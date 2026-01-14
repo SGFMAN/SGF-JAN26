@@ -4,10 +4,20 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
-
+const path = require("path");
 const app = express();
 app.use(express.json());
 app.use(cors({ origin: true }));
+// ------------------------------------------------------------
+// Serve the built frontend (Vite dist) on the same port
+// ------------------------------------------------------------
+const frontendDist = path.join(__dirname, "..", "frontend", "dist");
+app.use(express.static(frontendDist));
+
+// SPA fallback: for any non-API route, return index.html
+app.get(/^\/(?!api).*/, (req, res) => {
+  res.sendFile(path.join(frontendDist, "index.html"));
+});
 
 const PORT = process.env.PORT || 3001;
 
@@ -215,8 +225,8 @@ app.delete("/api/projects/:id", async (req, res) => {
 (async () => {
   try {
     await ensureSchema();
-    app.listen(PORT, () => {
-      console.log(`✅ SGF API running on http://localhost:${PORT}`);
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`✅ SGF API running on http://0.0.0.0:${PORT}`);
     });
   } catch (e) {
     console.error("❌ Startup error:", e);

@@ -15,7 +15,7 @@ const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3"; // Moderately lightened version
 const WHITE = "#fff";
 
-const API_URL = "http://localhost:3001";
+const API_URL = "";
 
 // Menu options for this page plus back to main
 const MENU_OPTIONS = [

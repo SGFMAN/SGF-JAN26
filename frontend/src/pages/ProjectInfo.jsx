@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
-const API_URL = "http://localhost:3001";
+const API_URL = "";
 
 const STATUS_OPTIONS = ["Design Phase", "Construction Phase", "Complete"];
 const STREAM_OPTIONS = [
