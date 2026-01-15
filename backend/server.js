@@ -61,7 +61,10 @@ async function ensureSchema() {
     );
   `);
   // Add new columns if they don't exist (for existing tables)
-  const columnsToAdd = ['suburb', 'street', 'client_name', 'email', 'phone', 'stream'];
+  const columnsToAdd = ['suburb', 'street', 'client_name', 'email', 'phone', 'stream',
+    'client1_name', 'client1_email', 'client1_phone', 'client1_active',
+    'client2_name', 'client2_email', 'client2_phone', 'client2_active',
+    'client3_name', 'client3_email', 'client3_phone', 'client3_active'];
   for (const column of columnsToAdd) {
     try {
       await pool.query(`
@@ -87,7 +90,7 @@ app.get("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, client_name, email, phone, stream, updated_at FROM projects ORDER BY updated_at DESC, id DESC"
+      "SELECT id, name, status, suburb, street, client_name, email, phone, stream, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
     );
     res.json(r.rows);
   } catch (e) {
@@ -108,7 +111,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, client_name, email, phone, stream, updated_at FROM projects WHERE id = $1",
+      "SELECT id, name, status, suburb, street, client_name, email, phone, stream, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
       [id]
     );
     
@@ -162,7 +165,33 @@ app.put("/api/projects/:id", async (req, res) => {
   }
 
   try {
-    const { name, status, stream } = req.body || {};
+    const { name, status, stream, suburb, street, client_name, email, phone,
+      client1_name, client1_email, client1_phone, client1_active,
+      client2_name, client2_email, client2_phone, client2_active,
+      client3_name, client3_email, client3_phone, client3_active } = req.body || {};
+    // Convert empty strings to null, but preserve non-empty strings
+    const processValue = (val) => {
+      if (val === undefined) return null;
+      if (typeof val === "string") {
+        const trimmed = val.trim();
+        return trimmed === "" ? null : trimmed;
+      }
+      return null;
+    };
+    // Process boolean/checkbox values: convert true to 'true', false/null to null
+    // But track if the value was explicitly provided (vs undefined/not provided)
+    const processBoolean = (val) => {
+      if (val === undefined) return { value: null, provided: false };
+      if (val === true || val === 'true' || val === 'Y' || val === 'y') return { value: 'true', provided: true };
+      return { value: null, provided: true }; // false or unchecked - explicitly set
+    };
+    
+    const client1ActiveResult = processBoolean(client1_active);
+    const client2ActiveResult = processBoolean(client2_active);
+    const client3ActiveResult = processBoolean(client3_active);
+    
+    // Build the SQL query - use CASE to handle boolean fields properly
+    // If value was provided, use it (even if null), otherwise keep existing
     const r = await pool.query(
       `
       UPDATE projects
@@ -170,15 +199,52 @@ app.put("/api/projects/:id", async (req, res) => {
         name = COALESCE($1, name),
         status = COALESCE($2, status),
         stream = COALESCE($3, stream),
+        suburb = COALESCE($4, suburb),
+        street = COALESCE($5, street),
+        client_name = COALESCE($6, client_name),
+        email = COALESCE($7, email),
+        phone = COALESCE($8, phone),
+        client1_name = COALESCE($9, client1_name),
+        client1_email = COALESCE($10, client1_email),
+        client1_phone = COALESCE($11, client1_phone),
+        client1_active = CASE WHEN $22::boolean THEN $12 ELSE client1_active END,
+        client2_name = COALESCE($13, client2_name),
+        client2_email = COALESCE($14, client2_email),
+        client2_phone = COALESCE($15, client2_phone),
+        client2_active = CASE WHEN $23::boolean THEN $16 ELSE client2_active END,
+        client3_name = COALESCE($17, client3_name),
+        client3_email = COALESCE($18, client3_email),
+        client3_phone = COALESCE($19, client3_phone),
+        client3_active = CASE WHEN $24::boolean THEN $20 ELSE client3_active END,
         updated_at = NOW()
-      WHERE id = $4
+      WHERE id = $21
       RETURNING *
       `,
       [
-        typeof name === "string" ? name.trim() : null,
-        typeof status === "string" ? status.trim() : null,
-        typeof stream === "string" ? stream.trim() : null,
+        processValue(name),
+        processValue(status),
+        processValue(stream),
+        processValue(suburb),
+        processValue(street),
+        processValue(client_name),
+        processValue(email),
+        processValue(phone),
+        processValue(client1_name),
+        processValue(client1_email),
+        processValue(client1_phone),
+        client1ActiveResult.value,
+        processValue(client2_name),
+        processValue(client2_email),
+        processValue(client2_phone),
+        client2ActiveResult.value,
+        processValue(client3_name),
+        processValue(client3_email),
+        processValue(client3_phone),
+        client3ActiveResult.value,
         id,
+        client1ActiveResult.provided, // $22 - flag to indicate if client1_active was provided
+        client2ActiveResult.provided, // $23 - flag to indicate if client2_active was provided
+        client3ActiveResult.provided, // $24 - flag to indicate if client3_active was provided
       ]
     );
 

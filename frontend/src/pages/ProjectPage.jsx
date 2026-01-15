@@ -215,7 +215,7 @@ export default function ProjectPage() {
           {!loading && !error && project && (
             <>
               {activeView === "project-info" && <ProjectInfo project={project} onUpdate={fetchProject} />}
-              {activeView === "client-info" && <ClientInfo project={project} />}
+              {activeView === "client-info" && <ClientInfo project={project} onUpdate={fetchProject} />}
               {activeView === "drawings" && <Drawings project={project} />}
               {activeView === "colours" && <Colours project={project} />}
               {activeView === "windows" && <Windows project={project} />}
