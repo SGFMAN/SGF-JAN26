@@ -6,16 +6,6 @@ const WHITE = "#fff";
 const API_URL = "";
 
 const STATUS_OPTIONS = ["Design Phase", "Construction Phase", "Complete"];
-const STREAM_OPTIONS = [
-  "SGF - VIC",
-  "SGF - QLD",
-  "Dual Dwelling",
-  "ATA",
-  "Pumped on Property",
-  "Henderson",
-  "Creat Cash Flow",
-  "Maple Group",
-];
 
 function getLongestText(arr, include = "") {
   return arr.concat(include ? [include] : []).reduce(
@@ -26,27 +16,24 @@ function getLongestText(arr, include = "") {
 
 export default function ProjectInfo({ project, onUpdate }) {
   const [status, setStatus] = useState(project?.status || "");
-  const [stream, setStream] = useState(project?.stream || "");
   const [street, setStreet] = useState(project?.street || "");
   const [suburb, setSuburb] = useState(project?.suburb || "");
+  const [state, setState] = useState(project?.state || "");
   
   // Use ref to track latest values for saving
-  const valuesRef = useRef({ status, stream, street, suburb });
+  const valuesRef = useRef({ status, street, suburb, state });
   
   // Update ref whenever state changes
   useEffect(() => {
-    valuesRef.current = { status, stream, street, suburb };
-  }, [status, stream, street, suburb]);
+    valuesRef.current = { status, street, suburb, state };
+  }, [status, street, suburb, state]);
   
   // For autosizing selects
   const statusSelectRef = useRef(null);
-  const streamSelectRef = useRef(null);
   const [statusSelectWidth, setStatusSelectWidth] = useState(undefined);
-  const [streamSelectWidth, setStreamSelectWidth] = useState(undefined);
 
   // Compute the longest option
   const LONGEST_STATUS = getLongestText(STATUS_OPTIONS);
-  const LONGEST_STREAM = getLongestText(STREAM_OPTIONS, "Select Stream");
 
   // Calculate width for <select>s when component mounts
   useEffect(() => {
@@ -60,14 +47,13 @@ export default function ProjectInfo({ project, onUpdate }) {
     const font = "1rem system-ui, Segoe UI, Arial, sans-serif";
 
     setStatusSelectWidth(Math.ceil(getTextWidth(LONGEST_STATUS, font)));
-    setStreamSelectWidth(Math.ceil(getTextWidth(LONGEST_STREAM, font)));
   }, []);
 
   useEffect(() => {
     setStatus(project?.status || "");
-    setStream(project?.stream || "");
     setStreet(project?.street || "");
     setSuburb(project?.suburb || "");
+    setState(project?.state || "");
   }, [project]);
 
   async function saveAllFields() {
@@ -84,21 +70,29 @@ export default function ProjectInfo({ project, onUpdate }) {
         body: JSON.stringify({
           name: projectName,
           status: currentValues.status,
-          stream: currentValues.stream,
           street: currentValues.street,
           suburb: currentValues.suburb,
+          state: currentValues.state,
         }),
       });
-      if (response.ok && onUpdate) {
-        onUpdate();
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => response.statusText);
+        console.error("Error saving fields - Status:", response.status, "Error:", errorText);
+      } else {
+        const savedData = await response.json().catch(() => null);
+        console.log("Successfully saved all fields:", savedData);
       }
+      // Don't call onUpdate() to prevent screen flash - state is already correct
     } catch (error) {
       console.error("Error saving fields:", error);
     }
   }
 
   async function saveField(fieldName, value) {
-    if (!project?.id) return;
+    if (!project?.id) {
+      console.error("Cannot save: no project ID");
+      return;
+    }
     const currentValues = valuesRef.current;
     // Derive name from street + suburb
     const projectName = `${currentValues.street}, ${currentValues.suburb}`.trim() || "";
@@ -106,11 +100,12 @@ export default function ProjectInfo({ project, onUpdate }) {
       const updateData = {
         name: projectName,
         status: currentValues.status,
-        stream: currentValues.stream,
         street: currentValues.street,
         suburb: currentValues.suburb,
+        state: currentValues.state,
         [fieldName]: value,
       };
+      console.log("Saving field:", fieldName, "=", value, "Update data:", updateData);
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "PUT",
         headers: {
@@ -118,9 +113,14 @@ export default function ProjectInfo({ project, onUpdate }) {
         },
         body: JSON.stringify(updateData),
       });
-      if (response.ok && onUpdate) {
-        onUpdate();
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => response.statusText);
+        console.error("Error saving field - Status:", response.status, "Error:", errorText);
+      } else {
+        const savedData = await response.json().catch(() => null);
+        console.log("Successfully saved:", savedData);
       }
+      // Don't call onUpdate() to prevent screen flash - state is already correct
     } catch (error) {
       console.error("Error saving field:", error);
     }
@@ -130,14 +130,8 @@ export default function ProjectInfo({ project, onUpdate }) {
     const newStatus = e.target.value;
     setStatus(newStatus);
     valuesRef.current.status = newStatus;
+    console.log("Saving status:", newStatus);
     await saveField("status", newStatus);
-  }
-
-  async function handleStreamChange(e) {
-    const newStream = e.target.value;
-    setStream(newStream);
-    valuesRef.current.stream = newStream;
-    await saveField("stream", newStream);
   }
 
   function handleStreetChange(e) {
@@ -152,8 +146,15 @@ export default function ProjectInfo({ project, onUpdate }) {
     valuesRef.current.suburb = newValue;
   }
 
+  function handleStateChange(e) {
+    const newValue = e.target.value;
+    setState(newValue);
+    valuesRef.current.state = newValue;
+  }
+
   async function handleBlur() {
     // Save all fields - ref should have latest values from change handlers
+    console.log("Blur triggered, saving all fields");
     await saveAllFields();
   }
 
@@ -244,18 +245,17 @@ export default function ProjectInfo({ project, onUpdate }) {
           </div>
           <div style={{ marginBottom: "16px" }}>
             <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
-              Stream
+              State
             </div>
-            <select
-              ref={streamSelectRef}
-              name="stream"
-              data-field="stream"
-              value={stream}
-              onChange={handleStreamChange}
+            <input
+              type="text"
+              name="state"
+              data-field="state"
+              value={state}
+              onChange={handleStateChange}
               onBlur={handleBlur}
               style={{
-                minWidth: streamSelectWidth ? `${streamSelectWidth}px` : undefined,
-                maxWidth: "100%",
+                width: "100%",
                 padding: "10px 12px",
                 borderRadius: "8px",
                 border: "none",
@@ -263,17 +263,8 @@ export default function ProjectInfo({ project, onUpdate }) {
                 color: MONUMENT,
                 background: WHITE,
                 boxSizing: "border-box",
-                cursor: "pointer",
-                display: "inline-block",
               }}
-            >
-              <option value="">Select Stream</option>
-              {STREAM_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+            />
           </div>
         </div>
       )}

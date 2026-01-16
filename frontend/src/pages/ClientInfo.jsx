@@ -80,9 +80,7 @@ export default function ClientInfo({ project, onUpdate }) {
           client3_active: currentValues.client3Active,
         }),
       });
-      if (response.ok && onUpdate) {
-        onUpdate();
-      }
+      // Don't call onUpdate() to prevent screen flash - state is already correct
     } catch (error) {
       console.error("Error saving fields:", error);
     }

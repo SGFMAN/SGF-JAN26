@@ -61,7 +61,8 @@ async function ensureSchema() {
     );
   `);
   // Add new columns if they don't exist (for existing tables)
-  const columnsToAdd = ['suburb', 'street', 'client_name', 'email', 'phone', 'stream',
+  const columnsToAdd = ['suburb', 'street', 'client_name', 'email', 'phone', 'stream', 'state', 'year',
+    'deposit',
     'client1_name', 'client1_email', 'client1_phone', 'client1_active',
     'client2_name', 'client2_email', 'client2_phone', 'client2_active',
     'client3_name', 'client3_email', 'client3_phone', 'client3_active'];
@@ -90,7 +91,7 @@ app.get("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, client_name, email, phone, stream, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
     );
     res.json(r.rows);
   } catch (e) {
@@ -111,7 +112,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, client_name, email, phone, stream, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
       [id]
     );
     
@@ -132,17 +133,24 @@ app.get("/api/projects/:id", async (req, res) => {
 app.post("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const { name, status, suburb, street, client_name, email, phone } = req.body || {};
+    const { name, status, suburb, street, state, stream, deposit, client_name, email, phone } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
 
+    // Derive year from current date
+    const currentYear = new Date().getFullYear().toString();
+
     const r = await pool.query(
-      `INSERT INTO projects (name, status, suburb, street, client_name, email, phone) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      `INSERT INTO projects (name, status, suburb, street, state, stream, year, deposit, client_name, email, phone) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
       [
         name.trim(),
         (status || "New").trim(),
         suburb ? suburb.trim() : null,
         street ? street.trim() : null,
+        state ? state.trim() : null,
+        stream ? stream.trim() : null,
+        currentYear,
+        deposit ? deposit.trim() : null,
         client_name ? client_name.trim() : null,
         email ? email.trim() : null,
         phone ? phone.trim() : null,
@@ -165,7 +173,7 @@ app.put("/api/projects/:id", async (req, res) => {
   }
 
   try {
-    const { name, status, stream, suburb, street, client_name, email, phone,
+    const { name, status, stream, suburb, street, state, deposit, client_name, email, phone,
       client1_name, client1_email, client1_phone, client1_active,
       client2_name, client2_email, client2_phone, client2_active,
       client3_name, client3_email, client3_phone, client3_active } = req.body || {};
@@ -201,23 +209,25 @@ app.put("/api/projects/:id", async (req, res) => {
         stream = COALESCE($3, stream),
         suburb = COALESCE($4, suburb),
         street = COALESCE($5, street),
-        client_name = COALESCE($6, client_name),
-        email = COALESCE($7, email),
-        phone = COALESCE($8, phone),
-        client1_name = COALESCE($9, client1_name),
-        client1_email = COALESCE($10, client1_email),
-        client1_phone = COALESCE($11, client1_phone),
-        client1_active = CASE WHEN $22::boolean THEN $12 ELSE client1_active END,
-        client2_name = COALESCE($13, client2_name),
-        client2_email = COALESCE($14, client2_email),
-        client2_phone = COALESCE($15, client2_phone),
-        client2_active = CASE WHEN $23::boolean THEN $16 ELSE client2_active END,
-        client3_name = COALESCE($17, client3_name),
-        client3_email = COALESCE($18, client3_email),
-        client3_phone = COALESCE($19, client3_phone),
-        client3_active = CASE WHEN $24::boolean THEN $20 ELSE client3_active END,
+        state = COALESCE($6, state),
+        deposit = COALESCE($7, deposit),
+        client_name = COALESCE($8, client_name),
+        email = COALESCE($9, email),
+        phone = COALESCE($10, phone),
+        client1_name = COALESCE($11, client1_name),
+        client1_email = COALESCE($12, client1_email),
+        client1_phone = COALESCE($13, client1_phone),
+        client1_active = COALESCE($14, client1_active),
+        client2_name = COALESCE($15, client2_name),
+        client2_email = COALESCE($16, client2_email),
+        client2_phone = COALESCE($17, client2_phone),
+        client2_active = COALESCE($18, client2_active),
+        client3_name = COALESCE($19, client3_name),
+        client3_email = COALESCE($20, client3_email),
+        client3_phone = COALESCE($21, client3_phone),
+        client3_active = COALESCE($22, client3_active),
         updated_at = NOW()
-      WHERE id = $21
+      WHERE id = $23
       RETURNING *
       `,
       [
@@ -226,25 +236,24 @@ app.put("/api/projects/:id", async (req, res) => {
         processValue(stream),
         processValue(suburb),
         processValue(street),
+        processValue(state),
+        processValue(deposit),
         processValue(client_name),
         processValue(email),
         processValue(phone),
         processValue(client1_name),
         processValue(client1_email),
         processValue(client1_phone),
-        client1ActiveResult.value,
+        client1ActiveResult.provided ? client1ActiveResult.value : undefined, // Only update if provided
         processValue(client2_name),
         processValue(client2_email),
         processValue(client2_phone),
-        client2ActiveResult.value,
+        client2ActiveResult.provided ? client2ActiveResult.value : undefined, // Only update if provided
         processValue(client3_name),
         processValue(client3_email),
         processValue(client3_phone),
-        client3ActiveResult.value,
-        id,
-        client1ActiveResult.provided, // $22 - flag to indicate if client1_active was provided
-        client2ActiveResult.provided, // $23 - flag to indicate if client2_active was provided
-        client3ActiveResult.provided, // $24 - flag to indicate if client3_active was provided
+        client3ActiveResult.provided ? client3ActiveResult.value : undefined, // Only update if provided
+        id
       ]
     );
 
