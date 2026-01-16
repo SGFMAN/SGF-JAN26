@@ -71,6 +71,7 @@ export default function ProjectPage() {
 
   return (
     <div
+      className="page-container"
       style={{
         position: "fixed",
         inset: 0,
@@ -112,6 +113,7 @@ export default function ProjectPage() {
 
       {/* Sections 2 & 3 */}
       <div
+        className="sections-container"
         style={{
           display: "flex",
           width: "calc(100vw - 64px)",
@@ -122,6 +124,7 @@ export default function ProjectPage() {
       >
         {/* Section 2: Menu */}
         <div
+          className="sidebar-menu"
           style={{
             background: SECTION_GREY,
             borderRadius: "18px",
@@ -191,6 +194,7 @@ export default function ProjectPage() {
         </div>
         {/* Section 3: Project Content */}
         <div
+          className="content-section"
           style={{
             background: SECTION_GREY,
             borderRadius: "18px",

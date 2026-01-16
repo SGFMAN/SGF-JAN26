@@ -75,6 +75,7 @@ export default function HomePage() {
 
   return (
     <div
+      className="page-container"
       style={{
         position: "fixed",
         inset: 0,
@@ -116,6 +117,7 @@ export default function HomePage() {
 
       {/* Sections 2 & 3 */}
       <div
+        className="sections-container"
         style={{
           display: "flex",
           width: "calc(100vw - 64px)",
@@ -126,6 +128,7 @@ export default function HomePage() {
       >
         {/* Section 2: Menu */}
         <div
+          className="sidebar-menu"
           style={{
             background: SECTION_GREY,
             borderRadius: "18px",
@@ -192,6 +195,7 @@ export default function HomePage() {
         </div>
         {/* Section 3: Projects */}
         <div
+          className="content-section"
           style={{
             background: SECTION_GREY,
             borderRadius: "18px",
@@ -221,6 +225,7 @@ export default function HomePage() {
           )}
           {!loading && !error && projects.length > 0 && (
             <div
+              className="projects-grid"
               style={{
                 display: "flex",
                 flexWrap: "wrap",

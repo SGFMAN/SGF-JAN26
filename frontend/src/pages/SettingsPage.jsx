@@ -8,6 +8,7 @@ import { Link } from "react-router-dom";
 export default function SettingsPage() {
   return (
     <div
+      className="page-container"
       style={{
         position: "fixed",
         inset: 0,
@@ -49,6 +50,7 @@ export default function SettingsPage() {
 
       {/* Sections 2 & 3: Sidebar and Main Content */}
       <div
+        className="sections-container"
         style={{
           display: "flex",
           width: "calc(100vw - 64px)",
@@ -59,6 +61,7 @@ export default function SettingsPage() {
       >
         {/* Section 2: Sidebar (menu, 200px wide, 700px height) */}
         <div
+          className="sidebar-menu"
           style={{
             background: SECTION_GREY,
             borderRadius: "16px",
@@ -120,6 +123,7 @@ export default function SettingsPage() {
 
         {/* Section 3: Main Content (same color and 700px height as the menu) */}
         <div
+          className="content-section"
           style={{
             background: SECTION_GREY,
             borderRadius: "16px",
