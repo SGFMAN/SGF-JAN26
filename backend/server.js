@@ -1449,7 +1449,7 @@ app.post("/api/projects/update-site-visit-scheduled", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   
   try {
-    const { projects } = req.body;
+    const { projects, updateStatus } = req.body;
     
     if (!projects || !Array.isArray(projects) || projects.length === 0) {
       return res.status(400).json({ error: "Projects array is required" });
@@ -1463,16 +1463,26 @@ app.post("/api/projects/update-site-visit-scheduled", async (req, res) => {
         continue; // Skip invalid entries
       }
 
-      await pool.query(
-        "UPDATE projects SET site_visit_scheduled_date = $1, site_visit_scheduled_period = $2, site_visit_status = $3 WHERE id = $4",
-        [date || null, period || null, "Email Sent", projectId]
-      );
+      // Only update status if updateStatus is true
+      if (updateStatus === true) {
+        await pool.query(
+          "UPDATE projects SET site_visit_scheduled_date = $1, site_visit_scheduled_period = $2, site_visit_status = $3 WHERE id = $4",
+          [date || null, period || null, "Email Sent", projectId]
+        );
+      } else {
+        // Only update date and period, not status
+        await pool.query(
+          "UPDATE projects SET site_visit_scheduled_date = $1, site_visit_scheduled_period = $2 WHERE id = $3",
+          [date || null, period || null, projectId]
+        );
+      }
     }
 
-    console.log(`Site visit scheduled updated and status set to "Email Sent" for ${projects.length} project(s)`);
+    const statusMsg = updateStatus === true ? " and status set to \"Email Sent\"" : "";
+    console.log(`Site visit scheduled updated${statusMsg} for ${projects.length} project(s)`);
     res.json({ 
       success: true, 
-      message: `Site visit schedule updated and status set to "Email Sent" for ${projects.length} project(s)`
+      message: `Site visit schedule updated${statusMsg} for ${projects.length} project(s)`
     });
   } catch (e) {
     console.error("Error updating site visit schedule:", e);

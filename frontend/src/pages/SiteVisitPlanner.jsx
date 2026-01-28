@@ -58,6 +58,8 @@ export default function SiteVisitPlanner() {
   const [hourHeight, setHourHeight] = useState(0);
   const draggingIdRef = useRef(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [currentEmailProjectIndex, setCurrentEmailProjectIndex] = useState(0);
 
   useEffect(() => {
     if (location.state && location.state.group) {
@@ -763,168 +765,6 @@ export default function SiteVisitPlanner() {
               >
                 Back to Manager
               </button>
-              <button
-                onClick={async () => {
-                  if (!groupDate) {
-                    alert("Please select a date first");
-                    return;
-                  }
-
-                  // Collect all project IDs with their AM/PM selections
-                  const projectUpdates = groupProjects.map(project => ({
-                    projectId: project.id,
-                    date: groupDate,
-                    period: projectTimePeriods[project.id] !== false ? "AM" : "PM" // Default to AM if not set
-                  }));
-
-                  try {
-                    // First, save the schedule
-                    const response = await fetch(`${API_URL}/api/projects/update-site-visit-scheduled`, {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({
-                        projects: projectUpdates
-                      }),
-                    });
-
-                    if (!response.ok) {
-                      const errorData = await response.json().catch(() => ({}));
-                      throw new Error(errorData.error || "Failed to save site visit schedule");
-                    }
-
-                    // Now fetch the "SITE VISIT BOOKING" template
-                    const templatesResponse = await fetch(`${API_URL}/api/email-templates`);
-                    if (!templatesResponse.ok) {
-                      throw new Error("Failed to fetch email templates");
-                    }
-                    const templates = await templatesResponse.json();
-                    const template = templates.find(t => t.name === "SITE VISIT BOOKING");
-                    
-                    if (!template) {
-                      alert("Email template 'SITE VISIT BOOKING' not found. Please create it in Settings → Email Settings.");
-                      return;
-                    }
-
-                    // Refresh projects to get updated scheduled dates
-                    await fetchProjects();
-
-                    // Get updated projects with scheduled dates
-                    let updatedProjects = projects.filter(p => groupProjects.some(gp => gp.id === p.id));
-                    
-                    if (updatedProjects.length === 0) {
-                      alert("No projects found in group");
-                      return;
-                    }
-
-                    // Update each project with the schedule data we just saved
-                    // This ensures we use the latest date and period, not stale data
-                    updatedProjects = updatedProjects.map(project => {
-                      const update = projectUpdates.find(u => u.projectId === project.id);
-                      if (update) {
-                        return {
-                          ...project,
-                          site_visit_scheduled_date: update.date,
-                          site_visit_scheduled_period: update.period
-                        };
-                      }
-                      return project;
-                    });
-
-                    // Process each project separately and open mailto for each
-                    for (const project of updatedProjects) {
-                      // Collect active client emails and names for this specific project
-                      const projectToEmails = new Set();
-                      const projectActiveClientNames = [];
-                      
-                      if (project.client1_email && project.client1_active === 'true') {
-                        projectToEmails.add(project.client1_email);
-                        if (project.client1_name) {
-                          projectActiveClientNames.push(project.client1_name);
-                        }
-                      }
-                      if (project.client2_email && project.client2_active === 'true') {
-                        projectToEmails.add(project.client2_email);
-                        if (project.client2_name) {
-                          projectActiveClientNames.push(project.client2_name);
-                        }
-                      }
-                      if (project.client3_email && project.client3_active === 'true') {
-                        projectToEmails.add(project.client3_email);
-                        if (project.client3_name) {
-                          projectActiveClientNames.push(project.client3_name);
-                        }
-                      }
-                      // Also include main client email if exists
-                      if (project.email) {
-                        projectToEmails.add(project.email);
-                      }
-
-                      if (projectToEmails.size === 0) {
-                        console.warn(`No active client email addresses found for project: ${project.name || project.id}`);
-                        continue; // Skip this project if no emails
-                      }
-
-                      // Extract first names and format them for this project
-                      const firstNames = projectActiveClientNames
-                        .map(name => name.trim().split(/\s+/)[0]) // Get first name only
-                        .filter(name => name.length > 0); // Remove empty names
-                      
-                      let formattedClientNames = "";
-                      if (firstNames.length === 1) {
-                        formattedClientNames = `${firstNames[0]},`;
-                      } else if (firstNames.length === 2) {
-                        formattedClientNames = `${firstNames[0]} and ${firstNames[1]},`;
-                      } else if (firstNames.length > 2) {
-                        const last = firstNames.pop();
-                        formattedClientNames = `${firstNames.join(", ")} and ${last},`;
-                      }
-
-                      // Create a modified project object with formatted client names for this project
-                      const projectForTokens = {
-                        ...project,
-                        client_name: formattedClientNames || project.client_name || ""
-                      };
-
-                      // Replace tokens in template using the helper function for this specific project
-                      const subject = await replaceTokens(template.subject || "", projectForTokens);
-                      const body = await replaceTokens(template.body || "", projectForTokens);
-
-                      // Create mailto link for this project
-                      const toAddresses = Array.from(projectToEmails).join(",");
-                      const mailtoLink = `mailto:${toAddresses}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-                      
-                      // Open mailto link (with a delay between each to allow email client to open)
-                      // Use setTimeout to space out the mailto links so each one opens properly
-                      setTimeout(() => {
-                        const link = document.createElement('a');
-                        link.href = mailtoLink;
-                        link.click();
-                      }, updatedProjects.indexOf(project) * 500);
-                    }
-                    
-                  } catch (error) {
-                    console.error("Error processing email:", error);
-                    alert(error.message || "Failed to process email");
-                  }
-                }}
-                style={{
-                  padding: "10px 20px",
-                  fontSize: "1rem",
-                  fontWeight: 500,
-                  color: WHITE,
-                  background: MONUMENT,
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  transition: "background 0.2s",
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
-              >
-                Send Email to Clients
-              </button>
             </div>
           </div>
 
@@ -934,7 +774,7 @@ export default function SiteVisitPlanner() {
             <p style={{ color: "#32323399" }}>No projects in this group.</p>
           )}
           {!loading && !error && groupProjects.length > 0 && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(8, minmax(0, 1fr))", gap: "12px", flex: 1, overflow: "hidden", minWidth: 0 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: "12px", flex: 1, overflow: "hidden", minWidth: 0 }}>
               {/* Column 1: Projects */}
               <div
                 style={{
@@ -947,6 +787,9 @@ export default function SiteVisitPlanner() {
                   minWidth: 0,
                 }}
               >
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, color: MONUMENT, margin: "0 0 8px 0", textAlign: "center" }}>
+                  Projects
+                </h3>
                 {groupProjects.map((project) => {
                   const suburb = project.suburb || "Unknown Suburb";
                   const street = project.street || "No address";
@@ -1061,7 +904,7 @@ export default function SiteVisitPlanner() {
                 })}
               </div>
 
-              {/* Column 2: AM/PM Selectors for each project */}
+              {/* Column 2: AM/PM Selectors */}
               <div
                 style={{
                   gridColumn: "2",
@@ -1073,6 +916,9 @@ export default function SiteVisitPlanner() {
                   minWidth: 0,
                 }}
               >
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, color: MONUMENT, margin: "0 0 8px 0", textAlign: "center" }}>
+                  Time Period
+                </h3>
                 {groupProjects.map((project) => {
                   const isAM = projectTimePeriods[project.id] !== false; // Default to AM (true) if not set
                   
@@ -1158,12 +1004,19 @@ export default function SiteVisitPlanner() {
                   minWidth: 0,
                 }}
               >
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, color: MONUMENT, margin: "0 0 8px 0", textAlign: "center" }}>
+                  Date
+                </h3>
                 <div
                   style={{
-                    height: "100px",
+                    background: "#d3d3d3",
+                    borderRadius: "12px",
+                    padding: "20px",
                     display: "flex",
-                    alignItems: "center",
+                    alignItems: "flex-start",
                     justifyContent: "center",
+                    height: "500px",
+                    paddingTop: "20px",
                   }}
                 >
                   <input
@@ -1184,24 +1037,348 @@ export default function SiteVisitPlanner() {
                       width: "100%",
                       maxWidth: "200px",
                       boxSizing: "border-box",
+                      marginTop: "0",
                     }}
                   />
                 </div>
               </div>
 
-              {/* Columns 4-7: Empty (reserved for future use) */}
-              <div style={{ gridColumn: "4 / 8" }}></div>
-
-              {/* Column 8: Empty (reserved for future use) */}
+              {/* Column 4: Email Clients button */}
               <div
                 style={{
-                  gridColumn: "8",
+                  gridColumn: "4",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "12px",
+                  alignContent: "flex-start",
+                  minWidth: 0,
                 }}
-              ></div>
+              >
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, color: MONUMENT, margin: "0 0 8px 0", textAlign: "center" }}>
+                  Email Booking
+                </h3>
+                <div
+                  style={{
+                    height: "100px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <button
+                    onClick={() => {
+                      if (!groupDate) {
+                        alert("Please select a date first");
+                        return;
+                      }
+                      setCurrentEmailProjectIndex(0);
+                      setShowEmailModal(true);
+                    }}
+                    style={{
+                      padding: "10px 20px",
+                      fontSize: "1rem",
+                      fontWeight: 500,
+                      color: WHITE,
+                      background: MONUMENT,
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                      transition: "background 0.2s",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
+                  >
+                    Email Clients
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* Email Modal */}
+      {showEmailModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowEmailModal(false);
+            }
+          }}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "16px",
+              padding: "32px",
+              maxWidth: "600px",
+              width: "90%",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.3)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {currentEmailProjectIndex < groupProjects.length ? (
+              <>
+                <h2 style={{ fontSize: "1.5rem", fontWeight: 600, color: MONUMENT, margin: "0 0 24px 0", textAlign: "center" }}>
+                  Send Email
+                </h2>
+                {(() => {
+                  const currentProject = groupProjects[currentEmailProjectIndex];
+                  const suburb = currentProject.suburb || "Unknown Suburb";
+                  const street = currentProject.street || "No address";
+                  
+                  return (
+                    <div style={{ marginBottom: "24px" }}>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 600, color: MONUMENT, marginBottom: "8px" }}>
+                        {suburb} - {street}
+                      </div>
+                      <div style={{ fontSize: "0.9rem", color: "#666", marginBottom: "16px" }}>
+                        Project {currentEmailProjectIndex + 1} of {groupProjects.length}
+                      </div>
+                    </div>
+                  );
+                })()}
+                <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+                  <button
+                    onClick={async () => {
+                      const currentProject = groupProjects[currentEmailProjectIndex];
+                      
+                      try {
+                        // Save the schedule and update status to "Email Sent" for this project
+                        const period = projectTimePeriods[currentProject.id] !== false ? "AM" : "PM";
+                        const scheduleResponse = await fetch(`${API_URL}/api/projects/update-site-visit-scheduled`, {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                          },
+                          body: JSON.stringify({
+                            projects: [{
+                              projectId: currentProject.id,
+                              date: groupDate,
+                              period: period
+                            }],
+                            updateStatus: true
+                          }),
+                        });
+
+                        if (!scheduleResponse.ok) {
+                          const errorData = await scheduleResponse.json().catch(() => ({}));
+                          throw new Error(errorData.error || "Failed to save site visit schedule");
+                        }
+
+                        // Fetch the "SITE VISIT BOOKING" template
+                        const templatesResponse = await fetch(`${API_URL}/api/email-templates`);
+                        if (!templatesResponse.ok) {
+                          throw new Error("Failed to fetch email templates");
+                        }
+                        const templates = await templatesResponse.json();
+                        const template = templates.find(t => t.name === "SITE VISIT BOOKING");
+                        
+                        if (!template) {
+                          alert("Email template 'SITE VISIT BOOKING' not found. Please create it in Settings → Email Settings.");
+                          return;
+                        }
+
+                        // Refresh projects to get updated data
+                        await fetchProjects();
+
+                        // Get the updated project
+                        let updatedProject = projects.find(p => p.id === currentProject.id);
+                        if (!updatedProject) {
+                          alert("Project not found");
+                          return;
+                        }
+
+                        // Update with the schedule data
+                        updatedProject = {
+                          ...updatedProject,
+                          site_visit_scheduled_date: groupDate,
+                          site_visit_scheduled_period: period
+                        };
+
+                        // Collect active client emails and names
+                        const projectToEmails = new Set();
+                        const projectActiveClientNames = [];
+                        
+                        if (updatedProject.client1_email && updatedProject.client1_active === 'true') {
+                          projectToEmails.add(updatedProject.client1_email);
+                          if (updatedProject.client1_name) {
+                            projectActiveClientNames.push(updatedProject.client1_name);
+                          }
+                        }
+                        if (updatedProject.client2_email && updatedProject.client2_active === 'true') {
+                          projectToEmails.add(updatedProject.client2_email);
+                          if (updatedProject.client2_name) {
+                            projectActiveClientNames.push(updatedProject.client2_name);
+                          }
+                        }
+                        if (updatedProject.client3_email && updatedProject.client3_active === 'true') {
+                          projectToEmails.add(updatedProject.client3_email);
+                          if (updatedProject.client3_name) {
+                            projectActiveClientNames.push(updatedProject.client3_name);
+                          }
+                        }
+                        if (updatedProject.email) {
+                          projectToEmails.add(updatedProject.email);
+                        }
+
+                        if (projectToEmails.size === 0) {
+                          alert("No active client email addresses found for this project");
+                          return;
+                        }
+
+                        // Extract first names and format them
+                        const firstNames = projectActiveClientNames
+                          .map(name => name.trim().split(/\s+/)[0])
+                          .filter(name => name.length > 0);
+                        
+                        let formattedClientNames = "";
+                        if (firstNames.length === 1) {
+                          formattedClientNames = `${firstNames[0]},`;
+                        } else if (firstNames.length === 2) {
+                          formattedClientNames = `${firstNames[0]} and ${firstNames[1]},`;
+                        } else if (firstNames.length > 2) {
+                          const last = firstNames.pop();
+                          formattedClientNames = `${firstNames.join(", ")} and ${last},`;
+                        }
+
+                        // Create project object with formatted client names
+                        const projectForTokens = {
+                          ...updatedProject,
+                          client_name: formattedClientNames || updatedProject.client_name || ""
+                        };
+
+                        // Replace tokens in template
+                        const subject = await replaceTokens(template.subject || "", projectForTokens);
+                        const body = await replaceTokens(template.body || "", projectForTokens);
+
+                        // Create mailto link
+                        const toAddresses = Array.from(projectToEmails).join(",");
+                        const mailtoLink = `mailto:${toAddresses}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                        
+                        // Open mailto link
+                        const link = document.createElement('a');
+                        link.href = mailtoLink;
+                        link.click();
+
+                        // Move to next project
+                        if (currentEmailProjectIndex < groupProjects.length - 1) {
+                          setCurrentEmailProjectIndex(currentEmailProjectIndex + 1);
+                        } else {
+                          // All projects processed
+                          setShowEmailModal(false);
+                          setCurrentEmailProjectIndex(0);
+                        }
+                        
+                      } catch (error) {
+                        console.error("Error processing email:", error);
+                        alert(error.message || "Failed to process email");
+                      }
+                    }}
+                    style={{
+                      padding: "10px 20px",
+                      fontSize: "1rem",
+                      fontWeight: 500,
+                      color: WHITE,
+                      background: MONUMENT,
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                      transition: "background 0.2s",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
+                  >
+                    Email
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (currentEmailProjectIndex < groupProjects.length - 1) {
+                        setCurrentEmailProjectIndex(currentEmailProjectIndex + 1);
+                      } else {
+                        setShowEmailModal(false);
+                        setCurrentEmailProjectIndex(0);
+                      }
+                    }}
+                    style={{
+                      padding: "10px 20px",
+                      fontSize: "1rem",
+                      fontWeight: 500,
+                      color: MONUMENT,
+                      background: SECTION_GREY,
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                      transition: "background 0.2s",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#909090")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = SECTION_GREY)}
+                  >
+                    Skip
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowEmailModal(false);
+                      setCurrentEmailProjectIndex(0);
+                    }}
+                    style={{
+                      padding: "10px 20px",
+                      fontSize: "1rem",
+                      fontWeight: 500,
+                      color: MONUMENT,
+                      background: SECTION_GREY,
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                      transition: "background 0.2s",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#909090")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = SECTION_GREY)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div style={{ textAlign: "center" }}>
+                <h2 style={{ fontSize: "1.5rem", fontWeight: 600, color: MONUMENT, margin: "0 0 24px 0" }}>
+                  All Projects Processed
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowEmailModal(false);
+                    setCurrentEmailProjectIndex(0);
+                  }}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    color: WHITE,
+                    background: MONUMENT,
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    transition: "background 0.2s",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
+                >
+                  Close
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
