@@ -57,30 +57,55 @@ export default function ClientInfo({ project, onUpdate }) {
   }, [project]);
 
   async function saveAllFields() {
-    if (!project?.id) return;
+    if (!project?.id) {
+      console.error("Cannot save: no project ID");
+      return;
+    }
     const currentValues = valuesRef.current;
+    const payload = {
+      client1_name: currentValues.client1Name,
+      client1_email: currentValues.client1Email,
+      client1_phone: currentValues.client1Phone,
+      client1_active: currentValues.client1Active,
+      client2_name: currentValues.client2Name,
+      client2_email: currentValues.client2Email,
+      client2_phone: currentValues.client2Phone,
+      client2_active: currentValues.client2Active,
+      client3_name: currentValues.client3Name,
+      client3_email: currentValues.client3Email,
+      client3_phone: currentValues.client3Phone,
+      client3_active: currentValues.client3Active,
+      project_cost: project?.project_cost || null,
+      deposit: project?.deposit || null,
+    };
+    console.log("Saving all fields with payload:", payload);
     try {
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          client1_name: currentValues.client1Name,
-          client1_email: currentValues.client1Email,
-          client1_phone: currentValues.client1Phone,
-          client1_active: currentValues.client1Active,
-          client2_name: currentValues.client2Name,
-          client2_email: currentValues.client2Email,
-          client2_phone: currentValues.client2Phone,
-          client2_active: currentValues.client2Active,
-          client3_name: currentValues.client3Name,
-          client3_email: currentValues.client3Email,
-          client3_phone: currentValues.client3Phone,
-          client3_active: currentValues.client3Active,
-        }),
+        body: JSON.stringify(payload),
       });
-      // Don't call onUpdate() to prevent screen flash - state is already correct
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        console.error("Error saving fields - Status:", response.status, "Error:", errorData.error || response.statusText);
+        const errorText = await response.text().catch(() => response.statusText);
+        console.error("Full error response:", errorText);
+        return;
+      }
+      
+      // Parse response but don't block on it
+      const result = await response.json().catch(() => null);
+      console.log("Successfully saved all fields. Response:", result);
+      
+      // CRITICAL: ALWAYS call onUpdate after successful save - this refreshes the project data
+      if (onUpdate) {
+        console.log("Calling onUpdate to refresh project data...");
+        onUpdate();
+      } else {
+        console.warn("onUpdate is not defined! Autosave will not refresh data.");
+      }
     } catch (error) {
       console.error("Error saving fields:", error);
     }
@@ -148,6 +173,7 @@ export default function ClientInfo({ project, onUpdate }) {
     const newValue = e.target.checked;
     setClient1Active(newValue);
     valuesRef.current.client1Active = newValue;
+    console.log("Client 1 active changed to:", newValue);
     await saveAllFields();
   }
 
@@ -155,6 +181,7 @@ export default function ClientInfo({ project, onUpdate }) {
     const newValue = e.target.checked;
     setClient2Active(newValue);
     valuesRef.current.client2Active = newValue;
+    console.log("Client 2 active changed to:", newValue);
     await saveAllFields();
   }
 
@@ -162,6 +189,7 @@ export default function ClientInfo({ project, onUpdate }) {
     const newValue = e.target.checked;
     setClient3Active(newValue);
     valuesRef.current.client3Active = newValue;
+    console.log("Client 3 active changed to:", newValue);
     await saveAllFields();
   }
 
@@ -267,89 +295,64 @@ export default function ClientInfo({ project, onUpdate }) {
   };
 
   return (
-    <div>
+    <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%" }}>
       <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT }}>
         Client Info
       </h2>
       {project && (
-        <div style={{ marginTop: "24px", display: "flex", gap: "24px" }}>
-          {/* Contact 1 Column */}
-          <div style={columnStyle}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
-              <input
-                type="checkbox"
-                checked={client1Active}
-                onChange={handleClient1ActiveChange}
-                style={{
-                  width: "18px",
-                  height: "18px",
-                  cursor: "pointer",
-                }}
-              />
-              <h3 style={{ fontSize: "1rem", fontWeight: 600, color: MONUMENT, margin: 0 }}>
-                Contact 1
-              </h3>
+        <>
+          <div style={{ marginTop: "24px", display: "flex", gap: "24px", paddingBottom: "80px" }}>
+            {/* Contact 1 Column */}
+            <div style={columnStyle}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
+                <input
+                  type="checkbox"
+                  checked={client1Active}
+                  onChange={handleClient1ActiveChange}
+                  style={{
+                    width: "18px",
+                    height: "18px",
+                    cursor: "pointer",
+                  }}
+                />
+                <h3 style={{ fontSize: "1rem", fontWeight: 600, color: MONUMENT, margin: 0 }}>
+                  Contact 1
+                </h3>
+              </div>
+              <div style={{ marginBottom: "16px" }}>
+                <div style={labelStyle}>Contact</div>
+                <input
+                  type="text"
+                  name="client1Name"
+                  value={client1Name}
+                  onChange={handleClient1NameChange}
+                  onBlur={handleBlur}
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ marginBottom: "16px" }}>
+                <div style={labelStyle}>Email</div>
+                <input
+                  type="email"
+                  name="client1Email"
+                  value={client1Email}
+                  onChange={handleClient1EmailChange}
+                  onBlur={handleBlur}
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ marginBottom: "16px" }}>
+                <div style={labelStyle}>Phone</div>
+                <input
+                  type="tel"
+                  name="client1Phone"
+                  value={client1Phone}
+                  onChange={handleClient1PhoneChange}
+                  onBlur={handleBlur}
+                  style={inputStyle}
+                />
+              </div>
             </div>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={labelStyle}>Contact</div>
-              <input
-                type="text"
-                name="client1Name"
-                value={client1Name}
-                onChange={handleClient1NameChange}
-                onBlur={handleBlur}
-                style={inputStyle}
-              />
-            </div>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={labelStyle}>Email</div>
-              <input
-                type="email"
-                name="client1Email"
-                value={client1Email}
-                onChange={handleClient1EmailChange}
-                onBlur={handleBlur}
-                style={inputStyle}
-              />
-            </div>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={labelStyle}>Phone</div>
-              <input
-                type="tel"
-                name="client1Phone"
-                value={client1Phone}
-                onChange={handleClient1PhoneChange}
-                onBlur={handleBlur}
-                style={inputStyle}
-              />
-            </div>
-            <div style={{ marginTop: "24px" }}>
-              <button
-                onClick={handleEmailClients}
-                style={{
-                  background: WHITE,
-                  color: MONUMENT,
-                  border: "none",
-                  borderRadius: "10px",
-                  padding: "13px 8px",
-                  fontSize: "1.05rem",
-                  fontWeight: 500,
-                  textAlign: "center",
-                  letterSpacing: "0.5px",
-                  cursor: "pointer",
-                  transition: "background 0.17s",
-                  width: "100%",
-                  display: "block",
-                }}
-              >
-                {activeContactCount === 0
-                  ? "Email Client"
-                  : activeContactCount === 1
-                  ? "Email Client"
-                  : "Email Clients"}
-              </button>
-            </div>
-          </div>
 
           {/* Contact 2 Column */}
           <div style={columnStyle}>
@@ -454,7 +457,38 @@ export default function ClientInfo({ project, onUpdate }) {
               />
             </div>
           </div>
-        </div>
+
+          {/* Contact 4 Column - Empty */}
+          <div style={columnStyle}>
+          </div>
+          </div>
+          <div style={{ position: "absolute", bottom: "14px", left: "0px" }}>
+            <button
+              onClick={handleEmailClients}
+              style={{
+                background: WHITE,
+                color: MONUMENT,
+                border: "none",
+                borderRadius: "10px",
+                padding: "12px 8px",
+                fontSize: "1.05rem",
+                fontWeight: 500,
+                textAlign: "center",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.17s",
+                width: "200px",
+                display: "block",
+              }}
+            >
+              {activeContactCount === 0
+                ? "Email Client"
+                : activeContactCount === 1
+                ? "Email Client"
+                : "Email Clients"}
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

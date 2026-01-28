@@ -4,55 +4,17 @@ const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 
-const STREAM_OPTIONS = [
-  "SGF - VIC",
-  "SGF - QLD",
-  "Dual Dwelling",
-  "ATA",
-  "Pumped on Property",
-  "Henderson",
-  "Creat Cash Flow",
-  "Maple Group",
-];
-
-export default function NewProject({ isOpen, onClose, onCreate }) {
-  const [formData, setFormData] = useState({
-    suburb: "",
-    street: "",
-    state: "",
-    stream: "",
-    deposit: "",
-    customDeposit: "",
-    clientName: "",
-    email: "",
-    phone: "",
-  });
+export default function NewProject({ isOpen, onClose, formData, onFormDataChange, onNext }) {
   const [addressPaste, setAddressPaste] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
   function handleChange(e) {
     const { name, value } = e.target;
-    if (name === "deposit") {
-      setFormData({
-        ...formData,
-        deposit: value,
-        // Clear customDeposit if not "Other"
-        customDeposit: value === "Other" ? formData.customDeposit : "",
-      });
-    } else if (name === "customDeposit") {
-      setFormData({
-        ...formData,
-        customDeposit: value,
-        deposit: "Other", // Ensure deposit is set to "Other" when entering custom amount
-      });
-    } else {
-      setFormData({
-        ...formData,
-        [name]: value,
-      });
-    }
+    onFormDataChange({
+      ...formData,
+      [name]: value,
+    });
   }
 
   // Address parser: expects format like "30 Macedon St, Hoppers Crossing, VIC 3029, Australia"
@@ -123,54 +85,16 @@ export default function NewProject({ isOpen, onClose, onCreate }) {
       }
     }
 
-    setFormData((prev) => ({
-      ...prev,
+    onFormDataChange({
+      ...formData,
       street,
       suburb,
       state,
-    }));
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setIsSubmitting(true);
-    try {
-      await onCreate(formData);
-      // Reset form
-      setFormData({
-        suburb: "",
-        street: "",
-        state: "",
-        stream: "",
-        deposit: "",
-        customDeposit: "",
-        clientName: "",
-        email: "",
-        phone: "",
-      });
-      setAddressPaste("");
-      onClose();
-    } catch (error) {
-      console.error("Error creating project:", error);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  function handleCancel() {
-    setFormData({
-      suburb: "",
-      street: "",
-      state: "",
-      stream: "",
-      deposit: "",
-      customDeposit: "",
-      clientName: "",
-      email: "",
-      phone: "",
     });
-    setAddressPaste("");
-    onClose();
+  }
+
+  function handleNext() {
+    onNext();
   }
 
   return (
@@ -183,8 +107,8 @@ export default function NewProject({ isOpen, onClose, onCreate }) {
         alignItems: "center",
         justifyContent: "center",
         zIndex: 1000,
+        pointerEvents: "auto",
       }}
-      onClick={onClose}
     >
       <div
         style={{
@@ -206,379 +130,172 @@ export default function NewProject({ isOpen, onClose, onCreate }) {
             color: MONUMENT,
           }}
         >
-          New Project
+          Project Address
         </h2>
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: "16px" }}>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.95rem",
-                marginBottom: "10px",
-                fontWeight: 500,
-                color: "#323233dd",
-              }}
-            >
-              Paste address (optional)
-            </label>
-            <input
-              type="text"
-              name="addressPaste"
-              placeholder="e.g. 12 Ocean Ave, Bondi"
-              value={addressPaste}
-              onChange={handleAddressPasteChange}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: "1px dashed #aaa",
-                fontSize: "1rem",
-                background: "#f6f6f7",
-                color: MONUMENT,
-                marginBottom: "2px",
-                boxSizing: "border-box",
-              }}
-              autoComplete="off"
-            />
-            <small style={{ color: "#32323399" }}>
-              You can paste an address to fill below, or just type in the boxes.
-            </small>
-          </div>
-          <div style={{ marginBottom: "16px" }}>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.9rem",
-                color: "#32323399",
-                marginBottom: "6px",
-                fontWeight: 500,
-              }}
-            >
-              Street
-            </label>
-            <input
-              type="text"
-              name="street"
-              value={formData.street}
-              onChange={handleChange}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: "none",
-                fontSize: "1rem",
-                color: MONUMENT,
-                background: WHITE,
-                boxSizing: "border-box",
-              }}
-              autoComplete="off"
-            />
-          </div>
-          <div style={{ marginBottom: "16px", display: "flex", gap: "12px" }}>
-            <div style={{ flex: 3 }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: "#32323399",
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Suburb
-              </label>
-              <input
-                type="text"
-                name="suburb"
-                value={formData.suburb}
-                onChange={handleChange}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
-                autoComplete="off"
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: "#32323399",
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                State
-              </label>
-              <input
-                type="text"
-                name="state"
-                value={formData.state}
-                onChange={handleChange}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
-                autoComplete="off"
-              />
-            </div>
-          </div>
-          <div style={{ marginBottom: "16px", display: "flex", gap: "12px" }}>
-            <div style={{ flex: 1 }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: "#32323399",
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Deposit Amount
-              </label>
-              <select
-                name="deposit"
-                value={formData.deposit}
-                onChange={handleChange}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                  cursor: "pointer",
-                }}
-              >
-                <option value="">Select Deposit</option>
-                <option value="Full 5%">Full 5%</option>
-                <option value="$5k only">$5k only</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-            {formData.deposit === "Other" && (
-              <div style={{ flex: 1 }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.9rem",
-                    color: "#32323399",
-                    marginBottom: "6px",
-                    fontWeight: 500,
-                  }}
-                >
-                  Custom Amount
-                </label>
-                <input
-                  type="text"
-                  name="customDeposit"
-                  value={formData.customDeposit}
-                  onChange={handleChange}
-                  placeholder="Enter custom amount"
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: "none",
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    background: WHITE,
-                    boxSizing: "border-box",
-                  }}
-                  autoComplete="off"
-                />
-              </div>
-            )}
-          </div>
-          <div style={{ marginBottom: "16px" }}>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.9rem",
-                color: "#32323399",
-                marginBottom: "6px",
-                fontWeight: 500,
-              }}
-            >
-              Client Name
-            </label>
-            <input
-              type="text"
-              name="clientName"
-              value={formData.clientName}
-              onChange={handleChange}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: "none",
-                fontSize: "1rem",
-                color: MONUMENT,
-                background: WHITE,
-                boxSizing: "border-box",
-              }}
-              autoComplete="off"
-            />
-          </div>
-          <div style={{ marginBottom: "16px" }}>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.9rem",
-                color: "#32323399",
-                marginBottom: "6px",
-                fontWeight: 500,
-              }}
-            >
-              Email
-            </label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: "none",
-                fontSize: "1rem",
-                color: MONUMENT,
-                background: WHITE,
-                boxSizing: "border-box",
-              }}
-              autoComplete="off"
-            />
-          </div>
-          {/* Stream and Phone side by side with even BIGGER vertical gap before the buttons */}
-          <div style={{ marginBottom: "96px", display: "flex", gap: "20px" }}>
-            <div style={{ flex: 1 }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: "#32323399",
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Stream
-              </label>
-              <select
-                name="stream"
-                value={formData.stream}
-                onChange={handleChange}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                  cursor: "pointer",
-                }}
-              >
-                <option value="">Select Stream</option>
-                {STREAM_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div style={{ flex: 1 }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: "#32323399",
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Phone
-              </label>
-              <input
-                type="tel"
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
-                autoComplete="off"
-              />
-            </div>
-          </div>
-          <div
+        <div style={{ marginBottom: "16px" }}>
+          <label
             style={{
-              display: "flex",
-              gap: "24px",
-              justifyContent: "flex-end",
-              marginBottom: 0, // ensure no extra space after buttons
+              display: "block",
+              fontSize: "0.95rem",
+              marginBottom: "10px",
+              fontWeight: 500,
+              color: "#323233dd",
             }}
           >
-            <button
-              type="button"
-              onClick={handleCancel}
+            Paste address (optional)
+          </label>
+          <input
+            type="text"
+            name="addressPaste"
+            placeholder="e.g. 12 Ocean Ave, Bondi"
+            value={addressPaste}
+            onChange={handleAddressPasteChange}
+            style={{
+              width: "100%",
+              padding: "10px 12px",
+              borderRadius: "8px",
+              border: "1px dashed #aaa",
+              fontSize: "1rem",
+              background: "#f6f6f7",
+              color: MONUMENT,
+              marginBottom: "2px",
+              boxSizing: "border-box",
+            }}
+            autoComplete="off"
+          />
+          <small style={{ color: "#32323399" }}>
+            You can paste an address to fill below, or just type in the boxes.
+          </small>
+        </div>
+        <div style={{ marginBottom: "16px" }}>
+          <label
+            style={{
+              display: "block",
+              fontSize: "0.9rem",
+              color: "#32323399",
+              marginBottom: "6px",
+              fontWeight: 500,
+            }}
+          >
+            Street
+          </label>
+          <input
+            type="text"
+            name="street"
+            value={formData.street}
+            onChange={handleChange}
+            style={{
+              width: "100%",
+              padding: "10px 12px",
+              borderRadius: "8px",
+              border: "none",
+              fontSize: "1rem",
+              color: MONUMENT,
+              background: WHITE,
+              boxSizing: "border-box",
+            }}
+            autoComplete="off"
+          />
+        </div>
+        <div style={{ marginBottom: "16px", display: "flex", gap: "12px" }}>
+          <div style={{ flex: 3 }}>
+            <label
               style={{
-                background: WHITE,
+                display: "block",
+                fontSize: "0.9rem",
+                color: "#32323399",
+                marginBottom: "6px",
+                fontWeight: 500,
+              }}
+            >
+              Suburb
+            </label>
+            <input
+              type="text"
+              name="suburb"
+              value={formData.suburb}
+              onChange={handleChange}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: "8px",
+                border: "none",
+                fontSize: "1rem",
                 color: MONUMENT,
-                border: "none",
-                borderRadius: "10px",
-                padding: "12px 36px",
-                fontSize: "1rem",
-                fontWeight: 500,
-                cursor: "pointer",
-                transition: "background 0.17s",
+                background: WHITE,
+                boxSizing: "border-box",
               }}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              style={{
-                background: MONUMENT,
-                color: WHITE,
-                border: "none",
-                borderRadius: "10px",
-                padding: "12px 36px",
-                fontSize: "1rem",
-                fontWeight: 500,
-                cursor: isSubmitting ? "not-allowed" : "pointer",
-                opacity: isSubmitting ? 0.6 : 1,
-                transition: "background 0.17s",
-              }}
-            >
-              {isSubmitting ? "Creating..." : "Create Project"}
-            </button>
+              autoComplete="off"
+            />
           </div>
-        </form>
+          <div style={{ flex: 1 }}>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.9rem",
+                color: "#32323399",
+                marginBottom: "6px",
+                fontWeight: 500,
+              }}
+            >
+              State
+            </label>
+            <input
+              type="text"
+              name="state"
+              value={formData.state}
+              onChange={handleChange}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: "8px",
+                border: "none",
+                fontSize: "1rem",
+                color: MONUMENT,
+                background: WHITE,
+                boxSizing: "border-box",
+              }}
+              autoComplete="off"
+            />
+          </div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px" }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              background: "#e0e0e0",
+              color: MONUMENT,
+              border: "none",
+              borderRadius: "10px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.17s",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleNext}
+            style={{
+              background: MONUMENT,
+              color: WHITE,
+              border: "none",
+              borderRadius: "10px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.17s",
+            }}
+          >
+            Next
+          </button>
+        </div>
       </div>
     </div>
   );

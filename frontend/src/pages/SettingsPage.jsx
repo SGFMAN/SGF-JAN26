@@ -1,11 +1,45 @@
+import React, { useState } from "react";
+import { Link } from "react-router-dom";
+import Users from "./Users";
+import FileSettings from "./FileSettings";
+import EmailTemplate from "./EmailTemplate";
+import AccountSettings from "./AccountSettings";
+
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 
-import { Link } from "react-router-dom";
+// Sidebar menu entries
+const menuOptions = [
+  { key: "file", label: "File Settings" },
+  { key: "email", label: "Email Settings" },
+  { key: "users", label: "Users" },
+  { key: "account", label: "Account Settings" },
+];
 
-// Menu and main area: 200px wide for sidebar, 700px height for both sections
 export default function SettingsPage() {
+  const [selected, setSelected] = useState(menuOptions[0].key);
+
+  function renderContent() {
+    switch (selected) {
+      case "file":
+        return <FileSettings />;
+      case "email":
+        return <EmailTemplate />;
+      case "users":
+        return <Users />;
+      case "account":
+        return <AccountSettings />;
+      default:
+        return (
+          <div>
+            <div style={{ fontWeight: 600, fontSize: "1.28rem", textAlign: "center" }}>Settings</div>
+            <div>(Select a menu option)</div>
+          </div>
+        );
+    }
+  }
+
   return (
     <div
       className="page-container"
@@ -48,7 +82,7 @@ export default function SettingsPage() {
         </h1>
       </div>
 
-      {/* Sections 2 & 3: Sidebar and Main Content */}
+      {/* Sidebar and Main Content */}
       <div
         className="sections-container"
         style={{
@@ -59,7 +93,7 @@ export default function SettingsPage() {
           gap: "32px",
         }}
       >
-        {/* Section 2: Sidebar (menu, 200px wide, 700px height) */}
+        {/* Sidebar Menu */}
         <div
           className="sidebar-menu"
           style={{
@@ -74,12 +108,42 @@ export default function SettingsPage() {
             display: "flex",
             flexDirection: "column",
             alignItems: "stretch",
-            gap: "20px",
+            gap: "18px",
             boxSizing: "border-box",
           }}
         >
+          {/* Menu Buttons */}
+          {menuOptions.map(option => (
+            <button
+              key={option.key}
+              onClick={() => setSelected(option.key)}
+              style={{
+                background: selected === option.key ? WHITE : "transparent",
+                color: selected === option.key ? MONUMENT : "#404049",
+                border: "none",
+                borderRadius: "10px",
+                padding: "12px 8px",
+                fontSize: "1.05rem",
+                fontWeight: 500,
+                textAlign: "center", // Center the heading on the button
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "2px",
+                outline: selected === option.key ? `2px solid ${MONUMENT}` : "none",
+                boxShadow: selected === option.key ? "0 2px 4px rgba(50,50,51,.04)" : "none"
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+
+          <div style={{ flex: 1 }} />
+
+          {/* Back to Main (Home) */}
           <Link
-            to="/"
+            to="/projects"
             style={{
               background: WHITE,
               color: MONUMENT,
@@ -93,35 +157,15 @@ export default function SettingsPage() {
               letterSpacing: "0.5px",
               cursor: "pointer",
               transition: "background 0.17s",
-              marginBottom: "12px",
+              marginBottom: "4px",
+              display: "block", // Ensures the link stretches full width for centering
             }}
           >
-            ← Back to Home
+            ← Back to Main
           </Link>
-          <div
-            style={{
-              color: "#56565a",
-              fontSize: "1.15rem",
-              fontWeight: 500,
-              userSelect: "none",
-            }}
-          >
-            Settings Menu
-          </div>
-          <div
-            style={{
-              color: "#909098",
-              fontSize: "1rem",
-              padding: "7px 0 0 6px",
-              userSelect: "none",
-              fontStyle: "italic",
-            }}
-          >
-            (Coming soon...)
-          </div>
         </div>
 
-        {/* Section 3: Main Content (same color and 700px height as the menu) */}
+        {/* Main Content */}
         <div
           className="content-section"
           style={{
@@ -139,7 +183,7 @@ export default function SettingsPage() {
             letterSpacing: "0.5px",
           }}
         >
-          Settings page coming soon...
+          {renderContent()}
         </div>
       </div>
     </div>
