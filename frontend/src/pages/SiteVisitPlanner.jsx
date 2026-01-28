@@ -1262,7 +1262,7 @@ export default function SiteVisitPlanner() {
                         const body = await replaceTokens(template.body || "", projectForTokens);
 
                         // Create mailto link
-                        const toAddresses = Array.from(projectToEmails).join(",");
+                        const toAddresses = Array.from(projectToEmails).join(";");
                         const mailtoLink = `mailto:${toAddresses}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
                         
                         // Open mailto link
