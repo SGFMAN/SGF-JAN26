@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { isUserAdmin } from "../utils/auth";
+import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
+const LIGHT_MONUMENT = "#42464d"; // More blue and slightly lighter version of monument
 const WHITE = "#fff";
 const API_URL = "";
 
@@ -545,31 +547,40 @@ export default function SiteVisitPlanner() {
       {/* Section 1: Heading */}
       <div
         style={{
-          background: SECTION_GREY,
-          borderRadius: "18px",
           margin: "32px auto 24px auto",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          height: "100px",
-          boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
+          position: "relative",
+          padding: "0 32px",
+          boxSizing: "border-box",
         }}
       >
-        <h1
+        <img
+          src={logo}
+          alt="SGF Logo"
           style={{
-            margin: 0,
-            fontSize: "2.4rem",
-            fontWeight: 700,
-            textAlign: "center",
-            width: "100%",
-            color: MONUMENT,
-            letterSpacing: "1px",
+            width: "120px",
+            height: "auto",
+            position: "absolute",
+            left: "40px",
           }}
-        >
-          SGF Central
-        </h1>
+        />
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "2.4rem",
+              fontWeight: 700,
+              color: WHITE,
+              letterSpacing: "1px",
+            }}
+          >
+            Site Visit Planner
+          </h1>
+        </div>
       </div>
 
       {/* Sections 2 & 3 */}
@@ -579,7 +590,7 @@ export default function SiteVisitPlanner() {
           display: "flex",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          margin: "0 auto",
+          margin: "50px auto 0 auto",
           gap: "32px",
         }}
       >
@@ -591,7 +602,7 @@ export default function SiteVisitPlanner() {
             borderRadius: "16px",
             width: "200px",
             minWidth: "200px",
-            height: "700px",
+            height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             padding: "32px 12px",
             boxSizing: "border-box",
@@ -611,19 +622,40 @@ export default function SiteVisitPlanner() {
               color: "#404049",
               border: "none",
               borderRadius: "10px",
-              padding: "12px 8px",
-              fontSize: "1.05rem",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
               fontWeight: 500,
               textAlign: "center",
               textDecoration: "none",
               letterSpacing: "0.5px",
               cursor: "pointer",
               transition: "background 0.18s, color 0.15s",
-              marginBottom: "2px",
+              marginBottom: "0px",
               display: "block",
             }}
           >
-            Current Projects
+            In Design
+          </Link>
+          <Link
+            to="/in-construction"
+            style={{
+              background: "transparent",
+              color: "#404049",
+              border: "none",
+              borderRadius: "10px",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              textAlign: "center",
+              textDecoration: "none",
+              letterSpacing: "0.5px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              marginBottom: "0px",
+              display: "block",
+            }}
+          >
+            In Construction
           </Link>
           <Link
             to="/finished-projects"
@@ -632,15 +664,15 @@ export default function SiteVisitPlanner() {
               color: "#404049",
               border: "none",
               borderRadius: "10px",
-              padding: "12px 8px",
-              fontSize: "1.05rem",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
               fontWeight: 500,
               textAlign: "center",
               textDecoration: "none",
               letterSpacing: "0.5px",
               cursor: "pointer",
               transition: "background 0.18s, color 0.15s",
-              marginBottom: "2px",
+              marginBottom: "0px",
               display: "block",
             }}
           >
@@ -653,15 +685,15 @@ export default function SiteVisitPlanner() {
               color: MONUMENT,
               border: "none",
               borderRadius: "10px",
-              padding: "12px 8px",
-              fontSize: "1.05rem",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
               fontWeight: 500,
               textAlign: "center",
               textDecoration: "none",
               letterSpacing: "0.5px",
               cursor: "pointer",
               transition: "background 0.18s, color 0.15s",
-              marginBottom: "2px",
+              marginBottom: "0px",
               outline: `2px solid ${MONUMENT}`,
               boxShadow: "0 2px 4px rgba(50,50,51,.04)",
               display: "block",
@@ -685,7 +717,7 @@ export default function SiteVisitPlanner() {
                 letterSpacing: "0.5px",
                 cursor: "pointer",
                 transition: "background 0.18s, color 0.15s",
-                marginBottom: "2px",
+                marginBottom: "0px",
                 display: "block",
               }}
             >
@@ -708,7 +740,7 @@ export default function SiteVisitPlanner() {
                 letterSpacing: "0.5px",
                 cursor: "pointer",
                 transition: "background 0.18s, color 0.15s",
-                marginBottom: "2px",
+                marginBottom: "0px",
                 display: "block",
               }}
             >
@@ -724,8 +756,8 @@ export default function SiteVisitPlanner() {
             background: SECTION_GREY,
             borderRadius: "18px",
             flex: 1,
-            minHeight: "700px",
-            height: "700px",
+            minHeight: "758px",
+            height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
             padding: "24px 32px",
             boxSizing: "border-box",
@@ -868,6 +900,37 @@ export default function SiteVisitPlanner() {
                               </span>
                             </div>
                           )}
+                          {/* Cancelled Diagonal Band */}
+                          {project.status === "Cancelled" && (
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: "50%",
+                                left: "50%",
+                                transform: "translate(-50%, -50%) rotate(-45deg)",
+                                width: "280px",
+                                height: "40px",
+                                background: "#cc0000",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                zIndex: 10,
+                                boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  color: WHITE,
+                                  fontWeight: 700,
+                                  fontSize: "1.1rem",
+                                  letterSpacing: "2px",
+                                  textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                                }}
+                              >
+                                CANCELLED
+                              </span>
+                            </div>
+                          )}
                           <div
                             style={{
                               fontWeight: 600,
@@ -882,7 +945,7 @@ export default function SiteVisitPlanner() {
                               flexDirection: "column",
                               gap: "4px",
                               position: "relative",
-                              zIndex: project.status === "On Hold" ? 1 : "auto",
+                              zIndex: (project.status === "On Hold" || project.status === "Cancelled") ? 1 : "auto",
                             }}
                           >
                             <div style={{ fontWeight: 600, fontSize: "1.1rem", color: textColor }}>

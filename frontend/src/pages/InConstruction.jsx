@@ -16,7 +16,7 @@ const WHITE = "#fff";
 
 const API_URL = "";
 
-export default function FinishedProjects() {
+export default function InConstruction() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -68,6 +68,21 @@ export default function FinishedProjects() {
     }
   }
 
+  // Classification mapping for acronyms
+  const getClassificationInfo = (classification) => {
+    const classificationMap = {
+      "Small Second Dwelling": { acronym: "SSD", color: "#0066cc" }, // Blue
+      "Dependant Persons Unit": { acronym: "DPU", color: "#33cc33" }, // Green
+      "Detached Extension": { acronym: "DEX", color: "#ff9900" }, // Orange
+      "Dwelling": { acronym: "DWE", color: "#9966cc" }, // Purple
+      "Home Office / Studio": { acronym: "STU", color: "#ffcc00" }, // Yellow
+      "Dwelling & DPU": { acronym: "D&DPU", color: "#6699cc" }, // Blue-Purple mix
+      "Dwelling & SSD": { acronym: "D&SSD", color: "#8066cc" }, // Purple-Blue mix
+      "SSD & DPU": { acronym: "SSD&DPU", color: "#0099cc" }, // Blue-Green mix
+    };
+    return classification ? classificationMap[classification] : null;
+  }
+
   return (
     <div
       className="page-container"
@@ -89,9 +104,9 @@ export default function FinishedProjects() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          position: "relative",
           padding: "0 32px",
           boxSizing: "border-box",
+          position: "relative",
         }}
       >
         <img
@@ -114,7 +129,7 @@ export default function FinishedProjects() {
               letterSpacing: "1px",
             }}
           >
-            Finished Projects
+            In Construction
           </h1>
         </div>
         {isAdmin && (
@@ -199,28 +214,6 @@ export default function FinishedProjects() {
           <Link
             to="/in-construction"
             style={{
-              background: "transparent",
-              color: "#404049",
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            In Construction
-          </Link>
-          <Link
-            to="/finished-projects"
-            style={{
               background: WHITE,
               color: MONUMENT,
               border: "none",
@@ -237,6 +230,28 @@ export default function FinishedProjects() {
               lineHeight: "1.4",
               outline: `2px solid ${MONUMENT}`,
               boxShadow: "0 2px 4px rgba(50,50,51,.04)",
+              display: "block",
+            }}
+          >
+            In Construction
+          </Link>
+          <Link
+            to="/finished-projects"
+            style={{
+              background: "transparent",
+              color: "#404049",
+              border: "none",
+              borderRadius: "10px",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              textAlign: "center",
+              textDecoration: "none",
+              letterSpacing: "0.5px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              marginBottom: "0px",
+              lineHeight: "1.4",
               display: "block",
             }}
           >
@@ -281,7 +296,6 @@ export default function FinishedProjects() {
                 cursor: "pointer",
                 transition: "background 0.18s, color 0.15s",
                 marginBottom: "0px",
-                display: "block",
               }}
             >
               Settings
@@ -304,7 +318,6 @@ export default function FinishedProjects() {
                 cursor: "pointer",
                 transition: "background 0.18s, color 0.15s",
                 marginBottom: "0px",
-                display: "block",
               }}
             >
               Apply Fields
@@ -330,9 +343,9 @@ export default function FinishedProjects() {
           }}
         >
           <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "16px" }}>
-            Finished Projects {(() => {
-              const finishedProjects = projects.filter((project) => project.status === "Complete" || project.status === "Cancelled");
-              return finishedProjects.length > 0 ? `(${finishedProjects.length} total)` : "";
+            In Construction {(() => {
+              const constructionProjects = projects.filter((project) => project.status === "Construction Phase");
+              return constructionProjects.length > 0 ? `(${constructionProjects.length} total)` : "";
             })()}
           </h2>
           
@@ -371,32 +384,21 @@ export default function FinishedProjects() {
           </div>
 
           {loading && <p style={{ color: "#32323399" }}>Loading projects...</p>}
-          {error && (
-            <p style={{ color: "#cc3333" }}>
-              Error: {error}
-            </p>
-          )}
-          {!loading && !error && (() => {
-            const finishedProjects = projects.filter((project) => project.status === "Complete" || project.status === "Cancelled");
-            if (finishedProjects.length === 0) {
-              return <p style={{ color: "#32323399" }}>No finished projects found.</p>;
-            }
-            return null;
-          })()}
+          {error && <p style={{ color: "#cc3333" }}>Error: {error}</p>}
           {!loading && !error && projects.length > 0 && (() => {
-            // Filter to only show projects with "Complete" or "Cancelled" status
-            const finishedProjects = projects.filter((project) => project.status === "Complete" || project.status === "Cancelled");
+            // Filter to only show projects with "Construction Phase" status
+            const constructionProjects = projects.filter((project) => project.status === "Construction Phase");
             
             // Filter projects based on search query
             let filteredProjects = searchQuery.trim()
-              ? finishedProjects.filter((project) => {
+              ? constructionProjects.filter((project) => {
                   const query = searchQuery.toLowerCase();
                   const suburb = (project.suburb || "").toLowerCase();
                   const street = (project.street || "").toLowerCase();
-                  const name = (project.name || "").toLowerCase();
-                  return suburb.includes(query) || street.includes(query) || name.includes(query);
+                  const clientName = (project.client_name || "").toLowerCase();
+                  return suburb.includes(query) || street.includes(query) || clientName.includes(query);
                 })
-              : finishedProjects;
+              : constructionProjects;
 
             // Sort alphabetically by suburb, then by street
             filteredProjects.sort((a, b) => {
@@ -424,95 +426,115 @@ export default function FinishedProjects() {
                   alignItems: "flex-start",
                 }}
               >
-                {filteredProjects.map((project) => (
-                  <Link
-                    key={project.id}
-                    to={`/project/${project.id}`}
-                    style={{
-                      textDecoration: "none",
-                      display: "block",
-                    }}
-                  >
-                    <div
+                {filteredProjects.map((project) => {
+                  const suburb = project.suburb || "Unknown Suburb";
+                  const street = project.street || "No address";
+                  const classificationInfo = getClassificationInfo(project.classification);
+
+                  return (
+                    <Link
+                      key={project.id}
+                      to={`/project/${project.id}`}
                       style={{
-                        background: MONUMENT,
-                        borderRadius: "8px",
-                        width: "200px",
-                        height: "100px",
-                        color: SECTION_GREY,
-                        cursor: "pointer",
-                        transition: "opacity 0.2s",
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "center",
-                        alignItems: "center",
-                        position: "relative",
-                        overflow: "hidden",
+                        textDecoration: "none",
+                        display: "block",
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
-                      onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
                     >
-                      {/* Cancelled Diagonal Band */}
-                      {project.status === "Cancelled" && (
+                      <div
+                        style={{
+                          background: MONUMENT,
+                          borderRadius: "8px",
+                          width: "200px",
+                          height: "100px",
+                          color: SECTION_GREY,
+                          cursor: "pointer",
+                          transition: "opacity 0.2s",
+                          display: "flex",
+                          flexDirection: "column",
+                          justifyContent: "center",
+                          alignItems: "center",
+                          position: "relative",
+                          overflow: "hidden",
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+                        onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                      >
+                        {/* Cancelled Diagonal Band */}
+                        {project.status === "Cancelled" && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              top: "50%",
+                              left: "50%",
+                              transform: "translate(-50%, -50%) rotate(-45deg)",
+                              width: "280px",
+                              height: "40px",
+                              background: "#cc0000",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              zIndex: 10,
+                              boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                            }}
+                          >
+                            <span
+                              style={{
+                                color: WHITE,
+                                fontWeight: 700,
+                                fontSize: "1.1rem",
+                                letterSpacing: "2px",
+                                textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                              }}
+                            >
+                              CANCELLED
+                            </span>
+                          </div>
+                        )}
                         <div
                           style={{
-                            position: "absolute",
-                            top: "50%",
-                            left: "50%",
-                            transform: "translate(-50%, -50%) rotate(-45deg)",
-                            width: "280px",
-                            height: "40px",
-                            background: "#cc0000",
+                            fontWeight: 600,
+                            fontSize: "1.1rem",
+                            textAlign: "center",
+                            marginBottom: "4px",
+                            width: "100%",
                             display: "flex",
-                            alignItems: "center",
                             justifyContent: "center",
-                            zIndex: 10,
-                            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                            alignItems: "center",
+                            flex: 1,
+                            flexDirection: "column",
+                            gap: "4px",
+                            position: "relative",
+                            zIndex: project.status === "Cancelled" ? 1 : "auto",
                           }}
                         >
-                          <span
+                          <div style={{ fontWeight: 600, fontSize: "1.1rem" }}>
+                            {suburb}
+                          </div>
+                          <div style={{ fontSize: "0.95rem", color: "#a1a1a3", fontWeight: 400 }}>
+                            {street}
+                          </div>
+                        </div>
+                        {/* Classification Acronym */}
+                        {classificationInfo && (
+                          <div
                             style={{
-                              color: WHITE,
+                              position: "absolute",
+                              bottom: "8px",
+                              right: "8px",
+                              fontSize: "0.85rem",
                               fontWeight: 700,
-                              fontSize: "1.1rem",
-                              letterSpacing: "2px",
+                              color: classificationInfo.color,
+                              zIndex: (project.status === "Cancelled") ? 11 : 5,
                               textShadow: "0 1px 2px rgba(0,0,0,0.3)",
                             }}
                           >
-                            CANCELLED
-                          </span>
-                        </div>
-                      )}
-                      <div
-                        style={{
-                          fontWeight: 600,
-                          fontSize: "1.1rem",
-                          textAlign: "center",
-                          marginBottom: "4px",
-                          width: "100%",
-                          display: "flex",
-                          justifyContent: "center",
-                          alignItems: "center",
-                          flex: 1,
-                          flexDirection: "column",
-                          gap: "4px",
-                          position: "relative",
-                          zIndex: project.status === "Cancelled" ? 1 : "auto",
-                        }}
-                      >
-                        <div style={{ fontWeight: 600, fontSize: "1.1rem" }}>
-                          {project.suburb || "Unknown Suburb"}
-                        </div>
-                        <div style={{ fontSize: "0.95rem", color: "#a1a1a3", fontWeight: 400 }}>
-                          {project.street || "No address"}
-                        </div>
+                            {classificationInfo.acronym}
+                          </div>
+                        )}
                       </div>
-                      <div style={{ fontSize: "0.9rem", color: "#323233cc", textAlign: "center", position: "relative", zIndex: project.status === "Cancelled" ? 1 : "auto" }}>
-                        Status: {project.status}
-                      </div>
-                    </div>
-                  </Link>
-                ))}
+                    </Link>
+                  );
+                })}
               </div>
             );
           })()}

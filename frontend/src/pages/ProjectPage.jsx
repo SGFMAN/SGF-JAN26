@@ -10,11 +10,13 @@ import SiteVisit from "./SiteVisit";
 import Contract from "./Contract";
 import Planning from "./Planning";
 import Admin from "./Admin";
+import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
 const MONUMENT = "#323233";
 // A bit lighter version for sections
 const SECTION_GREY = "#a1a1a3"; // Moderately lightened version
+const LIGHT_MONUMENT = "#42464d"; // More blue and slightly lighter version of monument
 const WHITE = "#fff";
 
 const API_URL = "";
@@ -69,9 +71,9 @@ export default function ProjectPage() {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
       const data = await response.json();
-      // Filter to only current projects (not Complete) and sort alphabetically
+      // Filter to only current projects (not Complete or Cancelled) and sort alphabetically
       const currentProjects = data
-        .filter((p) => p.status !== "Complete")
+        .filter((p) => p.status !== "Complete" && p.status !== "Cancelled" && p.status !== "Construction Phase")
         .sort((a, b) => {
           const suburbA = (a.suburb || "").toLowerCase();
           const suburbB = (b.suburb || "").toLowerCase();
@@ -164,7 +166,7 @@ export default function ProjectPage() {
       style={{
         position: "fixed",
         inset: 0,
-        background: MONUMENT,
+        background: LIGHT_MONUMENT,
         minHeight: "100vh",
         width: "100vw",
         overflowY: "auto",
@@ -173,20 +175,29 @@ export default function ProjectPage() {
       {/* Section 1: Heading */}
       <div
         style={{
-          background: SECTION_GREY,
-          borderRadius: "18px",
           margin: "32px auto 24px auto",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          height: "100px",
-          boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           padding: "0 32px",
           boxSizing: "border-box",
+          position: "relative",
         }}
       >
+        <img
+          src={logo}
+          alt="SGF Logo"
+          style={{
+            width: "120px",
+            height: "auto",
+            position: "absolute",
+            left: "40px",
+          }}
+        />
+        <div style={{ display: "flex", alignItems: "center" }}>
+        </div>
         {(() => {
           const currentProjectId = parseInt(id);
           const currentIndex = allProjects.findIndex(p => p.id === currentProjectId);
@@ -215,6 +226,8 @@ export default function ProjectPage() {
                     cursor: "pointer",
                     transition: "background 0.2s",
                     minWidth: "100px",
+                    position: "absolute",
+                    left: "264px",
                   }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
                   onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
@@ -232,7 +245,7 @@ export default function ProjectPage() {
                   fontWeight: 700,
                   textAlign: "center",
                   flex: 1,
-                  color: MONUMENT,
+                  color: WHITE,
                   letterSpacing: "1px",
                 }}
               >
@@ -278,7 +291,7 @@ export default function ProjectPage() {
           display: "flex",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          margin: "0 auto",
+          margin: "50px auto 0 auto",
           gap: "32px",
         }}
       >
@@ -290,7 +303,7 @@ export default function ProjectPage() {
             borderRadius: "16px",
             width: "200px",
             minWidth: "200px",
-            height: "700px",
+            height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             padding: "32px 12px",
             boxSizing: "border-box",
@@ -320,6 +333,7 @@ export default function ProjectPage() {
                 cursor: "pointer",
                 transition: "background 0.18s, color 0.15s",
                 marginBottom: "0px",
+                lineHeight: "1.4",
                 outline: activeView === item.key ? `2px solid ${MONUMENT}` : "none",
                 boxShadow: activeView === item.key ? "0 2px 4px rgba(50,50,51,.04)" : "none",
                 display: "block",
@@ -371,6 +385,7 @@ export default function ProjectPage() {
               cursor: "pointer",
               transition: "background 0.18s, color 0.15s",
               marginBottom: "0px",
+              lineHeight: "1.4",
               display: "block",
               width: "100%",
               boxSizing: "border-box",
@@ -386,8 +401,8 @@ export default function ProjectPage() {
             background: SECTION_GREY,
             borderRadius: "18px",
             flex: 1,
-            minHeight: "700px",
-            height: "700px",
+            minHeight: "758px",
+            height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
             padding: "24px 32px",
             boxSizing: "border-box",

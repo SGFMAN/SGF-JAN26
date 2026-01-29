@@ -5,11 +5,13 @@ import NewProject2 from "./NewProject2";
 import NewProject3 from "./NewProject3";
 import NewProject4 from "./NewProject4";
 import { isUserAdmin } from "../utils/auth";
+import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
 const MONUMENT = "#323233";
 // A bit lighter version for sections
 const SECTION_GREY = "#a1a1a3"; // Moderately lightened version
+const LIGHT_MONUMENT = "#42464d"; // More blue and slightly lighter version of monument
 const WHITE = "#fff";
 
 const API_URL = "";
@@ -78,7 +80,7 @@ const FIELD_DEFINITIONS = {
   },
   status: {
     label: "Project Status",
-    values: ["Design Phase", "On Hold", "Construction Phase", "Complete"],
+    values: ["Design Phase", "Construction Phase", "On Hold", "Cancelled", "Complete"],
     defaultValue: "Design Phase",
   },
   year: {
@@ -113,8 +115,9 @@ export default function HomePage() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    fetchProjects();
+    // Check admin status first so buttons show up quickly
     checkAdminStatus();
+    fetchProjects();
   }, []);
 
   async function checkAdminStatus() {
@@ -157,7 +160,7 @@ export default function HomePage() {
       },
       body: JSON.stringify({
         name: projectName,
-        status: "New",
+        status: "Design Phase",
         suburb: formData.suburb || null,
         street: formData.street || null,
         state: formData.state || null,
@@ -225,8 +228,8 @@ export default function HomePage() {
     // Get unique values from projects (using effective values)
     const projectValues = new Set();
     projects.forEach(project => {
-      // Only include current projects (not Complete)
-      if (project.status !== "Complete") {
+      // Only include design phase projects (not Complete, Cancelled, or Construction Phase)
+      if (project.status !== "Complete" && project.status !== "Cancelled" && project.status !== "Construction Phase") {
         const effectiveValue = getEffectiveValue(project, selectedField);
         if (effectiveValue) {
           projectValues.add(effectiveValue);
@@ -241,8 +244,8 @@ export default function HomePage() {
 
   // Filter projects based on status, field/value, and search query
   function getFilteredProjects() {
-    // First filter out "Complete" status projects
-    let filtered = projects.filter((project) => project.status !== "Complete");
+    // First filter out "Complete", "Cancelled", and "Construction Phase" status projects
+    let filtered = projects.filter((project) => project.status !== "Complete" && project.status !== "Cancelled" && project.status !== "Construction Phase");
 
     // Then filter by field/value if specified
     if (selectedField && selectedValue) {
@@ -287,7 +290,7 @@ export default function HomePage() {
       style={{
         position: "fixed",
         inset: 0,
-        background: MONUMENT,
+        background: LIGHT_MONUMENT,
         minHeight: "100vh",
         width: "100vw",
         overflowY: "auto",
@@ -296,31 +299,63 @@ export default function HomePage() {
       {/* Section 1: Heading */}
       <div
         style={{
-          background: SECTION_GREY,
-          borderRadius: "18px",
-          margin: "32px auto 24px auto",
+          margin: "32px auto 14px auto",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          height: "100px",
-          boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
           display: "flex",
           alignItems: "center",
+          padding: "0 32px",
+          boxSizing: "border-box",
           justifyContent: "center",
+          position: "relative",
         }}
       >
-        <h1
+        <img
+          src={logo}
+          alt="SGF Logo"
           style={{
-            margin: 0,
-            fontSize: "2.4rem",
-            fontWeight: 700,
-            textAlign: "center",
-            width: "100%",
-            color: MONUMENT,
-            letterSpacing: "1px",
+            width: "120px",
+            height: "auto",
+            position: "absolute",
+            left: "40px",
           }}
-        >
-          SGF Central
-        </h1>
+        />
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "2.4rem",
+              fontWeight: 700,
+              color: WHITE,
+              letterSpacing: "1px",
+            }}
+          >
+            In Design
+          </h1>
+        </div>
+        {isAdmin && (
+          <button
+            onClick={() => setIsNewProjectOpen(true)}
+            style={{
+              position: "absolute",
+              top: "20px",
+              right: "20px",
+              background: "#33cc33",
+              color: WHITE,
+              border: "none",
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#2bb32b")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#33cc33")}
+          >
+            + New Project
+          </button>
+        )}
       </div>
 
       {/* Sections 2 & 3 */}
@@ -330,7 +365,7 @@ export default function HomePage() {
           display: "flex",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          margin: "0 auto",
+          margin: "50px auto 0 auto",
           gap: "32px",
         }}
       >
@@ -342,7 +377,7 @@ export default function HomePage() {
             borderRadius: "16px",
             width: "200px",
             minWidth: "200px",
-            height: "700px",
+            height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             padding: "32px 12px",
             boxSizing: "border-box",
@@ -362,43 +397,45 @@ export default function HomePage() {
               color: MONUMENT,
               border: "none",
               borderRadius: "10px",
-              padding: "12px 8px",
-              fontSize: "1.05rem",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
               fontWeight: 500,
               textAlign: "center",
               textDecoration: "none",
               letterSpacing: "0.5px",
               cursor: "pointer",
               transition: "background 0.18s, color 0.15s",
-              marginBottom: "2px",
+              marginBottom: "0px",
+              lineHeight: "1.4",
               outline: `2px solid ${MONUMENT}`,
               boxShadow: "0 2px 4px rgba(50,50,51,.04)",
               display: "block",
             }}
           >
-            Current Projects
+            In Design
           </Link>
-          <button
-            onClick={() => setIsNewProjectOpen(true)}
+          <Link
+            to="/in-construction"
             style={{
-              background: WHITE,
-              color: MONUMENT,
+              background: "transparent",
+              color: "#404049",
               border: "none",
               borderRadius: "10px",
-              padding: "12px 8px",
-              fontSize: "1.05rem",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
               fontWeight: 500,
               textAlign: "center",
               textDecoration: "none",
               letterSpacing: "0.5px",
               cursor: "pointer",
-              transition: "background 0.17s",
+              transition: "background 0.18s, color 0.15s",
+              marginBottom: "0px",
+              lineHeight: "1.4",
               display: "block",
-              width: "100%",
             }}
           >
-            + New Project
-          </button>
+            In Construction
+          </Link>
           <Link
             to="/finished-projects"
             style={{
@@ -406,15 +443,16 @@ export default function HomePage() {
               color: "#404049",
               border: "none",
               borderRadius: "10px",
-              padding: "12px 8px",
-              fontSize: "1.05rem",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
               fontWeight: 500,
               textAlign: "center",
               textDecoration: "none",
               letterSpacing: "0.5px",
               cursor: "pointer",
               transition: "background 0.18s, color 0.15s",
-              marginBottom: "2px",
+              marginBottom: "0px",
+              lineHeight: "1.4",
               display: "block",
             }}
           >
@@ -427,15 +465,16 @@ export default function HomePage() {
               color: "#404049",
               border: "none",
               borderRadius: "10px",
-              padding: "12px 8px",
-              fontSize: "1.05rem",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
               fontWeight: 500,
               textAlign: "center",
               textDecoration: "none",
               letterSpacing: "0.5px",
               cursor: "pointer",
               transition: "background 0.18s, color 0.15s",
-              marginBottom: "2px",
+              marginBottom: "0px",
+              lineHeight: "1.4",
               display: "block",
             }}
           >
@@ -449,15 +488,15 @@ export default function HomePage() {
                 color: "#404049",
                 border: "none",
                 borderRadius: "10px",
-                padding: "12px 8px",
-                fontSize: "1.05rem",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
                 fontWeight: 500,
                 textAlign: "center",
                 textDecoration: "none",
                 letterSpacing: "0.5px",
                 cursor: "pointer",
                 transition: "background 0.18s, color 0.15s",
-                marginBottom: "2px",
+                marginBottom: "0px",
                 display: "block",
               }}
             >
@@ -472,15 +511,15 @@ export default function HomePage() {
                 color: "#404049",
                 border: "none",
                 borderRadius: "10px",
-                padding: "12px 8px",
-                fontSize: "1.05rem",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
                 fontWeight: 500,
                 textAlign: "center",
                 textDecoration: "none",
                 letterSpacing: "0.5px",
                 cursor: "pointer",
                 transition: "background 0.18s, color 0.15s",
-                marginBottom: "2px",
+                marginBottom: "0px",
                 display: "block",
               }}
             >
@@ -495,8 +534,8 @@ export default function HomePage() {
             background: SECTION_GREY,
             borderRadius: "18px",
             flex: 1,
-            minHeight: "700px",
-            height: "700px",
+            minHeight: "758px",
+            height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
             padding: "24px 32px",
             boxSizing: "border-box",
@@ -507,8 +546,8 @@ export default function HomePage() {
           }}
         >
           <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "16px" }}>
-            Current Projects {(() => {
-              const currentProjects = projects.filter((project) => project.status !== "Complete");
+            In Design {(() => {
+              const currentProjects = projects.filter((project) => project.status !== "Complete" && project.status !== "Cancelled" && project.status !== "Construction Phase");
               if (selectedField && selectedValue) {
                 return `(${filteredProjects.length} found)`;
               } else if (searchQuery.trim()) {
@@ -519,15 +558,16 @@ export default function HomePage() {
           </h2>
           
           {/* Search Bar and Filter Dropdowns - All on one line */}
-          <div style={{ display: "flex", gap: "16px", marginBottom: "20px", flexWrap: "nowrap", alignItems: "flex-end" }}>
+          <div style={{ display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "nowrap", alignItems: "flex-start", marginTop: 0, position: "relative" }}>
             {/* Search Bar */}
-            <div style={{ flex: "1 1 300px", minWidth: "200px" }}>
+            <div style={{ flex: "0 0 auto" }}>
               <label
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
                   color: "#32323399",
                   marginBottom: "6px",
+                  marginTop: 0,
                   fontWeight: 500,
                 }}
               >
@@ -539,8 +579,8 @@ export default function HomePage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 style={{
-                  width: "100%",
-                  padding: "10px 12px",
+                  width: "420px",
+                  padding: "12px 16px",
                   borderRadius: "8px",
                   border: `2px solid ${MONUMENT}`,
                   fontSize: "1rem",
@@ -553,13 +593,14 @@ export default function HomePage() {
             </div>
 
             {/* Filter by Field */}
-            <div style={{ flex: "1 1 200px", minWidth: "150px" }}>
+            <div style={{ flex: "0 0 auto", marginLeft: "10px" }}>
               <label
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
                   color: "#32323399",
                   marginBottom: "6px",
+                  marginTop: 0,
                   fontWeight: 500,
                 }}
               >
@@ -569,15 +610,16 @@ export default function HomePage() {
                 value={selectedField}
                 onChange={(e) => setSelectedField(e.target.value)}
                 style={{
-                  width: "100%",
-                  padding: "10px 12px",
+                  width: "420px",
+                  padding: "12px 16px",
                   borderRadius: "8px",
-                  border: "none",
+                  border: `2px solid ${MONUMENT}`,
                   fontSize: "1rem",
                   color: MONUMENT,
                   background: WHITE,
                   boxSizing: "border-box",
                   cursor: "pointer",
+                  outline: "none",
                 }}
               >
                 <option value="">All fields</option>
@@ -590,13 +632,14 @@ export default function HomePage() {
             </div>
 
             {/* Filter by Value - Always visible */}
-            <div style={{ flex: "1 1 200px", minWidth: "150px" }}>
+            <div style={{ flex: "0 0 auto", marginLeft: "880px", position: "absolute" }}>
               <label
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
                   color: "#32323399",
                   marginBottom: "6px",
+                  marginTop: 0,
                   fontWeight: 500,
                 }}
               >
@@ -607,15 +650,16 @@ export default function HomePage() {
                 onChange={(e) => setSelectedValue(e.target.value)}
                 disabled={!selectedField}
                 style={{
-                  width: "100%",
-                  padding: "10px 12px",
+                  width: "420px",
+                  padding: "12px 16px",
                   borderRadius: "8px",
-                  border: "none",
+                  border: `2px solid ${MONUMENT}`,
                   fontSize: "1rem",
                   color: selectedField ? MONUMENT : "#999",
                   background: selectedField ? WHITE : "#f5f5f5",
                   boxSizing: "border-box",
                   cursor: selectedField ? "pointer" : "not-allowed",
+                  outline: "none",
                 }}
               >
                 <option value="">All values</option>
@@ -689,6 +733,9 @@ export default function HomePage() {
                     "Detached Extension": { acronym: "DEX", color: "#ff9900" }, // Orange
                     "Dwelling": { acronym: "DWE", color: "#9966cc" }, // Purple
                     "Home Office / Studio": { acronym: "STU", color: "#ffcc00" }, // Yellow
+                    "Dwelling & DPU": { acronym: "D&DPU", color: "#6699cc" }, // Blue-Purple mix
+                    "Dwelling & SSD": { acronym: "D&SSD", color: "#8066cc" }, // Purple-Blue mix
+                    "SSD & DPU": { acronym: "SSD&DPU", color: "#0099cc" }, // Blue-Green mix
                   };
                   const classificationInfo = project.classification ? classificationMap[project.classification] : null;
 
@@ -751,6 +798,37 @@ export default function HomePage() {
                             </span>
                           </div>
                         )}
+                        {/* Cancelled Diagonal Band */}
+                        {project.status === "Cancelled" && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              top: "50%",
+                              left: "50%",
+                              transform: "translate(-50%, -50%) rotate(-45deg)",
+                              width: "280px",
+                              height: "40px",
+                              background: "#cc0000",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              zIndex: 10,
+                              boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                            }}
+                          >
+                            <span
+                              style={{
+                                color: WHITE,
+                                fontWeight: 700,
+                                fontSize: "1.1rem",
+                                letterSpacing: "2px",
+                                textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                              }}
+                            >
+                              CANCELLED
+                            </span>
+                          </div>
+                        )}
                         {/* Classification Acronym */}
                         {classificationInfo && (
                           <div
@@ -761,7 +839,7 @@ export default function HomePage() {
                               fontSize: "0.85rem",
                               fontWeight: 700,
                               color: classificationInfo.color,
-                              zIndex: project.status === "On Hold" ? 11 : 5,
+                              zIndex: (project.status === "On Hold" || project.status === "Cancelled") ? 11 : 5,
                               textShadow: "0 1px 2px rgba(0,0,0,0.3)",
                             }}
                           >

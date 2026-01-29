@@ -4,9 +4,11 @@ import Users from "./Users";
 import FileSettings from "./FileSettings";
 import EmailTemplate from "./EmailTemplate";
 import AccountSettings from "./AccountSettings";
+import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
+const LIGHT_MONUMENT = "#42464d"; // More blue and slightly lighter version of monument
 const WHITE = "#fff";
 
 // Sidebar menu entries
@@ -46,7 +48,7 @@ export default function SettingsPage() {
       style={{
         position: "fixed",
         inset: 0,
-        background: MONUMENT,
+        background: LIGHT_MONUMENT,
         minHeight: "100vh",
         width: "100vw",
         overflowY: "auto",
@@ -55,31 +57,40 @@ export default function SettingsPage() {
       {/* Section 1: Heading */}
       <div
         style={{
-          background: SECTION_GREY,
-          borderRadius: "18px",
           margin: "32px auto 24px auto",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          height: "100px",
-          boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
+          position: "relative",
+          padding: "0 32px",
+          boxSizing: "border-box",
         }}
       >
-        <h1
+        <img
+          src={logo}
+          alt="SGF Logo"
           style={{
-            margin: 0,
-            fontSize: "2.4rem",
-            fontWeight: 700,
-            textAlign: "center",
-            width: "100%",
-            color: MONUMENT,
-            letterSpacing: "1px",
+            width: "120px",
+            height: "auto",
+            position: "absolute",
+            left: "40px",
           }}
-        >
-          Settings
-        </h1>
+        />
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "2.4rem",
+              fontWeight: 700,
+              color: WHITE,
+              letterSpacing: "1px",
+            }}
+          >
+            Settings
+          </h1>
+        </div>
       </div>
 
       {/* Sidebar and Main Content */}
@@ -89,7 +100,7 @@ export default function SettingsPage() {
           display: "flex",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          margin: "0 auto",
+          margin: "50px auto 0 auto",
           gap: "32px",
         }}
       >
@@ -102,7 +113,7 @@ export default function SettingsPage() {
             width: "200px",
             minWidth: "200px",
             maxWidth: "200px",
-            height: "700px",
+            height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             padding: "32px 12px",
             display: "flex",
@@ -172,7 +183,7 @@ export default function SettingsPage() {
             background: SECTION_GREY,
             borderRadius: "16px",
             flex: 1,
-            height: "700px",
+            height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             display: "flex",
             alignItems: "center",

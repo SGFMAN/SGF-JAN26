@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
+import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
+const LIGHT_MONUMENT = "#42464d"; // More blue and slightly lighter version of monument
 const WHITE = "#fff";
 const API_URL = "";
 
@@ -65,7 +67,7 @@ const FIELD_DEFINITIONS = {
   },
   status: {
     label: "Project Status",
-    values: ["Design Phase", "On Hold", "Construction Phase", "Complete"],
+    values: ["Design Phase", "Construction Phase", "On Hold", "Cancelled", "Complete"],
     defaultValue: "Design Phase",
   },
   year: {
@@ -80,7 +82,7 @@ const FIELD_DEFINITIONS = {
   },
   classification: {
     label: "Classification",
-    values: ["Small Second Dwelling", "Dependant Persons Unit", "Detached Extension", "Dwelling", "Home Office / Studio"],
+    values: ["Small Second Dwelling", "Dependant Persons Unit", "Detached Extension", "Dwelling", "Home Office / Studio", "Dwelling & DPU", "Dwelling & SSD", "SSD & DPU"],
     defaultValue: "",
   },
 };
@@ -356,31 +358,40 @@ export default function ApplyFields() {
       {/* Section 1: Heading */}
       <div
         style={{
-          background: SECTION_GREY,
-          borderRadius: "18px",
           margin: "32px auto 24px auto",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          height: "100px",
-          boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
+          position: "relative",
+          padding: "0 32px",
+          boxSizing: "border-box",
         }}
       >
-        <h1
+        <img
+          src={logo}
+          alt="SGF Logo"
           style={{
-            margin: 0,
-            fontSize: "2.4rem",
-            fontWeight: 700,
-            textAlign: "center",
-            width: "100%",
-            color: MONUMENT,
-            letterSpacing: "1px",
+            width: "120px",
+            height: "auto",
+            position: "absolute",
+            left: "40px",
           }}
-        >
-          Apply Fields
-        </h1>
+        />
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "2.4rem",
+              fontWeight: 700,
+              color: WHITE,
+              letterSpacing: "1px",
+            }}
+          >
+            Apply Fields
+          </h1>
+        </div>
       </div>
 
       {/* Sections 2 & 3 */}
@@ -390,7 +401,7 @@ export default function ApplyFields() {
           display: "flex",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          margin: "0 auto",
+          margin: "50px auto 0 auto",
           gap: "32px",
         }}
       >
@@ -402,7 +413,7 @@ export default function ApplyFields() {
             borderRadius: "16px",
             width: "200px",
             minWidth: "200px",
-            height: "700px",
+            height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             padding: "32px 12px",
             boxSizing: "border-box",
@@ -422,15 +433,15 @@ export default function ApplyFields() {
               color: MONUMENT,
               border: "none",
               borderRadius: "10px",
-              padding: "12px 8px",
-              fontSize: "1.05rem",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
               fontWeight: 500,
               textAlign: "center",
               textDecoration: "none",
               letterSpacing: "0.5px",
               cursor: "pointer",
               transition: "background 0.18s, color 0.15s",
-              marginBottom: "2px",
+              marginBottom: "0px",
               outline: `2px solid ${MONUMENT}`,
               boxShadow: "0 2px 4px rgba(50,50,51,.04)",
               display: "block",
@@ -447,7 +458,7 @@ export default function ApplyFields() {
             background: SECTION_GREY,
             borderRadius: "16px",
             flex: 1,
-            minHeight: "700px",
+            minHeight: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             padding: "24px 32px",
             boxSizing: "border-box",

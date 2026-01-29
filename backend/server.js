@@ -133,7 +133,7 @@ async function ensureSchema() {
     'site_visit_status', 'site_visit_date', 'site_visit_time', 'site_visit_notes', 'site_visit_scheduled_date', 'site_visit_scheduled_period',
     'contract_status', 'contract_sent_date', 'contract_complete_date',
     'supporting_documents_status', 'supporting_documents_sent_date', 'supporting_documents_complete_date',
-    'water_declaration_status', 'water_declaration_sent_date', 'water_declaration_complete_date',
+    'water_authority', 'water_declaration_status', 'water_declaration_sent_date', 'water_declaration_complete_date',
     'notes', 'project_info_notes', 'specs', 'classification', 'project_log',
     'window_status', 'window_colour', 'window_reveal', 'window_reveal_other', 'window_glazing', 'window_bal_rating', 'window_date_required', 'window_ordered_date', 'window_order_pdf_location', 'window_order_number',
     'drawings_status', 'drawings_pdf_location', 'drawings_history', 'colours_status', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status'];
@@ -240,7 +240,7 @@ app.get("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
     );
     res.json(r.rows);
   } catch (e) {
@@ -261,7 +261,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
       [id]
     );
     
@@ -294,8 +294,8 @@ app.post("/api/projects", async (req, res) => {
     const initialLogEntry = `${dateTimeStr} - Project Created`;
 
     const r = await pool.query(
-      `INSERT INTO projects (name, status, suburb, street, state, stream, year, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, project_log) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27) RETURNING *`,
+      `INSERT INTO projects (name, status, suburb, street, state, stream, year, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, project_log) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28) RETURNING *`,
       [
         name.trim(),
         (status || "Design Phase").trim(),
@@ -318,7 +318,8 @@ app.post("/api/projects", async (req, res) => {
         null,    // client3_active - default to unchecked (null)
         'Not Sent',  // contract_status - default to Not Sent
         'Not Sent',  // supporting_documents_status - default to Not Sent
-        'Not Required',  // water_declaration_status - default to Not Required
+        'Not Required',  // water_authority - default to Not Required
+        'Not Sent',  // water_declaration_status - default to Not Sent
         'Not Selected',  // planning_status - default to Not Selected
         'Not Submitted',  // energy_report_status - default to Not Submitted
         'Not Submitted',  // footing_certification_status - default to Not Submitted
@@ -350,7 +351,7 @@ app.put("/api/projects/:id", async (req, res) => {
       site_visit_status, site_visit_date, site_visit_time, site_visit_notes,
       contract_status, contract_sent_date, contract_complete_date,
       supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date,
-      water_declaration_status, water_declaration_sent_date, water_declaration_complete_date,
+      water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date,
       notes, project_info_notes, specs, classification,
       window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number,
       drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status } = req.body || {};
@@ -424,34 +425,35 @@ app.put("/api/projects/:id", async (req, res) => {
         supporting_documents_status = COALESCE($33, supporting_documents_status),
         supporting_documents_sent_date = COALESCE($34, supporting_documents_sent_date),
         supporting_documents_complete_date = COALESCE($35, supporting_documents_complete_date),
-        water_declaration_status = COALESCE($36, water_declaration_status),
-        water_declaration_sent_date = COALESCE($37, water_declaration_sent_date),
-        water_declaration_complete_date = COALESCE($38, water_declaration_complete_date),
-        notes = COALESCE($39, notes),
-        window_status = COALESCE($40, window_status),
-        window_colour = COALESCE($41, window_colour),
-        window_reveal = COALESCE($42, window_reveal),
-        window_reveal_other = COALESCE($43, window_reveal_other),
-        window_glazing = COALESCE($44, window_glazing),
-        window_bal_rating = COALESCE($45, window_bal_rating),
-        window_date_required = COALESCE($46, window_date_required),
-        window_ordered_date = COALESCE($47, window_ordered_date),
-        window_order_pdf_location = COALESCE($48, window_order_pdf_location),
-        window_order_number = COALESCE($49, window_order_number),
-        drawings_status = COALESCE($50, drawings_status),
-        drawings_pdf_location = COALESCE($51, drawings_pdf_location),
-        drawings_history = COALESCE($52, drawings_history),
-        colours_status = COALESCE($53, colours_status),
-        planning_status = COALESCE($54, planning_status),
-        energy_report_status = COALESCE($55, energy_report_status),
-        footing_certification_status = COALESCE($56, footing_certification_status),
-        building_permit_status = COALESCE($57, building_permit_status),
-        year = COALESCE($58, year),
-        project_info_notes = COALESCE($59, project_info_notes),
-        specs = COALESCE($60, specs),
-        classification = COALESCE($61, classification),
+        water_authority = COALESCE($36, water_authority),
+        water_declaration_status = COALESCE($37, water_declaration_status),
+        water_declaration_sent_date = COALESCE($38, water_declaration_sent_date),
+        water_declaration_complete_date = COALESCE($39, water_declaration_complete_date),
+        notes = COALESCE($40, notes),
+        window_status = COALESCE($41, window_status),
+        window_colour = COALESCE($42, window_colour),
+        window_reveal = COALESCE($43, window_reveal),
+        window_reveal_other = COALESCE($44, window_reveal_other),
+        window_glazing = COALESCE($45, window_glazing),
+        window_bal_rating = COALESCE($46, window_bal_rating),
+        window_date_required = COALESCE($47, window_date_required),
+        window_ordered_date = COALESCE($48, window_ordered_date),
+        window_order_pdf_location = COALESCE($49, window_order_pdf_location),
+        window_order_number = COALESCE($50, window_order_number),
+        drawings_status = COALESCE($51, drawings_status),
+        drawings_pdf_location = COALESCE($52, drawings_pdf_location),
+        drawings_history = COALESCE($53, drawings_history),
+        colours_status = COALESCE($54, colours_status),
+        planning_status = COALESCE($55, planning_status),
+        energy_report_status = COALESCE($56, energy_report_status),
+        footing_certification_status = COALESCE($57, footing_certification_status),
+        building_permit_status = COALESCE($58, building_permit_status),
+        year = COALESCE($59, year),
+        project_info_notes = COALESCE($60, project_info_notes),
+        specs = COALESCE($61, specs),
+        classification = COALESCE($62, classification),
         updated_at = NOW()
-      WHERE id = $62
+      WHERE id = $63
       RETURNING *
       `,
       [
@@ -491,6 +493,7 @@ app.put("/api/projects/:id", async (req, res) => {
         processValue(supporting_documents_status),
         processValue(supporting_documents_sent_date),
         processValue(supporting_documents_complete_date),
+        processValue(water_authority),
         processValue(water_declaration_status),
         processValue(water_declaration_sent_date),
         processValue(water_declaration_complete_date),

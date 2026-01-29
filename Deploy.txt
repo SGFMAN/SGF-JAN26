@@ -1,0 +1,12 @@
+C:\SGF
+git add .
+git commit -m "Update: latest working version"
+
+
+C:\SGF\BACKEND
+node server.js
+
+C:\SGF\FRONTEND
+npm run build
+
+http:\\http://192.168.0.15:3001

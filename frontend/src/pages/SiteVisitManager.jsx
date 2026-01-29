@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { isUserAdmin } from "../utils/auth";
+import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
+const LIGHT_MONUMENT = "#42464d"; // More blue and slightly lighter version of monument
 const WHITE = "#fff";
 const API_URL = "";
 
@@ -26,7 +28,6 @@ export default function SiteVisitManager() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isTaggingMode, setIsTaggingMode] = useState(false);
   const [selectedProjectIds, setSelectedProjectIds] = useState(new Set());
   const [groups, setGroups] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -59,10 +60,19 @@ export default function SiteVisitManager() {
     }
   }
 
-  // Filter projects with site visit status "Not Complete"
-  const incompleteSiteVisits = projects.filter(
-    (project) => (project.site_visit_status || "Not Complete") === "Not Complete"
-  );
+  // Filter projects with site visit status "Not Complete" and sort alphabetically
+  const incompleteSiteVisits = projects
+    .filter((project) => (project.site_visit_status || "Not Complete") === "Not Complete")
+    .sort((a, b) => {
+      const suburbA = (a.suburb || "").toLowerCase();
+      const suburbB = (b.suburb || "").toLowerCase();
+      if (suburbA !== suburbB) {
+        return suburbA.localeCompare(suburbB);
+      }
+      const streetA = (a.street || "").toLowerCase();
+      const streetB = (b.street || "").toLowerCase();
+      return streetA.localeCompare(streetB);
+    });
 
   // Get group for a project
   function getProjectGroup(projectId) {
@@ -82,14 +92,8 @@ export default function SiteVisitManager() {
     });
   }
 
-  // Handle Create Group button
+  // Handle Create Group button - navigate directly to planner
   function handleCreateGroup() {
-    setIsTaggingMode(true);
-    setSelectedProjectIds(new Set());
-  }
-
-  // Handle Set as Group button
-  function handleSetAsGroup() {
     if (selectedProjectIds.size === 0) {
       alert("Please select at least one project to create a group");
       return;
@@ -111,9 +115,8 @@ export default function SiteVisitManager() {
       projectIds: Array.from(selectedProjectIds),
     };
 
-    setGroups(prev => [...prev, newGroup]);
-    setIsTaggingMode(false);
-    setSelectedProjectIds(new Set());
+    // Navigate directly to the planner with the group
+    navigate("/site-visit-planner", { state: { group: newGroup } });
   }
 
   // Sort projects: grouped projects first (by group), then ungrouped
@@ -145,7 +148,7 @@ export default function SiteVisitManager() {
       style={{
         position: "fixed",
         inset: 0,
-        background: MONUMENT,
+        background: LIGHT_MONUMENT,
         minHeight: "100vh",
         width: "100vw",
         overflowY: "auto",
@@ -154,31 +157,40 @@ export default function SiteVisitManager() {
       {/* Section 1: Heading */}
       <div
         style={{
-          background: SECTION_GREY,
-          borderRadius: "18px",
           margin: "32px auto 24px auto",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          height: "100px",
-          boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
+          position: "relative",
+          padding: "0 32px",
+          boxSizing: "border-box",
         }}
       >
-        <h1
+        <img
+          src={logo}
+          alt="SGF Logo"
           style={{
-            margin: 0,
-            fontSize: "2.4rem",
-            fontWeight: 700,
-            textAlign: "center",
-            width: "100%",
-            color: MONUMENT,
-            letterSpacing: "1px",
+            width: "120px",
+            height: "auto",
+            position: "absolute",
+            left: "40px",
           }}
-        >
-          SGF Central
-        </h1>
+        />
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "2.4rem",
+              fontWeight: 700,
+              color: WHITE,
+              letterSpacing: "1px",
+            }}
+          >
+            Site Visit Manager
+          </h1>
+        </div>
       </div>
 
       {/* Sections 2 & 3 */}
@@ -188,7 +200,7 @@ export default function SiteVisitManager() {
           display: "flex",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          margin: "0 auto",
+          margin: "50px auto 0 auto",
           gap: "32px",
         }}
       >
@@ -200,7 +212,7 @@ export default function SiteVisitManager() {
             borderRadius: "16px",
             width: "200px",
             minWidth: "200px",
-            height: "700px",
+            height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             padding: "32px 12px",
             boxSizing: "border-box",
@@ -220,19 +232,42 @@ export default function SiteVisitManager() {
               color: "#404049",
               border: "none",
               borderRadius: "10px",
-              padding: "12px 8px",
-              fontSize: "1.05rem",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
               fontWeight: 500,
               textAlign: "center",
               textDecoration: "none",
               letterSpacing: "0.5px",
               cursor: "pointer",
               transition: "background 0.18s, color 0.15s",
-              marginBottom: "2px",
+              marginBottom: "0px",
+              lineHeight: "1.4",
               display: "block",
             }}
           >
-            Current Projects
+            In Design
+          </Link>
+          <Link
+            to="/in-construction"
+            style={{
+              background: "transparent",
+              color: "#404049",
+              border: "none",
+              borderRadius: "10px",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              textAlign: "center",
+              textDecoration: "none",
+              letterSpacing: "0.5px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              marginBottom: "0px",
+              lineHeight: "1.4",
+              display: "block",
+            }}
+          >
+            In Construction
           </Link>
           <Link
             to="/finished-projects"
@@ -241,15 +276,16 @@ export default function SiteVisitManager() {
               color: "#404049",
               border: "none",
               borderRadius: "10px",
-              padding: "12px 8px",
-              fontSize: "1.05rem",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
               fontWeight: 500,
               textAlign: "center",
               textDecoration: "none",
               letterSpacing: "0.5px",
               cursor: "pointer",
               transition: "background 0.18s, color 0.15s",
-              marginBottom: "2px",
+              marginBottom: "0px",
+              lineHeight: "1.4",
               display: "block",
             }}
           >
@@ -262,15 +298,15 @@ export default function SiteVisitManager() {
               color: MONUMENT,
               border: "none",
               borderRadius: "10px",
-              padding: "12px 8px",
-              fontSize: "1.05rem",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
               fontWeight: 500,
               textAlign: "center",
               textDecoration: "none",
               letterSpacing: "0.5px",
               cursor: "pointer",
               transition: "background 0.18s, color 0.15s",
-              marginBottom: "2px",
+              marginBottom: "0px",
               outline: `2px solid ${MONUMENT}`,
               boxShadow: "0 2px 4px rgba(50,50,51,.04)",
               display: "block",
@@ -286,15 +322,15 @@ export default function SiteVisitManager() {
                 color: "#404049",
                 border: "none",
                 borderRadius: "10px",
-                padding: "12px 8px",
-                fontSize: "1.05rem",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
                 fontWeight: 500,
                 textAlign: "center",
                 textDecoration: "none",
                 letterSpacing: "0.5px",
                 cursor: "pointer",
                 transition: "background 0.18s, color 0.15s",
-                marginBottom: "2px",
+                marginBottom: "0px",
                 display: "block",
               }}
             >
@@ -309,15 +345,15 @@ export default function SiteVisitManager() {
                 color: "#404049",
                 border: "none",
                 borderRadius: "10px",
-                padding: "12px 8px",
-                fontSize: "1.05rem",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
                 fontWeight: 500,
                 textAlign: "center",
                 textDecoration: "none",
                 letterSpacing: "0.5px",
                 cursor: "pointer",
                 transition: "background 0.18s, color 0.15s",
-                marginBottom: "2px",
+                marginBottom: "0px",
                 display: "block",
               }}
             >
@@ -333,8 +369,8 @@ export default function SiteVisitManager() {
             background: SECTION_GREY,
             borderRadius: "18px",
             flex: 1,
-            minHeight: "700px",
-            height: "700px",
+            minHeight: "758px",
+            height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
             padding: "24px 32px",
             boxSizing: "border-box",
@@ -394,12 +430,11 @@ export default function SiteVisitManager() {
                     const notes = project.site_visit_notes?.trim();
                     const isSelected = selectedProjectIds.has(project.id);
                     const isAlreadyGrouped = group !== null;
-                    const canBeSelected = !isAlreadyGrouped;
-                    // Use group color if project is in a group, otherwise use MONUMENT
-                    const cardBackground = group ? group.color : MONUMENT;
-                    // Use white text if project is in a group, otherwise use SECTION_GREY
-                    const textColor = group ? WHITE : SECTION_GREY;
-                    const secondaryTextColor = group ? "#ffffffcc" : "#a1a1a3";
+                    // Use group color if project is in a group, blue if selected, otherwise use MONUMENT
+                    const cardBackground = group ? group.color : (isSelected ? "#0066cc" : MONUMENT);
+                    // Use white text if project is in a group or selected, otherwise use SECTION_GREY
+                    const textColor = (group || isSelected) ? WHITE : SECTION_GREY;
+                    const secondaryTextColor = (group || isSelected) ? "#ffffffcc" : "#a1a1a3";
                     
                     return (
                       <div
@@ -408,34 +443,27 @@ export default function SiteVisitManager() {
                           position: "relative",
                         }}
                       >
-                        {!isTaggingMode ? (
-                          <Link
-                            to={`/project/${project.id}`}
-                            style={{
-                              textDecoration: "none",
-                              display: "block",
-                            }}
-                          >
-                            <div
-                              style={{
-                                background: cardBackground,
-                                borderRadius: "8px",
-                                width: "100%",
-                                height: "100px",
-                                color: textColor,
-                                cursor: "pointer",
-                                transition: "opacity 0.2s",
-                                display: "flex",
-                                flexDirection: "column",
-                                justifyContent: "center",
-                                alignItems: "center",
-                                position: "relative",
-                                overflow: "hidden",
-                                boxSizing: "border-box",
-                              }}
-                              onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
-                              onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-                            >
+                        <div
+                          onClick={() => handleToggleProject(project.id)}
+                          style={{
+                            background: cardBackground,
+                            borderRadius: "8px",
+                            width: "100%",
+                            height: "100px",
+                            color: textColor,
+                            cursor: "pointer",
+                            transition: "opacity 0.2s",
+                            display: "flex",
+                            flexDirection: "column",
+                            justifyContent: "center",
+                            alignItems: "center",
+                            position: "relative",
+                            overflow: "hidden",
+                            boxSizing: "border-box",
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+                          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                        >
                               {/* On Hold Diagonal Band */}
                               {project.status === "On Hold" && (
                                 <div
@@ -467,6 +495,37 @@ export default function SiteVisitManager() {
                                   </span>
                                 </div>
                               )}
+                              {/* Cancelled Diagonal Band */}
+                              {project.status === "Cancelled" && (
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    top: "50%",
+                                    left: "50%",
+                                    transform: "translate(-50%, -50%) rotate(-45deg)",
+                                    width: "280px",
+                                    height: "40px",
+                                    background: "#cc0000",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    zIndex: 10,
+                                    boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      color: WHITE,
+                                      fontWeight: 700,
+                                      fontSize: "1.1rem",
+                                      letterSpacing: "2px",
+                                      textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                                    }}
+                                  >
+                                    CANCELLED
+                                  </span>
+                                </div>
+                              )}
                               <div
                                 style={{
                                   fontWeight: 600,
@@ -481,7 +540,7 @@ export default function SiteVisitManager() {
                                   flexDirection: "column",
                                   gap: "4px",
                                   position: "relative",
-                                  zIndex: project.status === "On Hold" ? 1 : "auto",
+                                  zIndex: (project.status === "On Hold" || project.status === "Cancelled") ? 1 : "auto",
                                 }}
                               >
                                 <div style={{ fontWeight: 600, fontSize: "1.1rem", color: textColor }}>
@@ -497,110 +556,6 @@ export default function SiteVisitManager() {
                                 )}
                               </div>
                             </div>
-                          </Link>
-                        ) : (
-                          <div
-                            style={{
-                              background: cardBackground,
-                              borderRadius: "8px",
-                              width: "100%",
-                              height: "100px",
-                              color: textColor,
-                              cursor: canBeSelected ? "pointer" : "default",
-                              transition: "opacity 0.2s",
-                              display: "flex",
-                              flexDirection: "column",
-                              justifyContent: "center",
-                              alignItems: "center",
-                              position: "relative",
-                              overflow: "hidden",
-                              opacity: isAlreadyGrouped ? 0.5 : 1,
-                              boxSizing: "border-box",
-                            }}
-                          >
-                            {/* On Hold Diagonal Band */}
-                            {project.status === "On Hold" && (
-                              <div
-                                style={{
-                                  position: "absolute",
-                                  top: "50%",
-                                  left: "50%",
-                                  transform: "translate(-50%, -50%) rotate(-45deg)",
-                                  width: "280px",
-                                  height: "40px",
-                                  background: "#0066cc",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  zIndex: 10,
-                                  boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    color: WHITE,
-                                    fontWeight: 700,
-                                    fontSize: "1.1rem",
-                                    letterSpacing: "2px",
-                                    textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                                  }}
-                                >
-                                  ON HOLD
-                                </span>
-                              </div>
-                            )}
-                            {canBeSelected && (
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={(e) => {
-                                  e.stopPropagation();
-                                  handleToggleProject(project.id);
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                                style={{
-                                  position: "absolute",
-                                  top: "8px",
-                                  right: "8px",
-                                  width: "20px",
-                                  height: "20px",
-                                  cursor: "pointer",
-                                  zIndex: 20,
-                                  accentColor: MONUMENT,
-                                }}
-                              />
-                            )}
-                            <div
-                              style={{
-                                fontWeight: 600,
-                                fontSize: "1.1rem",
-                                textAlign: "center",
-                                marginBottom: "4px",
-                                width: "100%",
-                                display: "flex",
-                                justifyContent: "center",
-                                alignItems: "center",
-                                flex: 1,
-                                flexDirection: "column",
-                                gap: "4px",
-                                position: "relative",
-                                zIndex: project.status === "On Hold" ? 1 : "auto",
-                              }}
-                            >
-                              <div style={{ fontWeight: 600, fontSize: "1.1rem", color: textColor }}>
-                                {suburb}
-                              </div>
-                              <div style={{ fontSize: "0.95rem", color: secondaryTextColor, fontWeight: 400 }}>
-                                {street}
-                              </div>
-                              {notes && (
-                                <div style={{ fontSize: "0.8rem", color: secondaryTextColor, fontWeight: 400, marginTop: "2px" }}>
-                                  {notes}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     );
                   });
@@ -689,61 +644,32 @@ kind regards,`;
                 ))}
                 <button
                   onClick={handleCreateGroup}
-                  disabled={isTaggingMode || groups.length > 0}
+                  disabled={groups.length > 0}
                   style={{
                     padding: "10px 20px",
                     fontSize: "1rem",
                     fontWeight: 500,
                     color: WHITE,
-                    background: (isTaggingMode || groups.length > 0) ? "#ccc" : MONUMENT,
+                    background: groups.length > 0 ? "#ccc" : MONUMENT,
                     border: "none",
                     borderRadius: "8px",
-                    cursor: (isTaggingMode || groups.length > 0) ? "not-allowed" : "pointer",
+                    cursor: groups.length > 0 ? "not-allowed" : "pointer",
                     transition: "background 0.2s",
-                    opacity: (isTaggingMode || groups.length > 0) ? 0.6 : 1,
+                    opacity: groups.length > 0 ? 0.6 : 1,
                   }}
                   onMouseEnter={(e) => {
-                    if (!isTaggingMode && groups.length === 0) {
+                    if (groups.length === 0) {
                       e.currentTarget.style.background = "#1a1a1a";
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (!isTaggingMode && groups.length === 0) {
+                    if (groups.length === 0) {
                       e.currentTarget.style.background = MONUMENT;
                     }
                   }}
                 >
                   Create Group
                 </button>
-                {isTaggingMode && (
-                  <button
-                    onClick={handleSetAsGroup}
-                    disabled={selectedProjectIds.size === 0}
-                    style={{
-                      padding: "10px 20px",
-                      fontSize: "1rem",
-                      fontWeight: 500,
-                      color: WHITE,
-                      background: selectedProjectIds.size > 0 ? MONUMENT : "#999",
-                      border: "none",
-                      borderRadius: "8px",
-                      cursor: selectedProjectIds.size > 0 ? "pointer" : "not-allowed",
-                      transition: "background 0.2s",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (selectedProjectIds.size > 0) {
-                        e.currentTarget.style.background = "#1a1a1a";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (selectedProjectIds.size > 0) {
-                        e.currentTarget.style.background = MONUMENT;
-                      }
-                    }}
-                  >
-                    Set as Group
-                  </button>
-                )}
               </div>
             </div>
           )}

@@ -5,14 +5,17 @@ const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 const API_URL = "";
 
-const STATUS_OPTIONS = ["Design Phase", "On Hold", "Construction Phase", "Complete"];
+const STATUS_OPTIONS = ["Design Phase", "Construction Phase", "On Hold", "Cancelled", "Complete"];
 const SPECS_OPTIONS = ["Affordable", "Superior"];
 const CLASSIFICATION_OPTIONS = [
   "Small Second Dwelling",
   "Dependant Persons Unit",
   "Detached Extension",
   "Dwelling",
-  "Home Office / Studio"
+  "Home Office / Studio",
+  "Dwelling & DPU",
+  "Dwelling & SSD",
+  "SSD & DPU"
 ];
 
 function getLongestText(arr, include = "") {

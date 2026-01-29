@@ -7,31 +7,28 @@ const API_URL = "";
 
 const CONTRACT_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
 const SUPPORTING_DOCUMENTS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
-const WATER_DECLARATION_STATUS_OPTIONS = ["Not Required", "Not Sent", "Sent", "Complete"];
+const WATER_AUTHORITY_OPTIONS = ["Not Required", "Barwon Water", "Greater Western Water", "South East Water"];
+const WATER_DECLARATION_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
 
 export default function Contract({ project, onUpdate }) {
   const [contractStatus, setContractStatus] = useState(project?.contract_status || "Not Sent");
   const [supportingDocumentsStatus, setSupportingDocumentsStatus] = useState(project?.supporting_documents_status || "Not Sent");
-  const [waterDeclarationStatus, setWaterDeclarationStatus] = useState(project?.water_declaration_status || "Not Required");
+  const [waterAuthority, setWaterAuthority] = useState(project?.water_authority || "Not Required");
+  const [waterDeclarationStatus, setWaterDeclarationStatus] = useState(project?.water_declaration_status || "Not Sent");
   const [notes, setNotes] = useState(project?.notes || "");
   
-  const valuesRef = useRef({ contractStatus, supportingDocumentsStatus, waterDeclarationStatus, notes });
+  const valuesRef = useRef({ contractStatus, supportingDocumentsStatus, waterAuthority, waterDeclarationStatus, notes });
   
   useEffect(() => {
-    valuesRef.current = { contractStatus, supportingDocumentsStatus, waterDeclarationStatus, notes };
-  }, [contractStatus, supportingDocumentsStatus, waterDeclarationStatus, notes]);
+    valuesRef.current = { contractStatus, supportingDocumentsStatus, waterAuthority, waterDeclarationStatus, notes };
+  }, [contractStatus, supportingDocumentsStatus, waterAuthority, waterDeclarationStatus, notes]);
 
   useEffect(() => {
     if (project) {
       setContractStatus(project.contract_status || "Not Sent");
       setSupportingDocumentsStatus(project.supporting_documents_status || "Not Sent");
-      // Only default to "Not Required" if the field is actually null/undefined in the database
-      // Otherwise use the saved value
-      setWaterDeclarationStatus(
-        project.water_declaration_status !== null && project.water_declaration_status !== undefined 
-          ? project.water_declaration_status 
-          : "Not Required"
-      );
+      setWaterAuthority(project.water_authority || "Not Required");
+      setWaterDeclarationStatus(project.water_declaration_status || "Not Sent");
       setNotes(project.notes || "");
     }
   }, [project]);
@@ -76,6 +73,7 @@ export default function Contract({ project, onUpdate }) {
         project_cost: project?.project_cost || null,
         contract_status: fieldName === "contract_status" ? (value === "" ? null : value) : currentValues.contractStatus,
         supporting_documents_status: fieldName === "supporting_documents_status" ? (value === "" ? null : value) : currentValues.supportingDocumentsStatus,
+        water_authority: fieldName === "water_authority" ? (value === "" ? null : value) : currentValues.waterAuthority,
         water_declaration_status: fieldName === "water_declaration_status" ? (value === "" ? null : value) : currentValues.waterDeclarationStatus,
         notes: fieldName === "notes" ? (value === "" ? null : value) : currentValues.notes,
       };
@@ -151,6 +149,20 @@ export default function Contract({ project, onUpdate }) {
     setSupportingDocumentsStatus(newStatus);
     valuesRef.current.supportingDocumentsStatus = newStatus;
     await saveField("supporting_documents_status", newStatus);
+  }
+
+  async function handleWaterAuthorityChange(e) {
+    const newAuthority = e.target.value;
+    setWaterAuthority(newAuthority);
+    valuesRef.current.waterAuthority = newAuthority;
+    await saveField("water_authority", newAuthority);
+    
+    // If set to "Not Required", reset water declaration status
+    if (newAuthority === "Not Required") {
+      setWaterDeclarationStatus("Not Sent");
+      valuesRef.current.waterDeclarationStatus = "Not Sent";
+      await saveField("water_declaration_status", "Not Sent");
+    }
   }
 
   async function handleWaterDeclarationStatusChange(e) {
@@ -335,16 +347,16 @@ export default function Contract({ project, onUpdate }) {
             )}
           </div>
 
-          {/* Column 3 - Water Declaration */}
+          {/* Column 3 - Water Authority & Water Declaration */}
           <div style={{ flex: "1", minWidth: "200px" }}>
             <div style={{ marginBottom: "16px" }}>
               <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
-                Water Declaration Status
+                Water Authority
               </div>
               <select
-                name="waterDeclarationStatus"
-                value={waterDeclarationStatus}
-                onChange={handleWaterDeclarationStatusChange}
+                name="waterAuthority"
+                value={waterAuthority}
+                onChange={handleWaterAuthorityChange}
                 style={{
                   width: "100%",
                   padding: "10px 12px",
@@ -359,13 +371,45 @@ export default function Contract({ project, onUpdate }) {
                   maxWidth: "100%",
                 }}
               >
-                {WATER_DECLARATION_STATUS_OPTIONS.map((option) => (
+                {WATER_AUTHORITY_OPTIONS.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>
                 ))}
               </select>
             </div>
+
+            {waterAuthority !== "Not Required" && (
+              <div style={{ marginBottom: "16px" }}>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                  Water Declaration Status
+                </div>
+                <select
+                  name="waterDeclarationStatus"
+                  value={waterDeclarationStatus}
+                  onChange={handleWaterDeclarationStatusChange}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                    cursor: "pointer",
+                    display: "inline-block",
+                    maxWidth: "100%",
+                  }}
+                >
+                  {WATER_DECLARATION_STATUS_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {waterDeclarationStatus === "Sent" && project?.water_declaration_sent_date && (
               <div style={{ marginBottom: "16px" }}>
