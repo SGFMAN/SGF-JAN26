@@ -228,8 +228,8 @@ export default function HomePage() {
     // Get unique values from projects (using effective values)
     const projectValues = new Set();
     projects.forEach(project => {
-      // Only include design phase projects (not Complete, Cancelled, or Construction Phase)
-      if (project.status !== "Complete" && project.status !== "Cancelled" && project.status !== "Construction Phase") {
+      // Only include design phase projects (not Complete, Cancelled, Construction Phase, or Hotlist)
+      if (project.status !== "Complete" && project.status !== "Cancelled" && project.status !== "Construction Phase" && project.status !== "Hotlist") {
         const effectiveValue = getEffectiveValue(project, selectedField);
         if (effectiveValue) {
           projectValues.add(effectiveValue);
@@ -244,8 +244,8 @@ export default function HomePage() {
 
   // Filter projects based on status, field/value, and search query
   function getFilteredProjects() {
-    // First filter out "Complete", "Cancelled", and "Construction Phase" status projects
-    let filtered = projects.filter((project) => project.status !== "Complete" && project.status !== "Cancelled" && project.status !== "Construction Phase");
+    // First filter out "Complete", "Cancelled", "Construction Phase", and "Hotlist" status projects
+    let filtered = projects.filter((project) => project.status !== "Complete" && project.status !== "Cancelled" && project.status !== "Construction Phase" && project.status !== "Hotlist");
 
     // Then filter by field/value if specified
     if (selectedField && selectedValue) {
@@ -390,6 +390,28 @@ export default function HomePage() {
           }}
         >
           {/* Menu Buttons */}
+          <Link
+            to="/hotlist"
+            style={{
+              background: "transparent",
+              color: "#404049",
+              border: "none",
+              borderRadius: "10px",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              textAlign: "center",
+              textDecoration: "none",
+              letterSpacing: "0.5px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              marginBottom: "0px",
+              lineHeight: "1.4",
+              display: "block",
+            }}
+          >
+            Hot List
+          </Link>
           <Link
             to="/projects"
             style={{
@@ -673,7 +695,7 @@ export default function HomePage() {
 
             {/* Clear Filters Button */}
             {(selectedField || searchQuery.trim()) && (
-              <div style={{ display: "flex", alignItems: "flex-end" }}>
+              <div style={{ flex: "0 0 auto", marginLeft: "1320px", position: "absolute", marginTop: "28px" }}>
                 <button
                   onClick={() => {
                     setSelectedField("");
@@ -686,10 +708,12 @@ export default function HomePage() {
                     fontWeight: 500,
                     color: MONUMENT,
                     background: WHITE,
-                    border: `1px solid ${MONUMENT}`,
+                    border: `2px solid ${MONUMENT}`,
                     borderRadius: "8px",
                     cursor: "pointer",
                     height: "42px",
+                    width: "200px",
+                    boxSizing: "border-box",
                   }}
                 >
                   Clear Filters

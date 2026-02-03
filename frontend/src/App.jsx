@@ -8,6 +8,7 @@ import FinishedProjects from "./pages/FinishedProjects";
 import InConstruction from "./pages/InConstruction";
 import SiteVisitManager from "./pages/SiteVisitManager";
 import SiteVisitPlanner from "./pages/SiteVisitPlanner";
+import Hotlist from "./pages/Hotlist";
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
         <Route path="/in-construction" element={<InConstruction />} />
         <Route path="/site-visit-manager" element={<SiteVisitManager />} />
         <Route path="/site-visit-planner" element={<SiteVisitPlanner />} />
+        <Route path="/hotlist" element={<Hotlist />} />
       </Routes>
     </BrowserRouter>
   );

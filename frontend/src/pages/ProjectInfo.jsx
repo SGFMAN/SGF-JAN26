@@ -501,37 +501,7 @@ export default function ProjectInfo({ project, onUpdate }) {
             </div>
           </div>
 
-          {/* Column 3 - Notes */}
-          <div style={{ flex: "1", minWidth: "200px" }}>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
-                Notes
-              </div>
-              <textarea
-                name="project_info_notes"
-                value={projectInfoNotes}
-                onChange={handleProjectInfoNotesChange}
-                onBlur={handleBlur}
-                placeholder="Add project notes..."
-                style={{
-                  width: "100%",
-                  maxWidth: "300px",
-                  minHeight: "200px",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                  resize: "vertical",
-                  fontFamily: "inherit",
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Column 4 - Project Log */}
+          {/* Column 3 - Project Log */}
           <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", height: "100%" }}>
             <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
               Project Log
@@ -557,6 +527,36 @@ export default function ProjectInfo({ project, onUpdate }) {
             >
               {project?.project_log || "No log entries yet."}
             </div>
+          </div>
+
+          {/* Column 4 - Notes */}
+          <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", height: "100%" }}>
+            <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              Notes
+            </div>
+            <textarea
+              name="project_info_notes"
+              value={projectInfoNotes}
+              onChange={handleProjectInfoNotesChange}
+              onBlur={handleBlur}
+              placeholder="Add project notes..."
+              style={{
+                width: "100%",
+                maxWidth: "300px",
+                flex: 1,
+                padding: "10px 12px",
+                borderRadius: "8px",
+                border: "none",
+                fontSize: "1rem",
+                color: MONUMENT,
+                background: WHITE,
+                boxSizing: "border-box",
+                resize: "none",
+                fontFamily: "inherit",
+                overflowY: "auto",
+                minHeight: 0,
+              }}
+            />
           </div>
 
         </div>

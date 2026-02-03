@@ -1,4 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { PROCESS_RULES, getRequirementStatus, getUnmetRequirements, getMetRequirements } from "../utils/ProcessRules";
+import craig1 from "../images/craig1.jpg";
+import craig2 from "../images/craig2.jpg";
+import craig3 from "../images/craig3.jpg";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -13,10 +17,180 @@ export default function Overview({ project }) {
   const [previewFrom, setPreviewFrom] = useState("");
   const [previewSubject, setPreviewSubject] = useState("");
   const [previewBody, setPreviewBody] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [displayedTexts, setDisplayedTexts] = useState({}); // Store word-by-word displayed text for each result
+  const [isTyping, setIsTyping] = useState(false);
+  const [isPrintingText, setIsPrintingText] = useState(false); // Track if text is actively being printed
+  const [fullResults, setFullResults] = useState([]); // Store full results before typewriter effect
+  const [faqModalOpen, setFaqModalOpen] = useState(false);
+  const [currentCraigImage, setCurrentCraigImage] = useState(0);
+  const craigAnimationRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const typewriterIntervalRef = useRef(null);
+  const fullResultsRef = useRef([]);
+  
+  const craigImages = [craig1, craig2, craig3];
 
   useEffect(() => {
     fetchEmailTemplates();
   }, []);
+
+  // Animate Craig only when text is actively being printed
+  useEffect(() => {
+    if (isPrintingText && faqModalOpen) {
+      // Start animation
+      let imageIndex = 0;
+      craigAnimationRef.current = setInterval(() => {
+        imageIndex = (imageIndex + 1) % craigImages.length;
+        setCurrentCraigImage(imageIndex);
+      }, 200); // Change image every 200ms for talking animation
+      
+      return () => {
+        if (craigAnimationRef.current) {
+          clearInterval(craigAnimationRef.current);
+        }
+      };
+    } else {
+      // Stop animation
+      if (craigAnimationRef.current) {
+        clearInterval(craigAnimationRef.current);
+        craigAnimationRef.current = null;
+      }
+      if (!isPrintingText) {
+        setCurrentCraigImage(0); // Reset to first image when not printing
+      }
+    }
+  }, [isPrintingText, faqModalOpen]);
+
+  // Check if all text printing is complete
+  useEffect(() => {
+    if (isPrintingText && searchResults.length > 0) {
+      const allComplete = searchResults.every(result => {
+        const displayed = displayedTexts[result.ruleKey] || "";
+        return displayed.length >= result.answer.length;
+      });
+      if (allComplete) {
+        setIsPrintingText(false);
+      }
+    }
+  }, [displayedTexts, searchResults, isPrintingText]);
+
+  // Typewriter effect - wait 2 seconds after typing stops, then display word by word
+  useEffect(() => {
+    // Clear any existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    
+    // Clear any existing typewriter intervals
+    if (typewriterIntervalRef.current) {
+      if (Array.isArray(typewriterIntervalRef.current)) {
+        typewriterIntervalRef.current.forEach(interval => clearInterval(interval));
+      } else {
+        clearInterval(typewriterIntervalRef.current);
+      }
+      typewriterIntervalRef.current = null;
+    }
+    
+    // Reset displayed texts and results when query changes
+    setDisplayedTexts({});
+    setSearchResults([]);
+    setIsTyping(false);
+    setIsPrintingText(false);
+    
+    if (searchQuery.trim().length > 0) {
+      setIsTyping(true);
+      
+      // Wait 2 seconds after user stops typing
+      typingTimeoutRef.current = setTimeout(() => {
+        // Check the ref for latest results
+        const currentResults = fullResultsRef.current;
+        if (currentResults.length > 0) {
+          setIsTyping(false);
+          setIsPrintingText(true); // Start printing animation
+          
+          const newDisplayedTexts = {};
+          const intervals = [];
+          
+          // Initialize displayed texts
+          currentResults.forEach((result) => {
+            newDisplayedTexts[result.ruleKey] = "";
+          });
+          
+          setDisplayedTexts(newDisplayedTexts);
+          setSearchResults(currentResults);
+          
+          // Start typewriter for each result sequentially
+          currentResults.forEach((result, resultIndex) => {
+            // Split into words and whitespace, preserving both
+            // This regex splits on word boundaries but keeps both words and spaces
+            const parts = result.answer.split(/(\s+)/).filter(part => part.length > 0);
+            // Now split each part further to separate words from spaces
+            const tokens = [];
+            parts.forEach(part => {
+              if (part.trim().length === 0) {
+                // It's whitespace, add it as a single token
+                tokens.push(part);
+              } else {
+                // It contains words, split by word boundaries
+                const words = part.split(/(\b)/).filter(w => w.length > 0);
+                tokens.push(...words);
+              }
+            });
+            // Simplify: just split by spaces and add spaces back
+            const simpleTokens = result.answer.split(/(\s+)/).filter(t => t.length > 0);
+            let partIndex = 0;
+            
+            // Delay each result's typewriter by a bit so they don't all start at once
+            setTimeout(() => {
+              const typeInterval = setInterval(() => {
+                setDisplayedTexts(prev => {
+                  if (partIndex < simpleTokens.length) {
+                    // Get the current token (word or whitespace)
+                    const token = simpleTokens[partIndex];
+                    const newText = (prev[result.ruleKey] || "") + token;
+                    partIndex++;
+                    return {
+                      ...prev,
+                      [result.ruleKey]: newText
+                    };
+                  } else {
+                    clearInterval(typeInterval);
+                    // Remove from intervals array when done
+                    const index = intervals.indexOf(typeInterval);
+                    if (index > -1) {
+                      intervals.splice(index, 1);
+                    }
+                    return prev;
+                  }
+                });
+              }, 80); // Display one word/whitespace every 80ms
+              
+              intervals.push(typeInterval);
+              typewriterIntervalRef.current = intervals;
+            }, resultIndex * 100); // Stagger each result by 100ms
+          });
+        } else {
+          setIsTyping(false);
+          setIsPrintingText(false);
+        }
+      }, 2000);
+    }
+    
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      if (typewriterIntervalRef.current) {
+        if (Array.isArray(typewriterIntervalRef.current)) {
+          typewriterIntervalRef.current.forEach(interval => clearInterval(interval));
+        } else {
+          clearInterval(typewriterIntervalRef.current);
+        }
+      }
+    };
+  }, [searchQuery]);
 
   async function fetchEmailTemplates() {
     try {
@@ -432,11 +606,636 @@ export default function Overview({ project }) {
     return COLOR_RED;
   }
 
+  // Search function to find matching rules based on question
+  function searchRules(query) {
+    if (!query || query.trim().length === 0) {
+      setSearchResults([]);
+      return;
+    }
+
+    const queryLower = query.toLowerCase().trim();
+    const queryWords = queryLower.split(/\s+/).filter(word => word.length > 2);
+    
+    if (queryWords.length === 0) {
+      setSearchResults([]);
+      return;
+    }
+
+    const results = [];
+    
+    // Search through all rules
+    Object.keys(PROCESS_RULES).forEach(ruleKey => {
+      const rule = PROCESS_RULES[ruleKey];
+      let score = 0;
+      const matchedKeywords = [];
+      
+      // Check rule name
+      const nameLower = rule.name.toLowerCase();
+      queryWords.forEach(word => {
+        if (nameLower.includes(word)) {
+          score += 3;
+          matchedKeywords.push(word);
+        }
+      });
+      
+      // Check description
+      const descLower = rule.description.toLowerCase();
+      queryWords.forEach(word => {
+        if (descLower.includes(word)) {
+          score += 2;
+          if (!matchedKeywords.includes(word)) matchedKeywords.push(word);
+        }
+      });
+      
+      // Check requirements labels
+      rule.requirements.forEach(req => {
+        const labelLower = req.label.toLowerCase();
+        queryWords.forEach(word => {
+          if (labelLower.includes(word)) {
+            score += 1;
+            if (!matchedKeywords.includes(word)) matchedKeywords.push(word);
+          }
+        });
+      });
+      
+      // Check for specific keyword matches
+      const keywordMap = {
+        'building permit': ['buildingPermit'],
+        'permit': ['buildingPermit'],
+        'windows': ['windows'],
+        'window': ['windows'],
+        'contract': ['contract'],
+        'master builder': ['contract'],
+        'drawings': ['buildingPermit', 'windows'],
+        'drawing': ['buildingPermit', 'windows'],
+        'colours': ['buildingPermit', 'windows'],
+        'colour': ['buildingPermit', 'windows'],
+        'color': ['buildingPermit', 'windows'],
+        'deposit': ['buildingPermit'],
+        'site visit': ['buildingPermit'],
+        'planning': ['buildingPermit'],
+        'energy': ['buildingPermit'],
+        'footing': ['buildingPermit'],
+        'certification': ['buildingPermit'],
+      };
+      
+      Object.keys(keywordMap).forEach(keyword => {
+        if (queryLower.includes(keyword) && keywordMap[keyword].includes(ruleKey)) {
+          score += 5;
+        }
+      });
+      
+      if (score > 0) {
+        // Generate answer based on rule and project status
+        let answer = rule.description;
+        
+        // Add project-specific context if available
+        if (project) {
+          const unmetReqs = getUnmetRequirements(rule, project);
+          const metReqs = getMetRequirements(rule, project);
+          
+          if (unmetReqs.length > 0) {
+            answer += "\n\nCurrently, we still need:\n";
+            unmetReqs.forEach((req, index) => {
+              answer += `• ${req.label}\n`;
+            });
+          }
+          
+          if (metReqs.length > 0 && unmetReqs.length > 0) {
+            answer += "\nCompleted:\n";
+            metReqs.forEach((req) => {
+              answer += `✓ ${req.label}\n`;
+            });
+          } else if (metReqs.length === rule.requirements.length) {
+            answer += "\n\n✓ All requirements have been met!";
+          }
+        } else {
+          // If no project, just list requirements
+          if (rule.requirements.length > 0) {
+            answer += "\n\nRequirements:\n";
+            rule.requirements.forEach((req, index) => {
+              answer += `${index + 1}. ${req.label}\n`;
+            });
+          }
+        }
+        
+        results.push({
+          ruleKey,
+          question: rule.name,
+          answer: answer,
+          score,
+          matchedKeywords
+        });
+      }
+    });
+    
+    // Sort by score (highest first) and take top 3
+    results.sort((a, b) => b.score - a.score);
+    const topResults = results.slice(0, 3);
+    fullResultsRef.current = topResults;
+    setFullResults(topResults);
+  }
+
+  function handleSearchChange(e) {
+    const query = e.target.value;
+    setSearchQuery(query);
+    searchRules(query);
+  }
+
+  function handleOpenFaqModal() {
+    setFaqModalOpen(true);
+    setSearchQuery("");
+    setSearchResults([]);
+    setFullResults([]);
+    fullResultsRef.current = [];
+    setDisplayedTexts({});
+    setIsTyping(false);
+    setIsPrintingText(false);
+  }
+
+  function handleCloseFaqModal() {
+    setFaqModalOpen(false);
+    setSearchQuery("");
+    setSearchResults([]);
+    setFullResults([]);
+    fullResultsRef.current = [];
+    setDisplayedTexts({});
+    setIsTyping(false);
+    setIsPrintingText(false);
+    // Clear any timeouts/intervals
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    if (typewriterIntervalRef.current) {
+      if (Array.isArray(typewriterIntervalRef.current)) {
+        typewriterIntervalRef.current.forEach(interval => clearInterval(interval));
+      } else {
+        clearInterval(typewriterIntervalRef.current);
+      }
+    }
+  }
+
+  function handleEmailUpdate() {
+    // Get the primary email address (prefer client1_email if active, otherwise email)
+    const primaryEmail = (project?.client1_email && project?.client1_active === 'true') 
+      ? project.client1_email 
+      : project?.email || project?.client1_email || project?.client2_email || project?.client3_email;
+    
+    if (!primaryEmail) {
+      alert("No email address available for this client.");
+      return;
+    }
+
+    const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "Project";
+    const clientName = project.client_name || project.client1_name || "Client";
+    const subject = encodeURIComponent(`UPDATE - ${projectName}`);
+    
+    // Build email body - only mention outstanding items
+    let body = `Hi ${clientName},\n\n`;
+    body += `Here's an update on your project at ${projectName}:\n\n`;
+    
+    const outstandingItems = [];
+    
+    // Check Drawings Status
+    const drawingsStatus = project.drawings_status || "In Progress";
+    if (drawingsStatus !== "Working Drawings Approved") {
+      if (drawingsStatus === "Concept Approved") {
+        outstandingItems.push({
+          title: "Working Drawings",
+          message: "Your concept drawings have been approved. We're now working on the working drawings. Once you approve these, we can proceed to the next steps."
+        });
+      } else {
+        outstandingItems.push({
+          title: "Drawings",
+          message: "We're currently working on your drawings. Once you approve the working drawings, we can proceed to the next steps."
+        });
+      }
+    }
+    
+    // Check Colours Status
+    const coloursStatus = project.colours_status || "Not Sent";
+    if (coloursStatus !== "Complete") {
+      if (coloursStatus === "Sent") {
+        outstandingItems.push({
+          title: "Colours",
+          message: "We've sent you the colour options. Please review and provide your selections so we can proceed."
+        });
+      } else {
+        outstandingItems.push({
+          title: "Colours",
+          message: "We'll send you colour options once your working drawings are approved."
+        });
+      }
+    }
+    
+    // Check Windows Status
+    const windowStatus = project.window_status || "Not Ordered";
+    if (windowStatus !== "Complete") {
+      if (windowStatus === "Ordered") {
+        outstandingItems.push({
+          title: "Windows",
+          message: "Your windows have been ordered. We're waiting for delivery."
+        });
+      } else {
+        // Check if windows can be ordered based on rules
+        const windowsRule = PROCESS_RULES.windows;
+        const windowsUnmet = getUnmetRequirements(windowsRule, project);
+        if (windowsUnmet.length > 0) {
+          const requirements = windowsUnmet.map(req => req.label.toLowerCase()).join(" and ");
+          outstandingItems.push({
+            title: "Windows",
+            message: `We need ${requirements} before we can order your windows.`
+          });
+        } else {
+          outstandingItems.push({
+            title: "Windows",
+            message: "We're ready to order your windows now that we have your approved working drawings and colour selections."
+          });
+        }
+      }
+    }
+    
+    // Check Site Visit Status
+    const siteVisitStatus = project.site_visit_status || "Not Complete";
+    if (siteVisitStatus !== "Complete") {
+      if (siteVisitStatus === "Booked") {
+        outstandingItems.push({
+          title: "Site Visit",
+          message: "Site visit is booked. We'll complete this soon."
+        });
+      } else {
+        outstandingItems.push({
+          title: "Site Visit",
+          message: "A site visit is required before we can proceed with the building permit submission."
+        });
+      }
+    }
+    
+    // Check Contract Status
+    const contractStatus = project.contract_status || "Not Sent";
+    if (contractStatus !== "Complete") {
+      if (contractStatus === "Sent") {
+        outstandingItems.push({
+          title: "Master Builder's Contract",
+          message: "Master Builder's Contract has been sent. Please review and sign so we can proceed."
+        });
+      } else {
+        outstandingItems.push({
+          title: "Master Builder's Contract",
+          message: "Master Builder's Contract will be sent out soon if we haven't already."
+        });
+      }
+    }
+    
+    // Check Supporting Documents Status
+    const supportingDocsStatus = project.supporting_documents_status || "Not Sent";
+    if (supportingDocsStatus !== "Complete") {
+      if (supportingDocsStatus === "Sent") {
+        outstandingItems.push({
+          title: "Supporting Documents",
+          message: "We've sent you the list of required supporting documents. Please provide these so we can proceed."
+        });
+      } else {
+        outstandingItems.push({
+          title: "Supporting Documents",
+          message: "We'll send you the list of required supporting documents once we have your approved working drawings."
+        });
+      }
+    }
+    
+    // Check Deposit Status
+    if (!isDepositFullyPaid()) {
+      const depositAmount = project.deposit ? project.deposit.toString().replace(/[^0-9]/g, "") : "0";
+      const depositFormatted = depositAmount ? `$${parseInt(depositAmount).toLocaleString()}` : "$0";
+      outstandingItems.push({
+        title: "Deposit",
+        message: `Deposit received: ${depositFormatted}. Full deposit payment is required before we can submit the building permit.`
+      });
+    }
+    
+    // Check Planning Permit Status
+    const planningStatus = project.planning_status || "Not Selected";
+    if (planningStatus !== "Planning Permit Issued" && planningStatus !== "No Planning Required") {
+      outstandingItems.push({
+        title: "Planning Permit",
+        message: "Planning permit status is pending. This is required (if applicable) before we can submit the building permit."
+      });
+    }
+    
+    // Check Energy Report Status
+    const energyReportStatus = project.energy_report_status || "Not Submitted";
+    if (energyReportStatus !== "Complete") {
+      if (energyReportStatus === "Sent") {
+        outstandingItems.push({
+          title: "Energy Report",
+          message: "Energy report has been submitted. We're waiting for completion."
+        });
+      } else {
+        outstandingItems.push({
+          title: "Energy Report",
+          message: "A 7 star energy report is required before we can submit the building permit."
+        });
+      }
+    }
+    
+    // Check Footing Certification Status
+    const footingCertStatus = project.footing_certification_status || "Not Submitted";
+    if (footingCertStatus !== "Complete") {
+      if (footingCertStatus === "Sent") {
+        outstandingItems.push({
+          title: "Footing Certification",
+          message: "Footing certification has been submitted. We're waiting for completion."
+        });
+      } else {
+        outstandingItems.push({
+          title: "Footing Certification",
+          message: "Footing certification is required before we can submit the building permit."
+        });
+      }
+    }
+    
+    // Check Building Permit Status
+    const buildingPermitStatus = project.building_permit_status || "Not Submitted";
+    if (buildingPermitStatus !== "Complete") {
+      if (buildingPermitStatus === "Sent") {
+        outstandingItems.push({
+          title: "Building Permit",
+          message: "Building permit has been submitted. We're waiting for approval."
+        });
+      } else {
+        // Only mention building permit if there are other outstanding items, otherwise it's obvious
+        if (outstandingItems.length > 0) {
+          outstandingItems.push({
+            title: "Building Permit",
+            message: "Building permit submission is pending."
+          });
+        }
+      }
+    }
+    
+    // Add outstanding items to email
+    if (outstandingItems.length > 0) {
+      outstandingItems.forEach((item, index) => {
+        body += `${item.title}:\n`;
+        body += `${item.message}\n\n`;
+      });
+    } else {
+      body += `Great news! All items are complete and your project is progressing well.\n\n`;
+    }
+    
+    // Add process rules context for building permit requirements
+    const buildingPermitRule = PROCESS_RULES.buildingPermit;
+    const unmetRequirements = getUnmetRequirements(buildingPermitRule, project);
+    
+    if (unmetRequirements.length > 0 && buildingPermitStatus !== "Complete" && buildingPermitStatus !== "Sent") {
+      body += `---\n\n`;
+      body += `IMPORTANT: Before we can submit the building permit, we need:\n\n`;
+      unmetRequirements.forEach((req, index) => {
+        body += `${index + 1}. ${req.label}\n`;
+      });
+      body += `\n`;
+      body += `Once all of the above are complete, we'll be able to submit your building permit application.\n\n`;
+    }
+    
+    body += `---\n\n`;
+    body += `If you have any questions, please don't hesitate to reach out.\n\n`;
+    body += `Best regards,\n`;
+    body += `Superior Granny Flats`;
+    
+    const encodedBody = encodeURIComponent(body);
+    const mailtoLink = `mailto:${primaryEmail}?subject=${subject}&body=${encodedBody}`;
+    window.location.href = mailtoLink;
+  }
+
   return (
     <div>
-      <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT }}>
-        Overview
-      </h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+        <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT }}>
+          Overview
+        </h2>
+        <button
+          type="button"
+          onClick={handleOpenFaqModal}
+          style={{
+            background: "#FF9800",
+            color: WHITE,
+            border: "none",
+            borderRadius: "8px",
+            padding: "10px 20px",
+            fontSize: "0.95rem",
+            fontWeight: 500,
+            cursor: "pointer",
+            transition: "background 0.2s",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#F57C00")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#FF9800")}
+        >
+          Ask Virtual Construction Manager
+        </button>
+      </div>
+      
+      {/* FAQ Modal */}
+      {faqModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "20px",
+          }}
+          onClick={handleCloseFaqModal}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              maxWidth: "800px",
+              width: "100%",
+              maxHeight: "90vh",
+              overflow: "auto",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+              position: "relative",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={handleCloseFaqModal}
+              style={{
+                position: "absolute",
+                top: "16px",
+                right: "16px",
+                background: "transparent",
+                border: "none",
+                fontSize: "24px",
+                cursor: "pointer",
+                color: MONUMENT,
+                width: "32px",
+                height: "32px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: "4px",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#f0f0f0";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+              }}
+            >
+              ×
+            </button>
+            
+            <h2 style={{ fontSize: "1.25rem", color: MONUMENT, marginTop: 0, marginBottom: "20px", fontWeight: 600 }}>
+              Ask Virtual Construction Manager
+            </h2>
+            
+            <div style={{ display: "flex", gap: "20px", marginBottom: "20px" }}>
+              {/* Craig Animation */}
+              <div style={{ flexShrink: 0 }}>
+                <img
+                  src={craigImages[currentCraigImage]}
+                  alt="Virtual Construction Manager"
+                  style={{
+                    width: "150px",
+                    height: "150px",
+                    objectFit: "cover",
+                    borderRadius: "8px",
+                    border: `2px solid ${SECTION_GREY}`,
+                  }}
+                />
+              </div>
+              
+              {/* Search Input */}
+              <div style={{ flex: 1 }}>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={handleSearchChange}
+                  placeholder="Ask a question about the process (e.g., 'When can we order windows?', 'What's needed for building permit?')"
+                  style={{
+                    width: "100%",
+                    padding: "12px 16px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "0.95rem",
+                    color: MONUMENT,
+                    boxSizing: "border-box",
+                  }}
+                  autoFocus
+                />
+              </div>
+            </div>
+            
+            {/* Typing Indicator */}
+            {isTyping && searchQuery.trim().length > 0 && (
+              <div style={{ 
+                padding: "16px", 
+                textAlign: "center", 
+                color: SECTION_GREY,
+                fontSize: "0.9rem",
+                fontStyle: "italic"
+              }}>
+                Thinking...
+              </div>
+            )}
+            
+            {/* Search Results */}
+            {searchResults.length > 0 && (
+              <div style={{ marginTop: "20px" }}>
+                {searchResults.map((result, index) => (
+                  <div
+                    key={result.ruleKey}
+                    style={{
+                      marginBottom: "16px",
+                      padding: "16px",
+                      background: "#f6f6f7",
+                      borderRadius: "8px",
+                      border: "1px solid #e0e0e0"
+                    }}
+                  >
+                    <div style={{ 
+                      fontSize: "0.95rem", 
+                      fontWeight: 600, 
+                      color: MONUMENT, 
+                      marginBottom: "8px" 
+                    }}>
+                      Q: {result.question}
+                    </div>
+                    <div 
+                      style={{ 
+                        fontSize: "14px", 
+                        color: "#000000",
+                        whiteSpace: "pre-line",
+                        lineHeight: "1.6",
+                        fontWeight: "normal",
+                        minHeight: "20px",
+                        padding: "8px",
+                        backgroundColor: "#ffffff",
+                        border: "1px solid #cccccc"
+                      }}
+                    >
+                      <p style={{ color: "#000000", margin: 0, padding: 0, minHeight: "20px" }}>
+                        {(() => {
+                          const displayText = displayedTexts[result.ruleKey];
+                          const fullAnswer = result.answer;
+                          const hasDisplayText = result.ruleKey in displayedTexts;
+                          
+                          // If we have display text (even if empty), show it (typewriter is active)
+                          if (hasDisplayText) {
+                            return (
+                              <>
+                                <span style={{ color: "#000000", display: "inline" }}>{displayText || ""}</span>
+                                {displayText && displayText.length < fullAnswer.length && (
+                                  <span style={{ opacity: 0.5, color: "#000000" }}>|</span>
+                                )}
+                              </>
+                            );
+                          } else {
+                            // No display text yet, show full answer
+                            return <span style={{ color: "#000000" }}>{fullAnswer || "No answer available"}</span>;
+                          }
+                        })()}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {searchQuery && !isTyping && searchResults.length === 0 && fullResults.length === 0 && (
+              <div style={{ 
+                padding: "16px", 
+                textAlign: "center", 
+                color: SECTION_GREY,
+                fontSize: "0.9rem"
+              }}>
+                No matching answers found. Try asking about building permits, windows, contracts, or drawings.
+              </div>
+            )}
+            
+            {!searchQuery && (
+              <div style={{ 
+                padding: "16px", 
+                textAlign: "center", 
+                color: SECTION_GREY,
+                fontSize: "0.9rem"
+              }}>
+                Type a question above to search for answers about the project process.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {project && (
         <div style={{ marginTop: "24px", display: "flex", gap: "16px", flexWrap: "wrap" }}>
           {/* Column 1 - Design Phase Progress and Construction Phase Progress */}

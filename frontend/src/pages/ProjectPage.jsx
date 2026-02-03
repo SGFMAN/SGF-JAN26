@@ -10,6 +10,7 @@ import SiteVisit from "./SiteVisit";
 import Contract from "./Contract";
 import Planning from "./Planning";
 import Admin from "./Admin";
+import Robes from "./Robes";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -35,6 +36,14 @@ const MENU_OPTIONS = [
   { label: "Admin", key: "admin" },
 ];
 
+// Construction menu options (simplified)
+const CONSTRUCTION_MENU_OPTIONS = [
+  { label: "Overview", key: "overview" },
+  { label: "Project Info", key: "project-info" },
+  { label: "Client Info", key: "client-info" },
+  { label: "Robes", key: "robes" },
+];
+
 export default function ProjectPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -45,6 +54,7 @@ export default function ProjectPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [allProjects, setAllProjects] = useState([]);
+  const [showProjectMenu, setShowProjectMenu] = useState(false);
   const updateTimeoutRef = useRef(null);
 
   useEffect(() => {
@@ -63,6 +73,15 @@ export default function ProjectPage() {
       setActiveView(viewParam);
     }
   }, [id]);
+
+  // Set default menu view for Construction Phase projects
+  useEffect(() => {
+    if (project && project.status === "Construction Phase") {
+      setShowProjectMenu(true);
+    } else {
+      setShowProjectMenu(false);
+    }
+  }, [project]);
 
   async function fetchAllProjects() {
     try {
@@ -315,8 +334,75 @@ export default function ProjectPage() {
             color: MONUMENT,
           }}
         >
+          {/* Toggle Switch - Only show for Construction Phase projects */}
+          {project && project.status === "Construction Phase" && (
+            <div style={{ marginBottom: "12px", width: "100%" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  background: SECTION_GREY,
+                  borderRadius: "8px",
+                  padding: "4px",
+                  position: "relative",
+                  cursor: "pointer",
+                }}
+                onClick={() => setShowProjectMenu(!showProjectMenu)}
+              >
+                <div
+                  style={{
+                    flex: 1,
+                    textAlign: "center",
+                    padding: "8px 4px",
+                    fontSize: "0.85rem",
+                    fontWeight: showProjectMenu ? 400 : 600,
+                    color: showProjectMenu ? "#666" : MONUMENT,
+                    transition: "all 0.2s",
+                    zIndex: 2,
+                    position: "relative",
+                  }}
+                >
+                  Design
+                </div>
+                <div
+                  style={{
+                    flex: 1,
+                    textAlign: "center",
+                    padding: "8px 4px",
+                    fontSize: "0.85rem",
+                    fontWeight: showProjectMenu ? 600 : 400,
+                    color: showProjectMenu ? MONUMENT : "#666",
+                    transition: "all 0.2s",
+                    zIndex: 2,
+                    position: "relative",
+                  }}
+                >
+                  Construction
+                </div>
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "4px",
+                    left: showProjectMenu ? "50%" : "4px",
+                    width: "calc(50% - 4px)",
+                    height: "calc(100% - 8px)",
+                    background: WHITE,
+                    borderRadius: "6px",
+                    transition: "left 0.2s ease",
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                    zIndex: 1,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           {/* Menu Buttons */}
-          {MENU_OPTIONS.map((item) => (
+          {(project && project.status === "Construction Phase" && showProjectMenu
+            ? CONSTRUCTION_MENU_OPTIONS
+            : MENU_OPTIONS
+          ).map((item) => (
             <button
               key={item.key}
               style={{
@@ -423,6 +509,7 @@ export default function ProjectPage() {
               {activeView === "overview" && <Overview project={project} />}
               {activeView === "project-info" && <ProjectInfo project={project} onUpdate={updateProject} />}
               {activeView === "client-info" && <ClientInfo project={project} onUpdate={updateProject} />}
+              {activeView === "robes" && <Robes project={project} onUpdate={updateProject} />}
               {activeView === "drawings" && <Drawings project={project} onUpdate={updateProject} />}
               {activeView === "colours" && <Colours project={project} onUpdate={updateProject} />}
               {activeView === "windows" && <Windows project={project} onUpdate={updateProject} />}

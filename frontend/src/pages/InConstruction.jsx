@@ -37,7 +37,6 @@ export default function InConstruction() {
     email: "",
     phone: "",
   });
-
   useEffect(() => {
     // Check admin status first so buttons show up quickly
     checkAdminStatus();

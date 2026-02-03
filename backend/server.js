@@ -136,7 +136,8 @@ async function ensureSchema() {
     'water_authority', 'water_declaration_status', 'water_declaration_sent_date', 'water_declaration_complete_date',
     'notes', 'project_info_notes', 'specs', 'classification', 'project_log',
     'window_status', 'window_colour', 'window_reveal', 'window_reveal_other', 'window_glazing', 'window_bal_rating', 'window_date_required', 'window_ordered_date', 'window_order_pdf_location', 'window_order_number',
-    'drawings_status', 'drawings_pdf_location', 'drawings_history', 'colours_status', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status'];
+    'drawings_status', 'drawings_pdf_location', 'drawings_history', 'colours_status', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status',
+    'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location'];
   for (const column of columnsToAdd) {
     try {
       await pool.query(`
@@ -240,7 +241,7 @@ app.get("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
     );
     res.json(r.rows);
   } catch (e) {
@@ -261,7 +262,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
       [id]
     );
     
@@ -354,7 +355,8 @@ app.put("/api/projects/:id", async (req, res) => {
       water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date,
       notes, project_info_notes, specs, classification,
       window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number,
-      drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status } = req.body || {};
+      drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status,
+      number_of_robes, robe_widths } = req.body || {};
     // Convert empty strings to null, but preserve non-empty strings
     const processValue = (val) => {
       if (val === undefined) return null;
@@ -452,8 +454,10 @@ app.put("/api/projects/:id", async (req, res) => {
         project_info_notes = COALESCE($60, project_info_notes),
         specs = COALESCE($61, specs),
         classification = COALESCE($62, classification),
+        number_of_robes = COALESCE($63, number_of_robes),
+        robe_widths = COALESCE($64, robe_widths),
         updated_at = NOW()
-      WHERE id = $63
+      WHERE id = $65
       RETURNING *
       `,
       [
@@ -520,6 +524,8 @@ app.put("/api/projects/:id", async (req, res) => {
         processValue(project_info_notes),
         processValue(specs),
         processValue(classification),
+        processValue(number_of_robes),
+        processValue(robe_widths),
         id
       ]
     );
@@ -1622,6 +1628,260 @@ app.get("/api/files/proposal/:id", async (req, res) => {
   }
 });
 
+// Locate/Upload robe plan PDF (saves file and path)
+app.post("/api/files/locate-robe-plan", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    const { projectId } = req.body;
+    
+    if (!projectId) {
+      return res.status(400).json({ error: "Project ID is required" });
+    }
+
+    // Only accept PDF files
+    if (req.file.mimetype !== "application/pdf" && !req.file.originalname.toLowerCase().endsWith(".pdf")) {
+      return res.status(400).json({ error: "Only PDF files are allowed" });
+    }
+
+    // Get project details to build path
+    let projectPath = null;
+    if (pool) {
+      const projectResult = await pool.query(
+        "SELECT name, suburb, street FROM projects WHERE id = $1",
+        [projectId]
+      );
+      
+      if (projectResult.rows.length > 0) {
+        const project = projectResult.rows[0];
+        // Get root directory from settings
+        const settingsResult = await pool.query("SELECT root_directory FROM settings WHERE id = 1");
+        const rootDir = settingsResult.rows[0]?.root_directory;
+        
+        if (rootDir) {
+          // Build project path: root_directory/street, suburb
+          const projectName = project.street && project.suburb 
+            ? `${project.street}, ${project.suburb}`.replace(/[<>:"/\\|?*]/g, '_')
+            : project.name.replace(/[<>:"/\\|?*]/g, '_');
+          projectPath = path.join(rootDir, projectName);
+        }
+      }
+    }
+
+    // Get the original filename
+    const fileName = req.file.originalname;
+    let fileLocation = fileName; // Default to just filename
+
+    // If we have a project path, save the file there
+    if (projectPath) {
+      try {
+        // Ensure the project folder exists
+        await fs.mkdir(projectPath, { recursive: true });
+        
+        // Save the file with its original name
+        const filePath = path.join(projectPath, fileName);
+        await fs.writeFile(filePath, req.file.buffer);
+        fileLocation = filePath;
+        console.log(`Robe plan PDF saved to: ${filePath}`);
+      } catch (fileError) {
+        console.error("Error saving file:", fileError);
+        // Continue with just filename if file save fails
+      }
+    }
+
+    // Update project record with robe plan PDF location
+    if (pool) {
+      await pool.query(
+        "UPDATE projects SET robe_plan_pdf_location = $1 WHERE id = $2",
+        [fileLocation, projectId]
+      );
+    }
+
+    console.log(`Robe plan PDF location saved: ${fileLocation} for project ${projectId}`);
+    res.json({ 
+      success: true, 
+      message: "Robe plan location saved successfully",
+      fileName: fileName,
+      path: fileLocation
+    });
+  } catch (e) {
+    console.error("Error saving robe plan location:", e);
+    res.status(500).json({ error: e.message || "Failed to save robe plan location" });
+  }
+});
+
+// Serve robe plan PDF
+app.get("/api/files/robe-plan/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    if (!pool) {
+      return res.status(500).json({ error: "DATABASE_URL not set" });
+    }
+
+    // Get project and robe plan PDF location
+    const projectResult = await pool.query(
+      "SELECT robe_plan_pdf_location FROM projects WHERE id = $1",
+      [id]
+    );
+
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    const robePlanPath = projectResult.rows[0].robe_plan_pdf_location;
+
+    if (!robePlanPath) {
+      return res.status(404).json({ error: "Robe plan PDF not found for this project" });
+    }
+
+    // Check if file exists
+    try {
+      await fs.access(robePlanPath);
+    } catch (e) {
+      return res.status(404).json({ error: "Robe plan PDF file does not exist" });
+    }
+
+    // Read and send the file
+    const fileBuffer = await fs.readFile(robePlanPath);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="RobePlan.pdf"`);
+    res.send(fileBuffer);
+  } catch (e) {
+    console.error("Error serving robe plan PDF:", e);
+    res.status(500).json({ error: e.message || "Failed to serve robe plan PDF" });
+  }
+});
+
+// Locate/Upload robe colours PDF (saves file and path)
+app.post("/api/files/locate-robe-colours", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    const { projectId } = req.body;
+    
+    if (!projectId) {
+      return res.status(400).json({ error: "Project ID is required" });
+    }
+
+    // Only accept PDF files
+    if (req.file.mimetype !== "application/pdf" && !req.file.originalname.toLowerCase().endsWith(".pdf")) {
+      return res.status(400).json({ error: "Only PDF files are allowed" });
+    }
+
+    // Get project details to build path
+    let projectPath = null;
+    if (pool) {
+      const projectResult = await pool.query(
+        "SELECT name, suburb, street FROM projects WHERE id = $1",
+        [projectId]
+      );
+      
+      if (projectResult.rows.length > 0) {
+        const project = projectResult.rows[0];
+        // Get root directory from settings
+        const settingsResult = await pool.query("SELECT root_directory FROM settings WHERE id = 1");
+        const rootDir = settingsResult.rows[0]?.root_directory;
+        
+        if (rootDir) {
+          // Build project path: root_directory/street, suburb
+          const projectName = project.street && project.suburb 
+            ? `${project.street}, ${project.suburb}`.replace(/[<>:"/\\|?*]/g, '_')
+            : project.name.replace(/[<>:"/\\|?*]/g, '_');
+          projectPath = path.join(rootDir, projectName);
+        }
+      }
+    }
+
+    // Get the original filename
+    const fileName = req.file.originalname;
+    let fileLocation = fileName; // Default to just filename
+
+    // If we have a project path, save the file there
+    if (projectPath) {
+      try {
+        // Ensure the project folder exists
+        await fs.mkdir(projectPath, { recursive: true });
+        
+        // Save the file with its original name
+        const filePath = path.join(projectPath, fileName);
+        await fs.writeFile(filePath, req.file.buffer);
+        fileLocation = filePath;
+        console.log(`Robe colours PDF saved to: ${filePath}`);
+      } catch (fileError) {
+        console.error("Error saving file:", fileError);
+        // Continue with just filename if file save fails
+      }
+    }
+
+    // Update project record with robe colours PDF location
+    if (pool) {
+      await pool.query(
+        "UPDATE projects SET robe_colours_pdf_location = $1 WHERE id = $2",
+        [fileLocation, projectId]
+      );
+    }
+
+    console.log(`Robe colours PDF location saved: ${fileLocation} for project ${projectId}`);
+    res.json({ 
+      success: true, 
+      message: "Robe colours location saved successfully",
+      fileName: fileName,
+      path: fileLocation
+    });
+  } catch (e) {
+    console.error("Error saving robe colours location:", e);
+    res.status(500).json({ error: e.message || "Failed to save robe colours location" });
+  }
+});
+
+// Serve robe colours PDF
+app.get("/api/files/robe-colours/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    if (!pool) {
+      return res.status(500).json({ error: "DATABASE_URL not set" });
+    }
+
+    // Get project and robe colours PDF location
+    const projectResult = await pool.query(
+      "SELECT robe_colours_pdf_location FROM projects WHERE id = $1",
+      [id]
+    );
+
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    const robeColoursPath = projectResult.rows[0].robe_colours_pdf_location;
+
+    if (!robeColoursPath) {
+      return res.status(404).json({ error: "Robe colours PDF not found for this project" });
+    }
+
+    // Check if file exists
+    try {
+      await fs.access(robeColoursPath);
+    } catch (e) {
+      return res.status(404).json({ error: "Robe colours PDF file does not exist" });
+    }
+
+    // Read and send the file
+    const fileBuffer = await fs.readFile(robeColoursPath);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="RobeColours.pdf"`);
+    res.send(fileBuffer);
+  } catch (e) {
+    console.error("Error serving robe colours PDF:", e);
+    res.status(500).json({ error: e.message || "Failed to serve robe colours PDF" });
+  }
+});
+
 // Delete project
 app.delete("/api/projects/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
@@ -1648,6 +1908,224 @@ app.delete("/api/projects/:id", async (req, res) => {
   } catch (e) {
     try { await pool.query('ROLLBACK'); } catch {}
     res.status(500).json({ error: e.message || "Failed to delete project" });
+  }
+});
+
+// ========== HOTLIST ENDPOINTS ==========
+// Hotlist items are stored as projects with status "Hotlist"
+
+// List hotlist items (projects with status "Hotlist")
+app.get("/api/hotlist", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  try {
+    const r = await pool.query(
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, updated_at FROM projects WHERE status = $1 ORDER BY updated_at DESC, id DESC",
+      ["Hotlist"]
+    );
+    res.json(r.rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Get single hotlist item
+app.get("/api/hotlist/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: "invalid id" });
+  }
+
+  try {
+    const r = await pool.query(
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, updated_at FROM projects WHERE id = $1 AND status = $2",
+      [id, "Hotlist"]
+    );
+    
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: "not found" });
+    }
+    
+    res.json(r.rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Create hotlist item (as project with status "Hotlist")
+app.post("/api/hotlist", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  try {
+    const { street, suburb, state, client_name, email, phone } = req.body || {};
+    
+    // Derive name from street + suburb (same as normal projects)
+    const projectName = `${street || ""}, ${suburb || ""}`.trim() || "New Hotlist Item";
+    
+    // Derive year from current date
+    const currentYear = new Date().getFullYear().toString();
+
+    // Create initial project log entry
+    const now = new Date();
+    const dateTimeStr = now.toISOString().replace('T', ' ').substring(0, 19);
+    const initialLogEntry = `${dateTimeStr} - Hotlist Item Created`;
+
+    // Use same fields as normal projects - populate client1_name, client1_email, client1_phone
+    const r = await pool.query(
+      `INSERT INTO projects (name, status, suburb, street, state, client_name, email, phone, year, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, project_log) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) RETURNING id, name, status, suburb, street, state, client_name, email, phone, updated_at`,
+      [
+        projectName,
+        "Hotlist", // Status is "Hotlist"
+        suburb ? suburb.trim() : null,
+        street ? street.trim() : null,
+        state ? state.trim() : null,
+        client_name ? client_name.trim() : null,
+        email ? email.trim() : null,
+        phone ? phone.trim() : null,
+        currentYear,
+        client_name ? client_name.trim() : null, // client1_name (same as client_name)
+        email ? email.trim() : null, // client1_email (same as email)
+        phone ? phone.trim() : null, // client1_phone (same as phone)
+        'true',  // client1_active
+        null,    // client2_active
+        null,    // client3_active
+        'Not Sent',  // contract_status
+        'Not Sent',  // supporting_documents_status
+        'Not Required',  // water_authority
+        'Not Sent',  // water_declaration_status
+        'Not Selected',  // planning_status
+        'Not Submitted',  // energy_report_status
+        'Not Submitted',  // footing_certification_status
+        'Not Submitted',  // building_permit_status
+        initialLogEntry,  // project_log
+      ]
+    );
+
+    res.json(r.rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Update hotlist item
+app.put("/api/hotlist/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: "invalid id" });
+  }
+
+  try {
+    const { street, suburb, state, client_name, email, phone } = req.body || {};
+    
+    const processValue = (val) => {
+      if (val === undefined) return null;
+      if (typeof val === "string") {
+        const trimmed = val.trim();
+        return trimmed === "" ? null : trimmed;
+      }
+      return val;
+    };
+
+    // Derive name from street + suburb
+    const projectName = `${processValue(street) || ""}, ${processValue(suburb) || ""}`.trim() || "New Hotlist Item";
+
+    // Keep client1 fields in sync with client_name, email, phone (same as normal projects)
+    const r = await pool.query(
+      `UPDATE projects 
+       SET name = $1, street = $2, suburb = $3, state = $4, client_name = $5, email = $6, phone = $7, 
+           client1_name = $5, client1_email = $6, client1_phone = $7, updated_at = NOW()
+       WHERE id = $8 AND status = $9 RETURNING id, name, status, suburb, street, state, client_name, email, phone, updated_at`,
+      [
+        projectName,
+        processValue(street),
+        processValue(suburb),
+        processValue(state),
+        processValue(client_name),
+        processValue(email),
+        processValue(phone),
+        id,
+        "Hotlist"
+      ]
+    );
+
+    if (r.rowCount === 0) {
+      return res.status(404).json({ error: "not found" });
+    }
+
+    res.json(r.rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Delete hotlist item
+app.delete("/api/hotlist/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: "invalid id" });
+  }
+
+  try {
+    const r = await pool.query(
+      "DELETE FROM projects WHERE id = $1 AND status = $2 RETURNING id, name, status, suburb, street, state, client_name, email, phone, updated_at",
+      [id, "Hotlist"]
+    );
+    if (r.rowCount === 0) {
+      return res.status(404).json({ error: "not found" });
+    }
+    res.json({ success: true, deleted: r.rows[0] });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Failed to delete hotlist item" });
+  }
+});
+
+// Upgrade hotlist item to project (Sold) - changes status from "Hotlist" to "Design Phase"
+app.post("/api/hotlist/:id/sold", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: "invalid id" });
+  }
+
+  try {
+    // Get project with Hotlist status
+    const projectResult = await pool.query(
+      "SELECT * FROM projects WHERE id = $1 AND status = $2",
+      [id, "Hotlist"]
+    );
+    
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "hotlist item not found" });
+    }
+
+    const project = projectResult.rows[0];
+    
+    // Update project log
+    const now = new Date();
+    const dateTimeStr = now.toISOString().replace('T', ' ').substring(0, 19);
+    const logEntry = project.project_log 
+      ? `${project.project_log}\n${dateTimeStr} - Status changed from Hotlist to Design Phase (Sold)`
+      : `${dateTimeStr} - Status changed from Hotlist to Design Phase (Sold)`;
+
+    // Update status from "Hotlist" to "Design Phase"
+    const updateResult = await pool.query(
+      `UPDATE projects 
+       SET status = $1, project_log = $2, updated_at = NOW()
+       WHERE id = $3 RETURNING *`,
+      ["Design Phase", logEntry, id]
+    );
+
+    const updatedProject = updateResult.rows[0];
+
+    res.json({ success: true, project: updatedProject });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Failed to upgrade hotlist item to project" });
   }
 });
 
