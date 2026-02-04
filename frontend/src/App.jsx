@@ -9,6 +9,10 @@ import InConstruction from "./pages/InConstruction";
 import SiteVisitManager from "./pages/SiteVisitManager";
 import SiteVisitPlanner from "./pages/SiteVisitPlanner";
 import Hotlist from "./pages/Hotlist";
+import Managers from "./pages/Managers";
+import ContractManager from "./pages/ContractManager";
+import StatusManager from "./pages/StatusManager";
+import Sales from "./pages/Sales";
 
 export default function App() {
   return (
@@ -24,6 +28,11 @@ export default function App() {
         <Route path="/site-visit-manager" element={<SiteVisitManager />} />
         <Route path="/site-visit-planner" element={<SiteVisitPlanner />} />
         <Route path="/hotlist" element={<Hotlist />} />
+        <Route path="/managers" element={<Managers />} />
+        <Route path="/managers/site-visit-manager" element={<SiteVisitManager />} />
+        <Route path="/managers/contract-manager" element={<ContractManager />} />
+        <Route path="/managers/status-manager" element={<StatusManager />} />
+        <Route path="/sales" element={<Sales />} />
       </Routes>
     </BrowserRouter>
   );

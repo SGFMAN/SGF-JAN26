@@ -67,7 +67,7 @@ export default function SiteVisitPlanner() {
     if (location.state && location.state.group) {
       setGroup(location.state.group);
     } else {
-      navigate("/site-visit-manager");
+      navigate("/managers/site-visit-manager");
       return;
     }
     fetchProjects();
@@ -214,9 +214,12 @@ export default function SiteVisitPlanner() {
     return replaced;
   }
 
-  // Get projects in the selected group
+  // Get projects in the selected group (excluding Hotlist projects)
   const groupProjects = group
-    ? projects.filter((project) => group.projectIds.includes(project.id))
+    ? projects.filter((project) => 
+        group.projectIds.includes(project.id) && 
+        project.status !== "Hotlist"
+      )
     : [];
 
   // Get unscheduled projects
@@ -679,7 +682,7 @@ export default function SiteVisitPlanner() {
             Finished Projects
           </Link>
           <Link
-            to="/site-visit-manager"
+            to="/managers/site-visit-manager"
             style={{
               background: WHITE,
               color: MONUMENT,
@@ -780,7 +783,7 @@ export default function SiteVisitPlanner() {
             </h2>
             <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
               <button
-                onClick={() => navigate("/site-visit-manager")}
+                onClick={() => navigate("/managers/site-visit-manager")}
                 style={{
                   padding: "10px 20px",
                   fontSize: "1rem",

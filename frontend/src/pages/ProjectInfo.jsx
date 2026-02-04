@@ -15,7 +15,8 @@ const CLASSIFICATION_OPTIONS = [
   "Home Office / Studio",
   "Dwelling & DPU",
   "Dwelling & SSD",
-  "SSD & DPU"
+  "SSD & DPU",
+  "Dual Occ"
 ];
 
 function getLongestText(arr, include = "") {

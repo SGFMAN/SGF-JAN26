@@ -680,7 +680,7 @@ export default function Hotlist() {
             Finished Projects
           </Link>
           <Link
-            to="/site-visit-manager"
+            to="/managers"
             style={{
               background: "transparent",
               color: "#404049",
@@ -699,7 +699,7 @@ export default function Hotlist() {
               display: "block",
             }}
           >
-            Site Visit Manager
+            Managers
           </Link>
           {isAdmin && (
             <Link

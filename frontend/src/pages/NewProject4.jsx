@@ -18,6 +18,33 @@ const STREAM_OPTIONS = [
 
 const DEPOSIT_OPTIONS = ["Full 5%", "$5k only", "Other"];
 
+const SPECS_OPTIONS = ["Affordable", "Superior"];
+
+const CLASSIFICATION_OPTIONS = [
+  "Small Second Dwelling",
+  "Dependant Persons Unit",
+  "Detached Extension",
+  "Dwelling",
+  "Home Office / Studio",
+  "Dwelling & DPU",
+  "Dwelling & SSD",
+  "SSD & DPU",
+  "Dual Occ"
+];
+
+// Classification mapping for abbreviations (same as HomePage.jsx)
+const CLASSIFICATION_MAP = {
+  "Small Second Dwelling": "SSD",
+  "Dependant Persons Unit": "DPU",
+  "Detached Extension": "DEX",
+  "Dwelling": "DWE",
+  "Home Office / Studio": "STU",
+  "Dwelling & DPU": "D&DPU",
+  "Dwelling & SSD": "D&SSD",
+  "SSD & DPU": "SSD&DPU",
+  "Dual Occ": "DOC",
+};
+
 export default function NewProject4({ isOpen, onClose, formData, onFormDataChange, onBack, onCreate, onNext }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDepositModal, setShowDepositModal] = useState(false);
@@ -277,7 +304,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
         // Get current year (same as backend uses)
         const currentYear = new Date().getFullYear().toString();
         
-        // Construct folder path: root_directory\YEAR\STATE\SUBURB - STREET
+        // Construct folder path: root_directory\YEAR\STATE\SUBURB - STREET (CLASSIFICATION)
         const suburb = (formData.suburb || "").toUpperCase();
         const street = formData.street || "";
         const state = (formData.state || "").toUpperCase();
@@ -288,7 +315,12 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
           return;
         }
         
-        folderPath = `${rootDirectory}\\${currentYear}\\${state}\\${suburb} - ${street}`;
+        // Get classification abbreviation
+        const classificationAbbr = formData.classification && CLASSIFICATION_MAP[formData.classification]
+          ? ` (${CLASSIFICATION_MAP[formData.classification]})`
+          : "";
+        
+        folderPath = `${rootDirectory}\\${currentYear}\\${state}\\${suburb} - ${street}${classificationAbbr}`;
         
         // Create folder via backend API (also copies template structure)
         console.log("Creating folder at path:", folderPath);
@@ -324,11 +356,16 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
             const street = formData.street || "";
             const state = (formData.state || "").toUpperCase();
             
+            // Get classification abbreviation
+            const classificationAbbr = formData.classification && CLASSIFICATION_MAP[formData.classification]
+              ? ` (${CLASSIFICATION_MAP[formData.classification]})`
+              : "";
+            
             if (state) {
-              folderPath = `${rootDirectory}\\${currentYear}\\${state}\\${suburb} - ${street}`;
+              folderPath = `${rootDirectory}\\${currentYear}\\${state}\\${suburb} - ${street}${classificationAbbr}`;
             } else {
               // Fallback to old format if state not provided
-              folderPath = `${rootDirectory}\\${currentYear}\\${suburb} - ${street}`;
+              folderPath = `${rootDirectory}\\${currentYear}\\${suburb} - ${street}${classificationAbbr}`;
             }
           }
         }
@@ -492,130 +529,206 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
                 ))}
               </select>
             </div>
+            <div style={{ flex: 1 }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  color: "#32323399",
+                  marginBottom: "6px",
+                  fontWeight: 500,
+                }}
+              >
+                Deposit Amount
+              </label>
+              <input
+                type="text"
+                name="depositAmount"
+                value={actualDepositAmount}
+                onChange={(e) => {
+                  // Allow manual editing of deposit amount
+                  const numericValue = e.target.value.replace(/[^0-9]/g, "");
+                  const numeric = parseInt(numericValue) || 0;
+                  const formattedValue = numeric > 0 ? `$${formatWithCommas(numeric)}` : "";
+                  onFormDataChange({
+                    ...formData,
+                    deposit: formattedValue,
+                    customDeposit: formattedValue, // Store as custom deposit when manually edited
+                  });
+                  // If manually editing, set deposit type to "Other"
+                  if (formattedValue && depositType !== "Other") {
+                    setDepositType("Other");
+                  }
+                }}
+                placeholder="$0"
+                disabled={!depositType}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "none",
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                  opacity: depositType ? 1 : 0.6,
+                  cursor: depositType ? "text" : "not-allowed",
+                }}
+                autoComplete="off"
+              />
+            </div>
           </div>
-          <div style={{ marginBottom: "16px" }}>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.9rem",
-                color: "#32323399",
-                marginBottom: "6px",
-                fontWeight: 500,
-              }}
-            >
-              Deposit Amount
-            </label>
-            <input
-              type="text"
-              name="depositAmount"
-              value={actualDepositAmount}
-              onChange={(e) => {
-                // Allow manual editing of deposit amount
-                const numericValue = e.target.value.replace(/[^0-9]/g, "");
-                const numeric = parseInt(numericValue) || 0;
-                const formattedValue = numeric > 0 ? `$${formatWithCommas(numeric)}` : "";
-                onFormDataChange({
-                  ...formData,
-                  deposit: formattedValue,
-                  customDeposit: formattedValue, // Store as custom deposit when manually edited
-                });
-                // If manually editing, set deposit type to "Other"
-                if (formattedValue && depositType !== "Other") {
-                  setDepositType("Other");
-                }
-              }}
-              placeholder="$0"
-              disabled={!depositType}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: "none",
-                fontSize: "1rem",
-                color: MONUMENT,
-                background: WHITE,
-                boxSizing: "border-box",
-                opacity: depositType ? 1 : 0.6,
-                cursor: depositType ? "text" : "not-allowed",
-              }}
-              autoComplete="off"
-            />
-          </div>
-          <div style={{ marginBottom: "16px" }}>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.9rem",
-                color: "#32323399",
-                marginBottom: "6px",
-                fontWeight: 500,
-              }}
-            >
-              Salesperson
-            </label>
-            <select
-              name="salesperson"
-              value={formData.salesperson || ""}
-              onChange={handleChange}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: "none",
-                fontSize: "1rem",
-                color: MONUMENT,
-                background: WHITE,
-                boxSizing: "border-box",
-                cursor: "pointer",
-              }}
-            >
-              <option value="">Select Salesperson</option>
-              {loadingSalesUsers ? (
-                <option value="">Loading...</option>
-              ) : (
-                salesTeamUsers.map((user) => (
-                  <option key={user.id} value={user.name}>
-                    {user.name}
+          <div style={{ marginBottom: "16px", display: "flex", gap: "12px" }}>
+            <div style={{ flex: 1 }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  color: "#32323399",
+                  marginBottom: "6px",
+                  fontWeight: 500,
+                }}
+              >
+                Salesperson
+              </label>
+              <select
+                name="salesperson"
+                value={formData.salesperson || ""}
+                onChange={handleChange}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "none",
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                  cursor: "pointer",
+                }}
+              >
+                <option value="">Select Salesperson</option>
+                {loadingSalesUsers ? (
+                  <option value="">Loading...</option>
+                ) : (
+                  salesTeamUsers.map((user) => (
+                    <option key={user.id} value={user.name}>
+                      {user.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  color: "#32323399",
+                  marginBottom: "6px",
+                  fontWeight: 500,
+                }}
+              >
+                Stream
+              </label>
+              <select
+                name="stream"
+                value={formData.stream}
+                onChange={handleChange}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "none",
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                  cursor: "pointer",
+                }}
+              >
+                <option value="">Select Stream</option>
+                {STREAM_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
                   </option>
-                ))
-              )}
-            </select>
+                ))}
+              </select>
+            </div>
           </div>
-          <div style={{ marginBottom: "24px" }}>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.9rem",
-                color: "#32323399",
-                marginBottom: "6px",
-                fontWeight: 500,
-              }}
-            >
-              Stream
-            </label>
-            <select
-              name="stream"
-              value={formData.stream}
-              onChange={handleChange}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: "none",
-                fontSize: "1rem",
-                color: MONUMENT,
-                background: WHITE,
-                boxSizing: "border-box",
-                cursor: "pointer",
-              }}
-            >
-              <option value="">Select Stream</option>
-              {STREAM_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+          <div style={{ marginBottom: "24px", display: "flex", gap: "12px" }}>
+            <div style={{ flex: 1 }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  color: "#32323399",
+                  marginBottom: "6px",
+                  fontWeight: 500,
+                }}
+              >
+                Specs
+              </label>
+              <select
+                name="specs"
+                value={formData.specs || ""}
+                onChange={handleChange}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "none",
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                  cursor: "pointer",
+                }}
+              >
+                <option value="">Select Specs</option>
+                {SPECS_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  color: "#32323399",
+                  marginBottom: "6px",
+                  fontWeight: 500,
+                }}
+              >
+                Classification
+              </label>
+              <select
+                name="classification"
+                value={formData.classification || ""}
+                onChange={handleChange}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "none",
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                  cursor: "pointer",
+                }}
+              >
+                <option value="">Select Classification</option>
+                {CLASSIFICATION_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>

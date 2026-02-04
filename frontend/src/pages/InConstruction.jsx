@@ -78,8 +78,26 @@ export default function InConstruction() {
       "Dwelling & DPU": { acronym: "D&DPU", color: "#6699cc" }, // Blue-Purple mix
       "Dwelling & SSD": { acronym: "D&SSD", color: "#8066cc" }, // Purple-Blue mix
       "SSD & DPU": { acronym: "SSD&DPU", color: "#0099cc" }, // Blue-Green mix
+      "Dual Occ": { acronym: "DOC", color: "#cc6600" }, // Brown-Orange
     };
     return classification ? classificationMap[classification] : null;
+  }
+
+  // Stream mapping for acronyms
+  const getStreamInfo = (stream) => {
+    const streamMap = {
+      "SGF - VIC": { acronym: "VIC SALE", color: "#a1a1a3" }, // Grey
+      "SGF - QLD": { acronym: "QLD SALE", color: "#a1a1a3" }, // Grey
+      "Dual Dwelling": { acronym: "DDI SALE", color: "#a1a1a3" }, // Grey
+      "ATA": { acronym: "ATA SALE", color: "#a1a1a3" }, // Grey
+      "Pumped on Property": { acronym: "POP SALE", color: "#a1a1a3" }, // Grey
+      "Pumped On Property": { acronym: "POP SALE", color: "#a1a1a3" }, // Grey (handle both variations)
+      "Henderson": { acronym: "HEN SALE", color: "#a1a1a3" }, // Grey
+      "Creat Cash Flow": { acronym: "CCF SALE", color: "#a1a1a3" }, // Grey
+      "Create Cash Flow": { acronym: "CCF SALE", color: "#a1a1a3" }, // Grey (handle both variations)
+      "Maple Group": { acronym: "MAP SALE", color: "#a1a1a3" }, // Grey
+    };
+    return stream ? streamMap[stream] : null;
   }
 
   return (
@@ -257,7 +275,7 @@ export default function InConstruction() {
             Finished Projects
           </Link>
           <Link
-            to="/site-visit-manager"
+            to="/managers"
             style={{
               background: "transparent",
               color: "#404049",
@@ -276,7 +294,7 @@ export default function InConstruction() {
               display: "block",
             }}
           >
-            Site Visit Manager
+            Managers
           </Link>
           {isAdmin && (
             <Link
@@ -343,7 +361,7 @@ export default function InConstruction() {
         >
           <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "16px" }}>
             In Construction {(() => {
-              const constructionProjects = projects.filter((project) => project.status === "Construction Phase");
+              const constructionProjects = projects.filter((project) => project.status === "Construction Phase" && project.status !== "Hotlist");
               return constructionProjects.length > 0 ? `(${constructionProjects.length} total)` : "";
             })()}
           </h2>
@@ -385,8 +403,8 @@ export default function InConstruction() {
           {loading && <p style={{ color: "#32323399" }}>Loading projects...</p>}
           {error && <p style={{ color: "#cc3333" }}>Error: {error}</p>}
           {!loading && !error && projects.length > 0 && (() => {
-            // Filter to only show projects with "Construction Phase" status
-            const constructionProjects = projects.filter((project) => project.status === "Construction Phase");
+            // Filter to only show projects with "Construction Phase" status (exclude Hotlist)
+            const constructionProjects = projects.filter((project) => project.status === "Construction Phase" && project.status !== "Hotlist");
             
             // Filter projects based on search query
             let filteredProjects = searchQuery.trim()
@@ -429,6 +447,7 @@ export default function InConstruction() {
                   const suburb = project.suburb || "Unknown Suburb";
                   const street = project.street || "No address";
                   const classificationInfo = getClassificationInfo(project.classification);
+                  const streamInfo = getStreamInfo(project.stream);
 
                   return (
                     <Link
@@ -506,14 +525,31 @@ export default function InConstruction() {
                             zIndex: project.status === "Cancelled" ? 1 : "auto",
                           }}
                         >
-                          <div style={{ fontWeight: 600, fontSize: "1.1rem" }}>
-                            {suburb}
+                          <div style={{ fontWeight: 600, fontSize: "1.1rem", color: "#ffffff" }}>
+                            {suburb.toUpperCase()}
                           </div>
-                          <div style={{ fontSize: "0.95rem", color: "#a1a1a3", fontWeight: 400 }}>
+                          <div style={{ fontSize: "0.95rem", color: "#ffffff", fontWeight: 400 }}>
                             {street}
                           </div>
                         </div>
-                        {/* Classification Acronym */}
+                        {/* Stream Acronym - Left Bottom */}
+                        {streamInfo && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              bottom: "8px",
+                              left: "8px",
+                              fontSize: "0.85rem",
+                              fontWeight: 700,
+                              color: streamInfo.color,
+                              zIndex: (project.status === "Cancelled") ? 11 : 5,
+                              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                            }}
+                          >
+                            {streamInfo.acronym}
+                          </div>
+                        )}
+                        {/* Classification Acronym - Right Bottom */}
                         {classificationInfo && (
                           <div
                             style={{

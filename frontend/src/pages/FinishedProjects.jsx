@@ -243,7 +243,7 @@ export default function FinishedProjects() {
             Finished Projects
           </Link>
           <Link
-            to="/site-visit-manager"
+            to="/managers"
             style={{
               background: "transparent",
               color: "#404049",
@@ -262,7 +262,7 @@ export default function FinishedProjects() {
               display: "block",
             }}
           >
-            Site Visit Manager
+            Managers
           </Link>
           {isAdmin && (
             <Link
@@ -331,7 +331,7 @@ export default function FinishedProjects() {
         >
           <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "16px" }}>
             Finished Projects {(() => {
-              const finishedProjects = projects.filter((project) => project.status === "Complete" || project.status === "Cancelled");
+              const finishedProjects = projects.filter((project) => (project.status === "Complete" || project.status === "Cancelled") && project.status !== "Hotlist");
               return finishedProjects.length > 0 ? `(${finishedProjects.length} total)` : "";
             })()}
           </h2>
@@ -377,15 +377,15 @@ export default function FinishedProjects() {
             </p>
           )}
           {!loading && !error && (() => {
-            const finishedProjects = projects.filter((project) => project.status === "Complete" || project.status === "Cancelled");
+            const finishedProjects = projects.filter((project) => (project.status === "Complete" || project.status === "Cancelled") && project.status !== "Hotlist");
             if (finishedProjects.length === 0) {
               return <p style={{ color: "#32323399" }}>No finished projects found.</p>;
             }
             return null;
           })()}
           {!loading && !error && projects.length > 0 && (() => {
-            // Filter to only show projects with "Complete" or "Cancelled" status
-            const finishedProjects = projects.filter((project) => project.status === "Complete" || project.status === "Cancelled");
+            // Filter to only show projects with "Complete" or "Cancelled" status (exclude Hotlist)
+            const finishedProjects = projects.filter((project) => (project.status === "Complete" || project.status === "Cancelled") && project.status !== "Hotlist");
             
             // Filter projects based on search query
             let filteredProjects = searchQuery.trim()
@@ -424,34 +424,50 @@ export default function FinishedProjects() {
                   alignItems: "flex-start",
                 }}
               >
-                {filteredProjects.map((project) => (
-                  <Link
-                    key={project.id}
-                    to={`/project/${project.id}`}
-                    style={{
-                      textDecoration: "none",
-                      display: "block",
-                    }}
-                  >
-                    <div
+                {filteredProjects.map((project) => {
+                  // Stream mapping
+                  const streamMap = {
+                    "SGF - VIC": { acronym: "VIC SALE", color: "#a1a1a3" }, // Grey
+                    "SGF - QLD": { acronym: "QLD SALE", color: "#a1a1a3" }, // Grey
+                    "Dual Dwelling": { acronym: "DDI SALE", color: "#a1a1a3" }, // Grey
+                    "ATA": { acronym: "ATA SALE", color: "#a1a1a3" }, // Grey
+                    "Pumped on Property": { acronym: "POP SALE", color: "#a1a1a3" }, // Grey
+                    "Pumped On Property": { acronym: "POP SALE", color: "#a1a1a3" }, // Grey (handle both variations)
+                    "Henderson": { acronym: "HEN SALE", color: "#a1a1a3" }, // Grey
+                    "Creat Cash Flow": { acronym: "CCF SALE", color: "#a1a1a3" }, // Grey
+                    "Create Cash Flow": { acronym: "CCF SALE", color: "#a1a1a3" }, // Grey (handle both variations)
+                    "Maple Group": { acronym: "MAP SALE", color: "#a1a1a3" }, // Grey
+                  };
+                  const streamInfo = project.stream ? streamMap[project.stream] : null;
+
+                  return (
+                    <Link
+                      key={project.id}
+                      to={`/project/${project.id}`}
                       style={{
-                        background: MONUMENT,
-                        borderRadius: "8px",
-                        width: "200px",
-                        height: "100px",
-                        color: SECTION_GREY,
-                        cursor: "pointer",
-                        transition: "opacity 0.2s",
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "center",
-                        alignItems: "center",
-                        position: "relative",
-                        overflow: "hidden",
+                        textDecoration: "none",
+                        display: "block",
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
-                      onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
                     >
+                      <div
+                        style={{
+                          background: MONUMENT,
+                          borderRadius: "8px",
+                          width: "200px",
+                          height: "100px",
+                          color: SECTION_GREY,
+                          cursor: "pointer",
+                          transition: "opacity 0.2s",
+                          display: "flex",
+                          flexDirection: "column",
+                          justifyContent: "center",
+                          alignItems: "center",
+                          position: "relative",
+                          overflow: "hidden",
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+                        onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                      >
                       {/* Cancelled Diagonal Band */}
                       {project.status === "Cancelled" && (
                         <div
@@ -500,19 +516,37 @@ export default function FinishedProjects() {
                           zIndex: project.status === "Cancelled" ? 1 : "auto",
                         }}
                       >
-                        <div style={{ fontWeight: 600, fontSize: "1.1rem" }}>
-                          {project.suburb || "Unknown Suburb"}
+                        <div style={{ fontWeight: 600, fontSize: "1.1rem", color: "#ffffff" }}>
+                          {(project.suburb || "Unknown Suburb").toUpperCase()}
                         </div>
-                        <div style={{ fontSize: "0.95rem", color: "#a1a1a3", fontWeight: 400 }}>
+                        <div style={{ fontSize: "0.95rem", color: "#ffffff", fontWeight: 400 }}>
                           {project.street || "No address"}
                         </div>
                       </div>
                       <div style={{ fontSize: "0.9rem", color: "#323233cc", textAlign: "center", position: "relative", zIndex: project.status === "Cancelled" ? 1 : "auto" }}>
                         Status: {project.status}
                       </div>
+                      {/* Stream Acronym - Left Bottom */}
+                      {streamInfo && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            bottom: "8px",
+                            left: "8px",
+                            fontSize: "0.85rem",
+                            fontWeight: 700,
+                            color: streamInfo.color,
+                            zIndex: (project.status === "Cancelled") ? 11 : 5,
+                            textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                          }}
+                        >
+                          {streamInfo.acronym}
+                        </div>
+                      )}
                     </div>
                   </Link>
-                ))}
+                  );
+                })}
               </div>
             );
           })()}

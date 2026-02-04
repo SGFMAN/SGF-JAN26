@@ -123,6 +123,49 @@ async function ensureSchema() {
       PRIMARY KEY (user_id, position_id)
     );
   `);
+  // Create substatuses table to store all possible substatuses and their details
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS substatuses (
+      id SERIAL PRIMARY KEY,
+      substatus TEXT NOT NULL,
+      detail TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(substatus, detail)
+    );
+  `);
+  // Initialize default substatuses and details
+  const defaultSubstatuses = [
+    { substatus: "Town Planning", detail: "Further Information Required" },
+    { substatus: "Town Planning", detail: "Section 50 Advertising" },
+    { substatus: "Town Planning", detail: "Planning Permit Received – Waiting Flood Consent" },
+    { substatus: "Town Planning", detail: "Waiting Arborist Report" },
+    { substatus: "Town Planning", detail: "Planner on Leave" },
+    { substatus: "Town Planning", detail: "Waiting Hydraulic Engineer Assessment" },
+    { substatus: "VicSmart", detail: "Waiting Hydraulic Engineer Assessment" },
+    { substatus: "Waiting", detail: "Covenant Removal" },
+    { substatus: "Waiting", detail: "Deposit Balance" },
+    { substatus: "Waiting", detail: "Hydraulic Engineering" },
+    { substatus: "Waiting", detail: "Vince Assessment" },
+    { substatus: "Waiting", detail: "PIC" },
+    { substatus: "Waiting", detail: "Engineering" },
+    { substatus: "Waiting", detail: "Approved Working Drawings" },
+    { substatus: "Waiting", detail: "Approved Concept Drawings" },
+    { substatus: "Waiting", detail: "Signed Contract and Docs" },
+    { substatus: "Waiting", detail: "Septic Permit" },
+    { substatus: "Waiting", detail: "JCA & Soil" },
+  ];
+  for (const item of defaultSubstatuses) {
+    try {
+      await pool.query(`
+        INSERT INTO substatuses (substatus, detail)
+        VALUES ($1, $2)
+        ON CONFLICT (substatus, detail) DO NOTHING
+      `, [item.substatus, item.detail]);
+    } catch (e) {
+      // Ignore errors for existing entries
+    }
+  }
   // Add new columns if they don't exist (for existing tables)
   const columnsToAdd = ['suburb', 'street', 'client_name', 'email', 'phone', 'stream', 'state', 'year',
     'deposit',
@@ -137,7 +180,7 @@ async function ensureSchema() {
     'notes', 'project_info_notes', 'specs', 'classification', 'project_log',
     'window_status', 'window_colour', 'window_reveal', 'window_reveal_other', 'window_glazing', 'window_bal_rating', 'window_date_required', 'window_ordered_date', 'window_order_pdf_location', 'window_order_number',
     'drawings_status', 'drawings_pdf_location', 'drawings_history', 'colours_status', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status',
-    'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location'];
+    'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail'];
   for (const column of columnsToAdd) {
     try {
       await pool.query(`
@@ -241,7 +284,7 @@ app.get("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
     );
     res.json(r.rows);
   } catch (e) {
@@ -262,7 +305,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
       [id]
     );
     
@@ -283,11 +326,11 @@ app.get("/api/projects/:id", async (req, res) => {
 app.post("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const { name, status, suburb, street, state, stream, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone } = req.body || {};
+    const { name, status, suburb, street, state, stream, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, specs, classification, year } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
 
-    // Derive year from current date
-    const currentYear = new Date().getFullYear().toString();
+    // Use provided year (full date) or derive from current date
+    const projectYear = year || new Date().toISOString().split('T')[0];
 
     // Create initial project log entry
     const now = new Date();
@@ -295,8 +338,8 @@ app.post("/api/projects", async (req, res) => {
     const initialLogEntry = `${dateTimeStr} - Project Created`;
 
     const r = await pool.query(
-      `INSERT INTO projects (name, status, suburb, street, state, stream, year, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, project_log) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28) RETURNING *`,
+      `INSERT INTO projects (name, status, suburb, street, state, stream, year, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, specs, classification, project_log) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30) RETURNING *`,
       [
         name.trim(),
         (status || "Design Phase").trim(),
@@ -304,7 +347,7 @@ app.post("/api/projects", async (req, res) => {
         street ? street.trim() : null,
         state ? state.trim() : null,
         stream ? stream.trim() : null,
-        currentYear,
+        projectYear,
         deposit ? deposit.trim() : null,
         project_cost ? project_cost.trim() : null,
         salesperson ? salesperson.trim() : null,
@@ -325,6 +368,8 @@ app.post("/api/projects", async (req, res) => {
         'Not Submitted',  // energy_report_status - default to Not Submitted
         'Not Submitted',  // footing_certification_status - default to Not Submitted
         'Not Submitted',  // building_permit_status - default to Not Submitted
+        specs ? specs.trim() : null,  // specs
+        classification ? classification.trim() : null,  // classification
         initialLogEntry,  // project_log - initial entry
       ]
     );
@@ -356,7 +401,7 @@ app.put("/api/projects/:id", async (req, res) => {
       notes, project_info_notes, specs, classification,
       window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number,
       drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status,
-      number_of_robes, robe_widths } = req.body || {};
+      number_of_robes, robe_widths, substatus, substatus_detail } = req.body || {};
     // Convert empty strings to null, but preserve non-empty strings
     const processValue = (val) => {
       if (val === undefined) return null;
@@ -456,8 +501,10 @@ app.put("/api/projects/:id", async (req, res) => {
         classification = COALESCE($62, classification),
         number_of_robes = COALESCE($63, number_of_robes),
         robe_widths = COALESCE($64, robe_widths),
+        substatus = COALESCE($65, substatus),
+        substatus_detail = COALESCE($66, substatus_detail),
         updated_at = NOW()
-      WHERE id = $65
+      WHERE id = $67
       RETURNING *
       `,
       [
@@ -526,6 +573,8 @@ app.put("/api/projects/:id", async (req, res) => {
         processValue(classification),
         processValue(number_of_robes),
         processValue(robe_widths),
+        processValue(substatus),
+        processValue(substatus_detail),
         id
       ]
     );
@@ -1281,7 +1330,7 @@ app.post("/api/files/locate-proposal", upload.single("file"), async (req, res) =
     let projectPath = null;
     if (pool) {
       const projectResult = await pool.query(
-        "SELECT name, suburb, street FROM projects WHERE id = $1",
+        "SELECT name, suburb, street, state, year, classification FROM projects WHERE id = $1",
         [projectId]
       );
       
@@ -1292,11 +1341,53 @@ app.post("/api/files/locate-proposal", upload.single("file"), async (req, res) =
         const rootDir = settingsResult.rows[0]?.root_directory;
         
         if (rootDir) {
-          // Build project path: root_directory/street, suburb
-          const projectName = project.street && project.suburb 
-            ? `${project.street}, ${project.suburb}`.replace(/[<>:"/\\|?*]/g, '_')
-            : project.name.replace(/[<>:"/\\|?*]/g, '_');
-          projectPath = path.join(rootDir, projectName);
+          // Extract year from year field (could be "2026-01-15" or just "2026")
+          let projectYear = "";
+          if (project.year) {
+            const yearStr = project.year.toString();
+            if (yearStr.includes("-")) {
+              // Extract year from date format (YYYY-MM-DD)
+              projectYear = yearStr.split("-")[0];
+            } else {
+              // Already just a year
+              projectYear = yearStr;
+            }
+          } else {
+            // Fallback to current year if no year set
+            projectYear = new Date().getFullYear().toString();
+          }
+          
+          // Get state (uppercase)
+          const state = (project.state || "").toUpperCase();
+          
+          if (!state) {
+            return res.status(400).json({ error: "Project state is required to save proposal" });
+          }
+          
+          // Get suburb and street
+          const suburb = (project.suburb || "").toUpperCase();
+          const street = project.street || "";
+          
+          // Get classification abbreviation
+          const classificationMap = {
+            "Small Second Dwelling": "SSD",
+            "Dependant Persons Unit": "DPU",
+            "Detached Extension": "DEX",
+            "Dwelling": "DWE",
+            "Home Office / Studio": "STU",
+            "Dwelling & DPU": "D&DPU",
+            "Dwelling & SSD": "D&SSD",
+            "SSD & DPU": "SSD&DPU",
+            "Dual Occ": "DOC",
+          };
+          
+          const classificationAbbr = project.classification && classificationMap[project.classification]
+            ? ` (${classificationMap[project.classification]})`
+            : "";
+          
+          // Build project path: root_directory/year/state/suburb - street (classification)
+          const projectFolderName = `${suburb} - ${street}${classificationAbbr}`.replace(/[<>:"/\\|?*]/g, '_');
+          projectPath = path.join(rootDir, projectYear, state, projectFolderName);
         }
       }
     }
@@ -1305,21 +1396,13 @@ app.post("/api/files/locate-proposal", upload.single("file"), async (req, res) =
     const fileName = req.file.originalname;
     let fileLocation = fileName; // Default to just filename
 
-    // If we have a project path, save the file there
+    // If we have a project path, construct the expected file location
+    // (Don't create folders or copy files - just store the path to where the file should be)
     if (projectPath) {
-      try {
-        // Ensure the project folder exists
-        await fs.mkdir(projectPath, { recursive: true });
-        
-        // Save the file with its original name
-        const filePath = path.join(projectPath, fileName);
-        await fs.writeFile(filePath, req.file.buffer);
-        fileLocation = filePath;
-        console.log(`Proposal PDF saved to: ${filePath}`);
-      } catch (fileError) {
-        console.error("Error saving file:", fileError);
-        // Continue with just filename if file save fails
-      }
+      // Construct the full file path where the proposal should be located
+      const filePath = path.join(projectPath, fileName);
+      fileLocation = filePath;
+      console.log(`Proposal PDF location set to: ${filePath} (no files or folders created)`);
     }
 
     // Update project record with proposal PDF location
@@ -2081,6 +2164,42 @@ app.delete("/api/hotlist/:id", async (req, res) => {
     res.json({ success: true, deleted: r.rows[0] });
   } catch (e) {
     res.status(500).json({ error: e.message || "Failed to delete hotlist item" });
+  }
+});
+
+// Get all substatuses
+app.get("/api/substatuses", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  try {
+    const result = await pool.query(
+      "SELECT * FROM substatuses ORDER BY substatus, detail"
+    );
+    res.json(result.rows);
+  } catch (e) {
+    console.error("Error fetching substatuses:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Add a new substatus
+app.post("/api/substatuses", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  try {
+    const { substatus, detail } = req.body;
+    if (!substatus) {
+      return res.status(400).json({ error: "substatus is required" });
+    }
+    const result = await pool.query(
+      `INSERT INTO substatuses (substatus, detail)
+       VALUES ($1, $2)
+       ON CONFLICT (substatus, detail) DO UPDATE SET updated_at = NOW()
+       RETURNING *`,
+      [substatus, detail || null]
+    );
+    res.json(result.rows[0]);
+  } catch (e) {
+    console.error("Error creating substatus:", e);
+    res.status(500).json({ error: e.message });
   }
 });
 

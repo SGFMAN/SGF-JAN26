@@ -60,9 +60,12 @@ export default function SiteVisitManager() {
     }
   }
 
-  // Filter projects with site visit status "Not Complete" and sort alphabetically
+  // Filter projects with site visit status "Not Complete" (excluding Hotlist projects) and sort alphabetically
   const incompleteSiteVisits = projects
-    .filter((project) => (project.site_visit_status || "Not Complete") === "Not Complete")
+    .filter((project) => 
+      (project.site_visit_status || "Not Complete") === "Not Complete" &&
+      project.status !== "Hotlist"
+    )
     .sort((a, b) => {
       const suburbA = (a.suburb || "").toLowerCase();
       const suburbB = (b.suburb || "").toLowerCase();
@@ -226,6 +229,75 @@ export default function SiteVisitManager() {
         >
           {/* Menu Buttons */}
           <Link
+            to="/managers/site-visit-manager"
+            style={{
+              background: WHITE,
+              color: MONUMENT,
+              border: "none",
+              borderRadius: "10px",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              textAlign: "center",
+              textDecoration: "none",
+              letterSpacing: "0.5px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              marginBottom: "0px",
+              lineHeight: "1.4",
+              outline: `2px solid ${MONUMENT}`,
+              boxShadow: "0 2px 4px rgba(50,50,51,.04)",
+              display: "block",
+            }}
+          >
+            Site Visit Manager
+          </Link>
+          <Link
+            to="/managers/contract-manager"
+            style={{
+              background: "transparent",
+              color: "#404049",
+              border: "none",
+              borderRadius: "10px",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              textAlign: "center",
+              textDecoration: "none",
+              letterSpacing: "0.5px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              marginBottom: "0px",
+              lineHeight: "1.4",
+              display: "block",
+            }}
+          >
+            Contract Manager
+          </Link>
+          <Link
+            to="/managers/status-manager"
+            style={{
+              background: "transparent",
+              color: "#404049",
+              border: "none",
+              borderRadius: "10px",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              textAlign: "center",
+              textDecoration: "none",
+              letterSpacing: "0.5px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              marginBottom: "0px",
+              lineHeight: "1.4",
+              display: "block",
+            }}
+          >
+            Status Manager
+          </Link>
+          <div style={{ flex: 1 }} />
+          <Link
             to="/projects"
             style={{
               background: "transparent",
@@ -245,121 +317,8 @@ export default function SiteVisitManager() {
               display: "block",
             }}
           >
-            In Design
+            ← Back to Main
           </Link>
-          <Link
-            to="/in-construction"
-            style={{
-              background: "transparent",
-              color: "#404049",
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            In Construction
-          </Link>
-          <Link
-            to="/finished-projects"
-            style={{
-              background: "transparent",
-              color: "#404049",
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            Finished Projects
-          </Link>
-          <Link
-            to="/site-visit-manager"
-            style={{
-              background: WHITE,
-              color: MONUMENT,
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              outline: `2px solid ${MONUMENT}`,
-              boxShadow: "0 2px 4px rgba(50,50,51,.04)",
-              display: "block",
-            }}
-          >
-            Site Visit Manager
-          </Link>
-          {isAdmin && (
-            <Link
-              to="/settings"
-              style={{
-                background: "transparent",
-                color: "#404049",
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                display: "block",
-              }}
-            >
-              Settings
-            </Link>
-          )}
-          {isAdmin && (
-            <Link
-              to="/apply-fields"
-              style={{
-                background: "transparent",
-                color: "#404049",
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                display: "block",
-              }}
-            >
-              Apply Fields
-            </Link>
-          )}
         </div>
 
         {/* Section 3: Content */}
@@ -402,9 +361,10 @@ export default function SiteVisitManager() {
                 className="projects-list"
                 style={{
                   gridColumn: "span 6",
-                  display: "grid",
-                  gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
-                  gap: "12px",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "20px",
+                  alignItems: "flex-start",
                   overflowY: "auto",
                   alignContent: "flex-start",
                   minWidth: 0,
@@ -425,16 +385,41 @@ export default function SiteVisitManager() {
                   });
 
                   return allProjects.map(({ project, group }) => {
-                    const suburb = project.suburb || "Unknown Suburb";
+                    const suburb = (project.suburb || "Unknown Suburb").toUpperCase();
                     const street = project.street || "No address";
-                    const notes = project.site_visit_notes?.trim();
                     const isSelected = selectedProjectIds.has(project.id);
                     const isAlreadyGrouped = group !== null;
                     // Use group color if project is in a group, blue if selected, otherwise use MONUMENT
                     const cardBackground = group ? group.color : (isSelected ? "#0066cc" : MONUMENT);
-                    // Use white text if project is in a group or selected, otherwise use SECTION_GREY
-                    const textColor = (group || isSelected) ? WHITE : SECTION_GREY;
-                    const secondaryTextColor = (group || isSelected) ? "#ffffffcc" : "#a1a1a3";
+                    
+                    // Stream mapping
+                    const streamMap = {
+                      "SGF - VIC": { acronym: "VIC SALE", color: SECTION_GREY },
+                      "SGF - QLD": { acronym: "QLD SALE", color: SECTION_GREY },
+                      "Dual Dwelling": { acronym: "DDI SALE", color: SECTION_GREY },
+                      "ATA": { acronym: "ATA SALE", color: SECTION_GREY },
+                      "Pumped on Property": { acronym: "POP SALE", color: SECTION_GREY },
+                      "Pumped On Property": { acronym: "POP SALE", color: SECTION_GREY },
+                      "Henderson": { acronym: "HEN SALE", color: SECTION_GREY },
+                      "Creat Cash Flow": { acronym: "CCF SALE", color: SECTION_GREY },
+                      "Create Cash Flow": { acronym: "CCF SALE", color: SECTION_GREY },
+                      "Maple Group": { acronym: "MAP SALE", color: SECTION_GREY },
+                    };
+                    const streamInfo = project.stream ? streamMap[project.stream] : null;
+                    
+                    // Classification mapping
+                    const classificationMap = {
+                      "Small Second Dwelling": { acronym: "SSD", color: "#0066cc" },
+                      "Dependant Persons Unit": { acronym: "DPU", color: "#33cc33" },
+                      "Detached Extension": { acronym: "DEX", color: "#ff9900" },
+                      "Dwelling": { acronym: "DWE", color: "#9966cc" },
+                      "Home Office / Studio": { acronym: "STU", color: "#ffcc00" },
+                      "Dwelling & DPU": { acronym: "D&DPU", color: "#6699cc" },
+                      "Dwelling & SSD": { acronym: "D&SSD", color: "#8066cc" },
+                      "SSD & DPU": { acronym: "SSD&DPU", color: "#0099cc" },
+                      "Dual Occ": { acronym: "DOC", color: "#cc6600" },
+                    };
+                    const classificationInfo = project.classification ? classificationMap[project.classification] : null;
                     
                     return (
                       <div
@@ -448,9 +433,9 @@ export default function SiteVisitManager() {
                           style={{
                             background: cardBackground,
                             borderRadius: "8px",
-                            width: "100%",
+                            width: "200px",
                             height: "100px",
-                            color: textColor,
+                            color: SECTION_GREY,
                             cursor: "pointer",
                             transition: "opacity 0.2s",
                             display: "flex",
@@ -459,7 +444,6 @@ export default function SiteVisitManager() {
                             alignItems: "center",
                             position: "relative",
                             overflow: "hidden",
-                            boxSizing: "border-box",
                           }}
                           onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
                           onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
@@ -526,6 +510,40 @@ export default function SiteVisitManager() {
                                   </span>
                                 </div>
                               )}
+                              {/* Stream Acronym - Left Bottom */}
+                              {streamInfo && (
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    bottom: "8px",
+                                    left: "8px",
+                                    fontSize: "0.85rem",
+                                    fontWeight: 700,
+                                    color: streamInfo.color,
+                                    zIndex: (project.status === "On Hold" || project.status === "Cancelled") ? 11 : 5,
+                                    textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                                  }}
+                                >
+                                  {streamInfo.acronym}
+                                </div>
+                              )}
+                              {/* Classification Acronym - Right Bottom */}
+                              {classificationInfo && (
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    bottom: "8px",
+                                    right: "8px",
+                                    fontSize: "0.85rem",
+                                    fontWeight: 700,
+                                    color: classificationInfo.color,
+                                    zIndex: (project.status === "On Hold" || project.status === "Cancelled") ? 11 : 5,
+                                    textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                                  }}
+                                >
+                                  {classificationInfo.acronym}
+                                </div>
+                              )}
                               <div
                                 style={{
                                   fontWeight: 600,
@@ -540,20 +558,26 @@ export default function SiteVisitManager() {
                                   flexDirection: "column",
                                   gap: "4px",
                                   position: "relative",
-                                  zIndex: (project.status === "On Hold" || project.status === "Cancelled") ? 1 : "auto",
+                                  zIndex: project.status === "On Hold" ? 1 : "auto",
                                 }}
                               >
-                                <div style={{ fontWeight: 600, fontSize: "1.1rem", color: textColor }}>
+                                <div style={{ fontWeight: 600, fontSize: "1.1rem", color: WHITE }}>
                                   {suburb}
                                 </div>
-                                <div style={{ fontSize: "0.95rem", color: secondaryTextColor, fontWeight: 400 }}>
+                                <div style={{ fontSize: "0.95rem", color: WHITE, fontWeight: 400 }}>
                                   {street}
                                 </div>
-                                {notes && (
-                                  <div style={{ fontSize: "0.8rem", color: secondaryTextColor, fontWeight: 400, marginTop: "2px" }}>
-                                    {notes}
-                                  </div>
-                                )}
+                              </div>
+                              <div 
+                                style={{ 
+                                  fontSize: "0.9rem", 
+                                  color: "#323233cc", 
+                                  textAlign: "center",
+                                  position: "relative",
+                                  zIndex: project.status === "On Hold" ? 1 : "auto",
+                                }}
+                              >
+                                Status: {project.status}
                               </div>
                             </div>
                       </div>

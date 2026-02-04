@@ -29,6 +29,10 @@ export default function Admin({ project, onUpdate }) {
   const [stream, setStream] = useState(project?.stream || "");
   const [customDeposit, setCustomDeposit] = useState("");
   const [projectCost, setProjectCost] = useState("");
+  const [projectDate, setProjectDate] = useState("");
+  const [salesperson, setSalesperson] = useState(project?.salesperson || "");
+  const [salesTeamUsers, setSalesTeamUsers] = useState([]);
+  const [loadingSalesUsers, setLoadingSalesUsers] = useState(false);
   
   useEffect(() => {
     // Initialize deposit amount - format with commas
@@ -49,18 +53,70 @@ export default function Admin({ project, onUpdate }) {
     } else {
       setProjectCost("");
     }
+
+    // Initialize project date
+    // If year field exists and is a date (YYYY-MM-DD format), use it
+    // If it's just a year (e.g., "2024"), convert to date
+    // Otherwise, leave empty for user to set
+    if (project?.year) {
+      const yearValue = project.year;
+      // Check if it's already a date (YYYY-MM-DD format)
+      if (/^\d{4}-\d{2}-\d{2}$/.test(yearValue)) {
+        setProjectDate(yearValue);
+      } else if (/^\d{4}$/.test(yearValue)) {
+        // It's just a year, set to January 1st of that year
+        setProjectDate(`${yearValue}-01-01`);
+      } else {
+        setProjectDate("");
+      }
+    } else {
+      setProjectDate("");
+    }
   }, [project]);
   
-  const valuesRef = useRef({ stream, deposit: customDeposit, projectCost });
+  const valuesRef = useRef({ stream, deposit: customDeposit, projectCost, projectDate, salesperson });
   
   useEffect(() => {
-    valuesRef.current = { stream, deposit: customDeposit, projectCost };
-  }, [stream, customDeposit, projectCost]);
+    valuesRef.current = { stream, deposit: customDeposit, projectCost, projectDate, salesperson };
+  }, [stream, customDeposit, projectCost, projectDate, salesperson]);
+
+  // Fetch sales team users on mount
+  useEffect(() => {
+    fetchSalesTeamUsers();
+  }, []);
+
+  async function fetchSalesTeamUsers() {
+    setLoadingSalesUsers(true);
+    try {
+      // Fetch all users
+      const usersResponse = await fetch(`${API_URL}/api/users`);
+      if (!usersResponse.ok) {
+        throw new Error("Failed to fetch users");
+      }
+      const allUsers = await usersResponse.json();
+      
+      // Filter users who have "Sales Team" as one of their positions
+      const salesUsers = allUsers.filter((user) => {
+        if (!user.positions || !Array.isArray(user.positions)) return false;
+        return user.positions.some((position) => 
+          position.name && position.name.toLowerCase() === "sales team"
+        );
+      });
+      
+      setSalesTeamUsers(salesUsers);
+    } catch (error) {
+      console.error("Error fetching sales team users:", error);
+      setSalesTeamUsers([]);
+    } finally {
+      setLoadingSalesUsers(false);
+    }
+  }
 
   // NO AUTOSIZING ANYMORE, always 300px
   
   useEffect(() => {
     setStream(project?.stream || "");
+    setSalesperson(project?.salesperson || "");
   }, [project]);
 
   async function saveField(fieldName, value) {
@@ -122,6 +178,21 @@ export default function Admin({ project, onUpdate }) {
     setStream(newStream);
     valuesRef.current.stream = newStream;
     await saveField("stream", newStream);
+  }
+
+  async function handleSalespersonChange(e) {
+    const newSalesperson = e.target.value;
+    setSalesperson(newSalesperson);
+    valuesRef.current.salesperson = newSalesperson;
+    await saveField("salesperson", newSalesperson);
+  }
+
+  async function handleProjectDateChange(e) {
+    const newDate = e.target.value;
+    setProjectDate(newDate);
+    valuesRef.current.projectDate = newDate;
+    // Save to the "year" field (keeping same field name for backward compatibility)
+    await saveField("year", newDate);
   }
 
   function handleCustomDepositChange(e) {
@@ -226,30 +297,62 @@ export default function Admin({ project, onUpdate }) {
               </select>
             </div>
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
-                Year
+              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", display: "flex", gap: "12px" }}>
+                <div style={{ flex: "1" }}>Start Date</div>
+                <div style={{ flex: "1" }}>Project Days</div>
               </div>
-              <div
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                  maxWidth: "100%",
-                }}
-              >
-                {project.year || "Not set"}
+              <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                <input
+                  type="date"
+                  value={projectDate}
+                  onChange={handleProjectDateChange}
+                  style={{
+                    flex: "1",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                    cursor: "pointer",
+                  }}
+                />
+                <input
+                  type="text"
+                  value={(() => {
+                    if (!projectDate) return "";
+                    const startDate = new Date(projectDate);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    startDate.setHours(0, 0, 0, 0);
+                    const diffTime = today - startDate;
+                    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                    return diffDays >= 0 ? diffDays.toString() : "";
+                  })()}
+                  readOnly
+                  style={{
+                    flex: "1",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                    cursor: "default",
+                  }}
+                />
               </div>
             </div>
             <div style={{ marginBottom: "16px" }}>
               <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
                 Salesperson
               </div>
-              <div
+              <select
+                name="salesperson"
+                value={salesperson}
+                onChange={handleSalespersonChange}
                 style={{
                   width: "100%",
                   padding: "10px 12px",
@@ -259,11 +362,22 @@ export default function Admin({ project, onUpdate }) {
                   color: MONUMENT,
                   background: WHITE,
                   boxSizing: "border-box",
+                  cursor: "pointer",
+                  display: "inline-block",
                   maxWidth: "100%",
                 }}
               >
-                {project.salesperson || "Not set"}
-              </div>
+                <option value="">Select Salesperson</option>
+                {loadingSalesUsers ? (
+                  <option value="">Loading...</option>
+                ) : (
+                  salesTeamUsers.map((user) => (
+                    <option key={user.id} value={user.name}>
+                      {user.name}
+                    </option>
+                  ))
+                )}
+              </select>
             </div>
           </div>
 

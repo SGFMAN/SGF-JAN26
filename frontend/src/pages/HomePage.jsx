@@ -85,7 +85,7 @@ const FIELD_DEFINITIONS = {
   },
   year: {
     label: "Year",
-    values: ["2023", "2024", "2025", "2026"],
+    values: [], // Will be populated dynamically from projects
     defaultValue: new Date().getFullYear().toString(),
   },
 };
@@ -108,6 +108,8 @@ export default function HomePage() {
     customDeposit: "",
     projectCost: "",
     salesperson: "",
+    specs: "",
+    classification: "",
     clientName: "",
     email: "",
     phone: "",
@@ -168,6 +170,8 @@ export default function HomePage() {
         deposit: formData.deposit || null, // Deposit amount (formatted with commas)
         project_cost: formData.projectCost || null, // Project cost (formatted with commas)
         salesperson: formData.salesperson || null,
+        specs: formData.specs || null,
+        classification: formData.classification || null,
         client_name: formData.clientName || null,
         email: formData.email || null,
         phone: formData.phone || null,
@@ -175,6 +179,8 @@ export default function HomePage() {
         client1_name: formData.clientName || null,
         client1_email: formData.email || null,
         client1_phone: formData.phone || null,
+        // Store current date in YYYY-MM-DD format
+        year: new Date().toISOString().split('T')[0],
       }),
     });
 
@@ -198,6 +204,8 @@ export default function HomePage() {
       customDeposit: "",
       projectCost: "",
       salesperson: "",
+      specs: "",
+      classification: "",
       clientName: "",
       email: "",
       phone: "",
@@ -210,7 +218,22 @@ export default function HomePage() {
     const fieldDef = FIELD_DEFINITIONS[fieldName];
     if (!fieldDef) return project[fieldName] || "";
     
-    const value = project[fieldName];
+    let value = project[fieldName];
+    
+    // Special handling for year field: extract year from date
+    if (fieldName === "year" && value) {
+      // If it's a date (YYYY-MM-DD), extract just the year
+      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        value = value.substring(0, 4);
+      }
+      // If it's already just a year (YYYY), use it as is
+      // If NULL or empty, return the default value
+      if (!value || value === null || value === undefined || value === "") {
+        return fieldDef.defaultValue || "";
+      }
+      return value;
+    }
+    
     // If NULL or empty, return the default value
     if (!value || value === null || value === undefined || value === "") {
       return fieldDef.defaultValue || "";
@@ -236,6 +259,12 @@ export default function HomePage() {
         }
       }
     });
+
+    // For year field, only use values from projects (don't include predefined values)
+    // This ensures we only show years that actually exist in projects
+    if (selectedField === "year") {
+      return Array.from(projectValues).sort((a, b) => b.localeCompare(a)); // Sort descending (newest first)
+    }
 
     // Combine predefined values with actual project values
     const allValues = new Set([...fieldDef.values, ...Array.from(projectValues)]);
@@ -481,7 +510,7 @@ export default function HomePage() {
             Finished Projects
           </Link>
           <Link
-            to="/site-visit-manager"
+            to="/managers"
             style={{
               background: "transparent",
               color: "#404049",
@@ -500,8 +529,31 @@ export default function HomePage() {
               display: "block",
             }}
           >
-            Site Visit Manager
+            Managers
           </Link>
+          <Link
+            to="/sales"
+            style={{
+              background: "transparent",
+              color: "#404049",
+              border: "none",
+              borderRadius: "10px",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              textAlign: "center",
+              textDecoration: "none",
+              letterSpacing: "0.5px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              marginBottom: "0px",
+              lineHeight: "1.4",
+              display: "block",
+            }}
+          >
+            Sales
+          </Link>
+          <div style={{ flex: 1 }} />
           {isAdmin && (
             <Link
               to="/settings"
@@ -760,8 +812,24 @@ export default function HomePage() {
                     "Dwelling & DPU": { acronym: "D&DPU", color: "#6699cc" }, // Blue-Purple mix
                     "Dwelling & SSD": { acronym: "D&SSD", color: "#8066cc" }, // Purple-Blue mix
                     "SSD & DPU": { acronym: "SSD&DPU", color: "#0099cc" }, // Blue-Green mix
+                    "Dual Occ": { acronym: "DOC", color: "#cc6600" }, // Brown-Orange
                   };
                   const classificationInfo = project.classification ? classificationMap[project.classification] : null;
+
+                  // Stream mapping
+                  const streamMap = {
+                    "SGF - VIC": { acronym: "VIC SALE", color: SECTION_GREY }, // Grey
+                    "SGF - QLD": { acronym: "QLD SALE", color: SECTION_GREY }, // Grey
+                    "Dual Dwelling": { acronym: "DDI SALE", color: SECTION_GREY }, // Grey
+                    "ATA": { acronym: "ATA SALE", color: SECTION_GREY }, // Grey
+                    "Pumped on Property": { acronym: "POP SALE", color: SECTION_GREY }, // Grey
+                    "Pumped On Property": { acronym: "POP SALE", color: SECTION_GREY }, // Grey (handle both variations)
+                    "Henderson": { acronym: "HEN SALE", color: SECTION_GREY }, // Grey
+                    "Creat Cash Flow": { acronym: "CCF SALE", color: SECTION_GREY }, // Grey
+                    "Create Cash Flow": { acronym: "CCF SALE", color: SECTION_GREY }, // Grey (handle both variations)
+                    "Maple Group": { acronym: "MAP SALE", color: SECTION_GREY }, // Grey
+                  };
+                  const streamInfo = project.stream ? streamMap[project.stream] : null;
 
                   return (
                     <Link
@@ -853,7 +921,24 @@ export default function HomePage() {
                             </span>
                           </div>
                         )}
-                        {/* Classification Acronym */}
+                        {/* Stream Acronym - Left Bottom */}
+                        {streamInfo && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              bottom: "8px",
+                              left: "8px",
+                              fontSize: "0.85rem",
+                              fontWeight: 700,
+                              color: streamInfo.color,
+                              zIndex: (project.status === "On Hold" || project.status === "Cancelled") ? 11 : 5,
+                              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                            }}
+                          >
+                            {streamInfo.acronym}
+                          </div>
+                        )}
+                        {/* Classification Acronym - Right Bottom */}
                         {classificationInfo && (
                           <div
                             style={{
@@ -887,10 +972,10 @@ export default function HomePage() {
                             zIndex: project.status === "On Hold" ? 1 : "auto",
                           }}
                         >
-                          <div style={{ fontWeight: 600, fontSize: "1.1rem" }}>
-                            {project.suburb || "Unknown Suburb"}
+                          <div style={{ fontWeight: 600, fontSize: "1.1rem", color: WHITE }}>
+                            {(project.suburb || "Unknown Suburb").toUpperCase()}
                           </div>
-                          <div style={{ fontSize: "0.95rem", color: "#a1a1a3", fontWeight: 400 }}>
+                          <div style={{ fontSize: "0.95rem", color: WHITE, fontWeight: 400 }}>
                             {project.street || "No address"}
                           </div>
                         </div>
