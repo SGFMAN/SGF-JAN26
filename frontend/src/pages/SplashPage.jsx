@@ -17,10 +17,59 @@ export default function SplashPage() {
   const [adminPassword, setAdminPassword] = useState(null);
   const [checkingPassword, setCheckingPassword] = useState(false);
 
+  // Check if running in development (localhost:5173)
+  const isDevelopment = window.location.hostname === 'localhost' && window.location.port === '5173';
+
   useEffect(() => {
-    fetchUsers();
-    fetchPasswords();
-  }, []);
+    // Check if already logged in
+    const loggedInUserId = localStorage.getItem("loggedInUserId");
+    if (loggedInUserId) {
+      // Already logged in, redirect to projects
+      navigate("/projects");
+      return;
+    }
+
+    async function autoLoginDev() {
+      try {
+        // Fetch users to find an admin
+        const response = await fetch(`${API_URL}/api/users`);
+        if (!response.ok) {
+          throw new Error("Failed to fetch users");
+        }
+        const usersData = await response.json();
+        setUsers(usersData);
+
+        // Find first admin user, or first user if no admin exists
+        const adminUser = usersData.find((u) => 
+          u.positions && 
+          Array.isArray(u.positions) && 
+          u.positions.some((p) => p.name === "Admin")
+        ) || usersData[0];
+
+        if (adminUser) {
+          // Auto-login as admin in dev mode
+          localStorage.setItem("loggedInUserId", adminUser.id.toString());
+          localStorage.setItem("passwordType", "admin"); // Always use admin password type in dev
+          navigate("/projects");
+        } else {
+          setLoading(false);
+          alert("No users found. Please create a user first.");
+        }
+      } catch (error) {
+        console.error("Error in dev auto-login:", error);
+        setLoading(false);
+      }
+    }
+
+    if (isDevelopment) {
+      // Auto-login in development mode
+      autoLoginDev();
+    } else {
+      // Normal login flow for production
+      fetchUsers();
+      fetchPasswords();
+    }
+  }, [isDevelopment, navigate]);
 
   async function fetchUsers() {
     try {
@@ -103,6 +152,11 @@ export default function SplashPage() {
 
     // Navigate to projects page
     navigate("/projects");
+  }
+
+  // In development, don't show login screen (auto-login handles it)
+  if (isDevelopment && loading) {
+    return null; // Or a loading spinner if you prefer
   }
 
   return (
