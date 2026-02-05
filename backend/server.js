@@ -97,24 +97,14 @@ async function appModeMiddleware(req, res, next) {
   // EDIT mode - check if admin
   const isAdmin = await isAdminRequest(req);
   
-  // Allow admin requests
+  // Allow admin requests (admins can access everything)
   if (isAdmin) {
     return next();
   }
   
-  // Allow login-related routes (needed for users to authenticate and become admins)
-  if (req.path === "/api/users" || 
-      req.path === "/api/settings" ||
-      req.path === "/api/login" ||
-      req.path === "/api/logout") {
-    return next();
-  }
-  
-  // Allow app-mode endpoints so admin can change mode (but they still need to be admin)
-  if (req.path === "/api/admin/app-mode" && (req.method === "GET" || req.method === "PUT")) {
-    // This will be checked again in the route handler
-    return next();
-  }
+  // In EDIT mode, block ALL requests from non-admins
+  // This includes login endpoints - users cannot log in during maintenance
+  // Admin will use localhost:5173 (dev server) to switch back to USE mode
   
   // Block all other requests in EDIT mode
   if (req.path.startsWith("/api/")) {
@@ -175,13 +165,118 @@ async function appModeMiddleware(req, res, next) {
 // Serve the built frontend (Vite dist) on the same port
 // ------------------------------------------------------------
 const frontendDist = path.join(__dirname, "..", "frontend", "dist");
-app.use(express.static(frontendDist));
 
-// Apply app mode middleware AFTER static files but BEFORE API routes
+// Apply app mode middleware for API routes
 app.use(appModeMiddleware);
 
-// SPA fallback: for any non-API route, return index.html (this will be caught by middleware if in EDIT mode)
-app.get(/^\/(?!api).*/, (req, res) => {
+// Handle root route and index.html BEFORE express.static
+// This ensures we can block non-admins in EDIT mode
+app.get(["/", "/index.html"], async (req, res) => {
+  const mode = await getAppMode();
+  if (mode === "EDIT") {
+    const isAdmin = await isAdminRequest(req);
+    if (!isAdmin) {
+      return res.status(503).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>SGF Central - Under Maintenance</title>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              min-height: 100vh;
+              margin: 0;
+              background: #42464d;
+              color: #fff;
+            }
+            .container {
+              text-align: center;
+              padding: 40px;
+              max-width: 600px;
+            }
+            h1 {
+              font-size: 2.5rem;
+              margin-bottom: 20px;
+              color: #fff;
+            }
+            p {
+              font-size: 1.2rem;
+              line-height: 1.6;
+              color: #e0e0e0;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>Under Construction</h1>
+            <p>SGF Central is under maintenance. Please try again shortly.</p>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+  }
+  res.sendFile(path.join(frontendDist, "index.html"));
+});
+
+// Serve static assets (JS, CSS, images) - these are always allowed
+// This comes AFTER the root route handler so index.html is handled above
+app.use(express.static(frontendDist, { index: false })); // index: false prevents serving index.html automatically
+
+// SPA fallback: for any other non-API route, return index.html (after checking app mode)
+app.get(/^\/(?!api).*/, async (req, res) => {
+  const mode = await getAppMode();
+  if (mode === "EDIT") {
+    const isAdmin = await isAdminRequest(req);
+    if (!isAdmin) {
+      return res.status(503).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>SGF Central - Under Maintenance</title>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              min-height: 100vh;
+              margin: 0;
+              background: #42464d;
+              color: #fff;
+            }
+            .container {
+              text-align: center;
+              padding: 40px;
+              max-width: 600px;
+            }
+            h1 {
+              font-size: 2.5rem;
+              margin-bottom: 20px;
+              color: #fff;
+            }
+            p {
+              font-size: 1.2rem;
+              line-height: 1.6;
+              color: #e0e0e0;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>Under Construction</h1>
+            <p>SGF Central is under maintenance. Please try again shortly.</p>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+  }
   res.sendFile(path.join(frontendDist, "index.html"));
 });
 
