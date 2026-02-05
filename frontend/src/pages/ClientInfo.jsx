@@ -24,21 +24,29 @@ export default function ClientInfo({ project, onUpdate }) {
   const [client3Phone, setClient3Phone] = useState(project?.client3_phone || "");
   const [client3Active, setClient3Active] = useState(project?.client3_active === 'true');
 
+  // Client Notes state
+  const [clientNotes, setClientNotes] = useState(project?.client_notes || "");
+
   // Use ref to track latest values for saving
   const valuesRef = useRef({
     client1Name, client1Email, client1Phone, client1Active,
     client2Name, client2Email, client2Phone, client2Active,
-    client3Name, client3Email, client3Phone, client3Active
+    client3Name, client3Email, client3Phone, client3Active,
+    clientNotes
   });
+
+  // Save timeout for autosave
+  const saveTimeoutRef = useRef(null);
 
   // Update ref whenever state changes
   useEffect(() => {
     valuesRef.current = {
       client1Name, client1Email, client1Phone, client1Active,
       client2Name, client2Email, client2Phone, client2Active,
-      client3Name, client3Email, client3Phone, client3Active
+      client3Name, client3Email, client3Phone, client3Active,
+      clientNotes
     };
-  }, [client1Name, client1Email, client1Phone, client1Active, client2Name, client2Email, client2Phone, client2Active, client3Name, client3Email, client3Phone, client3Active]);
+  }, [client1Name, client1Email, client1Phone, client1Active, client2Name, client2Email, client2Phone, client2Active, client3Name, client3Email, client3Phone, client3Active, clientNotes]);
 
   // Update state when project changes
   useEffect(() => {
@@ -54,6 +62,7 @@ export default function ClientInfo({ project, onUpdate }) {
     setClient3Email(project?.client3_email || "");
     setClient3Phone(project?.client3_phone || "");
     setClient3Active(project?.client3_active === 'true');
+    setClientNotes(project?.client_notes || "");
   }, [project]);
 
   async function saveAllFields() {
@@ -75,6 +84,7 @@ export default function ClientInfo({ project, onUpdate }) {
       client3_email: currentValues.client3Email,
       client3_phone: currentValues.client3Phone,
       client3_active: currentValues.client3Active,
+      client_notes: currentValues.clientNotes || null,
       project_cost: project?.project_cost || null,
       deposit: project?.deposit || null,
     };
@@ -197,6 +207,40 @@ export default function ClientInfo({ project, onUpdate }) {
     await saveAllFields();
   }
 
+  // Handle client notes change with autosave
+  function handleClientNotesChange(e) {
+    const newValue = e.target.value;
+    setClientNotes(newValue);
+    valuesRef.current.clientNotes = newValue;
+    
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    
+    // Auto-save after 1 second of no typing
+    saveTimeoutRef.current = setTimeout(async () => {
+      if (!project?.id) return;
+      const currentValues = valuesRef.current;
+      try {
+        await fetch(`${API_URL}/api/projects/${project.id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            client_notes: currentValues.clientNotes || null,
+          }),
+        });
+        if (onUpdate) {
+          onUpdate();
+        }
+      } catch (error) {
+        console.error("Error saving client notes:", error);
+      }
+    }, 1000);
+  }
+
   function handleEmailClients() {
     // Use current ref values to ensure we have the latest state
     const currentValues = valuesRef.current;
@@ -274,6 +318,7 @@ export default function ClientInfo({ project, onUpdate }) {
 
   const inputStyle = {
     width: "100%",
+    maxWidth: "300px",
     padding: "10px 12px",
     borderRadius: "8px",
     border: "none",
@@ -290,8 +335,8 @@ export default function ClientInfo({ project, onUpdate }) {
   };
 
   const columnStyle = {
-    flex: 1,
-    minWidth: 0,
+    flex: "1",
+    minWidth: "200px",
   };
 
   return (
@@ -301,7 +346,7 @@ export default function ClientInfo({ project, onUpdate }) {
       </h2>
       {project && (
         <>
-          <div style={{ marginTop: "24px", display: "flex", gap: "24px", paddingBottom: "80px" }}>
+          <div style={{ marginTop: "24px", display: "flex", gap: "24px", paddingBottom: "80px", alignItems: "stretch", flex: 1, minHeight: 0 }}>
             {/* Contact 1 Column */}
             <div style={columnStyle}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
@@ -458,8 +503,35 @@ export default function ClientInfo({ project, onUpdate }) {
             </div>
           </div>
 
-          {/* Contact 4 Column - Empty */}
-          <div style={columnStyle}>
+          {/* Column 4 - Notes */}
+          <div style={{ ...columnStyle, display: "flex", flexDirection: "column", height: "100%" }}>
+            <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", flexShrink: 0 }}>
+              Notes
+            </div>
+            <textarea
+              name="client_notes"
+              value={clientNotes}
+              onChange={handleClientNotesChange}
+              onBlur={handleBlur}
+              placeholder="Add client notes..."
+              style={{
+                width: "100%",
+                maxWidth: "300px",
+                flex: 1,
+                padding: "10px 12px",
+                borderRadius: "8px",
+                border: "none",
+                fontSize: "1rem",
+                color: MONUMENT,
+                background: WHITE,
+                boxSizing: "border-box",
+                resize: "none",
+                fontFamily: "inherit",
+                overflowY: "auto",
+                minHeight: 0,
+                height: "100%",
+              }}
+            />
           </div>
           </div>
           <div style={{ position: "absolute", bottom: "14px", left: "0px" }}>

@@ -8,18 +8,81 @@ const LIGHT_MONUMENT = "#42464d";
 const WHITE = "#fff";
 const API_URL = "";
 
+// SubStatus Detail options based on SubStatus
+const SUBSTATUS_DETAIL_OPTIONS = {
+  "Town Planning": [
+    "Further Information Required",
+    "Section 50 Advertising",
+    "Planning Permit Received – Waiting Flood Consent",
+    "Waiting Arborist Report",
+    "Planner on Leave",
+    "Waiting Hydraulic Engineer Assessment"
+  ],
+  "VicSmart": [
+    "Waiting Hydraulic Engineer Assessment"
+  ],
+  "Waiting": [
+    "Covenant Removal",
+    "Deposit Balance",
+    "Hydraulic Engineering",
+    "Vince Assessment",
+    "PIC",
+    "Engineering",
+    "Approved Working Drawings",
+    "Approved Concept Drawings",
+    "Signed Contract and Docs",
+    "Septic Permit",
+    "JCA & Soil"
+  ],
+  "Other": []
+};
+
 export default function StatusManager() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [customSubstatuses, setCustomSubstatuses] = useState([]); // Track custom "Other" values
-  const [showCustomModal, setShowCustomModal] = useState(false);
-  const [customSubstatusInput, setCustomSubstatusInput] = useState("");
+  const [customSubstatusDetails, setCustomSubstatusDetails] = useState({}); // Track custom details per substatus: { "Town Planning": ["Custom Detail 1", ...] }
+  const [deletedSubstatuses, setDeletedSubstatuses] = useState(new Set()); // Track deleted base substatuses
+  const [deletedDetails, setDeletedDetails] = useState({}); // Track deleted base details per substatus: { "Town Planning": Set(["Detail 1", ...]) }
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editModalType, setEditModalType] = useState(null); // "substatus" or "detail"
   const [pendingProjectId, setPendingProjectId] = useState(null);
+  const [pendingSubstatus, setPendingSubstatus] = useState(null);
+  const [editingItem, setEditingItem] = useState(null); // Item being edited: { value: "...", isBase: true/false }
+  const [newItemInput, setNewItemInput] = useState("");
 
   useEffect(() => {
     fetchProjects();
+    fetchSubstatuses();
   }, []);
+
+  // Fetch substatuses and details from backend
+  async function fetchSubstatuses() {
+    try {
+      const response = await fetch(`${API_URL}/api/substatuses`);
+      if (response.ok) {
+        const data = await response.json();
+        // Organize by substatus
+        const detailsBySubstatus = {};
+        data.forEach(item => {
+          if (item.substatus && item.detail) {
+            if (!detailsBySubstatus[item.substatus]) {
+              detailsBySubstatus[item.substatus] = [];
+            }
+            // Only add if not already in the base options
+            const baseOptions = SUBSTATUS_DETAIL_OPTIONS[item.substatus] || [];
+            if (!baseOptions.includes(item.detail)) {
+              detailsBySubstatus[item.substatus].push(item.detail);
+            }
+          }
+        });
+        setCustomSubstatusDetails(detailsBySubstatus);
+      }
+    } catch (err) {
+      console.error("Error fetching substatuses:", err);
+    }
+  }
 
   async function fetchProjects() {
     try {
@@ -32,6 +95,12 @@ export default function StatusManager() {
       const data = await response.json();
       // Filter for Design Phase projects (exclude Hotlist)
       const designPhaseProjects = data.filter((project) => project.status === "Design Phase" && project.status !== "Hotlist");
+      // Sort alphabetically by suburb
+      designPhaseProjects.sort((a, b) => {
+        const suburbA = (a.suburb || "").toUpperCase();
+        const suburbB = (b.suburb || "").toUpperCase();
+        return suburbA.localeCompare(suburbB);
+      });
       setProjects(designPhaseProjects);
       
       // Update custom substatuses from all projects
@@ -41,7 +110,7 @@ export default function StatusManager() {
             project.substatus !== "Town Planning" && 
             project.substatus !== "VicSmart" && 
             project.substatus !== "Waiting" && 
-            project.substatus !== "Other" &&
+            project.substatus !== "Edit" &&
             project.substatus !== "") {
           customValues.add(project.substatus);
         }
@@ -57,39 +126,12 @@ export default function StatusManager() {
 
   // SubStatus options - includes custom values
   const getSubstatusOptions = () => {
-    const baseOptions = ["Town Planning", "VicSmart", "Waiting", "Other"];
+    const baseOptions = ["Town Planning", "VicSmart", "Waiting"];
+    // Filter out deleted base options
+    const availableBaseOptions = baseOptions.filter(opt => !deletedSubstatuses.has(opt));
     // Add custom substatuses that aren't already in the base list
     const allCustom = customSubstatuses.filter(custom => !baseOptions.includes(custom));
-    return [...baseOptions, ...allCustom];
-  };
-
-  // SubStatus Detail options based on SubStatus
-  const SUBSTATUS_DETAIL_OPTIONS = {
-    "Town Planning": [
-      "Further Information Required",
-      "Section 50 Advertising",
-      "Planning Permit Received – Waiting Flood Consent",
-      "Waiting Arborist Report",
-      "Planner on Leave",
-      "Waiting Hydraulic Engineer Assessment"
-    ],
-    "VicSmart": [
-      "Waiting Hydraulic Engineer Assessment"
-    ],
-    "Waiting": [
-      "Covenant Removal",
-      "Deposit Balance",
-      "Hydraulic Engineering",
-      "Vince Assessment",
-      "PIC",
-      "Engineering",
-      "Approved Working Drawings",
-      "Approved Concept Drawings",
-      "Signed Contract and Docs",
-      "Septic Permit",
-      "JCA & Soil"
-    ],
-    "Other": []
+    return [...availableBaseOptions, ...allCustom, "Edit"];
   };
 
   // Get effective value with default
@@ -103,8 +145,14 @@ export default function StatusManager() {
 
   // Get available detail options for a given substatus
   function getDetailOptions(substatus) {
-    if (!substatus || substatus === "") return [];
-    return SUBSTATUS_DETAIL_OPTIONS[substatus] || [];
+    if (!substatus || substatus === "") return ["Edit"];
+    const baseOptions = SUBSTATUS_DETAIL_OPTIONS[substatus] || [];
+    const customOptions = customSubstatusDetails[substatus] || [];
+    // Filter out deleted base details
+    const deletedForSubstatus = deletedDetails[substatus] || new Set();
+    const availableBaseOptions = baseOptions.filter(opt => !deletedForSubstatus.has(opt));
+    // Always include "Edit" at the end
+    return [...availableBaseOptions, ...customOptions, "Edit"];
   }
 
   // Save field update
@@ -146,7 +194,7 @@ export default function StatusManager() {
             value !== "Town Planning" && 
             value !== "VicSmart" && 
             value !== "Waiting" && 
-            value !== "Other") {
+            value !== "Edit") {
           try {
             await fetch(`${API_URL}/api/substatuses`, {
               method: "POST",
@@ -159,7 +207,7 @@ export default function StatusManager() {
         }
         
         // Save substatus_detail to substatuses table if both exist
-        if (currentSubstatus && currentDetail && currentSubstatus !== "Other") {
+        if (currentSubstatus && currentDetail && currentSubstatus !== "Edit" && currentDetail !== "Edit") {
           try {
             await fetch(`${API_URL}/api/substatuses`, {
               method: "POST",
@@ -198,12 +246,14 @@ export default function StatusManager() {
 
   // Handle substatus change
   async function handleSubStatusChange(projectId, newValue) {
-    if (newValue === "Other") {
-      // Show modal for custom substatus input
+    if (newValue === "Edit") {
+      // Show edit modal for substatus
       setPendingProjectId(projectId);
-      setCustomSubstatusInput("");
-      setShowCustomModal(true);
-      // Don't save "Other" yet - wait for user to enter custom value or cancel
+      setEditModalType("substatus");
+      setEditingItem(null);
+      setNewItemInput("");
+      setShowEditModal(true);
+      // Don't save "Edit" - wait for user to select/edit or cancel
       return;
     }
     
@@ -218,17 +268,45 @@ export default function StatusManager() {
         newValue !== "Town Planning" && 
         newValue !== "VicSmart" && 
         newValue !== "Waiting" && 
-        newValue !== "Other" &&
+        newValue !== "Edit" &&
         !customSubstatuses.includes(newValue)) {
       setCustomSubstatuses(prev => [...prev, newValue]);
     }
   }
 
-  // Handle OK button in custom substatus modal
-  async function handleCustomSubstatusOK() {
-    const trimmedValue = customSubstatusInput.trim();
-    if (trimmedValue && pendingProjectId) {
-      // Save custom substatus to substatuses table
+  // Get all substatus options for edit modal
+  function getAllSubstatusOptions() {
+    const baseOptions = ["Town Planning", "VicSmart", "Waiting"];
+    const customOptions = customSubstatuses.filter(custom => !baseOptions.includes(custom));
+    // Filter out deleted base options, all options are editable/deletable
+    const availableBaseOptions = baseOptions.filter(opt => !deletedSubstatuses.has(opt));
+    return [
+      ...availableBaseOptions.map(opt => ({ value: opt, isBase: false })),
+      ...customOptions.map(opt => ({ value: opt, isBase: false }))
+    ];
+  }
+
+  // Get all detail options for edit modal
+  function getAllDetailOptions(substatus) {
+    if (!substatus) return [];
+    const baseOptions = SUBSTATUS_DETAIL_OPTIONS[substatus] || [];
+    const customOptions = customSubstatusDetails[substatus] || [];
+    // Filter out deleted base details, all options are editable/deletable
+    const deletedForSubstatus = deletedDetails[substatus] || new Set();
+    const availableBaseOptions = baseOptions.filter(opt => !deletedForSubstatus.has(opt));
+    return [
+      ...availableBaseOptions.map(opt => ({ value: opt, isBase: false })),
+      ...customOptions.map(opt => ({ value: opt, isBase: false }))
+    ];
+  }
+
+  // Handle adding new item
+  async function handleAddItem() {
+    const trimmedValue = newItemInput.trim();
+    if (!trimmedValue) return;
+
+    if (editModalType === "substatus") {
+      // Add new substatus
       try {
         await fetch(`${API_URL}/api/substatuses`, {
           method: "POST",
@@ -236,49 +314,320 @@ export default function StatusManager() {
           body: JSON.stringify({ substatus: trimmedValue, detail: null }),
         });
       } catch (e) {
-        console.error("Error saving custom substatus to table:", e);
+        console.error("Error saving substatus to table:", e);
       }
       
-      // Add to custom list FIRST so it appears in the dropdown immediately
       if (!customSubstatuses.includes(trimmedValue)) {
         setCustomSubstatuses(prev => [...prev, trimmedValue]);
       }
-      // Update local state immediately so the dropdown shows the new value
-      setProjects(prevProjects => 
-        prevProjects.map(p => 
-          p.id === pendingProjectId ? { ...p, substatus: trimmedValue, substatus_detail: null } : p
-        )
-      );
-      // Save the custom substatus
-      await saveField(pendingProjectId, "substatus", trimmedValue, false); // Don't update local state again, we already did
-      // Clear substatus_detail since custom values don't have details
-      await saveField(pendingProjectId, "substatus_detail", "", false); // Don't update local state again
+      // Update project with new substatus
+      if (pendingProjectId) {
+        setProjects(prevProjects => 
+          prevProjects.map(p => 
+            p.id === pendingProjectId ? { ...p, substatus: trimmedValue, substatus_detail: null } : p
+          )
+        );
+        await saveField(pendingProjectId, "substatus", trimmedValue, false);
+        await saveField(pendingProjectId, "substatus_detail", "", false);
+      }
+    } else if (editModalType === "detail" && pendingSubstatus) {
+      // Add new detail
+      try {
+        await fetch(`${API_URL}/api/substatuses`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ substatus: pendingSubstatus, detail: trimmedValue }),
+        });
+      } catch (e) {
+        console.error("Error saving detail to table:", e);
+      }
+      
+      setCustomSubstatusDetails(prev => {
+        const current = prev[pendingSubstatus] || [];
+        if (!current.includes(trimmedValue)) {
+          return { ...prev, [pendingSubstatus]: [...current, trimmedValue] };
+        }
+        return prev;
+      });
+      
+      // Update project with new detail
+      if (pendingProjectId) {
+        setProjects(prevProjects => 
+          prevProjects.map(p => 
+            p.id === pendingProjectId ? { ...p, substatus_detail: trimmedValue } : p
+          )
+        );
+        await saveField(pendingProjectId, "substatus_detail", trimmedValue, false);
+      }
     }
-    // Close modal and reset
-    setShowCustomModal(false);
-    setCustomSubstatusInput("");
-    setPendingProjectId(null);
+    
+    setNewItemInput("");
   }
 
-  // Handle Cancel button in custom substatus modal
-  function handleCustomSubstatusCancel() {
-    // Reset the dropdown to empty by updating local state
-    if (pendingProjectId) {
-      setProjects(prevProjects => 
-        prevProjects.map(p => 
-          p.id === pendingProjectId ? { ...p, substatus: "" } : p
-        )
-      );
+  // Handle editing item
+  function handleEditItem(item) {
+    setEditingItem(item);
+    setNewItemInput(item.value);
+  }
+
+  // Handle saving edited item
+  async function handleSaveEdit() {
+    if (!editingItem || !newItemInput.trim()) return;
+    const trimmedValue = newItemInput.trim();
+    
+    if (editModalType === "substatus") {
+      // Update substatus (all options are editable)
+      try {
+        // First, update all projects using this substatus
+        const projectsToUpdate = projects.filter(p => p.substatus === editingItem.value);
+        for (const project of projectsToUpdate) {
+          await saveField(project.id, "substatus", trimmedValue, false);
+        }
+        
+        // Update custom list
+        const baseOptions = ["Town Planning", "VicSmart", "Waiting"];
+        const isBaseOption = baseOptions.includes(editingItem.value);
+        
+        if (isBaseOption) {
+          // If editing a base option, add the new value to custom list
+          if (!customSubstatuses.includes(trimmedValue)) {
+            setCustomSubstatuses(prev => [...prev, trimmedValue]);
+          }
+        } else {
+          // If editing a custom option, update the custom list
+          setCustomSubstatuses(prev => {
+            const filtered = prev.filter(v => v !== editingItem.value);
+            if (!filtered.includes(trimmedValue)) {
+              return [...filtered, trimmedValue];
+            }
+            return filtered;
+          });
+        }
+        
+        // Update current project if it matches
+        if (pendingProjectId) {
+          const project = projects.find(p => p.id === pendingProjectId);
+          if (project && project.substatus === editingItem.value) {
+            setProjects(prevProjects => 
+              prevProjects.map(p => 
+                p.id === pendingProjectId ? { ...p, substatus: trimmedValue } : p
+              )
+            );
+            await saveField(pendingProjectId, "substatus", trimmedValue, false);
+          }
+        }
+      } catch (e) {
+        console.error("Error updating substatus:", e);
+      }
+    } else if (editModalType === "detail" && pendingSubstatus) {
+      // Update detail (all options are editable)
+      try {
+        // Update all projects using this detail
+        const projectsToUpdate = projects.filter(p => 
+          p.substatus === pendingSubstatus && p.substatus_detail === editingItem.value
+        );
+        for (const project of projectsToUpdate) {
+          await saveField(project.id, "substatus_detail", trimmedValue, false);
+        }
+        
+        // Update custom details
+        const baseOptions = SUBSTATUS_DETAIL_OPTIONS[pendingSubstatus] || [];
+        const isBaseOption = baseOptions.includes(editingItem.value);
+        
+        if (isBaseOption) {
+          // If editing a base option, add the new value to custom list
+          setCustomSubstatusDetails(prev => {
+            const current = prev[pendingSubstatus] || [];
+            if (!current.includes(trimmedValue)) {
+              return { ...prev, [pendingSubstatus]: [...current, trimmedValue] };
+            }
+            return prev;
+          });
+        } else {
+          // If editing a custom option, update the custom list
+          setCustomSubstatusDetails(prev => {
+            const current = prev[pendingSubstatus] || [];
+            const filtered = current.filter(v => v !== editingItem.value);
+            if (!filtered.includes(trimmedValue)) {
+              return { ...prev, [pendingSubstatus]: [...filtered, trimmedValue] };
+            }
+            return { ...prev, [pendingSubstatus]: filtered };
+          });
+        }
+        
+        // Update current project if it matches
+        if (pendingProjectId) {
+          const project = projects.find(p => p.id === pendingProjectId);
+          if (project && project.substatus_detail === editingItem.value) {
+            setProjects(prevProjects => 
+              prevProjects.map(p => 
+                p.id === pendingProjectId ? { ...p, substatus_detail: trimmedValue } : p
+              )
+            );
+            await saveField(pendingProjectId, "substatus_detail", trimmedValue, false);
+          }
+        }
+      } catch (e) {
+        console.error("Error updating detail:", e);
+      }
     }
-    // Close modal and reset
-    setShowCustomModal(false);
-    setCustomSubstatusInput("");
+    
+    setEditingItem(null);
+    setNewItemInput("");
+  }
+
+  // Handle deleting item
+  async function handleDeleteItem(item) {
+    // All options are deletable now
+    if (editModalType === "substatus") {
+      // Delete substatus
+      try {
+        // Clear from projects using this substatus
+        const projectsToUpdate = projects.filter(p => p.substatus === item.value);
+        for (const project of projectsToUpdate) {
+          await saveField(project.id, "substatus", "", false);
+        }
+        
+        // Check if it's a base option
+        const baseOptions = ["Town Planning", "VicSmart", "Waiting"];
+        if (baseOptions.includes(item.value)) {
+          // Mark as deleted
+          setDeletedSubstatuses(prev => new Set([...prev, item.value]));
+        } else {
+          // Remove from custom list
+          setCustomSubstatuses(prev => prev.filter(v => v !== item.value));
+        }
+        
+        // Clear current project if it matches
+        if (pendingProjectId) {
+          const project = projects.find(p => p.id === pendingProjectId);
+          if (project && project.substatus === item.value) {
+            setProjects(prevProjects => 
+              prevProjects.map(p => 
+                p.id === pendingProjectId ? { ...p, substatus: "", substatus_detail: "" } : p
+              )
+            );
+            await saveField(pendingProjectId, "substatus", "", false);
+            await saveField(pendingProjectId, "substatus_detail", "", false);
+          }
+        }
+      } catch (e) {
+        console.error("Error deleting substatus:", e);
+      }
+    } else if (editModalType === "detail" && pendingSubstatus) {
+      // Delete detail
+      try {
+        // Clear from projects using this detail
+        const projectsToUpdate = projects.filter(p => 
+          p.substatus === pendingSubstatus && p.substatus_detail === item.value
+        );
+        for (const project of projectsToUpdate) {
+          await saveField(project.id, "substatus_detail", "", false);
+        }
+        
+        // Check if it's a base option
+        const baseOptions = SUBSTATUS_DETAIL_OPTIONS[pendingSubstatus] || [];
+        if (baseOptions.includes(item.value)) {
+          // Mark as deleted
+          setDeletedDetails(prev => {
+            const current = prev[pendingSubstatus] || new Set();
+            return { ...prev, [pendingSubstatus]: new Set([...current, item.value]) };
+          });
+        } else {
+          // Remove from custom list
+          setCustomSubstatusDetails(prev => {
+            const current = prev[pendingSubstatus] || [];
+            return { ...prev, [pendingSubstatus]: current.filter(v => v !== item.value) };
+          });
+        }
+        
+        // Clear current project if it matches
+        if (pendingProjectId) {
+          const project = projects.find(p => p.id === pendingProjectId);
+          if (project && project.substatus_detail === item.value) {
+            setProjects(prevProjects => 
+              prevProjects.map(p => 
+                p.id === pendingProjectId ? { ...p, substatus_detail: "" } : p
+              )
+            );
+            await saveField(pendingProjectId, "substatus_detail", "", false);
+          }
+        }
+      } catch (e) {
+        console.error("Error deleting detail:", e);
+      }
+    }
+  }
+
+  // Handle cancel edit modal
+  function handleCancelEdit() {
+    // Reset dropdown if needed
+    if (pendingProjectId) {
+      const project = projects.find(p => p.id === pendingProjectId);
+      if (project) {
+        // Don't reset - just close modal
+      }
+    }
+    setShowEditModal(false);
+    setEditModalType(null);
     setPendingProjectId(null);
+    setPendingSubstatus(null);
+    setEditingItem(null);
+    setNewItemInput("");
+  }
+
+  // Generate email list
+  function handleEmailList() {
+    // Get current date in format: DD/MM/YYYY
+    const today = new Date();
+    const dateStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+    
+    // Build email body with project list
+    const emailBody = projects.map(project => {
+      const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "Unnamed Project";
+      const substatus = project.substatus || "";
+      const substatusDetail = project.substatus_detail || "";
+      return `${projectName} - ${substatus || ""} - ${substatusDetail || ""}`;
+    }).join('\n');
+    
+    // Create mailto link
+    const subject = encodeURIComponent(`Weekly Update - ${dateStr}`);
+    const body = encodeURIComponent(emailBody);
+    const mailtoLink = `mailto:?subject=${subject}&body=${body}`;
+    
+    // Open email client
+    window.location.href = mailtoLink;
   }
 
   // Handle substatus detail change
-  async function handleSubStatusDetailChange(projectId, newValue) {
+  async function handleSubStatusDetailChange(projectId, newValue, substatus) {
+    if (newValue === "Edit") {
+      // Show edit modal for detail
+      setPendingProjectId(projectId);
+      setPendingSubstatus(substatus);
+      setEditModalType("detail");
+      setEditingItem(null);
+      setNewItemInput("");
+      setShowEditModal(true);
+      // Don't save "Edit" - wait for user to select/edit or cancel
+      return;
+    }
+    
     await saveField(projectId, "substatus_detail", newValue, true);
+    
+    // If it's a custom detail (not in base options), add it to custom list
+    if (newValue && substatus) {
+      const baseOptions = SUBSTATUS_DETAIL_OPTIONS[substatus] || [];
+      if (!baseOptions.includes(newValue) && newValue !== "Edit") {
+        setCustomSubstatusDetails(prev => {
+          const current = prev[substatus] || [];
+          if (!current.includes(newValue)) {
+            return { ...prev, [substatus]: [...current, newValue] };
+          }
+          return prev;
+        });
+      }
+    }
   }
 
   return (
@@ -490,6 +839,27 @@ export default function StatusManager() {
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {/* Email List Button */}
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
+                <button
+                  onClick={handleEmailList}
+                  style={{
+                    padding: "10px 20px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: MONUMENT,
+                    color: WHITE,
+                    fontSize: "0.9rem",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    transition: "background 0.2s",
+                  }}
+                  onMouseOver={(e) => (e.target.style.background = "#222")}
+                  onMouseOut={(e) => (e.target.style.background = MONUMENT)}
+                >
+                  Email List
+                </button>
+              </div>
               {/* Header Row */}
               <div
                 style={{
@@ -518,13 +888,8 @@ export default function StatusManager() {
                 const substatus = project.substatus || "";
                 const substatusDetail = project.substatus_detail || "";
                 const detailOptions = getDetailOptions(substatus);
-                const showDetailDropdown = detailOptions.length > 0;
-                const isOtherSelected = substatus === "Other";
-                const isCustomSubstatus = substatus && 
-                                          substatus !== "Town Planning" && 
-                                          substatus !== "VicSmart" && 
-                                          substatus !== "Waiting" && 
-                                          substatus !== "Other";
+                // Always show dropdown if substatus is selected
+                const showDetailDropdown = substatus !== "";
 
                 return (
                   <div
@@ -585,11 +950,11 @@ export default function StatusManager() {
                     {showDetailDropdown ? (
                       <select
                         value={substatusDetail}
-                        onChange={(e) => handleSubStatusDetailChange(project.id, e.target.value)}
+                        onChange={(e) => handleSubStatusDetailChange(project.id, e.target.value, substatus)}
                         onBlur={(e) => {
                           // Auto-save on blur as well
-                          if (e.target.value !== substatusDetail) {
-                            handleSubStatusDetailChange(project.id, e.target.value);
+                          if (e.target.value !== substatusDetail && e.target.value !== "Edit") {
+                            handleSubStatusDetailChange(project.id, e.target.value, substatus);
                           }
                         }}
                         onClick={(e) => e.stopPropagation()}
@@ -625,7 +990,7 @@ export default function StatusManager() {
                           fontStyle: "italic",
                         }}
                       >
-                        {isOtherSelected || isCustomSubstatus || substatus === "" ? "N/A" : "Select SubStatus first"}
+                        Select SubStatus first
                       </div>
                     )}
                   </div>
@@ -636,8 +1001,8 @@ export default function StatusManager() {
         </div>
       </div>
 
-      {/* Custom SubStatus Modal */}
-      {showCustomModal && (
+      {/* Edit Modal for SubStatus or SubStatusDetail */}
+      {showEditModal && (
         <div
           style={{
             position: "fixed",
@@ -649,7 +1014,7 @@ export default function StatusManager() {
             zIndex: 2000,
             pointerEvents: "auto",
           }}
-          onClick={handleCustomSubstatusCancel}
+          onClick={handleCancelEdit}
         >
           <div
             style={{
@@ -657,7 +1022,9 @@ export default function StatusManager() {
               borderRadius: "18px",
               padding: "32px",
               width: "90%",
-              maxWidth: "500px",
+              maxWidth: "600px",
+              maxHeight: "80vh",
+              overflowY: "auto",
               boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
             }}
             onClick={(e) => e.stopPropagation()}
@@ -671,8 +1038,113 @@ export default function StatusManager() {
                 color: MONUMENT,
               }}
             >
-              Add Custom SubStatus
+              {editModalType === "substatus" ? "Edit SubStatus" : `Edit SubStatus Detail${pendingSubstatus ? ` (${pendingSubstatus})` : ""}`}
             </h2>
+            
+            {/* List of existing options */}
+            <div style={{ marginBottom: "24px" }}>
+              <div
+                style={{
+                  fontSize: "0.95rem",
+                  fontWeight: 600,
+                  marginBottom: "12px",
+                  color: MONUMENT,
+                }}
+              >
+                Existing Options:
+              </div>
+              <div
+                style={{
+                  maxHeight: "300px",
+                  overflowY: "auto",
+                  border: "1px solid #ddd",
+                  borderRadius: "8px",
+                  background: WHITE,
+                }}
+              >
+                {(editModalType === "substatus" ? getAllSubstatusOptions() : getAllDetailOptions(pendingSubstatus)).map((item, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "12px 16px",
+                      borderBottom: index < (editModalType === "substatus" ? getAllSubstatusOptions() : getAllDetailOptions(pendingSubstatus)).length - 1 ? "1px solid #eee" : "none",
+                      cursor: "pointer",
+                      transition: "background 0.2s",
+                    }}
+                    onMouseOver={(e) => (e.currentTarget.style.background = "#f5f5f5")}
+                    onMouseOut={(e) => (e.currentTarget.style.background = WHITE)}
+                    onClick={async () => {
+                      // Select this option
+                      if (editModalType === "substatus" && pendingProjectId) {
+                        await saveField(pendingProjectId, "substatus", item.value, true);
+                        const detailOptions = getDetailOptions(item.value);
+                        if (detailOptions.length === 0) {
+                          await saveField(pendingProjectId, "substatus_detail", "", true);
+                        }
+                      } else if (editModalType === "detail" && pendingProjectId && pendingSubstatus) {
+                        await saveField(pendingProjectId, "substatus_detail", item.value, true);
+                      }
+                      handleCancelEdit();
+                    }}
+                  >
+                    <span style={{ flex: 1, color: MONUMENT, fontWeight: 400 }}>
+                      {item.value}
+                    </span>
+                    <div style={{ display: "flex", gap: "8px" }} onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditItem(item);
+                        }}
+                        style={{
+                          padding: "6px 12px",
+                          borderRadius: "6px",
+                          border: "1px solid #ddd",
+                          background: WHITE,
+                          color: MONUMENT,
+                          fontSize: "0.85rem",
+                          fontWeight: 500,
+                          cursor: "pointer",
+                          transition: "background 0.2s",
+                        }}
+                        onMouseOver={(e) => (e.target.style.background = "#f5f5f5")}
+                        onMouseOut={(e) => (e.target.style.background = WHITE)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm(`Are you sure you want to delete "${item.value}"?`)) {
+                            handleDeleteItem(item);
+                          }
+                        }}
+                        style={{
+                          padding: "6px 12px",
+                          borderRadius: "6px",
+                          border: "1px solid #ddd",
+                          background: WHITE,
+                          color: "#cc3333",
+                          fontSize: "0.85rem",
+                          fontWeight: 500,
+                          cursor: "pointer",
+                          transition: "background 0.2s",
+                        }}
+                        onMouseOver={(e) => (e.target.style.background = "#ffe6e6")}
+                        onMouseOut={(e) => (e.target.style.background = WHITE)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Add/Edit input */}
             <div style={{ marginBottom: "24px" }}>
               <label
                 style={{
@@ -683,34 +1155,122 @@ export default function StatusManager() {
                   color: MONUMENT,
                 }}
               >
-                Enter new SubStatus:
+                {editingItem ? `Edit "${editingItem.value}":` : "Add New:"}
               </label>
-              <input
-                type="text"
-                value={customSubstatusInput}
-                onChange={(e) => setCustomSubstatusInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    handleCustomSubstatusOK();
-                  } else if (e.key === "Escape") {
-                    handleCustomSubstatusCancel();
-                  }
-                }}
-                placeholder="Enter custom substatus..."
-                autoFocus
-                style={{
-                  width: "100%",
-                  padding: "12px 16px",
-                  borderRadius: "8px",
-                  border: "1px solid #ddd",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  fontWeight: 500,
-                  boxSizing: "border-box",
-                }}
-              />
+              <div style={{ display: "flex", gap: "8px" }}>
+                <input
+                  type="text"
+                  value={newItemInput}
+                  onChange={(e) => setNewItemInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      if (editingItem) {
+                        handleSaveEdit();
+                      } else {
+                        handleAddItem();
+                      }
+                    } else if (e.key === "Escape") {
+                      handleCancelEdit();
+                    }
+                  }}
+                  placeholder={editingItem ? "Enter new value..." : `Enter new ${editModalType === "substatus" ? "SubStatus" : "Detail"}...`}
+                  autoFocus
+                  style={{
+                    flex: 1,
+                    padding: "12px 16px",
+                    borderRadius: "8px",
+                    border: "1px solid #ddd",
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    fontWeight: 500,
+                    boxSizing: "border-box",
+                  }}
+                />
+                {editingItem ? (
+                  <button
+                    onClick={handleSaveEdit}
+                    disabled={!newItemInput.trim()}
+                    style={{
+                      padding: "12px 24px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: newItemInput.trim() ? MONUMENT : "#ccc",
+                      color: WHITE,
+                      fontSize: "0.95rem",
+                      fontWeight: 500,
+                      cursor: newItemInput.trim() ? "pointer" : "not-allowed",
+                      transition: "background 0.2s",
+                    }}
+                    onMouseOver={(e) => {
+                      if (newItemInput.trim()) {
+                        e.target.style.background = "#222";
+                      }
+                    }}
+                    onMouseOut={(e) => {
+                      if (newItemInput.trim()) {
+                        e.target.style.background = MONUMENT;
+                      }
+                    }}
+                  >
+                    Save
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleAddItem}
+                    disabled={!newItemInput.trim()}
+                    style={{
+                      padding: "12px 24px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: newItemInput.trim() ? MONUMENT : "#ccc",
+                      color: WHITE,
+                      fontSize: "0.95rem",
+                      fontWeight: 500,
+                      cursor: newItemInput.trim() ? "pointer" : "not-allowed",
+                      transition: "background 0.2s",
+                    }}
+                    onMouseOver={(e) => {
+                      if (newItemInput.trim()) {
+                        e.target.style.background = "#222";
+                      }
+                    }}
+                    onMouseOut={(e) => {
+                      if (newItemInput.trim()) {
+                        e.target.style.background = MONUMENT;
+                      }
+                    }}
+                  >
+                    Add
+                  </button>
+                )}
+                {editingItem && (
+                  <button
+                    onClick={() => {
+                      setEditingItem(null);
+                      setNewItemInput("");
+                    }}
+                    style={{
+                      padding: "12px 24px",
+                      borderRadius: "8px",
+                      border: "1px solid #ddd",
+                      background: WHITE,
+                      color: MONUMENT,
+                      fontSize: "0.95rem",
+                      fontWeight: 500,
+                      cursor: "pointer",
+                      transition: "background 0.2s",
+                    }}
+                    onMouseOver={(e) => (e.target.style.background = "#f5f5f5")}
+                    onMouseOut={(e) => (e.target.style.background = WHITE)}
+                  >
+                    Cancel Edit
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* Close button */}
             <div
               style={{
                 display: "flex",
@@ -719,7 +1279,7 @@ export default function StatusManager() {
               }}
             >
               <button
-                onClick={handleCustomSubstatusCancel}
+                onClick={handleCancelEdit}
                 style={{
                   padding: "10px 24px",
                   borderRadius: "8px",
@@ -734,34 +1294,7 @@ export default function StatusManager() {
                 onMouseOver={(e) => (e.target.style.background = "#f5f5f5")}
                 onMouseOut={(e) => (e.target.style.background = WHITE)}
               >
-                Cancel
-              </button>
-              <button
-                onClick={handleCustomSubstatusOK}
-                disabled={!customSubstatusInput.trim()}
-                style={{
-                  padding: "10px 24px",
-                  borderRadius: "8px",
-                  border: "none",
-                  background: customSubstatusInput.trim() ? MONUMENT : "#ccc",
-                  color: WHITE,
-                  fontSize: "0.95rem",
-                  fontWeight: 500,
-                  cursor: customSubstatusInput.trim() ? "pointer" : "not-allowed",
-                  transition: "background 0.2s",
-                }}
-                onMouseOver={(e) => {
-                  if (customSubstatusInput.trim()) {
-                    e.target.style.background = "#222";
-                  }
-                }}
-                onMouseOut={(e) => {
-                  if (customSubstatusInput.trim()) {
-                    e.target.style.background = MONUMENT;
-                  }
-                }}
-              >
-                OK
+                Close
               </button>
             </div>
           </div>

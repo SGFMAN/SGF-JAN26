@@ -234,12 +234,12 @@ export default function ProjectInfo({ project, onUpdate }) {
   }
 
   return (
-    <div>
-      <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, flexShrink: 0 }}>
         Project Info
       </h2>
       {project && (
-        <div style={{ marginTop: "24px", display: "flex", gap: "24px", flexWrap: "wrap", alignItems: "flex-start" }}>
+        <div style={{ marginTop: "24px", display: "flex", gap: "24px", flexWrap: "wrap", alignItems: "stretch", flex: 1, minHeight: 0 }}>
           {/* Column 1 */}
           <div style={{ flex: "1", minWidth: "200px" }}>
             <div style={{ marginBottom: "16px" }}>
@@ -532,7 +532,7 @@ export default function ProjectInfo({ project, onUpdate }) {
 
           {/* Column 4 - Notes */}
           <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", height: "100%" }}>
-            <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+            <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", flexShrink: 0 }}>
               Notes
             </div>
             <textarea
@@ -556,6 +556,7 @@ export default function ProjectInfo({ project, onUpdate }) {
                 fontFamily: "inherit",
                 overflowY: "auto",
                 minHeight: 0,
+                height: "100%",
               }}
             />
           </div>
