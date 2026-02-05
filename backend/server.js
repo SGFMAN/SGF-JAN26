@@ -14,13 +14,173 @@ app.use(cors({ origin: true }));
 
 // Configure multer for file uploads (store in memory)
 const upload = multer({ storage: multer.memoryStorage() });
+
+// App mode cache (refreshed every 1-2 seconds or on update)
+let appModeCache = { mode: "USE", lastCheck: 0 };
+const APP_MODE_CACHE_TTL = 1500; // 1.5 seconds
+
+// Helper function to check if request is from admin
+async function isAdminRequest(req) {
+  if (!pool) return false;
+  try {
+    // Headers in Express are case-insensitive, but normalize to lowercase
+    const userId = req.headers["x-user-id"] || req.headers["X-User-Id"];
+    const passwordType = req.headers["x-password-type"] || req.headers["X-Password-Type"];
+    
+    if (!userId || passwordType !== "admin") {
+      console.log("Admin check failed:", { userId, passwordType, headers: Object.keys(req.headers) });
+      return false;
+    }
+    
+    // Check if user has Admin position
+    const userResult = await pool.query(
+      `SELECT u.id 
+       FROM users u
+       INNER JOIN user_positions up ON u.id = up.user_id
+       INNER JOIN positions p ON up.position_id = p.id
+       WHERE u.id = $1 AND p.name = 'Admin'`,
+      [parseInt(userId)]
+    );
+    
+    const isAdmin = userResult.rows.length > 0;
+    console.log("Admin check result:", { userId, isAdmin });
+    return isAdmin;
+  } catch (e) {
+    console.error("Error checking admin status:", e);
+    return false;
+  }
+}
+
+// Helper function to get current app mode (with caching)
+async function getAppMode() {
+  if (!pool) return "USE";
+  const now = Date.now();
+  if (now - appModeCache.lastCheck < APP_MODE_CACHE_TTL) {
+    return appModeCache.mode;
+  }
+  try {
+    const result = await pool.query(
+      "SELECT app_mode FROM settings WHERE id = 1"
+    );
+    const mode = result.rows.length > 0 && result.rows[0].app_mode 
+      ? result.rows[0].app_mode 
+      : "USE";
+    appModeCache = { mode, lastCheck: now };
+    return mode;
+  } catch (e) {
+    console.error("Error fetching app mode:", e);
+    return "USE";
+  }
+}
+
+// Middleware to check app mode and block non-admins in EDIT mode
+async function appModeMiddleware(req, res, next) {
+  // Skip static file requests (assets, images, etc.)
+  if (req.path.startsWith("/assets/") || 
+      req.path.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$/i) ||
+      req.path === "/vite.svg") {
+    return next();
+  }
+  
+  // Always allow health check
+  if (req.path === "/health") {
+    return next();
+  }
+  
+  const mode = await getAppMode();
+  
+  // If USE mode, allow all traffic
+  if (mode === "USE") {
+    return next();
+  }
+  
+  // EDIT mode - check if admin
+  const isAdmin = await isAdminRequest(req);
+  
+  // Allow admin requests
+  if (isAdmin) {
+    return next();
+  }
+  
+  // Allow login-related routes (needed for users to authenticate and become admins)
+  if (req.path === "/api/users" || 
+      req.path === "/api/settings" ||
+      req.path === "/api/login" ||
+      req.path === "/api/logout") {
+    return next();
+  }
+  
+  // Allow app-mode endpoints so admin can change mode (but they still need to be admin)
+  if (req.path === "/api/admin/app-mode" && (req.method === "GET" || req.method === "PUT")) {
+    // This will be checked again in the route handler
+    return next();
+  }
+  
+  // Block all other requests in EDIT mode
+  if (req.path.startsWith("/api/")) {
+    // API request - return 503 JSON
+    return res.status(503).json({
+      ok: false,
+      maintenance: true,
+      message: "SGF Central is under maintenance. Please try again shortly."
+    });
+  } else {
+    // Non-API request - return 503 HTML
+    return res.status(503).send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>SGF Central - Under Maintenance</title>
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background: #42464d;
+            color: #fff;
+          }
+          .container {
+            text-align: center;
+            padding: 40px;
+            max-width: 600px;
+          }
+          h1 {
+            font-size: 2.5rem;
+            margin-bottom: 20px;
+            color: #fff;
+          }
+          p {
+            font-size: 1.2rem;
+            line-height: 1.6;
+            color: #e0e0e0;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>Under Construction</h1>
+          <p>SGF Central is under maintenance. Please try again shortly.</p>
+        </div>
+      </body>
+      </html>
+    `);
+  }
+}
+
 // ------------------------------------------------------------
 // Serve the built frontend (Vite dist) on the same port
 // ------------------------------------------------------------
 const frontendDist = path.join(__dirname, "..", "frontend", "dist");
 app.use(express.static(frontendDist));
 
-// SPA fallback: for any non-API route, return index.html
+// Apply app mode middleware AFTER static files but BEFORE API routes
+app.use(appModeMiddleware);
+
+// SPA fallback: for any non-API route, return index.html (this will be caught by middleware if in EDIT mode)
 app.get(/^\/(?!api).*/, (req, res) => {
   res.sendFile(path.join(frontendDist, "index.html"));
 });
@@ -253,6 +413,17 @@ async function ensureSchema() {
     // Column might already exist, which is fine
     if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
       console.log(`Error adding column admin_password:`, e.message);
+    }
+  }
+  // Add app_mode column if it doesn't exist
+  try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN app_mode TEXT DEFAULT 'USE'`);
+    // Set default to USE if null
+    await pool.query(`UPDATE settings SET app_mode = 'USE' WHERE id = 1 AND app_mode IS NULL`);
+  } catch (e) {
+    // Column might already exist, which is fine
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column app_mode:`, e.message);
     }
   }
   // Insert default row if it doesn't exist
@@ -867,6 +1038,58 @@ app.delete("/api/positions/:id", async (req, res) => {
     res.json({ success: true, deleted: r.rows[0] });
   } catch (e) {
     res.status(500).json({ error: e.message || "Failed to delete position" });
+  }
+});
+
+// Get app mode (admin only)
+app.get("/api/admin/app-mode", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  
+  // Check if admin
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  
+  try {
+    const mode = await getAppMode();
+    res.json({ mode });
+  } catch (e) {
+    console.error("Error fetching app mode:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Update app mode (admin only)
+app.put("/api/admin/app-mode", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  
+  // Check if admin
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  
+  try {
+    const { mode } = req.body || {};
+    
+    // Validate mode
+    if (mode !== "USE" && mode !== "EDIT") {
+      return res.status(400).json({ error: "Mode must be 'USE' or 'EDIT'" });
+    }
+    
+    await pool.query(
+      `UPDATE settings SET app_mode = $1, updated_at = NOW() WHERE id = 1`,
+      [mode]
+    );
+    
+    // Update cache immediately
+    appModeCache = { mode, lastCheck: Date.now() };
+    
+    res.json({ mode });
+  } catch (e) {
+    console.error("Error updating app mode:", e);
+    res.status(500).json({ error: e.message });
   }
 });
 

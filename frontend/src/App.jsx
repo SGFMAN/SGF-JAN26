@@ -13,10 +13,12 @@ import Managers from "./pages/Managers";
 import ContractManager from "./pages/ContractManager";
 import StatusManager from "./pages/StatusManager";
 import Sales from "./pages/Sales";
+import AppModeBanner from "./components/AppModeBanner";
 
 export default function App() {
   return (
     <BrowserRouter>
+      <AppModeBanner />
       <Routes>
         <Route path="/" element={<SplashPage />} />
         <Route path="/projects" element={<HomePage />} />

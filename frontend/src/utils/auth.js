@@ -15,6 +15,21 @@ export function getPasswordType() {
 }
 
 /**
+ * Get headers with admin authentication info for API requests
+ */
+export function getApiHeaders(additionalHeaders = {}) {
+  const userId = getLoggedInUserId();
+  const passwordType = getPasswordType();
+  
+  return {
+    "Content-Type": "application/json",
+    "X-User-Id": userId || "",
+    "X-Password-Type": passwordType || "global",
+    ...additionalHeaders,
+  };
+}
+
+/**
  * Check if the logged-in user has Admin position AND logged in with admin password
  * Returns a promise that resolves to true only if:
  * 1. User has "Admin" position, AND
