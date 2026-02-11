@@ -9,11 +9,44 @@ const fs = require("fs").promises;
 const multer = require("multer");
 const nodemailer = require("nodemailer");
 const app = express();
-app.use(express.json());
 app.use(cors({ origin: true }));
 
-// Configure multer for file uploads (store in memory)
-const upload = multer({ storage: multer.memoryStorage() });
+// Increase body size limit for file uploads (50MB)
+// Only parse JSON for requests with application/json content-type (skip multipart/form-data)
+const jsonParser = express.json({ limit: '50mb' });
+const urlencodedParser = express.urlencoded({ limit: '50mb', extended: true });
+
+app.use((req, res, next) => {
+  const contentType = (req.get('content-type') || '').toLowerCase();
+  console.log("Body parser middleware - Content-Type:", contentType, "Path:", req.path);
+  
+  // CRITICAL: Skip parsing for multipart/form-data (let multer handle it)
+  if (contentType.includes('multipart/form-data')) {
+    console.log("Skipping body parsing for multipart/form-data request");
+    return next();
+  }
+  // Parse JSON requests
+  if (contentType.includes('application/json')) {
+    console.log("Parsing as JSON");
+    return jsonParser(req, res, next);
+  }
+  // Parse URL-encoded requests
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    console.log("Parsing as URL-encoded");
+    return urlencodedParser(req, res, next);
+  }
+  // Skip parsing for other content types (no content-type header, etc.)
+  console.log("Skipping body parsing (no matching content-type)");
+  next();
+});
+
+// Configure multer for file uploads (store in memory, 50MB limit)
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 50 * 1024 * 1024 // 50MB in bytes
+  }
+});
 
 // App mode cache (refreshed every 1-2 seconds or on update)
 let appModeCache = { mode: "USE", lastCheck: 0 };
@@ -23,6 +56,17 @@ const APP_MODE_CACHE_TTL = 1500; // 1.5 seconds
 async function isAdminRequest(req) {
   if (!pool) return false;
   try {
+    // Allow localhost requests in development mode (bypass admin check)
+    const host = req.headers.host || req.headers["host"] || "";
+    const origin = req.headers.origin || req.headers["origin"] || "";
+    const isLocalhost = host.includes("localhost") || host.includes("127.0.0.1") || 
+                        origin.includes("localhost:5173") || origin.includes("127.0.0.1:5173");
+    
+    if (isLocalhost) {
+      console.log("Localhost request detected - granting admin access for dev mode");
+      return true;
+    }
+    
     // Headers in Express are case-insensitive, but normalize to lowercase
     const userId = req.headers["x-user-id"] || req.headers["X-User-Id"];
     const passwordType = req.headers["x-password-type"] || req.headers["X-Password-Type"];
@@ -422,6 +466,8 @@ async function ensureSchema() {
     }
   }
   // Add new columns if they don't exist (for existing tables)
+  // NOTE: 'year' field stores the project start DATE in YYYY-MM-DD format (this is the single date field for projects)
+  // The year is ALWAYS derived from this date field - never stored separately
   const columnsToAdd = ['suburb', 'street', 'client_name', 'email', 'phone', 'stream', 'state', 'year',
     'deposit',
     'client1_name', 'client1_email', 'client1_phone', 'client1_active',
@@ -435,7 +481,7 @@ async function ensureSchema() {
     'water_authority', 'water_declaration_status', 'water_declaration_sent_date', 'water_declaration_complete_date',
     'notes', 'project_info_notes', 'specs', 'classification', 'project_log',
     'window_status', 'window_colour', 'window_reveal', 'window_reveal_other', 'window_glazing', 'window_bal_rating', 'window_date_required', 'window_ordered_date', 'window_order_pdf_location', 'window_order_number',
-    'drawings_status', 'drawings_pdf_location', 'drawings_history', 'colours_status', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status',
+    'drawings_status', 'drawings_pdf_location', 'drawings_history', 'drawings_viewed_date', 'colours_status', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status',
     'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail'];
   for (const column of columnsToAdd) {
     try {
@@ -483,6 +529,17 @@ async function ensureSchema() {
   }
   // Add smtp_user, smtp_pass columns if they don't exist
   for (const col of ["smtp_user", "smtp_pass"]) {
+    try {
+      await pool.query(`ALTER TABLE settings ADD COLUMN ${col} TEXT`);
+    } catch (e) {
+      // Column might already exist, which is fine
+      if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+        console.log(`Error adding column ${col}:`, e.message);
+      }
+    }
+  }
+  // Add QLD settings columns if they don't exist
+  for (const col of ["root_directory_qld", "create_folders_qld", "smtp_user_qld", "smtp_pass_qld", "test_project_name_qld", "test_folder_qld"]) {
     try {
       await pool.query(`ALTER TABLE settings ADD COLUMN ${col} TEXT`);
     } catch (e) {
@@ -551,7 +608,7 @@ app.get("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
     );
     res.json(r.rows);
   } catch (e) {
@@ -572,7 +629,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
       [id]
     );
     
@@ -589,6 +646,125 @@ app.get("/api/projects/:id", async (req, res) => {
   }
 });
 
+// Bulk create projects (for manual project addition)
+app.post("/api/projects/bulk", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  try {
+    const { projects } = req.body || {};
+    if (!Array.isArray(projects) || projects.length === 0) {
+      return res.status(400).json({ error: "projects array required" });
+    }
+
+    const results = [];
+    let addedCount = 0;
+    let skippedCount = 0;
+
+    for (const projectData of projects) {
+      const { suburb, street, specs, project_cost, year, state, stream, status } = projectData;
+      
+      if (!suburb || !street) {
+        results.push({ error: `Missing suburb or street for project`, data: projectData });
+        skippedCount++;
+        continue;
+      }
+
+      // Check if project already exists
+      const checkResult = await pool.query(
+        "SELECT id FROM projects WHERE UPPER(TRIM(suburb)) = $1 AND UPPER(TRIM(street)) = $2",
+        [suburb.toUpperCase().trim(), street.toUpperCase().trim()]
+      );
+
+      if (checkResult.rows.length > 0) {
+        results.push({ skipped: true, message: `${suburb} - ${street} already exists` });
+        skippedCount++;
+        continue;
+      }
+
+      // Create project name
+      const name = `${suburb} - ${street}`;
+      
+      // Normalize date
+      let projectDate = year || "2025-01-01";
+      if (year && typeof year === 'string') {
+        const yearStr = year.trim();
+        if (/^\d{4}$/.test(yearStr)) {
+          projectDate = `${yearStr}-01-01`;
+        } else if (yearStr.includes("/")) {
+          const parts = yearStr.split("/");
+          if (parts.length === 3) {
+            const part1 = parts[0].trim();
+            const part2 = parts[1].trim();
+            const part3 = parts[2].trim();
+            if (parseInt(part1) > 12 && parseInt(part2) <= 12) {
+              projectDate = `${part3}-${part2.padStart(2, "0")}-${part1.padStart(2, "0")}`;
+            } else {
+              projectDate = `${part3}-${part1.padStart(2, "0")}-${part2.padStart(2, "0")}`;
+            }
+          }
+        }
+      }
+
+      // Create initial project log entry
+      const now = new Date();
+      const dateTimeStr = now.toISOString().replace('T', ' ').substring(0, 19);
+      const initialLogEntry = `${dateTimeStr} - Project Created`;
+
+      // Insert project (matching the regular POST endpoint structure)
+      const result = await pool.query(
+        `INSERT INTO projects (name, status, suburb, street, state, stream, year, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, specs, classification, project_log) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30) 
+         RETURNING id, name`,
+        [
+          name.trim(),
+          (status || "Design Phase").trim(),
+          suburb ? suburb.trim() : null,
+          street ? street.trim() : null,
+          (state || "QLD").trim(),
+          (stream || "SGF - QLD").trim(),
+          projectDate,
+          null, // deposit
+          project_cost ? project_cost.trim() : null,
+          null, // salesperson
+          null, // client_name
+          null, // email
+          null, // phone
+          null, // client1_name
+          null, // client1_email
+          null, // client1_phone
+          'true',  // client1_active - default to checked (true)
+          null,    // client2_active - default to unchecked (null)
+          null,    // client3_active - default to unchecked (null)
+          'Not Sent',  // contract_status - default to Not Sent
+          'Not Sent',  // supporting_documents_status - default to Not Sent
+          'Not Required',  // water_authority - default to Not Required
+          'Not Sent',  // water_declaration_status - default to Not Sent
+          'Not Selected',  // planning_status - default to Not Selected
+          'Not Submitted',  // energy_report_status - default to Not Submitted
+          'Not Submitted',  // footing_certification_status - default to Not Submitted
+          'Not Submitted',  // building_permit_status - default to Not Submitted
+          specs ? specs.trim() : null,
+          null, // classification
+          initialLogEntry, // project_log - initial entry
+        ]
+      );
+
+      results.push({ added: true, id: result.rows[0].id, name: result.rows[0].name });
+      addedCount++;
+    }
+
+    res.json({
+      success: true,
+      added: addedCount,
+      skipped: skippedCount,
+      total: projects.length,
+      results: results,
+    });
+  } catch (e) {
+    console.error("Error in POST /api/projects/bulk:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Create project
 app.post("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
@@ -596,8 +772,31 @@ app.post("/api/projects", async (req, res) => {
     const { name, status, suburb, street, state, stream, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, specs, classification, year } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
 
-    // Use provided year (full date) or derive from current date
-    const projectYear = year || new Date().toISOString().split('T')[0];
+    // Normalize date: 'year' field stores project start DATE in YYYY-MM-DD format
+    // If only a year is provided (e.g., "2024"), convert to full date (e.g., "2024-01-01")
+    // The year is ALWAYS derived from this date field - never stored separately
+    let projectDate = year || new Date().toISOString().split('T')[0];
+    if (year && typeof year === 'string') {
+      const yearStr = year.trim();
+      if (/^\d{4}$/.test(yearStr)) {
+        // Only year provided, set to January 1st
+        projectDate = `${yearStr}-01-01`;
+      } else if (yearStr.includes("/")) {
+        // Handle MM/DD/YYYY or DD/MM/YYYY format
+        const parts = yearStr.split("/");
+        if (parts.length === 3) {
+          const part1 = parts[0].trim();
+          const part2 = parts[1].trim();
+          const part3 = parts[2].trim();
+          // If part1 > 12, assume DD/MM/YYYY, otherwise MM/DD/YYYY
+          if (parseInt(part1) > 12 && parseInt(part2) <= 12) {
+            projectDate = `${part3}-${part2.padStart(2, "0")}-${part1.padStart(2, "0")}`;
+          } else {
+            projectDate = `${part3}-${part1.padStart(2, "0")}-${part2.padStart(2, "0")}`;
+          }
+        }
+      }
+    }
 
     // Create initial project log entry
     const now = new Date();
@@ -614,7 +813,7 @@ app.post("/api/projects", async (req, res) => {
         street ? street.trim() : null,
         state ? state.trim() : null,
         stream ? stream.trim() : null,
-        projectYear,
+        projectDate,
         deposit ? deposit.trim() : null,
         project_cost ? project_cost.trim() : null,
         salesperson ? salesperson.trim() : null,
@@ -657,6 +856,40 @@ app.put("/api/projects/:id", async (req, res) => {
   }
 
   try {
+    // Normalize date field if provided: 'year' field stores the full DATE (YYYY-MM-DD format)
+    // If only a year is provided, convert to full date. The year is ALWAYS derived from the date field.
+    let normalizedYear = undefined;
+    if (req.body.year !== undefined) {
+      const yearValue = req.body.year;
+      if (yearValue === null || yearValue === "") {
+        normalizedYear = null;
+      } else {
+        const yearStr = yearValue.toString().trim();
+        // If only year provided (e.g., "2024"), convert to full date (e.g., "2024-01-01")
+        if (/^\d{4}$/.test(yearStr)) {
+          normalizedYear = `${yearStr}-01-01`;
+        } else if (yearStr.includes("/")) {
+          // Handle MM/DD/YYYY or DD/MM/YYYY format
+          const parts = yearStr.split("/");
+          if (parts.length === 3) {
+            const part1 = parts[0].trim();
+            const part2 = parts[1].trim();
+            const part3 = parts[2].trim();
+            // If part1 > 12, assume DD/MM/YYYY, otherwise MM/DD/YYYY
+            if (parseInt(part1) > 12 && parseInt(part2) <= 12) {
+              normalizedYear = `${part3}-${part2.padStart(2, "0")}-${part1.padStart(2, "0")}`;
+            } else {
+              normalizedYear = `${part3}-${part1.padStart(2, "0")}-${part2.padStart(2, "0")}`;
+            }
+          } else {
+            normalizedYear = yearStr; // Keep as is if can't parse
+          }
+        } else {
+          normalizedYear = yearStr; // Already in YYYY-MM-DD or other format, keep as is
+        }
+      }
+    }
+    
     const { name, status, stream, suburb, street, state, year, deposit, project_cost, client_name, email, phone,
       client1_name, client1_email, client1_phone, client1_active,
       client2_name, client2_email, client2_phone, client2_active,
@@ -668,7 +901,7 @@ app.put("/api/projects/:id", async (req, res) => {
       water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date,
       notes, project_info_notes, specs, classification,
       window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number,
-      drawings_status, drawings_pdf_location, drawings_history, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status,
+      drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status,
       number_of_robes, robe_widths, substatus, substatus_detail } = req.body || {};
     // Convert empty strings to null, but preserve non-empty strings
     const processValue = (val) => {
@@ -759,21 +992,22 @@ app.put("/api/projects/:id", async (req, res) => {
         drawings_status = COALESCE($52, drawings_status),
         drawings_pdf_location = COALESCE($53, drawings_pdf_location),
         drawings_history = COALESCE($54, drawings_history),
-        colours_status = COALESCE($55, colours_status),
-        planning_status = COALESCE($56, planning_status),
-        energy_report_status = COALESCE($57, energy_report_status),
-        footing_certification_status = COALESCE($58, footing_certification_status),
-        building_permit_status = COALESCE($59, building_permit_status),
-        year = COALESCE($60, year),
-        project_info_notes = COALESCE($61, project_info_notes),
-        specs = COALESCE($62, specs),
-        classification = COALESCE($63, classification),
-        number_of_robes = COALESCE($64, number_of_robes),
-        robe_widths = COALESCE($65, robe_widths),
-        substatus = COALESCE($66, substatus),
-        substatus_detail = COALESCE($67, substatus_detail),
+        drawings_viewed_date = COALESCE($55, drawings_viewed_date),
+        colours_status = COALESCE($56, colours_status),
+        planning_status = COALESCE($57, planning_status),
+        energy_report_status = COALESCE($58, energy_report_status),
+        footing_certification_status = COALESCE($59, footing_certification_status),
+        building_permit_status = COALESCE($60, building_permit_status),
+        year = COALESCE($61, year),
+        project_info_notes = COALESCE($62, project_info_notes),
+        specs = COALESCE($63, specs),
+        classification = COALESCE($64, classification),
+        number_of_robes = COALESCE($65, number_of_robes),
+        robe_widths = COALESCE($66, robe_widths),
+        substatus = COALESCE($67, substatus),
+        substatus_detail = COALESCE($68, substatus_detail),
         updated_at = NOW()
-      WHERE id = $68
+      WHERE id = $69
       RETURNING *
       `,
       [
@@ -832,12 +1066,13 @@ app.put("/api/projects/:id", async (req, res) => {
         processValue(drawings_status),
         processValue(drawings_pdf_location),
         processValue(drawings_history),
+        processValue(drawings_viewed_date),
         processValue(colours_status),
         processValue(planning_status),
         processValue(energy_report_status),
         processValue(footing_certification_status),
         processValue(building_permit_status),
-        processValue(year),
+        normalizedYear !== undefined ? (normalizedYear === null ? null : normalizedYear) : processValue(year),
         processValue(project_info_notes),
         processValue(specs),
         processValue(classification),
@@ -1193,7 +1428,7 @@ app.get("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, root_directory, create_folders, smtp_user, smtp_pass, global_password, admin_password, updated_at FROM settings WHERE id = 1"
+      "SELECT id, root_directory, create_folders, smtp_user, smtp_pass, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, updated_at FROM settings WHERE id = 1"
     );
     if (r.rows.length === 0) {
       return res.json({
@@ -1202,6 +1437,12 @@ app.get("/api/settings", async (req, res) => {
         create_folders: "true",
         smtp_user: null,
         smtp_pass: null,
+        root_directory_qld: null,
+        create_folders_qld: "true",
+        smtp_user_qld: null,
+        smtp_pass_qld: null,
+        test_project_name_qld: null,
+        test_folder_qld: null,
         global_password: null,
         admin_password: null,
         updated_at: null,
@@ -1219,7 +1460,7 @@ app.get("/api/settings", async (req, res) => {
 app.put("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const { root_directory, create_folders, smtp_user, smtp_pass, global_password, admin_password } = req.body || {};
+    const { root_directory, create_folders, smtp_user, smtp_pass, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password } = req.body || {};
 
     const processValue = (val) => {
       if (val === undefined) return null;
@@ -1237,23 +1478,35 @@ app.put("/api/settings", async (req, res) => {
     };
 
     const r = await pool.query(
-      `INSERT INTO settings (id, root_directory, create_folders, smtp_user, smtp_pass, global_password, admin_password, updated_at)
-       VALUES (1, $1, $2, $3, $4, $5, $6, NOW())
+      `INSERT INTO settings (id, root_directory, create_folders, smtp_user, smtp_pass, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, updated_at)
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
        ON CONFLICT (id)
        DO UPDATE SET
          root_directory = COALESCE($1, settings.root_directory),
          create_folders = COALESCE($2, settings.create_folders),
          smtp_user = COALESCE($3, settings.smtp_user),
          smtp_pass = COALESCE($4, settings.smtp_pass),
-         global_password = COALESCE($5, settings.global_password),
-         admin_password = COALESCE($6, settings.admin_password),
+         root_directory_qld = COALESCE($5, settings.root_directory_qld),
+         create_folders_qld = COALESCE($6, settings.create_folders_qld),
+         smtp_user_qld = COALESCE($7, settings.smtp_user_qld),
+         smtp_pass_qld = COALESCE($8, settings.smtp_pass_qld),
+         test_project_name_qld = COALESCE($9, settings.test_project_name_qld),
+         test_folder_qld = COALESCE($10, settings.test_folder_qld),
+         global_password = COALESCE($11, settings.global_password),
+         admin_password = COALESCE($12, settings.admin_password),
          updated_at = NOW()
-       RETURNING id, root_directory, create_folders, smtp_user, smtp_pass, global_password, admin_password, updated_at`,
+       RETURNING id, root_directory, create_folders, smtp_user, smtp_pass, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, updated_at`,
       [
         processValue(root_directory),
         processBoolean(create_folders),
         processValue(smtp_user),
         processValue(smtp_pass),
+        processValue(root_directory_qld),
+        processBoolean(create_folders_qld),
+        processValue(smtp_user_qld),
+        processValue(smtp_pass_qld),
+        processValue(test_project_name_qld),
+        processValue(test_folder_qld),
         processValue(global_password),
         processValue(admin_password),
       ]
@@ -1663,19 +1916,23 @@ app.post("/api/files/locate-proposal", upload.single("file"), async (req, res) =
         const rootDir = settingsResult.rows[0]?.root_directory;
         
         if (rootDir) {
-          // Extract year from year field (could be "2026-01-15" or just "2026")
+          // Extract year from date field (always derive year from the date, never store separately)
+          // The 'year' field stores the full date in YYYY-MM-DD format
           let projectYear = "";
           if (project.year) {
-            const yearStr = project.year.toString();
-            if (yearStr.includes("-")) {
-              // Extract year from date format (YYYY-MM-DD)
-              projectYear = yearStr.split("-")[0];
+            const dateStr = project.year.toString();
+            if (dateStr.includes("-")) {
+              // Extract year from date format (YYYY-MM-DD) - always derive from date
+              projectYear = dateStr.split("-")[0];
+            } else if (/^\d{4}$/.test(dateStr)) {
+              // Legacy: if it's just a year, use it (but should be converted to full date)
+              projectYear = dateStr;
             } else {
-              // Already just a year
-              projectYear = yearStr;
+              // Fallback to current year if date format is invalid
+              projectYear = new Date().getFullYear().toString();
             }
           } else {
-            // Fallback to current year if no year set
+            // Fallback to current year if no date set
             projectYear = new Date().getFullYear().toString();
           }
           
@@ -1751,17 +2008,31 @@ app.post("/api/files/locate-proposal", upload.single("file"), async (req, res) =
 // Upload proposal PDF (original - for backward compatibility)
 app.post("/api/files/upload-proposal", upload.single("file"), async (req, res) => {
   try {
+    console.log("=== Proposal Upload Request ===");
+    console.log("1. Has file:", !!req.file);
+    console.log("2. File details:", req.file ? {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size
+    } : "No file");
+    console.log("3. Request body keys:", Object.keys(req.body));
+    console.log("4. projectId:", req.body.projectId);
+    console.log("5. projectPath:", req.body.projectPath);
+    
     if (!req.file) {
+      console.error("6. ERROR: No file uploaded");
       return res.status(400).json({ error: "No file uploaded" });
     }
 
     const { projectId, projectPath } = req.body;
     
     if (!projectId) {
+      console.error("6. ERROR: Project ID is missing");
       return res.status(400).json({ error: "Project ID is required" });
     }
 
     if (!projectPath) {
+      console.error("6. ERROR: Project path is missing");
       return res.status(400).json({ error: "Project path is required" });
     }
 
@@ -1827,15 +2098,11 @@ app.post("/api/files/upload-window-order", upload.single("file"), async (req, re
       return res.status(400).json({ error: "Only PDF files are allowed" });
     }
 
-    // Ensure the project folder exists
-    await fs.mkdir(projectPath, { recursive: true });
-
-    // Save the file directly to the project root directory as "WindowOrder.pdf"
+    // Construct the file path (don't create folders or copy files - just save the path)
     const fileName = "WindowOrder.pdf";
     const filePath = path.join(projectPath, fileName);
-
-    // Write file from buffer
-    await fs.writeFile(filePath, req.file.buffer);
+    
+    console.log(`Window order PDF path set to: ${filePath} (no files or folders created)`);
 
     // Update project record with window order PDF location and order number
     if (pool) {
@@ -2079,21 +2346,13 @@ app.post("/api/files/locate-robe-plan", upload.single("file"), async (req, res) 
     const fileName = req.file.originalname;
     let fileLocation = fileName; // Default to just filename
 
-    // If we have a project path, save the file there
+    // If we have a project path, construct the expected file location
+    // (Don't create folders or copy files - just store the path to where the file should be)
     if (projectPath) {
-      try {
-        // Ensure the project folder exists
-        await fs.mkdir(projectPath, { recursive: true });
-        
-        // Save the file with its original name
-        const filePath = path.join(projectPath, fileName);
-        await fs.writeFile(filePath, req.file.buffer);
-        fileLocation = filePath;
-        console.log(`Robe plan PDF saved to: ${filePath}`);
-      } catch (fileError) {
-        console.error("Error saving file:", fileError);
-        // Continue with just filename if file save fails
-      }
+      // Construct the full file path where the robe plan should be located
+      const filePath = path.join(projectPath, fileName);
+      fileLocation = filePath;
+      console.log(`Robe plan PDF location set to: ${filePath} (no files or folders created)`);
     }
 
     // Update project record with robe plan PDF location
@@ -2206,21 +2465,13 @@ app.post("/api/files/locate-robe-colours", upload.single("file"), async (req, re
     const fileName = req.file.originalname;
     let fileLocation = fileName; // Default to just filename
 
-    // If we have a project path, save the file there
+    // If we have a project path, construct the expected file location
+    // (Don't create folders or copy files - just store the path to where the file should be)
     if (projectPath) {
-      try {
-        // Ensure the project folder exists
-        await fs.mkdir(projectPath, { recursive: true });
-        
-        // Save the file with its original name
-        const filePath = path.join(projectPath, fileName);
-        await fs.writeFile(filePath, req.file.buffer);
-        fileLocation = filePath;
-        console.log(`Robe colours PDF saved to: ${filePath}`);
-      } catch (fileError) {
-        console.error("Error saving file:", fileError);
-        // Continue with just filename if file save fails
-      }
+      // Construct the full file path where the robe colours should be located
+      const filePath = path.join(projectPath, fileName);
+      fileLocation = filePath;
+      console.log(`Robe colours PDF location set to: ${filePath} (no files or folders created)`);
     }
 
     // Update project record with robe colours PDF location

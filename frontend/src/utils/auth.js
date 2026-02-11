@@ -30,12 +30,26 @@ export function getApiHeaders(additionalHeaders = {}) {
 }
 
 /**
+ * Check if running in development mode (localhost:5173)
+ */
+export function isDevelopmentMode() {
+  return window.location.hostname === 'localhost' && window.location.port === '5173';
+}
+
+/**
  * Check if the logged-in user has Admin position AND logged in with admin password
  * Returns a promise that resolves to true only if:
  * 1. User has "Admin" position, AND
  * 2. User logged in with admin password (not global password)
+ * 
+ * In development mode (localhost:5173), always returns true for full admin access
  */
 export async function isUserAdmin() {
+  // In development mode, always grant admin access
+  if (isDevelopmentMode()) {
+    return true;
+  }
+
   const userId = getLoggedInUserId();
   if (!userId) {
     return false;

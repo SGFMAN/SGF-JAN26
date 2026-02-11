@@ -78,6 +78,11 @@ const FIELD_DEFINITIONS = {
     values: ["Not Submitted", "Sent", "Complete"],
     defaultValue: "Not Submitted",
   },
+  deposit: {
+    label: "Deposit Paid",
+    values: ["Full Deposit", "Partial Deposit"],
+    defaultValue: "Partial Deposit",
+  },
   status: {
     label: "Project Status",
     values: ["Design Phase", "Construction Phase", "On Hold", "Cancelled", "Complete"],
@@ -97,6 +102,7 @@ export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedField, setSelectedField] = useState("");
   const [selectedValue, setSelectedValue] = useState("");
+  const [stateFilter, setStateFilter] = useState("All");
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [newProjectStep, setNewProjectStep] = useState(1);
   const [newProjectFormData, setNewProjectFormData] = useState({
@@ -136,13 +142,18 @@ export default function HomePage() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`${API_URL}/api/projects`);
+      const url = `${API_URL}/api/projects`;
+      console.log("Fetching projects from:", url);
+      const response = await fetch(url);
+      console.log("Projects response status:", response.status, response.statusText);
       if (!response.ok) {
-        throw new Error(`Failed to fetch projects: ${response.statusText}`);
+        const errorText = await response.text().catch(() => response.statusText);
+        console.error("Projects API error:", errorText);
+        throw new Error(`Failed to fetch projects: ${response.status} ${response.statusText}`);
       }
       const data = await response.json();
       console.log("Projects from API:", data);
-      setProjects(data);
+      setProjects(data || []);
     } catch (err) {
       setError(err.message);
       console.error("Error fetching projects:", err);
@@ -220,6 +231,40 @@ export default function HomePage() {
     
     let value = project[fieldName];
     
+    // Special handling for deposit field: convert to Full Deposit/Partial Deposit based on whether it equals 5% of project cost
+    if (fieldName === "deposit") {
+      const depositValue = value;
+      if (!depositValue || depositValue === null || depositValue === undefined || depositValue === "") {
+        return null; // No deposit - don't show in filter
+      }
+      
+      // Get project cost
+      const projectCost = project.project_cost;
+      if (!projectCost || projectCost === null || projectCost === undefined || projectCost === "") {
+        return "Partial Deposit"; // If no project cost, can't determine if full, so treat as partial
+      }
+      
+      // Extract numeric values (remove $ and commas)
+      const depositNumeric = parseInt(depositValue.toString().replace(/[^0-9]/g, "")) || 0;
+      const costNumeric = parseInt(projectCost.toString().replace(/[^0-9]/g, "")) || 0;
+      
+      if (costNumeric === 0) {
+        return "Partial Deposit"; // Can't calculate if no cost
+      }
+      
+      // Calculate 5% of project cost
+      const fullDepositAmount = Math.floor(costNumeric / 20); // 5% = divide by 20
+      
+      // Check if deposit equals full deposit amount
+      if (depositNumeric === fullDepositAmount && fullDepositAmount > 0) {
+        return "Full Deposit";
+      } else if (depositNumeric > 0) {
+        return "Partial Deposit";
+      }
+      
+      return null; // No deposit
+    }
+    
     // Special handling for year field: extract year from date
     if (fieldName === "year" && value) {
       // If it's a date (YYYY-MM-DD), extract just the year
@@ -248,6 +293,12 @@ export default function HomePage() {
     const fieldDef = FIELD_DEFINITIONS[selectedField];
     if (!fieldDef) return [];
 
+    // For deposit field, only show predefined values (Full Deposit, Partial Deposit)
+    // Don't include project values since we calculate them dynamically
+    if (selectedField === "deposit") {
+      return fieldDef.values;
+    }
+
     // Get unique values from projects (using effective values)
     const projectValues = new Set();
     projects.forEach(project => {
@@ -271,10 +322,18 @@ export default function HomePage() {
     return Array.from(allValues).sort();
   }
 
-  // Filter projects based on status, field/value, and search query
+  // Filter projects based on status, field/value, search query, and state filter
   function getFilteredProjects() {
     // First filter out "Complete", "Cancelled", "Construction Phase", and "Hotlist" status projects
     let filtered = projects.filter((project) => project.status !== "Complete" && project.status !== "Cancelled" && project.status !== "Construction Phase" && project.status !== "Hotlist");
+
+    // Filter by state if specified
+    if (stateFilter !== "All") {
+      filtered = filtered.filter(project => {
+        const projectState = (project.state || "").toUpperCase();
+        return projectState === stateFilter.toUpperCase();
+      });
+    }
 
     // Then filter by field/value if specified
     if (selectedField && selectedValue) {
@@ -362,29 +421,116 @@ export default function HomePage() {
             In Design
           </h1>
         </div>
-        {isAdmin && (
+        <div
+          style={{
+            position: "absolute",
+            top: "20px",
+            right: "20px",
+            display: "flex",
+            gap: "10px",
+            alignItems: "center",
+          }}
+        >
+          {/* State Filter Buttons */}
           <button
-            onClick={() => setIsNewProjectOpen(true)}
+            onClick={() => setStateFilter("VIC")}
             style={{
-              position: "absolute",
-              top: "20px",
-              right: "20px",
-              background: "#33cc33",
-              color: WHITE,
-              border: "none",
+              background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
+              color: stateFilter === "VIC" ? WHITE : MONUMENT,
+              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : MONUMENT}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
               fontWeight: 500,
               cursor: "pointer",
-              transition: "background 0.2s",
+              transition: "background 0.2s, color 0.2s",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "#2bb32b")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "#33cc33")}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "VIC") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "VIC") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
           >
-            + New Project
+            VIC Only
           </button>
-        )}
+          <button
+            onClick={() => setStateFilter("QLD")}
+            style={{
+              background: stateFilter === "QLD" ? "#D54358" : WHITE,
+              color: stateFilter === "QLD" ? WHITE : MONUMENT,
+              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : MONUMENT}`,
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "QLD") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "QLD") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
+          >
+            QLD Only
+          </button>
+          <button
+            onClick={() => setStateFilter("All")}
+            style={{
+              background: stateFilter === "All" ? MONUMENT : WHITE,
+              color: stateFilter === "All" ? WHITE : MONUMENT,
+              border: `2px solid ${MONUMENT}`,
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "All") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "All") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
+          >
+            All Projects
+          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setIsNewProjectOpen(true)}
+              style={{
+                background: "#33cc33",
+                color: WHITE,
+                border: "none",
+                borderRadius: "8px",
+                padding: "10px 20px",
+                fontSize: "1rem",
+                fontWeight: 500,
+                cursor: "pointer",
+                transition: "background 0.2s",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#2bb32b")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "#33cc33")}
+            >
+              + New Project
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Sections 2 & 3 */}
@@ -621,13 +767,17 @@ export default function HomePage() {
         >
           <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "16px" }}>
             In Design {(() => {
-              const currentProjects = projects.filter((project) => project.status !== "Complete" && project.status !== "Cancelled" && project.status !== "Construction Phase");
+              const currentProjects = projects.filter((project) => project.status !== "Complete" && project.status !== "Cancelled" && project.status !== "Construction Phase" && project.status !== "Hotlist");
+              const totalCount = currentProjects.length;
+              
               if (selectedField && selectedValue) {
                 return `(${filteredProjects.length} found)`;
               } else if (searchQuery.trim()) {
                 return `(${filteredProjects.length} found)`;
+              } else if (stateFilter !== "All") {
+                return `(${filteredProjects.length} total)`;
               }
-              return currentProjects.length > 0 ? `(${currentProjects.length} total)` : "";
+              return totalCount > 0 ? `(${totalCount} total)` : "";
             })()}
           </h2>
           
@@ -802,32 +952,32 @@ export default function HomePage() {
                 }}
               >
                 {filteredProjects.map((project) => {
-                  // Classification mapping
+                  // Classification mapping - all grey
                   const classificationMap = {
-                    "Small Second Dwelling": { acronym: "SSD", color: "#0066cc" }, // Blue
-                    "Dependant Persons Unit": { acronym: "DPU", color: "#33cc33" }, // Green
-                    "Detached Extension": { acronym: "DEX", color: "#ff9900" }, // Orange
-                    "Dwelling": { acronym: "DWE", color: "#9966cc" }, // Purple
-                    "Home Office / Studio": { acronym: "STU", color: "#ffcc00" }, // Yellow
-                    "Dwelling & DPU": { acronym: "D&DPU", color: "#6699cc" }, // Blue-Purple mix
-                    "Dwelling & SSD": { acronym: "D&SSD", color: "#8066cc" }, // Purple-Blue mix
-                    "SSD & DPU": { acronym: "SSD&DPU", color: "#0099cc" }, // Blue-Green mix
-                    "Dual Occ": { acronym: "DOC", color: "#cc6600" }, // Brown-Orange
+                    "Small Second Dwelling": { acronym: "SSD", color: "#a1a1a3" }, // Grey
+                    "Dependant Persons Unit": { acronym: "DPU", color: "#a1a1a3" }, // Grey
+                    "Detached Extension": { acronym: "DEX", color: "#a1a1a3" }, // Grey
+                    "Dwelling": { acronym: "DWE", color: "#a1a1a3" }, // Grey
+                    "Home Office / Studio": { acronym: "STU", color: "#a1a1a3" }, // Grey
+                    "Dwelling & DPU": { acronym: "D&DPU", color: "#a1a1a3" }, // Grey
+                    "Dwelling & SSD": { acronym: "D&SSD", color: "#a1a1a3" }, // Grey
+                    "SSD & DPU": { acronym: "SSD&DPU", color: "#a1a1a3" }, // Grey
+                    "Dual Occ": { acronym: "DOC", color: "#a1a1a3" }, // Grey
                   };
                   const classificationInfo = project.classification ? classificationMap[project.classification] : null;
 
-                  // Stream mapping
+                  // Stream mapping - colored by stream type
                   const streamMap = {
-                    "SGF - VIC": { acronym: "VIC SALE", color: SECTION_GREY }, // Grey
-                    "SGF - QLD": { acronym: "QLD SALE", color: SECTION_GREY }, // Grey
-                    "Dual Dwelling": { acronym: "DDI SALE", color: SECTION_GREY }, // Grey
-                    "ATA": { acronym: "ATA SALE", color: SECTION_GREY }, // Grey
-                    "Pumped on Property": { acronym: "POP SALE", color: SECTION_GREY }, // Grey
-                    "Pumped On Property": { acronym: "POP SALE", color: SECTION_GREY }, // Grey (handle both variations)
-                    "Henderson": { acronym: "HEN SALE", color: SECTION_GREY }, // Grey
-                    "Creat Cash Flow": { acronym: "CCF SALE", color: SECTION_GREY }, // Grey
-                    "Create Cash Flow": { acronym: "CCF SALE", color: SECTION_GREY }, // Grey (handle both variations)
-                    "Maple Group": { acronym: "MAP SALE", color: SECTION_GREY }, // Grey
+                    "SGF - VIC": { acronym: "VIC", color: "#4D93D9" }, // Blue
+                    "SGF - QLD": { acronym: "QLD", color: "#D54358" }, // Red
+                    "Dual Dwelling": { acronym: "DD", color: "#92D050" }, // Green
+                    "ATA": { acronym: "ATA", color: "#92D050" }, // Green
+                    "Pumped on Property": { acronym: "POP", color: "#92D050" }, // Green
+                    "Pumped On Property": { acronym: "POP", color: "#92D050" }, // Green (handle both variations)
+                    "Henderson": { acronym: "HEN", color: "#92D050" }, // Green
+                    "Creat Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green
+                    "Create Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green (handle both variations)
+                    "Maple Group": { acronym: "MAP", color: "#92D050" }, // Green
                   };
                   const streamInfo = project.stream ? streamMap[project.stream] : null;
 
@@ -1042,7 +1192,38 @@ export default function HomePage() {
         formData={newProjectFormData}
         onFormDataChange={setNewProjectFormData}
         onBack={() => setNewProjectStep(1)}
-        onNext={() => setNewProjectStep(3)}
+        onNext={async () => {
+          // Check settings to determine if we should skip the proposal upload step
+          try {
+            const settingsResponse = await fetch(`${API_URL}/api/settings`);
+            if (settingsResponse.ok) {
+              const settings = await settingsResponse.json();
+              const state = (newProjectFormData.state || "").toUpperCase();
+              
+              // Check if "Create folders" is enabled for the selected state
+              let createFolders = false;
+              if (state === "VIC") {
+                createFolders = settings.create_folders === 'true' || settings.create_folders === true;
+              } else if (state === "QLD") {
+                createFolders = settings.create_folders_qld === 'true' || settings.create_folders_qld === true;
+              }
+              
+              // If createFolders is false, skip step 3 (proposal upload) and go directly to step 4
+              if (!createFolders) {
+                setNewProjectStep(4);
+              } else {
+                setNewProjectStep(3);
+              }
+            } else {
+              // If settings fetch fails, default to showing step 3
+              setNewProjectStep(3);
+            }
+          } catch (error) {
+            console.error("Error checking settings:", error);
+            // If error, default to showing step 3
+            setNewProjectStep(3);
+          }
+        }}
       />
       <NewProject3
         isOpen={isNewProjectOpen && newProjectStep === 3}
@@ -1089,7 +1270,38 @@ export default function HomePage() {
         }}
         formData={newProjectFormData}
         onFormDataChange={setNewProjectFormData}
-        onBack={() => setNewProjectStep(3)}
+        onBack={async () => {
+          // Check settings to determine which step to go back to
+          try {
+            const settingsResponse = await fetch(`${API_URL}/api/settings`);
+            if (settingsResponse.ok) {
+              const settings = await settingsResponse.json();
+              const state = (newProjectFormData.state || "").toUpperCase();
+              
+              // Check if "Create folders" is enabled for the selected state
+              let createFolders = false;
+              if (state === "VIC") {
+                createFolders = settings.create_folders === 'true' || settings.create_folders === true;
+              } else if (state === "QLD") {
+                createFolders = settings.create_folders_qld === 'true' || settings.create_folders_qld === true;
+              }
+              
+              // If createFolders is false, we skipped step 3, so go back to step 2
+              if (!createFolders) {
+                setNewProjectStep(2);
+              } else {
+                setNewProjectStep(3);
+              }
+            } else {
+              // If settings fetch fails, default to step 3
+              setNewProjectStep(3);
+            }
+          } catch (error) {
+            console.error("Error checking settings:", error);
+            // If error, default to step 3
+            setNewProjectStep(3);
+          }
+        }}
         onCreate={handleCreateProject}
       />
     </div>

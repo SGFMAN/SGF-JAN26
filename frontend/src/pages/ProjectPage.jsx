@@ -149,13 +149,22 @@ export default function ProjectPage() {
   }
 
   // Debounced update function to prevent flash
-  function updateProject() {
-    if (updateTimeoutRef.current) {
-      clearTimeout(updateTimeoutRef.current);
-    }
-    updateTimeoutRef.current = setTimeout(() => {
+  function updateProject(immediate = false) {
+    if (immediate) {
+      // Clear any pending timeout and fetch immediately
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+        updateTimeoutRef.current = null;
+      }
       fetchProject(true); // Skip loading state to prevent flash
-    }, 300);
+    } else {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
+      updateTimeoutRef.current = setTimeout(() => {
+        fetchProject(true); // Skip loading state to prevent flash
+      }, 300);
+    }
   }
 
   async function handleDeleteProject() {
@@ -402,35 +411,38 @@ export default function ProjectPage() {
           {(project && project.status === "Construction Phase" && showProjectMenu
             ? CONSTRUCTION_MENU_OPTIONS
             : MENU_OPTIONS
-          ).map((item) => (
-            <button
-              key={item.key}
-              style={{
-                background: activeView === item.key ? WHITE : "transparent",
-                color: activeView === item.key ? MONUMENT : "#404049",
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                outline: activeView === item.key ? `2px solid ${MONUMENT}` : "none",
-                boxShadow: activeView === item.key ? "0 2px 4px rgba(50,50,51,.04)" : "none",
-                display: "block",
-                width: "100%",
-              }}
-              onClick={() => setActiveView(item.key)}
-              type="button"
-            >
-              {item.label}
-            </button>
-          ))}
+          ).map((item) => {
+            return (
+              <button
+                key={item.key}
+                style={{
+                  background: activeView === item.key ? WHITE : "transparent",
+                  color: activeView === item.key ? MONUMENT : "#404049",
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "8px 8px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  textDecoration: "none",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  marginBottom: "0px",
+                  lineHeight: "1.4",
+                  outline: activeView === item.key ? `2px solid ${MONUMENT}` : "none",
+                  boxShadow: activeView === item.key ? "0 2px 4px rgba(50,50,51,.04)" : "none",
+                  display: "block",
+                  width: "100%",
+                  position: "relative",
+                }}
+                onClick={() => setActiveView(item.key)}
+                type="button"
+              >
+                {item.label}
+              </button>
+            );
+          })}
           <div style={{ flex: 1 }} />
           <button
             onClick={() => setShowDeleteModal(true)}

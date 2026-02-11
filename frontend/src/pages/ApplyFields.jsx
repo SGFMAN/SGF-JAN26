@@ -75,6 +75,11 @@ const FIELD_DEFINITIONS = {
     values: ["2023", "2024", "2025", "2026"],
     defaultValue: new Date().getFullYear().toString(),
   },
+  month: {
+    label: "Month",
+    values: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+    defaultValue: "",
+  },
   specs: {
     label: "Specs",
     values: ["Affordable", "Superior"],
@@ -132,6 +137,21 @@ export default function ApplyFields() {
   function getEffectiveValue(project, fieldName) {
     const fieldDef = FIELD_DEFINITIONS[fieldName];
     if (!fieldDef) return project[fieldName] || "";
+    
+    // Special handling for month field - extract month from year field
+    if (fieldName === "month") {
+      const yearValue = project.year;
+      if (!yearValue || yearValue === null || yearValue === undefined || yearValue === "") {
+        return "";
+      }
+      // year field is in YYYY-MM-DD format
+      if (/^\d{4}-\d{2}-\d{2}$/.test(yearValue)) {
+        const monthNum = parseInt(yearValue.substring(5, 7));
+        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        return monthNames[monthNum - 1] || "";
+      }
+      return "";
+    }
     
     const value = project[fieldName];
     // If NULL or empty, return the default value
@@ -241,6 +261,28 @@ export default function ApplyFields() {
               ? `${project.street}, ${project.suburb}`.trim() 
               : project?.name || "";
 
+            // Special handling for month field - update the year field instead
+            let yearValue = project?.year || null;
+            if (selectedField === "month" && newValue) {
+              // Convert month name to month number (1-12)
+              const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+              const monthIndex = monthNames.indexOf(newValue);
+              if (monthIndex !== -1) {
+                const monthNum = (monthIndex + 1).toString().padStart(2, "0");
+                
+                // Extract year from current year field (which is in YYYY-MM-DD format)
+                let year = new Date().getFullYear().toString(); // Default to current year
+                if (yearValue && /^\d{4}-\d{2}-\d{2}$/.test(yearValue)) {
+                  year = yearValue.substring(0, 4);
+                } else if (yearValue && /^\d{4}$/.test(yearValue)) {
+                  year = yearValue;
+                }
+                
+                // Set to 1st of the selected month, keeping the year
+                yearValue = `${year}-${monthNum}-01`;
+              }
+            }
+
             // Build update data - include all existing fields and update the selected field
             const updateData = {
               name: projectName,
@@ -299,9 +341,13 @@ export default function ApplyFields() {
               building_permit_status: project?.building_permit_status || null,
               specs: project?.specs || null,
               classification: project?.classification || null,
-              // Update the selected field with the new value
-              [selectedField]: newValue === "" ? null : newValue,
+              year: selectedField === "month" ? yearValue : (project?.year || null),
             };
+
+            // For month field, year is already set above; otherwise update the selected field
+            if (selectedField !== "month") {
+              updateData[selectedField] = newValue === "" ? null : newValue;
+            }
 
             const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
               method: "PUT",
@@ -626,7 +672,7 @@ export default function ApplyFields() {
           {/* Projects List */}
           <div style={{ flex: 1, overflowY: "auto" }}>
             {/* Search Bar */}
-            <div style={{ marginBottom: "16px" }}>
+            <div style={{ marginBottom: "16px", display: "flex", gap: "8px", alignItems: "center" }}>
               <input
                 type="text"
                 placeholder="Search projects..."
@@ -645,6 +691,24 @@ export default function ApplyFields() {
                   outline: "none",
                 }}
               />
+              {searchQuery.trim() && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  style={{
+                    padding: "10px 16px",
+                    fontSize: "0.9rem",
+                    fontWeight: 500,
+                    color: MONUMENT,
+                    background: WHITE,
+                    border: `1px solid ${MONUMENT}`,
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    height: "42px",
+                  }}
+                >
+                  Clear Search
+                </button>
+              )}
             </div>
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>

@@ -392,34 +392,34 @@ export default function SiteVisitManager() {
                     // Use group color if project is in a group, blue if selected, otherwise use MONUMENT
                     const cardBackground = group ? group.color : (isSelected ? "#0066cc" : MONUMENT);
                     
-                    // Stream mapping
-                    const streamMap = {
-                      "SGF - VIC": { acronym: "VIC SALE", color: SECTION_GREY },
-                      "SGF - QLD": { acronym: "QLD SALE", color: SECTION_GREY },
-                      "Dual Dwelling": { acronym: "DDI SALE", color: SECTION_GREY },
-                      "ATA": { acronym: "ATA SALE", color: SECTION_GREY },
-                      "Pumped on Property": { acronym: "POP SALE", color: SECTION_GREY },
-                      "Pumped On Property": { acronym: "POP SALE", color: SECTION_GREY },
-                      "Henderson": { acronym: "HEN SALE", color: SECTION_GREY },
-                      "Creat Cash Flow": { acronym: "CCF SALE", color: SECTION_GREY },
-                      "Create Cash Flow": { acronym: "CCF SALE", color: SECTION_GREY },
-                      "Maple Group": { acronym: "MAP SALE", color: SECTION_GREY },
-                    };
-                    const streamInfo = project.stream ? streamMap[project.stream] : null;
-                    
-                    // Classification mapping
+                    // Classification mapping - all grey
                     const classificationMap = {
-                      "Small Second Dwelling": { acronym: "SSD", color: "#0066cc" },
-                      "Dependant Persons Unit": { acronym: "DPU", color: "#33cc33" },
-                      "Detached Extension": { acronym: "DEX", color: "#ff9900" },
-                      "Dwelling": { acronym: "DWE", color: "#9966cc" },
-                      "Home Office / Studio": { acronym: "STU", color: "#ffcc00" },
-                      "Dwelling & DPU": { acronym: "D&DPU", color: "#6699cc" },
-                      "Dwelling & SSD": { acronym: "D&SSD", color: "#8066cc" },
-                      "SSD & DPU": { acronym: "SSD&DPU", color: "#0099cc" },
-                      "Dual Occ": { acronym: "DOC", color: "#cc6600" },
+                      "Small Second Dwelling": { acronym: "SSD", color: "#a1a1a3" }, // Grey
+                      "Dependant Persons Unit": { acronym: "DPU", color: "#a1a1a3" }, // Grey
+                      "Detached Extension": { acronym: "DEX", color: "#a1a1a3" }, // Grey
+                      "Dwelling": { acronym: "DWE", color: "#a1a1a3" }, // Grey
+                      "Home Office / Studio": { acronym: "STU", color: "#a1a1a3" }, // Grey
+                      "Dwelling & DPU": { acronym: "D&DPU", color: "#a1a1a3" }, // Grey
+                      "Dwelling & SSD": { acronym: "D&SSD", color: "#a1a1a3" }, // Grey
+                      "SSD & DPU": { acronym: "SSD&DPU", color: "#a1a1a3" }, // Grey
+                      "Dual Occ": { acronym: "DOC", color: "#a1a1a3" }, // Grey
                     };
                     const classificationInfo = project.classification ? classificationMap[project.classification] : null;
+                    
+                    // Stream mapping - colored by stream type
+                    const streamMap = {
+                      "SGF - VIC": { acronym: "VIC", color: "#4D93D9" }, // Blue
+                      "SGF - QLD": { acronym: "QLD", color: "#D54358" }, // Red
+                      "Dual Dwelling": { acronym: "DD", color: "#92D050" }, // Green
+                      "ATA": { acronym: "ATA", color: "#92D050" }, // Green
+                      "Pumped on Property": { acronym: "POP", color: "#92D050" }, // Green
+                      "Pumped On Property": { acronym: "POP", color: "#92D050" }, // Green
+                      "Henderson": { acronym: "HEN", color: "#92D050" }, // Green
+                      "Creat Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green
+                      "Create Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green
+                      "Maple Group": { acronym: "MAP", color: "#92D050" }, // Green
+                    };
+                    const streamInfo = project.stream ? streamMap[project.stream] : null;
                     
                     return (
                       <div

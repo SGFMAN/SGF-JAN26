@@ -34,7 +34,12 @@ export default function SplashPage() {
         // Fetch users to find an admin
         const response = await fetch(`${API_URL}/api/users`);
         if (!response.ok) {
-          throw new Error("Failed to fetch users");
+          // If API fails, still set dev credentials and continue
+          console.warn("Failed to fetch users, using dev fallback");
+          localStorage.setItem("loggedInUserId", "1"); // Fallback user ID
+          localStorage.setItem("passwordType", "admin");
+          navigate("/projects");
+          return;
         }
         const usersData = await response.json();
         setUsers(usersData);
@@ -52,12 +57,19 @@ export default function SplashPage() {
           localStorage.setItem("passwordType", "admin"); // Always use admin password type in dev
           navigate("/projects");
         } else {
-          setLoading(false);
-          alert("No users found. Please create a user first.");
+          // No users found, but in dev mode we still want to proceed
+          // Use a fallback user ID
+          console.warn("No users found, using dev fallback");
+          localStorage.setItem("loggedInUserId", "1"); // Fallback user ID
+          localStorage.setItem("passwordType", "admin");
+          navigate("/projects");
         }
       } catch (error) {
         console.error("Error in dev auto-login:", error);
-        setLoading(false);
+        // Even on error, set dev credentials so user can still access
+        localStorage.setItem("loggedInUserId", "1"); // Fallback user ID
+        localStorage.setItem("passwordType", "admin");
+        navigate("/projects");
       }
     }
 

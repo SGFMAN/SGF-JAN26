@@ -290,8 +290,22 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
         throw new Error("Failed to fetch settings");
       }
       const settings = await settingsResponse.json();
-      const rootDirectory = settings.root_directory || "";
-      const createFolders = settings.create_folders === 'true' || settings.create_folders === true;
+      const state = (formData.state || "").toUpperCase();
+      
+      // Check the appropriate setting based on state (VIC or QLD)
+      let rootDirectory = "";
+      let createFolders = false;
+      if (state === "VIC") {
+        rootDirectory = settings.root_directory || "";
+        createFolders = settings.create_folders === 'true' || settings.create_folders === true;
+      } else if (state === "QLD") {
+        rootDirectory = settings.root_directory_qld || "";
+        createFolders = settings.create_folders_qld === 'true' || settings.create_folders_qld === true;
+      } else {
+        // Default to VIC settings if state is not specified
+        rootDirectory = settings.root_directory || "";
+        createFolders = settings.create_folders === 'true' || settings.create_folders === true;
+      }
 
       // Only create folders if the setting is enabled
       if (createFolders) {
@@ -331,7 +345,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
           },
           body: JSON.stringify({
             path: folderPath,
-            rootDirectory: rootDirectory,
+            rootDirectory: rootDirectory, // Use the appropriate root directory (VIC or QLD)
             year: currentYear,
             state: state,
           }),
@@ -346,70 +360,51 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
           const result = await folderResponse.json().catch(() => null);
           console.log("Folder created successfully:", result);
         }
-      } else {
-        // Even if createFolders is disabled, we still need to construct the path for proposal upload
-        if (formData.proposalFile) {
-          const rootDirectory = settings.root_directory || "";
-          if (rootDirectory) {
-            const currentYear = new Date().getFullYear().toString();
-            const suburb = (formData.suburb || "").toUpperCase();
-            const street = formData.street || "";
-            const state = (formData.state || "").toUpperCase();
-            
-            // Get classification abbreviation
-            const classificationAbbr = formData.classification && CLASSIFICATION_MAP[formData.classification]
-              ? ` (${CLASSIFICATION_MAP[formData.classification]})`
-              : "";
-            
-            if (state) {
-              folderPath = `${rootDirectory}\\${currentYear}\\${state}\\${suburb} - ${street}${classificationAbbr}`;
-            } else {
-              // Fallback to old format if state not provided
-              folderPath = `${rootDirectory}\\${currentYear}\\${suburb} - ${street}${classificationAbbr}`;
-            }
-          }
-        }
       }
 
       // Then create the project
       const newProject = await onCreate(formData);
       
-      // If there's a proposal file stored in formData, upload it now
-      if (formData.proposalFile && newProject && newProject.id && folderPath) {
+      // Only upload proposal if createFolders is enabled AND folderPath exists
+      // (proposal upload should only happen when folders are being created)
+      if (createFolders && formData.proposalFile && newProject && newProject.id && folderPath) {
         try {
-          // Ensure folder exists before uploading proposal
-          if (!createFolders) {
-            // Create folder if it doesn't exist (for proposal upload)
-            await fetch(`${API_URL}/api/folders/create`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                path: folderPath,
-                rootDirectory: settings.root_directory || "",
-                year: new Date().getFullYear().toString(),
-              }),
-            });
-          }
-          
           const uploadFormData = new FormData();
           uploadFormData.append("file", formData.proposalFile);
           uploadFormData.append("projectId", newProject.id.toString());
           uploadFormData.append("projectPath", folderPath);
 
+          console.log("Uploading proposal to:", folderPath);
           const uploadResponse = await fetch(`${API_URL}/api/files/upload-proposal`, {
             method: "POST",
             body: uploadFormData,
           });
 
           if (!uploadResponse.ok) {
-            console.error("Failed to upload proposal, but project was created");
+            let errorMessage = "Unknown error";
+            try {
+              const errorData = await uploadResponse.json();
+              errorMessage = errorData.error || errorData.message || `HTTP ${uploadResponse.status}: ${uploadResponse.statusText}`;
+              console.error("Failed to upload proposal - server response:", errorData);
+            } catch (parseError) {
+              // Response is not JSON, try to get text
+              try {
+                const errorText = await uploadResponse.text();
+                errorMessage = errorText || `HTTP ${uploadResponse.status}: ${uploadResponse.statusText}`;
+                console.error("Failed to upload proposal - server response (text):", errorText);
+              } catch (textError) {
+                errorMessage = `HTTP ${uploadResponse.status}: ${uploadResponse.statusText}`;
+                console.error("Failed to upload proposal - status:", uploadResponse.status, uploadResponse.statusText);
+              }
+            }
+            alert(`Warning: Project created but proposal upload failed: ${errorMessage}`);
           } else {
-            console.log("Proposal uploaded successfully after project creation");
+            const result = await uploadResponse.json().catch(() => null);
+            console.log("Proposal uploaded successfully:", result);
           }
         } catch (uploadError) {
           console.error("Error uploading proposal after project creation:", uploadError);
+          alert(`Warning: Project created but proposal upload failed: ${uploadError.message || "Unknown error"}`);
         }
       }
       

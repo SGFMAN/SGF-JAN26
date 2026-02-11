@@ -70,32 +70,32 @@ export default function InConstruction() {
   // Classification mapping for acronyms
   const getClassificationInfo = (classification) => {
     const classificationMap = {
-      "Small Second Dwelling": { acronym: "SSD", color: "#0066cc" }, // Blue
-      "Dependant Persons Unit": { acronym: "DPU", color: "#33cc33" }, // Green
-      "Detached Extension": { acronym: "DEX", color: "#ff9900" }, // Orange
-      "Dwelling": { acronym: "DWE", color: "#9966cc" }, // Purple
-      "Home Office / Studio": { acronym: "STU", color: "#ffcc00" }, // Yellow
-      "Dwelling & DPU": { acronym: "D&DPU", color: "#6699cc" }, // Blue-Purple mix
-      "Dwelling & SSD": { acronym: "D&SSD", color: "#8066cc" }, // Purple-Blue mix
-      "SSD & DPU": { acronym: "SSD&DPU", color: "#0099cc" }, // Blue-Green mix
-      "Dual Occ": { acronym: "DOC", color: "#cc6600" }, // Brown-Orange
+      "Small Second Dwelling": { acronym: "SSD", color: "#a1a1a3" }, // Grey
+      "Dependant Persons Unit": { acronym: "DPU", color: "#a1a1a3" }, // Grey
+      "Detached Extension": { acronym: "DEX", color: "#a1a1a3" }, // Grey
+      "Dwelling": { acronym: "DWE", color: "#a1a1a3" }, // Grey
+      "Home Office / Studio": { acronym: "STU", color: "#a1a1a3" }, // Grey
+      "Dwelling & DPU": { acronym: "D&DPU", color: "#a1a1a3" }, // Grey
+      "Dwelling & SSD": { acronym: "D&SSD", color: "#a1a1a3" }, // Grey
+      "SSD & DPU": { acronym: "SSD&DPU", color: "#a1a1a3" }, // Grey
+      "Dual Occ": { acronym: "DOC", color: "#a1a1a3" }, // Grey
     };
     return classification ? classificationMap[classification] : null;
   }
 
-  // Stream mapping for acronyms
+  // Stream mapping for acronyms - colored by stream type
   const getStreamInfo = (stream) => {
     const streamMap = {
-      "SGF - VIC": { acronym: "VIC SALE", color: "#a1a1a3" }, // Grey
-      "SGF - QLD": { acronym: "QLD SALE", color: "#a1a1a3" }, // Grey
-      "Dual Dwelling": { acronym: "DDI SALE", color: "#a1a1a3" }, // Grey
-      "ATA": { acronym: "ATA SALE", color: "#a1a1a3" }, // Grey
-      "Pumped on Property": { acronym: "POP SALE", color: "#a1a1a3" }, // Grey
-      "Pumped On Property": { acronym: "POP SALE", color: "#a1a1a3" }, // Grey (handle both variations)
-      "Henderson": { acronym: "HEN SALE", color: "#a1a1a3" }, // Grey
-      "Creat Cash Flow": { acronym: "CCF SALE", color: "#a1a1a3" }, // Grey
-      "Create Cash Flow": { acronym: "CCF SALE", color: "#a1a1a3" }, // Grey (handle both variations)
-      "Maple Group": { acronym: "MAP SALE", color: "#a1a1a3" }, // Grey
+      "SGF - VIC": { acronym: "VIC", color: "#4D93D9" }, // Blue
+      "SGF - QLD": { acronym: "QLD", color: "#D54358" }, // Red
+      "Dual Dwelling": { acronym: "DD", color: "#92D050" }, // Green
+      "ATA": { acronym: "ATA", color: "#92D050" }, // Green
+      "Pumped on Property": { acronym: "POP", color: "#92D050" }, // Green
+      "Pumped On Property": { acronym: "POP", color: "#92D050" }, // Green (handle both variations)
+      "Henderson": { acronym: "HEN", color: "#92D050" }, // Green
+      "Creat Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green
+      "Create Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green (handle both variations)
+      "Maple Group": { acronym: "MAP", color: "#92D050" }, // Green
     };
     return stream ? streamMap[stream] : null;
   }
