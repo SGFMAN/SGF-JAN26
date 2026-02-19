@@ -1731,6 +1731,163 @@ app.post("/api/emails/send", async (req, res) => {
   }
 });
 
+// Send drawings PDF via email with attachment
+app.post("/api/emails/send-drawings", async (req, res) => {
+  const { projectId, toEmail, attachDrawings } = req.body || {};
+  const attachPdf = attachDrawings !== false; // Default to true if not specified
+
+  if (!projectId) {
+    return res.status(400).json({ error: "Project ID is required" });
+  }
+
+  if (!pool) {
+    return res.status(500).json({ error: "DATABASE_URL not set" });
+  }
+
+  // Get project details and drawings PDF location
+  let project = null;
+  let drawingsPdfPath = null;
+  try {
+    const projectResult = await pool.query(
+      "SELECT suburb, street, drawings_pdf_location FROM projects WHERE id = $1",
+      [projectId]
+    );
+
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    project = projectResult.rows[0];
+    drawingsPdfPath = project.drawings_pdf_location;
+
+    // Only check for PDF file if we need to attach it
+    if (attachPdf) {
+      if (!drawingsPdfPath) {
+        return res.status(404).json({ error: "Drawings PDF not found for this project" });
+      }
+
+      // Check if file exists
+      try {
+        await fs.access(drawingsPdfPath);
+      } catch (e) {
+        return res.status(404).json({ error: "Drawings PDF file does not exist on disk" });
+      }
+    }
+  } catch (e) {
+    console.error("Error fetching project:", e);
+    return res.status(500).json({ error: "Failed to fetch project details" });
+  }
+
+  // Get SMTP credentials
+  let smtpUser = null;
+  let smtpPass = null;
+  try {
+    const r = await pool.query(
+      "SELECT smtp_user, smtp_pass FROM settings WHERE id = 1"
+    );
+    if (r.rows[0]?.smtp_user && r.rows[0]?.smtp_pass) {
+      smtpUser = r.rows[0].smtp_user;
+      smtpPass = r.rows[0].smtp_pass;
+    }
+  } catch (e) {
+    console.error("Error reading SMTP from settings:", e);
+  }
+  if (!smtpUser || !smtpPass) {
+    smtpUser = process.env.SMTP_USER;
+    smtpPass = process.env.SMTP_PASS;
+  }
+  if (!smtpUser || !smtpPass) {
+    return res.status(503).json({
+      error:
+        "SMTP not configured. Set SMTP User and SMTP Pass in Settings → File Settings, or use backend .env.",
+    });
+  }
+
+  const host = process.env.SMTP_HOST || "smtp.office365.com";
+  const port = parseInt(process.env.SMTP_PORT || "587", 10);
+  const secure = process.env.SMTP_SECURE === "true";
+
+  try {
+    // Read the PDF file only if we need to attach it
+    let fileBuffer = null;
+    let fileName = null;
+    if (attachPdf && drawingsPdfPath) {
+      fileBuffer = await fs.readFile(drawingsPdfPath);
+      fileName = drawingsPdfPath.split("\\").pop() || drawingsPdfPath.split("/").pop() || "drawings.pdf";
+    }
+
+    // Create email transporter
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user: smtpUser, pass: smtpPass },
+    });
+
+    // Prepare email content
+    const suburb = (project.suburb || "").toUpperCase();
+    const street = project.street || "";
+    const subject = `New Drawings - ${suburb} - ${street}`;
+    
+    // Get notes from request body (optional)
+    const { notes } = req.body || {};
+    
+    // Build email body with optional notes
+    let htmlBody = `New Drawings for ${suburb} - ${street}`;
+    if (notes && notes.trim()) {
+      htmlBody += `<br><br>${notes.trim().replace(/\n/g, "<br>")}`;
+    }
+    htmlBody += `<br><br>SGF CENTRAL`;
+
+    // Use provided emails (array or single) or default to info@superiorgrannyflats.com.au
+    const { toEmails } = req.body || {};
+    let recipientEmails = [];
+    
+    if (toEmails && Array.isArray(toEmails) && toEmails.length > 0) {
+      // Use provided array of emails
+      recipientEmails = toEmails.filter(email => email && email.trim());
+    } else if (toEmail) {
+      // Fallback to single email for backward compatibility
+      recipientEmails = [toEmail];
+    } else {
+      // Default to info@superiorgrannyflats.com.au
+      recipientEmails = ["info@superiorgrannyflats.com.au"];
+    }
+    
+    if (recipientEmails.length === 0) {
+      return res.status(400).json({ error: "No valid recipient email addresses provided" });
+    }
+    
+    const recipientEmail = recipientEmails.join(", ");
+
+    const mailOptions = {
+      from: smtpUser,
+      to: recipientEmail,
+      subject: subject,
+      html: htmlBody,
+    };
+
+    // Only attach PDF if requested
+    if (attachPdf && drawingsPdfPath && fileBuffer) {
+      mailOptions.attachments = [
+        {
+          filename: fileName,
+          content: fileBuffer,
+          contentType: "application/pdf",
+        },
+      ];
+    }
+
+    const info = await transporter.sendMail(mailOptions);
+    res.json({ success: true, messageId: info.messageId, message: "Drawings email sent successfully!" });
+  } catch (e) {
+    console.error("Error sending drawings email:", e);
+    res.status(500).json({
+      error: e.message || "Failed to send email. Check SMTP settings and credentials.",
+    });
+  }
+});
+
 // Helper function to copy directory recursively
 async function copyDirectory(src, dest) {
   try {
@@ -2253,6 +2410,68 @@ app.get("/api/files/drawings/:id", async (req, res) => {
     res.send(fileBuffer);
   } catch (error) {
     console.error("Error serving drawings PDF:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Serve markup PDF for a specific revision
+app.get("/api/files/markup/:id/:revisionIndex", async (req, res) => {
+  try {
+    const { id, revisionIndex } = req.params;
+    const revisionIdx = parseInt(revisionIndex, 10);
+    
+    if (!pool) {
+      return res.status(500).json({ error: "DATABASE_URL not set" });
+    }
+
+    // Get project and drawings history
+    const projectResult = await pool.query(
+      "SELECT drawings_history FROM projects WHERE id = $1",
+      [id]
+    );
+
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    // Parse drawings history
+    let drawingsHistory = [];
+    try {
+      const historyValue = projectResult.rows[0].drawings_history;
+      if (historyValue) {
+        drawingsHistory = typeof historyValue === 'string' ? JSON.parse(historyValue) : historyValue;
+      }
+    } catch (e) {
+      console.error("Error parsing drawings_history:", e);
+      return res.status(500).json({ error: "Failed to parse drawings history" });
+    }
+
+    // Check if revision index is valid
+    if (revisionIdx < 0 || revisionIdx >= drawingsHistory.length) {
+      return res.status(404).json({ error: "Revision not found" });
+    }
+
+    const markupPdfPath = drawingsHistory[revisionIdx]?.markup_pdf_location;
+
+    if (!markupPdfPath) {
+      return res.status(404).json({ error: "Markup PDF not found for this revision" });
+    }
+
+    // Check if file exists
+    try {
+      await fs.access(markupPdfPath);
+    } catch (e) {
+      return res.status(404).json({ error: "Markup PDF file does not exist" });
+    }
+
+    // Read and send the file
+    const fileBuffer = await fs.readFile(markupPdfPath);
+    const fileName = markupPdfPath.split("\\").pop() || markupPdfPath.split("/").pop() || "Markup.pdf";
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
+    res.send(fileBuffer);
+  } catch (error) {
+    console.error("Error serving markup PDF:", error);
     res.status(500).json({ error: error.message });
   }
 });

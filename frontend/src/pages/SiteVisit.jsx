@@ -34,6 +34,8 @@ export default function SiteVisit({ project, onUpdate }) {
   const [siteVisitNotes, setSiteVisitNotes] = useState(project?.site_visit_notes || "");
   
   const valuesRef = useRef({ siteVisitNotes });
+  const isInitialMount = useRef(true);
+  const lastSavedNotes = useRef(project?.site_visit_notes || "");
 
   // Get site visit status or default to "Not Complete"
   const siteVisitStatus = project?.site_visit_status || "Not Complete";
@@ -45,10 +47,23 @@ export default function SiteVisit({ project, onUpdate }) {
     valuesRef.current = { siteVisitNotes };
   }, [siteVisitNotes]);
 
-  // Initialize notes from project data
+  // Initialize notes from project data only on mount or when project changes externally
   useEffect(() => {
-    if (project?.site_visit_notes !== undefined) {
-      setSiteVisitNotes(project.site_visit_notes || "");
+    if (isInitialMount.current) {
+      // On initial mount, set notes from project
+      if (project?.site_visit_notes !== undefined) {
+        setSiteVisitNotes(project.site_visit_notes || "");
+        lastSavedNotes.current = project.site_visit_notes || "";
+      }
+      isInitialMount.current = false;
+    } else {
+      // After mount, only update if the project notes changed externally
+      // (not from our own save operation)
+      const currentProjectNotes = project?.site_visit_notes || "";
+      if (currentProjectNotes !== lastSavedNotes.current && currentProjectNotes !== siteVisitNotes) {
+        setSiteVisitNotes(currentProjectNotes);
+        lastSavedNotes.current = currentProjectNotes;
+      }
     }
   }, [project?.site_visit_notes]);
 
@@ -276,6 +291,7 @@ export default function SiteVisit({ project, onUpdate }) {
     if (!project?.id) return;
     
     try {
+      const notesToSave = valuesRef.current.siteVisitNotes;
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "PUT",
         headers: {
@@ -284,7 +300,7 @@ export default function SiteVisit({ project, onUpdate }) {
         body: JSON.stringify({
           name: project.name || "",
           status: project.status || "",
-          site_visit_notes: valuesRef.current.siteVisitNotes,
+          site_visit_notes: notesToSave,
         }),
       });
 
@@ -292,6 +308,9 @@ export default function SiteVisit({ project, onUpdate }) {
         const errorData = await response.json().catch(() => ({ error: response.statusText }));
         throw new Error(errorData.error || "Failed to save notes");
       }
+
+      // Update last saved notes to prevent overwriting
+      lastSavedNotes.current = notesToSave;
 
       // Refresh project data
       if (onUpdate) {
@@ -310,131 +329,194 @@ export default function SiteVisit({ project, onUpdate }) {
           Site Visit
         </h2>
         {project && (
-          <div style={{ marginTop: "24px" }}>
-            <div style={{ marginBottom: "24px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
-                Status
+          <div style={{ marginTop: "24px", display: "flex", gap: "24px", flexWrap: "wrap", alignItems: "stretch", minHeight: "600px" }}>
+            {/* Columns 1-2 - Status, Date/Time, Buttons */}
+            <div style={{ flex: "2", minWidth: "200px", display: "flex", flexDirection: "column" }}>
+              <div style={{ marginBottom: "24px" }}>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  Status
+                </div>
+                <select
+                  value={siteVisitStatus}
+                  onChange={(e) => handleStatusChange(e.target.value)}
+                  style={{
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: WHITE,
+                    width: "300px",
+                    maxWidth: "100%",
+                    boxSizing: "border-box",
+                    cursor: "pointer",
+                  }}
+                >
+                  {SITE_VISIT_STATUS_OPTIONS.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <select
-                value={siteVisitStatus}
-                onChange={(e) => handleStatusChange(e.target.value)}
-                style={{
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  background: WHITE,
-                  width: "300px",
-                  maxWidth: "100%",
-                  boxSizing: "border-box",
-                  cursor: "pointer",
-                }}
-              >
-                {SITE_VISIT_STATUS_OPTIONS.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
+
+              {(siteVisitStatus === "Booked" || siteVisitStatus === "Complete") && project.site_visit_date && (
+                <div style={{ marginBottom: "24px" }}>
+                  <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                    {siteVisitStatus === "Complete" ? "Completed Date" : "Date"}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "1rem",
+                      color: MONUMENT,
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      background: WHITE,
+                      width: "300px",
+                      maxWidth: "100%",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    {formatDateDisplay()}
+                  </div>
+                </div>
+              )}
+
+              {(siteVisitStatus === "Booked" || siteVisitStatus === "Complete") && project.site_visit_time && (
+                <div style={{ marginBottom: "24px" }}>
+                  <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                    {siteVisitStatus === "Complete" ? "Completed Time" : "Time"}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "1rem",
+                      color: MONUMENT,
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      background: WHITE,
+                      width: "300px",
+                      maxWidth: "100%",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    {project.site_visit_time}
+                  </div>
+                </div>
+              )}
+
+              {/* Scheduled Site Visit Date and Period */}
+              {project.site_visit_scheduled_date && (
+                <div style={{ marginBottom: "24px" }}>
+                  <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                    Scheduled Site Visit Date
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "1rem",
+                      color: MONUMENT,
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      background: WHITE,
+                      width: "300px",
+                      maxWidth: "100%",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    {new Date(project.site_visit_scheduled_date + "T00:00:00").toLocaleDateString("en-AU", {
+                      weekday: "long",
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric"
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {project.site_visit_scheduled_period && (
+                <div style={{ marginBottom: "24px" }}>
+                  <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                    Scheduled Site Visit Time Period
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "1rem",
+                      color: MONUMENT,
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      background: WHITE,
+                      width: "300px",
+                      maxWidth: "100%",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    {project.site_visit_scheduled_period}
+                  </div>
+                </div>
+              )}
+
+              {siteVisitStatus !== "Complete" && (
+                <div style={{ marginTop: "24px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowBookingModal(true)}
+                    style={{
+                      background: MONUMENT,
+                      color: WHITE,
+                      border: "none",
+                      borderRadius: "10px",
+                      padding: "10px 20px",
+                      fontSize: "1rem",
+                      fontWeight: 500,
+                      cursor: "pointer",
+                      transition: "background 0.17s",
+                    }}
+                  >
+                    {siteVisitStatus === "Booked" ? "Rebook Site Visit" : "Book Site Visit"}
+                  </button>
+                  {siteVisitStatus === "Booked" && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setShowCompleteModal(true)}
+                        style={{
+                          background: MONUMENT,
+                          color: WHITE,
+                          border: "none",
+                          borderRadius: "10px",
+                          padding: "10px 20px",
+                          fontSize: "1rem",
+                          fontWeight: 500,
+                          cursor: "pointer",
+                          transition: "background 0.17s",
+                        }}
+                      >
+                        Complete Site Visit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelSiteVisit}
+                        style={{
+                          background: "#dc3545",
+                          color: WHITE,
+                          border: "none",
+                          borderRadius: "10px",
+                          padding: "10px 20px",
+                          fontSize: "1rem",
+                          fontWeight: 500,
+                          cursor: "pointer",
+                          transition: "background 0.17s",
+                        }}
+                      >
+                        Cancel Booking
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
-            {(siteVisitStatus === "Booked" || siteVisitStatus === "Complete") && project.site_visit_date && (
-              <div style={{ marginBottom: "24px" }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
-                  {siteVisitStatus === "Complete" ? "Completed Date" : "Date"}
-                </div>
-                <div
-                  style={{
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    background: WHITE,
-                    width: "300px",
-                    maxWidth: "100%",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  {formatDateDisplay()}
-                </div>
-              </div>
-            )}
-
-            {(siteVisitStatus === "Booked" || siteVisitStatus === "Complete") && project.site_visit_time && (
-              <div style={{ marginBottom: "24px" }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
-                  {siteVisitStatus === "Complete" ? "Completed Time" : "Time"}
-                </div>
-                <div
-                  style={{
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    background: WHITE,
-                    width: "300px",
-                    maxWidth: "100%",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  {project.site_visit_time}
-                </div>
-              </div>
-            )}
-
-            {/* Scheduled Site Visit Date and Period */}
-            {project.site_visit_scheduled_date && (
-              <div style={{ marginBottom: "24px" }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
-                  Scheduled Site Visit Date
-                </div>
-                <div
-                  style={{
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    background: WHITE,
-                    width: "300px",
-                    maxWidth: "100%",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  {new Date(project.site_visit_scheduled_date + "T00:00:00").toLocaleDateString("en-AU", {
-                    weekday: "long",
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric"
-                  })}
-                </div>
-              </div>
-            )}
-
-            {project.site_visit_scheduled_period && (
-              <div style={{ marginBottom: "24px" }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
-                  Scheduled Site Visit Time Period
-                </div>
-                <div
-                  style={{
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    background: WHITE,
-                    width: "300px",
-                    maxWidth: "100%",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  {project.site_visit_scheduled_period}
-                </div>
-              </div>
-            )}
-
-            {/* Notes Section */}
-            <div style={{ marginTop: "24px", marginBottom: "24px" }}>
+            {/* Columns 3-4 - Notes (Spans Both Columns) with Button in Column 4 */}
+            <div style={{ flex: "2", minWidth: "200px", display: "flex", flexDirection: "column" }}>
               <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
                 Notes
               </div>
@@ -445,8 +527,7 @@ export default function SiteVisit({ project, onUpdate }) {
                 placeholder="Add notes about the site visit..."
                 style={{
                   width: "100%",
-                  maxWidth: "600px",
-                  minHeight: "120px",
+                  flex: 1,
                   padding: "12px",
                   borderRadius: "8px",
                   border: `1px solid ${SECTION_GREY}`,
@@ -455,16 +536,22 @@ export default function SiteVisit({ project, onUpdate }) {
                   background: WHITE,
                   boxSizing: "border-box",
                   fontFamily: "inherit",
-                  resize: "vertical",
+                  resize: "none",
+                  marginBottom: "12px",
                 }}
               />
-            </div>
-
-            {siteVisitStatus !== "Complete" && (
-              <div style={{ marginTop: "24px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button
                   type="button"
-                  onClick={() => setShowBookingModal(true)}
+                  onClick={() => {
+                    const street = project?.street || "";
+                    const suburb = project?.suburb || "";
+                    const subject = street && suburb ? `${street} - ${suburb}` : "Site Visit Notes";
+                    const body = siteVisitNotes || "";
+                    
+                    const mailtoLink = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                    window.location.href = mailtoLink;
+                  }}
                   style={{
                     background: MONUMENT,
                     color: WHITE,
@@ -475,50 +562,19 @@ export default function SiteVisit({ project, onUpdate }) {
                     fontWeight: 500,
                     cursor: "pointer",
                     transition: "background 0.17s",
+                    width: "calc(50% - 12px)",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "#252526";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = MONUMENT;
                   }}
                 >
-                  {siteVisitStatus === "Booked" ? "Rebook Site Visit" : "Book Site Visit"}
+                  Email Notes
                 </button>
-                {siteVisitStatus === "Booked" && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setShowCompleteModal(true)}
-                      style={{
-                        background: MONUMENT,
-                        color: WHITE,
-                        border: "none",
-                        borderRadius: "10px",
-                        padding: "10px 20px",
-                        fontSize: "1rem",
-                        fontWeight: 500,
-                        cursor: "pointer",
-                        transition: "background 0.17s",
-                      }}
-                    >
-                      Complete Site Visit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCancelSiteVisit}
-                      style={{
-                        background: "#dc3545",
-                        color: WHITE,
-                        border: "none",
-                        borderRadius: "10px",
-                        padding: "10px 20px",
-                        fontSize: "1rem",
-                        fontWeight: 500,
-                        cursor: "pointer",
-                        transition: "background 0.17s",
-                      }}
-                    >
-                      Cancel Booking
-                    </button>
-                  </>
-                )}
               </div>
-            )}
+            </div>
           </div>
         )}
       </div>

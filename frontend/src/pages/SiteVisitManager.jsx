@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { isUserAdmin } from "../utils/auth";
+import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -31,6 +32,7 @@ export default function SiteVisitManager() {
   const [selectedProjectIds, setSelectedProjectIds] = useState(new Set());
   const [groups, setGroups] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [stateFilter, setStateFilter] = useState(getStateFilter());
 
   useEffect(() => {
     fetchProjects();
@@ -61,12 +63,21 @@ export default function SiteVisitManager() {
   }
 
   // Filter projects with site visit status "Not Complete" (excluding Hotlist projects) and sort alphabetically
-  const incompleteSiteVisits = projects
-    .filter((project) => 
+  const incompleteSiteVisits = React.useMemo(() => {
+    let filtered = projects.filter((project) => 
       (project.site_visit_status || "Not Complete") === "Not Complete" &&
       project.status !== "Hotlist"
-    )
-    .sort((a, b) => {
+    );
+    
+    // Filter by state if specified
+    if (stateFilter !== "All") {
+      filtered = filtered.filter(project => {
+        const projectState = (project.state || "").toUpperCase();
+        return projectState === stateFilter.toUpperCase();
+      });
+    }
+    
+    return filtered.sort((a, b) => {
       const suburbA = (a.suburb || "").toLowerCase();
       const suburbB = (b.suburb || "").toLowerCase();
       if (suburbA !== suburbB) {
@@ -76,6 +87,7 @@ export default function SiteVisitManager() {
       const streetB = (b.street || "").toLowerCase();
       return streetA.localeCompare(streetB);
     });
+  }, [projects, stateFilter]);
 
   // Get group for a project
   function getProjectGroup(projectId) {
@@ -193,6 +205,108 @@ export default function SiteVisitManager() {
           >
             Site Visit Manager
           </h1>
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            top: "20px",
+            right: "20px",
+            display: "flex",
+            gap: "10px",
+            alignItems: "center",
+          }}
+        >
+          {/* State Filter Buttons */}
+          <button
+            onClick={() => {
+              const newFilter = "VIC";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
+            style={{
+              background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
+              color: stateFilter === "VIC" ? WHITE : MONUMENT,
+              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : MONUMENT}`,
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "VIC") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "VIC") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
+          >
+            VIC Only
+          </button>
+          <button
+            onClick={() => {
+              const newFilter = "QLD";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
+            style={{
+              background: stateFilter === "QLD" ? "#D54358" : WHITE,
+              color: stateFilter === "QLD" ? WHITE : MONUMENT,
+              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : MONUMENT}`,
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "QLD") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "QLD") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
+          >
+            QLD Only
+          </button>
+          <button
+            onClick={() => {
+              const newFilter = "All";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
+            style={{
+              background: stateFilter === "All" ? MONUMENT : WHITE,
+              color: stateFilter === "All" ? WHITE : MONUMENT,
+              border: `2px solid ${MONUMENT}`,
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "All") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "All") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
+          >
+            All Projects
+          </button>
         </div>
       </div>
 
@@ -341,7 +455,7 @@ export default function SiteVisitManager() {
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
             <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: 0 }}>
-              Projects Needing Site Visit {incompleteSiteVisits.length > 0 && `(${incompleteSiteVisits.length} total)`}
+              Projects Needing Site Visit
             </h2>
           </div>
 

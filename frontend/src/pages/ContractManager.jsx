@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
+import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -13,6 +14,7 @@ export default function ContractManager() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [sortOrder, setSortOrder] = useState("asc"); // "asc" or "desc"
+  const [stateFilter, setStateFilter] = useState(getStateFilter());
 
   useEffect(() => {
     fetchProjects();
@@ -208,6 +210,108 @@ export default function ContractManager() {
             Contract Manager
           </h1>
         </div>
+        <div
+          style={{
+            position: "absolute",
+            top: "20px",
+            right: "20px",
+            display: "flex",
+            gap: "10px",
+            alignItems: "center",
+          }}
+        >
+          {/* State Filter Buttons */}
+          <button
+            onClick={() => {
+              const newFilter = "VIC";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
+            style={{
+              background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
+              color: stateFilter === "VIC" ? WHITE : MONUMENT,
+              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : MONUMENT}`,
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "VIC") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "VIC") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
+          >
+            VIC Only
+          </button>
+          <button
+            onClick={() => {
+              const newFilter = "QLD";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
+            style={{
+              background: stateFilter === "QLD" ? "#D54358" : WHITE,
+              color: stateFilter === "QLD" ? WHITE : MONUMENT,
+              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : MONUMENT}`,
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "QLD") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "QLD") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
+          >
+            QLD Only
+          </button>
+          <button
+            onClick={() => {
+              const newFilter = "All";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
+            style={{
+              background: stateFilter === "All" ? MONUMENT : WHITE,
+              color: stateFilter === "All" ? WHITE : MONUMENT,
+              border: `2px solid ${MONUMENT}`,
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "All") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "All") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
+          >
+            All Projects
+          </button>
+        </div>
       </div>
 
       {/* Sections 2 & 3 */}
@@ -356,7 +460,7 @@ export default function ContractManager() {
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", position: "sticky", top: "-24px", background: SECTION_GREY, zIndex: 9, paddingTop: "24px", marginTop: "-24px", paddingBottom: "8px" }}>
             <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: 0 }}>
-              Design Phase Projects ({projects.length})
+              Design Phase Projects
             </h2>
             <button
               onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
@@ -384,12 +488,26 @@ export default function ContractManager() {
               Error: {error}
             </p>
           )}
-          {!loading && !error && projects.length === 0 && (
-            <p style={{ color: "#32323399" }}>No Design Phase projects found.</p>
-          )}
-          {!loading && !error && projects.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              {/* Header Row */}
+          {!loading && !error && (
+            <>
+              {/* Filter projects by state */}
+              {(() => {
+                const filteredProjects = stateFilter !== "All" 
+                  ? projects.filter(project => {
+                      const projectState = (project.state || "").toUpperCase();
+                      return projectState === stateFilter.toUpperCase();
+                    })
+                  : projects;
+                
+                if (filteredProjects.length === 0) {
+                  return (
+                    <p style={{ color: "#32323399" }}>No Design Phase projects found.</p>
+                  );
+                }
+                
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {/* Header Row */}
               <div
                 style={{
                   display: "grid",
@@ -415,8 +533,8 @@ export default function ContractManager() {
                 <div>Date</div>
               </div>
 
-              {/* Project Rows */}
-              {projects.map((project) => {
+                    {/* Project Rows */}
+                    {filteredProjects.map((project) => {
                 const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "Unknown Project";
                 const contractStatus = getEffectiveValue(project, "contract_status", "Not Sent");
                 const supportingDocsStatus = getEffectiveValue(project, "supporting_documents_status", "Not Sent");
@@ -583,9 +701,12 @@ export default function ContractManager() {
                     )}
                     <div>{displayDate}</div>
                   </div>
+                    );
+                  })}
+                  </div>
                 );
-              })}
-            </div>
+              })()}
+            </>
           )}
         </div>
       </div>

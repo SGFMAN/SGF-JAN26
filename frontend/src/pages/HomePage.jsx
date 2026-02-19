@@ -5,6 +5,7 @@ import NewProject2 from "./NewProject2";
 import NewProject3 from "./NewProject3";
 import NewProject4 from "./NewProject4";
 import { isUserAdmin } from "../utils/auth";
+import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -102,7 +103,7 @@ export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedField, setSelectedField] = useState("");
   const [selectedValue, setSelectedValue] = useState("");
-  const [stateFilter, setStateFilter] = useState("All");
+  const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [newProjectStep, setNewProjectStep] = useState(1);
   const [newProjectFormData, setNewProjectFormData] = useState({
@@ -433,7 +434,11 @@ export default function HomePage() {
         >
           {/* State Filter Buttons */}
           <button
-            onClick={() => setStateFilter("VIC")}
+            onClick={() => {
+              const newFilter = "VIC";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
             style={{
               background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
               color: stateFilter === "VIC" ? WHITE : MONUMENT,
@@ -459,7 +464,11 @@ export default function HomePage() {
             VIC Only
           </button>
           <button
-            onClick={() => setStateFilter("QLD")}
+            onClick={() => {
+              const newFilter = "QLD";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
             style={{
               background: stateFilter === "QLD" ? "#D54358" : WHITE,
               color: stateFilter === "QLD" ? WHITE : MONUMENT,
@@ -485,7 +494,11 @@ export default function HomePage() {
             QLD Only
           </button>
           <button
-            onClick={() => setStateFilter("All")}
+            onClick={() => {
+              const newFilter = "All";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
             style={{
               background: stateFilter === "All" ? MONUMENT : WHITE,
               color: stateFilter === "All" ? WHITE : MONUMENT,

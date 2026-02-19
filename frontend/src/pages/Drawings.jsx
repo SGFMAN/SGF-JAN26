@@ -12,6 +12,16 @@ export default function Drawings({ project, onUpdate }) {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
+  const [showNotesModal, setShowNotesModal] = useState(false);
+  const [notesForRevision, setNotesForRevision] = useState(null); // { index, revision, name, isNewDrawing, isCurrentRevision }
+  const [notesText, setNotesText] = useState("");
+  const [resendDrawings, setResendDrawings] = useState(false);
+  const [showEmailClientModal, setShowEmailClientModal] = useState(false);
+  const [emailClientNotes, setEmailClientNotes] = useState("");
+  const [attachDrawings, setAttachDrawings] = useState(true);
+  const [markupFile, setMarkupFile] = useState(null);
+  const [isDraggingMarkup, setIsDraggingMarkup] = useState(false);
+  const markupInputRef = useRef(null);
   
   const valuesRef = useRef({ drawingsStatus });
   
@@ -577,7 +587,9 @@ export default function Drawings({ project, onUpdate }) {
         name: fileName,
         date: date,
         time: time,
-        revision: revisionNumber
+        revision: revisionNumber,
+        notes: "", // Initialize with empty notes
+        markup_pdf_location: null // Initialize with no markup
       };
       drawingsHistory.push(newEntry);
 
@@ -674,6 +686,19 @@ export default function Drawings({ project, onUpdate }) {
 
       // Clear selected file after save
       setSelectedFile(null);
+      
+      // Show notes modal for the newly added revision
+      setNotesForRevision({
+        index: drawingsHistory.length - 1,
+        revision: revisionNumber,
+        name: fileName,
+        isNewDrawing: true,
+        isCurrentRevision: true
+      });
+      setNotesText("");
+      setResendDrawings(false);
+      setMarkupFile(null);
+      setShowNotesModal(true);
     } catch (error) {
       console.error("Error saving drawings path:", error);
       alert(`Error saving drawings path: ${error.message}`);
@@ -714,15 +739,762 @@ export default function Drawings({ project, onUpdate }) {
     fileInputRef.current?.click();
   }
 
+  async function saveNotesForRevision(revisionIndex, notes) {
+    if (!project?.id) {
+      console.error("Cannot save notes: no project ID");
+      return;
+    }
+
+    try {
+      // Get current drawings history
+      let drawingsHistory = [];
+      try {
+        const historyValue = project?.drawings_history;
+        if (historyValue) {
+          drawingsHistory = typeof historyValue === 'string' ? JSON.parse(historyValue) : historyValue;
+        }
+      } catch (e) {
+        console.error("Error parsing drawings_history:", e);
+        return;
+      }
+
+      if (revisionIndex < 0 || revisionIndex >= drawingsHistory.length) {
+        console.error("Invalid revision index");
+        return;
+      }
+
+      // Update notes for the specific revision
+      drawingsHistory[revisionIndex] = {
+        ...drawingsHistory[revisionIndex],
+        notes: notes || ""
+      };
+
+      // Save updated history
+      const projectName = project?.street && project?.suburb 
+        ? `${project.street}, ${project.suburb}`.trim() 
+        : project?.name || "";
+
+      const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: projectName,
+          status: project?.status || null,
+          stream: project?.stream || null,
+          suburb: project?.suburb || null,
+          street: project?.street || null,
+          state: project?.state || null,
+          deposit: project?.deposit || null,
+          project_cost: project?.project_cost || null,
+          client_name: project?.client_name || null,
+          email: project?.email || null,
+          phone: project?.phone || null,
+          client1_name: project?.client1_name || null,
+          client1_email: project?.client1_email || null,
+          client1_phone: project?.client1_phone || null,
+          client1_active: project?.client1_active || null,
+          client2_name: project?.client2_name || null,
+          client2_email: project?.client2_email || null,
+          client2_phone: project?.client2_phone || null,
+          client2_active: project?.client2_active || null,
+          client3_name: project?.client3_name || null,
+          client3_email: project?.client3_email || null,
+          client3_phone: project?.client3_phone || null,
+          client3_active: project?.client3_active || null,
+          site_visit_status: project?.site_visit_status || null,
+          site_visit_date: project?.site_visit_date || null,
+          site_visit_time: project?.site_visit_time || null,
+          contract_status: project?.contract_status || null,
+          contract_sent_date: project?.contract_sent_date || null,
+          contract_complete_date: project?.contract_complete_date || null,
+          supporting_documents_status: project?.supporting_documents_status || null,
+          supporting_documents_sent_date: project?.supporting_documents_sent_date || null,
+          supporting_documents_complete_date: project?.supporting_documents_complete_date || null,
+          water_declaration_status: project?.water_declaration_status || null,
+          water_declaration_sent_date: project?.water_declaration_sent_date || null,
+          water_declaration_complete_date: project?.water_declaration_complete_date || null,
+          notes: project?.notes || null,
+          window_status: project?.window_status || null,
+          window_colour: project?.window_colour || null,
+          window_reveal: project?.window_reveal || null,
+          window_reveal_other: project?.window_reveal_other || null,
+          window_glazing: project?.window_glazing || null,
+          window_bal_rating: project?.window_bal_rating || null,
+          window_date_required: project?.window_date_required || null,
+          window_ordered_date: project?.window_ordered_date || null,
+          window_order_pdf_location: project?.window_order_pdf_location || null,
+          window_order_number: project?.window_order_number || null,
+          drawings_status: project?.drawings_status || null,
+          drawings_pdf_location: project?.drawings_pdf_location || null,
+          drawings_history: JSON.stringify(drawingsHistory),
+          drawings_viewed_date: project?.drawings_viewed_date || null,
+          colours_status: project?.colours_status || null,
+          planning_status: project?.planning_status || null,
+          energy_report_status: project?.energy_report_status || null,
+          footing_certification_status: project?.footing_certification_status || null,
+          building_permit_status: project?.building_permit_status || null,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to save notes");
+      }
+
+      if (onUpdate) {
+        onUpdate();
+      }
+    } catch (error) {
+      console.error("Error saving notes:", error);
+      alert("Failed to save notes");
+    }
+  }
+
+  function handleOpenNotesModal(index, revision, name) {
+    // Get current notes for this revision
+    let drawingsHistory = [];
+    try {
+      const historyValue = project?.drawings_history;
+      if (historyValue) {
+        drawingsHistory = typeof historyValue === 'string' ? JSON.parse(historyValue) : historyValue;
+      }
+    } catch (e) {
+      console.error("Error parsing drawings_history:", e);
+    }
+
+    const currentNotes = drawingsHistory[index]?.notes || "";
+    // Check if this is the current (last) revision
+    const isCurrentRevision = index === drawingsHistory.length - 1;
+    setNotesForRevision({ 
+      index, 
+      revision, 
+      name, 
+      isNewDrawing: false,
+      isCurrentRevision 
+    });
+    setNotesText(currentNotes);
+    setResendDrawings(false);
+    setMarkupFile(null);
+    setShowNotesModal(true);
+  }
+
+  async function handleSaveNotes() {
+    if (notesForRevision === null) return;
+    
+    await saveNotesForRevision(notesForRevision.index, notesText);
+    setShowNotesModal(false);
+    setNotesForRevision(null);
+    setNotesText("");
+  }
+
+  async function handleSendDrawingsWithNotes() {
+    if (!project || !project.id) {
+      alert("Error: Project ID is missing");
+      return;
+    }
+
+    // Determine if we should attach drawings
+    // For new drawings, always attach. For current revision, only if checkbox is checked
+    const shouldAttachDrawings = notesForRevision?.isNewDrawing || resendDrawings;
+    
+    // For new drawings, show the path instead of trying to send
+    if (notesForRevision?.isNewDrawing && shouldAttachDrawings) {
+      const drawingsPath = project.drawings_pdf_location || "Path not yet saved";
+      alert(`Generated Drawings PDF Path:\n\n${drawingsPath}\n\nPlease verify this path is correct.`);
+      return;
+    }
+    
+    if (shouldAttachDrawings && !project.drawings_pdf_location) {
+      alert("No drawings PDF available to attach.");
+      return;
+    }
+
+    // If this is a new drawing or current revision, save notes first
+    if (notesForRevision && (notesForRevision.isNewDrawing || notesForRevision.isCurrentRevision)) {
+      await saveNotesForRevision(notesForRevision.index, notesText);
+      
+      // If there's a markup file, save it
+      if (markupFile && notesForRevision.isNewDrawing) {
+        await saveMarkupPath(markupFile, notesForRevision.index);
+      }
+    }
+
+    // Build email body with notes
+    let emailBody = "";
+    
+    // For current revision (not new), add the edited notes message
+    if (notesForRevision?.isCurrentRevision && !notesForRevision?.isNewDrawing) {
+      emailBody = "Edited notes from previous submission";
+      if (notesText && notesText.trim()) {
+        emailBody += "\n\n" + notesText;
+      }
+    } else if (notesText && notesText.trim()) {
+      // For new drawings, just include the notes
+      emailBody = notesText;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/emails/send-drawings`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          projectId: project.id,
+          notes: emailBody,
+          attachDrawings: shouldAttachDrawings,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(errorData.error || "Failed to send drawings email");
+      }
+
+      const result = await response.json();
+      alert("Drawings email sent successfully!");
+      
+      // Close modal after sending
+      setShowNotesModal(false);
+      setNotesForRevision(null);
+      setNotesText("");
+      setResendDrawings(false);
+    } catch (error) {
+      console.error("Error sending drawings email:", error);
+      alert(`Failed to send drawings email: ${error.message}`);
+    }
+  }
+
+  function handleCloseNotesModal() {
+    setShowNotesModal(false);
+    setNotesForRevision(null);
+    setNotesText("");
+    setResendDrawings(false);
+    setMarkupFile(null);
+    setIsDraggingMarkup(false);
+  }
+
+  // Markup PDF handlers
+  function handleMarkupDragEnter(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingMarkup(true);
+  }
+
+  function handleMarkupDragLeave(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingMarkup(false);
+  }
+
+  function handleMarkupDragOver(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function handleMarkupDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingMarkup(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+        setMarkupFile(file);
+      } else {
+        alert("Please select a PDF file");
+      }
+    }
+  }
+
+  function handleMarkupFileSelect(e) {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+        setMarkupFile(file);
+      } else {
+        alert("Please select a PDF file");
+      }
+    }
+  }
+
+  function handleMarkupBrowseClick() {
+    markupInputRef.current?.click();
+  }
+
+  async function saveMarkupPath(file, revisionIndex) {
+    if (!file) return;
+    if (!project?.id) {
+      alert("Error: Project ID is missing");
+      return;
+    }
+
+    try {
+      // Get project folder path from settings
+      const settingsResponse = await fetch(`${API_URL}/api/settings`);
+      if (!settingsResponse.ok) {
+        throw new Error("Failed to fetch settings");
+      }
+      const settings = await settingsResponse.json();
+      const rootDirectory = settings.root_directory || "";
+      
+      if (!rootDirectory) {
+        alert("Error: Root directory is not set. Please configure it in File Settings.");
+        return;
+      }
+
+      // Get project year
+      let projectYear = "";
+      if (project.year) {
+        const yearStr = project.year.toString();
+        if (yearStr.includes("-")) {
+          projectYear = yearStr.split("-")[0];
+        } else {
+          projectYear = yearStr;
+        }
+      } else {
+        projectYear = new Date().getFullYear().toString();
+      }
+      
+      // Get state (uppercase) - required for path construction
+      const state = (project.state || "").toUpperCase();
+      if (!state) {
+        alert("Error: Project state is required to save markup path. Please set the state in Project Info.");
+        return;
+      }
+      
+      const suburb = (project.suburb || "").toUpperCase();
+      const street = project.street || "";
+      
+      // Get classification abbreviation
+      const classificationMap = {
+        "Small Second Dwelling": "SSD",
+        "Dependant Persons Unit": "DPU",
+        "Detached Extension": "DEX",
+        "Dwelling": "DWE",
+        "Home Office / Studio": "STU",
+        "Dwelling & DPU": "D&DPU",
+        "Dwelling & SSD": "D&SSD",
+        "SSD & DPU": "SSD&DPU",
+        "Dual Occ": "DOC",
+      };
+      
+      const classificationAbbr = project.classification && classificationMap[project.classification]
+        ? ` (${classificationMap[project.classification]})`
+        : "";
+      
+      // Construct the file path: root_directory\year\state\suburb - street (classification)\1. DRAFTING\DESIGN NOTES\filename
+      const fileName = file.name;
+      const projectFolderName = `${suburb} - ${street}${classificationAbbr}`.replace(/[<>:"/\\|?*]/g, '_');
+      const filePath = `${rootDirectory}\\${projectYear}\\${state}\\${projectFolderName}\\1. DRAFTING\\DESIGN NOTES\\${fileName}`;
+
+      // Get current drawings history
+      let drawingsHistory = [];
+      try {
+        const historyValue = project?.drawings_history;
+        if (historyValue) {
+          drawingsHistory = typeof historyValue === 'string' ? JSON.parse(historyValue) : historyValue;
+        }
+      } catch (e) {
+        console.error("Error parsing drawings_history:", e);
+        drawingsHistory = [];
+      }
+
+      // Update the markup_pdf_location for the specific revision
+      if (revisionIndex >= 0 && revisionIndex < drawingsHistory.length) {
+        drawingsHistory[revisionIndex] = {
+          ...drawingsHistory[revisionIndex],
+          markup_pdf_location: filePath
+        };
+      } else {
+        console.error("Invalid revision index for markup");
+        return;
+      }
+
+      // Save updated history
+      const projectName = project?.street && project?.suburb 
+        ? `${project.street}, ${project.suburb}`.trim() 
+        : project?.name || "";
+
+      const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: projectName,
+          status: project?.status || null,
+          stream: project?.stream || null,
+          suburb: project?.suburb || null,
+          street: project?.street || null,
+          state: project?.state || null,
+          deposit: project?.deposit || null,
+          project_cost: project?.project_cost || null,
+          client_name: project?.client_name || null,
+          email: project?.email || null,
+          phone: project?.phone || null,
+          client1_name: project?.client1_name || null,
+          client1_email: project?.client1_email || null,
+          client1_phone: project?.client1_phone || null,
+          client1_active: project?.client1_active || null,
+          client2_name: project?.client2_name || null,
+          client2_email: project?.client2_email || null,
+          client2_phone: project?.client2_phone || null,
+          client2_active: project?.client2_active || null,
+          client3_name: project?.client3_name || null,
+          client3_email: project?.client3_email || null,
+          client3_phone: project?.client3_phone || null,
+          client3_active: project?.client3_active || null,
+          site_visit_status: project?.site_visit_status || null,
+          site_visit_date: project?.site_visit_date || null,
+          site_visit_time: project?.site_visit_time || null,
+          contract_status: project?.contract_status || null,
+          contract_sent_date: project?.contract_sent_date || null,
+          contract_complete_date: project?.contract_complete_date || null,
+          supporting_documents_status: project?.supporting_documents_status || null,
+          supporting_documents_sent_date: project?.supporting_documents_sent_date || null,
+          supporting_documents_complete_date: project?.supporting_documents_complete_date || null,
+          water_declaration_status: project?.water_declaration_status || null,
+          water_declaration_sent_date: project?.water_declaration_sent_date || null,
+          water_declaration_complete_date: project?.water_declaration_complete_date || null,
+          notes: project?.notes || null,
+          window_status: project?.window_status || null,
+          window_colour: project?.window_colour || null,
+          window_reveal: project?.window_reveal || null,
+          window_reveal_other: project?.window_reveal_other || null,
+          window_glazing: project?.window_glazing || null,
+          window_bal_rating: project?.window_bal_rating || null,
+          window_date_required: project?.window_date_required || null,
+          window_ordered_date: project?.window_ordered_date || null,
+          window_order_pdf_location: project?.window_order_pdf_location || null,
+          window_order_number: project?.window_order_number || null,
+          drawings_status: project?.drawings_status || null,
+          drawings_pdf_location: project?.drawings_pdf_location || null,
+          drawings_history: JSON.stringify(drawingsHistory),
+          drawings_viewed_date: project?.drawings_viewed_date || null,
+          colours_status: project?.colours_status || null,
+          planning_status: project?.planning_status || null,
+          energy_report_status: project?.energy_report_status || null,
+          footing_certification_status: project?.footing_certification_status || null,
+          building_permit_status: project?.building_permit_status || null,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(errorData.error || "Failed to save markup path");
+      }
+
+      if (onUpdate) {
+        onUpdate();
+      }
+
+      // Clear markup file after save
+      setMarkupFile(null);
+    } catch (error) {
+      console.error("Error saving markup path:", error);
+      alert(`Error saving markup path: ${error.message}`);
+    }
+  }
+
+  async function handleSaveMarkup() {
+    if (!markupFile || !notesForRevision) return;
+    await saveMarkupPath(markupFile, notesForRevision.index);
+  }
+
+  async function handleSendDrawings() {
+    if (!project || !project.drawings_pdf_location) {
+      alert("No drawings PDF available to send.");
+      return;
+    }
+
+    if (!project.id) {
+      alert("Error: Project ID is missing");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/emails/send-drawings`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          projectId: project.id,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(errorData.error || "Failed to send drawings email");
+      }
+
+      const result = await response.json();
+      alert("Drawings email sent successfully!");
+    } catch (error) {
+      console.error("Error sending drawings email:", error);
+      alert(`Failed to send drawings email: ${error.message}`);
+    }
+  }
+
+  function handleEmailClient() {
+    // Get all active client emails
+    const activeEmails = [];
+    
+    // Primary client email (always included if exists)
+    if (project?.email && project.email.trim()) {
+      activeEmails.push(project.email);
+    }
+    
+    // Client1 if active
+    if (project?.client1_active === 'true' && project?.client1_email && project.client1_email.trim()) {
+      activeEmails.push(project.client1_email);
+    }
+    
+    // Client2 if active
+    if (project?.client2_active === 'true' && project?.client2_email && project.client2_email.trim()) {
+      activeEmails.push(project.client2_email);
+    }
+    
+    // Client3 if active
+    if (project?.client3_active === 'true' && project?.client3_email && project.client3_email.trim()) {
+      activeEmails.push(project.client3_email);
+    }
+    
+    if (activeEmails.length === 0) {
+      alert("No active client email addresses found for this project.");
+      return;
+    }
+
+    // Reset modal state
+    setEmailClientNotes("");
+    setAttachDrawings(true);
+    setShowEmailClientModal(true);
+  }
+
+  function handleCloseEmailClientModal() {
+    setShowEmailClientModal(false);
+    setEmailClientNotes("");
+    setAttachDrawings(true);
+  }
+
+  async function handleSendEmailToClient() {
+    if (!project || !project.id) {
+      alert("Error: Project ID is missing");
+      return;
+    }
+
+    // Get all active client emails
+    const activeEmails = [];
+    
+    // Primary client email (always included if exists)
+    if (project?.email && project.email.trim()) {
+      activeEmails.push(project.email);
+    }
+    
+    // Client1 if active
+    if (project?.client1_active === 'true' && project?.client1_email && project.client1_email.trim()) {
+      activeEmails.push(project.client1_email);
+    }
+    
+    // Client2 if active
+    if (project?.client2_active === 'true' && project?.client2_email && project.client2_email.trim()) {
+      activeEmails.push(project.client2_email);
+    }
+    
+    // Client3 if active
+    if (project?.client3_active === 'true' && project?.client3_email && project.client3_email.trim()) {
+      activeEmails.push(project.client3_email);
+    }
+    
+    if (activeEmails.length === 0) {
+      alert("No active client email addresses found for this project.");
+      return;
+    }
+
+    if (attachDrawings && !project.drawings_pdf_location) {
+      alert("No drawings PDF available to attach.");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/emails/send-drawings`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          projectId: project.id,
+          toEmails: activeEmails, // Send array of emails
+          notes: emailClientNotes,
+          attachDrawings: attachDrawings,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(errorData.error || "Failed to send email");
+      }
+
+      const result = await response.json();
+      const emailList = activeEmails.join(", ");
+      alert(`Email sent successfully to ${emailList}!`);
+      handleCloseEmailClientModal();
+    } catch (error) {
+      console.error("Error sending email:", error);
+      alert(`Failed to send email: ${error.message}`);
+    }
+  }
+
   return (
     <div>
       <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT }}>
         Drawings
       </h2>
       {project && (
-        <div style={{ marginTop: "24px", display: "flex", gap: "24px", flexWrap: "wrap" }}>
-          {/* Column 1 - Status and Approval Buttons */}
-          <div style={{ flex: "1", minWidth: "200px" }}>
+        <div style={{ marginTop: "24px", display: "flex", gap: "24px", flexWrap: "wrap", alignItems: "stretch" }}>
+          {/* Columns 1, 2, 3 - Drawings History */}
+          <div style={{ flex: "3", minWidth: "200px", display: "flex", flexDirection: "column" }}>
+            <div style={{ marginBottom: "24px" }}>
+              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
+                Drawings History
+              </div>
+              <div
+                style={{
+                  background: WHITE,
+                  border: `1px solid ${SECTION_GREY}`,
+                  borderRadius: "8px",
+                  padding: "16px",
+                  flex: 1,
+                  minHeight: "550px",
+                  overflowY: "auto",
+                  overflowX: "hidden",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                {(() => {
+                  let drawingsHistory = [];
+                  try {
+                    const historyValue = project?.drawings_history;
+                    if (historyValue) {
+                      drawingsHistory = typeof historyValue === 'string' ? JSON.parse(historyValue) : historyValue;
+                    }
+                  } catch (e) {
+                    console.error("Error parsing drawings_history:", e);
+                  }
+
+                  if (!drawingsHistory || drawingsHistory.length === 0) {
+                    return (
+                      <div style={{ color: "#32323399", fontSize: "0.9rem", fontStyle: "italic" }}>
+                        No drawings uploaded yet
+                      </div>
+                    );
+                  }
+
+                  return drawingsHistory.map((drawing, index) => {
+                    // Determine background color based on approval status
+                    let backgroundColor = WHITE;
+                    if (drawing.workingDrawingsApproved) {
+                      backgroundColor = "#e3f2fd"; // Light blue
+                    } else if (drawing.conceptApproved) {
+                      backgroundColor = "#e8f5e9"; // Light green
+                    }
+
+                    return (
+                      <div
+                        key={index}
+                        style={{
+                          padding: "12px",
+                          marginBottom: index < drawingsHistory.length - 1 ? "12px" : "0",
+                          borderBottom: index < drawingsHistory.length - 1 ? `1px solid ${SECTION_GREY}` : "none",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "16px",
+                          flexWrap: "wrap",
+                          backgroundColor: backgroundColor,
+                          borderRadius: "4px",
+                        }}
+                      >
+                        <div style={{ fontWeight: "500", color: MONUMENT, minWidth: "150px" }}>
+                          {drawing.name}
+                        </div>
+                        <div style={{ fontSize: "0.85rem", color: "#32323399" }}>
+                          Date: {drawing.date}
+                        </div>
+                        <div style={{ fontSize: "0.85rem", color: "#32323399" }}>
+                          Time: {drawing.time}
+                        </div>
+                        {drawing.revision !== null && (
+                          <div style={{ fontSize: "0.85rem", color: "#32323399" }}>
+                            Revision: {drawing.revision}
+                          </div>
+                        )}
+                        {drawing.markup_pdf_location && (
+                          <button
+                            onClick={() => {
+                              // Open markup PDF in new tab
+                              const markupUrl = `${API_URL}/api/files/markup/${project.id}/${index}`;
+                              window.open(markupUrl, "_blank");
+                            }}
+                            style={{
+                              background: WHITE,
+                              color: MONUMENT,
+                              border: `1px solid ${SECTION_GREY}`,
+                              borderRadius: "6px",
+                              padding: "4px 12px",
+                              fontSize: "0.85rem",
+                              fontWeight: 500,
+                              cursor: "pointer",
+                              transition: "background 0.18s, color 0.15s",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#f0f0f0";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = WHITE;
+                            }}
+                          >
+                            View Markup
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleOpenNotesModal(index, drawing.revision, drawing.name)}
+                          style={{
+                            background: WHITE,
+                            color: MONUMENT,
+                            border: `1px solid ${SECTION_GREY}`,
+                            borderRadius: "6px",
+                            padding: "4px 12px",
+                            fontSize: "0.85rem",
+                            fontWeight: 500,
+                            cursor: "pointer",
+                            transition: "background 0.18s, color 0.15s",
+                            marginLeft: "auto",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = "#f0f0f0";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = WHITE;
+                          }}
+                        >
+                          Drafting Notes
+                        </button>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          </div>
+
+          {/* Column 4 - Status, Buttons, and Drop Zone */}
+          <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column" }}>
+            {/* Status and Approval Buttons */}
             <div style={{ marginBottom: "24px" }}>
               <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
                 Status
@@ -750,7 +1522,7 @@ export default function Drawings({ project, onUpdate }) {
                 ))}
               </select>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "18px", alignItems: "flex-start", width: "fit-content" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "18px", alignItems: "flex-start", width: "fit-content", marginBottom: "24px" }}>
               {project.drawings_pdf_location && (
                 <button
                   onClick={() => {
@@ -878,94 +1650,33 @@ export default function Drawings({ project, onUpdate }) {
               >
                 Clear Drawing Data
               </button>
-            </div>
-          </div>
-
-          {/* Column 2 - Drawings History (twice as wide) */}
-          <div style={{ flex: "2", minWidth: "200px" }}>
-            <div style={{ marginBottom: "24px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
-                Drawings History
-              </div>
-              <div
+              <button
+                onClick={handleEmailClient}
                 style={{
-                  background: WHITE,
-                  border: `1px solid ${SECTION_GREY}`,
-                  borderRadius: "8px",
-                  padding: "16px",
-                  minHeight: "300px",
-                  maxHeight: "500px",
-                  overflowY: "auto",
+                  background: "#4D93D9",
+                  color: WHITE,
+                  border: `1px solid #4D93D9`,
+                  borderRadius: "10px",
+                  padding: "8px 8px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  display: "block",
+                  width: "100%",
+                  marginTop: "8px",
                 }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "#3d7bc9")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "#4D93D9")}
               >
-                {(() => {
-                  let drawingsHistory = [];
-                  try {
-                    const historyValue = project?.drawings_history;
-                    if (historyValue) {
-                      drawingsHistory = typeof historyValue === 'string' ? JSON.parse(historyValue) : historyValue;
-                    }
-                  } catch (e) {
-                    console.error("Error parsing drawings_history:", e);
-                  }
-
-                  if (!drawingsHistory || drawingsHistory.length === 0) {
-                    return (
-                      <div style={{ color: "#32323399", fontSize: "0.9rem", fontStyle: "italic" }}>
-                        No drawings uploaded yet
-                      </div>
-                    );
-                  }
-
-                  return drawingsHistory.map((drawing, index) => {
-                    // Determine background color based on approval status
-                    let backgroundColor = WHITE;
-                    if (drawing.workingDrawingsApproved) {
-                      backgroundColor = "#e3f2fd"; // Light blue
-                    } else if (drawing.conceptApproved) {
-                      backgroundColor = "#e8f5e9"; // Light green
-                    }
-
-                    return (
-                      <div
-                        key={index}
-                        style={{
-                          padding: "12px",
-                          marginBottom: index < drawingsHistory.length - 1 ? "12px" : "0",
-                          borderBottom: index < drawingsHistory.length - 1 ? `1px solid ${SECTION_GREY}` : "none",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "16px",
-                          flexWrap: "wrap",
-                          backgroundColor: backgroundColor,
-                          borderRadius: "4px",
-                        }}
-                      >
-                        <div style={{ fontWeight: "500", color: MONUMENT, minWidth: "150px" }}>
-                          {drawing.name}
-                        </div>
-                        <div style={{ fontSize: "0.85rem", color: "#32323399" }}>
-                          Date: {drawing.date}
-                        </div>
-                        <div style={{ fontSize: "0.85rem", color: "#32323399" }}>
-                          Time: {drawing.time}
-                        </div>
-                        {drawing.revision !== null && (
-                          <div style={{ fontSize: "0.85rem", color: "#32323399" }}>
-                            Revision: {drawing.revision}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
+                Email Client
+              </button>
             </div>
-          </div>
 
-          {/* Column 3 - Drawings PDF Upload */}
-          <div style={{ flex: "1", minWidth: "200px" }}>
-            <div style={{ marginBottom: "24px" }}>
+            {/* Drawings PDF Upload Drop Zone */}
+            <div style={{ display: "flex", flexDirection: "column", marginBottom: "24px" }}>
               <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
                 Drawings PDF
               </div>
@@ -983,6 +1694,10 @@ export default function Drawings({ project, onUpdate }) {
                   cursor: "pointer",
                   background: MONUMENT,
                   transition: "background 0.2s, border-color 0.2s",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "center",
+                  alignItems: "center",
                 }}
               >
                 {selectedFile ? (
@@ -1012,6 +1727,354 @@ export default function Drawings({ project, onUpdate }) {
                   style={{ display: "none" }}
                 />
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email Client Modal */}
+      {showEmailClientModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={handleCloseEmailClientModal}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              maxWidth: "600px",
+              width: "90%",
+              maxHeight: "80vh",
+              overflow: "auto",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: "16px", color: MONUMENT }}>
+              Email Client
+            </h3>
+            {(() => {
+              // Get all active client emails for display
+              const activeEmails = [];
+              const activeNames = [];
+              
+              // Primary client
+              if (project?.email && project.email.trim()) {
+                activeEmails.push(project.email);
+                activeNames.push(project?.client_name || "Primary Client");
+              }
+              
+              // Client1 if active
+              if (project?.client1_active === 'true' && project?.client1_email && project.client1_email.trim()) {
+                activeEmails.push(project.client1_email);
+                activeNames.push(project?.client1_name || "Contact 1");
+              }
+              
+              // Client2 if active
+              if (project?.client2_active === 'true' && project?.client2_email && project.client2_email.trim()) {
+                activeEmails.push(project.client2_email);
+                activeNames.push(project?.client2_name || "Contact 2");
+              }
+              
+              // Client3 if active
+              if (project?.client3_active === 'true' && project?.client3_email && project.client3_email.trim()) {
+                activeEmails.push(project.client3_email);
+                activeNames.push(project?.client3_name || "Contact 3");
+              }
+              
+              return (
+                <div style={{ marginBottom: "16px", padding: "12px", background: "#f5f5f5", borderRadius: "8px" }}>
+                  <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "8px", fontWeight: "500" }}>
+                    Sending to:
+                  </div>
+                  {activeEmails.map((email, index) => (
+                    <div key={index} style={{ fontSize: "0.85rem", color: MONUMENT, marginBottom: "4px" }}>
+                      {activeNames[index]}: {email}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
+                Notes (optional)
+              </div>
+              <textarea
+                value={emailClientNotes}
+                onChange={(e) => setEmailClientNotes(e.target.value)}
+                placeholder="Enter any notes to include in the email..."
+                style={{
+                  width: "100%",
+                  minHeight: "150px",
+                  padding: "12px",
+                  borderRadius: "8px",
+                  border: `1px solid ${SECTION_GREY}`,
+                  fontSize: "0.9rem",
+                  fontFamily: "inherit",
+                  resize: "vertical",
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+            <div style={{ marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+              <input
+                type="checkbox"
+                id="attachDrawings"
+                checked={attachDrawings}
+                onChange={(e) => setAttachDrawings(e.target.checked)}
+                style={{
+                  width: "18px",
+                  height: "18px",
+                  cursor: "pointer",
+                }}
+              />
+              <label
+                htmlFor="attachDrawings"
+                style={{
+                  fontSize: "0.9rem",
+                  color: MONUMENT,
+                  cursor: "pointer",
+                }}
+              >
+                Attach drawings PDF
+              </label>
+            </div>
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+              <button
+                onClick={handleCloseEmailClientModal}
+                style={{
+                  background: SECTION_GREY,
+                  color: WHITE,
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "10px 20px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  transition: "background 0.2s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "#8a8a8c")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = SECTION_GREY)}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSendEmailToClient}
+                style={{
+                  background: "#4D93D9",
+                  color: WHITE,
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "10px 20px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  transition: "background 0.2s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "#3d7bc9")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "#4D93D9")}
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notes Modal */}
+      {showNotesModal && notesForRevision && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={handleCloseNotesModal}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              maxWidth: "600px",
+              width: "90%",
+              maxHeight: "80vh",
+              overflow: "auto",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: "16px", color: MONUMENT }}>
+              Drafting Notes for {notesForRevision.name}
+              {notesForRevision.revision !== null ? ` - Rev ${notesForRevision.revision}` : " (Initial)"}
+            </h3>
+            <textarea
+              value={notesText}
+              onChange={(e) => setNotesText(e.target.value)}
+              placeholder="Enter notes for this drawing revision..."
+              readOnly={!notesForRevision.isNewDrawing && !notesForRevision.isCurrentRevision}
+              style={{
+                width: "100%",
+                minHeight: "200px",
+                padding: "12px",
+                borderRadius: "8px",
+                border: `1px solid ${SECTION_GREY}`,
+                fontSize: "0.9rem",
+                fontFamily: "inherit",
+                resize: "vertical",
+                boxSizing: "border-box",
+                marginBottom: "16px",
+                backgroundColor: (!notesForRevision.isNewDrawing && !notesForRevision.isCurrentRevision) ? "#f5f5f5" : WHITE,
+                cursor: (!notesForRevision.isNewDrawing && !notesForRevision.isCurrentRevision) ? "not-allowed" : "text",
+              }}
+            />
+            {/* Show Markup PDF drop zone only for new drawings */}
+            {notesForRevision.isNewDrawing && (
+              <div style={{ marginBottom: "16px" }}>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
+                  Markup PDF (optional)
+                </div>
+                <div
+                  onDragEnter={handleMarkupDragEnter}
+                  onDragOver={handleMarkupDragOver}
+                  onDragLeave={handleMarkupDragLeave}
+                  onDrop={handleMarkupDrop}
+                  onClick={handleMarkupBrowseClick}
+                  style={{
+                    border: `2px dashed ${isDraggingMarkup ? "#4D93D9" : SECTION_GREY}`,
+                    borderRadius: "8px",
+                    padding: "20px",
+                    textAlign: "center",
+                    cursor: "pointer",
+                    background: isDraggingMarkup ? "#f0f7ff" : WHITE,
+                    transition: "background 0.2s, border-color 0.2s",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    minHeight: "80px",
+                  }}
+                >
+                  {markupFile ? (
+                    <div>
+                      <div style={{ color: MONUMENT, fontWeight: "500", marginBottom: "4px" }}>
+                        {markupFile.name}
+                      </div>
+                      <div style={{ fontSize: "0.85rem", color: "#32323399" }}>
+                        Click to select a different file
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ color: MONUMENT, fontWeight: "500", marginBottom: "4px" }}>
+                        Drag and drop markup PDF here
+                      </div>
+                      <div style={{ fontSize: "0.85rem", color: "#32323399" }}>
+                        or click to browse
+                      </div>
+                    </div>
+                  )}
+                  <input
+                    ref={markupInputRef}
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    onChange={handleMarkupFileSelect}
+                    style={{ display: "none" }}
+                  />
+                </div>
+              </div>
+            )}
+            {/* Show Resend Drawings checkbox only for current revision (not new drawings) */}
+            {notesForRevision.isCurrentRevision && !notesForRevision.isNewDrawing && (
+              <div style={{ display: "flex", alignItems: "center", marginBottom: "16px" }}>
+                <input
+                  type="checkbox"
+                  id="resendDrawings"
+                  checked={resendDrawings}
+                  onChange={(e) => setResendDrawings(e.target.checked)}
+                  style={{ width: "18px", height: "18px", cursor: "pointer", marginRight: "8px" }}
+                />
+                <label htmlFor="resendDrawings" style={{ fontSize: "0.9rem", color: MONUMENT, fontWeight: 500, cursor: "pointer" }}>
+                  Resend Drawings
+                </label>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+              {/* Show Send Drawings and Cancel for new drawings or current revision */}
+              {(notesForRevision.isNewDrawing || notesForRevision.isCurrentRevision) && (
+                <>
+                  <button
+                    onClick={handleSendDrawingsWithNotes}
+                    style={{
+                      background: "#4D93D9",
+                      color: WHITE,
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "10px 20px",
+                      fontSize: "0.9rem",
+                      fontWeight: 500,
+                      cursor: "pointer",
+                      transition: "background 0.2s",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#3d7bc9")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "#4D93D9")}
+                  >
+                    Send Drawings
+                  </button>
+                  <button
+                    onClick={handleCloseNotesModal}
+                    style={{
+                      background: SECTION_GREY,
+                      color: WHITE,
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "10px 20px",
+                      fontSize: "0.9rem",
+                      fontWeight: 500,
+                      cursor: "pointer",
+                      transition: "background 0.2s",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#8a8a8c")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = SECTION_GREY)}
+                  >
+                    Cancel
+                  </button>
+                </>
+              )}
+              {/* Show only Close for previous revisions */}
+              {!notesForRevision.isNewDrawing && !notesForRevision.isCurrentRevision && (
+                <button
+                  onClick={handleCloseNotesModal}
+                  style={{
+                    background: SECTION_GREY,
+                    color: WHITE,
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "10px 20px",
+                    fontSize: "0.9rem",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    transition: "background 0.2s",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#8a8a8c")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = SECTION_GREY)}
+                >
+                  Close
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -22,6 +22,7 @@ export default function InConstruction() {
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [newProjectStep, setNewProjectStep] = useState(1);
   const [newProjectFormData, setNewProjectFormData] = useState({
@@ -149,18 +150,116 @@ export default function InConstruction() {
             In Construction
           </h1>
         </div>
-        {isAdmin && (
+        <div
+          style={{
+            position: "absolute",
+            top: "20px",
+            right: "20px",
+            display: "flex",
+            gap: "10px",
+            alignItems: "center",
+          }}
+        >
+          {/* State Filter Buttons */}
           <button
-            onClick={() => setIsNewProjectOpen(true)}
+            onClick={() => {
+              const newFilter = "VIC";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
             style={{
-              position: "absolute",
-              top: "20px",
-              right: "20px",
-              background: "#33cc33",
-              color: WHITE,
-              border: "none",
+              background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
+              color: stateFilter === "VIC" ? WHITE : MONUMENT,
+              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : MONUMENT}`,
               borderRadius: "8px",
               padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "VIC") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "VIC") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
+          >
+            VIC Only
+          </button>
+          <button
+            onClick={() => {
+              const newFilter = "QLD";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
+            style={{
+              background: stateFilter === "QLD" ? "#D54358" : WHITE,
+              color: stateFilter === "QLD" ? WHITE : MONUMENT,
+              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : MONUMENT}`,
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "QLD") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "QLD") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
+          >
+            QLD Only
+          </button>
+          <button
+            onClick={() => {
+              const newFilter = "All";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
+            style={{
+              background: stateFilter === "All" ? MONUMENT : WHITE,
+              color: stateFilter === "All" ? WHITE : MONUMENT,
+              border: `2px solid ${MONUMENT}`,
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "All") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "All") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
+          >
+            All Projects
+          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setIsNewProjectOpen(true)}
+              style={{
+                background: "#33cc33",
+                color: WHITE,
+                border: "none",
+                borderRadius: "8px",
+                padding: "10px 20px",
               fontSize: "1rem",
               fontWeight: 500,
               cursor: "pointer",
@@ -171,7 +270,8 @@ export default function InConstruction() {
           >
             + New Project
           </button>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Sections 2 & 3 */}
@@ -404,7 +504,15 @@ export default function InConstruction() {
           {error && <p style={{ color: "#cc3333" }}>Error: {error}</p>}
           {!loading && !error && projects.length > 0 && (() => {
             // Filter to only show projects with "Construction Phase" status (exclude Hotlist)
-            const constructionProjects = projects.filter((project) => project.status === "Construction Phase" && project.status !== "Hotlist");
+            let constructionProjects = projects.filter((project) => project.status === "Construction Phase" && project.status !== "Hotlist");
+            
+            // Filter by state if specified
+            if (stateFilter !== "All") {
+              constructionProjects = constructionProjects.filter(project => {
+                const projectState = (project.state || "").toUpperCase();
+                return projectState === stateFilter.toUpperCase();
+              });
+            }
             
             // Filter projects based on search query
             let filteredProjects = searchQuery.trim()

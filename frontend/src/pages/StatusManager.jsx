@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
+import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -41,6 +42,7 @@ export default function StatusManager() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [customSubstatuses, setCustomSubstatuses] = useState([]); // Track custom "Other" values
   const [customSubstatusDetails, setCustomSubstatusDetails] = useState({}); // Track custom details per substatus: { "Town Planning": ["Custom Detail 1", ...] }
   const [deletedSubstatuses, setDeletedSubstatuses] = useState(new Set()); // Track deleted base substatuses
@@ -586,8 +588,7 @@ export default function StatusManager() {
     const emailBody = projects.map(project => {
       const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "Unnamed Project";
       const substatus = project.substatus || "";
-      const substatusDetail = project.substatus_detail || "";
-      return `${projectName} - ${substatus || ""} - ${substatusDetail || ""}`;
+      return `${projectName} - ${substatus || ""}`;
     }).join('\n');
     
     // Create mailto link
@@ -678,6 +679,108 @@ export default function StatusManager() {
           >
             Status Manager
           </h1>
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            top: "20px",
+            right: "20px",
+            display: "flex",
+            gap: "10px",
+            alignItems: "center",
+          }}
+        >
+          {/* State Filter Buttons */}
+          <button
+            onClick={() => {
+              const newFilter = "VIC";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
+            style={{
+              background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
+              color: stateFilter === "VIC" ? WHITE : MONUMENT,
+              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : MONUMENT}`,
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "VIC") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "VIC") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
+          >
+            VIC Only
+          </button>
+          <button
+            onClick={() => {
+              const newFilter = "QLD";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
+            style={{
+              background: stateFilter === "QLD" ? "#D54358" : WHITE,
+              color: stateFilter === "QLD" ? WHITE : MONUMENT,
+              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : MONUMENT}`,
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "QLD") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "QLD") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
+          >
+            QLD Only
+          </button>
+          <button
+            onClick={() => {
+              const newFilter = "All";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
+            style={{
+              background: stateFilter === "All" ? MONUMENT : WHITE,
+              color: stateFilter === "All" ? WHITE : MONUMENT,
+              border: `2px solid ${MONUMENT}`,
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "All") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "All") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
+          >
+            All Projects
+          </button>
         </div>
       </div>
 
@@ -833,70 +936,80 @@ export default function StatusManager() {
             <div style={{ textAlign: "center", padding: "40px", color: "#cc3333" }}>
               Error: {error}
             </div>
-          ) : projects.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "40px", color: MONUMENT }}>
-              No Design Phase projects found.
-            </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              {/* Email List Button */}
-              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
-                <button
-                  onClick={handleEmailList}
-                  style={{
-                    padding: "10px 20px",
-                    borderRadius: "8px",
-                    border: "none",
-                    background: MONUMENT,
-                    color: WHITE,
-                    fontSize: "0.9rem",
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    transition: "background 0.2s",
-                  }}
-                  onMouseOver={(e) => (e.target.style.background = "#222")}
-                  onMouseOut={(e) => (e.target.style.background = MONUMENT)}
-                >
-                  Email List
-                </button>
-              </div>
-              {/* Header Row */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "2fr 1fr 1fr",
-                  gap: "16px",
-                  padding: "12px 16px",
-                  background: MONUMENT,
-                  color: WHITE,
-                  borderRadius: "8px",
-                  fontWeight: 600,
-                  fontSize: "0.9rem",
-                  position: "sticky",
-                  top: "0px",
-                  zIndex: 10,
-                }}
-              >
-                <div>Project</div>
-                <div>SubStatus</div>
-                <div>SubStatus Detail</div>
-              </div>
-              {/* Project Rows */}
-              {projects.map((project) => {
+            <>
+              {/* Filter projects by state */}
+              {(() => {
+                const filteredProjects = stateFilter !== "All" 
+                  ? projects.filter(project => {
+                      const projectState = (project.state || "").toUpperCase();
+                      return projectState === stateFilter.toUpperCase();
+                    })
+                  : projects;
+                
+                if (filteredProjects.length === 0) {
+                  return (
+                    <div style={{ textAlign: "center", padding: "40px", color: MONUMENT }}>
+                      No Design Phase projects found.
+                    </div>
+                  );
+                }
+                
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {/* Email List Button */}
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
+                      <button
+                        onClick={handleEmailList}
+                        style={{
+                          padding: "10px 20px",
+                          borderRadius: "8px",
+                          border: "none",
+                          background: MONUMENT,
+                          color: WHITE,
+                          fontSize: "0.9rem",
+                          fontWeight: 500,
+                          cursor: "pointer",
+                          transition: "background 0.2s",
+                        }}
+                        onMouseOver={(e) => (e.target.style.background = "#222")}
+                        onMouseOut={(e) => (e.target.style.background = MONUMENT)}
+                      >
+                        Email List
+                      </button>
+                    </div>
+                    {/* Header Row */}
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "2fr 1fr",
+                        gap: "16px",
+                        padding: "12px 16px",
+                        background: MONUMENT,
+                        color: WHITE,
+                        borderRadius: "8px",
+                        fontWeight: 600,
+                        fontSize: "0.9rem",
+                        position: "sticky",
+                        top: "0px",
+                        zIndex: 10,
+                      }}
+                    >
+                      <div>Project</div>
+                      <div>SubStatus</div>
+                    </div>
+                    {/* Project Rows */}
+                    {filteredProjects.map((project) => {
                 const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "Unnamed Project";
-                // Get substatus values
+                // Get substatus value
                 const substatus = project.substatus || "";
-                const substatusDetail = project.substatus_detail || "";
-                const detailOptions = getDetailOptions(substatus);
-                // Always show dropdown if substatus is selected
-                const showDetailDropdown = substatus !== "";
 
                 return (
                   <div
                     key={project.id}
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "2fr 1fr 1fr",
+                      gridTemplateColumns: "2fr 1fr",
                       gap: "16px",
                       padding: "12px 16px",
                       background: WHITE,
@@ -947,56 +1060,13 @@ export default function StatusManager() {
                         </option>
                       ))}
                     </select>
-                    {showDetailDropdown ? (
-                      <select
-                        value={substatusDetail}
-                        onChange={(e) => handleSubStatusDetailChange(project.id, e.target.value, substatus)}
-                        onBlur={(e) => {
-                          // Auto-save on blur as well
-                          if (e.target.value !== substatusDetail && e.target.value !== "Edit") {
-                            handleSubStatusDetailChange(project.id, e.target.value, substatus);
-                          }
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          width: "100%",
-                          padding: "8px 10px",
-                          borderRadius: "6px",
-                          border: "1px solid #ddd",
-                          fontSize: "0.9rem",
-                          color: MONUMENT,
-                          background: WHITE,
-                          cursor: "pointer",
-                          fontWeight: 500,
-                          boxSizing: "border-box",
-                          textAlign: "center",
-                        }}
-                      >
-                        <option value="">-- Select --</option>
-                        {detailOptions.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <div
-                        style={{
-                          width: "100%",
-                          padding: "8px 10px",
-                          fontSize: "0.9rem",
-                          color: "#999",
-                          textAlign: "center",
-                          fontStyle: "italic",
-                        }}
-                      >
-                        Select SubStatus first
-                      </div>
-                    )}
+                  </div>
+                    );
+                  })}
                   </div>
                 );
-              })}
-            </div>
+              })()}
+            </>
           )}
         </div>
       </div>
