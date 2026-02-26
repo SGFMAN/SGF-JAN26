@@ -9,7 +9,7 @@ const LIGHT_MONUMENT = "#42464d";
 const WHITE = "#fff";
 const API_URL = "";
 
-export default function ContractManager() {
+export default function ColourManager() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -60,8 +60,12 @@ export default function ContractManager() {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
       const data = await response.json();
-      // Filter for Design Phase projects (exclude Hotlist)
-      const designPhaseProjects = data.filter((project) => project.status === "Design Phase" && project.status !== "Hotlist");
+      // Filter for Design Phase projects (exclude Hotlist and on_hold projects)
+      const designPhaseProjects = data.filter((project) => {
+        return project.status === "Design Phase" 
+          && project.status !== "Hotlist"
+          && (project.on_hold !== true && project.on_hold !== 'true');
+      });
       // Sort by date
       const sortedProjects = sortProjectsByDate(designPhaseProjects, sortOrder);
       setProjects(sortedProjects);
@@ -83,25 +87,14 @@ export default function ContractManager() {
   }, [sortOrder]);
 
   // Status options
-  const CONTRACT_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
-  const SUPPORTING_DOCUMENTS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
-  const WATER_AUTHORITY_OPTIONS = ["Not Required", "Barwon Water", "Greater Western Water", "South East Water"];
-  const WATER_DECLARATION_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
+  const COLOURS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
 
   // Get status color
-  function getStatusColor(status, fieldName = "") {
-    if (status === "Not Required") {
-      return "#999999"; // Grey
-    } else if (status === "Complete") {
+  function getStatusColor(status) {
+    if (status === "Complete") {
       return "#33cc33"; // Green
     } else if (status === "Sent") {
       return "#ff9900"; // Orange
-    } else if (fieldName === "water_authority" && (status === "Barwon Water" || status === "Greater Western Water" || status === "South East Water")) {
-      // For water authority, show specific authorities in blue
-      return "#0066cc"; // Blue
-    } else if (fieldName === "water_authority" && status !== "Not Required" && status !== "Not Sent") {
-      // For other water authority values, use a neutral color
-      return WHITE;
     } else {
       return "#cc3333"; // Red (for "Not Sent" or other)
     }
@@ -153,14 +146,8 @@ export default function ContractManager() {
   // Handle status change
   async function handleStatusChange(projectId, fieldName, newValue) {
     await saveField(projectId, fieldName, newValue);
-    
-    // Special handling: if water authority changes to "Not Required", set water declaration to "Not Sent" (it will display as "Not Required")
-    if (fieldName === "water_authority") {
-      if (newValue === "Not Required") {
-        await saveField(projectId, "water_declaration_status", "Not Sent");
-      }
-    }
   }
+
   return (
     <div
       className="page-container"
@@ -207,7 +194,7 @@ export default function ContractManager() {
               letterSpacing: "1px",
             }}
           >
-            Contract Manager
+            Colour Manager
           </h1>
         </div>
         <div
@@ -371,6 +358,28 @@ export default function ContractManager() {
           <Link
             to="/managers/contract-manager"
             style={{
+              background: "transparent",
+              color: "#404049",
+              border: "none",
+              borderRadius: "10px",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              textAlign: "center",
+              textDecoration: "none",
+              letterSpacing: "0.5px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              marginBottom: "0px",
+              lineHeight: "1.4",
+              display: "block",
+            }}
+          >
+            Contract Manager
+          </Link>
+          <Link
+            to="/managers/colour-manager"
+            style={{
               background: WHITE,
               color: MONUMENT,
               border: "none",
@@ -387,28 +396,6 @@ export default function ContractManager() {
               lineHeight: "1.4",
               outline: `2px solid ${MONUMENT}`,
               boxShadow: "0 2px 4px rgba(50,50,51,.04)",
-              display: "block",
-            }}
-          >
-            Contract Manager
-          </Link>
-          <Link
-            to="/managers/colour-manager"
-            style={{
-              background: "transparent",
-              color: "#404049",
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
               display: "block",
             }}
           >
@@ -528,12 +515,13 @@ export default function ContractManager() {
                 }
                 
                 return (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                    {/* Header Row */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px" }}>
+                    {/* Header Row - spans columns 1 and 2 */}
               <div
                 style={{
+                  gridColumn: "1 / 3",
                   display: "grid",
-                  gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr",
+                  gridTemplateColumns: "3fr 1fr",
                   gap: "16px",
                   padding: "12px 16px",
                   background: MONUMENT,
@@ -548,45 +536,21 @@ export default function ContractManager() {
                 }}
               >
                 <div>Project</div>
-                <div>Contract</div>
-                <div>Supporting Docs</div>
-                <div>Water Authority</div>
-                <div>Water Declaration</div>
+                <div>Colours Status</div>
               </div>
 
-                    {/* Project Rows */}
+                    {/* Project Rows - spans columns 1 and 2 */}
                     {filteredProjects.map((project) => {
                 const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "Unknown Project";
-                const contractStatus = getEffectiveValue(project, "contract_status", "Not Sent");
-                const supportingDocsStatus = getEffectiveValue(project, "supporting_documents_status", "Not Sent");
-                const waterAuthority = getEffectiveValue(project, "water_authority", "Not Required");
-                // For water declaration, if water authority is "Not Required", treat it as "Not Required" for display/color
-                const waterDeclarationStatusRaw = getEffectiveValue(project, "water_declaration_status", "Not Sent");
-                const waterDeclarationStatus = waterAuthority === "Not Required" ? "Not Required" : waterDeclarationStatusRaw;
-                // Format date for display (year field now stores full date YYYY-MM-DD)
-                let displayDate = "";
-                if (project.year) {
-                  // Check if it's a date format (YYYY-MM-DD) or just a year
-                  if (/^\d{4}-\d{2}-\d{2}$/.test(project.year)) {
-                    // Format as DD/MM/YYYY
-                    const [year, month, day] = project.year.split('-');
-                    displayDate = `${day}/${month}/${year}`;
-                  } else if (/^\d{4}$/.test(project.year)) {
-                    // It's just a year, show as "Year: YYYY"
-                    displayDate = `Year: ${project.year}`;
-                  } else {
-                    displayDate = "Not set";
-                  }
-                } else {
-                  displayDate = "Not set";
-                }
+                const coloursStatus = getEffectiveValue(project, "colours_status", "Not Sent");
 
                 return (
                   <div
                     key={project.id}
                     style={{
+                      gridColumn: "1 / 3",
                       display: "grid",
-                      gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr",
+                      gridTemplateColumns: "3fr 1fr",
                       gap: "16px",
                       padding: "12px 16px",
                       background: WHITE,
@@ -607,8 +571,8 @@ export default function ContractManager() {
                       {projectName}
                     </Link>
                     <select
-                      value={contractStatus}
-                      onChange={(e) => handleStatusChange(project.id, "contract_status", e.target.value)}
+                      value={coloursStatus}
+                      onChange={(e) => handleStatusChange(project.id, "colours_status", e.target.value)}
                       onClick={(e) => e.stopPropagation()}
                       style={{
                         width: "100%",
@@ -617,109 +581,19 @@ export default function ContractManager() {
                         border: "none",
                         fontSize: "0.9rem",
                         color: WHITE,
-                        background: getStatusColor(contractStatus),
+                        background: getStatusColor(coloursStatus),
                         cursor: "pointer",
                         fontWeight: 500,
                         boxSizing: "border-box",
                         textAlign: "center",
                       }}
                     >
-                      {CONTRACT_STATUS_OPTIONS.map((option) => (
+                      {COLOURS_STATUS_OPTIONS.map((option) => (
                         <option key={option} value={option}>
                           {option}
                         </option>
                       ))}
                     </select>
-                    <select
-                      value={supportingDocsStatus}
-                      onChange={(e) => handleStatusChange(project.id, "supporting_documents_status", e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                      style={{
-                        width: "100%",
-                        padding: "8px 10px",
-                        borderRadius: "6px",
-                        border: "none",
-                        fontSize: "0.9rem",
-                        color: WHITE,
-                        background: getStatusColor(supportingDocsStatus),
-                        cursor: "pointer",
-                        fontWeight: 500,
-                        boxSizing: "border-box",
-                        textAlign: "center",
-                      }}
-                    >
-                      {SUPPORTING_DOCUMENTS_STATUS_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={waterAuthority}
-                      onChange={(e) => handleStatusChange(project.id, "water_authority", e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                      style={{
-                        width: "100%",
-                        padding: "8px 10px",
-                        borderRadius: "6px",
-                        border: "none",
-                        fontSize: "0.9rem",
-                        color: getStatusColor(waterAuthority, "water_authority") === WHITE ? MONUMENT : WHITE,
-                        background: getStatusColor(waterAuthority, "water_authority"),
-                        cursor: "pointer",
-                        fontWeight: 500,
-                        boxSizing: "border-box",
-                        textAlign: "center",
-                      }}
-                    >
-                      {WATER_AUTHORITY_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                    {waterAuthority === "Not Required" ? (
-                      <div
-                        style={{
-                          width: "100%",
-                          padding: "8px 10px",
-                          borderRadius: "6px",
-                          fontSize: "0.9rem",
-                          color: WHITE,
-                          background: getStatusColor("Not Required"),
-                          fontWeight: 500,
-                          boxSizing: "border-box",
-                          textAlign: "center",
-                        }}
-                      >
-                        Not Required
-                      </div>
-                    ) : (
-                      <select
-                        value={waterDeclarationStatusRaw}
-                        onChange={(e) => handleStatusChange(project.id, "water_declaration_status", e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          width: "100%",
-                          padding: "8px 10px",
-                          borderRadius: "6px",
-                          border: "none",
-                          fontSize: "0.9rem",
-                          color: WHITE,
-                          background: getStatusColor(waterDeclarationStatusRaw),
-                          cursor: "pointer",
-                          fontWeight: 500,
-                          boxSizing: "border-box",
-                          textAlign: "center",
-                        }}
-                      >
-                        {WATER_DECLARATION_STATUS_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    )}
                   </div>
                     );
                   })}

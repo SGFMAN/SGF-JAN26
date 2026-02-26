@@ -11,7 +11,10 @@ export default function FileSettings() {
   const [createFolders, setCreateFolders] = useState(true);
   const [smtpUser, setSmtpUser] = useState("");
   const [smtpPass, setSmtpPass] = useState("");
+  const [smtpUserSecondary, setSmtpUserSecondary] = useState("");
+  const [smtpPassSecondary, setSmtpPassSecondary] = useState("");
   const [testProjectName, setTestProjectName] = useState("");
+  const [colourAttachmentsVic, setColourAttachmentsVic] = useState("");
   
   // QLD Settings
   const [rootDirectoryQld, setRootDirectoryQld] = useState("");
@@ -19,17 +22,18 @@ export default function FileSettings() {
   const [smtpUserQld, setSmtpUserQld] = useState("");
   const [smtpPassQld, setSmtpPassQld] = useState("");
   const [testProjectNameQld, setTestProjectNameQld] = useState("");
+  const [colourAttachmentsQld, setColourAttachmentsQld] = useState("");
   
   const [isCreatingTestFolder, setIsCreatingTestFolder] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingFolderPath, setPendingFolderPath] = useState("");
   const [pendingState, setPendingState] = useState("VIC"); // Track which state (VIC/QLD) for test folder
   const [loading, setLoading] = useState(true);
-  const valuesRef = useRef({ rootDirectory, createFolders, smtpUser, smtpPass, rootDirectoryQld, createFoldersQld, smtpUserQld, smtpPassQld });
+  const valuesRef = useRef({ rootDirectory, createFolders, smtpUser, smtpPass, smtpUserSecondary, smtpPassSecondary, rootDirectoryQld, createFoldersQld, smtpUserQld, smtpPassQld, colourAttachmentsVic, colourAttachmentsQld });
 
   useEffect(() => {
-    valuesRef.current = { rootDirectory, createFolders, smtpUser, smtpPass, rootDirectoryQld, createFoldersQld, smtpUserQld, smtpPassQld };
-  }, [rootDirectory, createFolders, smtpUser, smtpPass, rootDirectoryQld, createFoldersQld, smtpUserQld, smtpPassQld]);
+    valuesRef.current = { rootDirectory, createFolders, smtpUser, smtpPass, smtpUserSecondary, smtpPassSecondary, rootDirectoryQld, createFoldersQld, smtpUserQld, smtpPassQld, colourAttachmentsVic, colourAttachmentsQld };
+  }, [rootDirectory, createFolders, smtpUser, smtpPass, smtpUserSecondary, smtpPassSecondary, rootDirectoryQld, createFoldersQld, smtpUserQld, smtpPassQld, colourAttachmentsVic, colourAttachmentsQld]);
 
   useEffect(() => {
     fetchSettings();
@@ -47,20 +51,28 @@ export default function FileSettings() {
       setCreateFolders(data.create_folders === "true" || data.create_folders === true);
       setSmtpUser(data.smtp_user || "");
       setSmtpPass(data.smtp_pass || "");
+      setSmtpUserSecondary(data.smtp_user_secondary || "");
+      setSmtpPassSecondary(data.smtp_pass_secondary || "");
       setRootDirectoryQld(data.root_directory_qld || "");
       setCreateFoldersQld(data.create_folders_qld === "true" || data.create_folders_qld === true);
       setSmtpUserQld(data.smtp_user_qld || "");
       setSmtpPassQld(data.smtp_pass_qld || "");
+      setColourAttachmentsVic(data.colour_attachments_vic || "");
+      setColourAttachmentsQld(data.colour_attachments_qld || "");
     } catch (error) {
       console.error("Error fetching settings:", error);
       setRootDirectory("");
       setCreateFolders(true);
       setSmtpUser("");
       setSmtpPass("");
+      setSmtpUserSecondary("");
+      setSmtpPassSecondary("");
       setRootDirectoryQld("");
       setCreateFoldersQld(true);
       setSmtpUserQld("");
       setSmtpPassQld("");
+      setColourAttachmentsVic("");
+      setColourAttachmentsQld("");
     } finally {
       setLoading(false);
     }
@@ -68,29 +80,40 @@ export default function FileSettings() {
 
   async function saveSettings() {
     try {
+      const payload = {
+        root_directory: valuesRef.current.rootDirectory || null,
+        create_folders: valuesRef.current.createFolders === true || valuesRef.current.createFolders === "true",
+        smtp_user: (valuesRef.current.smtpUser || "").trim() || null,
+        smtp_pass: valuesRef.current.smtpPass || null,
+        smtp_user_secondary: (valuesRef.current.smtpUserSecondary || "").trim() || null,
+        smtp_pass_secondary: valuesRef.current.smtpPassSecondary || null,
+        root_directory_qld: valuesRef.current.rootDirectoryQld || null,
+        create_folders_qld: valuesRef.current.createFoldersQld === true || valuesRef.current.createFoldersQld === "true",
+        smtp_user_qld: (valuesRef.current.smtpUserQld || "").trim() || null,
+        smtp_pass_qld: valuesRef.current.smtpPassQld || null,
+        colour_attachments_vic: (valuesRef.current.colourAttachmentsVic || "").trim() || null,
+        colour_attachments_qld: (valuesRef.current.colourAttachmentsQld || "").trim() || null,
+      };
+      console.log("Saving settings with payload:", payload);
+      console.log("colour_attachments_vic value:", valuesRef.current.colourAttachmentsVic, "trimmed:", (valuesRef.current.colourAttachmentsVic || "").trim());
       const response = await fetch(`${API_URL}/api/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          root_directory: valuesRef.current.rootDirectory || null,
-          create_folders: valuesRef.current.createFolders === true || valuesRef.current.createFolders === "true",
-          smtp_user: (valuesRef.current.smtpUser || "").trim() || null,
-          smtp_pass: valuesRef.current.smtpPass || null,
-          root_directory_qld: valuesRef.current.rootDirectoryQld || null,
-          create_folders_qld: valuesRef.current.createFoldersQld === true || valuesRef.current.createFoldersQld === "true",
-          smtp_user_qld: (valuesRef.current.smtpUserQld || "").trim() || null,
-          smtp_pass_qld: valuesRef.current.smtpPassQld || null,
-        }),
+        body: JSON.stringify(payload),
       });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: response.statusText }));
         console.error("Failed to save settings:", errorData.error || response.statusText);
+        alert(`Failed to save settings: ${errorData.error || response.statusText}`);
       } else {
         const savedData = await response.json().catch(() => null);
         console.log("Successfully saved settings:", savedData);
+        console.log("Saved colour_attachments_vic:", savedData?.colour_attachments_vic);
+        console.log("Saved colour_attachments_qld:", savedData?.colour_attachments_qld);
       }
     } catch (error) {
       console.error("Error saving settings:", error);
+      alert(`Error saving settings: ${error.message}`);
     }
   }
 
@@ -104,10 +127,14 @@ export default function FileSettings() {
           create_folders: valuesRef.current.createFolders === true || valuesRef.current.createFolders === "true",
           smtp_user: (valuesRef.current.smtpUser || "").trim() || null,
           smtp_pass: valuesRef.current.smtpPass || null,
+          smtp_user_secondary: (valuesRef.current.smtpUserSecondary || "").trim() || null,
+          smtp_pass_secondary: valuesRef.current.smtpPassSecondary || null,
           root_directory_qld: valuesRef.current.rootDirectoryQld || null,
           create_folders_qld: valuesRef.current.createFoldersQld === true || valuesRef.current.createFoldersQld === "true",
           smtp_user_qld: (valuesRef.current.smtpUserQld || "").trim() || null,
           smtp_pass_qld: valuesRef.current.smtpPassQld || null,
+          colour_attachments_vic: (valuesRef.current.colourAttachmentsVic || "").trim() || null,
+          colour_attachments_qld: (valuesRef.current.colourAttachmentsQld || "").trim() || null,
         }),
       });
       if (!res.ok) {
@@ -139,6 +166,18 @@ export default function FileSettings() {
     valuesRef.current.smtpPass = v;
   }
 
+  function handleSmtpUserSecondaryChange(e) {
+    const v = e.target.value;
+    setSmtpUserSecondary(v);
+    valuesRef.current.smtpUserSecondary = v;
+  }
+
+  function handleSmtpPassSecondaryChange(e) {
+    const v = e.target.value;
+    setSmtpPassSecondary(v);
+    valuesRef.current.smtpPassSecondary = v;
+  }
+
   // QLD handlers
   function handleRootDirectoryQldChange(e) {
     const newValue = e.target.value;
@@ -158,6 +197,26 @@ export default function FileSettings() {
     valuesRef.current.smtpPassQld = v;
   }
 
+  function handleColourAttachmentsVicChange(e) {
+    const newValue = e.target.value;
+    setColourAttachmentsVic(newValue);
+    valuesRef.current.colourAttachmentsVic = newValue;
+  }
+
+  function handleColourAttachmentsQldChange(e) {
+    const newValue = e.target.value;
+    setColourAttachmentsQld(newValue);
+    valuesRef.current.colourAttachmentsQld = newValue;
+  }
+
+  async function handleColourAttachmentsVicBlur() {
+    await saveSettings();
+  }
+
+  async function handleColourAttachmentsQldBlur() {
+    await saveSettings();
+  }
+
   async function handleCreateFoldersQldChange(e) {
     const newValue = e.target.checked;
     setCreateFoldersQld(newValue);
@@ -171,10 +230,14 @@ export default function FileSettings() {
           create_folders: valuesRef.current.createFolders,
           smtp_user: (valuesRef.current.smtpUser || "").trim() || null,
           smtp_pass: valuesRef.current.smtpPass || null,
+          smtp_user_secondary: (valuesRef.current.smtpUserSecondary || "").trim() || null,
+          smtp_pass_secondary: valuesRef.current.smtpPassSecondary || null,
           root_directory_qld: valuesRef.current.rootDirectoryQld || null,
           create_folders_qld: newValue,
           smtp_user_qld: (valuesRef.current.smtpUserQld || "").trim() || null,
           smtp_pass_qld: valuesRef.current.smtpPassQld || null,
+          colour_attachments_vic: (valuesRef.current.colourAttachmentsVic || "").trim() || null,
+          colour_attachments_qld: (valuesRef.current.colourAttachmentsQld || "").trim() || null,
         }),
       });
 
@@ -205,10 +268,14 @@ export default function FileSettings() {
           create_folders: valuesRef.current.createFolders === true || valuesRef.current.createFolders === "true",
           smtp_user: (valuesRef.current.smtpUser || "").trim() || null,
           smtp_pass: valuesRef.current.smtpPass || null,
+          smtp_user_secondary: (valuesRef.current.smtpUserSecondary || "").trim() || null,
+          smtp_pass_secondary: valuesRef.current.smtpPassSecondary || null,
           root_directory_qld: valuesRef.current.rootDirectoryQld || null,
           create_folders_qld: valuesRef.current.createFoldersQld === true || valuesRef.current.createFoldersQld === "true",
           smtp_user_qld: (valuesRef.current.smtpUserQld || "").trim() || null,
           smtp_pass_qld: valuesRef.current.smtpPassQld || null,
+          colour_attachments_vic: (valuesRef.current.colourAttachmentsVic || "").trim() || null,
+          colour_attachments_qld: (valuesRef.current.colourAttachmentsQld || "").trim() || null,
         }),
       });
       if (!res.ok) {
@@ -239,6 +306,8 @@ export default function FileSettings() {
           create_folders_qld: valuesRef.current.createFoldersQld === true || valuesRef.current.createFoldersQld === "true",
           smtp_user_qld: (valuesRef.current.smtpUserQld || "").trim() || null,
           smtp_pass_qld: valuesRef.current.smtpPassQld || null,
+          colour_attachments_vic: (valuesRef.current.colourAttachmentsVic || "").trim() || null,
+          colour_attachments_qld: (valuesRef.current.colourAttachmentsQld || "").trim() || null,
         }),
       });
 
@@ -469,12 +538,51 @@ export default function FileSettings() {
           >
             {isCreatingTestFolder ? "Creating..." : "Make Test Folder"}
           </button>
+          
+          {/* VIC Colour Attachments Section */}
+          <div style={{ marginTop: "24px", display: "flex", flexDirection: "column", gap: "16px", backgroundColor: "#4D93D9", padding: "16px", borderRadius: "8px" }}>
+            <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
+              Colour Attachments
+            </h3>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  color: "#32323399",
+                  marginBottom: "6px",
+                  fontWeight: 500,
+                }}
+              >
+                Location Path
+              </label>
+              <input
+                type="text"
+                name="colourAttachmentsVic"
+                value={colourAttachmentsVic}
+                onChange={handleColourAttachmentsVicChange}
+                onBlur={handleColourAttachmentsVicBlur}
+                placeholder="e.g. Z:\1.SGF PROJECT MANAGEMENT\COLOURS\VIC"
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "none",
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                }}
+                autoComplete="off"
+              />
+            </div>
+          </div>
         </div>
 
         {/* Column 2: VIC SMTP Settings */}
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", backgroundColor: "#4D93D9", padding: "16px", borderRadius: "8px" }}>
           <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
-            SMTP (email sending)
+            SMTP - Primary
           </h3>
           <div>
             <label
@@ -534,6 +642,68 @@ export default function FileSettings() {
               }}
             />
           </div>
+          {/* SMTP - Secondary */}
+          <h3 style={{ fontSize: "1rem", marginTop: "24px", marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
+            SMTP - Secondary
+          </h3>
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.9rem",
+                color: "#32323399",
+                marginBottom: "6px",
+                fontWeight: 500,
+              }}
+            >
+              SMTP User
+            </label>
+            <input
+              type="text"
+              value={smtpUserSecondary}
+              onChange={handleSmtpUserSecondaryChange}
+              placeholder="e.g. info@superiorgrannyflats.com.au"
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: "8px",
+                border: "none",
+                fontSize: "1rem",
+                color: MONUMENT,
+                background: WHITE,
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.9rem",
+                color: "#32323399",
+                marginBottom: "6px",
+                fontWeight: 500,
+              }}
+            >
+              SMTP Pass
+            </label>
+            <input
+              type="password"
+              value={smtpPassSecondary}
+              onChange={handleSmtpPassSecondaryChange}
+              placeholder="App password"
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: "8px",
+                border: "none",
+                fontSize: "1rem",
+                color: MONUMENT,
+                background: WHITE,
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
           <button
             type="button"
             onClick={saveSmtpSettings}
@@ -547,6 +717,7 @@ export default function FileSettings() {
               borderRadius: "8px",
               cursor: "pointer",
               width: "100%",
+              marginTop: "16px",
             }}
           >
             Save SMTP
@@ -663,6 +834,45 @@ export default function FileSettings() {
           >
             {isCreatingTestFolder ? "Creating..." : "Make Test Folder"}
           </button>
+          
+          {/* QLD Colour Attachments Section */}
+          <div style={{ marginTop: "24px", display: "flex", flexDirection: "column", gap: "16px", backgroundColor: "#D54358", padding: "16px", borderRadius: "8px" }}>
+            <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
+              Colour Attachments
+            </h3>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  color: "#32323399",
+                  marginBottom: "6px",
+                  fontWeight: 500,
+                }}
+              >
+                Location Path
+              </label>
+              <input
+                type="text"
+                name="colourAttachmentsQld"
+                value={colourAttachmentsQld}
+                onChange={handleColourAttachmentsQldChange}
+                onBlur={handleColourAttachmentsQldBlur}
+                placeholder="e.g. Z:\1.SGF PROJECT MANAGEMENT\COLOURS\QLD"
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "none",
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                }}
+                autoComplete="off"
+              />
+            </div>
+          </div>
         </div>
 
         {/* Column 4: QLD SMTP Settings */}

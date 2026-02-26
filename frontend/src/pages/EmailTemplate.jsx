@@ -640,6 +640,22 @@ export default function EmailTemplate() {
           >
             {"{SiteVisitScheduledPeriod}"}
           </button>
+          <button
+            type="button"
+            onClick={() => insertToken("body", "ColourConsultant")}
+            style={{
+              padding: "6px 12px",
+              fontSize: "0.85rem",
+              fontWeight: 500,
+              color: MONUMENT,
+              background: WHITE,
+              border: `1px solid ${SECTION_GREY}`,
+              borderRadius: "6px",
+              cursor: "pointer",
+            }}
+          >
+            {"{ColourConsultant}"}
+          </button>
         </div>
         <textarea
           value={body}

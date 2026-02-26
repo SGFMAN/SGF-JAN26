@@ -537,28 +537,11 @@ export default function Drawings({ project, onUpdate }) {
       const suburb = (project.suburb || "").toUpperCase();
       const street = project.street || "";
       
-      // Get classification abbreviation (matching proposal format)
-      const classificationMap = {
-        "Small Second Dwelling": "SSD",
-        "Dependant Persons Unit": "DPU",
-        "Detached Extension": "DEX",
-        "Dwelling": "DWE",
-        "Home Office / Studio": "STU",
-        "Dwelling & DPU": "D&DPU",
-        "Dwelling & SSD": "D&SSD",
-        "SSD & DPU": "SSD&DPU",
-        "Dual Occ": "DOC",
-      };
-      
-      const classificationAbbr = project.classification && classificationMap[project.classification]
-        ? ` (${classificationMap[project.classification]})`
-        : "";
-      
-      // Construct the file path matching proposal format but with "2. PUBLISHED PLANS" subfolder
-      // Format: root_directory\year\state\suburb - street (classification)\2. PUBLISHED PLANS\filename
+      // Construct the file path with "2. PUBLISHED PLANS" subfolder
+      // Format: root_directory\year\state\suburb - street\2. PUBLISHED PLANS\filename
       // NOTE: This function ONLY saves the path to the database - it does NOT create folders or copy files
       const fileName = file.name;
-      const projectFolderName = `${suburb} - ${street}${classificationAbbr}`.replace(/[<>:"/\\|?*]/g, '_');
+      const projectFolderName = `${suburb} - ${street}`.replace(/[<>:"/\\|?*]/g, '_');
       const filePath = `${rootDirectory}\\${projectYear}\\${state}\\${projectFolderName}\\2. PUBLISHED PLANS\\${fileName}`;
 
       // Get current drawings history or initialize empty array
@@ -1069,26 +1052,9 @@ export default function Drawings({ project, onUpdate }) {
       const suburb = (project.suburb || "").toUpperCase();
       const street = project.street || "";
       
-      // Get classification abbreviation
-      const classificationMap = {
-        "Small Second Dwelling": "SSD",
-        "Dependant Persons Unit": "DPU",
-        "Detached Extension": "DEX",
-        "Dwelling": "DWE",
-        "Home Office / Studio": "STU",
-        "Dwelling & DPU": "D&DPU",
-        "Dwelling & SSD": "D&SSD",
-        "SSD & DPU": "SSD&DPU",
-        "Dual Occ": "DOC",
-      };
-      
-      const classificationAbbr = project.classification && classificationMap[project.classification]
-        ? ` (${classificationMap[project.classification]})`
-        : "";
-      
-      // Construct the file path: root_directory\year\state\suburb - street (classification)\1. DRAFTING\DESIGN NOTES\filename
+      // Construct the file path: root_directory\year\state\suburb - street\1. DRAFTING\DESIGN NOTES\filename
       const fileName = file.name;
-      const projectFolderName = `${suburb} - ${street}${classificationAbbr}`.replace(/[<>:"/\\|?*]/g, '_');
+      const projectFolderName = `${suburb} - ${street}`.replace(/[<>:"/\\|?*]/g, '_');
       const filePath = `${rootDirectory}\\${projectYear}\\${state}\\${projectFolderName}\\1. DRAFTING\\DESIGN NOTES\\${fileName}`;
 
       // Get current drawings history

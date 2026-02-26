@@ -5,7 +5,7 @@ const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 const API_URL = "";
 
-const STATUS_OPTIONS = ["Design Phase", "Construction Phase", "On Hold", "Cancelled", "Complete"];
+const STATUS_OPTIONS = ["Design Phase", "Construction Phase", "Cancelled", "Complete"];
 const SPECS_OPTIONS = ["Affordable", "Superior"];
 const CLASSIFICATION_OPTIONS = [
   "Small Second Dwelling",
@@ -34,15 +34,16 @@ export default function ProjectInfo({ project, onUpdate }) {
   const [specs, setSpecs] = useState(project?.specs || "");
   const [classification, setClassification] = useState(project?.classification || "");
   const [projectInfoNotes, setProjectInfoNotes] = useState(project?.project_info_notes || "");
+  const [onHold, setOnHold] = useState(project?.on_hold === 'true' || project?.on_hold === true);
   
   // Use ref to track latest values for saving
-  const valuesRef = useRef({ status, street, suburb, state, specs, classification, projectInfoNotes });
+  const valuesRef = useRef({ status, street, suburb, state, specs, classification, projectInfoNotes, onHold });
   const saveTimeoutRef = useRef(null);
   
   // Update ref whenever state changes
   useEffect(() => {
-    valuesRef.current = { status, street, suburb, state, specs, classification, projectInfoNotes };
-  }, [status, street, suburb, state, specs, classification, projectInfoNotes]);
+    valuesRef.current = { status, street, suburb, state, specs, classification, projectInfoNotes, onHold };
+  }, [status, street, suburb, state, specs, classification, projectInfoNotes, onHold]);
   
   // For autosizing selects (now fixed at 300px)
   const statusSelectRef = useRef(null);
@@ -56,6 +57,7 @@ export default function ProjectInfo({ project, onUpdate }) {
     setSpecs(project?.specs || "");
     setClassification(project?.classification || "");
     setProjectInfoNotes(project?.project_info_notes || "");
+    setOnHold(project?.on_hold === 'true' || project?.on_hold === true);
   }, [project]);
 
   async function saveAllFields() {
@@ -78,6 +80,7 @@ export default function ProjectInfo({ project, onUpdate }) {
           specs: currentValues.specs || null,
           classification: currentValues.classification || null,
           project_info_notes: currentValues.projectInfoNotes || null,
+          on_hold: currentValues.onHold || null,
           project_cost: project?.project_cost || null,
           deposit: project?.deposit || null,
         }),
@@ -137,6 +140,7 @@ export default function ProjectInfo({ project, onUpdate }) {
       } else {
         const savedData = await response.json().catch(() => null);
         console.log("Successfully saved:", savedData);
+        console.log("on_hold value in saved data:", savedData?.on_hold, "type:", typeof savedData?.on_hold);
         // Silently update parent state with saved data (no flash)
         if (onUpdate) {
           onUpdate();
@@ -153,6 +157,14 @@ export default function ProjectInfo({ project, onUpdate }) {
     valuesRef.current.status = newStatus;
     console.log("Saving status:", newStatus);
     await saveField("status", newStatus);
+  }
+
+  async function handleOnHoldChange(e) {
+    const newValue = e.target.checked;
+    setOnHold(newValue);
+    valuesRef.current.onHold = newValue;
+    console.log("Saving on_hold:", newValue);
+    await saveField("on_hold", newValue);
   }
 
   function handleStreetChange(e) {
@@ -273,6 +285,23 @@ export default function ProjectInfo({ project, onUpdate }) {
                   </option>
                 ))}
               </select>
+            </div>
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={onHold}
+                  onChange={handleOnHoldChange}
+                  style={{
+                    width: "18px",
+                    height: "18px",
+                    cursor: "pointer",
+                  }}
+                />
+                <div style={{ fontSize: "0.9rem", color: "#32323399" }}>
+                  On Hold
+                </div>
+              </label>
             </div>
             <div style={{ marginBottom: "16px" }}>
               <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>

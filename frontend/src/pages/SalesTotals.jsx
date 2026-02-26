@@ -39,6 +39,7 @@ const STREAM_COLORS = {
   "Henderson": { darker: "#92D050", lighter: "#CEEAB0" },
   "Create Cash Flow": { darker: "#92D050", lighter: "#CEEAB0" },
   "Maple Group": { darker: "#92D050", lighter: "#CEEAB0" },
+  "Home Office / Studio": { darker: "#FF8C42", lighter: "#FFD4B3" },
 };
 
 export default function SalesTotals() {
@@ -201,6 +202,50 @@ export default function SalesTotals() {
     
     return { salesCount: totalSales, totalCost };
   }, [streamTotals]);
+
+  // Calculate green streams VIC/QLD breakdown
+  const greenStreamsStateBreakdown = React.useMemo(() => {
+    const greenStreamProjects = yearFilteredProjects.filter((project) => {
+      // Exclude Home Office / Studio projects
+      if (project.classification === "Home Office / Studio") {
+        return false;
+      }
+      
+      const projectStream = (project.stream || "").trim();
+      return GREEN_STREAMS.some((stream) => {
+        const streamNormalized = stream.trim();
+        // Handle stream name variations
+        if (streamNormalized === "Pumped On Property") {
+          return projectStream === "Pumped On Property" || 
+                 projectStream === "Pumped on Property" ||
+                 projectStream.toLowerCase() === "pumped on property";
+        }
+        if (streamNormalized === "Create Cash Flow") {
+          return projectStream === "Create Cash Flow" || 
+                 projectStream === "Creat Cash Flow" ||
+                 projectStream.toLowerCase() === "create cash flow";
+        }
+        // Exact match first
+        if (projectStream === streamNormalized) {
+          return true;
+        }
+        // Case-insensitive match as fallback
+        return projectStream.toLowerCase() === streamNormalized.toLowerCase();
+      });
+    });
+    
+    const vicCount = greenStreamProjects.filter((project) => {
+      const state = (project.state || "").trim().toUpperCase();
+      return state === "VIC" || state === "VICTORIA";
+    }).length;
+    
+    const qldCount = greenStreamProjects.filter((project) => {
+      const state = (project.state || "").trim().toUpperCase();
+      return state === "QLD" || state === "QUEENSLAND";
+    }).length;
+    
+    return { vic: vicCount, qld: qldCount };
+  }, [yearFilteredProjects]);
 
   // Calculate Home Office / Studio total
   const homeOfficeStudioTotal = React.useMemo(() => {
@@ -422,54 +467,63 @@ export default function SalesTotals() {
             display: "flex",
             flexDirection: "column",
             alignItems: "stretch",
-            gap: "8px",
+            gap: "18px",
             color: MONUMENT,
           }}
         >
-          <Link
-            to="/sales"
-            style={{
-              background: "transparent",
-              color: "#404049",
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            ← Back to Sales
-          </Link>
-          <Link
-            to="/sales-analytics"
-            style={{
-              background: "transparent",
-              color: "#404049",
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            Analytics
-          </Link>
+          {/* Analytics - Light Blue */}
+          <div style={{ background: "#A6C9EC", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+            <Link
+              to="/sales-analytics"
+              style={{
+                background: "transparent",
+                color: "#404049",
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              Analytics
+            </Link>
+          </div>
+          
+          <div style={{ flex: 1 }} />
+          
+          {/* Back to Sales - Light Red */}
+          <div style={{ background: "#F79198", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+            <Link
+              to="/sales"
+              style={{
+                background: "transparent",
+                color: "#404049",
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              ← Back to Sales
+            </Link>
+          </div>
         </div>
 
         {/* Section 3: Content */}
@@ -490,11 +544,9 @@ export default function SalesTotals() {
             display: "flex",
             flexDirection: "column",
             minWidth: 0,
+            justifyContent: "space-between",
           }}
         >
-          <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "24px" }}>
-            Year Totals for {selectedYear}
-          </h2>
 
           {loading && <p style={{ color: "#32323399" }}>Loading projects...</p>}
           {error && (
@@ -504,13 +556,12 @@ export default function SalesTotals() {
           )}
           {!loading && !error && (
             <>
-              {/* Stream Totals Grid - 9 columns, 1 row */}
+              {/* Stream Totals Grid - 4 columns, 1 row */}
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(9, 1fr)",
+                  gridTemplateColumns: "1fr 1fr 1fr 1fr",
                   gap: "16px",
-                  marginBottom: "24px",
                 }}
               >
                 {/* Column 1: SGF - VIC */}
@@ -540,7 +591,7 @@ export default function SalesTotals() {
                           marginBottom: "12px",
                           textAlign: "center",
                           fontWeight: 600,
-                          fontSize: "0.75rem",
+                          fontSize: "1.5rem",
                           letterSpacing: "0.5px",
                           display: "flex",
                           flexDirection: "column",
@@ -556,8 +607,9 @@ export default function SalesTotals() {
                         style={{
                           display: "flex",
                           flexDirection: "column",
-                          gap: "12px",
+                          gap: "8px",
                           flex: 1,
+                          marginBottom: "12px",
                         }}
                       >
                         <div>
@@ -568,13 +620,13 @@ export default function SalesTotals() {
                             {totals.salesCount}
                           </div>
                         </div>
-                        <div>
-                          <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                            Total Value
-                          </div>
-                          <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
-                            {formatCurrency(totals.totalCost)}
-                          </div>
+                      </div>
+                      <div style={{ marginTop: "auto", borderTop: `1px solid ${colors.darker}`, paddingTop: "12px" }}>
+                        <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
+                          Total Value
+                        </div>
+                        <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
+                          {formatCurrency(totals.totalCost)}
                         </div>
                       </div>
                     </div>
@@ -608,7 +660,7 @@ export default function SalesTotals() {
                           marginBottom: "12px",
                           textAlign: "center",
                           fontWeight: 600,
-                          fontSize: "0.75rem",
+                          fontSize: "1.5rem",
                           letterSpacing: "0.5px",
                           display: "flex",
                           flexDirection: "column",
@@ -624,8 +676,9 @@ export default function SalesTotals() {
                         style={{
                           display: "flex",
                           flexDirection: "column",
-                          gap: "12px",
+                          gap: "8px",
                           flex: 1,
+                          marginBottom: "12px",
                         }}
                       >
                         <div>
@@ -636,88 +689,20 @@ export default function SalesTotals() {
                             {totals.salesCount}
                           </div>
                         </div>
-                        <div>
-                          <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                            Total Value
-                          </div>
-                          <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
-                            {formatCurrency(totals.totalCost)}
-                          </div>
+                      </div>
+                      <div style={{ marginTop: "auto", borderTop: `1px solid ${colors.darker}`, paddingTop: "12px" }}>
+                        <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
+                          Total Value
+                        </div>
+                        <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
+                          {formatCurrency(totals.totalCost)}
                         </div>
                       </div>
                     </div>
                   );
                 })()}
                 
-                {/* Columns 3-8: Green Streams */}
-                {GREEN_STREAMS.map((stream) => {
-                  const totals = streamTotals[stream] || { salesCount: 0, totalCost: 0 };
-                  const colors = STREAM_COLORS[stream];
-                  
-                  return (
-                    <div
-                      key={stream}
-                      style={{
-                        background: colors.lighter,
-                        borderRadius: "12px",
-                        padding: "16px",
-                        border: `2px solid ${colors.darker}`,
-                        boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                        display: "flex",
-                        flexDirection: "column",
-                      }}
-                    >
-                      <div
-                        style={{
-                          background: colors.darker,
-                          color: WHITE,
-                          padding: "10px 12px",
-                          borderRadius: "8px",
-                          marginBottom: "12px",
-                          textAlign: "center",
-                          fontWeight: 600,
-                          fontSize: "0.75rem",
-                          letterSpacing: "0.5px",
-                          display: "flex",
-                          flexDirection: "column",
-                          justifyContent: "center",
-                          minHeight: "40px",
-                          lineHeight: "1.2",
-                        }}
-                      >
-                        <div>{formatStreamName(stream).line1}</div>
-                        <div>{formatStreamName(stream).line2}</div>
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "12px",
-                          flex: 1,
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                            Sales Count
-                          </div>
-                          <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
-                            {totals.salesCount}
-                          </div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                            Total Value
-                          </div>
-                          <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
-                            {formatCurrency(totals.totalCost)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                
-                {/* Column 9: Green Streams TOTAL */}
+                {/* Column 3: Green Streams Combined */}
                 <div
                   style={{
                     background: "#CEEAB0",
@@ -738,7 +723,7 @@ export default function SalesTotals() {
                       marginBottom: "12px",
                       textAlign: "center",
                       fontWeight: 600,
-                      fontSize: "0.75rem",
+                      fontSize: "1.5rem",
                       letterSpacing: "0.5px",
                       display: "flex",
                       flexDirection: "column",
@@ -747,15 +732,102 @@ export default function SalesTotals() {
                       lineHeight: "1.2",
                     }}
                   >
-                    <div>TOTAL</div>
+                    <div>GREEN STREAMS</div>
                     <div> </div>
                   </div>
                   <div
                     style={{
                       display: "flex",
                       flexDirection: "column",
-                      gap: "12px",
+                      gap: "8px",
                       flex: 1,
+                      marginBottom: "12px",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", display: "flex", justifyContent: "space-between", gap: "8px" }}>
+                        <span style={{ flex: "1 1 auto", minWidth: 0 }}>Sales Count</span>
+                        <span style={{ flex: "0 0 auto", textAlign: "right", minWidth: "30px" }}>Sales</span>
+                        <span style={{ flex: "0 0 auto", textAlign: "right", minWidth: "80px" }}>VIC / QLD</span>
+                      </div>
+                      <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT, display: "flex", justifyContent: "space-between", gap: "8px" }}>
+                        <span style={{ flex: "1 1 auto", minWidth: 0 }}>{greenStreamsTotal.salesCount}</span>
+                        <span style={{ flex: "0 0 auto", textAlign: "right", minWidth: "30px" }}></span>
+                        <span style={{ flex: "0 0 auto", textAlign: "right", minWidth: "80px", fontSize: "1rem" }}>{greenStreamsStateBreakdown.vic} / {greenStreamsStateBreakdown.qld}</span>
+                      </div>
+                    </div>
+                    {GREEN_STREAMS.map((stream) => {
+                      const totals = streamTotals[stream] || { salesCount: 0, totalCost: 0 };
+                      return (
+                        <div
+                          key={stream}
+                          style={{
+                            fontSize: "0.9rem",
+                            color: MONUMENT,
+                            padding: "3px 0",
+                            lineHeight: "1.3",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: "8px",
+                          }}
+                        >
+                          <span style={{ flex: "1 1 auto", minWidth: 0 }}>{stream}</span>
+                          <span style={{ flex: "0 0 auto", textAlign: "right", minWidth: "30px" }}>{totals.salesCount}</span>
+                          <span style={{ flex: "0 0 auto", textAlign: "right", minWidth: "80px" }}>{formatCurrency(totals.totalCost)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ marginTop: "auto", borderTop: `1px solid #92D050`, paddingTop: "12px" }}>
+                    <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
+                      Total Value
+                    </div>
+                    <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
+                      {formatCurrency(greenStreamsTotal.totalCost)}
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Column 4: Home Office / Studio */}
+                <div
+                  style={{
+                    background: "#FFD4B3",
+                    borderRadius: "12px",
+                    padding: "16px",
+                    border: `2px solid #FF8C42`,
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  <div
+                    style={{
+                      background: "#FF8C42",
+                      color: WHITE,
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      marginBottom: "12px",
+                      textAlign: "center",
+                      fontWeight: 600,
+                      fontSize: "1.5rem",
+                      letterSpacing: "0.5px",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "center",
+                      minHeight: "40px",
+                      lineHeight: "1.2",
+                    }}
+                  >
+                    <div>HOME OFFICE</div>
+                    <div> </div>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                      flex: 1,
+                      marginBottom: "12px",
                     }}
                   >
                     <div>
@@ -763,133 +835,79 @@ export default function SalesTotals() {
                         Sales Count
                       </div>
                       <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
-                        {greenStreamsTotal.salesCount}
+                        {homeOfficeStudioTotal.salesCount}
                       </div>
                     </div>
-                    <div>
-                      <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                        Total Value
-                      </div>
-                      <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
-                        {formatCurrency(greenStreamsTotal.totalCost)}
-                      </div>
+                  </div>
+                  <div style={{ marginTop: "auto", borderTop: `1px solid #FF8C42`, paddingTop: "12px" }}>
+                    <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
+                      Total Value
+                    </div>
+                    <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
+                      {formatCurrency(homeOfficeStudioTotal.totalCost)}
                     </div>
                   </div>
                 </div>
               </div>
               
-              {/* Grand Total Section - 4 Columns */}
+              {/* Grand Total Section - 3 Columns */}
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(4, 1fr)",
+                  gridTemplateColumns: "repeat(3, 1fr)",
                   gap: "16px",
                   minWidth: 0,
                 }}
               >
-                {/* Column 1: VIC Total and Home Office / Studio */}
+                {/* Column 1: VIC Total */}
                 <div
                   style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "16px",
+                    background: MONUMENT,
+                    borderRadius: "12px",
+                    padding: "20px",
+                    border: `2px solid ${MONUMENT}`,
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
                   }}
                 >
-                  {/* VIC Total */}
                   <div
                     style={{
-                      background: MONUMENT,
-                      borderRadius: "12px",
-                      padding: "20px",
-                      border: `2px solid ${MONUMENT}`,
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                      background: "#4D93D9",
+                      color: WHITE,
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      marginBottom: "16px",
+                      textAlign: "center",
+                      fontWeight: 600,
+                      fontSize: "0.85rem",
+                      letterSpacing: "0.5px",
                     }}
                   >
-                    <div
-                      style={{
-                        background: "#4D93D9",
-                        color: WHITE,
-                        padding: "10px 12px",
-                        borderRadius: "8px",
-                        marginBottom: "16px",
-                        textAlign: "center",
-                        fontWeight: 600,
-                        fontSize: "0.85rem",
-                        letterSpacing: "0.5px",
-                      }}
-                    >
-                      VIC TOTAL
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                      <div>
-                        <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
-                          Sales
-                        </div>
-                        <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
-                          {stateTotals.VIC.salesCount}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", marginBottom: "4px" }}>
-                          <div style={{ fontSize: "0.8rem", color: "#a1a1a3" }}>
-                            Value
-                          </div>
-                          <div style={{ fontSize: "0.8rem", color: "#a1a1a3" }}>
-                            Average Price
-                          </div>
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
-                          <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
-                            {formatCurrency(stateTotals.VIC.totalCost)}
-                          </div>
-                          <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
-                            {formatCurrency(stateTotals.VIC.averagePrice)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                    VIC TOTAL
                   </div>
-                  
-                  {/* Home Office Total */}
-                  <div
-                    style={{
-                      background: MONUMENT,
-                      borderRadius: "12px",
-                      padding: "12px",
-                      border: `2px solid ${MONUMENT}`,
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        background: "#FFD54F",
-                        color: MONUMENT,
-                        padding: "6px 8px",
-                        borderRadius: "6px",
-                        marginBottom: "8px",
-                        textAlign: "center",
-                        fontWeight: 600,
-                        fontSize: "0.7rem",
-                        letterSpacing: "0.5px",
-                      }}
-                    >
-                      HOME OFFICE
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                      <div>
-                        <div style={{ fontSize: "0.7rem", color: "#a1a1a3", marginBottom: "2px" }}>
-                          Sales
-                        </div>
-                        <div style={{ fontSize: "1rem", fontWeight: 700, color: WHITE }}>
-                          {homeOfficeStudioTotal.salesCount}
-                        </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                    <div>
+                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
+                        Sales
                       </div>
-                      <div>
-                        <div style={{ fontSize: "0.7rem", color: "#a1a1a3", marginBottom: "2px" }}>
+                      <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
+                        {stateTotals.VIC.salesCount}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", marginBottom: "4px" }}>
+                        <div style={{ fontSize: "0.8rem", color: "#a1a1a3" }}>
                           Value
                         </div>
-                        <div style={{ fontSize: "1rem", fontWeight: 700, color: WHITE }}>
-                          {formatCurrency(homeOfficeStudioTotal.totalCost)}
+                        <div style={{ fontSize: "0.8rem", color: "#a1a1a3" }}>
+                          Average Price
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
+                        <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
+                          {formatCurrency(stateTotals.VIC.totalCost)}
+                        </div>
+                        <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
+                          {formatCurrency(stateTotals.VIC.averagePrice)}
                         </div>
                       </div>
                     </div>
@@ -952,10 +970,7 @@ export default function SalesTotals() {
                   </div>
                 </div>
                 
-                {/* Column 3: Empty */}
-                <div></div>
-                
-                {/* Column 4: Grand Total */}
+                {/* Column 3: Grand Total */}
                 <div
                   style={{
                     background: MONUMENT,

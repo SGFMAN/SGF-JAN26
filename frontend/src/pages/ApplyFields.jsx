@@ -67,7 +67,7 @@ const FIELD_DEFINITIONS = {
   },
   status: {
     label: "Project Status",
-    values: ["Design Phase", "Construction Phase", "On Hold", "Cancelled", "Complete"],
+    values: ["Design Phase", "Construction Phase", "Cancelled", "Complete"],
     defaultValue: "Design Phase",
   },
   year: {

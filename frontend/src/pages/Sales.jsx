@@ -495,76 +495,87 @@ export default function Sales() {
             color: MONUMENT,
           }}
         >
-          <Link
-            to="/projects"
-            style={{
-              background: "transparent",
-              color: "#404049",
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            ← Back to Main
-          </Link>
-          {MONTHS.map((month) => (
-            <button
-              key={month}
-              onClick={() => setSelectedMonth(month)}
+          {/* TOTALS - Light Blue */}
+          <div style={{ background: "#A6C9EC", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+            <Link
+              to="/sales-totals"
               style={{
-                background: selectedMonth === month ? WHITE : "transparent",
-                color: selectedMonth === month ? MONUMENT : "#404049",
+                background: "transparent",
+                color: "#404049",
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
                 fontSize: "0.95rem",
                 fontWeight: 500,
                 textAlign: "center",
+                textDecoration: "none",
                 letterSpacing: "0.5px",
                 cursor: "pointer",
                 transition: "background 0.18s, color 0.15s",
                 marginBottom: "0px",
                 lineHeight: "1.4",
                 display: "block",
-                outline: selectedMonth === month ? `2px solid ${MONUMENT}` : "none",
-                boxShadow: selectedMonth === month ? "0 2px 4px rgba(50,50,51,.04)" : "none",
               }}
             >
-              {month}
-            </button>
-          ))}
-          <Link
-            to="/sales-totals"
-            style={{
-              background: "transparent",
-              color: "#404049",
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            TOTALS
-          </Link>
+              TOTALS
+            </Link>
+          </div>
+          
+          {/* Months - Light Green */}
+          <div style={{ background: "#CEEAB0", borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: "2px solid #000" }}>
+            {MONTHS.map((month) => (
+              <button
+                key={month}
+                onClick={() => setSelectedMonth(month)}
+                style={{
+                  background: selectedMonth === month ? "#92D050" : "transparent",
+                  color: selectedMonth === month ? WHITE : "#404049",
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "8px 8px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  marginBottom: "0px",
+                  lineHeight: "1.4",
+                  display: "block",
+                }}
+              >
+                {month}
+              </button>
+            ))}
+          </div>
+          
+          <div style={{ flex: 1 }} />
+          
+          {/* Back to Main - Light Red */}
+          <div style={{ background: "#F79198", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+            <Link
+              to="/projects"
+              style={{
+                background: "transparent",
+                color: "#404049",
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              ← Back to Main
+            </Link>
+          </div>
         </div>
 
         {/* Section 3: Content */}

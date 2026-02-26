@@ -619,6 +619,27 @@ export default function SiteVisitPlanner() {
         >
           {/* Menu Buttons */}
           <Link
+            to="/all-projects"
+            style={{
+              background: "transparent",
+              color: "#404049",
+              border: "none",
+              borderRadius: "10px",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              textAlign: "center",
+              textDecoration: "none",
+              letterSpacing: "0.5px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              marginBottom: "0px",
+              display: "block",
+            }}
+          >
+            All Projects
+          </Link>
+          <Link
             to="/projects"
             style={{
               background: "transparent",
@@ -873,7 +894,7 @@ export default function SiteVisitPlanner() {
                           onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
                         >
                           {/* On Hold Diagonal Band */}
-                          {project.status === "On Hold" && (
+                          {(project.on_hold === 'true' || project.on_hold === true) && (
                             <div
                               style={{
                                 position: "absolute",
@@ -948,7 +969,7 @@ export default function SiteVisitPlanner() {
                               flexDirection: "column",
                               gap: "4px",
                               position: "relative",
-                              zIndex: (project.status === "On Hold" || project.status === "Cancelled") ? 1 : "auto",
+                              zIndex: ((project.on_hold === 'true' || project.on_hold === true) || project.status === "Cancelled") ? 1 : "auto",
                             }}
                           >
                             <div style={{ fontWeight: 600, fontSize: "1.1rem", color: textColor }}>

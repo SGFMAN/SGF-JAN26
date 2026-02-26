@@ -137,6 +137,7 @@ export default function ProjectPage() {
       }
       const data = await response.json();
       console.log("Project data:", data);
+      console.log("on_hold value in fetched project:", data?.on_hold, "type:", typeof data?.on_hold);
       setProject(data);
     } catch (err) {
       console.error("Error fetching project:", err);

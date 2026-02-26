@@ -1,9 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import NewProject from "./NewProject";
-import NewProject2 from "./NewProject2";
-import NewProject3 from "./NewProject3";
-import NewProject4 from "./NewProject4";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import logo from "../images/logo.png";
@@ -17,31 +13,15 @@ const WHITE = "#fff";
 
 const API_URL = "";
 
-export default function FinishedProjects() {
+export default function OnHold() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isAdmin, setIsAdmin] = useState(false);
   const [stateFilter, setStateFilter] = useState(getStateFilter());
-  const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
-  const [newProjectStep, setNewProjectStep] = useState(1);
-  const [newProjectFormData, setNewProjectFormData] = useState({
-    suburb: "",
-    street: "",
-    state: "",
-    stream: "",
-    deposit: "",
-    customDeposit: "",
-    projectCost: "",
-    salesperson: "",
-    clientName: "",
-    email: "",
-    phone: "",
-  });
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    // Check admin status first so buttons show up quickly
     checkAdminStatus();
     fetchProjects();
   }, []);
@@ -55,20 +35,61 @@ export default function FinishedProjects() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`${API_URL}/api/projects`);
+      const url = `${API_URL}/api/projects`;
+      const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
       const data = await response.json();
-      console.log("Projects from API:", data);
       setProjects(data);
     } catch (err) {
-      setError(err.message);
       console.error("Error fetching projects:", err);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   }
+
+  // Filter projects based on search query and state filter
+  function getFilteredProjects() {
+    // Only show projects that are on hold
+    let filtered = projects.filter((project) => project.on_hold === 'true' || project.on_hold === true);
+
+    // Filter by state if specified
+    if (stateFilter !== "All") {
+      filtered = filtered.filter(project => {
+        const projectState = (project.state || "").toUpperCase();
+        return projectState === stateFilter.toUpperCase();
+      });
+    }
+
+    // Filter by search query if specified
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(project => {
+        const suburb = (project.suburb || "").toLowerCase();
+        const street = (project.street || "").toLowerCase();
+        const name = (project.name || "").toLowerCase();
+        return suburb.includes(query) || street.includes(query) || name.includes(query);
+      });
+    }
+
+    // Sort alphabetically by suburb, then by street
+    filtered.sort((a, b) => {
+      const suburbA = (a.suburb || "").toLowerCase();
+      const suburbB = (b.suburb || "").toLowerCase();
+      if (suburbA !== suburbB) {
+        return suburbA.localeCompare(suburbB);
+      }
+      const streetA = (a.street || "").toLowerCase();
+      const streetB = (b.street || "").toLowerCase();
+      return streetA.localeCompare(streetB);
+    });
+
+    return filtered;
+  }
+
+  const filteredProjects = getFilteredProjects();
 
   return (
     <div
@@ -85,15 +106,15 @@ export default function FinishedProjects() {
       {/* Section 1: Heading */}
       <div
         style={{
-          margin: "32px auto 24px auto",
+          margin: "32px auto 14px auto",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
-          position: "relative",
           padding: "0 32px",
           boxSizing: "border-box",
+          justifyContent: "center",
+          position: "relative",
         }}
       >
         <img
@@ -116,7 +137,7 @@ export default function FinishedProjects() {
               letterSpacing: "1px",
             }}
           >
-            Finished Projects
+            On Hold
           </h1>
         </div>
         <div
@@ -220,26 +241,6 @@ export default function FinishedProjects() {
           >
             All Projects
           </button>
-          {isAdmin && (
-            <button
-              onClick={() => setIsNewProjectOpen(true)}
-              style={{
-                background: "#33cc33",
-                color: WHITE,
-                border: "none",
-                borderRadius: "8px",
-                padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "#2bb32b")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "#33cc33")}
-          >
-            + New Project
-          </button>
-          )}
         </div>
       </div>
 
@@ -372,8 +373,8 @@ export default function FinishedProjects() {
             <Link
               to="/finished-projects"
               style={{
-                background: "#92D050",
-                color: WHITE,
+                background: "transparent",
+                color: "#404049",
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -416,8 +417,8 @@ export default function FinishedProjects() {
             <Link
               to="/on-hold"
               style={{
-                background: "transparent",
-                color: "#404049",
+                background: "#92D050",
+                color: WHITE,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -484,6 +485,7 @@ export default function FinishedProjects() {
               Sales
             </Link>
           </div>
+          
           <div style={{ flex: 1 }} />
           {isAdmin && (
             <Link
@@ -534,6 +536,7 @@ export default function FinishedProjects() {
             </Link>
           )}
         </div>
+
         {/* Section 3: Projects */}
         <div
           className="content-section"
@@ -553,41 +556,77 @@ export default function FinishedProjects() {
           }}
         >
           <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "16px" }}>
-            Finished Projects
+            On Hold {(() => {
+              const totalCount = projects.filter((project) => project.on_hold === 'true' || project.on_hold === true).length;
+              if (searchQuery.trim()) {
+                return `(${filteredProjects.length} found)`;
+              } else if (stateFilter !== "All") {
+                return `(${filteredProjects.length} total)`;
+              }
+              return totalCount > 0 ? `(${totalCount} total)` : "";
+            })()}
           </h2>
           
-          {/* Search Bar */}
-          <div style={{ marginBottom: "20px", marginTop: 0 }}>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.9rem",
-                color: "#32323399",
-                marginBottom: "6px",
-                marginTop: 0,
-                fontWeight: 500,
-              }}
-            >
-              Search
-            </label>
-            <input
-              type="text"
-              placeholder="Search projects..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{
-                width: "100%",
-                maxWidth: "420px",
-                padding: "12px 16px",
-                borderRadius: "8px",
-                border: `2px solid ${MONUMENT}`,
-                fontSize: "1rem",
-                color: MONUMENT,
-                background: WHITE,
-                boxSizing: "border-box",
-                outline: "none",
-              }}
-            />
+          {/* Search Bar - All on one line */}
+          <div style={{ display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "nowrap", alignItems: "flex-start", marginTop: 0, position: "relative" }}>
+            {/* Search Bar */}
+            <div style={{ flex: "0 0 auto" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  color: "#32323399",
+                  marginBottom: "6px",
+                  marginTop: 0,
+                  fontWeight: 500,
+                }}
+              >
+                Search
+              </label>
+              <input
+                type="text"
+                placeholder="Search projects..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  width: "420px",
+                  padding: "12px 16px",
+                  borderRadius: "8px",
+                  border: `2px solid ${MONUMENT}`,
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                  outline: "none",
+                }}
+              />
+            </div>
+
+            {/* Clear Filters Button */}
+            {searchQuery.trim() && (
+              <div style={{ flex: "0 0 auto", marginLeft: "10px", marginTop: "28px" }}>
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                  }}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    color: MONUMENT,
+                    background: WHITE,
+                    border: `2px solid ${MONUMENT}`,
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    height: "42px",
+                    width: "200px",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  Clear Filters
+                </button>
+              </div>
+            )}
           </div>
 
           {loading && <p style={{ color: "#32323399" }}>Loading projects...</p>}
@@ -596,120 +635,110 @@ export default function FinishedProjects() {
               Error: {error}
             </p>
           )}
-          {!loading && !error && (() => {
-            const finishedProjects = projects.filter((project) => (project.status === "Complete" || project.status === "Cancelled") && project.status !== "Hotlist");
-            if (finishedProjects.length === 0) {
-              return <p style={{ color: "#32323399" }}>No finished projects found.</p>;
-            }
-            return null;
-          })()}
-          {!loading && !error && projects.length > 0 && (() => {
-            // Filter to only show projects with "Complete" or "Cancelled" status (exclude Hotlist)
-            let finishedProjects = projects.filter((project) => (project.status === "Complete" || project.status === "Cancelled") && project.status !== "Hotlist");
-            
-            // Filter by state if specified
-            if (stateFilter !== "All") {
-              finishedProjects = finishedProjects.filter(project => {
-                const projectState = (project.state || "").toUpperCase();
-                return projectState === stateFilter.toUpperCase();
-              });
-            }
-            
-            // Filter projects based on search query
-            let filteredProjects = searchQuery.trim()
-              ? finishedProjects.filter((project) => {
-                  const query = searchQuery.toLowerCase();
-                  const suburb = (project.suburb || "").toLowerCase();
-                  const street = (project.street || "").toLowerCase();
-                  const name = (project.name || "").toLowerCase();
-                  return suburb.includes(query) || street.includes(query) || name.includes(query);
-                })
-              : finishedProjects;
+          {!loading && !error && filteredProjects.length === 0 && (
+            <p style={{ color: "#32323399" }}>
+              {searchQuery.trim()
+                ? "No projects match your search."
+                : "No on hold projects found."}
+            </p>
+          )}
+          {!loading && !error && filteredProjects.length > 0 && (
+            <div
+              className="projects-grid"
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "20px",
+                alignItems: "flex-start",
+              }}
+            >
+              {filteredProjects.map((project) => {
+                // Classification mapping - all grey
+                const classificationMap = {
+                  "Small Second Dwelling": { acronym: "SSD", color: "#a1a1a3" }, // Grey
+                  "Dependant Persons Unit": { acronym: "DPU", color: "#a1a1a3" }, // Grey
+                  "Detached Extension": { acronym: "DEX", color: "#a1a1a3" }, // Grey
+                  "Dwelling": { acronym: "DWE", color: "#a1a1a3" }, // Grey
+                  "Home Office / Studio": { acronym: "STU", color: "#a1a1a3" }, // Grey
+                  "Dwelling & DPU": { acronym: "D&DPU", color: "#a1a1a3" }, // Grey
+                  "Dwelling & SSD": { acronym: "D&SSD", color: "#a1a1a3" }, // Grey
+                  "SSD & DPU": { acronym: "SSD&DPU", color: "#a1a1a3" }, // Grey
+                  "Dual Occ": { acronym: "DOC", color: "#a1a1a3" }, // Grey
+                };
+                const classificationInfo = project.classification ? classificationMap[project.classification] : null;
 
-            // Sort alphabetically by suburb, then by street
-            filteredProjects.sort((a, b) => {
-              const suburbA = (a.suburb || "").toLowerCase();
-              const suburbB = (b.suburb || "").toLowerCase();
-              if (suburbA !== suburbB) {
-                return suburbA.localeCompare(suburbB);
-              }
-              const streetA = (a.street || "").toLowerCase();
-              const streetB = (b.street || "").toLowerCase();
-              return streetA.localeCompare(streetB);
-            });
+                // Stream mapping - colored by stream type
+                const streamMap = {
+                  "SGF - VIC": { acronym: "VIC", color: "#4D93D9" }, // Blue
+                  "SGF - QLD": { acronym: "QLD", color: "#D54358" }, // Red
+                  "Dual Dwelling": { acronym: "DD", color: "#92D050" }, // Green
+                  "ATA": { acronym: "ATA", color: "#92D050" }, // Green
+                  "Pumped on Property": { acronym: "POP", color: "#92D050" }, // Green
+                  "Pumped On Property": { acronym: "POP", color: "#92D050" }, // Green (handle both variations)
+                  "Henderson": { acronym: "HEN", color: "#92D050" }, // Green
+                  "Creat Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green
+                  "Create Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green (handle both variations)
+                  "Maple Group": { acronym: "MAP", color: "#92D050" }, // Green
+                };
+                const streamInfo = project.stream ? streamMap[project.stream] : null;
 
-            if (filteredProjects.length === 0) {
-              return <p style={{ color: "#32323399" }}>No projects match your search.</p>;
-            }
-
-            return (
-              <div
-                className="projects-grid"
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "20px",
-                  alignItems: "flex-start",
-                }}
-              >
-                {filteredProjects.map((project) => {
-                  // Classification mapping - all grey
-                  const classificationMap = {
-                    "Small Second Dwelling": { acronym: "SSD", color: "#a1a1a3" }, // Grey
-                    "Dependant Persons Unit": { acronym: "DPU", color: "#a1a1a3" }, // Grey
-                    "Detached Extension": { acronym: "DEX", color: "#a1a1a3" }, // Grey
-                    "Dwelling": { acronym: "DWE", color: "#a1a1a3" }, // Grey
-                    "Home Office / Studio": { acronym: "STU", color: "#a1a1a3" }, // Grey
-                    "Dwelling & DPU": { acronym: "D&DPU", color: "#a1a1a3" }, // Grey
-                    "Dwelling & SSD": { acronym: "D&SSD", color: "#a1a1a3" }, // Grey
-                    "SSD & DPU": { acronym: "SSD&DPU", color: "#a1a1a3" }, // Grey
-                    "Dual Occ": { acronym: "DOC", color: "#a1a1a3" }, // Grey
-                  };
-                  const classificationInfo = project.classification ? classificationMap[project.classification] : null;
-
-                  // Stream mapping - colored by stream type
-                  const streamMap = {
-                    "SGF - VIC": { acronym: "VIC", color: "#4D93D9" }, // Blue
-                    "SGF - QLD": { acronym: "QLD", color: "#D54358" }, // Red
-                    "Dual Dwelling": { acronym: "DD", color: "#92D050" }, // Green
-                    "ATA": { acronym: "ATA", color: "#92D050" }, // Green
-                    "Pumped on Property": { acronym: "POP", color: "#92D050" }, // Green
-                    "Pumped On Property": { acronym: "POP", color: "#92D050" }, // Green (handle both variations)
-                    "Henderson": { acronym: "HEN", color: "#92D050" }, // Green
-                    "Creat Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green
-                    "Create Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green (handle both variations)
-                    "Maple Group": { acronym: "MAP", color: "#92D050" }, // Green
-                  };
-                  const streamInfo = project.stream ? streamMap[project.stream] : null;
-
-                  return (
-                    <Link
-                      key={project.id}
-                      to={`/project/${project.id}`}
+                return (
+                  <Link
+                    key={project.id}
+                    to={`/project/${project.id}`}
+                    style={{
+                      textDecoration: "none",
+                      display: "block",
+                    }}
+                  >
+                    <div
                       style={{
-                        textDecoration: "none",
-                        display: "block",
+                        background: MONUMENT,
+                        borderRadius: "8px",
+                        width: "200px",
+                        height: "100px",
+                        color: SECTION_GREY,
+                        cursor: "pointer",
+                        transition: "opacity 0.2s",
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        position: "relative",
+                        overflow: "hidden",
                       }}
+                      onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+                      onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
                     >
+                      {/* On Hold Diagonal Band */}
                       <div
                         style={{
-                          background: MONUMENT,
-                          borderRadius: "8px",
-                          width: "200px",
-                          height: "100px",
-                          color: SECTION_GREY,
-                          cursor: "pointer",
-                          transition: "opacity 0.2s",
+                          position: "absolute",
+                          top: "50%",
+                          left: "50%",
+                          transform: "translate(-50%, -50%) rotate(-45deg)",
+                          width: "280px",
+                          height: "40px",
+                          background: "#0066cc",
                           display: "flex",
-                          flexDirection: "column",
-                          justifyContent: "center",
                           alignItems: "center",
-                          position: "relative",
-                          overflow: "hidden",
+                          justifyContent: "center",
+                          zIndex: 10,
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
                         }}
-                        onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
-                        onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
                       >
+                        <span
+                          style={{
+                            color: WHITE,
+                            fontWeight: 700,
+                            fontSize: "1.1rem",
+                            letterSpacing: "2px",
+                            textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                          }}
+                        >
+                          ON HOLD
+                        </span>
+                      </div>
                       {/* Cancelled Diagonal Band */}
                       {project.status === "Cancelled" && (
                         <div
@@ -741,33 +770,6 @@ export default function FinishedProjects() {
                           </span>
                         </div>
                       )}
-                      <div
-                        style={{
-                          fontWeight: 600,
-                          fontSize: "1.1rem",
-                          textAlign: "center",
-                          marginBottom: "4px",
-                          width: "100%",
-                          display: "flex",
-                          justifyContent: "center",
-                          alignItems: "center",
-                          flex: 1,
-                          flexDirection: "column",
-                          gap: "4px",
-                          position: "relative",
-                          zIndex: project.status === "Cancelled" ? 1 : "auto",
-                        }}
-                      >
-                        <div style={{ fontWeight: 600, fontSize: "1.1rem", color: "#ffffff" }}>
-                          {(project.suburb || "Unknown Suburb").toUpperCase()}
-                        </div>
-                        <div style={{ fontSize: "0.95rem", color: "#ffffff", fontWeight: 400 }}>
-                          {project.street || "No address"}
-                        </div>
-                      </div>
-                      <div style={{ fontSize: "0.9rem", color: "#323233cc", textAlign: "center", position: "relative", zIndex: project.status === "Cancelled" ? 1 : "auto" }}>
-                        Status: {project.status}
-                      </div>
                       {/* Stream Acronym - Left Bottom */}
                       {streamInfo && (
                         <div
@@ -778,7 +780,7 @@ export default function FinishedProjects() {
                             fontSize: "0.85rem",
                             fontWeight: 700,
                             color: streamInfo.color,
-                            zIndex: (project.status === "Cancelled") ? 11 : 5,
+                            zIndex: 11,
                             textShadow: "0 1px 2px rgba(0,0,0,0.3)",
                           }}
                         >
@@ -795,120 +797,56 @@ export default function FinishedProjects() {
                             fontSize: "0.85rem",
                             fontWeight: 700,
                             color: classificationInfo.color,
-                            zIndex: (project.status === "Cancelled") ? 11 : 5,
+                            zIndex: 11,
                             textShadow: "0 1px 2px rgba(0,0,0,0.3)",
                           }}
                         >
                           {classificationInfo.acronym}
                         </div>
                       )}
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          fontSize: "1.1rem",
+                          textAlign: "center",
+                          marginBottom: "4px",
+                          width: "100%",
+                          display: "flex",
+                          justifyContent: "center",
+                          alignItems: "center",
+                          flex: 1,
+                          flexDirection: "column",
+                          gap: "4px",
+                          position: "relative",
+                          zIndex: 1,
+                        }}
+                      >
+                        <div style={{ fontWeight: 600, fontSize: "1.1rem", color: WHITE }}>
+                          {(project.suburb || "Unknown Suburb").toUpperCase()}
+                        </div>
+                        <div style={{ fontSize: "0.95rem", color: WHITE, fontWeight: 400 }}>
+                          {project.street || "No address"}
+                        </div>
+                      </div>
+                      <div 
+                        style={{ 
+                          fontSize: "0.9rem", 
+                          color: "#323233cc", 
+                          textAlign: "center",
+                          position: "relative",
+                          zIndex: 1,
+                        }}
+                      >
+                        Status: {project.status}
+                      </div>
                     </div>
                   </Link>
-                  );
-                })}
-              </div>
-            );
-          })()}
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
-
-      {/* New Project Modals */}
-      <NewProject
-        isOpen={isNewProjectOpen && newProjectStep === 1}
-        onClose={() => {
-          setIsNewProjectOpen(false);
-          setNewProjectStep(1);
-          setNewProjectFormData({
-            suburb: "",
-            street: "",
-            state: "",
-            stream: "",
-            deposit: "",
-            customDeposit: "",
-            projectCost: "",
-            salesperson: "",
-            clientName: "",
-            email: "",
-            phone: "",
-          });
-        }}
-        formData={newProjectFormData}
-        onFormDataChange={setNewProjectFormData}
-        onNext={() => setNewProjectStep(2)}
-      />
-      <NewProject2
-        isOpen={isNewProjectOpen && newProjectStep === 2}
-        onClose={() => {
-          setIsNewProjectOpen(false);
-          setNewProjectStep(1);
-          setNewProjectFormData({
-            suburb: "",
-            street: "",
-            state: "",
-            stream: "",
-            deposit: "",
-            customDeposit: "",
-            projectCost: "",
-            salesperson: "",
-            clientName: "",
-            email: "",
-            phone: "",
-          });
-        }}
-        formData={newProjectFormData}
-        onFormDataChange={setNewProjectFormData}
-        onBack={() => setNewProjectStep(1)}
-        onNext={() => setNewProjectStep(3)}
-      />
-      <NewProject3
-        isOpen={isNewProjectOpen && newProjectStep === 3}
-        onClose={() => {
-          setIsNewProjectOpen(false);
-          setNewProjectStep(1);
-          setNewProjectFormData({
-            suburb: "",
-            street: "",
-            state: "",
-            stream: "",
-            deposit: "",
-            customDeposit: "",
-            projectCost: "",
-            salesperson: "",
-            clientName: "",
-            email: "",
-            phone: "",
-          });
-        }}
-        formData={newProjectFormData}
-        onFormDataChange={setNewProjectFormData}
-        onBack={() => setNewProjectStep(2)}
-        onNext={() => setNewProjectStep(4)}
-      />
-      <NewProject4
-        isOpen={isNewProjectOpen && newProjectStep === 4}
-        onClose={() => {
-          setIsNewProjectOpen(false);
-          setNewProjectStep(1);
-          setNewProjectFormData({
-            suburb: "",
-            street: "",
-            state: "",
-            stream: "",
-            deposit: "",
-            customDeposit: "",
-            projectCost: "",
-            salesperson: "",
-            clientName: "",
-            email: "",
-            phone: "",
-          });
-          // Refresh the projects list after creating a new project
-          fetchProjects();
-        }}
-        formData={newProjectFormData}
-        onFormDataChange={setNewProjectFormData}
-        onBack={() => setNewProjectStep(3)}
-      />
     </div>
   );
 }

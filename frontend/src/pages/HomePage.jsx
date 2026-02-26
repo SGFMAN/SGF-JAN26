@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import NewProject from "./NewProject";
 import NewProject2 from "./NewProject2";
 import NewProject3 from "./NewProject3";
@@ -86,7 +86,7 @@ const FIELD_DEFINITIONS = {
   },
   status: {
     label: "Project Status",
-    values: ["Design Phase", "Construction Phase", "On Hold", "Cancelled", "Complete"],
+    values: ["Design Phase", "Construction Phase", "Cancelled", "Complete"],
     defaultValue: "Design Phase",
   },
   year: {
@@ -97,6 +97,7 @@ const FIELD_DEFINITIONS = {
 };
 
 export default function HomePage() {
+  const location = useLocation();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -129,6 +130,40 @@ export default function HomePage() {
     fetchProjects();
   }, []);
 
+  // Refetch projects when navigating back to this page or when window gains focus
+  useEffect(() => {
+    let isMounted = true;
+    
+    const handleFocus = () => {
+      if (isMounted && location.pathname === "/projects") {
+        console.log("Window focused, refetching projects...");
+        fetchProjects();
+      }
+    };
+    
+    const handleVisibilityChange = () => {
+      if (isMounted && !document.hidden && location.pathname === "/projects") {
+        console.log("Page visible, refetching projects...");
+        fetchProjects();
+      }
+    };
+    
+    // Refetch when navigating to this page
+    if (location.pathname === "/projects") {
+      fetchProjects();
+    }
+    
+    // Also refetch when window gains focus (user returns to tab/window)
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    
+    return () => {
+      isMounted = false;
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [location.pathname]);
+
   async function checkAdminStatus() {
     const admin = await isUserAdmin();
     setIsAdmin(admin);
@@ -154,6 +189,12 @@ export default function HomePage() {
       }
       const data = await response.json();
       console.log("Projects from API:", data);
+      // Log on_hold values for all projects to debug
+      data.forEach(project => {
+        if (project.id === 42 || project.status === "Design Phase") {
+          console.log(`[FETCH] Project ${project.id} (${project.suburb} - ${project.street}): status=${project.status}, on_hold=${project.on_hold} (type: ${typeof project.on_hold})`);
+        }
+      });
       setProjects(data || []);
     } catch (err) {
       setError(err.message);
@@ -303,8 +344,8 @@ export default function HomePage() {
     // Get unique values from projects (using effective values)
     const projectValues = new Set();
     projects.forEach(project => {
-      // Only include design phase projects (not Complete, Cancelled, Construction Phase, or Hotlist)
-      if (project.status !== "Complete" && project.status !== "Cancelled" && project.status !== "Construction Phase" && project.status !== "Hotlist") {
+      // Only include design phase projects (including those that are on hold)
+      if (project.status === "Design Phase") {
         const effectiveValue = getEffectiveValue(project, selectedField);
         if (effectiveValue) {
           projectValues.add(effectiveValue);
@@ -325,8 +366,40 @@ export default function HomePage() {
 
   // Filter projects based on status, field/value, search query, and state filter
   function getFilteredProjects() {
-    // First filter out "Complete", "Cancelled", "Construction Phase", and "Hotlist" status projects
-    let filtered = projects.filter((project) => project.status !== "Complete" && project.status !== "Cancelled" && project.status !== "Construction Phase" && project.status !== "Hotlist");
+    // Only show "Design Phase" projects, excluding those that are on hold
+    // Also handle legacy "On Hold" status (treat it as "Design Phase")
+    // When on_hold is unchecked, backend stores it as NULL
+    // When on_hold is checked, backend stores it as true (boolean) or 'true' (string)
+    let filtered = projects.filter((project) => {
+      // Accept "Design Phase" or legacy "On Hold" status
+      if (project.status !== "Design Phase" && project.status !== "On Hold") {
+        return false;
+      }
+      
+      // Get the on_hold value
+      const onHoldValue = project.on_hold;
+      
+      // Only exclude if on_hold is explicitly true
+      // Accept: true (boolean), 'true' (string), 1 (number), '1' (string)
+      // Include everything else: false, 'false', null, undefined, 0, '0', etc.
+      const isOnHold = onHoldValue === true || 
+                       onHoldValue === 'true' || 
+                       onHoldValue === 1 || 
+                       onHoldValue === '1';
+      
+      // Debug: Always log project 42, and log others if they have unexpected on_hold values
+      if (project.id === 42) {
+        console.log(`[FILTER] Project ${project.id} (${project.suburb} - ${project.street}): status=${project.status}, on_hold=${onHoldValue} (type: ${typeof onHoldValue}), isOnHold=${isOnHold}, will ${isOnHold ? 'EXCLUDE' : 'INCLUDE'}`);
+      } else if (onHoldValue !== null && onHoldValue !== undefined && onHoldValue !== false && onHoldValue !== true && onHoldValue !== 'true' && onHoldValue !== 'false') {
+        console.log(`[FILTER] Project ${project.id} (${project.suburb} - ${project.street}): on_hold =`, onHoldValue, `(type: ${typeof onHoldValue}), isOnHold =`, isOnHold, `→ will ${isOnHold ? 'EXCLUDE' : 'INCLUDE'}`);
+      }
+      
+      const shouldInclude = !isOnHold;
+      if (project.id === 42) {
+        console.log(`[FILTER] Project 42 final decision: ${shouldInclude ? 'INCLUDED' : 'EXCLUDED'}`);
+      }
+      return shouldInclude;
+    });
 
     // Filter by state if specified
     if (stateFilter !== "All") {
@@ -578,140 +651,215 @@ export default function HomePage() {
           }}
         >
           {/* Menu Buttons */}
-          <Link
-            to="/hotlist"
-            style={{
-              background: "transparent",
-              color: "#404049",
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            Hot List
-          </Link>
-          <Link
-            to="/projects"
-            style={{
-              background: WHITE,
-              color: MONUMENT,
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              outline: `2px solid ${MONUMENT}`,
-              boxShadow: "0 2px 4px rgba(50,50,51,.04)",
-              display: "block",
-            }}
-          >
-            In Design
-          </Link>
-          <Link
-            to="/in-construction"
-            style={{
-              background: "transparent",
-              color: "#404049",
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            In Construction
-          </Link>
-          <Link
-            to="/finished-projects"
-            style={{
-              background: "transparent",
-              color: "#404049",
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            Finished Projects
-          </Link>
-          <Link
-            to="/managers"
-            style={{
-              background: "transparent",
-              color: "#404049",
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            Managers
-          </Link>
-          <Link
-            to="/sales"
-            style={{
-              background: "transparent",
-              color: "#404049",
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            Sales
-          </Link>
+          {/* Hot List - Light Blue */}
+          <div style={{ background: "#A6C9EC", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+            <Link
+              to="/hotlist"
+              style={{
+                background: "transparent",
+                color: "#404049",
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              Hot List
+            </Link>
+          </div>
+          
+          {/* All Projects, In Design, In Construction, Finished Projects, Cancelled, On Hold - Light Green */}
+          <div style={{ background: "#CEEAB0", borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: "2px solid #000" }}>
+            <Link
+              to="/all-projects"
+              style={{
+                background: "transparent",
+                color: "#404049",
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              All Projects
+            </Link>
+            <Link
+              to="/projects"
+              style={{
+                background: "#92D050",
+                color: WHITE,
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              In Design
+            </Link>
+            <Link
+              to="/in-construction"
+              style={{
+                background: "transparent",
+                color: "#404049",
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              In Construction
+            </Link>
+            <Link
+              to="/finished-projects"
+              style={{
+                background: "transparent",
+                color: "#404049",
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              Finished Projects
+            </Link>
+            <Link
+              to="/cancelled"
+              style={{
+                background: "transparent",
+                color: "#404049",
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              Cancelled
+            </Link>
+            <Link
+              to="/on-hold"
+              style={{
+                background: "transparent",
+                color: "#404049",
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              On Hold
+            </Link>
+          </div>
+          
+          {/* Managers and Sales - Light Red */}
+          <div style={{ background: "#F79198", borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: "2px solid #000" }}>
+            <Link
+              to="/managers"
+              style={{
+                background: "transparent",
+                color: "#404049",
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              Managers
+            </Link>
+            <Link
+              to="/sales"
+              style={{
+                background: "transparent",
+                color: "#404049",
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              Sales
+            </Link>
+          </div>
           <div style={{ flex: 1 }} />
           {isAdmin && (
             <Link
@@ -780,7 +928,17 @@ export default function HomePage() {
         >
           <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "16px" }}>
             In Design {(() => {
-              const currentProjects = projects.filter((project) => project.status !== "Complete" && project.status !== "Cancelled" && project.status !== "Construction Phase" && project.status !== "Hotlist");
+              const currentProjects = projects.filter((project) => {
+                // Accept "Design Phase" or legacy "On Hold" status
+                if (project.status !== "Design Phase" && project.status !== "On Hold") {
+                  return false;
+                }
+                // Exclude if on_hold is explicitly true (boolean or string)
+                // Handle all possible values: true, 'true', false, 'false', null, undefined, 1, '1', 0, '0'
+                const onHoldValue = project.on_hold;
+                const isOnHold = onHoldValue === true || onHoldValue === 'true' || onHoldValue === 1 || onHoldValue === '1';
+                return !isOnHold;
+              });
               const totalCount = currentProjects.length;
               
               if (selectedField && selectedValue) {
@@ -1023,7 +1181,7 @@ export default function HomePage() {
                         onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
                       >
                         {/* On Hold Diagonal Band */}
-                        {project.status === "On Hold" && (
+                        {(project.on_hold === 'true' || project.on_hold === true) && (
                           <div
                             style={{
                               position: "absolute",
@@ -1094,7 +1252,7 @@ export default function HomePage() {
                               fontSize: "0.85rem",
                               fontWeight: 700,
                               color: streamInfo.color,
-                              zIndex: (project.status === "On Hold" || project.status === "Cancelled") ? 11 : 5,
+                              zIndex: ((project.on_hold === 'true' || project.on_hold === true) || project.status === "Cancelled") ? 11 : 5,
                               textShadow: "0 1px 2px rgba(0,0,0,0.3)",
                             }}
                           >
@@ -1111,7 +1269,7 @@ export default function HomePage() {
                               fontSize: "0.85rem",
                               fontWeight: 700,
                               color: classificationInfo.color,
-                              zIndex: (project.status === "On Hold" || project.status === "Cancelled") ? 11 : 5,
+                              zIndex: ((project.on_hold === 'true' || project.on_hold === true) || project.status === "Cancelled") ? 11 : 5,
                               textShadow: "0 1px 2px rgba(0,0,0,0.3)",
                             }}
                           >
@@ -1132,7 +1290,7 @@ export default function HomePage() {
                             flexDirection: "column",
                             gap: "4px",
                             position: "relative",
-                            zIndex: project.status === "On Hold" ? 1 : "auto",
+                            zIndex: (project.on_hold === 'true' || project.on_hold === true) ? 1 : "auto",
                           }}
                         >
                           <div style={{ fontWeight: 600, fontSize: "1.1rem", color: WHITE }}>
@@ -1148,7 +1306,7 @@ export default function HomePage() {
                             color: "#323233cc", 
                             textAlign: "center",
                             position: "relative",
-                            zIndex: project.status === "On Hold" ? 1 : "auto",
+                            zIndex: (project.on_hold === 'true' || project.on_hold === true) ? 1 : "auto",
                           }}
                         >
                           Status: {project.status}

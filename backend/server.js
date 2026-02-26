@@ -481,8 +481,8 @@ async function ensureSchema() {
     'water_authority', 'water_declaration_status', 'water_declaration_sent_date', 'water_declaration_complete_date',
     'notes', 'project_info_notes', 'specs', 'classification', 'project_log',
     'window_status', 'window_colour', 'window_reveal', 'window_reveal_other', 'window_glazing', 'window_bal_rating', 'window_date_required', 'window_ordered_date', 'window_order_pdf_location', 'window_order_number',
-    'drawings_status', 'drawings_pdf_location', 'drawings_history', 'drawings_viewed_date', 'colours_status', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status',
-    'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail'];
+    'drawings_status', 'drawings_pdf_location', 'drawings_history', 'drawings_viewed_date', 'colours_status', 'colours_notes', 'colours_pdf_location', 'colours_sent_date', 'colours_reminder_sent_date', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status',
+    'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail', 'on_hold'];
   for (const column of columnsToAdd) {
     try {
       await pool.query(`
@@ -528,7 +528,18 @@ async function ensureSchema() {
     console.log(`Column create_folders might already exist:`, e.message);
   }
   // Add smtp_user, smtp_pass columns if they don't exist
-  for (const col of ["smtp_user", "smtp_pass"]) {
+  for (const col of ["smtp_user", "smtp_pass", "smtp_user_secondary", "smtp_pass_secondary"]) {
+    try {
+      await pool.query(`ALTER TABLE settings ADD COLUMN ${col} TEXT`);
+    } catch (e) {
+      // Column might already exist, which is fine
+      if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+        console.log(`Error adding column ${col}:`, e.message);
+      }
+    }
+  }
+  // Add colour_attachments columns if they don't exist
+  for (const col of ["colour_attachments_vic", "colour_attachments_qld"]) {
     try {
       await pool.query(`ALTER TABLE settings ADD COLUMN ${col} TEXT`);
     } catch (e) {
@@ -608,7 +619,7 @@ app.get("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
     );
     res.json(r.rows);
   } catch (e) {
@@ -629,7 +640,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
       [id]
     );
     
@@ -901,8 +912,8 @@ app.put("/api/projects/:id", async (req, res) => {
       water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date,
       notes, project_info_notes, specs, classification,
       window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number,
-      drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status,
-      number_of_robes, robe_widths, substatus, substatus_detail } = req.body || {};
+      drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status,
+      number_of_robes, robe_widths, substatus, substatus_detail, on_hold } = req.body || {};
     // Convert empty strings to null, but preserve non-empty strings
     const processValue = (val) => {
       if (val === undefined) return null;
@@ -925,11 +936,13 @@ app.put("/api/projects/:id", async (req, res) => {
     const client1ActiveValue = processBoolean(client1_active);
     const client2ActiveValue = processBoolean(client2_active);
     const client3ActiveValue = processBoolean(client3_active);
+    const onHoldValue = processBoolean(on_hold);
     
     console.log("Client active values:", {
       client1: client1ActiveValue,
       client2: client2ActiveValue,
       client3: client3ActiveValue,
+      on_hold: onHoldValue,
     });
     
     // Build the SQL query - use CASE to handle boolean fields properly
@@ -994,20 +1007,25 @@ app.put("/api/projects/:id", async (req, res) => {
         drawings_history = COALESCE($54, drawings_history),
         drawings_viewed_date = COALESCE($55, drawings_viewed_date),
         colours_status = COALESCE($56, colours_status),
-        planning_status = COALESCE($57, planning_status),
-        energy_report_status = COALESCE($58, energy_report_status),
-        footing_certification_status = COALESCE($59, footing_certification_status),
-        building_permit_status = COALESCE($60, building_permit_status),
-        year = COALESCE($61, year),
-        project_info_notes = COALESCE($62, project_info_notes),
-        specs = COALESCE($63, specs),
-        classification = COALESCE($64, classification),
-        number_of_robes = COALESCE($65, number_of_robes),
-        robe_widths = COALESCE($66, robe_widths),
-        substatus = COALESCE($67, substatus),
-        substatus_detail = COALESCE($68, substatus_detail),
+        colours_notes = COALESCE($57, colours_notes),
+        colours_pdf_location = COALESCE($58, colours_pdf_location),
+        colours_sent_date = COALESCE($59, colours_sent_date),
+        colours_reminder_sent_date = COALESCE($60, colours_reminder_sent_date),
+        planning_status = COALESCE($61, planning_status),
+        energy_report_status = COALESCE($62, energy_report_status),
+        footing_certification_status = COALESCE($63, footing_certification_status),
+        building_permit_status = COALESCE($64, building_permit_status),
+        year = COALESCE($65, year),
+        project_info_notes = COALESCE($66, project_info_notes),
+        specs = COALESCE($67, specs),
+        classification = COALESCE($68, classification),
+        number_of_robes = COALESCE($69, number_of_robes),
+        robe_widths = COALESCE($70, robe_widths),
+        substatus = COALESCE($71, substatus),
+        substatus_detail = COALESCE($72, substatus_detail),
+        on_hold = CASE WHEN $73 = '__SKIP__' THEN on_hold WHEN $73 = '__NULL__' THEN NULL ELSE $73 END,
         updated_at = NOW()
-      WHERE id = $69
+      WHERE id = $74
       RETURNING *
       `,
       [
@@ -1068,6 +1086,10 @@ app.put("/api/projects/:id", async (req, res) => {
         processValue(drawings_history),
         processValue(drawings_viewed_date),
         processValue(colours_status),
+        processValue(colours_notes),
+        processValue(colours_pdf_location),
+        processValue(colours_sent_date),
+        processValue(colours_reminder_sent_date),
         processValue(planning_status),
         processValue(energy_report_status),
         processValue(footing_certification_status),
@@ -1080,6 +1102,7 @@ app.put("/api/projects/:id", async (req, res) => {
         processValue(robe_widths),
         processValue(substatus),
         processValue(substatus_detail),
+        onHoldValue,
         id
       ]
     );
@@ -1428,7 +1451,7 @@ app.get("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, root_directory, create_folders, smtp_user, smtp_pass, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, updated_at FROM settings WHERE id = 1"
+      "SELECT id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, updated_at FROM settings WHERE id = 1"
     );
     if (r.rows.length === 0) {
       return res.json({
@@ -1437,6 +1460,8 @@ app.get("/api/settings", async (req, res) => {
         create_folders: "true",
         smtp_user: null,
         smtp_pass: null,
+        smtp_user_secondary: null,
+        smtp_pass_secondary: null,
         root_directory_qld: null,
         create_folders_qld: "true",
         smtp_user_qld: null,
@@ -1445,6 +1470,8 @@ app.get("/api/settings", async (req, res) => {
         test_folder_qld: null,
         global_password: null,
         admin_password: null,
+        colour_attachments_vic: null,
+        colour_attachments_qld: null,
         updated_at: null,
       });
     }
@@ -1460,7 +1487,7 @@ app.get("/api/settings", async (req, res) => {
 app.put("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const { root_directory, create_folders, smtp_user, smtp_pass, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password } = req.body || {};
+    const { root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld } = req.body || {};
 
     const processValue = (val) => {
       if (val === undefined) return null;
@@ -1478,29 +1505,35 @@ app.put("/api/settings", async (req, res) => {
     };
 
     const r = await pool.query(
-      `INSERT INTO settings (id, root_directory, create_folders, smtp_user, smtp_pass, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, updated_at)
-       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+      `INSERT INTO settings (id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, updated_at)
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
        ON CONFLICT (id)
        DO UPDATE SET
          root_directory = COALESCE($1, settings.root_directory),
          create_folders = COALESCE($2, settings.create_folders),
          smtp_user = COALESCE($3, settings.smtp_user),
          smtp_pass = COALESCE($4, settings.smtp_pass),
-         root_directory_qld = COALESCE($5, settings.root_directory_qld),
-         create_folders_qld = COALESCE($6, settings.create_folders_qld),
-         smtp_user_qld = COALESCE($7, settings.smtp_user_qld),
-         smtp_pass_qld = COALESCE($8, settings.smtp_pass_qld),
-         test_project_name_qld = COALESCE($9, settings.test_project_name_qld),
-         test_folder_qld = COALESCE($10, settings.test_folder_qld),
-         global_password = COALESCE($11, settings.global_password),
-         admin_password = COALESCE($12, settings.admin_password),
+         smtp_user_secondary = COALESCE($5, settings.smtp_user_secondary),
+         smtp_pass_secondary = COALESCE($6, settings.smtp_pass_secondary),
+         root_directory_qld = COALESCE($7, settings.root_directory_qld),
+         create_folders_qld = COALESCE($8, settings.create_folders_qld),
+         smtp_user_qld = COALESCE($9, settings.smtp_user_qld),
+         smtp_pass_qld = COALESCE($10, settings.smtp_pass_qld),
+         test_project_name_qld = COALESCE($11, settings.test_project_name_qld),
+         test_folder_qld = COALESCE($12, settings.test_folder_qld),
+         global_password = COALESCE($13, settings.global_password),
+         admin_password = COALESCE($14, settings.admin_password),
+         colour_attachments_vic = COALESCE($15, settings.colour_attachments_vic),
+         colour_attachments_qld = COALESCE($16, settings.colour_attachments_qld),
          updated_at = NOW()
-       RETURNING id, root_directory, create_folders, smtp_user, smtp_pass, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, updated_at`,
+       RETURNING id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, updated_at`,
       [
         processValue(root_directory),
         processBoolean(create_folders),
         processValue(smtp_user),
         processValue(smtp_pass),
+        processValue(smtp_user_secondary),
+        processValue(smtp_pass_secondary),
         processValue(root_directory_qld),
         processBoolean(create_folders_qld),
         processValue(smtp_user_qld),
@@ -1509,6 +1542,8 @@ app.put("/api/settings", async (req, res) => {
         processValue(test_folder_qld),
         processValue(global_password),
         processValue(admin_password),
+        processValue(colour_attachments_vic),
+        processValue(colour_attachments_qld),
       ]
     );
 
@@ -1662,6 +1697,105 @@ app.delete("/api/email-templates/:id", async (req, res) => {
   }
 });
 
+// Helper function to get SMTP credentials based on from_address
+async function getSmtpCredentialsForFromAddress(fromAddress) {
+  if (!pool) {
+    return {
+      smtpUser: process.env.SMTP_USER,
+      smtpPass: process.env.SMTP_PASS,
+    };
+  }
+
+  try {
+    const settingsResult = await pool.query(
+      "SELECT smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary FROM settings WHERE id = 1"
+    );
+
+    if (settingsResult.rows.length === 0) {
+      return {
+        smtpUser: process.env.SMTP_USER,
+        smtpPass: process.env.SMTP_PASS,
+      };
+    }
+
+    const settings = settingsResult.rows[0];
+    const primaryEmail = settings.smtp_user?.trim().toLowerCase();
+    const secondaryEmail = settings.smtp_user_secondary?.trim().toLowerCase();
+    const fromEmail = fromAddress?.trim().toLowerCase();
+
+    // Match from_address to determine which SMTP to use
+    if (fromEmail && secondaryEmail && fromEmail === secondaryEmail) {
+      // Use secondary SMTP if from_address matches secondary email
+      if (settings.smtp_user_secondary && settings.smtp_pass_secondary) {
+        return {
+          smtpUser: settings.smtp_user_secondary,
+          smtpPass: settings.smtp_pass_secondary,
+        };
+      }
+    }
+
+    // Default to primary SMTP (or match if from_address matches primary)
+    if (settings.smtp_user && settings.smtp_pass) {
+      return {
+        smtpUser: settings.smtp_user,
+        smtpPass: settings.smtp_pass,
+      };
+    }
+
+    // Fallback to environment variables
+    return {
+      smtpUser: process.env.SMTP_USER,
+      smtpPass: process.env.SMTP_PASS,
+    };
+  } catch (e) {
+    console.error("Error fetching SMTP credentials:", e);
+    return {
+      smtpUser: process.env.SMTP_USER,
+      smtpPass: process.env.SMTP_PASS,
+    };
+  }
+}
+
+// Helper function to add SGF logo to email HTML and attachments
+async function addLogoToEmail(htmlBody, attachments = []) {
+  const logoPath = "Z:\\1.SGF PROJECT MANAGEMENT\\SGF RESOURCES\\LOGOS\\SGF.jpg";
+  
+  try {
+    // Check if logo file exists
+    await fs.access(logoPath);
+    
+    // Read logo file
+    const logoBuffer = await fs.readFile(logoPath);
+    
+    // Add logo as CID attachment
+    attachments.push({
+      filename: "SGF.jpg",
+      content: logoBuffer,
+      cid: "sgf-logo", // Content-ID for embedding
+      contentType: "image/jpeg",
+    });
+    
+    // Add logo image to HTML body (at the end)
+    const logoHtml = `<br><br><div style="text-align: left; margin-top: 20px;"><img src="cid:sgf-logo" alt="SGF Logo" style="max-width: 200px; height: auto;" /></div>`;
+    
+    // Insert logo before closing body/html tags, or append if no tags
+    if (htmlBody.includes("</body>")) {
+      htmlBody = htmlBody.replace("</body>", `${logoHtml}</body>`);
+    } else if (htmlBody.includes("</html>")) {
+      htmlBody = htmlBody.replace("</html>", `${logoHtml}</html>`);
+    } else {
+      // No HTML structure, just append
+      htmlBody = htmlBody + logoHtml;
+    }
+    
+    return { htmlBody, attachments };
+  } catch (e) {
+    console.error("Error adding logo to email:", e.message);
+    // If logo can't be found, continue without it
+    return { htmlBody, attachments };
+  }
+}
+
 // Send HTML email via SMTP
 app.post("/api/emails/send", async (req, res) => {
   const { to, from, subject, htmlBody } = req.body || {};
@@ -1673,25 +1807,11 @@ app.post("/api/emails/send", async (req, res) => {
     return res.status(400).json({ error: "From address is required" });
   }
 
-  let smtpUser = null;
-  let smtpPass = null;
-  if (pool) {
-    try {
-      const r = await pool.query(
-        "SELECT smtp_user, smtp_pass FROM settings WHERE id = 1"
-      );
-      if (r.rows[0]?.smtp_user && r.rows[0]?.smtp_pass) {
-        smtpUser = r.rows[0].smtp_user;
-        smtpPass = r.rows[0].smtp_pass;
-      }
-    } catch (e) {
-      console.error("Error reading SMTP from settings:", e);
-    }
-  }
-  if (!smtpUser || !smtpPass) {
-    smtpUser = process.env.SMTP_USER;
-    smtpPass = process.env.SMTP_PASS;
-  }
+  // Get SMTP credentials based on from_address
+  const smtpCreds = await getSmtpCredentialsForFromAddress(from);
+  let smtpUser = smtpCreds.smtpUser;
+  let smtpPass = smtpCreds.smtpPass;
+
   if (!smtpUser || !smtpPass) {
     return res.status(503).json({
       error:
@@ -1712,13 +1832,18 @@ app.post("/api/emails/send", async (req, res) => {
     });
 
     const rawBody = (htmlBody || "").trim().replace(/\n/g, "<br>");
-    const htmlEmailBody = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">${rawBody}</body></html>`;
+    let htmlEmailBody = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">${rawBody}</body></html>`;
+
+    // Add logo to email
+    const logoResult = await addLogoToEmail(htmlEmailBody, []);
+    htmlEmailBody = logoResult.htmlBody;
 
     const mailOptions = {
       from: from,
       to: Array.isArray(to) ? to.join(", ") : to,
       subject: subject || "",
       html: htmlEmailBody,
+      attachments: logoResult.attachments,
     };
 
     const info = await transporter.sendMail(mailOptions);
@@ -1860,23 +1985,28 @@ app.post("/api/emails/send-drawings", async (req, res) => {
     
     const recipientEmail = recipientEmails.join(", ");
 
+    // Prepare attachments array
+    const emailAttachments = [];
+    
+    // Only attach PDF if requested
+    if (attachPdf && drawingsPdfPath && fileBuffer) {
+      emailAttachments.push({
+        filename: fileName,
+        content: fileBuffer,
+        contentType: "application/pdf",
+      });
+    }
+
+    // Add logo to email
+    const logoResult = await addLogoToEmail(htmlBody, emailAttachments);
+
     const mailOptions = {
       from: smtpUser,
       to: recipientEmail,
       subject: subject,
-      html: htmlBody,
+      html: logoResult.htmlBody,
+      attachments: logoResult.attachments,
     };
-
-    // Only attach PDF if requested
-    if (attachPdf && drawingsPdfPath && fileBuffer) {
-      mailOptions.attachments = [
-        {
-          filename: fileName,
-          content: fileBuffer,
-          contentType: "application/pdf",
-        },
-      ];
-    }
 
     const info = await transporter.sendMail(mailOptions);
     res.json({ success: true, messageId: info.messageId, message: "Drawings email sent successfully!" });
@@ -1884,6 +2014,795 @@ app.post("/api/emails/send-drawings", async (req, res) => {
     console.error("Error sending drawings email:", e);
     res.status(500).json({
       error: e.message || "Failed to send email. Check SMTP settings and credentials.",
+    });
+  }
+});
+
+// Send colours PDFs via email with attachments
+app.post("/api/emails/send-colours", async (req, res) => {
+  const { projectId, attachAffordable, attachSuperior, toEmails, customBody } = req.body || {};
+
+  if (!projectId) {
+    return res.status(400).json({ error: "Project ID is required" });
+  }
+
+  if (!pool) {
+    return res.status(500).json({ error: "DATABASE_URL not set" });
+  }
+
+  // Get project details including client names
+  let project = null;
+  try {
+    const projectResult = await pool.query(
+      "SELECT suburb, street, state, client1_name, client1_active, client2_name, client2_active, client3_name, client3_active FROM projects WHERE id = $1",
+      [projectId]
+    );
+
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    project = projectResult.rows[0];
+  } catch (e) {
+    console.error("Error fetching project:", e);
+    return res.status(500).json({ error: "Failed to fetch project details" });
+  }
+
+  // Get settings for colour attachments path and SMTP
+  let colourAttachmentsPath = null;
+  let smtpUser = null;
+  let smtpPass = null;
+  try {
+    const settingsResult = await pool.query(
+      "SELECT colour_attachments_vic, colour_attachments_qld, smtp_user, smtp_pass FROM settings WHERE id = 1"
+    );
+    
+    if (settingsResult.rows.length > 0) {
+      const settings = settingsResult.rows[0];
+      // Use VIC or QLD path based on project state
+      if (project.state === "VIC") {
+        colourAttachmentsPath = settings.colour_attachments_vic;
+      } else if (project.state === "QLD") {
+        colourAttachmentsPath = settings.colour_attachments_qld;
+      }
+      
+      smtpUser = settings.smtp_user;
+      smtpPass = settings.smtp_pass;
+    }
+  } catch (e) {
+    console.error("Error reading settings:", e);
+    return res.status(500).json({ error: "Failed to fetch settings" });
+  }
+
+  if (!colourAttachmentsPath) {
+    return res.status(400).json({ 
+      error: `Colour attachments path not configured for ${project.state || "this state"}. Please set it in Settings → File Settings.` 
+    });
+  }
+
+  // Get email template by name
+  let template = null;
+  try {
+    const templateResult = await pool.query(
+      "SELECT id, name, to_addresses, from_address, subject, body FROM email_templates WHERE name = $1",
+      ["COLOURS - Send"]
+    );
+    
+    if (templateResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Email template "COLOURS - Send" not found. Please create it in Settings → Email Settings.' });
+    }
+    
+    try {
+      template = {
+        ...templateResult.rows[0],
+        to_addresses: templateResult.rows[0].to_addresses ? JSON.parse(templateResult.rows[0].to_addresses) : []
+      };
+    } catch (parseError) {
+      console.error("Error parsing template to_addresses:", parseError);
+      template = {
+        ...templateResult.rows[0],
+        to_addresses: []
+      };
+    }
+  } catch (e) {
+    console.error("Error fetching email template:", e);
+    return res.status(500).json({ error: `Failed to fetch email template: ${e.message}` });
+  }
+
+  // Get Colour Consultant name(s)
+  let colourConsultantName = "";
+  try {
+    const consultantResult = await pool.query(
+      `SELECT DISTINCT u.name 
+       FROM users u
+       INNER JOIN user_positions up ON u.id = up.user_id
+       INNER JOIN positions p ON up.position_id = p.id
+       WHERE LOWER(TRIM(p.name)) = LOWER(TRIM($1))
+       ORDER BY u.name ASC`,
+      ["Colour Consultant"]
+    );
+    
+    if (consultantResult.rows.length > 0) {
+      const consultantNames = consultantResult.rows.map(row => row.name.trim()).filter(name => name);
+      if (consultantNames.length === 1) {
+        colourConsultantName = consultantNames[0];
+      } else if (consultantNames.length > 1) {
+        // Multiple consultants: "Name1, Name2 & Name3"
+        if (consultantNames.length === 2) {
+          colourConsultantName = `${consultantNames[0]} & ${consultantNames[1]}`;
+        } else {
+          const allButLast = consultantNames.slice(0, -1).join(", ");
+          const last = consultantNames[consultantNames.length - 1];
+          colourConsultantName = `${allButLast} & ${last}`;
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Error fetching Colour Consultant:", e);
+    // Don't fail if we can't find consultant, just leave token as empty string
+  }
+
+  // Build attachment paths
+  // Normalize the path (handle trailing slashes/backslashes)
+  const normalizedPath = colourAttachmentsPath.replace(/[\/\\]+$/, "");
+  const attachments = [];
+  
+  if (attachAffordable) {
+    const affordablePath = path.join(normalizedPath, "COLOR_AFFORDABLE.pdf");
+    console.log(`Attempting to read COLOR_AFFORDABLE.pdf from: ${affordablePath}`);
+    try {
+      await fs.access(affordablePath);
+      const fileBuffer = await fs.readFile(affordablePath);
+      attachments.push({
+        filename: "COLOR_AFFORDABLE.pdf",
+        content: fileBuffer,
+        contentType: "application/pdf",
+      });
+      console.log(`Successfully loaded COLOR_AFFORDABLE.pdf`);
+    } catch (e) {
+      console.error(`Error reading COLOR_AFFORDABLE.pdf: ${e.message}`, e);
+      return res.status(404).json({ error: `COLOR_AFFORDABLE.pdf not found at ${affordablePath}. Error: ${e.message}` });
+    }
+  }
+
+  if (attachSuperior) {
+    const superiorPath = path.join(normalizedPath, "COLOR_SUPERIOR.pdf");
+    console.log(`Attempting to read COLOR_SUPERIOR.pdf from: ${superiorPath}`);
+    try {
+      await fs.access(superiorPath);
+      const fileBuffer = await fs.readFile(superiorPath);
+      attachments.push({
+        filename: "COLOR_SUPERIOR.pdf",
+        content: fileBuffer,
+        contentType: "application/pdf",
+      });
+      console.log(`Successfully loaded COLOR_SUPERIOR.pdf`);
+    } catch (e) {
+      console.error(`Error reading COLOR_SUPERIOR.pdf: ${e.message}`, e);
+      return res.status(404).json({ error: `COLOR_SUPERIOR.pdf not found at ${superiorPath}. Error: ${e.message}` });
+    }
+  }
+
+  if (attachments.length === 0) {
+    return res.status(400).json({ error: "At least one attachment must be selected" });
+  }
+
+  // Get SMTP credentials based on template's from_address
+  // For QLD projects, use QLD SMTP; for VIC projects, use from_address to determine primary/secondary
+  if (project.state === "QLD") {
+    try {
+      const qldSettingsResult = await pool.query(
+        "SELECT smtp_user_qld, smtp_pass_qld FROM settings WHERE id = 1"
+      );
+      if (qldSettingsResult.rows[0]?.smtp_user_qld && qldSettingsResult.rows[0]?.smtp_pass_qld) {
+        smtpUser = qldSettingsResult.rows[0].smtp_user_qld;
+        smtpPass = qldSettingsResult.rows[0].smtp_pass_qld;
+      }
+    } catch (e) {
+      console.error("Error reading QLD SMTP from settings:", e);
+    }
+  } else {
+    // VIC project - use from_address to determine which SMTP to use
+    const fromAddress = template.from_address;
+    const smtpCreds = await getSmtpCredentialsForFromAddress(fromAddress);
+    smtpUser = smtpCreds.smtpUser;
+    smtpPass = smtpCreds.smtpPass;
+  }
+
+  if (!smtpUser || !smtpPass) {
+    smtpUser = process.env.SMTP_USER;
+    smtpPass = process.env.SMTP_PASS;
+  }
+  if (!smtpUser || !smtpPass) {
+    return res.status(503).json({
+      error:
+        "SMTP not configured. Set SMTP User and SMTP Pass in Settings → File Settings, or use backend .env.",
+    });
+  }
+
+  const host = process.env.SMTP_HOST || "smtp.office365.com";
+  const port = parseInt(process.env.SMTP_PORT || "587", 10);
+  const secure = process.env.SMTP_SECURE === "true";
+
+  try {
+    // Create email transporter
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user: smtpUser, pass: smtpPass },
+    });
+
+    // Prepare email content from template
+    const suburb = (project.suburb || "").toUpperCase();
+    const street = project.street || "";
+    
+    // Get active client names (first names only)
+    const activeClientFirstNames = [];
+    if (project.client1_active === true || project.client1_active === 'true') {
+      if (project.client1_name && project.client1_name.trim()) {
+        const firstName = project.client1_name.trim().split(/\s+/)[0]; // Get first word
+        if (firstName) activeClientFirstNames.push(firstName);
+      }
+    }
+    if (project.client2_active === true || project.client2_active === 'true') {
+      if (project.client2_name && project.client2_name.trim()) {
+        const firstName = project.client2_name.trim().split(/\s+/)[0]; // Get first word
+        if (firstName) activeClientFirstNames.push(firstName);
+      }
+    }
+    if (project.client3_active === true || project.client3_active === 'true') {
+      if (project.client3_name && project.client3_name.trim()) {
+        const firstName = project.client3_name.trim().split(/\s+/)[0]; // Get first word
+        if (firstName) activeClientFirstNames.push(firstName);
+      }
+    }
+    
+    // Format client first names with commas and "&"
+    let clientName = "";
+    if (activeClientFirstNames.length === 0) {
+      clientName = ""; // No active clients
+    } else if (activeClientFirstNames.length === 1) {
+      clientName = activeClientFirstNames[0];
+    } else if (activeClientFirstNames.length === 2) {
+      clientName = `${activeClientFirstNames[0]} & ${activeClientFirstNames[1]}`;
+    } else {
+      // 3 or more: "Name1, Name2 & Name3"
+      const allButLast = activeClientFirstNames.slice(0, -1).join(", ");
+      const last = activeClientFirstNames[activeClientFirstNames.length - 1];
+      clientName = `${allButLast} & ${last}`;
+    }
+    
+    // Format project name: "<Street>, <Suburb>"
+    const projectName = `${street || ""}, ${suburb || ""}`.trim().replace(/^,\s*|,\s*$/g, "");
+    
+    // Replace template variables in subject and body
+    let subject = (template.subject || "").toString();
+    // Use customBody if provided, otherwise use template body
+    let htmlBody = (customBody !== undefined && customBody !== null) ? customBody.toString() : (template.body || "").toString();
+    
+    // Replace common placeholders
+    subject = subject.replace(/\{SUBURB\}/g, suburb)
+                     .replace(/\{STREET\}/g, street)
+                     .replace(/\{ClientName\}/g, clientName)
+                     .replace(/\{ProjectName\}/g, projectName)
+                     .replace(/\{ColourConsultant\}/g, colourConsultantName);
+    // Only replace tokens in htmlBody if customBody was not provided (to avoid double replacement)
+    if (customBody === undefined || customBody === null) {
+      htmlBody = htmlBody.replace(/\{SUBURB\}/g, suburb)
+                         .replace(/\{STREET\}/g, street)
+                         .replace(/\{ClientName\}/g, clientName)
+                         .replace(/\{ProjectName\}/g, projectName)
+                         .replace(/\{ColourConsultant\}/g, colourConsultantName);
+    }
+    
+    // Convert newlines to HTML breaks
+    htmlBody = htmlBody.replace(/\n/g, "<br>");
+    
+    // Wrap in HTML structure if not already HTML
+    if (!htmlBody.includes("<html") && !htmlBody.includes("<!DOCTYPE")) {
+      htmlBody = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">${htmlBody}</body></html>`;
+    }
+
+    // Use provided emails or template default
+    let recipientEmails = [];
+    if (toEmails && Array.isArray(toEmails) && toEmails.length > 0) {
+      recipientEmails = toEmails.filter(email => email && email.trim());
+    } else if (template.to_addresses && Array.isArray(template.to_addresses) && template.to_addresses.length > 0) {
+      recipientEmails = template.to_addresses.filter(email => email && email.trim());
+    }
+    
+    if (recipientEmails.length === 0) {
+      return res.status(400).json({ error: "No valid recipient email addresses provided" });
+    }
+    
+    const recipientEmail = recipientEmails.join(", ");
+
+    // Use template's from_address (or fallback to SMTP user)
+    // Office 365 requires the "from" address to match the authenticated user
+    const fromAddress = template.from_address || smtpUser;
+    
+    // Add logo to email (logo will be added to existing attachments array)
+    const logoResult = await addLogoToEmail(htmlBody, attachments);
+    
+    const mailOptions = {
+      from: fromAddress,
+      to: recipientEmail,
+      subject: subject,
+      html: logoResult.htmlBody,
+      attachments: logoResult.attachments,
+    };
+
+    console.log(`Sending colours email from: ${fromAddress}`);
+    console.log(`Sending colours email to: ${recipientEmail}`);
+    console.log(`Subject: ${subject}`);
+    console.log(`Attachments: ${attachments.length} file(s)`);
+    
+    // Verify SMTP connection before sending
+    try {
+      await transporter.verify();
+      console.log("SMTP connection verified successfully");
+    } catch (verifyError) {
+      console.error("SMTP verification failed:", verifyError);
+      return res.status(500).json({
+        error: `SMTP connection failed: ${verifyError.message || verifyError}`,
+        details: verifyError.response || verifyError.code,
+      });
+    }
+    
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`Email sent successfully. Message ID: ${info.messageId}`);
+    
+    // Add project log entry
+    try {
+      const now = new Date();
+      const dateTimeStr = now.toISOString().replace('T', ' ').substring(0, 19);
+      const attachmentsList = [];
+      if (attachAffordable) attachmentsList.push("Affordable");
+      if (attachSuperior) attachmentsList.push("Superior");
+      const attachmentsText = attachmentsList.length > 0 ? ` - ${attachmentsList.join(", ")}` : "";
+      const logEntry = `Colours Email Sent${attachmentsText} - ${dateTimeStr}`;
+      
+      // Get current project log
+      const projectLogResult = await pool.query(
+        "SELECT project_log FROM projects WHERE id = $1",
+        [projectId]
+      );
+      
+      const currentLog = projectLogResult.rows[0]?.project_log || "";
+      const newLog = currentLog ? `${currentLog}\n${logEntry}` : logEntry;
+      
+      // Update project log and colours_sent_date
+      await pool.query(
+        "UPDATE projects SET project_log = $1, colours_sent_date = $2 WHERE id = $3",
+        [newLog, dateTimeStr, projectId]
+      );
+      
+      console.log(`Project log and colours_sent_date updated for project ${projectId}`);
+    } catch (logError) {
+      console.error("Error updating project log:", logError);
+      // Don't fail the request if log update fails
+    }
+    
+    res.json({ success: true, messageId: info.messageId, message: "Colours email sent successfully!" });
+  } catch (e) {
+    console.error("Error sending colours email:", e);
+    console.error("Error stack:", e.stack);
+    
+    // Extract more detailed error information from nodemailer
+    let errorMessage = e.message || "Failed to send email. Check SMTP settings and credentials.";
+    let errorDetails = null;
+    
+    if (e.response) {
+      errorDetails = e.response;
+      errorMessage += ` Response: ${e.response}`;
+    }
+    if (e.responseCode) {
+      errorDetails = { code: e.responseCode, response: e.response };
+      errorMessage += ` Code: ${e.responseCode}`;
+    }
+    if (e.command) {
+      errorMessage += ` Command: ${e.command}`;
+    }
+    
+    res.status(500).json({
+      error: errorMessage,
+      details: errorDetails || (process.env.NODE_ENV === "development" ? e.stack : undefined),
+    });
+  }
+});
+
+// Send colours reminder email - identical to send-colours but uses "COLOURS - Remind" template
+app.post("/api/emails/send-colours-reminder", async (req, res) => {
+  const { projectId, attachAffordable, attachSuperior, toEmails, customBody } = req.body || {};
+
+  if (!projectId) {
+    return res.status(400).json({ error: "Project ID is required" });
+  }
+
+  if (!pool) {
+    return res.status(500).json({ error: "DATABASE_URL not set" });
+  }
+
+  // Get project details including client names
+  let project = null;
+  try {
+    const projectResult = await pool.query(
+      "SELECT suburb, street, state, client1_name, client1_active, client2_name, client2_active, client3_name, client3_active FROM projects WHERE id = $1",
+      [projectId]
+    );
+
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    project = projectResult.rows[0];
+  } catch (e) {
+    console.error("Error fetching project:", e);
+    return res.status(500).json({ error: "Failed to fetch project details" });
+  }
+
+  // Get settings for colour attachments path and SMTP
+  let colourAttachmentsPath = null;
+  let smtpUser = null;
+  let smtpPass = null;
+  try {
+    const settingsResult = await pool.query(
+      "SELECT colour_attachments_vic, colour_attachments_qld, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary FROM settings WHERE id = 1"
+    );
+    
+    if (settingsResult.rows.length > 0) {
+      const settings = settingsResult.rows[0];
+      // Use VIC or QLD path based on project state
+      if (project.state === "VIC") {
+        colourAttachmentsPath = settings.colour_attachments_vic;
+      } else if (project.state === "QLD") {
+        colourAttachmentsPath = settings.colour_attachments_qld;
+      }
+      
+      smtpUser = settings.smtp_user;
+      smtpPass = settings.smtp_pass;
+    }
+  } catch (e) {
+    console.error("Error reading settings:", e);
+    return res.status(500).json({ error: "Failed to fetch settings" });
+  }
+
+  if (!colourAttachmentsPath) {
+    return res.status(400).json({ 
+      error: `Colour attachments path not configured for ${project.state || "this state"}. Please set it in Settings → File Settings.` 
+    });
+  }
+
+  // Get email template by name - use "COLOURS - Remind"
+  let template = null;
+  try {
+    const templateResult = await pool.query(
+      "SELECT id, name, to_addresses, from_address, subject, body FROM email_templates WHERE name = $1",
+      ["COLOURS - Remind"]
+    );
+    
+    if (templateResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Email template "COLOURS - Remind" not found. Please create it in Settings → Email Settings.' });
+    }
+    
+    try {
+      template = {
+        ...templateResult.rows[0],
+        to_addresses: templateResult.rows[0].to_addresses ? JSON.parse(templateResult.rows[0].to_addresses) : []
+      };
+    } catch (parseError) {
+      console.error("Error parsing template to_addresses:", parseError);
+      template = {
+        ...templateResult.rows[0],
+        to_addresses: []
+      };
+    }
+  } catch (e) {
+    console.error("Error fetching email template:", e);
+    return res.status(500).json({ error: `Failed to fetch email template: ${e.message}` });
+  }
+
+  // Get Colour Consultant name(s)
+  let colourConsultantName = "";
+  try {
+    const consultantResult = await pool.query(
+      `SELECT DISTINCT u.name 
+       FROM users u
+       INNER JOIN user_positions up ON u.id = up.user_id
+       INNER JOIN positions p ON up.position_id = p.id
+       WHERE LOWER(TRIM(p.name)) = LOWER(TRIM($1))
+       ORDER BY u.name ASC`,
+      ["Colour Consultant"]
+    );
+    
+    if (consultantResult.rows.length > 0) {
+      const consultantNames = consultantResult.rows.map(row => row.name.trim()).filter(name => name);
+      if (consultantNames.length === 1) {
+        colourConsultantName = consultantNames[0];
+      } else if (consultantNames.length > 1) {
+        // Multiple consultants: "Name1, Name2 & Name3"
+        if (consultantNames.length === 2) {
+          colourConsultantName = `${consultantNames[0]} & ${consultantNames[1]}`;
+        } else {
+          const allButLast = consultantNames.slice(0, -1).join(", ");
+          const last = consultantNames[consultantNames.length - 1];
+          colourConsultantName = `${allButLast} & ${last}`;
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Error fetching Colour Consultant:", e);
+    // Don't fail if we can't find consultant, just leave token as empty string
+  }
+
+  // Build attachment paths
+  // Normalize the path (handle trailing slashes/backslashes)
+  const normalizedPath = colourAttachmentsPath.replace(/[\/\\]+$/, "");
+  const attachments = [];
+  
+  if (attachAffordable) {
+    const affordablePath = path.join(normalizedPath, "COLOR_AFFORDABLE.pdf");
+    console.log(`Attempting to read COLOR_AFFORDABLE.pdf from: ${affordablePath}`);
+    try {
+      await fs.access(affordablePath);
+      const fileBuffer = await fs.readFile(affordablePath);
+      attachments.push({
+        filename: "COLOR_AFFORDABLE.pdf",
+        content: fileBuffer,
+        contentType: "application/pdf",
+      });
+      console.log(`Successfully loaded COLOR_AFFORDABLE.pdf`);
+    } catch (e) {
+      console.error(`Error reading COLOR_AFFORDABLE.pdf: ${e.message}`, e);
+      return res.status(404).json({ error: `COLOR_AFFORDABLE.pdf not found at ${affordablePath}. Error: ${e.message}` });
+    }
+  }
+
+  if (attachSuperior) {
+    const superiorPath = path.join(normalizedPath, "COLOR_SUPERIOR.pdf");
+    console.log(`Attempting to read COLOR_SUPERIOR.pdf from: ${superiorPath}`);
+    try {
+      await fs.access(superiorPath);
+      const fileBuffer = await fs.readFile(superiorPath);
+      attachments.push({
+        filename: "COLOR_SUPERIOR.pdf",
+        content: fileBuffer,
+        contentType: "application/pdf",
+      });
+      console.log(`Successfully loaded COLOR_SUPERIOR.pdf`);
+    } catch (e) {
+      console.error(`Error reading COLOR_SUPERIOR.pdf: ${e.message}`, e);
+      return res.status(404).json({ error: `COLOR_SUPERIOR.pdf not found at ${superiorPath}. Error: ${e.message}` });
+    }
+  }
+
+  if (attachments.length === 0) {
+    return res.status(400).json({ error: "At least one attachment must be selected" });
+  }
+
+  // Get SMTP credentials based on template's from_address
+  // For QLD projects, use QLD SMTP; for VIC projects, use from_address to determine primary/secondary
+  if (project.state === "QLD") {
+    // QLD projects use QLD SMTP
+    try {
+      const settingsResult = await pool.query(
+        "SELECT smtp_user_qld, smtp_pass_qld FROM settings WHERE id = 1"
+      );
+      if (settingsResult.rows.length > 0 && settingsResult.rows[0].smtp_user_qld && settingsResult.rows[0].smtp_pass_qld) {
+        smtpUser = settingsResult.rows[0].smtp_user_qld;
+        smtpPass = settingsResult.rows[0].smtp_pass_qld;
+      }
+    } catch (e) {
+      console.error("Error reading QLD SMTP from settings:", e);
+    }
+  } else {
+    // VIC project - use from_address to determine which SMTP to use
+    const fromAddress = template.from_address;
+    const smtpCreds = await getSmtpCredentialsForFromAddress(fromAddress);
+    smtpUser = smtpCreds.smtpUser;
+    smtpPass = smtpCreds.smtpPass;
+  }
+
+  if (!smtpUser || !smtpPass) {
+    smtpUser = process.env.SMTP_USER;
+    smtpPass = process.env.SMTP_PASS;
+  }
+  if (!smtpUser || !smtpPass) {
+    return res.status(503).json({
+      error:
+        "SMTP not configured. Set SMTP User and SMTP Pass in Settings → File Settings, or use backend .env.",
+    });
+  }
+
+  const host = process.env.SMTP_HOST || "smtp.office365.com";
+  const port = parseInt(process.env.SMTP_PORT || "587", 10);
+  const secure = process.env.SMTP_SECURE === "true";
+
+  try {
+    // Create email transporter
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user: smtpUser, pass: smtpPass },
+    });
+
+    // Prepare email content from template
+    const suburb = (project.suburb || "").toUpperCase();
+    const street = project.street || "";
+    
+    // Get active client names (first names only)
+    const activeClientFirstNames = [];
+    if (project.client1_active === true || project.client1_active === 'true') {
+      if (project.client1_name && project.client1_name.trim()) {
+        const firstName = project.client1_name.trim().split(/\s+/)[0]; // Get first word
+        if (firstName) activeClientFirstNames.push(firstName);
+      }
+    }
+    if (project.client2_active === true || project.client2_active === 'true') {
+      if (project.client2_name && project.client2_name.trim()) {
+        const firstName = project.client2_name.trim().split(/\s+/)[0]; // Get first word
+        if (firstName) activeClientFirstNames.push(firstName);
+      }
+    }
+    if (project.client3_active === true || project.client3_active === 'true') {
+      if (project.client3_name && project.client3_name.trim()) {
+        const firstName = project.client3_name.trim().split(/\s+/)[0]; // Get first word
+        if (firstName) activeClientFirstNames.push(firstName);
+      }
+    }
+    
+    // Format client first names with commas and "&"
+    let clientName = "";
+    if (activeClientFirstNames.length === 0) {
+      clientName = ""; // No active clients
+    } else if (activeClientFirstNames.length === 1) {
+      clientName = activeClientFirstNames[0];
+    } else if (activeClientFirstNames.length === 2) {
+      clientName = `${activeClientFirstNames[0]} & ${activeClientFirstNames[1]}`;
+    } else {
+      // 3 or more: "Name1, Name2 & Name3"
+      const allButLast = activeClientFirstNames.slice(0, -1).join(", ");
+      const last = activeClientFirstNames[activeClientFirstNames.length - 1];
+      clientName = `${allButLast} & ${last}`;
+    }
+    
+    // Format project name: "<Street>, <Suburb>"
+    const projectName = `${street || ""}, ${suburb || ""}`.trim().replace(/^,\s*|,\s*$/g, "");
+    
+    // Replace template variables in subject and body
+    let subject = (template.subject || "").toString();
+    // Use customBody if provided, otherwise use template body
+    let htmlBody = (customBody !== undefined && customBody !== null) ? customBody.toString() : (template.body || "").toString();
+    
+    // Replace common placeholders
+    subject = subject.replace(/\{SUBURB\}/g, suburb)
+                     .replace(/\{STREET\}/g, street)
+                     .replace(/\{ClientName\}/g, clientName)
+                     .replace(/\{ProjectName\}/g, projectName)
+                     .replace(/\{ColourConsultant\}/g, colourConsultantName);
+    // Only replace tokens in htmlBody if customBody was not provided (to avoid double replacement)
+    if (customBody === undefined || customBody === null) {
+      htmlBody = htmlBody.replace(/\{SUBURB\}/g, suburb)
+                         .replace(/\{STREET\}/g, street)
+                         .replace(/\{ClientName\}/g, clientName)
+                         .replace(/\{ProjectName\}/g, projectName)
+                         .replace(/\{ColourConsultant\}/g, colourConsultantName);
+    }
+    
+    // Convert newlines to HTML breaks
+    htmlBody = htmlBody.replace(/\n/g, "<br>");
+    
+    // Wrap in HTML structure if not already HTML
+    if (!htmlBody.includes("<html") && !htmlBody.includes("<!DOCTYPE")) {
+      htmlBody = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">${htmlBody}</body></html>`;
+    }
+
+    // Use provided emails or template default
+    let recipientEmails = [];
+    if (toEmails && Array.isArray(toEmails) && toEmails.length > 0) {
+      recipientEmails = toEmails.filter(email => email && email.trim());
+    } else if (template.to_addresses && Array.isArray(template.to_addresses) && template.to_addresses.length > 0) {
+      recipientEmails = template.to_addresses.filter(email => email && email.trim());
+    }
+    
+    if (recipientEmails.length === 0) {
+      return res.status(400).json({ error: "No valid recipient email addresses provided" });
+    }
+    
+    const recipientEmail = recipientEmails.join(", ");
+
+    // Use template's from_address (or fallback to SMTP user)
+    // Office 365 requires the "from" address to match the authenticated user
+    const fromAddress = template.from_address || smtpUser;
+    
+    // Add logo to email (logo will be added to existing attachments array)
+    const logoResult = await addLogoToEmail(htmlBody, attachments);
+    
+    const mailOptions = {
+      from: fromAddress,
+      to: recipientEmail,
+      subject: subject,
+      html: logoResult.htmlBody,
+      attachments: logoResult.attachments,
+    };
+
+    console.log(`Sending colours reminder email from: ${fromAddress}`);
+    console.log(`Sending colours reminder email to: ${recipientEmail}`);
+    console.log(`Subject: ${subject}`);
+    console.log(`Attachments: ${attachments.length} file(s)`);
+    
+    // Verify SMTP connection before sending
+    try {
+      await transporter.verify();
+      console.log("SMTP connection verified successfully");
+    } catch (verifyError) {
+      console.error("SMTP verification failed:", verifyError);
+      return res.status(500).json({
+        error: `SMTP connection failed: ${verifyError.message || verifyError}`,
+        details: verifyError.response || verifyError.code,
+      });
+    }
+    
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`Email sent successfully. Message ID: ${info.messageId}`);
+    
+    // Add project log entry and update colours_reminder_sent_date
+    try {
+      const now = new Date();
+      const dateTimeStr = now.toISOString().replace('T', ' ').substring(0, 19);
+      const attachmentsList = [];
+      if (attachAffordable) attachmentsList.push("Affordable");
+      if (attachSuperior) attachmentsList.push("Superior");
+      const attachmentsText = attachmentsList.length > 0 ? ` - ${attachmentsList.join(", ")}` : "";
+      const logEntry = `Colours Reminder Email Sent${attachmentsText} - ${dateTimeStr}`;
+      
+      // Get current project log
+      const projectLogResult = await pool.query(
+        "SELECT project_log FROM projects WHERE id = $1",
+        [projectId]
+      );
+      
+      const currentLog = projectLogResult.rows[0]?.project_log || "";
+      const newLog = currentLog ? `${currentLog}\n${logEntry}` : logEntry;
+      
+      // Update project log and colours_reminder_sent_date
+      await pool.query(
+        "UPDATE projects SET project_log = $1, colours_reminder_sent_date = $2 WHERE id = $3",
+        [newLog, dateTimeStr, projectId]
+      );
+      
+      console.log(`Project log and colours_reminder_sent_date updated for project ${projectId}`);
+    } catch (logError) {
+      console.error("Error updating project log:", logError);
+      // Don't fail the request if log update fails
+    }
+    
+    res.json({ success: true, messageId: info.messageId, message: "Colours reminder email sent successfully!" });
+  } catch (e) {
+    console.error("Error in POST /api/emails/send-colours-reminder:", e);
+    console.error("Error stack:", e.stack);
+    
+    // Extract more detailed error information from nodemailer
+    let errorMessage = e.message || "Failed to send email. Check SMTP settings and credentials.";
+    let errorDetails = null;
+    
+    if (e.response) {
+      errorDetails = e.response;
+      errorMessage += ` Response: ${e.response}`;
+    }
+    if (e.responseCode) {
+      errorDetails = { code: e.responseCode, response: e.response };
+      errorMessage += ` Code: ${e.responseCode}`;
+    }
+    if (e.command) {
+      errorMessage += ` Command: ${e.command}`;
+    }
+    
+    res.status(500).json({
+      error: errorMessage,
+      details: errorDetails || (process.env.NODE_ENV === "development" ? e.stack : undefined),
     });
   }
 });
@@ -2104,25 +3023,9 @@ app.post("/api/files/locate-proposal", upload.single("file"), async (req, res) =
           const suburb = (project.suburb || "").toUpperCase();
           const street = project.street || "";
           
-          // Get classification abbreviation
-          const classificationMap = {
-            "Small Second Dwelling": "SSD",
-            "Dependant Persons Unit": "DPU",
-            "Detached Extension": "DEX",
-            "Dwelling": "DWE",
-            "Home Office / Studio": "STU",
-            "Dwelling & DPU": "D&DPU",
-            "Dwelling & SSD": "D&SSD",
-            "SSD & DPU": "SSD&DPU",
-            "Dual Occ": "DOC",
-          };
-          
-          const classificationAbbr = project.classification && classificationMap[project.classification]
-            ? ` (${classificationMap[project.classification]})`
-            : "";
-          
-          // Build project path: root_directory/year/state/suburb - street (classification)
-          const projectFolderName = `${suburb} - ${street}${classificationAbbr}`.replace(/[<>:"/\\|?*]/g, '_');
+          // Build project path: root_directory/year/state/suburb - street
+          // NOTE: Do NOT include classification abbreviation in folder name
+          const projectFolderName = `${suburb} - ${street}`.replace(/[<>:"/\\|?*]/g, '_');
           projectPath = path.join(rootDir, projectYear, state, projectFolderName);
         }
       }
@@ -2198,14 +3101,12 @@ app.post("/api/files/upload-proposal", upload.single("file"), async (req, res) =
       return res.status(400).json({ error: "Only PDF files are allowed" });
     }
 
-    // Ensure the project folder exists
-    await fs.mkdir(projectPath, { recursive: true });
-
+    // DO NOT create folders - folders should ONLY be created when a new project is first created
     // Save the file directly to the project root directory as "Proposal.pdf"
     const fileName = "Proposal.pdf";
     const filePath = path.join(projectPath, fileName);
 
-    // Write file from buffer
+    // Write file from buffer (this will fail if folder doesn't exist, which is correct behavior)
     await fs.writeFile(filePath, req.file.buffer);
 
     // Update project record with proposal PDF location
@@ -2328,6 +3229,401 @@ app.post("/api/projects/update-site-visit-scheduled", async (req, res) => {
   }
 });
 
+// Send colours Windows & Roof email - identical to send-colours-reminder but uses "COLORS - Windows&Roof" template
+app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
+  const { projectId, attachAffordable, attachSuperior, toEmails, customBody } = req.body || {};
+
+  if (!projectId) {
+    return res.status(400).json({ error: "Project ID is required" });
+  }
+
+  if (!pool) {
+    return res.status(500).json({ error: "DATABASE_URL not set" });
+  }
+
+  // Get project details including client names
+  let project = null;
+  try {
+    const projectResult = await pool.query(
+      "SELECT suburb, street, state, client1_name, client1_active, client2_name, client2_active, client3_name, client3_active FROM projects WHERE id = $1",
+      [projectId]
+    );
+
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    project = projectResult.rows[0];
+  } catch (e) {
+    console.error("Error fetching project:", e);
+    return res.status(500).json({ error: "Failed to fetch project details" });
+  }
+
+  // Get settings for colour attachments path and SMTP
+  let colourAttachmentsPath = null;
+  let smtpUser = null;
+  let smtpPass = null;
+  try {
+    const settingsResult = await pool.query(
+      "SELECT colour_attachments_vic, colour_attachments_qld, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary FROM settings WHERE id = 1"
+    );
+    
+    if (settingsResult.rows.length > 0) {
+      const settings = settingsResult.rows[0];
+      // Use VIC or QLD path based on project state
+      if (project.state === "VIC") {
+        colourAttachmentsPath = settings.colour_attachments_vic;
+      } else if (project.state === "QLD") {
+        colourAttachmentsPath = settings.colour_attachments_qld;
+      }
+      
+      smtpUser = settings.smtp_user;
+      smtpPass = settings.smtp_pass;
+    }
+  } catch (e) {
+    console.error("Error reading settings:", e);
+    return res.status(500).json({ error: "Failed to fetch settings" });
+  }
+
+  if (!colourAttachmentsPath) {
+    return res.status(400).json({ 
+      error: `Colour attachments path not configured for ${project.state || "this state"}. Please set it in Settings → File Settings.` 
+    });
+  }
+
+  // Get email template by name - use "COLORS - Windows&Roof"
+  let template = null;
+  try {
+    const templateResult = await pool.query(
+      "SELECT id, name, to_addresses, from_address, subject, body FROM email_templates WHERE name = $1",
+      ["COLORS - Windows&Roof"]
+    );
+    
+    if (templateResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Email template "COLORS - Windows&Roof" not found. Please create it in Settings → Email Settings.' });
+    }
+    
+    try {
+      template = {
+        ...templateResult.rows[0],
+        to_addresses: templateResult.rows[0].to_addresses ? JSON.parse(templateResult.rows[0].to_addresses) : []
+      };
+    } catch (parseError) {
+      console.error("Error parsing template to_addresses:", parseError);
+      template = {
+        ...templateResult.rows[0],
+        to_addresses: []
+      };
+    }
+  } catch (e) {
+    console.error("Error fetching email template:", e);
+    return res.status(500).json({ error: `Failed to fetch email template: ${e.message}` });
+  }
+
+  // Get Colour Consultant name(s)
+  let colourConsultantName = "";
+  try {
+    const consultantResult = await pool.query(
+      `SELECT DISTINCT u.name 
+       FROM users u
+       INNER JOIN user_positions up ON u.id = up.user_id
+       INNER JOIN positions p ON up.position_id = p.id
+       WHERE LOWER(TRIM(p.name)) = LOWER(TRIM($1))
+       ORDER BY u.name ASC`,
+      ["Colour Consultant"]
+    );
+    
+    if (consultantResult.rows.length > 0) {
+      const consultantNames = consultantResult.rows.map(row => row.name.trim()).filter(name => name);
+      if (consultantNames.length === 1) {
+        colourConsultantName = consultantNames[0];
+      } else if (consultantNames.length > 1) {
+        // Multiple consultants: "Name1, Name2 & Name3"
+        if (consultantNames.length === 2) {
+          colourConsultantName = `${consultantNames[0]} & ${consultantNames[1]}`;
+        } else {
+          const allButLast = consultantNames.slice(0, -1).join(", ");
+          const last = consultantNames[consultantNames.length - 1];
+          colourConsultantName = `${allButLast} & ${last}`;
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Error fetching Colour Consultant:", e);
+    // Don't fail if we can't find consultant, just leave token as empty string
+  }
+
+  // Build attachment paths
+  // Normalize the path (handle trailing slashes/backslashes)
+  const normalizedPath = colourAttachmentsPath.replace(/[\/\\]+$/, "");
+  const attachments = [];
+  
+  if (attachAffordable) {
+    const affordablePath = path.join(normalizedPath, "COLOR_AFFORDABLE.pdf");
+    console.log(`Attempting to read COLOR_AFFORDABLE.pdf from: ${affordablePath}`);
+    try {
+      await fs.access(affordablePath);
+      const fileBuffer = await fs.readFile(affordablePath);
+      attachments.push({
+        filename: "COLOR_AFFORDABLE.pdf",
+        content: fileBuffer,
+        contentType: "application/pdf",
+      });
+      console.log(`Successfully loaded COLOR_AFFORDABLE.pdf`);
+    } catch (e) {
+      console.error(`Error reading COLOR_AFFORDABLE.pdf: ${e.message}`, e);
+      return res.status(404).json({ error: `COLOR_AFFORDABLE.pdf not found at ${affordablePath}. Error: ${e.message}` });
+    }
+  }
+
+  if (attachSuperior) {
+    const superiorPath = path.join(normalizedPath, "COLOR_SUPERIOR.pdf");
+    console.log(`Attempting to read COLOR_SUPERIOR.pdf from: ${superiorPath}`);
+    try {
+      await fs.access(superiorPath);
+      const fileBuffer = await fs.readFile(superiorPath);
+      attachments.push({
+        filename: "COLOR_SUPERIOR.pdf",
+        content: fileBuffer,
+        contentType: "application/pdf",
+      });
+      console.log(`Successfully loaded COLOR_SUPERIOR.pdf`);
+    } catch (e) {
+      console.error(`Error reading COLOR_SUPERIOR.pdf: ${e.message}`, e);
+      return res.status(404).json({ error: `COLOR_SUPERIOR.pdf not found at ${superiorPath}. Error: ${e.message}` });
+    }
+  }
+
+  if (attachments.length === 0) {
+    return res.status(400).json({ error: "At least one attachment must be selected" });
+  }
+
+  // Get SMTP credentials based on template's from_address
+  // For QLD projects, use QLD SMTP; for VIC projects, use from_address to determine primary/secondary
+  if (project.state === "QLD") {
+    // QLD projects use QLD SMTP
+    try {
+      const settingsResult = await pool.query(
+        "SELECT smtp_user_qld, smtp_pass_qld FROM settings WHERE id = 1"
+      );
+      if (settingsResult.rows.length > 0 && settingsResult.rows[0].smtp_user_qld && settingsResult.rows[0].smtp_pass_qld) {
+        smtpUser = settingsResult.rows[0].smtp_user_qld;
+        smtpPass = settingsResult.rows[0].smtp_pass_qld;
+      }
+    } catch (e) {
+      console.error("Error reading QLD SMTP from settings:", e);
+    }
+  } else {
+    // VIC project - use from_address to determine which SMTP to use
+    const fromAddress = template.from_address;
+    const smtpCreds = await getSmtpCredentialsForFromAddress(fromAddress);
+    smtpUser = smtpCreds.smtpUser;
+    smtpPass = smtpCreds.smtpPass;
+  }
+
+  if (!smtpUser || !smtpPass) {
+    smtpUser = process.env.SMTP_USER;
+    smtpPass = process.env.SMTP_PASS;
+  }
+  if (!smtpUser || !smtpPass) {
+    return res.status(503).json({
+      error:
+        "SMTP not configured. Set SMTP User and SMTP Pass in Settings → File Settings, or use backend .env.",
+    });
+  }
+
+  const host = process.env.SMTP_HOST || "smtp.office365.com";
+  const port = parseInt(process.env.SMTP_PORT || "587", 10);
+  const secure = process.env.SMTP_SECURE === "true";
+
+  try {
+    // Create email transporter
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user: smtpUser, pass: smtpPass },
+    });
+
+    // Prepare email content from template
+    const suburb = (project.suburb || "").toUpperCase();
+    const street = project.street || "";
+    
+    // Get active client names (first names only)
+    const activeClientFirstNames = [];
+    if (project.client1_active === true || project.client1_active === 'true') {
+      if (project.client1_name && project.client1_name.trim()) {
+        const firstName = project.client1_name.trim().split(/\s+/)[0]; // Get first word
+        if (firstName) activeClientFirstNames.push(firstName);
+      }
+    }
+    if (project.client2_active === true || project.client2_active === 'true') {
+      if (project.client2_name && project.client2_name.trim()) {
+        const firstName = project.client2_name.trim().split(/\s+/)[0]; // Get first word
+        if (firstName) activeClientFirstNames.push(firstName);
+      }
+    }
+    if (project.client3_active === true || project.client3_active === 'true') {
+      if (project.client3_name && project.client3_name.trim()) {
+        const firstName = project.client3_name.trim().split(/\s+/)[0]; // Get first word
+        if (firstName) activeClientFirstNames.push(firstName);
+      }
+    }
+    
+    // Format client first names with commas and "&"
+    let clientName = "";
+    if (activeClientFirstNames.length === 0) {
+      clientName = ""; // No active clients
+    } else if (activeClientFirstNames.length === 1) {
+      clientName = activeClientFirstNames[0];
+    } else if (activeClientFirstNames.length === 2) {
+      clientName = `${activeClientFirstNames[0]} & ${activeClientFirstNames[1]}`;
+    } else {
+      // 3 or more: "Name1, Name2 & Name3"
+      const allButLast = activeClientFirstNames.slice(0, -1).join(", ");
+      const last = activeClientFirstNames[activeClientFirstNames.length - 1];
+      clientName = `${allButLast} & ${last}`;
+    }
+    
+    // Format project name: "<Street>, <Suburb>"
+    const projectName = `${street || ""}, ${suburb || ""}`.trim().replace(/^,\s*|,\s*$/g, "");
+    
+    // Replace template variables in subject and body
+    let subject = (template.subject || "").toString();
+    // Use customBody if provided, otherwise use template body
+    let htmlBody = (customBody !== undefined && customBody !== null) ? customBody.toString() : (template.body || "").toString();
+    
+    // Replace common placeholders
+    subject = subject.replace(/\{SUBURB\}/g, suburb)
+                     .replace(/\{STREET\}/g, street)
+                     .replace(/\{ClientName\}/g, clientName)
+                     .replace(/\{ProjectName\}/g, projectName)
+                     .replace(/\{ColourConsultant\}/g, colourConsultantName);
+    // Only replace tokens in htmlBody if customBody was not provided (to avoid double replacement)
+    if (customBody === undefined || customBody === null) {
+      htmlBody = htmlBody.replace(/\{SUBURB\}/g, suburb)
+                         .replace(/\{STREET\}/g, street)
+                         .replace(/\{ClientName\}/g, clientName)
+                         .replace(/\{ProjectName\}/g, projectName)
+                         .replace(/\{ColourConsultant\}/g, colourConsultantName);
+    }
+    
+    // Convert newlines to HTML breaks
+    htmlBody = htmlBody.replace(/\n/g, "<br>");
+    
+    // Wrap in HTML structure if not already HTML
+    if (!htmlBody.includes("<html") && !htmlBody.includes("<!DOCTYPE")) {
+      htmlBody = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">${htmlBody}</body></html>`;
+    }
+
+    // Use provided emails or template default
+    let recipientEmails = [];
+    if (toEmails && Array.isArray(toEmails) && toEmails.length > 0) {
+      recipientEmails = toEmails.filter(email => email && email.trim());
+    } else if (template.to_addresses && Array.isArray(template.to_addresses) && template.to_addresses.length > 0) {
+      recipientEmails = template.to_addresses.filter(email => email && email.trim());
+    }
+    
+    if (recipientEmails.length === 0) {
+      return res.status(400).json({ error: "No valid recipient email addresses provided" });
+    }
+    
+    const recipientEmail = recipientEmails.join(", ");
+
+    // Use template's from_address (or fallback to SMTP user)
+    // Office 365 requires the "from" address to match the authenticated user
+    const fromAddress = template.from_address || smtpUser;
+    
+    // Add logo to email (logo will be added to existing attachments array)
+    const logoResult = await addLogoToEmail(htmlBody, attachments);
+    
+    const mailOptions = {
+      from: fromAddress,
+      to: recipientEmail,
+      subject: subject,
+      html: logoResult.htmlBody,
+      attachments: logoResult.attachments,
+    };
+
+    console.log(`Sending colours Windows & Roof email from: ${fromAddress}`);
+    console.log(`Sending colours Windows & Roof email to: ${recipientEmail}`);
+    console.log(`Subject: ${subject}`);
+    console.log(`Attachments: ${attachments.length} file(s)`);
+    
+    // Verify SMTP connection before sending
+    try {
+      await transporter.verify();
+      console.log("SMTP connection verified successfully");
+    } catch (verifyError) {
+      console.error("SMTP verification failed:", verifyError);
+      return res.status(500).json({
+        error: `SMTP connection failed: ${verifyError.message || verifyError}`,
+        details: verifyError.response || verifyError.code,
+      });
+    }
+    
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`Email sent successfully. Message ID: ${info.messageId}`);
+    
+    // Add project log entry
+    try {
+      const now = new Date();
+      const dateTimeStr = now.toISOString().replace('T', ' ').substring(0, 19);
+      const attachmentsList = [];
+      if (attachAffordable) attachmentsList.push("Affordable");
+      if (attachSuperior) attachmentsList.push("Superior");
+      const attachmentsText = attachmentsList.length > 0 ? ` - ${attachmentsList.join(", ")}` : "";
+      const logEntry = `Colours Windows & Roof Email Sent${attachmentsText} - ${dateTimeStr}`;
+      
+      // Get current project log
+      const projectLogResult = await pool.query(
+        "SELECT project_log FROM projects WHERE id = $1",
+        [projectId]
+      );
+      
+      const currentLog = projectLogResult.rows[0]?.project_log || "";
+      const newLog = currentLog ? `${currentLog}\n${logEntry}` : logEntry;
+      
+      // Update project log
+      await pool.query(
+        "UPDATE projects SET project_log = $1 WHERE id = $2",
+        [newLog, projectId]
+      );
+      
+      console.log(`Project log updated for project ${projectId}`);
+    } catch (logError) {
+      console.error("Error updating project log:", logError);
+      // Don't fail the request if log update fails
+    }
+    
+    res.json({ success: true, messageId: info.messageId, message: "Colours Windows & Roof email sent successfully!" });
+  } catch (e) {
+    console.error("Error in POST /api/emails/send-colours-windows-roof:", e);
+    console.error("Error stack:", e.stack);
+    
+    // Extract more detailed error information from nodemailer
+    let errorMessage = e.message || "Failed to send email. Check SMTP settings and credentials.";
+    let errorDetails = null;
+    
+    if (e.response) {
+      errorDetails = e.response;
+      errorMessage += ` Response: ${e.response}`;
+    }
+    if (e.responseCode) {
+      errorDetails = { code: e.responseCode, response: e.response };
+      errorMessage += ` Code: ${e.responseCode}`;
+    }
+    if (e.command) {
+      errorMessage += ` Command: ${e.command}`;
+    }
+    
+    res.status(500).json({
+      error: errorMessage,
+      details: errorDetails,
+    });
+  }
+});
+
 // Serve window order PDF
 app.get("/api/files/window-order/:id", async (req, res) => {
   try {
@@ -2410,6 +3706,49 @@ app.get("/api/files/drawings/:id", async (req, res) => {
     res.send(fileBuffer);
   } catch (error) {
     console.error("Error serving drawings PDF:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Serve colours PDF
+app.get("/api/files/colours/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    if (!pool) {
+      return res.status(500).json({ error: "DATABASE_URL not set" });
+    }
+
+    // Get project and colours PDF location
+    const projectResult = await pool.query(
+      "SELECT colours_pdf_location FROM projects WHERE id = $1",
+      [id]
+    );
+
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    const coloursPdfPath = projectResult.rows[0].colours_pdf_location;
+
+    if (!coloursPdfPath) {
+      return res.status(404).json({ error: "Colours PDF not found for this project" });
+    }
+
+    // Check if file exists
+    try {
+      await fs.access(coloursPdfPath);
+    } catch (e) {
+      return res.status(404).json({ error: "Colours PDF file does not exist" });
+    }
+
+    // Read and send the file
+    const fileBuffer = await fs.readFile(coloursPdfPath);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="Colours.pdf"`);
+    res.send(fileBuffer);
+  } catch (error) {
+    console.error("Error serving colours PDF:", error);
     res.status(500).json({ error: error.message });
   }
 });

@@ -318,7 +318,8 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
         // Get current year (same as backend uses)
         const currentYear = new Date().getFullYear().toString();
         
-        // Construct folder path: root_directory\YEAR\STATE\SUBURB - STREET (CLASSIFICATION)
+        // Construct folder path: root_directory\YEAR\STATE\SUBURB - STREET
+        // NOTE: Do NOT include classification abbreviation in folder name
         const suburb = (formData.suburb || "").toUpperCase();
         const street = formData.street || "";
         const state = (formData.state || "").toUpperCase();
@@ -329,12 +330,8 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
           return;
         }
         
-        // Get classification abbreviation
-        const classificationAbbr = formData.classification && CLASSIFICATION_MAP[formData.classification]
-          ? ` (${CLASSIFICATION_MAP[formData.classification]})`
-          : "";
-        
-        folderPath = `${rootDirectory}\\${currentYear}\\${state}\\${suburb} - ${street}${classificationAbbr}`;
+        // Construct folder path without classification abbreviation
+        folderPath = `${rootDirectory}\\${currentYear}\\${state}\\${suburb} - ${street}`;
         
         // Create folder via backend API (also copies template structure)
         console.log("Creating folder at path:", folderPath);

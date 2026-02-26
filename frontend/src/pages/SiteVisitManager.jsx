@@ -389,6 +389,28 @@ export default function SiteVisitManager() {
             Contract Manager
           </Link>
           <Link
+            to="/managers/colour-manager"
+            style={{
+              background: "transparent",
+              color: "#404049",
+              border: "none",
+              borderRadius: "10px",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              textAlign: "center",
+              textDecoration: "none",
+              letterSpacing: "0.5px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              marginBottom: "0px",
+              lineHeight: "1.4",
+              display: "block",
+            }}
+          >
+            Colour Manager
+          </Link>
+          <Link
             to="/managers/status-manager"
             style={{
               background: "transparent",
@@ -563,7 +585,7 @@ export default function SiteVisitManager() {
                           onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
                         >
                               {/* On Hold Diagonal Band */}
-                              {project.status === "On Hold" && (
+                              {(project.on_hold === 'true' || project.on_hold === true) && (
                                 <div
                                   style={{
                                     position: "absolute",
@@ -634,7 +656,7 @@ export default function SiteVisitManager() {
                                     fontSize: "0.85rem",
                                     fontWeight: 700,
                                     color: streamInfo.color,
-                                    zIndex: (project.status === "On Hold" || project.status === "Cancelled") ? 11 : 5,
+                                    zIndex: ((project.on_hold === 'true' || project.on_hold === true) || project.status === "Cancelled") ? 11 : 5,
                                     textShadow: "0 1px 2px rgba(0,0,0,0.3)",
                                   }}
                                 >
@@ -651,7 +673,7 @@ export default function SiteVisitManager() {
                                     fontSize: "0.85rem",
                                     fontWeight: 700,
                                     color: classificationInfo.color,
-                                    zIndex: (project.status === "On Hold" || project.status === "Cancelled") ? 11 : 5,
+                                    zIndex: ((project.on_hold === 'true' || project.on_hold === true) || project.status === "Cancelled") ? 11 : 5,
                                     textShadow: "0 1px 2px rgba(0,0,0,0.3)",
                                   }}
                                 >
@@ -672,7 +694,7 @@ export default function SiteVisitManager() {
                                   flexDirection: "column",
                                   gap: "4px",
                                   position: "relative",
-                                  zIndex: project.status === "On Hold" ? 1 : "auto",
+                                  zIndex: (project.on_hold === 'true' || project.on_hold === true) ? 1 : "auto",
                                 }}
                               >
                                 <div style={{ fontWeight: 600, fontSize: "1.1rem", color: WHITE }}>
@@ -688,7 +710,7 @@ export default function SiteVisitManager() {
                                   color: "#323233cc", 
                                   textAlign: "center",
                                   position: "relative",
-                                  zIndex: project.status === "On Hold" ? 1 : "auto",
+                                  zIndex: (project.on_hold === 'true' || project.on_hold === true) ? 1 : "auto",
                                 }}
                               >
                                 Status: {project.status}
