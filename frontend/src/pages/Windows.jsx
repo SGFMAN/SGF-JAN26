@@ -46,11 +46,46 @@ export default function Windows({ project, onUpdate }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [orderNumber, setOrderNumber] = useState("");
   const fileInputRef = useRef(null);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailBody, setEmailBody] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [sendProgress, setSendProgress] = useState(0);
+  const [sendAbortController, setSendAbortController] = useState(null);
+  const progressIntervalRef = useRef(null);
 
   // Get window status or default to "Not Ordered"
   const windowStatus = project?.window_status || "Not Ordered";
+  
+  const WINDOW_STATUS_OPTIONS = ["Not Ordered", "Ordered", "Complete"];
 
   async function handleOrderWindows() {
+    // Validate required fields
+    if (!windowColour) {
+      alert("Please select a window colour");
+      return;
+    }
+    if (!reveal) {
+      alert("Please select a reveal");
+      return;
+    }
+    if (reveal === "Other" && !revealOther.trim()) {
+      alert("Please enter a reveal value");
+      return;
+    }
+    if (!glazing) {
+      alert("Please select glazing");
+      return;
+    }
+    if (!balRating) {
+      alert("Please select a BAL rating");
+      return;
+    }
+    if (!dateRequired) {
+      alert("Please select a date required");
+      return;
+    }
+
+    // Save the window details first
     if (!project?.id) {
       alert("Error: Project ID is missing");
       return;
@@ -58,62 +93,33 @@ export default function Windows({ project, onUpdate }) {
 
     setIsOrdering(true);
     try {
+      // Calculate date required: if "Normal", use 3 weeks from today; if "Urgent", just use "Urgent"
+      let dateRequiredValue = dateRequired;
+      if (dateRequired === "Normal") {
+        const threeWeeksFromNow = new Date();
+        threeWeeksFromNow.setDate(threeWeeksFromNow.getDate() + 21); // 3 weeks = 21 days
+        dateRequiredValue = threeWeeksFromNow.toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      }
+      
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          name: project.name || "",
-          status: project.status || "",
-          stream: project.stream || null,
-          suburb: project.suburb || null,
-          street: project.street || null,
-          state: project.state || null,
-          deposit: project.deposit || null,
-          project_cost: project.project_cost || null,
-          client_name: project.client_name || null,
-          email: project.email || null,
-          phone: project.phone || null,
-          client1_name: project.client1_name || null,
-          client1_email: project.client1_email || null,
-          client1_phone: project.client1_phone || null,
-          client1_active: project.client1_active || null,
-          client2_name: project.client2_name || null,
-          client2_email: project.client2_email || null,
-          client2_phone: project.client2_phone || null,
-          client2_active: project.client2_active || null,
-          client3_name: project.client3_name || null,
-          client3_email: project.client3_email || null,
-          client3_phone: project.client3_phone || null,
-          client3_active: project.client3_active || null,
-          site_visit_status: project.site_visit_status || null,
-          site_visit_date: project.site_visit_date || null,
-          site_visit_time: project.site_visit_time || null,
-          contract_status: project.contract_status || null,
-          contract_sent_date: project.contract_sent_date || null,
-          contract_complete_date: project.contract_complete_date || null,
-          supporting_documents_status: project.supporting_documents_status || null,
-          supporting_documents_sent_date: project.supporting_documents_sent_date || null,
-          supporting_documents_complete_date: project.supporting_documents_complete_date || null,
-          water_declaration_status: project.water_declaration_status || null,
-          water_declaration_sent_date: project.water_declaration_sent_date || null,
-          water_declaration_complete_date: project.water_declaration_complete_date || null,
-          notes: project.notes || null,
-          window_status: "Ordered",
-          window_colour: project.window_colour || null,
-          window_reveal: project.window_reveal || null,
-          window_reveal_other: project.window_reveal_other || null,
-          window_glazing: project.window_glazing || null,
-          window_bal_rating: project.window_bal_rating || null,
-          window_date_required: project.window_date_required || null,
-          window_ordered_date: new Date().toISOString(),
+          ...project,
+          window_colour: windowColour,
+          window_reveal: reveal,
+          window_reveal_other: reveal === "Other" ? revealOther : null,
+          window_glazing: glazing,
+          window_bal_rating: balRating,
+          window_date_required: dateRequiredValue,
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: response.statusText }));
-        throw new Error(errorData.error || "Failed to order windows");
+        throw new Error(errorData.error || "Failed to save window details");
       }
 
       // Refresh project data
@@ -121,13 +127,215 @@ export default function Windows({ project, onUpdate }) {
         onUpdate();
       }
 
-      // Close modal
+      // Close order modal and open email modal
       setShowOrderModal(false);
+      await loadEmailTemplate();
+      setShowEmailModal(true);
     } catch (error) {
-      console.error("Error ordering windows:", error);
-      alert(`Error ordering windows: ${error.message}`);
+      console.error("Error saving window details:", error);
+      alert(`Error saving window details: ${error.message}`);
     } finally {
       setIsOrdering(false);
+    }
+  }
+
+  async function loadEmailTemplate() {
+    if (!project?.id) return;
+
+    try {
+      const response = await fetch(`${API_URL}/api/email-templates`);
+      if (response.ok) {
+        const templates = await response.json();
+        const template = templates.find(t => t.name === "WINDOWS - Order");
+        if (template && template.body) {
+          // Build window ordering information
+          const windowInfo = buildWindowOrderingInfo();
+          
+          // Find "<b>Scope</b>" in the body and insert window info after the closing </b>
+          let body = template.body;
+          // Look for <b>Scope</b> or <b>scope</b> (case insensitive)
+          const scopePattern = /<b>Scope<\/b>/i;
+          const match = body.match(scopePattern);
+          if (match) {
+            // Find the position after the closing </b>
+            const insertIndex = match.index + match[0].length;
+            // Insert window info after </b>
+            body = body.slice(0, insertIndex) + "\n\n" + windowInfo + body.slice(insertIndex);
+          } else {
+            // If "<b>Scope</b>" not found, append at the end
+            body = body + "\n\n" + windowInfo;
+          }
+          
+          // Replace tokens
+          const suburb = (project?.suburb || "").toUpperCase();
+          const street = project?.street || "";
+          const projectName = `${street || ""}, ${suburb || ""}`.trim().replace(/^,\s*|,\s*$/g, "");
+          
+          body = body.replace(/\{SUBURB\}/g, suburb)
+                     .replace(/\{STREET\}/g, street)
+                     .replace(/\{ProjectName\}/g, projectName);
+          
+          setEmailBody(body);
+        } else {
+          setEmailBody("");
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching email template:", error);
+      setEmailBody("");
+    }
+  }
+
+  function buildWindowOrderingInfo() {
+    const revealText = reveal === "Other" ? revealOther : reveal;
+    // Calculate date required: if "Normal", use 3 weeks from today; if "Urgent", just use "Urgent"
+    let dateRequiredText = dateRequired;
+    if (dateRequired === "Normal") {
+      const threeWeeksFromNow = new Date();
+      threeWeeksFromNow.setDate(threeWeeksFromNow.getDate() + 21); // 3 weeks = 21 days
+      dateRequiredText = threeWeeksFromNow.toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    }
+    
+    return `Window Colour: ${windowColour}
+Reveal: ${revealText}
+Glazing: ${glazing}
+BAL Rating: ${balRating}
+Date Required: ${dateRequiredText}`;
+  }
+
+  function getActiveClients() {
+    const clients = [];
+    if (project?.client1_active === true || project?.client1_active === 'true') {
+      clients.push({
+        name: project.client1_name || "",
+        email: project.client1_email || "",
+      });
+    }
+    if (project?.client2_active === true || project?.client2_active === 'true') {
+      clients.push({
+        name: project.client2_name || "",
+        email: project.client2_email || "",
+      });
+    }
+    if (project?.client3_active === true || project?.client3_active === 'true') {
+      clients.push({
+        name: project.client3_name || "",
+        email: project.client3_email || "",
+      });
+    }
+    return clients;
+  }
+
+  async function handleSendEmail() {
+    if (!project?.id) {
+      alert("Error: Project ID is missing");
+      return;
+    }
+
+    setIsSending(true);
+    setSendProgress(0);
+    
+    // Create abort controller and store in both state and local variable
+    const abortController = new AbortController();
+    setSendAbortController(abortController);
+
+    // Start progress simulation
+    progressIntervalRef.current = setInterval(() => {
+      setSendProgress((prev) => {
+        if (prev >= 90) return 90; // Cap at 90% until response
+        return prev + Math.random() * 10; // Increment by 0-10%
+      });
+    }, 200); // Update every 200ms
+
+    try {
+      const response = await fetch(`${API_URL}/api/emails/send-windows-order`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          projectId: project.id,
+          customBody: emailBody,
+          windowColour: windowColour,
+          windowReveal: reveal === "Other" ? revealOther : reveal,
+          windowGlazing: glazing,
+          windowBalRating: balRating,
+          windowDateRequired: dateRequired === "Normal" 
+            ? new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+            : dateRequired,
+        }),
+        signal: abortController.signal,
+      });
+
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ error: response.statusText }));
+        const errorMessage = data.error || `Failed to send email: ${response.statusText}`;
+        alert(`Error sending email: ${errorMessage}`);
+        console.error("Error details:", data);
+        setIsSending(false);
+        setSendProgress(0);
+        setSendAbortController(null);
+        return;
+      }
+
+      // Small delay to show 100% before closing
+      setTimeout(() => {
+        alert("Window order email sent successfully!");
+        setIsSending(false);
+        setSendProgress(0);
+        setSendAbortController(null);
+        setShowEmailModal(false);
+        
+        // Update window status to "Ordered" and set ordered date
+        if (onUpdate) {
+          onUpdate();
+        }
+      }, 500);
+    } catch (error) {
+      if (error.name === "AbortError") {
+        console.log("Email send cancelled");
+        setIsSending(false);
+        setSendProgress(0);
+        setSendAbortController(null);
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+        }
+        return;
+      }
+
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+      console.error("Error sending email:", error);
+      alert(`Error sending email: ${error.message}`);
+      setIsSending(false);
+      setSendProgress(0);
+      setSendAbortController(null);
+    }
+  }
+
+  function handleCloseEmailModal() {
+    if (isSending) {
+      if (sendAbortController) {
+        sendAbortController.abort();
+      }
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+      setIsSending(false);
+      setSendProgress(0);
+      setSendAbortController(null);
+    } else {
+      setShowEmailModal(false);
+      setEmailBody("");
     }
   }
 
@@ -358,20 +566,50 @@ export default function Windows({ project, onUpdate }) {
               <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
                 Window Status
               </div>
-              <div
+              <select
+                value={windowStatus}
+                onChange={async (e) => {
+                  const newStatus = e.target.value;
+                  if (!project?.id) return;
+                  
+                  try {
+                    const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
+                      method: "PUT",
+                      headers: {
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify({
+                        ...project,
+                        window_status: newStatus,
+                      }),
+                    });
+                    
+                    if (response.ok && onUpdate) {
+                      onUpdate();
+                    }
+                  } catch (error) {
+                    console.error("Error updating window status:", error);
+                    alert(`Error updating window status: ${error.message}`);
+                  }
+                }}
                 style={{
                   padding: "10px 12px",
                   borderRadius: "8px",
-                  border: "none",
+                  border: "1px solid #ddd",
                   fontSize: "1rem",
                   color: MONUMENT,
                   background: WHITE,
                   boxSizing: "border-box",
                   maxWidth: "300px",
+                  cursor: "pointer",
                 }}
               >
-                {windowStatus}
-              </div>
+                {WINDOW_STATUS_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Order Windows Button */}
@@ -1049,6 +1287,185 @@ export default function Windows({ project, onUpdate }) {
                 {isReceiving ? "Uploading..." : "Upload"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email Preview/Send Modal */}
+      {showEmailModal && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: isSending ? "rgba(0, 0, 0, 0.7)" : "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2000,
+            pointerEvents: "auto",
+          }}
+          onClick={isSending ? undefined : handleCloseEmailModal}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "32px",
+              maxWidth: "600px",
+              width: "90%",
+              maxHeight: "95vh",
+              height: "90vh",
+              overflowY: "auto",
+              boxShadow: "0 4px 20px rgba(0, 0, 0, 0.2)",
+              pointerEvents: isSending ? "none" : "auto",
+              opacity: isSending ? 0.6 : 1,
+              position: "relative",
+              display: "flex",
+              flexDirection: "column",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3
+              style={{
+                fontSize: "1.5rem",
+                marginTop: 0,
+                marginBottom: "24px",
+                color: MONUMENT,
+              }}
+            >
+              Preview & Send Window Order Email
+            </h3>
+
+            {/* Email Body Section */}
+            <div style={{ marginBottom: "24px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "12px", fontWeight: 500 }}>
+                Email Body
+              </div>
+              <textarea
+                value={emailBody}
+                onChange={(e) => setEmailBody(e.target.value)}
+                style={{
+                  width: "100%",
+                  flex: 1,
+                  minHeight: "300px",
+                  padding: "12px",
+                  borderRadius: "8px",
+                  border: `1px solid ${SECTION_GREY}`,
+                  fontSize: "0.95rem",
+                  fontFamily: "inherit",
+                  color: MONUMENT,
+                  resize: "vertical",
+                  boxSizing: "border-box",
+                }}
+                placeholder="Email body will be loaded from template..."
+              />
+            </div>
+
+            {/* Progress Bar Overlay - Only shown when sending */}
+            {isSending && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  background: "rgba(255, 255, 255, 0.9)",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: "12px",
+                  zIndex: 10,
+                }}
+              >
+                <div style={{ marginBottom: "20px", fontSize: "1.1rem", color: MONUMENT, fontWeight: 500 }}>
+                  Sending email...
+                </div>
+                <div
+                  style={{
+                    width: "80%",
+                    height: "30px",
+                    background: SECTION_GREY,
+                    borderRadius: "15px",
+                    overflow: "hidden",
+                    marginBottom: "10px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${sendProgress}%`,
+                      height: "100%",
+                      background: MONUMENT,
+                      transition: "width 0.3s ease",
+                    }}
+                  />
+                </div>
+                <div style={{ fontSize: "0.9rem", color: MONUMENT, marginBottom: "20px" }}>
+                  {Math.round(sendProgress)}%
+                </div>
+                <button
+                  onClick={handleCloseEmailModal}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: "500",
+                    color: WHITE,
+                    background: "#d32f2f",
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {/* Modal Buttons */}
+            {!isSending && (
+              <div
+                style={{
+                  display: "flex",
+                  gap: "12px",
+                  justifyContent: "flex-end",
+                }}
+              >
+                <button
+                  onClick={handleCloseEmailModal}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: "500",
+                    color: MONUMENT,
+                    background: WHITE,
+                    border: `1px solid ${MONUMENT}`,
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendEmail}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: "500",
+                    color: WHITE,
+                    background: MONUMENT,
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Send Email
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

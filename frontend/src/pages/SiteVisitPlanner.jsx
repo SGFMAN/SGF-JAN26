@@ -62,10 +62,59 @@ export default function SiteVisitPlanner() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [currentEmailProjectIndex, setCurrentEmailProjectIndex] = useState(0);
+  // Drag state for reordering group project list (green rectangles)
+  const [groupDragId, setGroupDragId] = useState(null);
+  const [groupDragPosition, setGroupDragPosition] = useState({ x: 0, y: 0 });
+  const projectCardRef = useRef(null);
+  const [cardWidth, setCardWidth] = useState(200);
 
   useEffect(() => {
     if (location.state && location.state.group) {
-      setGroup(location.state.group);
+      const savedGroup = location.state.group;
+      // Try to load saved order from localStorage
+      const savedOrderKey = `siteVisitGroup_${savedGroup.id}_order`;
+      const savedOrder = localStorage.getItem(savedOrderKey);
+      if (savedOrder) {
+        try {
+          const savedIds = JSON.parse(savedOrder);
+          // If saved order is an 8-position array (with nulls), use it directly
+          // Otherwise, convert to 8-position array
+          let orderedIds = Array.isArray(savedIds) ? savedIds : [];
+          // Pad to 8 positions if needed
+          while (orderedIds.length < 8) {
+            orderedIds.push(null);
+          }
+          // Trim to 8 if longer
+          orderedIds = orderedIds.slice(0, 8);
+          // Verify all saved IDs are still in the group and replace invalid ones with null
+          const validIds = orderedIds.map(id => 
+            id && savedGroup.projectIds.includes(id) ? id : null
+          );
+          // Add any missing IDs from the group to empty slots
+          const missingIds = savedGroup.projectIds.filter(id => !validIds.includes(id));
+          let insertIndex = 0;
+          for (let i = 0; i < validIds.length && insertIndex < missingIds.length; i++) {
+            if (validIds[i] === null) {
+              validIds[i] = missingIds[insertIndex];
+              insertIndex++;
+            }
+          }
+          // Ensure exactly 8 positions
+          while (validIds.length < 8) {
+            validIds.push(null);
+          }
+          validIds.length = 8; // Trim to 8 if longer
+          setGroup({
+            ...savedGroup,
+            projectIds: validIds,
+          });
+        } catch (e) {
+          console.error("Error loading saved order:", e);
+          setGroup(savedGroup);
+        }
+      } else {
+        setGroup(savedGroup);
+      }
     } else {
       navigate("/managers/site-visit-manager");
       return;
@@ -73,6 +122,16 @@ export default function SiteVisitPlanner() {
     fetchProjects();
     checkAdminStatus();
   }, [location, navigate]);
+
+  // Measure card width when projects are loaded
+  useEffect(() => {
+    if (projectCardRef.current) {
+      const width = projectCardRef.current.offsetWidth;
+      if (width > 0) {
+        setCardWidth(width);
+      }
+    }
+  }, [projects, group]);
 
   async function checkAdminStatus() {
     const admin = await isUserAdmin();
@@ -214,13 +273,41 @@ export default function SiteVisitPlanner() {
     return replaced;
   }
 
-  // Get projects in the selected group (excluding Hotlist projects)
-  const groupProjects = group
-    ? projects.filter((project) => 
-        group.projectIds.includes(project.id) && 
-        project.status !== "Hotlist"
-      )
-    : [];
+  // Get projects in the selected group (excluding Hotlist projects), in the order of group.projectIds
+  const groupProjects = React.useMemo(() => {
+    if (!group || !Array.isArray(group.projectIds)) return [];
+
+    const idOrder = group.projectIds;
+    const idSet = new Set(idOrder);
+    const idToProject = new Map();
+
+    projects.forEach((project) => {
+      if (idSet.has(project.id) && project.status !== "Hotlist") {
+        idToProject.set(project.id, project);
+      }
+    });
+
+    return idOrder
+      .map((id) => idToProject.get(id))
+      .filter(Boolean);
+  }, [group, projects]);
+
+  // Helper function to get project at a specific position (0-7)
+  const getProjectAtPosition = (position) => {
+    if (!group || !Array.isArray(group.projectIds) || position < 0 || position >= 8) {
+      return null;
+    }
+    // Pad array to 8 positions if needed (for backward compatibility)
+    let projectIds = [...group.projectIds];
+    while (projectIds.length < 8) {
+      projectIds.push(null);
+    }
+    const projectId = projectIds[position];
+    if (!projectId) {
+      return null;
+    }
+    return groupProjects.find(p => p.id === projectId) || null;
+  };
 
   // Get unscheduled projects
   const unscheduledProjects = groupProjects.filter(
@@ -286,6 +373,80 @@ export default function SiteVisitPlanner() {
       (scheduled) =>
         (scheduled.startMinutes < endMinutes && scheduled.startMinutes + PROJECT_DURATION_MINUTES > startMinutes)
     );
+  };
+
+  // ----- Drag & Drop for Group Project List (Green Rectangles) -----
+  const handleGroupDragStart = (e, projectId) => {
+    setGroupDragId(projectId);
+    setGroupDragPosition({ x: e.clientX, y: e.clientY });
+    if (e.dataTransfer) {
+      // Use a transparent drag image so we can show our own custom drag preview
+      const img = new Image();
+      img.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1' height='1'%3E%3C/svg%3E";
+      e.dataTransfer.setDragImage(img, 0, 0);
+      e.dataTransfer.setData("text/plain", String(projectId));
+      e.dataTransfer.effectAllowed = "move";
+    }
+  };
+
+  const handleGroupDragOver = (e, targetProjectId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Update drag position for visual feedback
+    setGroupDragPosition({ x: e.clientX, y: e.clientY });
+
+    if (!group || !group.projectIds || !groupDragId || groupDragId === targetProjectId) {
+      return;
+    }
+
+    // Pad array to 8 positions to work with fixed positions
+    let currentIds = Array.isArray(group.projectIds) ? [...group.projectIds] : [];
+    while (currentIds.length < 8) {
+      currentIds.push(null);
+    }
+    
+    const fromIndex = currentIds.indexOf(groupDragId);
+    const toIndex = currentIds.indexOf(targetProjectId);
+
+    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
+      return;
+    }
+
+    // Remove the dragged project and insert it at the new index
+    currentIds[fromIndex] = null;
+    currentIds[toIndex] = groupDragId;
+
+    // Keep the 8-position array (with nulls for empty slots)
+    const updatedGroup = {
+      ...group,
+      projectIds: currentIds,
+    };
+
+    setGroup(updatedGroup);
+
+    // Update AM/PM based on new position (0-3 = AM, 4-7 = PM)
+    const newIsAM = toIndex < 4;
+    setProjectTimePeriods(prev => ({
+      ...prev,
+      [groupDragId]: newIsAM
+    }));
+
+    // Save to localStorage so order persists
+    if (group.id) {
+      const savedOrderKey = `siteVisitGroup_${group.id}_order`;
+      localStorage.setItem(savedOrderKey, JSON.stringify(currentIds));
+    }
+  };
+
+  const handleGroupDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setGroupDragId(null);
+  };
+
+  const handleGroupDragEnd = () => {
+    setGroupDragId(null);
+    setGroupDragPosition({ x: 0, y: 0 });
   };
 
   // Handle pointer down on project card
@@ -830,7 +991,7 @@ export default function SiteVisitPlanner() {
             <p style={{ color: "#32323399" }}>No projects in this group.</p>
           )}
           {!loading && !error && groupProjects.length > 0 && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: "12px", flex: 1, overflow: "hidden", minWidth: 0 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px", flex: 1, overflow: "hidden", minWidth: 0 }}>
               {/* Column 1: Projects */}
               <div
                 style={{
@@ -843,257 +1004,666 @@ export default function SiteVisitPlanner() {
                   minWidth: 0,
                 }}
               >
-                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, color: MONUMENT, margin: "0 0 8px 0", textAlign: "center" }}>
-                  Projects
-                </h3>
-                {groupProjects.map((project) => {
-                  const suburb = project.suburb || "Unknown Suburb";
-                  const street = project.street || "No address";
-                  const notes = project.site_visit_notes?.trim();
-                  // Use group color (green) for background
-                  const cardBackground = group ? group.color : MONUMENT;
-                  // Use white text since background is green
-                  const textColor = WHITE;
-                  const secondaryTextColor = "#ffffffcc";
+                <p style={{ fontSize: "0.85rem", color: "#666", margin: "0 0 12px 0", textAlign: "center" }}>
+                  Drag to move projects
+                </p>
+                {/* AM Zone */}
+                <div
+                  style={{
+                    border: "3px solid #4D93D9",
+                    borderRadius: "8px",
+                    padding: "8px",
+                    marginBottom: "12px",
+                    position: "relative",
+                  }}
+                >
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "-12px",
+                      left: "12px",
+                      background: WHITE,
+                      padding: "2px 8px",
+                      fontSize: "0.9rem",
+                      fontWeight: 700,
+                      color: "#4D93D9",
+                    }}
+                  >
+                    AM
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px" }}>
+                    {Array.from({ length: 4 }, (_, index) => {
+                      // Get project at this position (AM zone: positions 0-3)
+                      const project = getProjectAtPosition(index);
+                      if (!project) {
+                        // Empty slot placeholder
+                        return (
+                          <div
+                            key={`am-placeholder-${index}`}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (groupDragId && group) {
+                                // Pad array to 8 positions if needed
+                                let currentIds = Array.isArray(group.projectIds) ? [...group.projectIds] : [];
+                                while (currentIds.length < 8) {
+                                  currentIds.push(null);
+                                }
+                                const fromIndex = currentIds.indexOf(groupDragId);
+                                if (fromIndex !== -1) {
+                                  // Remove from current position
+                                  currentIds[fromIndex] = null;
+                                  // Insert at target position (AM zone: 0-3)
+                                  currentIds[index] = groupDragId;
+                                  // Remove nulls to keep array clean
+                                  const cleanIds = currentIds.filter(id => id !== null);
+                                  setGroup({
+                                    ...group,
+                                    projectIds: cleanIds,
+                                  });
+                                  setProjectTimePeriods(prev => ({
+                                    ...prev,
+                                    [groupDragId]: true
+                                  }));
+                                  if (group.id) {
+                                    const savedOrderKey = `siteVisitGroup_${group.id}_order`;
+                                    localStorage.setItem(savedOrderKey, JSON.stringify(cleanIds));
+                                  }
+                                }
+                              }
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (groupDragId && group) {
+                                // Pad array to 8 positions if needed
+                                let currentIds = Array.isArray(group.projectIds) ? [...group.projectIds] : [];
+                                while (currentIds.length < 8) {
+                                  currentIds.push(null);
+                                }
+                                const fromIndex = currentIds.indexOf(groupDragId);
+                                if (fromIndex !== -1) {
+                                  // Remove from current position
+                                  currentIds[fromIndex] = null;
+                                  // Insert at target position (AM zone: 0-3)
+                                  currentIds[index] = groupDragId;
+                                  // Keep the 8-position array (with nulls for empty slots)
+                                  setGroup({
+                                    ...group,
+                                    projectIds: currentIds,
+                                  });
+                                  setProjectTimePeriods(prev => ({
+                                    ...prev,
+                                    [groupDragId]: true
+                                  }));
+                                  if (group.id) {
+                                    const savedOrderKey = `siteVisitGroup_${group.id}_order`;
+                                    localStorage.setItem(savedOrderKey, JSON.stringify(currentIds));
+                                  }
+                                }
+                                handleGroupDragEnd();
+                              }
+                            }}
+                            style={{
+                              width: "100%",
+                              height: "100px",
+                              border: "2px dashed #ccc",
+                              borderRadius: "8px",
+                              background: "rgba(0,0,0,0.05)",
+                            }}
+                          />
+                        );
+                      }
+                      const suburb = project.suburb || "Unknown Suburb";
+                      const street = project.street || "No address";
+                      const notes = project.site_visit_notes?.trim();
+                      const cardBackground = "#4D93D9"; // Blue instead of green
+                      const textColor = WHITE;
+                      const secondaryTextColor = "#ffffffcc";
 
-                  return (
-                    <div
-                      key={project.id}
-                      style={{
-                        position: "relative",
-                        width: "100%",
-                        height: "100px",
-                      }}
-                    >
-                      <Link
-                        to={`/project/${project.id}`}
-                        style={{
-                          textDecoration: "none",
-                          display: "block",
-                          height: "100%",
-                        }}
-                      >
+                      return (
                         <div
-                          style={{
-                            background: cardBackground,
-                            borderRadius: "8px",
-                            width: "100%",
-                            height: "100%",
-                            color: textColor,
-                            cursor: "pointer",
-                            transition: "opacity 0.2s",
-                            display: "flex",
-                            flexDirection: "column",
-                            justifyContent: "center",
-                            alignItems: "center",
-                            position: "relative",
-                            overflow: "hidden",
-                            boxSizing: "border-box",
+                          key={project.id}
+                          ref={index === 0 ? projectCardRef : null}
+                          draggable
+                          onDragStart={(e) => {
+                            e.stopPropagation();
+                            handleGroupDragStart(e, project.id);
                           }}
-                          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
-                          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleGroupDragOver(e, project.id);
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleGroupDrop(e, project.id);
+                          }}
+                          onDragEnd={(e) => {
+                            e.stopPropagation();
+                            handleGroupDragEnd();
+                          }}
+                          style={{
+                            position: "relative",
+                            width: "100%",
+                            height: "100px",
+                            cursor: groupDragId === project.id ? "grabbing" : "grab",
+                          }}
                         >
-                          {/* On Hold Diagonal Band */}
-                          {(project.on_hold === 'true' || project.on_hold === true) && (
-                            <div
-                              style={{
-                                position: "absolute",
-                                top: "50%",
-                                left: "50%",
-                                transform: "translate(-50%, -50%) rotate(-45deg)",
-                                width: "280px",
-                                height: "40px",
-                                background: "#0066cc",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                zIndex: 10,
-                                boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-                              }}
-                            >
-                              <span
-                                style={{
-                                  color: WHITE,
-                                  fontWeight: 700,
-                                  fontSize: "1.1rem",
-                                  letterSpacing: "2px",
-                                  textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                                }}
-                              >
-                                ON HOLD
-                              </span>
-                            </div>
-                          )}
-                          {/* Cancelled Diagonal Band */}
-                          {project.status === "Cancelled" && (
-                            <div
-                              style={{
-                                position: "absolute",
-                                top: "50%",
-                                left: "50%",
-                                transform: "translate(-50%, -50%) rotate(-45deg)",
-                                width: "280px",
-                                height: "40px",
-                                background: "#cc0000",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                zIndex: 10,
-                                boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-                              }}
-                            >
-                              <span
-                                style={{
-                                  color: WHITE,
-                                  fontWeight: 700,
-                                  fontSize: "1.1rem",
-                                  letterSpacing: "2px",
-                                  textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                                }}
-                              >
-                                CANCELLED
-                              </span>
-                            </div>
-                          )}
                           <div
                             style={{
-                              fontWeight: 600,
-                              fontSize: "1.1rem",
-                              textAlign: "center",
-                              marginBottom: "4px",
+                              background: cardBackground,
+                              borderRadius: "8px",
                               width: "100%",
+                              height: "100px",
+                              color: textColor,
+                              cursor: groupDragId === project.id ? "grabbing" : "grab",
+                              transition: groupDragId === project.id ? "none" : "transform 0.2s ease-out",
                               display: "flex",
+                              flexDirection: "column",
                               justifyContent: "center",
                               alignItems: "center",
-                              flex: 1,
-                              flexDirection: "column",
-                              gap: "4px",
                               position: "relative",
-                              zIndex: ((project.on_hold === 'true' || project.on_hold === true) || project.status === "Cancelled") ? 1 : "auto",
+                              overflow: "hidden",
+                              boxSizing: "border-box",
+                              opacity: groupDragId === project.id ? 0.4 : 1,
                             }}
                           >
-                            <div style={{ fontWeight: 600, fontSize: "1.1rem", color: textColor }}>
-                              {suburb}
-                            </div>
-                            <div style={{ fontSize: "0.95rem", color: secondaryTextColor, fontWeight: 400 }}>
-                              {street}
-                            </div>
-                            {notes && (
-                              <div style={{ fontSize: "0.8rem", color: secondaryTextColor, fontWeight: 400, marginTop: "2px" }}>
-                                {notes}
+                            {/* On Hold and Cancelled bands - same as before */}
+                            {(project.on_hold === 'true' || project.on_hold === true) && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: "50%",
+                                  left: "50%",
+                                  transform: "translate(-50%, -50%) rotate(-45deg)",
+                                  width: "280px",
+                                  height: "40px",
+                                  background: "#0066cc",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  zIndex: 10,
+                                  boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    color: WHITE,
+                                    fontWeight: 700,
+                                    fontSize: "1.1rem",
+                                    letterSpacing: "2px",
+                                    textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                                  }}
+                                >
+                                  ON HOLD
+                                </span>
                               </div>
                             )}
+                            {project.status === "Cancelled" && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: "50%",
+                                  left: "50%",
+                                  transform: "translate(-50%, -50%) rotate(-45deg)",
+                                  width: "280px",
+                                  height: "40px",
+                                  background: "#cc0000",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  zIndex: 10,
+                                  boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    color: WHITE,
+                                    fontWeight: 700,
+                                    fontSize: "1.1rem",
+                                    letterSpacing: "2px",
+                                    textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                                  }}
+                                >
+                                  CANCELLED
+                                </span>
+                              </div>
+                            )}
+                            <div
+                              style={{
+                                fontWeight: 600,
+                                fontSize: "1.1rem",
+                                textAlign: "center",
+                                marginBottom: "4px",
+                                width: "100%",
+                                display: "flex",
+                                justifyContent: "center",
+                                alignItems: "center",
+                                flex: 1,
+                                flexDirection: "column",
+                                gap: "4px",
+                                position: "relative",
+                                zIndex: ((project.on_hold === 'true' || project.on_hold === true) || project.status === "Cancelled") ? 1 : "auto",
+                              }}
+                            >
+                              <div style={{ fontWeight: 600, fontSize: "1.1rem", color: textColor }}>
+                                {suburb}
+                              </div>
+                              <div style={{ fontSize: "0.95rem", color: secondaryTextColor, fontWeight: 400 }}>
+                                {street}
+                              </div>
+                              {notes && (
+                                <div style={{ fontSize: "0.8rem", color: secondaryTextColor, fontWeight: 400, marginTop: "2px" }}>
+                                  {notes}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+                {/* PM Zone */}
+                <div
+                  style={{
+                    border: "3px solid #D54358",
+                    borderRadius: "8px",
+                    padding: "8px",
+                    position: "relative",
+                  }}
+                >
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "-12px",
+                      left: "12px",
+                      background: WHITE,
+                      padding: "2px 8px",
+                      fontSize: "0.9rem",
+                      fontWeight: 700,
+                      color: "#D54358",
+                    }}
+                  >
+                    PM
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px" }}>
+                    {Array.from({ length: 4 }, (_, index) => {
+                      // Get project at this position (PM zone: positions 4-7)
+                      const positionIndex = index + 4;
+                      const project = getProjectAtPosition(positionIndex);
+                      if (!project) {
+                        // Empty slot placeholder
+                        return (
+                          <div
+                            key={`pm-placeholder-${index}`}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (groupDragId && group) {
+                                // Pad array to 8 positions if needed
+                                let currentIds = Array.isArray(group.projectIds) ? [...group.projectIds] : [];
+                                while (currentIds.length < 8) {
+                                  currentIds.push(null);
+                                }
+                                const positionIndex = index + 4;
+                                const fromIndex = currentIds.indexOf(groupDragId);
+                                if (fromIndex !== -1) {
+                                  // Remove from current position
+                                  currentIds[fromIndex] = null;
+                                  // Insert at target position (PM zone: 4-7)
+                                  currentIds[positionIndex] = groupDragId;
+                                  // Keep the 8-position array (with nulls for empty slots)
+                                  setGroup({
+                                    ...group,
+                                    projectIds: currentIds,
+                                  });
+                                  setProjectTimePeriods(prev => ({
+                                    ...prev,
+                                    [groupDragId]: false
+                                  }));
+                                  if (group.id) {
+                                    const savedOrderKey = `siteVisitGroup_${group.id}_order`;
+                                    localStorage.setItem(savedOrderKey, JSON.stringify(currentIds));
+                                  }
+                                }
+                              }
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (groupDragId && group) {
+                                // Pad array to 8 positions if needed
+                                let currentIds = Array.isArray(group.projectIds) ? [...group.projectIds] : [];
+                                while (currentIds.length < 8) {
+                                  currentIds.push(null);
+                                }
+                                const positionIndex = index + 4;
+                                const fromIndex = currentIds.indexOf(groupDragId);
+                                if (fromIndex !== -1) {
+                                  // Remove from current position
+                                  currentIds[fromIndex] = null;
+                                  // Insert at target position (PM zone: 4-7)
+                                  currentIds[positionIndex] = groupDragId;
+                                  // Keep the 8-position array (with nulls for empty slots)
+                                  setGroup({
+                                    ...group,
+                                    projectIds: currentIds,
+                                  });
+                                  setProjectTimePeriods(prev => ({
+                                    ...prev,
+                                    [groupDragId]: false
+                                  }));
+                                  if (group.id) {
+                                    const savedOrderKey = `siteVisitGroup_${group.id}_order`;
+                                    localStorage.setItem(savedOrderKey, JSON.stringify(currentIds));
+                                  }
+                                }
+                                handleGroupDragEnd();
+                              }
+                            }}
+                            style={{
+                              width: "100%",
+                              height: "100px",
+                              border: "2px dashed #ccc",
+                              borderRadius: "8px",
+                              background: "rgba(0,0,0,0.05)",
+                            }}
+                          />
+                        );
+                      }
+                      const suburb = project.suburb || "Unknown Suburb";
+                      const street = project.street || "No address";
+                      const notes = project.site_visit_notes?.trim();
+                      const cardBackground = "#4D93D9"; // Blue instead of green
+                      const textColor = WHITE;
+                      const secondaryTextColor = "#ffffffcc";
+
+                      return (
+                        <div
+                          key={project.id}
+                          draggable
+                          onDragStart={(e) => {
+                            e.stopPropagation();
+                            handleGroupDragStart(e, project.id);
+                          }}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleGroupDragOver(e, project.id);
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleGroupDrop(e, project.id);
+                          }}
+                          onDragEnd={(e) => {
+                            e.stopPropagation();
+                            handleGroupDragEnd();
+                          }}
+                          style={{
+                            position: "relative",
+                            width: "100%",
+                            height: "100px",
+                            cursor: groupDragId === project.id ? "grabbing" : "grab",
+                          }}
+                        >
+                          <div
+                            style={{
+                              background: cardBackground,
+                              borderRadius: "8px",
+                              width: "100%",
+                              height: "100px",
+                              color: textColor,
+                              cursor: groupDragId === project.id ? "grabbing" : "grab",
+                              transition: groupDragId === project.id ? "none" : "transform 0.2s ease-out",
+                              display: "flex",
+                              flexDirection: "column",
+                              justifyContent: "center",
+                              alignItems: "center",
+                              position: "relative",
+                              overflow: "hidden",
+                              boxSizing: "border-box",
+                              opacity: groupDragId === project.id ? 0.4 : 1,
+                            }}
+                          >
+                            {/* On Hold and Cancelled bands - same as before */}
+                            {(project.on_hold === 'true' || project.on_hold === true) && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: "50%",
+                                  left: "50%",
+                                  transform: "translate(-50%, -50%) rotate(-45deg)",
+                                  width: "280px",
+                                  height: "40px",
+                                  background: "#0066cc",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  zIndex: 10,
+                                  boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    color: WHITE,
+                                    fontWeight: 700,
+                                    fontSize: "1.1rem",
+                                    letterSpacing: "2px",
+                                    textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                                  }}
+                                >
+                                  ON HOLD
+                                </span>
+                              </div>
+                            )}
+                            {project.status === "Cancelled" && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: "50%",
+                                  left: "50%",
+                                  transform: "translate(-50%, -50%) rotate(-45deg)",
+                                  width: "280px",
+                                  height: "40px",
+                                  background: "#cc0000",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  zIndex: 10,
+                                  boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    color: WHITE,
+                                    fontWeight: 700,
+                                    fontSize: "1.1rem",
+                                    letterSpacing: "2px",
+                                    textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                                  }}
+                                >
+                                  CANCELLED
+                                </span>
+                              </div>
+                            )}
+                            <div
+                              style={{
+                                fontWeight: 600,
+                                fontSize: "1.1rem",
+                                textAlign: "center",
+                                marginBottom: "4px",
+                                width: "100%",
+                                display: "flex",
+                                justifyContent: "center",
+                                alignItems: "center",
+                                flex: 1,
+                                flexDirection: "column",
+                                gap: "4px",
+                                position: "relative",
+                                zIndex: ((project.on_hold === 'true' || project.on_hold === true) || project.status === "Cancelled") ? 1 : "auto",
+                              }}
+                            >
+                              <div style={{ fontWeight: 600, fontSize: "1.1rem", color: textColor }}>
+                                {suburb}
+                              </div>
+                              <div style={{ fontSize: "0.95rem", color: secondaryTextColor, fontWeight: 400 }}>
+                                {street}
+                              </div>
+                              {notes && (
+                                <div style={{ fontSize: "0.8rem", color: secondaryTextColor, fontWeight: 400, marginTop: "2px" }}>
+                                  {notes}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                {/* Floating dragged card that follows cursor */}
+                {groupDragId && groupDragPosition && groupDragPosition.x > 0 && (() => {
+                  const draggedProject = groupProjects.find(p => p.id === groupDragId);
+                  if (!draggedProject) return null;
+                  const draggedIndex = groupProjects.findIndex(p => p.id === groupDragId);
+                  const suburb = draggedProject.suburb || "Unknown Suburb";
+                  const street = draggedProject.street || "No address";
+                  const notes = draggedProject.site_visit_notes?.trim();
+                  const cardBackground = "#4D93D9"; // Blue instead of green
+                  const textColor = WHITE;
+                  const secondaryTextColor = "#ffffffcc";
+                  return (
+                    <div
+                      style={{
+                        position: "fixed",
+                        left: `${(groupDragPosition.x || 0) - ((cardWidth || 200) / 2)}px`,
+                        top: `${(groupDragPosition.y || 0) - 50}px`,
+                        width: `${cardWidth || 200}px`,
+                        height: "100px",
+                        background: cardBackground,
+                        borderRadius: "8px",
+                        color: textColor,
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        zIndex: 10000,
+                        pointerEvents: "none",
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+                        border: "2px solid rgba(255,255,255,0.2)",
+                      }}
+                    >
+                      {/* On Hold Diagonal Band */}
+                      {(draggedProject.on_hold === 'true' || draggedProject.on_hold === true) && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: "50%",
+                            left: "50%",
+                            transform: "translate(-50%, -50%) rotate(-45deg)",
+                            width: "280px",
+                            height: "40px",
+                            background: "#0066cc",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            zIndex: 10,
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                          }}
+                        >
+                          <span
+                            style={{
+                              color: WHITE,
+                              fontWeight: 700,
+                              fontSize: "1.1rem",
+                              letterSpacing: "2px",
+                              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                            }}
+                          >
+                            ON HOLD
+                          </span>
+                        </div>
+                      )}
+                      {/* Cancelled Diagonal Band */}
+                      {draggedProject.status === "Cancelled" && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: "50%",
+                            left: "50%",
+                            transform: "translate(-50%, -50%) rotate(-45deg)",
+                            width: "280px",
+                            height: "40px",
+                            background: "#cc0000",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            zIndex: 10,
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                          }}
+                        >
+                          <span
+                            style={{
+                              color: WHITE,
+                              fontWeight: 700,
+                              fontSize: "1.1rem",
+                              letterSpacing: "2px",
+                              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                            }}
+                          >
+                            CANCELLED
+                          </span>
+                        </div>
+                      )}
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          fontSize: "1.1rem",
+                          textAlign: "center",
+                          marginBottom: "4px",
+                          width: "100%",
+                          display: "flex",
+                          justifyContent: "center",
+                          alignItems: "center",
+                          flex: 1,
+                          flexDirection: "column",
+                          gap: "2px",
+                          position: "relative",
+                          zIndex: ((draggedProject.on_hold === 'true' || draggedProject.on_hold === true) || draggedProject.status === "Cancelled") ? 1 : "auto",
+                        }}
+                      >
+                        <div style={{ fontWeight: 600, fontSize: "1.1rem", color: textColor }}>
+                          {suburb}
+                        </div>
+                        <div style={{ fontSize: "0.95rem", color: secondaryTextColor, fontWeight: 400 }}>
+                          {street}
+                        </div>
+                        {notes && (
+                          <div style={{ fontSize: "0.8rem", color: secondaryTextColor, fontWeight: 400, marginTop: "2px" }}>
+                            {notes}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
-                })}
+                })()}
               </div>
 
-              {/* Column 2: AM/PM Selectors */}
+              {/* Column 2: Single Date Selector for the group */}
               <div
                 style={{
                   gridColumn: "2",
                   display: "flex",
                   flexDirection: "column",
                   gap: "12px",
-                  overflowY: "auto",
                   alignContent: "flex-start",
                   minWidth: 0,
                 }}
               >
-                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, color: MONUMENT, margin: "0 0 8px 0", textAlign: "center" }}>
-                  Time Period
-                </h3>
-                {groupProjects.map((project) => {
-                  const isAM = projectTimePeriods[project.id] !== false; // Default to AM (true) if not set
-                  
-                  return (
-                    <div
-                      key={project.id}
-                      style={{
-                        height: "100px",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "8px",
-                          background: WHITE,
-                          padding: "4px",
-                          borderRadius: "8px",
-                          border: `2px solid ${MONUMENT}`,
-                        }}
-                      >
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setProjectTimePeriods(prev => ({
-                              ...prev,
-                              [project.id]: true
-                            }));
-                          }}
-                          style={{
-                            padding: "6px 12px",
-                            fontSize: "0.9rem",
-                            fontWeight: 500,
-                            color: isAM ? WHITE : MONUMENT,
-                            background: isAM ? MONUMENT : "transparent",
-                            border: "none",
-                            borderRadius: "6px",
-                            cursor: "pointer",
-                            transition: "all 0.2s",
-                          }}
-                        >
-                          AM
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setProjectTimePeriods(prev => ({
-                              ...prev,
-                              [project.id]: false
-                            }));
-                          }}
-                          style={{
-                            padding: "6px 12px",
-                            fontSize: "0.9rem",
-                            fontWeight: 500,
-                            color: !isAM ? WHITE : MONUMENT,
-                            background: !isAM ? MONUMENT : "transparent",
-                            border: "none",
-                            borderRadius: "6px",
-                            cursor: "pointer",
-                            transition: "all 0.2s",
-                          }}
-                        >
-                          PM
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Column 3: Single Date Selector for the group */}
-              <div
-                style={{
-                  gridColumn: "3",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "12px",
-                  alignContent: "flex-start",
-                  minWidth: 0,
-                }}
-              >
-                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, color: MONUMENT, margin: "0 0 8px 0", textAlign: "center" }}>
-                  Date
-                </h3>
                 <div
                   style={{
                     background: "#d3d3d3",
@@ -1130,10 +1700,10 @@ export default function SiteVisitPlanner() {
                 </div>
               </div>
 
-              {/* Column 4: Email Clients button */}
+              {/* Column 3: Email Clients button */}
               <div
                 style={{
-                  gridColumn: "4",
+                  gridColumn: "3",
                   display: "flex",
                   flexDirection: "column",
                   gap: "12px",
@@ -1141,9 +1711,6 @@ export default function SiteVisitPlanner() {
                   minWidth: 0,
                 }}
               >
-                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, color: MONUMENT, margin: "0 0 8px 0", textAlign: "center" }}>
-                  Email Booking
-                </h3>
                 <div
                   style={{
                     height: "100px",

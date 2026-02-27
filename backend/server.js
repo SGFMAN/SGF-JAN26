@@ -3624,6 +3624,287 @@ app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
   }
 });
 
+// Send windows order email
+app.post("/api/emails/send-windows-order", async (req, res) => {
+  const { projectId, customBody, windowColour, windowReveal, windowGlazing, windowBalRating, windowDateRequired } = req.body || {};
+
+  if (!projectId) {
+    return res.status(400).json({ error: "Project ID is required" });
+  }
+
+  if (!pool) {
+    return res.status(500).json({ error: "DATABASE_URL not set" });
+  }
+
+  // Get project details including drawings PDF location
+  let project = null;
+  let drawingsPdfPath = null;
+  try {
+    const projectResult = await pool.query(
+      "SELECT suburb, street, state, drawings_pdf_location FROM projects WHERE id = $1",
+      [projectId]
+    );
+
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    project = projectResult.rows[0];
+    drawingsPdfPath = project.drawings_pdf_location;
+  } catch (e) {
+    console.error("Error fetching project:", e);
+    return res.status(500).json({ error: "Failed to fetch project details" });
+  }
+
+  // Get SMTP settings
+  let smtpUser = null;
+  let smtpPass = null;
+  try {
+    const settingsResult = await pool.query(
+      "SELECT smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_qld, smtp_pass_qld FROM settings WHERE id = 1"
+    );
+    
+    if (settingsResult.rows.length > 0) {
+      const settings = settingsResult.rows[0];
+      if (project.state === "QLD") {
+        smtpUser = settings.smtp_user_qld;
+        smtpPass = settings.smtp_pass_qld;
+      } else {
+        smtpUser = settings.smtp_user;
+        smtpPass = settings.smtp_pass;
+      }
+    }
+  } catch (e) {
+    console.error("Error reading settings:", e);
+    return res.status(500).json({ error: "Failed to fetch settings" });
+  }
+
+  if (!smtpUser || !smtpPass) {
+    smtpUser = process.env.SMTP_USER;
+    smtpPass = process.env.SMTP_PASS;
+  }
+  if (!smtpUser || !smtpPass) {
+    return res.status(503).json({
+      error:
+        "SMTP not configured. Set SMTP User and SMTP Pass in Settings → File Settings, or use backend .env.",
+    });
+  }
+
+  // Get email template
+  let template = null;
+  try {
+    const templateResult = await pool.query(
+      "SELECT id, name, to_addresses, from_address, subject, body FROM email_templates WHERE name = $1",
+      ["WINDOWS - Order"]
+    );
+    
+    if (templateResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Email template "WINDOWS - Order" not found. Please create it in Settings → Email Settings.' });
+    }
+    
+    try {
+      template = {
+        ...templateResult.rows[0],
+        to_addresses: templateResult.rows[0].to_addresses ? JSON.parse(templateResult.rows[0].to_addresses) : []
+      };
+    } catch (parseError) {
+      console.error("Error parsing template to_addresses:", parseError);
+      template = {
+        ...templateResult.rows[0],
+        to_addresses: []
+      };
+    }
+  } catch (e) {
+    console.error("Error fetching email template:", e);
+    return res.status(500).json({ error: `Failed to fetch email template: ${e.message}` });
+  }
+
+  // Build window ordering information
+  // Note: windowDateRequired will already be formatted (date string for "Normal", "Urgent" for urgent)
+  const windowInfo = `Window Colour: ${windowColour || "N/A"}
+Reveal: ${windowReveal || "N/A"}
+Glazing: ${windowGlazing || "N/A"}
+BAL Rating: ${windowBalRating || "N/A"}
+Date Required: ${windowDateRequired || "N/A"}`;
+
+  // Prepare email content
+  const suburb = (project.suburb || "").toUpperCase();
+  const street = project.street || "";
+  const projectName = `${street || ""}, ${suburb || ""}`.trim().replace(/^,\s*|,\s*$/g, "");
+  
+  // Replace template variables in subject and body
+  let subject = (template.subject || "").toString();
+  // Use customBody if provided, otherwise use template body
+  let htmlBody = (customBody !== undefined && customBody !== null) ? customBody.toString() : (template.body || "").toString();
+  
+  // Replace common placeholders
+  subject = subject.replace(/\{SUBURB\}/g, suburb)
+                   .replace(/\{STREET\}/g, street)
+                   .replace(/\{ProjectName\}/g, projectName);
+  
+  // Only replace tokens in htmlBody if customBody was not provided
+  if (customBody === undefined || customBody === null) {
+    htmlBody = htmlBody.replace(/\{SUBURB\}/g, suburb)
+                       .replace(/\{STREET\}/g, street)
+                       .replace(/\{ProjectName\}/g, projectName);
+    
+    // Insert window info after "<b>Scope</b>"
+    // Look for <b>Scope</b> or <b>scope</b> (case insensitive)
+    const scopePattern = /<b>Scope<\/b>/i;
+    const match = htmlBody.match(scopePattern);
+    if (match) {
+      // Find the position after the closing </b>
+      const insertIndex = match.index + match[0].length;
+      // Insert window info after </b>
+      htmlBody = htmlBody.slice(0, insertIndex) + "\n\n" + windowInfo + htmlBody.slice(insertIndex);
+    } else {
+      // If "<b>Scope</b>" not found, append at the end
+      htmlBody = htmlBody + "\n\n" + windowInfo;
+    }
+  }
+  
+  // Convert newlines to HTML breaks
+  htmlBody = htmlBody.replace(/\n/g, "<br>");
+  
+  // Wrap in HTML structure if not already HTML
+  if (!htmlBody.includes("<html") && !htmlBody.includes("<!DOCTYPE")) {
+    htmlBody = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">${htmlBody}</body></html>`;
+  }
+
+  // Use template's to_addresses only (not from request)
+  let recipientEmails = [];
+  if (template.to_addresses && Array.isArray(template.to_addresses) && template.to_addresses.length > 0) {
+    recipientEmails = template.to_addresses.filter(email => email && email.trim());
+  }
+  
+  if (recipientEmails.length === 0) {
+    return res.status(400).json({ error: "No recipient email addresses configured in the template. Please set recipients in Settings → Email Settings." });
+  }
+  
+  const recipientEmail = recipientEmails.join(", ");
+
+  // Use template's from_address (or fallback to SMTP user)
+  const fromAddress = template.from_address || smtpUser;
+  
+  // Build attachments array - attach drawings PDF (required)
+  const attachments = [];
+  
+  if (!drawingsPdfPath) {
+    return res.status(400).json({ error: "Drawings PDF not found for this project. Please upload drawings on the Drawings page before sending the window order email." });
+  }
+  
+  try {
+    // Check if file exists
+    await fs.access(drawingsPdfPath);
+    const fileBuffer = await fs.readFile(drawingsPdfPath);
+    const fileName = drawingsPdfPath.split("\\").pop() || drawingsPdfPath.split("/").pop() || "drawings.pdf";
+    attachments.push({
+      filename: fileName,
+      content: fileBuffer,
+      contentType: "application/pdf",
+    });
+    console.log(`Successfully loaded drawings PDF: ${fileName}`);
+  } catch (e) {
+    console.error(`Error reading drawings PDF: ${e.message}`, e);
+    return res.status(404).json({ error: `Drawings PDF file does not exist at ${drawingsPdfPath}. Please ensure the drawings PDF has been uploaded correctly.` });
+  }
+  
+  // Add logo to email (logo will be added to existing attachments array)
+  const logoResult = await addLogoToEmail(htmlBody, attachments);
+  
+  const host = process.env.SMTP_HOST || "smtp.office365.com";
+  const port = parseInt(process.env.SMTP_PORT || "587", 10);
+  const secure = process.env.SMTP_SECURE === "true";
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user: smtpUser, pass: smtpPass },
+    });
+
+    const mailOptions = {
+      from: fromAddress,
+      to: recipientEmail,
+      subject: subject,
+      html: logoResult.htmlBody,
+      attachments: logoResult.attachments,
+    };
+
+    console.log(`Sending windows order email from: ${fromAddress}`);
+    console.log(`Sending windows order email to: ${recipientEmail}`);
+    console.log(`Subject: ${subject}`);
+    
+    // Verify SMTP connection before sending
+    try {
+      await transporter.verify();
+      console.log("SMTP connection verified successfully");
+    } catch (verifyError) {
+      console.error("SMTP verification failed:", verifyError);
+      return res.status(500).json({
+        error: `SMTP connection failed: ${verifyError.message || verifyError}`,
+        details: verifyError.response || verifyError.code,
+      });
+    }
+    
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`Email sent successfully. Message ID: ${info.messageId}`);
+    
+    // Update window status to "Ordered" and set ordered date
+    try {
+      const now = new Date();
+      const dateTimeStr = now.toISOString().replace('T', ' ').substring(0, 19);
+      
+      // Get current project log
+      const projectLogResult = await pool.query(
+        "SELECT project_log FROM projects WHERE id = $1",
+        [projectId]
+      );
+      
+      const currentLog = projectLogResult.rows[0]?.project_log || "";
+      const logEntry = `Window Order Email Sent - ${dateTimeStr}`;
+      const newLog = currentLog ? `${currentLog}\n${logEntry}` : logEntry;
+      
+      // Update project log, window status, and window_ordered_date
+      await pool.query(
+        "UPDATE projects SET project_log = $1, window_status = $2, window_ordered_date = $3 WHERE id = $4",
+        [newLog, "Ordered", dateTimeStr, projectId]
+      );
+      
+      console.log(`Project log and window status updated for project ${projectId}`);
+    } catch (logError) {
+      console.error("Error updating project log:", logError);
+      // Don't fail the request if log update fails
+    }
+    
+    res.json({ success: true, messageId: info.messageId, message: "Window order email sent successfully!" });
+  } catch (e) {
+    console.error("Error in POST /api/emails/send-windows-order:", e);
+    console.error("Error stack:", e.stack);
+    
+    let errorMessage = e.message || "Failed to send email. Check SMTP settings and credentials.";
+    let errorDetails = null;
+    
+    if (e.response) {
+      errorDetails = e.response;
+      errorMessage += ` Response: ${e.response}`;
+    }
+    if (e.responseCode) {
+      errorDetails = { code: e.responseCode, response: e.response };
+      errorMessage += ` Code: ${e.responseCode}`;
+    }
+    if (e.command) {
+      errorMessage += ` Command: ${e.command}`;
+    }
+    
+    res.status(500).json({
+      error: errorMessage,
+      details: errorDetails || (process.env.NODE_ENV === "development" ? e.stack : undefined),
+    });
+  }
+});
+
 // Serve window order PDF
 app.get("/api/files/window-order/:id", async (req, res) => {
   try {

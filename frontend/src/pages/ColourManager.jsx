@@ -516,12 +516,12 @@ export default function ColourManager() {
                 
                 return (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px" }}>
-                    {/* Header Row - spans columns 1 and 2 */}
+                    {/* Header Row - spans columns 1, 2, 3, and 4 */}
               <div
                 style={{
-                  gridColumn: "1 / 3",
+                  gridColumn: "1 / 5",
                   display: "grid",
-                  gridTemplateColumns: "3fr 1fr",
+                  gridTemplateColumns: "3fr 1fr 0.5fr 1fr",
                   gap: "16px",
                   padding: "12px 16px",
                   background: MONUMENT,
@@ -537,20 +537,50 @@ export default function ColourManager() {
               >
                 <div>Project</div>
                 <div>Colours Status</div>
+                <div>Project Days</div>
+                <div>Drawings Status</div>
               </div>
 
-                    {/* Project Rows - spans columns 1 and 2 */}
+                    {/* Project Rows - spans columns 1, 2, 3, and 4 */}
                     {filteredProjects.map((project) => {
                 const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "Unknown Project";
                 const coloursStatus = getEffectiveValue(project, "colours_status", "Not Sent");
+                const drawingsStatus = getEffectiveValue(project, "drawings_status", "In Progress");
+                
+                // Calculate project days (same as Admin page)
+                let projectDays = "";
+                if (project.year) {
+                  let startDate;
+                  if (/^\d{4}-\d{2}-\d{2}$/.test(project.year)) {
+                    startDate = new Date(project.year);
+                  } else if (/^\d{4}$/.test(project.year)) {
+                    startDate = new Date(`${project.year}-01-01`);
+                  } else {
+                    startDate = null;
+                  }
+                  
+                  if (startDate) {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    startDate.setHours(0, 0, 0, 0);
+                    const diffTime = today - startDate;
+                    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                    projectDays = diffDays >= 0 ? diffDays.toString() : "";
+                  }
+                }
+                
+                // Determine project days background color
+                const projectDaysBgColor = projectDays 
+                  ? (parseInt(projectDays) < 30 ? "#cc3333" : "#33cc33")
+                  : WHITE;
 
                 return (
                   <div
                     key={project.id}
                     style={{
-                      gridColumn: "1 / 3",
+                      gridColumn: "1 / 5",
                       display: "grid",
-                      gridTemplateColumns: "3fr 1fr",
+                      gridTemplateColumns: "3fr 1fr 0.5fr 1fr",
                       gap: "16px",
                       padding: "12px 16px",
                       background: WHITE,
@@ -594,6 +624,36 @@ export default function ColourManager() {
                         </option>
                       ))}
                     </select>
+                    <div
+                      style={{
+                        padding: "8px 10px",
+                        borderRadius: "6px",
+                        background: projectDaysBgColor,
+                        color: WHITE,
+                        fontSize: "0.9rem",
+                        fontWeight: 500,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {projectDays || "-"}
+                    </div>
+                    <div
+                      style={{
+                        padding: "8px 10px",
+                        borderRadius: "6px",
+                        background: WHITE,
+                        color: MONUMENT,
+                        fontSize: "0.9rem",
+                        fontWeight: 500,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {drawingsStatus}
+                    </div>
                   </div>
                     );
                   })}

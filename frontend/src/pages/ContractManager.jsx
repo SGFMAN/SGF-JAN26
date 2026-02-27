@@ -533,7 +533,7 @@ export default function ContractManager() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr",
+                  gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 0.5fr",
                   gap: "16px",
                   padding: "12px 16px",
                   background: MONUMENT,
@@ -552,6 +552,7 @@ export default function ContractManager() {
                 <div>Supporting Docs</div>
                 <div>Water Authority</div>
                 <div>Water Declaration</div>
+                <div>Project Days</div>
               </div>
 
                     {/* Project Rows */}
@@ -563,30 +564,40 @@ export default function ContractManager() {
                 // For water declaration, if water authority is "Not Required", treat it as "Not Required" for display/color
                 const waterDeclarationStatusRaw = getEffectiveValue(project, "water_declaration_status", "Not Sent");
                 const waterDeclarationStatus = waterAuthority === "Not Required" ? "Not Required" : waterDeclarationStatusRaw;
-                // Format date for display (year field now stores full date YYYY-MM-DD)
-                let displayDate = "";
+                
+                // Calculate project days (same as Admin page and Colour Manager)
+                let projectDays = "";
                 if (project.year) {
-                  // Check if it's a date format (YYYY-MM-DD) or just a year
+                  let startDate;
                   if (/^\d{4}-\d{2}-\d{2}$/.test(project.year)) {
-                    // Format as DD/MM/YYYY
-                    const [year, month, day] = project.year.split('-');
-                    displayDate = `${day}/${month}/${year}`;
+                    startDate = new Date(project.year);
                   } else if (/^\d{4}$/.test(project.year)) {
-                    // It's just a year, show as "Year: YYYY"
-                    displayDate = `Year: ${project.year}`;
+                    startDate = new Date(`${project.year}-01-01`);
                   } else {
-                    displayDate = "Not set";
+                    startDate = null;
                   }
-                } else {
-                  displayDate = "Not set";
+                  
+                  if (startDate) {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    startDate.setHours(0, 0, 0, 0);
+                    const diffTime = today - startDate;
+                    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                    projectDays = diffDays >= 0 ? diffDays.toString() : "";
+                  }
                 }
+                
+                // Determine project days background color
+                const projectDaysBgColor = projectDays 
+                  ? (parseInt(projectDays) < 30 ? "#cc3333" : "#33cc33")
+                  : WHITE;
 
                 return (
                   <div
                     key={project.id}
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr",
+                      gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 0.5fr",
                       gap: "16px",
                       padding: "12px 16px",
                       background: WHITE,
@@ -720,6 +731,21 @@ export default function ContractManager() {
                         ))}
                       </select>
                     )}
+                    <div
+                      style={{
+                        padding: "8px 10px",
+                        borderRadius: "6px",
+                        background: projectDaysBgColor,
+                        color: WHITE,
+                        fontSize: "0.9rem",
+                        fontWeight: 500,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {projectDays || "-"}
+                    </div>
                   </div>
                     );
                   })}
