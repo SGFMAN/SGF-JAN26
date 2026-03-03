@@ -48,21 +48,109 @@ export default function ClientInfo({ project, onUpdate }) {
     };
   }, [client1Name, client1Email, client1Phone, client1Active, client2Name, client2Email, client2Phone, client2Active, client3Name, client3Email, client3Phone, client3Active, clientNotes]);
 
-  // Update state when project changes
+  // Track if this is the initial mount
+  const isInitialMount = useRef(true);
+  const lastSavedValues = useRef({});
+
+  // Update state when project changes - only update if values actually changed externally
   useEffect(() => {
-    setClient1Name(project?.client1_name || "");
-    setClient1Email(project?.client1_email || "");
-    setClient1Phone(project?.client1_phone || "");
-    setClient1Active(project?.client1_active === 'true');
-    setClient2Name(project?.client2_name || "");
-    setClient2Email(project?.client2_email || "");
-    setClient2Phone(project?.client2_phone || "");
-    setClient2Active(project?.client2_active === 'true');
-    setClient3Name(project?.client3_name || "");
-    setClient3Email(project?.client3_email || "");
-    setClient3Phone(project?.client3_phone || "");
-    setClient3Active(project?.client3_active === 'true');
-    setClientNotes(project?.client_notes || "");
+    if (isInitialMount.current) {
+      // On initial mount, set all values from project
+      setClient1Name(project?.client1_name || "");
+      setClient1Email(project?.client1_email || "");
+      setClient1Phone(project?.client1_phone || "");
+      setClient1Active(project?.client1_active === 'true');
+      setClient2Name(project?.client2_name || "");
+      setClient2Email(project?.client2_email || "");
+      setClient2Phone(project?.client2_phone || "");
+      setClient2Active(project?.client2_active === 'true');
+      setClient3Name(project?.client3_name || "");
+      setClient3Email(project?.client3_email || "");
+      setClient3Phone(project?.client3_phone || "");
+      setClient3Active(project?.client3_active === 'true');
+      setClientNotes(project?.client_notes || "");
+      isInitialMount.current = false;
+      // Store initial values
+      lastSavedValues.current = {
+        client1Name: project?.client1_name || "",
+        client1Email: project?.client1_email || "",
+        client1Phone: project?.client1_phone || "",
+        client2Name: project?.client2_name || "",
+        client2Email: project?.client2_email || "",
+        client2Phone: project?.client2_phone || "",
+        client3Name: project?.client3_name || "",
+        client3Email: project?.client3_email || "",
+        client3Phone: project?.client3_phone || "",
+        clientNotes: project?.client_notes || "",
+      };
+    } else {
+      // After initial mount, only update if the project value changed externally
+      // (not from our own save operation)
+      if (project) {
+        const projectClient1Name = project.client1_name || "";
+        const projectClient1Email = project.client1_email || "";
+        const projectClient1Phone = project.client1_phone || "";
+        const projectClient2Name = project.client2_name || "";
+        const projectClient2Email = project.client2_email || "";
+        const projectClient2Phone = project.client2_phone || "";
+        const projectClient3Name = project.client3_name || "";
+        const projectClient3Email = project.client3_email || "";
+        const projectClient3Phone = project.client3_phone || "";
+        const projectClientNotes = project.client_notes || "";
+        
+        // Only update if the project value is different from what we last saved
+        // This prevents overwriting user edits with stale data
+        if (projectClient1Name !== lastSavedValues.current.client1Name && 
+            projectClient1Name !== valuesRef.current.client1Name) {
+          setClient1Name(projectClient1Name);
+        }
+        if (projectClient1Email !== lastSavedValues.current.client1Email && 
+            projectClient1Email !== valuesRef.current.client1Email) {
+          setClient1Email(projectClient1Email);
+        }
+        if (projectClient1Phone !== lastSavedValues.current.client1Phone && 
+            projectClient1Phone !== valuesRef.current.client1Phone) {
+          setClient1Phone(projectClient1Phone);
+        }
+        if (project.client1_active !== undefined) {
+          setClient1Active(project.client1_active === 'true');
+        }
+        if (projectClient2Name !== lastSavedValues.current.client2Name && 
+            projectClient2Name !== valuesRef.current.client2Name) {
+          setClient2Name(projectClient2Name);
+        }
+        if (projectClient2Email !== lastSavedValues.current.client2Email && 
+            projectClient2Email !== valuesRef.current.client2Email) {
+          setClient2Email(projectClient2Email);
+        }
+        if (projectClient2Phone !== lastSavedValues.current.client2Phone && 
+            projectClient2Phone !== valuesRef.current.client2Phone) {
+          setClient2Phone(projectClient2Phone);
+        }
+        if (project.client2_active !== undefined) {
+          setClient2Active(project.client2_active === 'true');
+        }
+        if (projectClient3Name !== lastSavedValues.current.client3Name && 
+            projectClient3Name !== valuesRef.current.client3Name) {
+          setClient3Name(projectClient3Name);
+        }
+        if (projectClient3Email !== lastSavedValues.current.client3Email && 
+            projectClient3Email !== valuesRef.current.client3Email) {
+          setClient3Email(projectClient3Email);
+        }
+        if (projectClient3Phone !== lastSavedValues.current.client3Phone && 
+            projectClient3Phone !== valuesRef.current.client3Phone) {
+          setClient3Phone(projectClient3Phone);
+        }
+        if (project.client3_active !== undefined) {
+          setClient3Active(project.client3_active === 'true');
+        }
+        if (projectClientNotes !== lastSavedValues.current.clientNotes && 
+            projectClientNotes !== valuesRef.current.clientNotes) {
+          setClientNotes(projectClientNotes);
+        }
+      }
+    }
   }, [project]);
 
   async function saveAllFields() {
@@ -71,20 +159,30 @@ export default function ClientInfo({ project, onUpdate }) {
       return;
     }
     const currentValues = valuesRef.current;
+    // Convert empty strings to null for proper database storage
+    const processValue = (val) => {
+      if (val === undefined || val === null) return null;
+      if (typeof val === "string") {
+        const trimmed = val.trim();
+        return trimmed === "" ? null : trimmed;
+      }
+      return val;
+    };
+    
     const payload = {
-      client1_name: currentValues.client1Name,
-      client1_email: currentValues.client1Email,
-      client1_phone: currentValues.client1Phone,
+      client1_name: processValue(currentValues.client1Name),
+      client1_email: processValue(currentValues.client1Email),
+      client1_phone: processValue(currentValues.client1Phone),
       client1_active: currentValues.client1Active,
-      client2_name: currentValues.client2Name,
-      client2_email: currentValues.client2Email,
-      client2_phone: currentValues.client2Phone,
+      client2_name: processValue(currentValues.client2Name),
+      client2_email: processValue(currentValues.client2Email),
+      client2_phone: processValue(currentValues.client2Phone),
       client2_active: currentValues.client2Active,
-      client3_name: currentValues.client3Name,
-      client3_email: currentValues.client3Email,
-      client3_phone: currentValues.client3Phone,
+      client3_name: processValue(currentValues.client3Name),
+      client3_email: processValue(currentValues.client3Email),
+      client3_phone: processValue(currentValues.client3Phone),
       client3_active: currentValues.client3Active,
-      client_notes: currentValues.clientNotes || null,
+      client_notes: processValue(currentValues.clientNotes),
       project_cost: project?.project_cost || null,
       deposit: project?.deposit || null,
     };
@@ -108,6 +206,20 @@ export default function ClientInfo({ project, onUpdate }) {
       // Parse response but don't block on it
       const result = await response.json().catch(() => null);
       console.log("Successfully saved all fields. Response:", result);
+      
+      // Update lastSavedValues to track what we just saved
+      lastSavedValues.current = {
+        client1Name: currentValues.client1Name || "",
+        client1Email: currentValues.client1Email || "",
+        client1Phone: currentValues.client1Phone || "",
+        client2Name: currentValues.client2Name || "",
+        client2Email: currentValues.client2Email || "",
+        client2Phone: currentValues.client2Phone || "",
+        client3Name: currentValues.client3Name || "",
+        client3Email: currentValues.client3Email || "",
+        client3Phone: currentValues.client3Phone || "",
+        clientNotes: currentValues.clientNotes || "",
+      };
       
       // CRITICAL: ALWAYS call onUpdate after successful save - this refreshes the project data
       if (onUpdate) {

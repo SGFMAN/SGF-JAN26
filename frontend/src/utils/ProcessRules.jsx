@@ -8,9 +8,9 @@ export const PROCESS_RULES = {
     requirements: [
       {
         field: "drawings_status",
-        value: "Working Drawings Approved",
-        label: "Working drawings approved by the client",
-        check: (project) => project?.drawings_status === "Working Drawings Approved"
+        value: "Drawings Complete",
+        label: "Drawings complete",
+        check: (project) => project?.drawings_status === "Drawings Complete"
       },
       {
         field: "colours_status",
@@ -100,9 +100,9 @@ export const PROCESS_RULES = {
     requirements: [
       {
         field: "drawings_status",
-        value: "Working Drawings Approved",
-        label: "Working drawings approved by the client",
-        check: (project) => project?.drawings_status === "Working Drawings Approved"
+        value: "Drawings Complete",
+        label: "Drawings complete",
+        check: (project) => project?.drawings_status === "Drawings Complete"
       },
       {
         field: "colours_status",

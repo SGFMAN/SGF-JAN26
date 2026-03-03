@@ -545,7 +545,7 @@ export default function ColourManager() {
                     {filteredProjects.map((project) => {
                 const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "Unknown Project";
                 const coloursStatus = getEffectiveValue(project, "colours_status", "Not Sent");
-                const drawingsStatus = getEffectiveValue(project, "drawings_status", "In Progress");
+                const drawingsStatus = getEffectiveValue(project, "drawings_status", "Not Assigned");
                 
                 // Calculate project days (same as Admin page)
                 let projectDays = "";

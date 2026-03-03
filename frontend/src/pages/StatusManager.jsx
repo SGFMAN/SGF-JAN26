@@ -53,6 +53,7 @@ export default function StatusManager() {
   const [pendingSubstatus, setPendingSubstatus] = useState(null);
   const [editingItem, setEditingItem] = useState(null); // Item being edited: { value: "...", isBase: true/false }
   const [newItemInput, setNewItemInput] = useState("");
+  const [showAllStatuses, setShowAllStatuses] = useState(true); // Toggle between all statuses and earliest incomplete
 
   useEffect(() => {
     fetchProjects();
@@ -979,8 +980,38 @@ export default function StatusManager() {
                 
                 return (
                   <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                    {/* Email List Button */}
-                    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
+                    {/* Email List Button and Toggle */}
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginBottom: "8px" }}>
+                      <button
+                        onClick={() => setShowAllStatuses(!showAllStatuses)}
+                        style={{
+                          padding: "10px 20px",
+                          borderRadius: "8px",
+                          border: "none",
+                          background: showAllStatuses ? MONUMENT : SECTION_GREY,
+                          color: showAllStatuses ? WHITE : MONUMENT,
+                          fontSize: "0.9rem",
+                          fontWeight: 500,
+                          cursor: "pointer",
+                          transition: "background 0.2s",
+                        }}
+                        onMouseOver={(e) => {
+                          if (showAllStatuses) {
+                            e.target.style.background = "#222";
+                          } else {
+                            e.target.style.background = "#b0b0b0";
+                          }
+                        }}
+                        onMouseOut={(e) => {
+                          if (showAllStatuses) {
+                            e.target.style.background = MONUMENT;
+                          } else {
+                            e.target.style.background = SECTION_GREY;
+                          }
+                        }}
+                      >
+                        {showAllStatuses ? "Show Next" : "Show All"}
+                      </button>
                       <button
                         onClick={handleEmailList}
                         style={{
@@ -1004,7 +1035,7 @@ export default function StatusManager() {
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "2fr 1fr",
+                        gridTemplateColumns: "2fr 11fr",
                         gap: "16px",
                         padding: "12px 16px",
                         background: MONUMENT,
@@ -1018,26 +1049,170 @@ export default function StatusManager() {
                       }}
                     >
                       <div>Project</div>
-                      <div>SubStatus</div>
+                      {showAllStatuses ? (
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(11, 1fr)", gap: "4px" }}>
+                          <div style={{ textAlign: "center", fontSize: "0.75rem" }}>Deposit</div>
+                          <div style={{ textAlign: "center", fontSize: "0.75rem" }}>Drawings</div>
+                          <div style={{ textAlign: "center", fontSize: "0.75rem" }}>Site Visit</div>
+                          <div style={{ textAlign: "center", fontSize: "0.75rem" }}>Colour</div>
+                          <div style={{ textAlign: "center", fontSize: "0.75rem" }}>Window</div>
+                          <div style={{ textAlign: "center", fontSize: "0.75rem" }}>Contract</div>
+                          <div style={{ textAlign: "center", fontSize: "0.75rem" }}>Survey</div>
+                          <div style={{ textAlign: "center", fontSize: "0.75rem" }}>Planning</div>
+                          <div style={{ textAlign: "center", fontSize: "0.75rem" }}>Energy</div>
+                          <div style={{ textAlign: "center", fontSize: "0.75rem" }}>Footing</div>
+                          <div style={{ textAlign: "center", fontSize: "0.75rem" }}>Building</div>
+                        </div>
+                      ) : (
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(11, 1fr)", gap: "4px" }}>
+                          <div style={{ textAlign: "center", fontSize: "0.75rem" }}>Next Status</div>
+                          <div></div>
+                          <div></div>
+                          <div></div>
+                          <div></div>
+                          <div></div>
+                          <div></div>
+                          <div></div>
+                          <div></div>
+                          <div></div>
+                          <div></div>
+                        </div>
+                      )}
                     </div>
                     {/* Project Rows */}
                     {filteredProjects.map((project) => {
                 const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "Unnamed Project";
-                // Get substatus value
-                const substatus = project.substatus || "";
+                
+                // Status color functions (same as Overview.jsx)
+                const COLOR_RED = "#cc3333";
+                const COLOR_ORANGE = "#ff8800";
+                const COLOR_GREEN = "#33cc33";
+                
+                const getDepositStatusColor = () => {
+                  if (!project.deposit || !project.project_cost) return COLOR_RED;
+                  const depositStr = project.deposit.toString().replace(/[^0-9]/g, "");
+                  const depositNum = parseInt(depositStr) || 0;
+                  const fullDeposit = Math.floor(parseInt(project.project_cost.toString().replace(/[^0-9]/g, "")) / 20) || 0;
+                  return depositNum >= fullDeposit && fullDeposit > 0 ? COLOR_GREEN : COLOR_RED;
+                };
+                
+                const getDrawingsStatusColor = () => {
+                  const status = project.drawings_status || "Not Assigned";
+                  if (status === "Concept Stage" || status === "Working Drawing Stage") return COLOR_ORANGE;
+                  if (status === "Drawings Complete") return COLOR_GREEN;
+                  return COLOR_RED;
+                };
+                
+                const getSiteVisitStatusColor = () => {
+                  const status = project.site_visit_status || "Not Complete";
+                  if (status === "Booked") return COLOR_ORANGE;
+                  if (status === "Complete") return COLOR_GREEN;
+                  return COLOR_RED;
+                };
+                
+                const getColoursStatusColor = () => {
+                  const status = project.colours_status || "Not Sent";
+                  if (status === "Sent") return COLOR_ORANGE;
+                  if (status === "Complete") return COLOR_GREEN;
+                  return COLOR_RED;
+                };
+                
+                const getWindowStatusColor = () => {
+                  const status = project.window_status || "Not Ordered";
+                  if (status === "Ordered") return COLOR_ORANGE;
+                  if (status === "Complete") return COLOR_GREEN;
+                  return COLOR_RED;
+                };
+                
+                const getContractStatusColor = () => {
+                  const contractStatus = project.contract_status || "Not Sent";
+                  const supportingDocsStatus = project.supporting_documents_status || "Not Sent";
+                  const waterDeclStatus = project.water_declaration_status || "Not Required";
+                  if (contractStatus === "Complete" && supportingDocsStatus === "Complete" && 
+                      (waterDeclStatus === "Complete" || waterDeclStatus === "Not Required")) {
+                    return COLOR_GREEN;
+                  }
+                  if (contractStatus === "Sent") return COLOR_ORANGE;
+                  return COLOR_RED;
+                };
+                
+                const getSurveySoilsStatusColor = () => {
+                  const surveyStatus = project.survey_status || "Not Booked";
+                  const soilStatus = project.soil_status || "Not Booked";
+                  if (surveyStatus === "Not Booked" && soilStatus === "Not Booked") return COLOR_RED;
+                  if (surveyStatus === "Complete" && soilStatus === "Complete") return COLOR_GREEN;
+                  return COLOR_ORANGE;
+                };
+                
+                const getPlanningPermitStatusColor = () => {
+                  const status = project.planning_status || "Not Selected";
+                  if (status === "No Planning Required" || status === "Planning Permit Issued") return COLOR_GREEN;
+                  return COLOR_RED;
+                };
+                
+                const getEnergyReportStatusColor = () => {
+                  const status = project.energy_report_status || "Not Submitted";
+                  if (status === "Complete") return COLOR_GREEN;
+                  if (status === "Sent") return COLOR_ORANGE;
+                  return COLOR_RED;
+                };
+                
+                const getFootingCertificationStatusColor = () => {
+                  const status = project.footing_certification_status || "Not Submitted";
+                  if (status === "Complete") return COLOR_GREEN;
+                  if (status === "Sent") return COLOR_ORANGE;
+                  return COLOR_RED;
+                };
+                
+                const getBuildingPermitStatusColor = () => {
+                  const status = project.building_permit_status || "Not Submitted";
+                  if (status === "Complete") return COLOR_GREEN;
+                  if (status === "Sent") return COLOR_ORANGE;
+                  return COLOR_RED;
+                };
+
+                // Find the earliest incomplete status
+                const getEarliestIncompleteStatus = () => {
+                  const statuses = [
+                    { name: "Deposit", color: getDepositStatusColor(), getColor: getDepositStatusColor },
+                    { name: "Drawings", color: getDrawingsStatusColor(), getColor: getDrawingsStatusColor },
+                    { name: "Site Visit", color: getSiteVisitStatusColor(), getColor: getSiteVisitStatusColor },
+                    { name: "Colour", color: getColoursStatusColor(), getColor: getColoursStatusColor },
+                    { name: "Window", color: getWindowStatusColor(), getColor: getWindowStatusColor },
+                    { name: "Contract", color: getContractStatusColor(), getColor: getContractStatusColor },
+                    { name: "Survey", color: getSurveySoilsStatusColor(), getColor: getSurveySoilsStatusColor },
+                    { name: "Planning", color: getPlanningPermitStatusColor(), getColor: getPlanningPermitStatusColor },
+                    { name: "Energy", color: getEnergyReportStatusColor(), getColor: getEnergyReportStatusColor },
+                    { name: "Footing", color: getFootingCertificationStatusColor(), getColor: getFootingCertificationStatusColor },
+                    { name: "Building", color: getBuildingPermitStatusColor(), getColor: getBuildingPermitStatusColor },
+                  ];
+                  
+                  // Find the first status that is not green (complete)
+                  for (const status of statuses) {
+                    if (status.color !== COLOR_GREEN) {
+                      return status;
+                    }
+                  }
+                  
+                  // If all are complete, return the last one
+                  return statuses[statuses.length - 1];
+                };
+
+                const earliestIncomplete = getEarliestIncompleteStatus();
 
                 return (
                   <div
                     key={project.id}
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "2fr 1fr",
+                      gridTemplateColumns: "2fr 11fr",
                       gap: "16px",
                       padding: "12px 16px",
                       background: WHITE,
                       borderRadius: "8px",
                       color: MONUMENT,
                       fontSize: "0.9rem",
+                      alignItems: "center",
                     }}
                   >
                     <Link
@@ -1051,37 +1226,262 @@ export default function StatusManager() {
                     >
                       {projectName}
                     </Link>
-                    <select
-                      value={substatus}
-                      onChange={(e) => handleSubStatusChange(project.id, e.target.value)}
-                      onBlur={(e) => {
-                        // Auto-save on blur as well for better UX
-                        if (e.target.value !== substatus) {
-                          handleSubStatusChange(project.id, e.target.value);
-                        }
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      style={{
-                        width: "100%",
-                        padding: "8px 10px",
-                        borderRadius: "6px",
-                        border: "1px solid #ddd",
-                        fontSize: "0.9rem",
-                        color: MONUMENT,
-                        background: WHITE,
-                        cursor: "pointer",
-                        fontWeight: 500,
-                        boxSizing: "border-box",
-                        textAlign: "center",
-                      }}
-                    >
-                      <option value="">-- Select --</option>
-                      {getSubstatusOptions().map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
+                    {showAllStatuses ? (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(11, 1fr)", gap: "4px" }}>
+                      {/* Deposit Status */}
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "24px",
+                          borderRadius: "4px",
+                          background: getDepositStatusColor(),
+                          border: "1px solid white",
+                          boxSizing: "border-box",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: WHITE,
+                          fontSize: "0.75rem",
+                          fontWeight: 500,
+                        }}
+                        title="Deposit Status"
+                      >
+                        Deposit
+                      </div>
+                      {/* Drawings Status */}
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "24px",
+                          borderRadius: "4px",
+                          background: getDrawingsStatusColor(),
+                          border: "1px solid white",
+                          boxSizing: "border-box",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: WHITE,
+                          fontSize: "0.75rem",
+                          fontWeight: 500,
+                        }}
+                        title="Drawings Status"
+                      >
+                        Drawings
+                      </div>
+                      {/* Site Visit Status */}
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "24px",
+                          borderRadius: "4px",
+                          background: getSiteVisitStatusColor(),
+                          border: "1px solid white",
+                          boxSizing: "border-box",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: WHITE,
+                          fontSize: "0.75rem",
+                          fontWeight: 500,
+                        }}
+                        title="Site Visit Status"
+                      >
+                        Site Visit
+                      </div>
+                      {/* Colour Status */}
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "24px",
+                          borderRadius: "4px",
+                          background: getColoursStatusColor(),
+                          border: "1px solid white",
+                          boxSizing: "border-box",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: WHITE,
+                          fontSize: "0.75rem",
+                          fontWeight: 500,
+                        }}
+                        title="Colour Status"
+                      >
+                        Colour
+                      </div>
+                      {/* Window Status */}
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "24px",
+                          borderRadius: "4px",
+                          background: getWindowStatusColor(),
+                          border: "1px solid white",
+                          boxSizing: "border-box",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: WHITE,
+                          fontSize: "0.75rem",
+                          fontWeight: 500,
+                        }}
+                        title="Window Status"
+                      >
+                        Window
+                      </div>
+                      {/* Contract Status */}
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "24px",
+                          borderRadius: "4px",
+                          background: getContractStatusColor(),
+                          border: "1px solid white",
+                          boxSizing: "border-box",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: WHITE,
+                          fontSize: "0.75rem",
+                          fontWeight: 500,
+                        }}
+                        title="Contract Status"
+                      >
+                        Contract
+                      </div>
+                      {/* Survey & Soils Status */}
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "24px",
+                          borderRadius: "4px",
+                          background: getSurveySoilsStatusColor(),
+                          border: "1px solid white",
+                          boxSizing: "border-box",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: WHITE,
+                          fontSize: "0.75rem",
+                          fontWeight: 500,
+                        }}
+                        title="Survey & Soils Status"
+                      >
+                        Survey
+                      </div>
+                      {/* Planning Permit Status */}
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "24px",
+                          borderRadius: "4px",
+                          background: getPlanningPermitStatusColor(),
+                          border: "1px solid white",
+                          boxSizing: "border-box",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: WHITE,
+                          fontSize: "0.75rem",
+                          fontWeight: 500,
+                        }}
+                        title="Planning Permit Status"
+                      >
+                        Planning
+                      </div>
+                      {/* Energy Report Status */}
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "24px",
+                          borderRadius: "4px",
+                          background: getEnergyReportStatusColor(),
+                          border: "1px solid white",
+                          boxSizing: "border-box",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: WHITE,
+                          fontSize: "0.75rem",
+                          fontWeight: 500,
+                        }}
+                        title="Energy Report Status"
+                      >
+                        Energy
+                      </div>
+                      {/* Footing Certification Status */}
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "24px",
+                          borderRadius: "4px",
+                          background: getFootingCertificationStatusColor(),
+                          border: "1px solid white",
+                          boxSizing: "border-box",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: WHITE,
+                          fontSize: "0.75rem",
+                          fontWeight: 500,
+                        }}
+                        title="Footing Certification Status"
+                      >
+                        Footing
+                      </div>
+                      {/* Building Permit Status */}
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "24px",
+                          borderRadius: "4px",
+                          background: getBuildingPermitStatusColor(),
+                          border: "1px solid white",
+                          boxSizing: "border-box",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: WHITE,
+                          fontSize: "0.75rem",
+                          fontWeight: 500,
+                        }}
+                        title="Building Permit Status"
+                      >
+                        Building
+                      </div>
+                    </div>
+                    ) : (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(11, 1fr)", gap: "4px" }}>
+                        <div
+                          style={{
+                            width: "100%",
+                            height: "24px",
+                            borderRadius: "4px",
+                            background: earliestIncomplete.color,
+                            border: "1px solid white",
+                            boxSizing: "border-box",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: WHITE,
+                            fontSize: "0.75rem",
+                            fontWeight: 500,
+                          }}
+                          title={`${earliestIncomplete.name} Status`}
+                        >
+                          {earliestIncomplete.name}
+                        </div>
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                      </div>
+                    )}
                   </div>
                     );
                   })}

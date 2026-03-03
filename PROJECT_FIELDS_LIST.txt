@@ -1,0 +1,114 @@
+Complete List of Project Fields
+
+Core Project Information
+- id - Project ID (auto-generated)
+- name - Project name (derived from street + suburb)
+- status - Project Status: ["Design Phase", "Construction Phase", "Cancelled", "Complete"]
+- stream - Project stream
+- suburb - Suburb
+- street - Street address
+- state - State (VIC, QLD, etc.)
+- year - Project year (stored as date, year extracted)
+- updated_at - Last update timestamp
+
+Financial Fields
+- deposit - Deposit amount
+- project_cost - Project cost
+
+Client Information
+- client_name - Primary client name
+- email - Primary client email
+- phone - Primary client phone
+
+Additional Contacts (Client 1, 2, 3)
+- client1_name - Contact 1 name
+- client1_email - Contact 1 email
+- client1_phone - Contact 1 phone
+- client1_active - Contact 1 active (checkbox)
+- client2_name - Contact 2 name
+- client2_email - Contact 2 email
+- client2_phone - Contact 2 phone
+- client2_active - Contact 2 active (checkbox)
+- client3_name - Contact 3 name
+- client3_email - Contact 3 email
+- client3_phone - Contact 3 phone
+- client3_active - Contact 3 active (checkbox)
+- client_notes - Client notes
+
+Sales & Proposal
+- salesperson - Salesperson name
+- proposal_pdf_location - Proposal PDF file path
+
+Site Visit
+- site_visit_status - Status: ["Not Complete", "Email Sent", "Booked", "Complete"]
+- site_visit_date - Site visit date
+- site_visit_time - Site visit time
+- site_visit_notes - Site visit notes
+- site_visit_scheduled_date - Scheduled date
+- site_visit_scheduled_period - Scheduled period
+
+Contract
+- contract_status - Status: ["Not Sent", "Sent", "Complete"]
+- contract_sent_date - Contract sent date
+- contract_complete_date - Contract complete date
+
+Supporting Documents
+- supporting_documents_status - Status: ["Not Sent", "Sent", "Complete"]
+- supporting_documents_sent_date - Sent date
+- supporting_documents_complete_date - Complete date
+
+Water Declaration
+- water_authority - Water authority
+- water_declaration_status - Status: ["Not Required", "Not Sent", "Sent", "Complete"]
+- water_declaration_sent_date - Sent date
+- water_declaration_complete_date - Complete date
+
+Windows
+- window_status - Status: ["Not Ordered", "Ordered", "Complete"]
+- window_colour - Window colour
+- window_reveal - Window reveal
+- window_reveal_other - Window reveal (other)
+- window_glazing - Window glazing
+- window_bal_rating - BAL rating
+- window_date_required - Date required
+- window_ordered_date - Ordered date
+- window_order_pdf_location - Order PDF file path
+- window_order_number - Order number
+
+Drawings
+- drawings_status - Status: ["Not Assigned", "Concept Stage", "Working Drawing Stage", "Drawings Complete"]
+- drawings_pdf_location - Drawings PDF file path
+- drawings_history - Drawings history (JSON)
+- drawings_viewed_date - Drawings viewed date
+- draftsperson - Draftsperson user ID
+
+Colours
+- colours_status - Status: ["Not Sent", "Sent", "Complete"]
+- colours_notes - Colours notes
+- colours_pdf_location - Colours PDF file path
+- colours_sent_date - Colours sent date
+- colours_reminder_sent_date - Colours reminder sent date
+
+Planning & Permits
+- planning_status - Status: ["Not Selected", "No Planning Required", "Planning Required", "Planning Permit Issued"]
+- energy_report_status - Status: ["Not Submitted", "Sent", "Complete"]
+- footing_certification_status - Status: ["Not Submitted", "Sent", "Complete"]
+- building_permit_status - Status: ["Not Submitted", "Sent", "Complete"]
+
+Robes
+- number_of_robes - Number of robes
+- robe_widths - Robe widths (JSON)
+- robe_plan_pdf_location - Robe plan PDF file path
+- robe_colours_pdf_location - Robe colours PDF file path
+
+Project Details
+- notes - General notes
+- project_info_notes - Project info notes
+- specs - Specs: ["Affordable", "Superior"]
+- classification - Classification: ["Small Second Dwelling", "Dependant Persons Unit", "Detached Extension", "Dwelling", "Home Office / Studio", "Dwelling & DPU", "Dwelling & SSD", "SSD & DPU"]
+- project_log - Project log (text)
+- substatus - Substatus (e.g., "Town Planning", "VicSmart", "Waiting")
+- substatus_detail - Substatus detail
+- on_hold - On hold (checkbox)
+
+Total: 75+ fields

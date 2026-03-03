@@ -14,6 +14,7 @@ export default function Users() {
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserPhone, setNewUserPhone] = useState("");
   const [selectedPositionIds, setSelectedPositionIds] = useState([]);
+  const [primaryPositionId, setPrimaryPositionId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showEditUserModal, setShowEditUserModal] = useState(false);
   const [showDeleteUserModal, setShowDeleteUserModal] = useState(false);
@@ -65,6 +66,9 @@ export default function Users() {
     setNewUserName(user.name || "");
     setNewUserEmail(user.email || "");
     setNewUserPhone(user.phone || "");
+    // Set primary position from user data
+    setPrimaryPositionId(user.primary_position_id || null);
+    // Also set selectedPositionIds to include all positions (for backward compatibility)
     setSelectedPositionIds(user.positions && Array.isArray(user.positions) 
       ? user.positions.map((p) => p.id) 
       : []);
@@ -86,6 +90,7 @@ export default function Users() {
     setNewUserEmail("");
     setNewUserPhone("");
     setSelectedPositionIds([]);
+    setPrimaryPositionId(null);
   }
 
   function handleCloseModal() {
@@ -94,17 +99,39 @@ export default function Users() {
     setNewUserEmail("");
     setNewUserPhone("");
     setSelectedPositionIds([]);
+    setPrimaryPositionId(null);
   }
 
   function handlePositionToggle(positionId) {
+    const id = parseInt(positionId);
     setSelectedPositionIds((prev) => {
-      const id = parseInt(positionId);
       if (prev.includes(id)) {
+        // If removing this position and it's the primary, clear primary
+        if (primaryPositionId === id) {
+          setPrimaryPositionId(null);
+        }
         return prev.filter((pid) => pid !== id);
       } else {
         return [...prev, id];
       }
     });
+  }
+
+  function handlePrimaryPositionChange(positionId) {
+    const id = parseInt(positionId);
+    // If clicking the same position that's already primary, uncheck it
+    if (primaryPositionId === id) {
+      setPrimaryPositionId(null);
+    } else {
+      // Only allow setting primary position if the position is in selectedPositionIds
+      if (selectedPositionIds.includes(id)) {
+        setPrimaryPositionId(id);
+      } else {
+        // If position is not selected, first add it to selected positions
+        setSelectedPositionIds((prev) => [...prev, id]);
+        setPrimaryPositionId(id);
+      }
+    }
   }
 
   async function fetchPositions() {
@@ -179,7 +206,9 @@ export default function Users() {
           name: newUserName.trim(),
           email: newUserEmail.trim() || null,
           phone: newUserPhone.trim() || null,
-          positionIds: selectedPositionIds,
+          // Include primary position in positionIds for backward compatibility
+          positionIds: primaryPositionId ? [primaryPositionId, ...selectedPositionIds.filter(id => id !== primaryPositionId)] : selectedPositionIds,
+          primaryPositionId: primaryPositionId || null,
         }),
       });
 
@@ -196,6 +225,50 @@ export default function Users() {
       alert(error.message || "Failed to create user");
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleUpdatePrimaryPosition(positionId) {
+    const user = users.find((u) => u.id === parseInt(selectedUserId));
+    if (!user) {
+      return;
+    }
+
+    // If clicking the same position that's already primary, unset it
+    const newPrimaryPositionId = user.primary_position_id === positionId ? null : positionId;
+
+    try {
+      // Get all position IDs for this user
+      const userPositionIds = user.positions && Array.isArray(user.positions) 
+        ? user.positions.map((p) => p.id) 
+        : [];
+
+      const response = await fetch(`${API_URL}/api/users/${user.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: user.name,
+          email: user.email || null,
+          phone: user.phone || null,
+          positionIds: userPositionIds,
+          primaryPositionId: newPrimaryPositionId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(errorData.error || "Failed to update primary position");
+      }
+
+      // Refresh users list to show updated primary position
+      await fetchUsers();
+      // Keep the same user selected
+      setSelectedUserId(selectedUserId);
+    } catch (error) {
+      console.error("Error updating primary position:", error);
+      alert(error.message || "Failed to update primary position");
     }
   }
 
@@ -219,7 +292,9 @@ export default function Users() {
           name: newUserName.trim(),
           email: newUserEmail.trim() || null,
           phone: newUserPhone.trim() || null,
-          positionIds: selectedPositionIds,
+          // Include primary position in positionIds for backward compatibility
+          positionIds: primaryPositionId ? [primaryPositionId, ...selectedPositionIds.filter(id => id !== primaryPositionId)] : selectedPositionIds,
+          primaryPositionId: primaryPositionId || null,
         }),
       });
 
@@ -666,32 +741,41 @@ export default function Users() {
               </div>
               <div style={{
                 width: "100%",
-                padding: "10px 12px",
+                padding: "12px",
                 borderRadius: "8px",
-                border: "none",
+                border: "1px solid #e0e0e0",
                 fontSize: "1rem",
                 color: MONUMENT,
-                background: WHITE,
+                background: "#f9f9f9",
                 boxSizing: "border-box",
                 minHeight: "42px",
               }}>
                 {selectedUser.positions && selectedUser.positions.length > 0 ? (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                     {selectedUser.positions.map((position) => (
-                      <span
+                      <label
                         key={position.id}
                         style={{
-                          display: "inline-block",
-                          padding: "4px 12px",
-                          borderRadius: "16px",
-                          background: SECTION_GREY,
+                          display: "flex",
+                          alignItems: "center",
+                          cursor: "pointer",
+                          fontSize: "1rem",
                           color: MONUMENT,
-                          fontSize: "0.9rem",
-                          fontWeight: 500,
                         }}
                       >
+                        <input
+                          type="checkbox"
+                          checked={selectedUser.primary_position_id === position.id}
+                          onChange={() => handleUpdatePrimaryPosition(position.id)}
+                          style={{
+                            marginRight: "10px",
+                            width: "18px",
+                            height: "18px",
+                            cursor: "pointer",
+                          }}
+                        />
                         {position.name}
-                      </span>
+                      </label>
                     ))}
                   </div>
                 ) : (
@@ -719,7 +803,6 @@ export default function Users() {
             justifyContent: "center",
             zIndex: 1000,
           }}
-          onClick={handleCloseModal}
         >
           <div
             style={{
@@ -881,6 +964,63 @@ export default function Users() {
                         type="checkbox"
                         checked={selectedPositionIds.includes(position.id)}
                         onChange={() => handlePositionToggle(position.id)}
+                        style={{
+                          marginRight: "10px",
+                          width: "18px",
+                          height: "18px",
+                          cursor: "pointer",
+                        }}
+                      />
+                      {position.name}
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  color: "#32323399",
+                  marginBottom: "12px",
+                  fontWeight: 500,
+                }}
+              >
+                Primary Position
+              </label>
+              <div
+                style={{
+                  maxHeight: "200px",
+                  overflowY: "auto",
+                  border: "1px solid #e0e0e0",
+                  borderRadius: "8px",
+                  padding: "12px",
+                  background: "#f9f9f9",
+                }}
+              >
+                {positions.length === 0 ? (
+                  <div style={{ color: "#999", fontSize: "0.9rem" }}>
+                    No positions available. Add positions first.
+                  </div>
+                ) : (
+                  positions.map((position) => (
+                    <label
+                      key={position.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        marginBottom: "12px",
+                        cursor: "pointer",
+                        fontSize: "1rem",
+                        color: MONUMENT,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={primaryPositionId === position.id}
+                        onChange={() => handlePrimaryPositionChange(position.id)}
                         style={{
                           marginRight: "10px",
                           width: "18px",
@@ -1119,6 +1259,63 @@ export default function Users() {
                         type="checkbox"
                         checked={selectedPositionIds.includes(position.id)}
                         onChange={() => handlePositionToggle(position.id)}
+                        style={{
+                          marginRight: "10px",
+                          width: "18px",
+                          height: "18px",
+                          cursor: "pointer",
+                        }}
+                      />
+                      {position.name}
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  color: "#32323399",
+                  marginBottom: "12px",
+                  fontWeight: 500,
+                }}
+              >
+                Primary Position
+              </label>
+              <div
+                style={{
+                  maxHeight: "200px",
+                  overflowY: "auto",
+                  border: "1px solid #e0e0e0",
+                  borderRadius: "8px",
+                  padding: "12px",
+                  background: "#f9f9f9",
+                }}
+              >
+                {positions.length === 0 ? (
+                  <div style={{ color: "#999", fontSize: "0.9rem" }}>
+                    No positions available. Add positions first.
+                  </div>
+                ) : (
+                  positions.map((position) => (
+                    <label
+                      key={position.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        marginBottom: "12px",
+                        cursor: "pointer",
+                        fontSize: "1rem",
+                        color: MONUMENT,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={primaryPositionId === position.id}
+                        onChange={() => handlePrimaryPositionChange(position.id)}
                         style={{
                           marginRight: "10px",
                           width: "18px",

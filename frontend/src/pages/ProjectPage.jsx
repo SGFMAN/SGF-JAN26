@@ -7,6 +7,7 @@ import Drawings from "./Drawings";
 import Colours from "./Colours";
 import Windows from "./Windows";
 import SiteVisit from "./SiteVisit";
+import SurveySoil from "./SurveySoil";
 import Contract from "./Contract";
 import Planning from "./Planning";
 import Admin from "./Admin";
@@ -31,6 +32,7 @@ const MENU_OPTIONS = [
   { label: "Colours", key: "colours" },
   { label: "Windows", key: "windows" },
   { label: "Site Visit", key: "site-visit" },
+  { label: "Survey & Soil", key: "survey-soil" },
   { label: "Contract", key: "contract" },
   { label: "Planning", key: "planning" },
   { label: "Admin", key: "admin" },
@@ -527,6 +529,7 @@ export default function ProjectPage() {
               {activeView === "colours" && <Colours project={project} onUpdate={updateProject} />}
               {activeView === "windows" && <Windows project={project} onUpdate={updateProject} />}
               {activeView === "site-visit" && <SiteVisit project={project} onUpdate={updateProject} />}
+              {activeView === "survey-soil" && <SurveySoil project={project} onUpdate={updateProject} />}
               {activeView === "contract" && <Contract project={project} onUpdate={updateProject} />}
               {activeView === "planning" && <Planning project={project} onUpdate={updateProject} />}
               {activeView === "admin" && <Admin project={project} onUpdate={updateProject} />}

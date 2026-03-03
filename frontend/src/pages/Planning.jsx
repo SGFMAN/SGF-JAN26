@@ -126,9 +126,9 @@ export default function Planning({ project, onUpdate }) {
         Planning
       </h2>
       {project && (
-        <div style={{ marginTop: "24px", display: "flex", gap: "16px", flexWrap: "nowrap" }}>
+        <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "24px" }}>
           {/* Column 1 - Planning Status */}
-          <div style={{ flex: "1 1 0", minWidth: "0" }}>
+          <div>
             <div style={{ marginBottom: "24px" }}>
               <label
                 style={{
@@ -165,7 +165,7 @@ export default function Planning({ project, onUpdate }) {
           </div>
 
           {/* Column 2 - Energy Report */}
-          <div style={{ flex: "1 1 0", minWidth: "0" }}>
+          <div>
             <div style={{ marginBottom: "24px" }}>
               <label
                 style={{
@@ -202,7 +202,7 @@ export default function Planning({ project, onUpdate }) {
           </div>
 
           {/* Column 3 - Footing Certification */}
-          <div style={{ flex: "1 1 0", minWidth: "0" }}>
+          <div>
             <div style={{ marginBottom: "24px" }}>
               <label
                 style={{
@@ -239,7 +239,7 @@ export default function Planning({ project, onUpdate }) {
           </div>
 
           {/* Column 4 - Building Permit */}
-          <div style={{ flex: "1 1 0", minWidth: "0" }}>
+          <div>
             <div style={{ marginBottom: "24px" }}>
               <label
                 style={{
@@ -273,14 +273,6 @@ export default function Planning({ project, onUpdate }) {
                 ))}
               </select>
             </div>
-          </div>
-
-          {/* Column 5 - Empty */}
-          <div style={{ flex: "1 1 0", minWidth: "0" }}>
-          </div>
-
-          {/* Column 6 - Empty */}
-          <div style={{ flex: "1 1 0", minWidth: "0" }}>
           </div>
         </div>
       )}

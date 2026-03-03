@@ -260,6 +260,38 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
           </div>
         </div>
 
+        <div style={{ marginBottom: "16px" }}>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              fontSize: "0.9rem",
+              color: "#32323399",
+              fontWeight: 500,
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              name="createFolders"
+              checked={formData.createFolders === true || formData.createFolders === "true"}
+              onChange={(e) => {
+                onFormDataChange({
+                  ...formData,
+                  createFolders: e.target.checked,
+                });
+              }}
+              style={{
+                width: "18px",
+                height: "18px",
+                cursor: "pointer",
+              }}
+            />
+            Create project folders and copy template structure
+          </label>
+        </div>
+
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px" }}>
           <button
             type="button"

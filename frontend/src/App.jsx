@@ -19,6 +19,7 @@ import StatusManager from "./pages/StatusManager";
 import Sales from "./pages/Sales";
 import SalesTotals from "./pages/SalesTotals";
 import SalesAnalytics from "./pages/SalesAnalytics";
+import ApproveConcept from "./pages/ApproveConcept";
 import AppModeBanner from "./components/AppModeBanner";
 
 export default function App() {
@@ -47,6 +48,7 @@ export default function App() {
         <Route path="/sales" element={<Sales />} />
         <Route path="/sales-totals" element={<SalesTotals />} />
         <Route path="/sales-analytics" element={<SalesAnalytics />} />
+        <Route path="/approve-concept/:projectId" element={<ApproveConcept />} />
       </Routes>
     </BrowserRouter>
   );

@@ -273,6 +273,11 @@ app.use(express.static(frontendDist, { index: false })); // index: false prevent
 
 // SPA fallback: for any other non-API route, return index.html (after checking app mode)
 app.get(/^\/(?!api).*/, async (req, res) => {
+  // Allow approval page without authentication (secret page for clients)
+  if (req.path.startsWith("/approve-concept/")) {
+    return res.sendFile(path.join(frontendDist, "index.html"));
+  }
+  
   const mode = await getAppMode();
   if (mode === "EDIT") {
     const isAdmin = await isAdminRequest(req);
@@ -392,6 +397,22 @@ async function ensureSchema() {
   } catch (e) {
     console.log(`Column phone might already exist:`, e.message);
   }
+  // Add primary_position_id column if it doesn't exist
+  try {
+    await pool.query(`
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name='users' AND column_name='primary_position_id'
+        ) THEN
+          ALTER TABLE users ADD COLUMN primary_position_id INTEGER;
+        END IF;
+      END $$;
+    `);
+  } catch (e) {
+    console.log(`Column primary_position_id might already exist:`, e.message);
+  }
   // Create positions table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS positions (
@@ -468,7 +489,8 @@ async function ensureSchema() {
   // Add new columns if they don't exist (for existing tables)
   // NOTE: 'year' field stores the project start DATE in YYYY-MM-DD format (this is the single date field for projects)
   // The year is ALWAYS derived from this date field - never stored separately
-  const columnsToAdd = ['suburb', 'street', 'client_name', 'email', 'phone', 'stream', 'state', 'year',
+  const columnsToAdd = [
+    'suburb', 'street', 'client_name', 'email', 'phone', 'stream', 'state', 'year',
     'deposit',
     'client1_name', 'client1_email', 'client1_phone', 'client1_active',
     'client2_name', 'client2_email', 'client2_phone', 'client2_active',
@@ -481,8 +503,8 @@ async function ensureSchema() {
     'water_authority', 'water_declaration_status', 'water_declaration_sent_date', 'water_declaration_complete_date',
     'notes', 'project_info_notes', 'specs', 'classification', 'project_log',
     'window_status', 'window_colour', 'window_reveal', 'window_reveal_other', 'window_glazing', 'window_bal_rating', 'window_date_required', 'window_ordered_date', 'window_order_pdf_location', 'window_order_number',
-    'drawings_status', 'drawings_pdf_location', 'drawings_history', 'drawings_viewed_date', 'colours_status', 'colours_notes', 'colours_pdf_location', 'colours_sent_date', 'colours_reminder_sent_date', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status',
-    'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail', 'on_hold'];
+    'drawings_status', 'drawings_pdf_location', 'drawings_history', 'drawings_viewed_date', 'draftsperson', 'colours_status', 'colours_notes', 'colours_pdf_location', 'colours_sent_date', 'colours_reminder_sent_date', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status',
+    'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail', 'on_hold', 'survey_status', 'soil_status'];
   for (const column of columnsToAdd) {
     try {
       await pool.query(`
@@ -540,6 +562,17 @@ async function ensureSchema() {
   }
   // Add colour_attachments columns if they don't exist
   for (const col of ["colour_attachments_vic", "colour_attachments_qld"]) {
+    try {
+      await pool.query(`ALTER TABLE settings ADD COLUMN ${col} TEXT`);
+    } catch (e) {
+      // Column might already exist, which is fine
+      if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+        console.log(`Error adding column ${col}:`, e.message);
+      }
+    }
+  }
+  // Add send_drawings columns if they don't exist
+  for (const col of ["send_drawings_vic", "send_drawings_qld"]) {
     try {
       await pool.query(`ALTER TABLE settings ADD COLUMN ${col} TEXT`);
     } catch (e) {
@@ -619,7 +652,7 @@ app.get("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, draftsperson, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
     );
     res.json(r.rows);
   } catch (e) {
@@ -640,7 +673,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, draftsperson, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
       [id]
     );
     
@@ -912,8 +945,8 @@ app.put("/api/projects/:id", async (req, res) => {
       water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date,
       notes, project_info_notes, specs, classification,
       window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number,
-      drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status,
-      number_of_robes, robe_widths, substatus, substatus_detail, on_hold } = req.body || {};
+      drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, draftsperson, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status,
+      number_of_robes, robe_widths, substatus, substatus_detail, on_hold, survey_status, soil_status } = req.body || {};
     // Convert empty strings to null, but preserve non-empty strings
     const processValue = (val) => {
       if (val === undefined) return null;
@@ -1006,26 +1039,29 @@ app.put("/api/projects/:id", async (req, res) => {
         drawings_pdf_location = COALESCE($53, drawings_pdf_location),
         drawings_history = COALESCE($54, drawings_history),
         drawings_viewed_date = COALESCE($55, drawings_viewed_date),
-        colours_status = COALESCE($56, colours_status),
-        colours_notes = COALESCE($57, colours_notes),
-        colours_pdf_location = COALESCE($58, colours_pdf_location),
-        colours_sent_date = COALESCE($59, colours_sent_date),
-        colours_reminder_sent_date = COALESCE($60, colours_reminder_sent_date),
-        planning_status = COALESCE($61, planning_status),
-        energy_report_status = COALESCE($62, energy_report_status),
-        footing_certification_status = COALESCE($63, footing_certification_status),
-        building_permit_status = COALESCE($64, building_permit_status),
-        year = COALESCE($65, year),
-        project_info_notes = COALESCE($66, project_info_notes),
-        specs = COALESCE($67, specs),
-        classification = COALESCE($68, classification),
-        number_of_robes = COALESCE($69, number_of_robes),
-        robe_widths = COALESCE($70, robe_widths),
-        substatus = COALESCE($71, substatus),
-        substatus_detail = COALESCE($72, substatus_detail),
-        on_hold = CASE WHEN $73 = '__SKIP__' THEN on_hold WHEN $73 = '__NULL__' THEN NULL ELSE $73 END,
+        draftsperson = COALESCE($56, draftsperson),
+        colours_status = COALESCE($57, colours_status),
+        colours_notes = COALESCE($58, colours_notes),
+        colours_pdf_location = COALESCE($59, colours_pdf_location),
+        colours_sent_date = COALESCE($60, colours_sent_date),
+        colours_reminder_sent_date = COALESCE($61, colours_reminder_sent_date),
+        planning_status = COALESCE($62, planning_status),
+        energy_report_status = COALESCE($63, energy_report_status),
+        footing_certification_status = COALESCE($64, footing_certification_status),
+        building_permit_status = COALESCE($65, building_permit_status),
+        year = COALESCE($66, year),
+        project_info_notes = COALESCE($67, project_info_notes),
+        specs = COALESCE($68, specs),
+        classification = COALESCE($69, classification),
+        number_of_robes = COALESCE($70, number_of_robes),
+        robe_widths = COALESCE($71, robe_widths),
+        substatus = COALESCE($72, substatus),
+        substatus_detail = COALESCE($73, substatus_detail),
+        on_hold = CASE WHEN $74 = '__SKIP__' THEN on_hold WHEN $74 = '__NULL__' THEN NULL ELSE $74 END,
+        survey_status = COALESCE($75, survey_status),
+        soil_status = COALESCE($76, soil_status),
         updated_at = NOW()
-      WHERE id = $74
+      WHERE id = $77
       RETURNING *
       `,
       [
@@ -1085,6 +1121,7 @@ app.put("/api/projects/:id", async (req, res) => {
         processValue(drawings_pdf_location),
         processValue(drawings_history),
         processValue(drawings_viewed_date),
+        processValue(draftsperson),
         processValue(colours_status),
         processValue(colours_notes),
         processValue(colours_pdf_location),
@@ -1103,6 +1140,8 @@ app.put("/api/projects/:id", async (req, res) => {
         processValue(substatus),
         processValue(substatus_detail),
         onHoldValue,
+        processValue(survey_status),
+        processValue(soil_status),
         id
       ]
     );
@@ -1125,7 +1164,7 @@ app.get("/api/users", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const usersResult = await pool.query(
-      "SELECT id, name, email, phone, created_at, updated_at FROM users ORDER BY name ASC, id ASC"
+      "SELECT id, name, email, phone, primary_position_id, created_at, updated_at FROM users ORDER BY name ASC, id ASC"
     );
     // Get positions for each user
     const usersWithPositions = await Promise.all(
@@ -1155,19 +1194,20 @@ app.get("/api/users", async (req, res) => {
 app.post("/api/users", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const { name, email, phone, positionIds } = req.body || {};
+    const { name, email, phone, positionIds, primaryPositionId } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
 
     await pool.query('BEGIN');
     
     // Create the user
     const userResult = await pool.query(
-      `INSERT INTO users (name, email, phone) 
-       VALUES ($1, $2, $3) RETURNING *`,
+      `INSERT INTO users (name, email, phone, primary_position_id) 
+       VALUES ($1, $2, $3, $4) RETURNING *`,
       [
         name.trim(),
         email ? email.trim() : null,
         phone ? phone.trim() : null,
+        primaryPositionId ? parseInt(primaryPositionId) : null,
       ]
     );
 
@@ -1189,7 +1229,7 @@ app.post("/api/users", async (req, res) => {
 
     // Fetch user with positions
     const userWithPositionsResult = await pool.query(
-      `SELECT u.id, u.name, u.email, u.phone, u.created_at, u.updated_at 
+      `SELECT u.id, u.name, u.email, u.phone, u.primary_position_id, u.created_at, u.updated_at 
        FROM users u WHERE u.id = $1`,
       [userId]
     );
@@ -1234,7 +1274,7 @@ app.put("/api/users/:id", async (req, res) => {
   }
 
   try {
-    const { name, email, phone, positionIds } = req.body || {};
+    const { name, email, phone, positionIds, primaryPositionId } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
 
     await pool.query('BEGIN');
@@ -1242,13 +1282,14 @@ app.put("/api/users/:id", async (req, res) => {
     // Update the user
     const userResult = await pool.query(
       `UPDATE users 
-       SET name = $1, email = $2, phone = $3, updated_at = NOW()
-       WHERE id = $4 
+       SET name = $1, email = $2, phone = $3, primary_position_id = $4, updated_at = NOW()
+       WHERE id = $5 
        RETURNING *`,
       [
         name.trim(),
         email ? email.trim() : null,
         phone ? phone.trim() : null,
+        primaryPositionId ? parseInt(primaryPositionId) : null,
         id,
       ]
     );
@@ -1451,7 +1492,7 @@ app.get("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, updated_at FROM settings WHERE id = 1"
+      "SELECT id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, updated_at FROM settings WHERE id = 1"
     );
     if (r.rows.length === 0) {
       return res.json({
@@ -1472,10 +1513,32 @@ app.get("/api/settings", async (req, res) => {
         admin_password: null,
         colour_attachments_vic: null,
         colour_attachments_qld: null,
+        send_drawings_vic: [],
+        send_drawings_qld: [],
         updated_at: null,
       });
     }
-    res.json(r.rows[0]);
+    // Parse JSON arrays in response
+    const result = r.rows[0];
+    if (result.send_drawings_vic) {
+      try {
+        result.send_drawings_vic = JSON.parse(result.send_drawings_vic);
+      } catch (e) {
+        result.send_drawings_vic = [];
+      }
+    } else {
+      result.send_drawings_vic = [];
+    }
+    if (result.send_drawings_qld) {
+      try {
+        result.send_drawings_qld = JSON.parse(result.send_drawings_qld);
+      } catch (e) {
+        result.send_drawings_qld = [];
+      }
+    } else {
+      result.send_drawings_qld = [];
+    }
+    res.json(result);
   } catch (e) {
     console.error("Error fetching settings:", e);
     console.error("Error stack:", e.stack);
@@ -1487,7 +1550,7 @@ app.get("/api/settings", async (req, res) => {
 app.put("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const { root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld } = req.body || {};
+    const { root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld } = req.body || {};
 
     const processValue = (val) => {
       if (val === undefined) return null;
@@ -1504,9 +1567,17 @@ app.put("/api/settings", async (req, res) => {
       return "false";
     };
 
+    const processArray = (val) => {
+      if (val === undefined || val === null) return null;
+      if (Array.isArray(val)) {
+        return JSON.stringify(val);
+      }
+      return null;
+    };
+
     const r = await pool.query(
-      `INSERT INTO settings (id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, updated_at)
-       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
+      `INSERT INTO settings (id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, updated_at)
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW())
        ON CONFLICT (id)
        DO UPDATE SET
          root_directory = COALESCE($1, settings.root_directory),
@@ -1525,8 +1596,10 @@ app.put("/api/settings", async (req, res) => {
          admin_password = COALESCE($14, settings.admin_password),
          colour_attachments_vic = COALESCE($15, settings.colour_attachments_vic),
          colour_attachments_qld = COALESCE($16, settings.colour_attachments_qld),
+         send_drawings_vic = COALESCE($17, settings.send_drawings_vic),
+         send_drawings_qld = COALESCE($18, settings.send_drawings_qld),
          updated_at = NOW()
-       RETURNING id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, updated_at`,
+       RETURNING id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, updated_at`,
       [
         processValue(root_directory),
         processBoolean(create_folders),
@@ -1544,10 +1617,33 @@ app.put("/api/settings", async (req, res) => {
         processValue(admin_password),
         processValue(colour_attachments_vic),
         processValue(colour_attachments_qld),
+        processArray(send_drawings_vic),
+        processArray(send_drawings_qld),
       ]
     );
 
-    res.json(r.rows[0]);
+    // Parse JSON arrays in response
+    const result = r.rows[0];
+    if (result.send_drawings_vic) {
+      try {
+        result.send_drawings_vic = JSON.parse(result.send_drawings_vic);
+      } catch (e) {
+        result.send_drawings_vic = [];
+      }
+    } else {
+      result.send_drawings_vic = [];
+    }
+    if (result.send_drawings_qld) {
+      try {
+        result.send_drawings_qld = JSON.parse(result.send_drawings_qld);
+      } catch (e) {
+        result.send_drawings_qld = [];
+      }
+    } else {
+      result.send_drawings_qld = [];
+    }
+
+    res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -1858,7 +1954,7 @@ app.post("/api/emails/send", async (req, res) => {
 
 // Send drawings PDF via email with attachment
 app.post("/api/emails/send-drawings", async (req, res) => {
-  const { projectId, toEmail, attachDrawings } = req.body || {};
+  const { projectId, toEmail, attachDrawings, toEmails, customBody, from, subject: customSubject } = req.body || {};
   const attachPdf = attachDrawings !== false; // Default to true if not specified
 
   if (!projectId) {
@@ -1903,29 +1999,61 @@ app.post("/api/emails/send-drawings", async (req, res) => {
     return res.status(500).json({ error: "Failed to fetch project details" });
   }
 
-  // Get SMTP credentials
+  // Get SMTP credentials based on the "from" address
+  // Fetch all SMTP settings to match the correct one
   let smtpUser = null;
   let smtpPass = null;
+  let fromAddress = from || null;
+  
   try {
     const r = await pool.query(
-      "SELECT smtp_user, smtp_pass FROM settings WHERE id = 1"
+      "SELECT smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_qld, smtp_pass_qld FROM settings WHERE id = 1"
     );
-    if (r.rows[0]?.smtp_user && r.rows[0]?.smtp_pass) {
-      smtpUser = r.rows[0].smtp_user;
-      smtpPass = r.rows[0].smtp_pass;
+    if (r.rows[0]) {
+      const settings = r.rows[0];
+      
+      // If from address is provided, match it to the correct SMTP account
+      if (fromAddress) {
+        if (settings.smtp_user_secondary && fromAddress.toLowerCase() === settings.smtp_user_secondary.toLowerCase()) {
+          smtpUser = settings.smtp_user_secondary;
+          smtpPass = settings.smtp_pass_secondary;
+        } else if (settings.smtp_user_qld && fromAddress.toLowerCase() === settings.smtp_user_qld.toLowerCase()) {
+          smtpUser = settings.smtp_user_qld;
+          smtpPass = settings.smtp_pass_qld;
+        } else if (settings.smtp_user && fromAddress.toLowerCase() === settings.smtp_user.toLowerCase()) {
+          smtpUser = settings.smtp_user;
+          smtpPass = settings.smtp_pass;
+        } else {
+          // Default to primary SMTP if no match
+          smtpUser = settings.smtp_user;
+          smtpPass = settings.smtp_pass;
+        }
+      } else {
+        // No from address provided, use primary SMTP
+        smtpUser = settings.smtp_user;
+        smtpPass = settings.smtp_pass;
+      }
     }
   } catch (e) {
     console.error("Error reading SMTP from settings:", e);
   }
+  
+  // Fallback to environment variables if settings not found
   if (!smtpUser || !smtpPass) {
     smtpUser = process.env.SMTP_USER;
     smtpPass = process.env.SMTP_PASS;
   }
+  
   if (!smtpUser || !smtpPass) {
     return res.status(503).json({
       error:
-        "SMTP not configured. Set SMTP User and SMTP Pass in Settings → File Settings, or use backend .env.",
+        "SMTP not configured. Set SMTP User and SMTP Pass in Settings → Email Settings, or use backend .env.",
     });
+  }
+  
+  // Use the from address if provided, otherwise use the SMTP user
+  if (!fromAddress) {
+    fromAddress = smtpUser;
   }
 
   const host = process.env.SMTP_HOST || "smtp.office365.com";
@@ -1952,20 +2080,115 @@ app.post("/api/emails/send-drawings", async (req, res) => {
     // Prepare email content
     const suburb = (project.suburb || "").toUpperCase();
     const street = project.street || "";
-    const subject = `New Drawings - ${suburb} - ${street}`;
     
-    // Get notes from request body (optional)
-    const { notes } = req.body || {};
+    // Use custom subject if provided, otherwise use default
+    const subject = customSubject || `New Drawings - ${suburb} - ${street}`;
     
-    // Build email body with optional notes
-    let htmlBody = `New Drawings for ${suburb} - ${street}`;
-    if (notes && notes.trim()) {
-      htmlBody += `<br><br>${notes.trim().replace(/\n/g, "<br>")}`;
+    // Use custom body if provided, otherwise build default body
+    let htmlBody;
+    if (customBody !== undefined && customBody !== null) {
+      htmlBody = customBody.toString();
+      
+      // Add "Approve Concept Here" button for CONCEPT client emails (when attachDrawings is true)
+      // Check if this is a CONCEPT email by looking for "CONCEPT" in the subject, body, or comment marker
+      const isConceptEmail = attachPdf === true && (
+        (customSubject && customSubject.includes("CONCEPT")) || 
+        htmlBody.includes("CONCEPT") || 
+        htmlBody.includes("<!-- CONCEPT -->")
+      );
+      
+      if (isConceptEmail) {
+        // Add approval button link
+        const approvalUrl = `http://192.168.0.222:3001/approve-concept/${projectId}`;
+        const approvalButtonHtml = `
+          <br><br>
+          <div style="text-align: center; margin: 20px 0;">
+            <a href="${approvalUrl}" style="
+              display: inline-block;
+              padding: 16px 32px;
+              background-color: #4D93D9;
+              color: #ffffff;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: 500;
+              font-size: 1.1rem;
+            ">Approve Concept Here</a>
+          </div>
+        `;
+        
+        // Insert button before "Powered by" or at the end
+        const poweredByPattern = /Powered by SGF Central/i;
+        const match = htmlBody.match(poweredByPattern);
+        if (match) {
+          const insertIndex = match.index;
+          htmlBody = htmlBody.slice(0, insertIndex) + approvalButtonHtml + htmlBody.slice(insertIndex);
+        } else {
+          // Fallback: append at the end
+          htmlBody += approvalButtonHtml;
+        }
+      }
+      
+      // Only add "View Drawings" button for Drafting Notes emails (Preview & Send Email modal)
+      // Do NOT add it for "Email Drawings to Client" emails (when attachDrawings is true)
+      if (attachPdf === false) {
+        // Add button link to drawings page directly after the notes
+        const drawingsUrl = `http://192.168.0.222:3001/project/${projectId}?view=drawings`;
+        const buttonHtml = `
+          <br><br>
+          <div style="text-align: left; margin: 20px 0;">
+            <a href="${drawingsUrl}" style="
+              display: inline-block;
+              padding: 16px 32px;
+              background-color: #4D93D9;
+              color: #ffffff;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: 500;
+              font-size: 1.1rem;
+            ">View Drawings</a>
+          </div>
+        `;
+        
+        // Find where the notes section ends and insert button right after it
+        // Look for patterns that come after the notes: {Draftsperson}, {Position}, or "Powered by"
+        let buttonInserted = false;
+        
+        // Find the position right before {Draftsperson} or {Position} tokens
+        // These tokens come after the notes section
+        const afterNotesPatterns = [
+          /{Draftsperson}/i,
+          /{Position}/i,
+          /<b>.*?<\/b>\s*Powered by/i,
+          /Powered by SGF Central/i
+        ];
+        
+        for (const pattern of afterNotesPatterns) {
+          const match = htmlBody.match(pattern);
+          if (match) {
+            // Insert button right before this pattern
+            const insertIndex = match.index;
+            htmlBody = htmlBody.slice(0, insertIndex) + buttonHtml + htmlBody.slice(insertIndex);
+            buttonInserted = true;
+            break;
+          }
+        }
+        
+        // Fallback: if we can't find the pattern, append at the end
+        if (!buttonInserted) {
+          htmlBody += buttonHtml;
+        }
+      }
+    } else {
+      // Build default email body with optional notes
+      const { notes } = req.body || {};
+      htmlBody = `New Drawings for ${suburb} - ${street}`;
+      if (notes && notes.trim()) {
+        htmlBody += `<br><br>${notes.trim().replace(/\n/g, "<br>")}`;
+      }
+      htmlBody += `<br><br>SGF CENTRAL`;
     }
-    htmlBody += `<br><br>SGF CENTRAL`;
 
     // Use provided emails (array or single) or default to info@superiorgrannyflats.com.au
-    const { toEmails } = req.body || {};
     let recipientEmails = [];
     
     if (toEmails && Array.isArray(toEmails) && toEmails.length > 0) {
@@ -1984,6 +2207,8 @@ app.post("/api/emails/send-drawings", async (req, res) => {
     }
     
     const recipientEmail = recipientEmails.join(", ");
+    
+    // fromAddress is already set above based on the "from" parameter and matching SMTP credentials
 
     // Prepare attachments array
     const emailAttachments = [];
@@ -2001,7 +2226,7 @@ app.post("/api/emails/send-drawings", async (req, res) => {
     const logoResult = await addLogoToEmail(htmlBody, emailAttachments);
 
     const mailOptions = {
-      from: smtpUser,
+      from: fromAddress,
       to: recipientEmail,
       subject: subject,
       html: logoResult.htmlBody,
@@ -2034,7 +2259,7 @@ app.post("/api/emails/send-colours", async (req, res) => {
   let project = null;
   try {
     const projectResult = await pool.query(
-      "SELECT suburb, street, state, client1_name, client1_active, client2_name, client2_active, client3_name, client3_active FROM projects WHERE id = $1",
+      "SELECT suburb, street, state, client1_name, client1_active, client2_name, client2_active, client3_name, client3_active, draftsperson FROM projects WHERE id = $1",
       [projectId]
     );
 
@@ -2276,6 +2501,19 @@ app.post("/api/emails/send-colours", async (req, res) => {
     // Format project name: "<Street>, <Suburb>"
     const projectName = `${street || ""}, ${suburb || ""}`.trim().replace(/^,\s*|,\s*$/g, "");
     
+    // Get draftsperson name
+    let draftspersonName = "";
+    if (project.draftsperson) {
+      try {
+        const draftspersonResult = await pool.query("SELECT name FROM users WHERE id = $1", [project.draftsperson]);
+        if (draftspersonResult.rows.length > 0) {
+          draftspersonName = draftspersonResult.rows[0].name || "";
+        }
+      } catch (e) {
+        console.error("Error fetching draftsperson name:", e);
+      }
+    }
+    
     // Replace template variables in subject and body
     let subject = (template.subject || "").toString();
     // Use customBody if provided, otherwise use template body
@@ -2286,14 +2524,18 @@ app.post("/api/emails/send-colours", async (req, res) => {
                      .replace(/\{STREET\}/g, street)
                      .replace(/\{ClientName\}/g, clientName)
                      .replace(/\{ProjectName\}/g, projectName)
-                     .replace(/\{ColourConsultant\}/g, colourConsultantName);
+                     .replace(/\{ColourConsultant\}/g, colourConsultantName)
+                     .replace(/\{Draftsperson\}/g, draftspersonName)
+                     .replace(/\{DRAFTSPERSON\}/g, draftspersonName);
     // Only replace tokens in htmlBody if customBody was not provided (to avoid double replacement)
     if (customBody === undefined || customBody === null) {
       htmlBody = htmlBody.replace(/\{SUBURB\}/g, suburb)
                          .replace(/\{STREET\}/g, street)
                          .replace(/\{ClientName\}/g, clientName)
                          .replace(/\{ProjectName\}/g, projectName)
-                         .replace(/\{ColourConsultant\}/g, colourConsultantName);
+                         .replace(/\{ColourConsultant\}/g, colourConsultantName)
+                         .replace(/\{Draftsperson\}/g, draftspersonName)
+                         .replace(/\{DRAFTSPERSON\}/g, draftspersonName);
     }
     
     // Convert newlines to HTML breaks
@@ -2428,7 +2670,7 @@ app.post("/api/emails/send-colours-reminder", async (req, res) => {
   let project = null;
   try {
     const projectResult = await pool.query(
-      "SELECT suburb, street, state, client1_name, client1_active, client2_name, client2_active, client3_name, client3_active FROM projects WHERE id = $1",
+      "SELECT suburb, street, state, client1_name, client1_active, client2_name, client2_active, client3_name, client3_active, draftsperson FROM projects WHERE id = $1",
       [projectId]
     );
 
@@ -2671,6 +2913,19 @@ app.post("/api/emails/send-colours-reminder", async (req, res) => {
     // Format project name: "<Street>, <Suburb>"
     const projectName = `${street || ""}, ${suburb || ""}`.trim().replace(/^,\s*|,\s*$/g, "");
     
+    // Get draftsperson name
+    let draftspersonName = "";
+    if (project.draftsperson) {
+      try {
+        const draftspersonResult = await pool.query("SELECT name FROM users WHERE id = $1", [project.draftsperson]);
+        if (draftspersonResult.rows.length > 0) {
+          draftspersonName = draftspersonResult.rows[0].name || "";
+        }
+      } catch (e) {
+        console.error("Error fetching draftsperson name:", e);
+      }
+    }
+    
     // Replace template variables in subject and body
     let subject = (template.subject || "").toString();
     // Use customBody if provided, otherwise use template body
@@ -2681,14 +2936,18 @@ app.post("/api/emails/send-colours-reminder", async (req, res) => {
                      .replace(/\{STREET\}/g, street)
                      .replace(/\{ClientName\}/g, clientName)
                      .replace(/\{ProjectName\}/g, projectName)
-                     .replace(/\{ColourConsultant\}/g, colourConsultantName);
+                     .replace(/\{ColourConsultant\}/g, colourConsultantName)
+                     .replace(/\{Draftsperson\}/g, draftspersonName)
+                     .replace(/\{DRAFTSPERSON\}/g, draftspersonName);
     // Only replace tokens in htmlBody if customBody was not provided (to avoid double replacement)
     if (customBody === undefined || customBody === null) {
       htmlBody = htmlBody.replace(/\{SUBURB\}/g, suburb)
                          .replace(/\{STREET\}/g, street)
                          .replace(/\{ClientName\}/g, clientName)
                          .replace(/\{ProjectName\}/g, projectName)
-                         .replace(/\{ColourConsultant\}/g, colourConsultantName);
+                         .replace(/\{ColourConsultant\}/g, colourConsultantName)
+                         .replace(/\{Draftsperson\}/g, draftspersonName)
+                         .replace(/\{DRAFTSPERSON\}/g, draftspersonName);
     }
     
     // Convert newlines to HTML breaks
@@ -3245,7 +3504,7 @@ app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
   let project = null;
   try {
     const projectResult = await pool.query(
-      "SELECT suburb, street, state, client1_name, client1_active, client2_name, client2_active, client3_name, client3_active FROM projects WHERE id = $1",
+      "SELECT suburb, street, state, client1_name, client1_active, client2_name, client2_active, client3_name, client3_active, draftsperson FROM projects WHERE id = $1",
       [projectId]
     );
 
@@ -3488,6 +3747,19 @@ app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
     // Format project name: "<Street>, <Suburb>"
     const projectName = `${street || ""}, ${suburb || ""}`.trim().replace(/^,\s*|,\s*$/g, "");
     
+    // Get draftsperson name
+    let draftspersonName = "";
+    if (project.draftsperson) {
+      try {
+        const draftspersonResult = await pool.query("SELECT name FROM users WHERE id = $1", [project.draftsperson]);
+        if (draftspersonResult.rows.length > 0) {
+          draftspersonName = draftspersonResult.rows[0].name || "";
+        }
+      } catch (e) {
+        console.error("Error fetching draftsperson name:", e);
+      }
+    }
+    
     // Replace template variables in subject and body
     let subject = (template.subject || "").toString();
     // Use customBody if provided, otherwise use template body
@@ -3498,14 +3770,18 @@ app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
                      .replace(/\{STREET\}/g, street)
                      .replace(/\{ClientName\}/g, clientName)
                      .replace(/\{ProjectName\}/g, projectName)
-                     .replace(/\{ColourConsultant\}/g, colourConsultantName);
+                     .replace(/\{ColourConsultant\}/g, colourConsultantName)
+                     .replace(/\{Draftsperson\}/g, draftspersonName)
+                     .replace(/\{DRAFTSPERSON\}/g, draftspersonName);
     // Only replace tokens in htmlBody if customBody was not provided (to avoid double replacement)
     if (customBody === undefined || customBody === null) {
       htmlBody = htmlBody.replace(/\{SUBURB\}/g, suburb)
                          .replace(/\{STREET\}/g, street)
                          .replace(/\{ClientName\}/g, clientName)
                          .replace(/\{ProjectName\}/g, projectName)
-                         .replace(/\{ColourConsultant\}/g, colourConsultantName);
+                         .replace(/\{ColourConsultant\}/g, colourConsultantName)
+                         .replace(/\{Draftsperson\}/g, draftspersonName)
+                         .replace(/\{DRAFTSPERSON\}/g, draftspersonName);
     }
     
     // Convert newlines to HTML breaks
@@ -4576,6 +4852,81 @@ app.delete("/api/hotlist/:id", async (req, res) => {
     res.json({ success: true, deleted: r.rows[0] });
   } catch (e) {
     res.status(500).json({ error: e.message || "Failed to delete hotlist item" });
+  }
+});
+
+// Approve concept drawings (public endpoint - no auth required)
+app.post("/api/projects/:id/approve-concept", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: "invalid id" });
+  }
+
+  try {
+    // Get current project data
+    const projectResult = await pool.query(
+      "SELECT drawings_history, drawings_status, name, status, stream, suburb, street, state, deposit, project_cost, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, site_visit_status, site_visit_date, site_visit_time, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_pdf_location, drawings_viewed_date, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, draftsperson, survey_status, soil_status FROM projects WHERE id = $1",
+      [id]
+    );
+
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    const project = projectResult.rows[0];
+
+    // Get current drawings history
+    let drawingsHistory = [];
+    try {
+      const historyValue = project.drawings_history;
+      if (historyValue) {
+        drawingsHistory = typeof historyValue === 'string' ? JSON.parse(historyValue) : historyValue;
+      }
+    } catch (e) {
+      console.error("Error parsing drawings_history:", e);
+      return res.status(400).json({ error: "Invalid drawings history data" });
+    }
+
+    if (drawingsHistory.length === 0) {
+      return res.status(400).json({ error: "No drawings have been uploaded yet" });
+    }
+
+    // Mark the last entry as concept approved
+    const lastIndex = drawingsHistory.length - 1;
+    drawingsHistory[lastIndex] = {
+      ...drawingsHistory[lastIndex],
+      conceptApproved: true
+    };
+
+    // Update project with approved concept
+    const projectName = project?.street && project?.suburb 
+      ? `${project.street}, ${project.suburb}`.trim() 
+      : project?.name || "";
+
+    const updateResult = await pool.query(
+      `UPDATE projects 
+       SET drawings_history = $1, 
+           drawings_status = $2,
+           updated_at = NOW()
+       WHERE id = $3
+       RETURNING id, name, drawings_status, drawings_history`,
+      [JSON.stringify(drawingsHistory), "Concept Stage", id]
+    );
+
+    if (updateResult.rowCount === 0) {
+      return res.status(404).json({ error: "Failed to update project" });
+    }
+
+    res.json({ 
+      success: true, 
+      message: "Concept approved successfully",
+      project: updateResult.rows[0]
+    });
+  } catch (e) {
+    console.error("Error approving concept:", e);
+    res.status(500).json({ error: e.message || "Failed to approve concept" });
   }
 });
 

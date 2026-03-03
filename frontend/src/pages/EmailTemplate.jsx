@@ -626,6 +626,22 @@ export default function EmailTemplate() {
           </button>
           <button
             type="button"
+            onClick={() => insertToken("body", "Draftsperson")}
+            style={{
+              padding: "6px 12px",
+              fontSize: "0.85rem",
+              fontWeight: 500,
+              color: MONUMENT,
+              background: WHITE,
+              border: `1px solid ${SECTION_GREY}`,
+              borderRadius: "6px",
+              cursor: "pointer",
+            }}
+          >
+            {"{Draftsperson}"}
+          </button>
+          <button
+            type="button"
             onClick={() => insertToken("body", "SiteVisitScheduledPeriod")}
             style={{
               padding: "6px 12px",

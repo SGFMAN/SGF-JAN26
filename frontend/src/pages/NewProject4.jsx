@@ -292,20 +292,19 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
       const settings = await settingsResponse.json();
       const state = (formData.state || "").toUpperCase();
       
-      // Check the appropriate setting based on state (VIC or QLD)
+      // Check the appropriate setting based on state (VIC or QLD) for root directory
       let rootDirectory = "";
-      let createFolders = false;
       if (state === "VIC") {
         rootDirectory = settings.root_directory || "";
-        createFolders = settings.create_folders === 'true' || settings.create_folders === true;
       } else if (state === "QLD") {
         rootDirectory = settings.root_directory_qld || "";
-        createFolders = settings.create_folders_qld === 'true' || settings.create_folders_qld === true;
       } else {
         // Default to VIC settings if state is not specified
         rootDirectory = settings.root_directory || "";
-        createFolders = settings.create_folders === 'true' || settings.create_folders === true;
       }
+      
+      // Use createFolders from formData (set in NewProject modal)
+      const createFolders = formData.createFolders === true || formData.createFolders === "true" || formData.createFolders === 1 || formData.createFolders === "1";
 
       // Only create folders if the setting is enabled
       if (createFolders) {

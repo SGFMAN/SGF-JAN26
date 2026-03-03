@@ -17,8 +17,8 @@ const FIELD_DEFINITIONS = {
   },
   drawings_status: {
     label: "Drawings",
-    values: ["In Progress", "Concept Approved", "Working Drawings Approved"],
-    defaultValue: "In Progress",
+    values: ["Not Assigned", "Concept Stage", "Working Drawing Stage", "Drawings Complete"],
+    defaultValue: "Not Assigned",
   },
   colours_status: {
     label: "Colours",

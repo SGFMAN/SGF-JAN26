@@ -329,9 +329,9 @@ export default function SiteVisit({ project, onUpdate }) {
           Site Visit
         </h2>
         {project && (
-          <div style={{ marginTop: "24px", display: "flex", gap: "24px", flexWrap: "wrap", alignItems: "stretch", minHeight: "600px" }}>
-            {/* Columns 1-2 - Status, Date/Time, Buttons */}
-            <div style={{ flex: "2", minWidth: "200px", display: "flex", flexDirection: "column" }}>
+          <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "24px", alignItems: "stretch", minHeight: "600px" }}>
+            {/* Column 1 - Status, Date/Time, Buttons */}
+            <div style={{ display: "flex", flexDirection: "column" }}>
               <div style={{ marginBottom: "24px" }}>
                 <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
                   Status
@@ -346,7 +346,7 @@ export default function SiteVisit({ project, onUpdate }) {
                     borderRadius: "8px",
                     border: "none",
                     background: WHITE,
-                    width: "300px",
+                    width: "100%",
                     maxWidth: "100%",
                     boxSizing: "border-box",
                     cursor: "pointer",
@@ -372,7 +372,7 @@ export default function SiteVisit({ project, onUpdate }) {
                       padding: "10px 12px",
                       borderRadius: "8px",
                       background: WHITE,
-                      width: "300px",
+                      width: "100%",
                       maxWidth: "100%",
                       boxSizing: "border-box",
                     }}
@@ -394,7 +394,7 @@ export default function SiteVisit({ project, onUpdate }) {
                       padding: "10px 12px",
                       borderRadius: "8px",
                       background: WHITE,
-                      width: "300px",
+                      width: "100%",
                       maxWidth: "100%",
                       boxSizing: "border-box",
                     }}
@@ -417,7 +417,7 @@ export default function SiteVisit({ project, onUpdate }) {
                       padding: "10px 12px",
                       borderRadius: "8px",
                       background: WHITE,
-                      width: "300px",
+                      width: "100%",
                       maxWidth: "100%",
                       boxSizing: "border-box",
                     }}
@@ -444,7 +444,7 @@ export default function SiteVisit({ project, onUpdate }) {
                       padding: "10px 12px",
                       borderRadius: "8px",
                       background: WHITE,
-                      width: "300px",
+                      width: "100%",
                       maxWidth: "100%",
                       boxSizing: "border-box",
                     }}
@@ -515,32 +515,40 @@ export default function SiteVisit({ project, onUpdate }) {
               )}
             </div>
 
-            {/* Columns 3-4 - Notes (Spans Both Columns) with Button in Column 4 */}
-            <div style={{ flex: "2", minWidth: "200px", display: "flex", flexDirection: "column" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
-                Notes
+            {/* Columns 2-3 - Notes (Spans Both Columns) with Button in Column 3 */}
+            <div style={{ gridColumn: "span 2", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+              {/* Notes textarea spans both columns */}
+              <div style={{ gridColumn: "span 2", display: "flex", flexDirection: "column" }}>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  Notes
+                </div>
+                <textarea
+                  value={siteVisitNotes}
+                  onChange={handleNotesChange}
+                  onBlur={handleNotesBlur}
+                  placeholder="Add notes about the site visit..."
+                  style={{
+                    width: "100%",
+                    flex: 1,
+                    padding: "12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                    fontFamily: "inherit",
+                    resize: "none",
+                    marginBottom: "12px",
+                  }}
+                />
               </div>
-              <textarea
-                value={siteVisitNotes}
-                onChange={handleNotesChange}
-                onBlur={handleNotesBlur}
-                placeholder="Add notes about the site visit..."
-                style={{
-                  width: "100%",
-                  flex: 1,
-                  padding: "12px",
-                  borderRadius: "8px",
-                  border: `1px solid ${SECTION_GREY}`,
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                  fontFamily: "inherit",
-                  resize: "none",
-                  marginBottom: "12px",
-                }}
-              />
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              
+              {/* Empty space in column 2 */}
+              <div></div>
+              
+              {/* Email Notes Button in Column 3 */}
+              <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
                 <button
                   type="button"
                   onClick={() => {
@@ -562,7 +570,7 @@ export default function SiteVisit({ project, onUpdate }) {
                     fontWeight: 500,
                     cursor: "pointer",
                     transition: "background 0.17s",
-                    width: "calc(50% - 12px)",
+                    width: "100%",
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = "#252526";
@@ -575,6 +583,9 @@ export default function SiteVisit({ project, onUpdate }) {
                 </button>
               </div>
             </div>
+
+            {/* Column 4 - Empty */}
+            <div></div>
           </div>
         )}
       </div>

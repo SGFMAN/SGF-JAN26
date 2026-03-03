@@ -22,6 +22,10 @@ export default function Colours({ project, onUpdate }) {
   const fileInputRef = useRef(null);
   const [emailBody, setEmailBody] = useState("");
   const [emailTemplateType, setEmailTemplateType] = useState("Send");
+  const [emailTo, setEmailTo] = useState("");
+  const [emailFrom, setEmailFrom] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const emailBodyRef = useRef(null);
   
   const valuesRef = useRef({ coloursStatus, notes });
   
@@ -49,6 +53,16 @@ export default function Colours({ project, onUpdate }) {
       }
     }
   }, [project]);
+
+  // Update contentEditable when emailBody changes and modal is open
+  useEffect(() => {
+    if (showSendModal && emailBodyRef.current && emailBody) {
+      // Only update if content is different to avoid cursor jumping
+      if (emailBodyRef.current.innerHTML !== emailBody) {
+        emailBodyRef.current.innerHTML = emailBody;
+      }
+    }
+  }, [showSendModal, emailBody]);
 
   async function saveField(fieldName, value) {
     if (!project?.id) {
@@ -167,14 +181,24 @@ export default function Colours({ project, onUpdate }) {
           templateName = "COLORS - Windows&Roof";
         }
         const template = templates.find(t => t.name === templateName);
-        if (template && template.body) {
-          // Replace tokens in body
-          let body = template.body;
+        if (template) {
+          // Get active client emails for "To" field
+          const activeClients = getActiveClients();
+          const activeClientEmails = activeClients
+            .map(client => client.email)
+            .filter(email => email && email.trim());
+          const toAddresses = activeClientEmails.join(", ");
+          
+          // Set To, From, Subject from template
+          setEmailTo(toAddresses);
+          setEmailFrom(template.from_address || "");
+          
+          // Replace tokens in subject
+          let subject = template.subject || "";
           const suburb = (project?.suburb || "").toUpperCase();
           const street = project?.street || "";
           
           // Get active client names (first names only)
-          const activeClients = getActiveClients();
           const activeClientFirstNames = activeClients
             .map(client => {
               if (client.name && client.name.trim()) {
@@ -201,14 +225,62 @@ export default function Colours({ project, onUpdate }) {
           // Format project name: "<Street>, <Suburb>"
           const projectName = `${street || ""}, ${suburb || ""}`.trim().replace(/^,\s*|,\s*$/g, "");
           
-          // Replace tokens
-          body = body.replace(/\{SUBURB\}/g, suburb)
-                     .replace(/\{STREET\}/g, street)
-                     .replace(/\{ClientName\}/g, clientName)
-                     .replace(/\{ProjectName\}/g, projectName);
+          // Get colour consultant names
+          let colourConsultantName = "";
+          try {
+            const usersResponse = await fetch(`${API_URL}/api/users`);
+            if (usersResponse.ok) {
+              const allUsers = await usersResponse.json();
+              // Find users with "Colour Consultant" position
+              const colourConsultants = allUsers.filter((user) => {
+                if (!user.positions || !Array.isArray(user.positions)) return false;
+                return user.positions.some((position) => {
+                  const positionName = position.name ? position.name.toLowerCase() : "";
+                  return positionName === "colour consultant";
+                });
+              });
+              
+              if (colourConsultants.length > 0) {
+                const consultantNames = colourConsultants.map(c => c.name || "").filter(n => n);
+                if (consultantNames.length === 1) {
+                  colourConsultantName = consultantNames[0];
+                } else if (consultantNames.length === 2) {
+                  colourConsultantName = `${consultantNames[0]} & ${consultantNames[1]}`;
+                } else if (consultantNames.length >= 3) {
+                  const allButLast = consultantNames.slice(0, -1).join(", ");
+                  const last = consultantNames[consultantNames.length - 1];
+                  colourConsultantName = `${allButLast} & ${last}`;
+                }
+              }
+            }
+          } catch (error) {
+            console.error("Error fetching colour consultants:", error);
+          }
           
-          setEmailBody(body);
+          // Replace tokens in subject
+          subject = subject.replace(/\{SUBURB\}/g, suburb)
+                           .replace(/\{STREET\}/g, street)
+                           .replace(/\{ClientName\}/g, clientName)
+                           .replace(/\{ProjectName\}/g, projectName)
+                           .replace(/\{ColourConsultant\}/g, colourConsultantName);
+          setEmailSubject(subject);
+          
+          // Replace tokens in body
+          if (template.body) {
+            let body = template.body;
+            body = body.replace(/\{SUBURB\}/g, suburb)
+                       .replace(/\{STREET\}/g, street)
+                       .replace(/\{ClientName\}/g, clientName)
+                       .replace(/\{ProjectName\}/g, projectName)
+                       .replace(/\{ColourConsultant\}/g, colourConsultantName);
+            setEmailBody(body);
+          } else {
+            setEmailBody("");
+          }
         } else {
+          setEmailTo("");
+          setEmailFrom("");
+          setEmailSubject("");
           setEmailBody("");
         }
       }
@@ -227,6 +299,9 @@ export default function Colours({ project, onUpdate }) {
   function handleCloseSendModal() {
     setShowSendModal(false);
     setEmailBody("");
+    setEmailTo("");
+    setEmailFrom("");
+    setEmailSubject("");
   }
 
   async function handleTemplateTypeChange(e) {
@@ -404,24 +479,20 @@ export default function Colours({ project, onUpdate }) {
       return;
     }
 
-    const activeClients = getActiveClients();
-    if (activeClients.length === 0) {
-      alert("No active clients selected. Please select at least one client in Client Info.");
-      return;
-    }
-
     if (!attachAffordable && !attachSuperior) {
       alert("Please select at least one attachment (Affordable or Superior).");
       return;
     }
 
-    // Get active client emails
-    const toEmails = activeClients
-      .map(client => client.email)
-      .filter(email => email && email.trim());
-
+    // Get email addresses from the To field (comma-separated)
+    const toEmails = emailTo.split(",").map(a => a.trim()).filter(a => a.length > 0);
     if (toEmails.length === 0) {
-      alert("No valid email addresses found for active clients.");
+      alert("Please enter at least one email address in the To field.");
+      return;
+    }
+
+    if (!emailFrom || !emailFrom.trim()) {
+      alert("From address is required");
       return;
     }
 
@@ -461,6 +532,8 @@ export default function Colours({ project, onUpdate }) {
           attachSuperior: attachSuperior,
           toEmails: toEmails,
           customBody: emailBody || null,
+          from: emailFrom,
+          subject: emailSubject || null,
         }),
         signal: abortController.signal,
       });
@@ -1012,79 +1085,81 @@ export default function Colours({ project, onUpdate }) {
             zIndex: 1000,
             pointerEvents: "auto",
           }}
-          onClick={isSending ? undefined : handleCloseSendModal}
+          onClick={(e) => {
+            // Prevent closing when clicking on the modal background
+            if (e.target === e.currentTarget && !isSending) {
+              e.stopPropagation();
+            }
+          }}
         >
           <div
             style={{
               background: WHITE,
               borderRadius: "12px",
-              padding: "32px",
-              maxWidth: "600px",
+              padding: "24px",
               width: "90%",
-              maxHeight: "95vh",
-              height: "90vh",
+              maxWidth: "800px",
+              maxHeight: "90vh",
               overflowY: "auto",
-              boxShadow: "0 4px 20px rgba(0, 0, 0, 0.2)",
-              pointerEvents: isSending ? "none" : "auto",
-              opacity: isSending ? 0.6 : 1,
-              position: "relative",
-              display: "flex",
-              flexDirection: "column",
+              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h3
-              style={{
-                fontSize: "1.5rem",
-                marginTop: 0,
-                marginBottom: "24px",
-                color: MONUMENT,
-              }}
-            >
-              Email Client
-            </h3>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Preview & Send Email</h2>
+              <button
+                onClick={handleCloseSendModal}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "1.5rem",
+                  cursor: "pointer",
+                  color: MONUMENT,
+                  padding: "0",
+                  width: "30px",
+                  height: "30px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ×
+              </button>
+            </div>
 
-            {/* Recipients and Attachments Side by Side */}
-            <div style={{ display: "flex", gap: "16px", marginBottom: "16px" }}>
-              {/* Recipients Section */}
-              <div style={{ flex: 1, marginBottom: 0 }}>
-                <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "8px", fontWeight: 500 }}>
-                  Recipients
-                </div>
-                {getActiveClients().length > 0 ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                    {getActiveClients().map((client, index) => (
-                      <div
-                        key={index}
-                        style={{
-                          padding: "6px 10px",
-                          borderRadius: "6px",
-                          background: SECTION_GREY,
-                          fontSize: "0.85rem",
-                          color: MONUMENT,
-                        }}
-                      >
-                        <div style={{ fontWeight: 500, marginBottom: "2px", fontSize: "0.85rem" }}>
-                          {client.name || "No name"}
-                        </div>
-                        <div style={{ color: "#32323399", fontSize: "0.8rem" }}>
-                          {client.email || "No email"}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ color: "#32323399", fontSize: "0.85rem", fontStyle: "italic" }}>
-                    No active clients selected in Client Info
-                  </div>
-                )}
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              {/* Email Template Type Dropdown */}
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  Email Type
+                </label>
+                <select
+                  value={emailTemplateType}
+                  onChange={handleTemplateTypeChange}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    fontFamily: "inherit",
+                    color: MONUMENT,
+                    background: WHITE,
+                    cursor: "pointer",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  <option value="Send">Send Colours</option>
+                  <option value="Remind">Send Reminder</option>
+                  <option value="WindowsRoof">Windows & Roof</option>
+                </select>
               </div>
 
               {/* Attachments Section */}
-              <div style={{ flex: 1, marginBottom: 0 }}>
-                <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "8px", fontWeight: 500 }}>
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
                   Attachments
-                </div>
+                </label>
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                   <label
                     style={{
@@ -1132,59 +1207,98 @@ export default function Colours({ project, onUpdate }) {
                   </label>
                 </div>
               </div>
-            </div>
 
-            {/* Email Template Type Dropdown */}
-            <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "8px", fontWeight: 500 }}>
-                Email Type
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  To (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={emailTo}
+                  onChange={(e) => setEmailTo(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
               </div>
-              <select
-                value={emailTemplateType}
-                onChange={handleTemplateTypeChange}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: `1px solid ${SECTION_GREY}`,
-                  fontSize: "0.95rem",
-                  fontFamily: "inherit",
-                  color: MONUMENT,
-                  background: WHITE,
-                  cursor: "pointer",
-                  boxSizing: "border-box",
-                }}
-              >
-                <option value="Send">Send Colours</option>
-                <option value="Remind">Send Reminder</option>
-                <option value="WindowsRoof">Windows & Roof</option>
-              </select>
-            </div>
 
-            {/* Email Body Section */}
-            <div style={{ marginBottom: "24px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "12px", fontWeight: 500 }}>
-                Email Body
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  From
+                </label>
+                <input
+                  type="text"
+                  value={emailFrom}
+                  onChange={(e) => setEmailFrom(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
               </div>
-              <textarea
-                value={emailBody}
-                onChange={(e) => setEmailBody(e.target.value)}
-                style={{
-                  width: "100%",
-                  flex: 1,
-                  minHeight: "300px",
-                  padding: "12px",
-                  borderRadius: "8px",
-                  border: `1px solid ${SECTION_GREY}`,
-                  fontSize: "0.95rem",
-                  fontFamily: "inherit",
-                  color: MONUMENT,
-                  resize: "vertical",
-                  boxSizing: "border-box",
-                }}
-                placeholder="Email body will be loaded from template..."
-              />
-            </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  Subject
+                </label>
+                <input
+                  type="text"
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  Body
+                </label>
+                <div
+                  ref={emailBodyRef}
+                  contentEditable
+                  onInput={(e) => {
+                    setEmailBody(e.currentTarget.innerHTML);
+                  }}
+                  onBlur={(e) => {
+                    setEmailBody(e.currentTarget.innerHTML);
+                  }}
+                  style={{
+                    width: "100%",
+                    minHeight: "300px",
+                    padding: "12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "0.9rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                    lineHeight: "1.6",
+                    outline: "none",
+                  }}
+                />
+              </div>
 
             {/* Progress Bar Overlay - Only shown when sending */}
             {isSending && (
@@ -1241,77 +1355,40 @@ export default function Colours({ project, onUpdate }) {
               </div>
             )}
 
-            {/* Buttons */}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "32px", position: "relative", zIndex: 20 }}>
-              {isSending ? (
+              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
                 <button
-                  type="button"
-                  onClick={handleCancelSend}
+                  onClick={handleCloseSendModal}
                   style={{
-                    background: SECTION_GREY,
-                    color: MONUMENT,
-                    border: "none",
-                    borderRadius: "8px",
                     padding: "10px 20px",
                     fontSize: "1rem",
                     fontWeight: 500,
+                    color: MONUMENT,
+                    background: "transparent",
+                    border: `1px solid ${SECTION_GREY}`,
+                    borderRadius: "8px",
                     cursor: "pointer",
-                    transition: "background 0.2s",
-                    pointerEvents: "auto",
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#8a8a8c")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = SECTION_GREY)}
                 >
                   Cancel
                 </button>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleCloseSendModal}
-                    style={{
-                      background: SECTION_GREY,
-                      color: MONUMENT,
-                      border: "none",
-                      borderRadius: "8px",
-                      padding: "10px 20px",
-                      fontSize: "1rem",
-                      fontWeight: 500,
-                      cursor: "pointer",
-                      transition: "background 0.2s",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "#8a8a8c")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = SECTION_GREY)}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSendToClient}
-                    disabled={isSending}
-                    style={{
-                      background: MONUMENT,
-                      color: WHITE,
-                      border: "none",
-                      borderRadius: "8px",
-                      padding: "10px 20px",
-                      fontSize: "1rem",
-                      fontWeight: 500,
-                      cursor: isSending ? "not-allowed" : "pointer",
-                      opacity: isSending ? 0.6 : 1,
-                      transition: "background 0.2s",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isSending) e.currentTarget.style.background = "#1a1a1b";
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isSending) e.currentTarget.style.background = MONUMENT;
-                    }}
-                  >
-                    Send to Client
-                  </button>
-                </>
-              )}
+                <button
+                  onClick={handleSendToClient}
+                  disabled={isSending}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    color: WHITE,
+                    background: MONUMENT,
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: isSending ? "not-allowed" : "pointer",
+                    opacity: isSending ? 0.6 : 1,
+                  }}
+                >
+                  Send Email
+                </button>
+              </div>
             </div>
           </div>
         </div>

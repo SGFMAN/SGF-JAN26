@@ -230,6 +230,21 @@ export default function Overview({ project }) {
     }
   }
 
+  /** Fetch draftsperson name by ID from users API. */
+  async function getDraftspersonName(draftspersonId) {
+    if (!draftspersonId) return "";
+    try {
+      const response = await fetch(`${API_URL}/api/users`);
+      if (!response.ok) return "";
+      const users = await response.json();
+      const user = users.find((u) => u.id === parseInt(draftspersonId) || u.id === draftspersonId);
+      return user ? (user.name || "") : "";
+    } catch (error) {
+      console.error("Error fetching draftsperson name:", error);
+      return "";
+    }
+  }
+
   async function replaceTokens(text, project, opts = {}) {
     if (!text || !project) return text;
     const html = !!opts.html;
@@ -308,6 +323,12 @@ export default function Overview({ project }) {
 
     // Site Visit Scheduled Period (AM/PM)
     replaced = replaced.replace(/{SiteVisitScheduledPeriod}/g, project.site_visit_scheduled_period || "");
+
+    // Draftsperson
+    if (replaced.includes("{Draftsperson}")) {
+      const draftspersonName = await getDraftspersonName(project.draftsperson);
+      replaced = replaced.replace(/{Draftsperson}/g, draftspersonName);
+    }
 
     return replaced;
   }
@@ -427,9 +448,10 @@ export default function Overview({ project }) {
 
   // Get drawings status color
   function getDrawingsStatusColor() {
-    const status = project?.drawings_status || "In Progress";
-    if (status === "Concept Approved") return COLOR_ORANGE;
-    if (status === "Working Drawings Approved") return COLOR_GREEN;
+    const status = project?.drawings_status || "Not Assigned";
+    if (status === "Concept Stage") return COLOR_ORANGE;
+    if (status === "Working Drawing Stage") return COLOR_ORANGE;
+    if (status === "Drawings Complete") return COLOR_GREEN;
     return COLOR_RED;
   }
 
@@ -531,11 +553,44 @@ export default function Overview({ project }) {
     return COLOR_RED;
   }
 
+  // Get survey and soils status text
+  function getSurveySoilsStatusText() {
+    const surveyStatus = project?.survey_status || "Not Booked";
+    const soilStatus = project?.soil_status || "Not Booked";
+    
+    if (surveyStatus === "Complete" && soilStatus === "Complete") {
+      return "Complete";
+    }
+    if (surveyStatus === "Not Booked" && soilStatus === "Not Booked") {
+      return "Not Booked";
+    }
+    return "In Progress";
+  }
+
+  // Get survey and soils status color
+  function getSurveySoilsStatusColor() {
+    const surveyStatus = project?.survey_status || "Not Booked";
+    const soilStatus = project?.soil_status || "Not Booked";
+    
+    // Both "Not Booked" = Red
+    if (surveyStatus === "Not Booked" && soilStatus === "Not Booked") {
+      return COLOR_RED;
+    }
+    
+    // Both "Complete" = Green
+    if (surveyStatus === "Complete" && soilStatus === "Complete") {
+      return COLOR_GREEN;
+    }
+    
+    // All other combinations = Orange (partially done)
+    return COLOR_ORANGE;
+  }
+
   // Check if design phase is complete (all required statuses must be green)
   function isDesignPhaseComplete() {
-    // Check drawings status - must be "Working Drawings Approved"
-    const drawingsStatus = project?.drawings_status || "In Progress";
-    if (drawingsStatus !== "Working Drawings Approved") return false;
+    // Check drawings status - must be "Drawings Complete"
+    const drawingsStatus = project?.drawings_status || "Not Assigned";
+    if (drawingsStatus !== "Drawings Complete") return false;
 
     // Check colours status - must be "Complete"
     const coloursStatus = project?.colours_status || "Not Sent";
@@ -797,17 +852,22 @@ export default function Overview({ project }) {
     const outstandingItems = [];
     
     // Check Drawings Status
-    const drawingsStatus = project.drawings_status || "In Progress";
-    if (drawingsStatus !== "Working Drawings Approved") {
-      if (drawingsStatus === "Concept Approved") {
+    const drawingsStatus = project.drawings_status || "Not Assigned";
+    if (drawingsStatus !== "Drawings Complete") {
+      if (drawingsStatus === "Concept Stage") {
         outstandingItems.push({
           title: "Working Drawings",
-          message: "Your concept drawings have been approved. We're now working on the working drawings. Once you approve these, we can proceed to the next steps."
+          message: "Your concept drawings are in progress. We're now working on the working drawings. Once these are complete, we can proceed to the next steps."
+        });
+      } else if (drawingsStatus === "Working Drawing Stage") {
+        outstandingItems.push({
+          title: "Drawings",
+          message: "We're currently working on your working drawings. Once these are complete, we can proceed to the next steps."
         });
       } else {
         outstandingItems.push({
           title: "Drawings",
-          message: "We're currently working on your drawings. Once you approve the working drawings, we can proceed to the next steps."
+          message: "We're currently working on your drawings. Once the drawings are complete, we can proceed to the next steps."
         });
       }
     }
@@ -1013,25 +1073,28 @@ export default function Overview({ project }) {
         <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT }}>
           Overview
         </h2>
-        <button
-          type="button"
-          onClick={handleOpenFaqModal}
-          style={{
-            background: "#FF9800",
-            color: WHITE,
-            border: "none",
-            borderRadius: "8px",
-            padding: "10px 20px",
-            fontSize: "0.95rem",
-            fontWeight: 500,
-            cursor: "pointer",
-            transition: "background 0.2s",
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = "#F57C00")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "#FF9800")}
-        >
-          Ask Virtual Construction Manager
-        </button>
+        {/* Virtual Construction Manager button - hidden for now */}
+        {false && (
+          <button
+            type="button"
+            onClick={handleOpenFaqModal}
+            style={{
+              background: "#FF9800",
+              color: WHITE,
+              border: "none",
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#F57C00")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#FF9800")}
+          >
+            Ask Virtual Construction Manager
+          </button>
+        )}
       </div>
       
       {/* FAQ Modal */}
@@ -1237,377 +1300,313 @@ export default function Overview({ project }) {
         </div>
       )}
       {project && (
-        <div style={{ marginTop: "24px", display: "flex", gap: "16px", flexWrap: "wrap" }}>
-          {/* Column 1 - Design Phase Progress and Construction Phase Progress */}
-          <div style={{ flex: "1 1 0", minWidth: "0" }}>
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
-                Design Phase Progress
-              </div>
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: WHITE,
-                  background: getDesignPhaseProgressColor(),
-                  boxSizing: "border-box",
-                  height: "100px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  textAlign: "center",
-                }}
-              >
-                {getDesignPhaseProgress()}
-              </div>
-            </div>
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
-                Construction Phase Progress
-              </div>
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: WHITE,
-                  background: getConstructionPhaseProgressColor(),
-                  boxSizing: "border-box",
-                  height: "100px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  textAlign: "center",
-                }}
-              >
-                {getConstructionPhaseProgress()}
-              </div>
-            </div>
-          </div>
+        <div style={{ marginTop: "24px", display: "flex", flexDirection: "column", gap: "24px" }}>
+          {/* Design Phase Progress Section */}
+          <div
+            style={{
+              background: "transparent",
+              border: "2px solid white",
+              borderRadius: "12px",
+              padding: "24px",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+            }}
+          >
+            <h2 style={{ fontSize: "1.3rem", fontWeight: 600, color: MONUMENT, marginTop: 0, marginBottom: "20px" }}>
+              Design Phase Progress
+            </h2>
 
-          {/* Column 2 - Drawings Status */}
-          <div style={{ flex: "1 1 0", minWidth: "0" }}>
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
-                Drawings Status
-              </div>
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: WHITE,
-                  background: getDrawingsStatusColor(),
-                  boxSizing: "border-box",
-                  height: "100px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  textAlign: "center",
-                }}
-              >
-                {project.drawings_status || "In Progress"}
-              </div>
-            </div>
-          </div>
-
-          {/* Column 3 - Colour Status */}
-          <div style={{ flex: "1 1 0", minWidth: "0" }}>
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
-                Colour Status
-              </div>
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: WHITE,
-                  background: getColoursStatusColor(),
-                  boxSizing: "border-box",
-                  height: "100px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  textAlign: "center",
-                }}
-              >
-                {project.colours_status || "Not Sent"}
-              </div>
-            </div>
-          </div>
-
-          {/* Column 4 - Window Status */}
-          <div style={{ flex: "1 1 0", minWidth: "0" }}>
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
-                Window Status
-              </div>
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: WHITE,
-                  background: getWindowStatusColor(),
-                  boxSizing: "border-box",
-                  height: "100px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  textAlign: "center",
-                }}
-              >
-                {project.window_status || "Not Ordered"}
-              </div>
-            </div>
-          </div>
-
-          {/* Column 5 - Site Visit Status */}
-          <div style={{ flex: "1 1 0", minWidth: "0" }}>
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
-                Site Visit Status
-              </div>
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: WHITE,
-                  background: getSiteVisitStatusColor(),
-                  boxSizing: "border-box",
-                  height: "100px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  textAlign: "center",
-                }}
-              >
-                {project.site_visit_status || "Not Complete"}
-              </div>
-            </div>
-          </div>
-
-          {/* Column 6 - Contract Status */}
-          <div style={{ flex: "1 1 0", minWidth: "0" }}>
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
-                Contract Status
-              </div>
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: WHITE,
-                  background: getContractStatusColor(),
-                  boxSizing: "border-box",
-                  height: "100px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  textAlign: "center",
-                }}
-              >
-                {getContractStatusText()}
-              </div>
-            </div>
-          </div>
-
-          {/* Column 7 - Deposit Status */}
-          <div style={{ flex: "1 1 0", minWidth: "0" }}>
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
-                Deposit Status
-              </div>
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: WHITE,
-                  background: getDepositStatusColor(),
-                  boxSizing: "border-box",
-                  height: "100px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  textAlign: "center",
-                }}
-              >
-                {getDepositStatus()}
-              </div>
-            </div>
-          </div>
-
-          {/* Column 8 - Planning Permit Status */}
-          <div style={{ flex: "1 1 0", minWidth: "0" }}>
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
-                Planning Permit Status
-              </div>
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: WHITE,
-                  background: getPlanningPermitStatusColor(),
-                  boxSizing: "border-box",
-                  height: "100px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  textAlign: "center",
-                }}
-              >
-                {project.planning_status || "Not Selected"}
-              </div>
-            </div>
-          </div>
-
-          {/* Column 9 - Energy Report Status */}
-          <div style={{ flex: "1 1 0", minWidth: "0" }}>
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
-                Energy Report Status
-              </div>
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: WHITE,
-                  background: getEnergyReportStatusColor(),
-                  boxSizing: "border-box",
-                  height: "100px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  textAlign: "center",
-                }}
-              >
-                {project.energy_report_status || "Not Submitted"}
-              </div>
-            </div>
-          </div>
-
-          {/* Column 10 - Footing Certification Status */}
-          <div style={{ flex: "1 1 0", minWidth: "0" }}>
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
-                Footing Certification Status
-              </div>
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: WHITE,
-                  background: getFootingCertificationStatusColor(),
-                  boxSizing: "border-box",
-                  height: "100px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  textAlign: "center",
-                }}
-              >
-                {project.footing_certification_status || "Not Submitted"}
-              </div>
-            </div>
-          </div>
-
-          {/* Column 11 - Building Permit Status */}
-          <div style={{ flex: "1 1 0", minWidth: "0" }}>
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
-                Building Permit Status
-              </div>
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: WHITE,
-                  background: getBuildingPermitStatusColor(),
-                  boxSizing: "border-box",
-                  height: "100px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  textAlign: "center",
-                }}
-              >
-                {project.building_permit_status || "Not Submitted"}
-              </div>
-            </div>
-          </div>
-
-          {/* Test Email Template Section - at the bottom */}
-          <div style={{ flex: "1 1 100%", minWidth: "100%", marginTop: "24px" }}>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
-                Test Email Template
-              </div>
-              <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", flexWrap: "wrap" }}>
-                <select
-                  value={selectedTemplateId}
-                  onChange={(e) => setSelectedTemplateId(e.target.value)}
+            {/* Status Rectangles - 11 columns in a single row */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(11, 1fr)", gap: "12px" }}>
+              {/* Deposit Status */}
+              <div>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                  Deposit Status
+                </div>
+                <div
                   style={{
-                    minWidth: "200px",
                     padding: "10px 12px",
                     borderRadius: "8px",
-                    border: "none",
+                    border: "2px solid white",
                     fontSize: "1rem",
-                    color: MONUMENT,
-                    background: WHITE,
-                    boxSizing: "border-box",
-                    cursor: "pointer",
-                  }}
-                >
-                  <option value="">Select template...</option>
-                  {emailTemplates.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={handleSendTest}
-                  disabled={!selectedTemplateId}
-                  style={{
-                    background: selectedTemplateId ? MONUMENT : "#ccc",
                     color: WHITE,
-                    border: "none",
-                    borderRadius: "10px",
-                    padding: "10px 20px",
-                    fontSize: "1rem",
-                    fontWeight: 500,
-                    cursor: selectedTemplateId ? "pointer" : "not-allowed",
-                    transition: "background 0.17s",
-                    opacity: selectedTemplateId ? 1 : 0.6,
+                    background: getDepositStatusColor(),
+                    boxSizing: "border-box",
+                    height: "100px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
                   }}
                 >
-                  Send Test
-                </button>
+                  {getDepositStatus()}
+                </div>
+              </div>
+
+              {/* Drawings Status */}
+              <div>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                  Drawings Status
+                </div>
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "2px solid white",
+                    fontSize: "1rem",
+                    color: WHITE,
+                    background: getDrawingsStatusColor(),
+                    boxSizing: "border-box",
+                    height: "100px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                  }}
+                >
+                  {project.drawings_status || "Not Assigned"}
+                </div>
+              </div>
+
+              {/* Site Visit Status */}
+              <div>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                  Site Visit Status
+                </div>
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "2px solid white",
+                    fontSize: "1rem",
+                    color: WHITE,
+                    background: getSiteVisitStatusColor(),
+                    boxSizing: "border-box",
+                    height: "100px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                  }}
+                >
+                  {project.site_visit_status || "Not Complete"}
+                </div>
+              </div>
+
+              {/* Colour Status */}
+              <div>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                  Colour Status
+                </div>
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "2px solid white",
+                    fontSize: "1rem",
+                    color: WHITE,
+                    background: getColoursStatusColor(),
+                    boxSizing: "border-box",
+                    height: "100px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                  }}
+                >
+                  {project.colours_status || "Not Sent"}
+                </div>
+              </div>
+
+              {/* Window Status */}
+              <div>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                  Window Status
+                </div>
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "2px solid white",
+                    fontSize: "1rem",
+                    color: WHITE,
+                    background: getWindowStatusColor(),
+                    boxSizing: "border-box",
+                    height: "100px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                  }}
+                >
+                  {project.window_status || "Not Ordered"}
+                </div>
+              </div>
+
+              {/* Contract Status */}
+              <div>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                  Contract Status
+                </div>
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "2px solid white",
+                    fontSize: "1rem",
+                    color: WHITE,
+                    background: getContractStatusColor(),
+                    boxSizing: "border-box",
+                    height: "100px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                  }}
+                >
+                  {getContractStatusText()}
+                </div>
+              </div>
+
+              {/* Survey & Soils Status */}
+              <div>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                  Survey & Soils
+                </div>
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "2px solid white",
+                    fontSize: "1rem",
+                    color: WHITE,
+                    background: getSurveySoilsStatusColor(),
+                    boxSizing: "border-box",
+                    height: "100px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                  }}
+                >
+                  {getSurveySoilsStatusText()}
+                </div>
+              </div>
+
+              {/* Planning Permit Status */}
+              <div>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                  Planning Permit Status
+                </div>
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "2px solid white",
+                    fontSize: "1rem",
+                    color: WHITE,
+                    background: getPlanningPermitStatusColor(),
+                    boxSizing: "border-box",
+                    height: "100px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                  }}
+                >
+                  {project.planning_status || "Not Selected"}
+                </div>
+              </div>
+
+              {/* Energy Report Status */}
+              <div>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                  Energy Report Status
+                </div>
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "2px solid white",
+                    fontSize: "1rem",
+                    color: WHITE,
+                    background: getEnergyReportStatusColor(),
+                    boxSizing: "border-box",
+                    height: "100px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                  }}
+                >
+                  {project.energy_report_status || "Not Submitted"}
+                </div>
+              </div>
+
+              {/* Footing Certification Status */}
+              <div>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                  Footing Certification Status
+                </div>
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "2px solid white",
+                    fontSize: "1rem",
+                    color: WHITE,
+                    background: getFootingCertificationStatusColor(),
+                    boxSizing: "border-box",
+                    height: "100px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                  }}
+                >
+                  {project.footing_certification_status || "Not Submitted"}
+                </div>
+              </div>
+
+              {/* Building Permit Status */}
+              <div>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                  Building Permit Status
+                </div>
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "2px solid white",
+                    fontSize: "1rem",
+                    color: WHITE,
+                    background: getBuildingPermitStatusColor(),
+                    boxSizing: "border-box",
+                    height: "100px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                  }}
+                >
+                  {project.building_permit_status || "Not Submitted"}
+                </div>
               </div>
             </div>
+          </div>
+
+          {/* Construction Phase Progress Section */}
+          <div
+            style={{
+              background: "transparent",
+              border: "2px solid white",
+              borderRadius: "12px",
+              padding: "24px",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+            }}
+          >
+            <h2 style={{ fontSize: "1.3rem", fontWeight: 600, color: MONUMENT, marginTop: 0, marginBottom: "20px" }}>
+              Construction Phase Progress
+            </h2>
           </div>
         </div>
       )}

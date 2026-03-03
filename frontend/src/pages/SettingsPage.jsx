@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import Users from "./Users";
 import FileSettings from "./FileSettings";
 import EmailTemplate from "./EmailTemplate";
+import EmailSettings from "./EmailSettings";
 import AccountSettings from "./AccountSettings";
 import logo from "../images/logo.png";
 
@@ -14,7 +15,8 @@ const WHITE = "#fff";
 // Sidebar menu entries
 const menuOptions = [
   { key: "file", label: "File Settings" },
-  { key: "email", label: "Email Settings" },
+  { key: "emailTemplates", label: "Email Templates" },
+  { key: "emailSettings", label: "Email Settings" },
   { key: "users", label: "Users" },
   { key: "account", label: "Account Settings" },
 ];
@@ -26,8 +28,10 @@ export default function SettingsPage() {
     switch (selected) {
       case "file":
         return <FileSettings />;
-      case "email":
+      case "emailTemplates":
         return <EmailTemplate />;
+      case "emailSettings":
+        return <EmailSettings />;
       case "users":
         return <Users />;
       case "account":
