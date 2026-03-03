@@ -273,8 +273,8 @@ app.use(express.static(frontendDist, { index: false })); // index: false prevent
 
 // SPA fallback: for any other non-API route, return index.html (after checking app mode)
 app.get(/^\/(?!api).*/, async (req, res) => {
-  // Allow approval page without authentication (secret page for clients)
-  if (req.path.startsWith("/approve-concept/")) {
+  // Allow approval page and colours portal without authentication (secret pages for clients)
+  if (req.path.startsWith("/approve-concept/") || req.path.startsWith("/colours-portal/")) {
     return res.sendFile(path.join(frontendDist, "index.html"));
   }
   
@@ -503,7 +503,7 @@ async function ensureSchema() {
     'water_authority', 'water_declaration_status', 'water_declaration_sent_date', 'water_declaration_complete_date',
     'notes', 'project_info_notes', 'specs', 'classification', 'project_log',
     'window_status', 'window_colour', 'window_reveal', 'window_reveal_other', 'window_glazing', 'window_bal_rating', 'window_date_required', 'window_ordered_date', 'window_order_pdf_location', 'window_order_number',
-    'drawings_status', 'drawings_pdf_location', 'drawings_history', 'drawings_viewed_date', 'draftsperson', 'drawings_holder', 'colours_status', 'colours_notes', 'colours_pdf_location', 'colours_sent_date', 'colours_reminder_sent_date', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status',
+    'drawings_status', 'drawings_pdf_location', 'drawings_history', 'drawings_viewed_date', 'draftsperson', 'drawings_holder', 'colours_status', 'colours_notes', 'colours_pdf_location', 'colours_sent_date', 'colours_reminder_sent_date', 'roof_colour', 'cladding_colour', 'baseboards_colour', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status',
     'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail', 'on_hold', 'survey_status', 'soil_status'];
   for (const column of columnsToAdd) {
     try {
@@ -652,7 +652,7 @@ app.get("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, draftsperson, drawings_holder, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, draftsperson, drawings_holder, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
     );
     res.json(r.rows);
   } catch (e) {
@@ -673,7 +673,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, draftsperson, drawings_holder, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, draftsperson, drawings_holder, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
       [id]
     );
     
@@ -945,7 +945,7 @@ app.put("/api/projects/:id", async (req, res) => {
       water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date,
       notes, project_info_notes, specs, classification,
       window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number,
-      drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, draftsperson, drawings_holder, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status,
+      drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, draftsperson, drawings_holder, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, planning_status, energy_report_status, footing_certification_status, building_permit_status,
       number_of_robes, robe_widths, substatus, substatus_detail, on_hold, survey_status, soil_status } = req.body || {};
     // Convert empty strings to null, but preserve non-empty strings
     const processValue = (val) => {
@@ -1046,23 +1046,26 @@ app.put("/api/projects/:id", async (req, res) => {
         colours_pdf_location = COALESCE($60, colours_pdf_location),
         colours_sent_date = COALESCE($61, colours_sent_date),
         colours_reminder_sent_date = COALESCE($62, colours_reminder_sent_date),
-        planning_status = COALESCE($63, planning_status),
-        energy_report_status = COALESCE($64, energy_report_status),
-        footing_certification_status = COALESCE($65, footing_certification_status),
-        building_permit_status = COALESCE($66, building_permit_status),
-        year = COALESCE($67, year),
-        project_info_notes = COALESCE($68, project_info_notes),
-        specs = COALESCE($69, specs),
-        classification = COALESCE($70, classification),
-        number_of_robes = COALESCE($71, number_of_robes),
-        robe_widths = COALESCE($72, robe_widths),
-        substatus = COALESCE($73, substatus),
-        substatus_detail = COALESCE($74, substatus_detail),
-        on_hold = CASE WHEN $75 = '__SKIP__' THEN on_hold WHEN $75 = '__NULL__' THEN NULL ELSE $75 END,
-        survey_status = COALESCE($76, survey_status),
-        soil_status = COALESCE($77, soil_status),
+        roof_colour = COALESCE($63, roof_colour),
+        cladding_colour = COALESCE($64, cladding_colour),
+        baseboards_colour = COALESCE($65, baseboards_colour),
+        planning_status = COALESCE($66, planning_status),
+        energy_report_status = COALESCE($67, energy_report_status),
+        footing_certification_status = COALESCE($68, footing_certification_status),
+        building_permit_status = COALESCE($69, building_permit_status),
+        year = COALESCE($70, year),
+        project_info_notes = COALESCE($71, project_info_notes),
+        specs = COALESCE($72, specs),
+        classification = COALESCE($73, classification),
+        number_of_robes = COALESCE($74, number_of_robes),
+        robe_widths = COALESCE($75, robe_widths),
+        substatus = COALESCE($76, substatus),
+        substatus_detail = COALESCE($77, substatus_detail),
+        on_hold = CASE WHEN $78 = '__SKIP__' THEN on_hold WHEN $78 = '__NULL__' THEN NULL ELSE $78 END,
+        survey_status = COALESCE($79, survey_status),
+        soil_status = COALESCE($80, soil_status),
         updated_at = NOW()
-      WHERE id = $78
+      WHERE id = $81
       RETURNING *
       `,
       [
@@ -1129,6 +1132,9 @@ app.put("/api/projects/:id", async (req, res) => {
         processValue(colours_pdf_location),
         processValue(colours_sent_date),
         processValue(colours_reminder_sent_date),
+        processValue(roof_colour),
+        processValue(cladding_colour),
+        processValue(baseboards_colour),
         processValue(planning_status),
         processValue(energy_report_status),
         processValue(footing_certification_status),
@@ -3910,6 +3916,200 @@ app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
       error: errorMessage,
       details: errorDetails,
     });
+  }
+});
+
+// Send colours portal email
+app.post("/api/emails/send-colours-portal", async (req, res) => {
+  const { projectId, toEmails, from, subject, htmlBody } = req.body || {};
+
+  if (!projectId) {
+    return res.status(400).json({ error: "Project ID is required" });
+  }
+
+  if (!pool) {
+    return res.status(500).json({ error: "DATABASE_URL not set" });
+  }
+
+  // Get project details
+  let project = null;
+  try {
+    const projectResult = await pool.query(
+      "SELECT suburb, street, state FROM projects WHERE id = $1",
+      [projectId]
+    );
+
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    project = projectResult.rows[0];
+  } catch (e) {
+    console.error("Error fetching project:", e);
+    return res.status(500).json({ error: "Failed to fetch project details" });
+  }
+
+  // Get SMTP credentials based on from address
+  let smtpUser = null;
+  let smtpPass = null;
+  try {
+    const smtpCreds = await getSmtpCredentialsForFromAddress(from);
+    smtpUser = smtpCreds.smtpUser;
+    smtpPass = smtpCreds.smtpPass;
+  } catch (e) {
+    console.error("Error getting SMTP credentials:", e);
+  }
+
+  if (!smtpUser || !smtpPass) {
+    smtpUser = process.env.SMTP_USER;
+    smtpPass = process.env.SMTP_PASS;
+  }
+  if (!smtpUser || !smtpPass) {
+    return res.status(503).json({
+      error: "SMTP not configured. Set SMTP User and SMTP Pass in Settings → File Settings, or use backend .env.",
+    });
+  }
+
+  const host = process.env.SMTP_HOST || "smtp.office365.com";
+  const port = parseInt(process.env.SMTP_PORT || "587", 10);
+  const secure = process.env.SMTP_SECURE === "true";
+
+  try {
+    // Create email transporter
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user: smtpUser, pass: smtpPass },
+    });
+
+    // Add "Click here for colours" button to email body
+    const portalUrl = `http://192.168.0.222:3001/colours-portal/${projectId}`;
+    const buttonHtml = `
+      <br><br>
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${portalUrl}" style="
+          display: inline-block;
+          padding: 20px 48px;
+          background-color: #4D93D9;
+          color: #ffffff;
+          text-decoration: none;
+          border-radius: 10px;
+          font-weight: 600;
+          font-size: 1.3rem;
+          box-shadow: 0 4px 12px rgba(77, 147, 217, 0.4);
+        ">Click here for colours</a>
+      </div>
+    `;
+    
+    // Insert button before "Powered by" or at the end
+    let finalHtmlBody = htmlBody || "";
+    const poweredByPattern = /Powered by SGF Central/i;
+    const poweredByMatch = finalHtmlBody.match(poweredByPattern);
+    if (poweredByMatch) {
+      const insertIndex = poweredByMatch.index;
+      finalHtmlBody = finalHtmlBody.slice(0, insertIndex) + buttonHtml + finalHtmlBody.slice(insertIndex);
+    } else {
+      // Append at the end
+      finalHtmlBody += buttonHtml;
+    }
+
+    // Add logo to email
+    const attachments = [];
+    const logoResult = await addLogoToEmail(finalHtmlBody, attachments);
+
+    const recipientEmail = toEmails && Array.isArray(toEmails) && toEmails.length > 0
+      ? toEmails.filter(email => email && email.trim()).join(", ")
+      : "";
+
+    if (!recipientEmail) {
+      return res.status(400).json({ error: "No valid recipient email addresses provided" });
+    }
+
+    const mailOptions = {
+      from: from || smtpUser,
+      to: recipientEmail,
+      subject: subject || "Colours Portal",
+      html: logoResult.htmlBody,
+      attachments: logoResult.attachments,
+    };
+
+    console.log(`Sending colours portal email from: ${from || smtpUser}`);
+    console.log(`Sending colours portal email to: ${recipientEmail}`);
+    console.log(`Subject: ${subject || "Colours Portal"}`);
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log("Colours portal email sent successfully:", info.messageId);
+
+    res.json({ success: true, messageId: info.messageId, message: "Colours portal email sent successfully!" });
+  } catch (e) {
+    console.error("Error in POST /api/emails/send-colours-portal:", e);
+    console.error("Error stack:", e.stack);
+    
+    let errorMessage = e.message || "Failed to send email. Check SMTP settings and credentials.";
+    let errorDetails = null;
+    
+    if (e.response) {
+      errorDetails = e.response;
+      errorMessage += ` Response: ${e.response}`;
+    }
+    if (e.responseCode) {
+      errorDetails = { code: e.responseCode, response: e.response };
+      errorMessage += ` Code: ${e.responseCode}`;
+    }
+    if (e.command) {
+      errorMessage += ` Command: ${e.command}`;
+    }
+    
+    res.status(500).json({
+      error: errorMessage,
+      details: errorDetails,
+    });
+  }
+});
+
+// Update colours from portal (public endpoint - no auth required)
+app.post("/api/projects/:id/update-colours", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: "invalid id" });
+  }
+
+  const { roof_colour, cladding_colour, baseboards_colour } = req.body || {};
+
+  try {
+    // Verify project exists
+    const projectResult = await pool.query("SELECT id FROM projects WHERE id = $1", [id]);
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    // Update colours
+    const updateResult = await pool.query(
+      `UPDATE projects 
+       SET roof_colour = COALESCE($1, roof_colour),
+           cladding_colour = COALESCE($2, cladding_colour),
+           baseboards_colour = COALESCE($3, baseboards_colour),
+           updated_at = NOW()
+       WHERE id = $4
+       RETURNING id, roof_colour, cladding_colour, baseboards_colour`,
+      [roof_colour, cladding_colour, baseboards_colour, id]
+    );
+
+    if (updateResult.rowCount === 0) {
+      return res.status(404).json({ error: "Failed to update project" });
+    }
+
+    res.json({ 
+      success: true, 
+      message: "Colours updated successfully",
+      project: updateResult.rows[0]
+    });
+  } catch (e) {
+    console.error("Error updating colours:", e);
+    res.status(500).json({ error: e.message || "Failed to update colours" });
   }
 });
 

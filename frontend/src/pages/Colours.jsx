@@ -6,10 +6,14 @@ const WHITE = "#fff";
 const API_URL = "";
 
 const COLOURS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
+const COLOUR_OPTIONS = ["Select", "Monument", "Paperbark", "Wallaby"];
 
 export default function Colours({ project, onUpdate }) {
   const [coloursStatus, setColoursStatus] = useState(project?.colours_status || "Not Sent");
   const [notes, setNotes] = useState(project?.colours_notes || "");
+  const [roofColour, setRoofColour] = useState(project?.roof_colour || "Select");
+  const [claddingColour, setCladdingColour] = useState(project?.cladding_colour || "Select");
+  const [baseboardsColour, setBaseboardsColour] = useState(project?.baseboards_colour || "Select");
   const [showSendModal, setShowSendModal] = useState(false);
   const [attachAffordable, setAttachAffordable] = useState(false);
   const [attachSuperior, setAttachSuperior] = useState(false);
@@ -26,17 +30,26 @@ export default function Colours({ project, onUpdate }) {
   const [emailFrom, setEmailFrom] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const emailBodyRef = useRef(null);
+  const [showPortalEmailModal, setShowPortalEmailModal] = useState(false);
+  const [portalEmailTo, setPortalEmailTo] = useState("");
+  const [portalEmailFrom, setPortalEmailFrom] = useState("");
+  const [portalEmailSubject, setPortalEmailSubject] = useState("");
+  const [portalEmailBody, setPortalEmailBody] = useState("");
+  const portalEmailBodyRef = useRef(null);
   
-  const valuesRef = useRef({ coloursStatus, notes });
+  const valuesRef = useRef({ coloursStatus, notes, roofColour, claddingColour, baseboardsColour });
   
   useEffect(() => {
-    valuesRef.current = { coloursStatus, notes };
-  }, [coloursStatus, notes]);
+    valuesRef.current = { coloursStatus, notes, roofColour, claddingColour, baseboardsColour };
+  }, [coloursStatus, notes, roofColour, claddingColour, baseboardsColour]);
 
   useEffect(() => {
     if (project) {
       setColoursStatus(project.colours_status || "Not Sent");
       setNotes(project.colours_notes || "");
+      setRoofColour(project.roof_colour || "Select");
+      setCladdingColour(project.cladding_colour || "Select");
+      setBaseboardsColour(project.baseboards_colour || "Select");
       
       // Set default checkboxes based on specs
       const specs = project.specs || "";
@@ -64,7 +77,16 @@ export default function Colours({ project, onUpdate }) {
     }
   }, [showSendModal, emailBody]);
 
-  async function saveField(fieldName, value) {
+  // Update portal email body contentEditable
+  useEffect(() => {
+    if (showPortalEmailModal && portalEmailBodyRef.current && portalEmailBody) {
+      if (portalEmailBodyRef.current.innerHTML !== portalEmailBody) {
+        portalEmailBodyRef.current.innerHTML = portalEmailBody;
+      }
+    }
+  }, [showPortalEmailModal, portalEmailBody]);
+
+  async function saveField(fieldName, value, shouldUpdate = true) {
     if (!project?.id) {
       console.error("Cannot save: no project ID");
       return;
@@ -124,6 +146,9 @@ export default function Colours({ project, onUpdate }) {
         drawings_status: project?.drawings_status || null,
         colours_status: fieldName === "colours_status" ? (value === "" ? null : value) : currentValues.coloursStatus,
         colours_notes: fieldName === "colours_notes" ? (value === "" ? null : value) : currentValues.notes,
+        roof_colour: fieldName === "roof_colour" ? (value === "Select" ? null : value) : (currentValues.roofColour === "Select" ? null : currentValues.roofColour),
+        cladding_colour: fieldName === "cladding_colour" ? (value === "Select" ? null : value) : (currentValues.claddingColour === "Select" ? null : currentValues.claddingColour),
+        baseboards_colour: fieldName === "baseboards_colour" ? (value === "Select" ? null : value) : (currentValues.baseboardsColour === "Select" ? null : currentValues.baseboardsColour),
       };
       
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
@@ -140,7 +165,7 @@ export default function Colours({ project, onUpdate }) {
       } else {
         const savedData = await response.json().catch(() => null);
         console.log("Successfully saved:", savedData);
-        if (onUpdate) {
+        if (onUpdate && shouldUpdate) {
           onUpdate();
         }
       }
@@ -164,6 +189,27 @@ export default function Colours({ project, onUpdate }) {
 
   async function handleNotesBlur() {
     await saveField("colours_notes", valuesRef.current.notes);
+  }
+
+  async function handleRoofColourChange(e) {
+    const newValue = e.target.value;
+    setRoofColour(newValue);
+    valuesRef.current.roofColour = newValue;
+    await saveField("roof_colour", newValue, false);
+  }
+
+  async function handleCladdingColourChange(e) {
+    const newValue = e.target.value;
+    setCladdingColour(newValue);
+    valuesRef.current.claddingColour = newValue;
+    await saveField("cladding_colour", newValue, false);
+  }
+
+  async function handleBaseboardsColourChange(e) {
+    const newValue = e.target.value;
+    setBaseboardsColour(newValue);
+    valuesRef.current.baseboardsColour = newValue;
+    await saveField("baseboards_colour", newValue, false);
   }
 
   async function loadEmailTemplate(templateType) {
@@ -302,6 +348,165 @@ export default function Colours({ project, onUpdate }) {
     setEmailTo("");
     setEmailFrom("");
     setEmailSubject("");
+  }
+
+  async function handleOpenPortalEmailModal() {
+    // Load "COLOURS - Portal" template
+    try {
+      const response = await fetch(`${API_URL}/api/email-templates`);
+      if (response.ok) {
+        const templates = await response.json();
+        const template = templates.find(t => t.name === "COLOURS - Portal");
+        if (template) {
+          // Get active client emails for "To" field
+          const activeClients = getActiveClients();
+          const activeClientEmails = activeClients
+            .map(client => client.email)
+            .filter(email => email && email.trim());
+          const toAddresses = activeClientEmails.join(", ");
+          
+          // Set To, From, Subject from template
+          setPortalEmailTo(toAddresses);
+          setPortalEmailFrom(template.from_address || "");
+          
+          // Replace tokens in subject
+          let subject = template.subject || "";
+          const suburb = (project?.suburb || "").toUpperCase();
+          const street = project?.street || "";
+          
+          // Get active client names (first names only)
+          const activeClientFirstNames = activeClients
+            .map(client => {
+              if (client.name && client.name.trim()) {
+                return client.name.trim().split(/\s+/)[0];
+              }
+              return null;
+            })
+            .filter(name => name);
+          
+          // Format client first names with commas and "&"
+          let clientName = "";
+          if (activeClientFirstNames.length === 0) {
+            clientName = "";
+          } else if (activeClientFirstNames.length === 1) {
+            clientName = activeClientFirstNames[0];
+          } else if (activeClientFirstNames.length === 2) {
+            clientName = `${activeClientFirstNames[0]} & ${activeClientFirstNames[1]}`;
+          } else {
+            const allButLast = activeClientFirstNames.slice(0, -1).join(", ");
+            const last = activeClientFirstNames[activeClientFirstNames.length - 1];
+            clientName = `${allButLast} & ${last}`;
+          }
+          
+          // Format project name
+          const projectName = `${street || ""}, ${suburb || ""}`.trim().replace(/^,\s*|,\s*$/g, "");
+          
+          // Get colour consultant names
+          let colourConsultantName = "";
+          try {
+            const usersResponse = await fetch(`${API_URL}/api/users`);
+            if (usersResponse.ok) {
+              const allUsers = await usersResponse.json();
+              const colourConsultants = allUsers.filter((user) => {
+                if (!user.positions || !Array.isArray(user.positions)) return false;
+                return user.positions.some((position) => {
+                  const positionName = position.name ? position.name.toLowerCase() : "";
+                  return positionName === "colour consultant";
+                });
+              });
+              
+              if (colourConsultants.length > 0) {
+                const consultantNames = colourConsultants.map(c => c.name || "").filter(n => n);
+                if (consultantNames.length === 1) {
+                  colourConsultantName = consultantNames[0];
+                } else if (consultantNames.length === 2) {
+                  colourConsultantName = `${consultantNames[0]} & ${consultantNames[1]}`;
+                } else if (consultantNames.length >= 3) {
+                  const allButLast = consultantNames.slice(0, -1).join(", ");
+                  const last = consultantNames[consultantNames.length - 1];
+                  colourConsultantName = `${allButLast} & ${last}`;
+                }
+              }
+            }
+          } catch (error) {
+            console.error("Error fetching colour consultants:", error);
+          }
+          
+          // Replace tokens in subject
+          subject = subject.replace(/\{SUBURB\}/g, suburb)
+                           .replace(/\{STREET\}/g, street)
+                           .replace(/\{ClientName\}/g, clientName)
+                           .replace(/\{ProjectName\}/g, projectName)
+                           .replace(/\{ColourConsultant\}/g, colourConsultantName);
+          setPortalEmailSubject(subject);
+          
+          // Replace tokens in body
+          if (template.body) {
+            let body = template.body;
+            body = body.replace(/\{SUBURB\}/g, suburb)
+                       .replace(/\{STREET\}/g, street)
+                       .replace(/\{ClientName\}/g, clientName)
+                       .replace(/\{ProjectName\}/g, projectName)
+                       .replace(/\{ColourConsultant\}/g, colourConsultantName);
+            setPortalEmailBody(body);
+          } else {
+            setPortalEmailBody("");
+          }
+          
+          setShowPortalEmailModal(true);
+        } else {
+          alert('Email template "COLOURS - Portal" not found. Please create it in Settings → Email Templates.');
+        }
+      }
+    } catch (error) {
+      console.error("Error loading portal email template:", error);
+      alert("Failed to load email template");
+    }
+  }
+
+  async function handleSendPortalEmail() {
+    if (!project || !project.id) {
+      alert("Error: Project ID is missing");
+      return;
+    }
+
+    const toAddresses = portalEmailTo.split(",").map(a => a.trim()).filter(a => a.length > 0);
+    if (toAddresses.length === 0) {
+      alert("Please enter at least one email address");
+      return;
+    }
+    if (!portalEmailFrom || !portalEmailFrom.trim()) {
+      alert("From address is required");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/emails/send-colours-portal`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          projectId: project.id,
+          toEmails: toAddresses,
+          from: portalEmailFrom,
+          subject: portalEmailSubject,
+          htmlBody: portalEmailBody,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(errorData.error || "Failed to send email");
+      }
+
+      const result = await response.json();
+      alert("Portal email sent successfully!");
+      setShowPortalEmailModal(false);
+    } catch (error) {
+      console.error("Error sending portal email:", error);
+      alert(`Failed to send email: ${error.message}`);
+    }
   }
 
   async function handleTemplateTypeChange(e) {
@@ -1035,8 +1240,111 @@ export default function Colours({ project, onUpdate }) {
           </div>
 
           {/* Column 3 */}
-          <div style={{ flex: "1", minWidth: "200px" }}>
-            {/* Placeholder for future content */}
+          <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", gap: "24px" }}>
+            {/* Roof */}
+            <div>
+              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
+                Roof
+              </div>
+              <select
+                value={roofColour}
+                onChange={handleRoofColourChange}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "none",
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                }}
+              >
+                {COLOUR_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Cladding */}
+            <div>
+              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
+                Cladding
+              </div>
+              <select
+                value={claddingColour}
+                onChange={handleCladdingColourChange}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "none",
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                }}
+              >
+                {COLOUR_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Baseboards */}
+            <div>
+              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
+                Baseboards
+              </div>
+              <select
+                value={baseboardsColour}
+                onChange={handleBaseboardsColourChange}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "none",
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                }}
+              >
+                {COLOUR_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Email Online Colours Button */}
+            <div style={{ marginTop: "24px" }}>
+              <button
+                type="button"
+                onClick={handleOpenPortalEmailModal}
+                style={{
+                  width: "100%",
+                  background: MONUMENT,
+                  color: WHITE,
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "12px 20px",
+                  fontSize: "1rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  transition: "background 0.2s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1b")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
+              >
+                Email Online Colours
+              </button>
+            </div>
           </div>
 
           {/* Column 4 - Notes */}
@@ -1670,6 +1978,185 @@ export default function Colours({ project, onUpdate }) {
               >
                 Send to Client
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Portal Email Preview Modal */}
+      {showPortalEmailModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1001,
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowPortalEmailModal(false);
+            }
+          }}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              width: "90%",
+              maxWidth: "800px",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Preview & Send Email</h2>
+              <button
+                onClick={() => setShowPortalEmailModal(false)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "1.5rem",
+                  cursor: "pointer",
+                  color: MONUMENT,
+                  padding: "0",
+                  width: "30px",
+                  height: "30px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div>
+                <label style={{ display: "block", marginBottom: "6px", fontSize: "0.9rem", color: "#32323399", fontWeight: 500 }}>
+                  To
+                </label>
+                <input
+                  type="text"
+                  value={portalEmailTo}
+                  onChange={(e) => setPortalEmailTo(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: "6px", fontSize: "0.9rem", color: "#32323399", fontWeight: 500 }}>
+                  From
+                </label>
+                <input
+                  type="text"
+                  value={portalEmailFrom}
+                  onChange={(e) => setPortalEmailFrom(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: "6px", fontSize: "0.9rem", color: "#32323399", fontWeight: 500 }}>
+                  Subject
+                </label>
+                <input
+                  type="text"
+                  value={portalEmailSubject}
+                  onChange={(e) => setPortalEmailSubject(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: "6px", fontSize: "0.9rem", color: "#32323399", fontWeight: 500 }}>
+                  Body
+                </label>
+                <div
+                  ref={portalEmailBodyRef}
+                  contentEditable
+                  onInput={(e) => setPortalEmailBody(e.currentTarget.innerHTML)}
+                  onBlur={(e) => setPortalEmailBody(e.currentTarget.innerHTML)}
+                  dangerouslySetInnerHTML={{ __html: portalEmailBody }}
+                  style={{
+                    width: "100%",
+                    minHeight: "300px",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                    overflowY: "auto",
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
+                <button
+                  onClick={() => setShowPortalEmailModal(false)}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    color: MONUMENT,
+                    background: "transparent",
+                    border: `1px solid ${SECTION_GREY}`,
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendPortalEmail}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    color: WHITE,
+                    background: MONUMENT,
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Send Email
+                </button>
+              </div>
             </div>
           </div>
         </div>
