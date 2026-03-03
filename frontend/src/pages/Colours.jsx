@@ -191,25 +191,60 @@ export default function Colours({ project, onUpdate }) {
     await saveField("colours_notes", valuesRef.current.notes);
   }
 
+  async function saveColoursFromProjectPage(nextRoof, nextCladding, nextBaseboards) {
+    if (!project?.id) {
+      console.error("Cannot save colours: no project ID");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/projects/${project.id}/update-colours`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          roof_colour: nextRoof === "Select" ? null : nextRoof,
+          cladding_colour: nextCladding === "Select" ? null : nextCladding,
+          baseboards_colour: nextBaseboards === "Select" ? null : nextBaseboards,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(errorData.error || "Failed to save colours");
+      }
+
+      const result = await response.json().catch(() => null);
+      console.log("Colours saved from project page:", result);
+      if (onUpdate) {
+        onUpdate();
+      }
+    } catch (error) {
+      console.error("Error saving colours from project page:", error);
+      alert(`Failed to save colours: ${error.message}`);
+    }
+  }
+
   async function handleRoofColourChange(e) {
     const newValue = e.target.value;
     setRoofColour(newValue);
     valuesRef.current.roofColour = newValue;
-    await saveField("roof_colour", newValue, false);
+    await saveColoursFromProjectPage(newValue, claddingColour, baseboardsColour);
   }
 
   async function handleCladdingColourChange(e) {
     const newValue = e.target.value;
     setCladdingColour(newValue);
     valuesRef.current.claddingColour = newValue;
-    await saveField("cladding_colour", newValue, false);
+    await saveColoursFromProjectPage(roofColour, newValue, baseboardsColour);
   }
 
   async function handleBaseboardsColourChange(e) {
     const newValue = e.target.value;
     setBaseboardsColour(newValue);
     valuesRef.current.baseboardsColour = newValue;
-    await saveField("baseboards_colour", newValue, false);
+    await saveColoursFromProjectPage(roofColour, claddingColour, newValue);
   }
 
   async function loadEmailTemplate(templateType) {

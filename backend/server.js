@@ -4086,12 +4086,12 @@ app.post("/api/projects/:id/update-colours", async (req, res) => {
       return res.status(404).json({ error: "Project not found" });
     }
 
-    // Update colours
+    // Update colours - always set to provided values (including NULL to clear)
     const updateResult = await pool.query(
       `UPDATE projects 
-       SET roof_colour = COALESCE($1, roof_colour),
-           cladding_colour = COALESCE($2, cladding_colour),
-           baseboards_colour = COALESCE($3, baseboards_colour),
+       SET roof_colour = $1,
+           cladding_colour = $2,
+           baseboards_colour = $3,
            updated_at = NOW()
        WHERE id = $4
        RETURNING id, roof_colour, cladding_colour, baseboards_colour`,
