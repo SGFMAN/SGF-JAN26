@@ -503,7 +503,7 @@ async function ensureSchema() {
     'water_authority', 'water_declaration_status', 'water_declaration_sent_date', 'water_declaration_complete_date',
     'notes', 'project_info_notes', 'specs', 'classification', 'project_log',
     'window_status', 'window_colour', 'window_reveal', 'window_reveal_other', 'window_glazing', 'window_bal_rating', 'window_date_required', 'window_ordered_date', 'window_order_pdf_location', 'window_order_number',
-    'drawings_status', 'drawings_pdf_location', 'drawings_history', 'drawings_viewed_date', 'draftsperson', 'colours_status', 'colours_notes', 'colours_pdf_location', 'colours_sent_date', 'colours_reminder_sent_date', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status',
+    'drawings_status', 'drawings_pdf_location', 'drawings_history', 'drawings_viewed_date', 'draftsperson', 'drawings_holder', 'colours_status', 'colours_notes', 'colours_pdf_location', 'colours_sent_date', 'colours_reminder_sent_date', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status',
     'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail', 'on_hold', 'survey_status', 'soil_status'];
   for (const column of columnsToAdd) {
     try {
@@ -652,7 +652,7 @@ app.get("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, draftsperson, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, draftsperson, drawings_holder, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
     );
     res.json(r.rows);
   } catch (e) {
@@ -673,7 +673,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, draftsperson, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, draftsperson, drawings_holder, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
       [id]
     );
     
@@ -945,7 +945,7 @@ app.put("/api/projects/:id", async (req, res) => {
       water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date,
       notes, project_info_notes, specs, classification,
       window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number,
-      drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, draftsperson, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status,
+      drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, draftsperson, drawings_holder, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, planning_status, energy_report_status, footing_certification_status, building_permit_status,
       number_of_robes, robe_widths, substatus, substatus_detail, on_hold, survey_status, soil_status } = req.body || {};
     // Convert empty strings to null, but preserve non-empty strings
     const processValue = (val) => {
@@ -1040,28 +1040,29 @@ app.put("/api/projects/:id", async (req, res) => {
         drawings_history = COALESCE($54, drawings_history),
         drawings_viewed_date = COALESCE($55, drawings_viewed_date),
         draftsperson = COALESCE($56, draftsperson),
-        colours_status = COALESCE($57, colours_status),
-        colours_notes = COALESCE($58, colours_notes),
-        colours_pdf_location = COALESCE($59, colours_pdf_location),
-        colours_sent_date = COALESCE($60, colours_sent_date),
-        colours_reminder_sent_date = COALESCE($61, colours_reminder_sent_date),
-        planning_status = COALESCE($62, planning_status),
-        energy_report_status = COALESCE($63, energy_report_status),
-        footing_certification_status = COALESCE($64, footing_certification_status),
-        building_permit_status = COALESCE($65, building_permit_status),
-        year = COALESCE($66, year),
-        project_info_notes = COALESCE($67, project_info_notes),
-        specs = COALESCE($68, specs),
-        classification = COALESCE($69, classification),
-        number_of_robes = COALESCE($70, number_of_robes),
-        robe_widths = COALESCE($71, robe_widths),
-        substatus = COALESCE($72, substatus),
-        substatus_detail = COALESCE($73, substatus_detail),
-        on_hold = CASE WHEN $74 = '__SKIP__' THEN on_hold WHEN $74 = '__NULL__' THEN NULL ELSE $74 END,
-        survey_status = COALESCE($75, survey_status),
-        soil_status = COALESCE($76, soil_status),
+        drawings_holder = COALESCE($57, drawings_holder),
+        colours_status = COALESCE($58, colours_status),
+        colours_notes = COALESCE($59, colours_notes),
+        colours_pdf_location = COALESCE($60, colours_pdf_location),
+        colours_sent_date = COALESCE($61, colours_sent_date),
+        colours_reminder_sent_date = COALESCE($62, colours_reminder_sent_date),
+        planning_status = COALESCE($63, planning_status),
+        energy_report_status = COALESCE($64, energy_report_status),
+        footing_certification_status = COALESCE($65, footing_certification_status),
+        building_permit_status = COALESCE($66, building_permit_status),
+        year = COALESCE($67, year),
+        project_info_notes = COALESCE($68, project_info_notes),
+        specs = COALESCE($69, specs),
+        classification = COALESCE($70, classification),
+        number_of_robes = COALESCE($71, number_of_robes),
+        robe_widths = COALESCE($72, robe_widths),
+        substatus = COALESCE($73, substatus),
+        substatus_detail = COALESCE($74, substatus_detail),
+        on_hold = CASE WHEN $75 = '__SKIP__' THEN on_hold WHEN $75 = '__NULL__' THEN NULL ELSE $75 END,
+        survey_status = COALESCE($76, survey_status),
+        soil_status = COALESCE($77, soil_status),
         updated_at = NOW()
-      WHERE id = $77
+      WHERE id = $78
       RETURNING *
       `,
       [
@@ -1122,6 +1123,7 @@ app.put("/api/projects/:id", async (req, res) => {
         processValue(drawings_history),
         processValue(drawings_viewed_date),
         processValue(draftsperson),
+        processValue(drawings_holder),
         processValue(colours_status),
         processValue(colours_notes),
         processValue(colours_pdf_location),
@@ -2098,33 +2100,44 @@ app.post("/api/emails/send-drawings", async (req, res) => {
       );
       
       if (isConceptEmail) {
-        // Add approval button link
+        // Add approval button link - make it more prominent
         const approvalUrl = `http://192.168.0.222:3001/approve-concept/${projectId}`;
         const approvalButtonHtml = `
           <br><br>
-          <div style="text-align: center; margin: 20px 0;">
+          <div style="text-align: center; margin: 30px 0;">
             <a href="${approvalUrl}" style="
               display: inline-block;
-              padding: 16px 32px;
+              padding: 20px 48px;
               background-color: #4D93D9;
               color: #ffffff;
               text-decoration: none;
-              border-radius: 8px;
-              font-weight: 500;
-              font-size: 1.1rem;
+              border-radius: 10px;
+              font-weight: 600;
+              font-size: 1.3rem;
+              box-shadow: 0 4px 12px rgba(77, 147, 217, 0.4);
             ">Approve Concept Here</a>
           </div>
         `;
         
-        // Insert button before "Powered by" or at the end
-        const poweredByPattern = /Powered by SGF Central/i;
-        const match = htmlBody.match(poweredByPattern);
+        // Find the word "approve" (case-insensitive) and insert button right after it
+        const approvePattern = /\bapprove\b/i;
+        const match = htmlBody.match(approvePattern);
         if (match) {
-          const insertIndex = match.index;
+          // Find the end of the word "approve" (including any trailing punctuation or whitespace)
+          const insertIndex = match.index + match[0].length;
+          // Insert button right after "approve"
           htmlBody = htmlBody.slice(0, insertIndex) + approvalButtonHtml + htmlBody.slice(insertIndex);
         } else {
-          // Fallback: append at the end
-          htmlBody += approvalButtonHtml;
+          // Fallback: insert before "Powered by" or at the end
+          const poweredByPattern = /Powered by SGF Central/i;
+          const poweredByMatch = htmlBody.match(poweredByPattern);
+          if (poweredByMatch) {
+            const insertIndex = poweredByMatch.index;
+            htmlBody = htmlBody.slice(0, insertIndex) + approvalButtonHtml + htmlBody.slice(insertIndex);
+          } else {
+            // Last resort: append at the end
+            htmlBody += approvalButtonHtml;
+          }
         }
       }
       

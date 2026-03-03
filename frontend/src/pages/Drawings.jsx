@@ -10,6 +10,7 @@ const DRAWINGS_STATUS_OPTIONS = ["Not Assigned", "Concept Stage", "Working Drawi
 export default function Drawings({ project, onUpdate }) {
   const [drawingsStatus, setDrawingsStatus] = useState(project?.drawings_status || "Not Assigned");
   const [draftsperson, setDraftsperson] = useState(project?.draftsperson ? String(project.draftsperson) : "");
+  const [drawingsHolder, setDrawingsHolder] = useState(project?.drawings_holder || "design team");
   const [draftspersonUsers, setDraftspersonUsers] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -39,6 +40,7 @@ export default function Drawings({ project, onUpdate }) {
   const [emailDrawingsToClientFrom, setEmailDrawingsToClientFrom] = useState("");
   const [emailDrawingsToClientSubject, setEmailDrawingsToClientSubject] = useState("");
   const [emailDrawingsToClientBody, setEmailDrawingsToClientBody] = useState("");
+  const [emailPreviewType, setEmailPreviewType] = useState(null); // "drafting" or "sales"
   
   const valuesRef = useRef({ drawingsStatus, draftsperson });
   
@@ -50,6 +52,8 @@ export default function Drawings({ project, onUpdate }) {
     if (project) {
       setDrawingsStatus(project.drawings_status || "Not Assigned");
       setDraftsperson(project.draftsperson ? String(project.draftsperson) : "");
+      // Initialize drawings_holder to "design team" if not set (for new projects)
+      setDrawingsHolder(project.drawings_holder || "design team");
     }
   }, [project]);
 
@@ -748,6 +752,7 @@ export default function Drawings({ project, onUpdate }) {
           drawings_pdf_location: filePath,
           drawings_history: JSON.stringify(drawingsHistory),
           drawings_viewed_date: project?.drawings_viewed_date || null, // Preserve existing viewed date
+          drawings_holder: "sales team", // When drawings are uploaded, sales team has them
           project_log: logEntry,
           colours_status: project?.colours_status || null,
           planning_status: project?.planning_status || null,
@@ -1270,6 +1275,9 @@ export default function Drawings({ project, onUpdate }) {
       const result = await response.json();
       alert("Drawings email sent successfully!");
       
+      // Client now has the drawings
+      await saveDrawingsHolder("client");
+      
       // Close modal after sending
       setShowEmailDrawingsToClientModal(false);
     } catch (error) {
@@ -1382,10 +1390,101 @@ export default function Drawings({ project, onUpdate }) {
       setEmailPreviewFrom(template.from_address || "");
       setEmailPreviewSubject(subject);
       setEmailPreviewBody(body);
+      setEmailPreviewType("drafting"); // Mark as drafting notes email
       setShowEmailPreviewModal(true);
     } catch (error) {
       console.error("Error preparing email:", error);
       alert(`Failed to prepare email: ${error.message}`);
+    }
+  }
+
+  async function saveDrawingsHolder(holder) {
+    if (!project?.id) return;
+    
+    try {
+      const projectName = project?.street && project?.suburb 
+        ? `${project.street}, ${project.suburb}`.trim() 
+        : project?.name || "";
+
+      const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: projectName,
+          status: project?.status || null,
+          stream: project?.stream || null,
+          suburb: project?.suburb || null,
+          street: project?.street || null,
+          state: project?.state || null,
+          deposit: project?.deposit || null,
+          project_cost: project?.project_cost || null,
+          client_name: project?.client_name || null,
+          email: project?.email || null,
+          phone: project?.phone || null,
+          client1_name: project?.client1_name || null,
+          client1_email: project?.client1_email || null,
+          client1_phone: project?.client1_phone || null,
+          client1_active: project?.client1_active || null,
+          client2_name: project?.client2_name || null,
+          client2_email: project?.client2_email || null,
+          client2_phone: project?.client2_phone || null,
+          client2_active: project?.client2_active || null,
+          client3_name: project?.client3_name || null,
+          client3_email: project?.client3_email || null,
+          client3_phone: project?.client3_phone || null,
+          client3_active: project?.client3_active || null,
+          site_visit_status: project?.site_visit_status || null,
+          site_visit_date: project?.site_visit_date || null,
+          site_visit_time: project?.site_visit_time || null,
+          contract_status: project?.contract_status || null,
+          contract_sent_date: project?.contract_sent_date || null,
+          contract_complete_date: project?.contract_complete_date || null,
+          supporting_documents_status: project?.supporting_documents_status || null,
+          supporting_documents_sent_date: project?.supporting_documents_sent_date || null,
+          supporting_documents_complete_date: project?.supporting_documents_complete_date || null,
+          water_declaration_status: project?.water_declaration_status || null,
+          water_declaration_sent_date: project?.water_declaration_sent_date || null,
+          water_declaration_complete_date: project?.water_declaration_complete_date || null,
+          notes: project?.notes || null,
+          window_status: project?.window_status || null,
+          window_colour: project?.window_colour || null,
+          window_reveal: project?.window_reveal || null,
+          window_reveal_other: project?.window_reveal_other || null,
+          window_glazing: project?.window_glazing || null,
+          window_bal_rating: project?.window_bal_rating || null,
+          window_date_required: project?.window_date_required || null,
+          window_ordered_date: project?.window_ordered_date || null,
+          window_order_pdf_location: project?.window_order_pdf_location || null,
+          window_order_number: project?.window_order_number || null,
+          drawings_status: project?.drawings_status || null,
+          drawings_pdf_location: project?.drawings_pdf_location || null,
+          drawings_history: project?.drawings_history || null,
+          drawings_viewed_date: project?.drawings_viewed_date || null,
+          draftsperson: project?.draftsperson || null,
+          drawings_holder: holder,
+          colours_status: project?.colours_status || null,
+          planning_status: project?.planning_status || null,
+          energy_report_status: project?.energy_report_status || null,
+          footing_certification_status: project?.footing_certification_status || null,
+          building_permit_status: project?.building_permit_status || null,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to save drawings holder");
+      }
+
+      // Update local state
+      setDrawingsHolder(holder);
+      
+      // Refresh project data
+      if (onUpdate) {
+        onUpdate();
+      }
+    } catch (error) {
+      console.error("Error saving drawings holder:", error);
     }
   }
 
@@ -1430,12 +1529,20 @@ export default function Drawings({ project, onUpdate }) {
       const result = await response.json();
       alert("Drawings email sent successfully!");
       
+      // Update drawings holder based on email type
+      if (emailPreviewType === "sales") {
+        // Sales notes sent - design team now has the drawings
+        await saveDrawingsHolder("design team");
+      }
+      // Drafting notes don't change the holder (design team keeps them)
+      
       // Close modals after sending
       setShowEmailPreviewModal(false);
       setShowNotesModal(false);
       setNotesForRevision(null);
       setNotesText("");
       setMarkupFile(null);
+      setEmailPreviewType(null);
     } catch (error) {
       console.error("Error sending drawings email:", error);
       alert(`Failed to send drawings email: ${error.message}`);
@@ -1545,6 +1652,7 @@ export default function Drawings({ project, onUpdate }) {
       setEmailPreviewFrom(template.from_address || "");
       setEmailPreviewSubject(subject);
       setEmailPreviewBody(body);
+      setEmailPreviewType("sales"); // Mark as sales notes email
       setShowEmailPreviewModal(true);
     } catch (error) {
       console.error("Error preparing email:", error);
@@ -1924,11 +2032,41 @@ export default function Drawings({ project, onUpdate }) {
     }
   }
 
+  // Get holder display text and color
+  const getHolderDisplay = () => {
+    const holder = drawingsHolder || "design team";
+    const displayText = holder.charAt(0).toUpperCase() + holder.slice(1);
+    let color = "#4D93D9"; // Default blue
+    if (holder === "sales team") {
+      color = "#FFA500"; // Orange
+    } else if (holder === "client") {
+      color = "#28a745"; // Green
+    }
+    return { text: displayText, color };
+  };
+
+  const holderDisplay = getHolderDisplay();
+
   return (
     <div>
-      <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT }}>
-        Drawings
-      </h2>
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+        <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: 0, color: MONUMENT }}>
+          Drawings
+        </h2>
+        <div
+          style={{
+            padding: "4px 12px",
+            borderRadius: "6px",
+            fontSize: "0.85rem",
+            fontWeight: 500,
+            color: WHITE,
+            background: holderDisplay.color,
+            display: "inline-block",
+          }}
+        >
+          {holderDisplay.text}
+        </div>
+      </div>
       {project && (
         <div style={{ marginTop: "24px", display: "flex", gap: "24px", flexWrap: "wrap", alignItems: "stretch" }}>
           {/* Columns 1, 2, 3 - Drawings History */}
