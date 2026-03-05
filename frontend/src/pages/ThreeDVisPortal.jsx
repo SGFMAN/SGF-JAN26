@@ -345,10 +345,11 @@ export default function ThreeDVisPortal() {
 
       {/* Main Content */}
       <div style={{ display: "flex", gap: "20px", flex: 1, minHeight: 0 }}>
-        {/* Left Side - 3D Visualiser */}
-        <div style={{ flex: "1", minWidth: "400px", display: "flex", flexDirection: "column" }}>
-          <div style={{ background: "#42464d", borderRadius: "12px", padding: "16px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-            <div style={{ marginBottom: "16px" }}>
+        {/* Left Side - Colour Selector (1/3 of width) */}
+        <div style={{ width: "30%", minWidth: "280px", display: "flex", flexDirection: "column" }}>
+          <div style={{ background: "#42464d", borderRadius: "12px", padding: "24px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+            {/* Roof Style */}
+            <div style={{ marginBottom: "24px" }}>
               <label style={{ display: "block", marginBottom: "8px", fontSize: "1rem", color: WHITE, fontWeight: 500 }}>
                 Roof Style
               </label>
@@ -374,64 +375,7 @@ export default function ThreeDVisPortal() {
                 ))}
               </select>
             </div>
-            
-            {/* 3D Visualiser */}
-            <div style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>
-              <style>{`
-                .three-d-vis-portal-wrapper > div > div:first-child > div:first-child {
-                  display: none !important;
-                }
-                .three-d-vis-portal-wrapper > div > div:first-child > div:last-child > button {
-                  display: none !important;
-                }
-                .three-d-vis-portal-wrapper > div > div:first-child > div:last-child {
-                  width: 100% !important;
-                  max-width: 100% !important;
-                }
-                .three-d-vis-portal-wrapper canvas {
-                  width: 100% !important;
-                  height: 100% !important;
-                }
-              `}</style>
-              <div className="three-d-vis-portal-wrapper" style={{ height: "100%", width: "100%" }}>
-                <ThreeDVis
-                  project={project}
-                  onBack={null}
-                  onUpdate={() => {}}
-                  roofColour={roofColour}
-                  claddingColour={claddingColour}
-                  baseboardsColour={baseboardsColour}
-                  setRoofColour={setRoofColour}
-                  setCladdingColour={setCladdingColour}
-                  setBaseboardsColour={setBaseboardsColour}
-                  saveColoursFromProjectPage={saveColoursFromProjectPage}
-                  roofStyle={roofStyle}
-                  setRoofStyle={setRoofStyle}
-                  handleRoofStyleChange={handleRoofStyleChange}
-                  fasciaGutterColour={fasciaGutterColour}
-                  setFasciaGutterColour={setFasciaGutterColour}
-                  handleFasciaGutterColourChange={handleFasciaGutterColourChange}
-                  balustradeColour={balustradeColour}
-                  setBalustradeColour={setBalustradeColour}
-                  handleBalustradeColourChange={handleBalustradeColourChange}
-                  frontDoorColour={frontDoorColour}
-                  setFrontDoorColour={setFrontDoorColour}
-                  handleFrontDoorColourChange={handleFrontDoorColourChange}
-                  windowFramesColour={windowFramesColour}
-                  setWindowFramesColour={setWindowFramesColour}
-                  handleWindowFramesColourChange={handleWindowFramesColourChange}
-                  windowSurroundsColour={windowSurroundsColour}
-                  setWindowSurroundsColour={setWindowSurroundsColour}
-                  handleWindowSurroundsColourChange={handleWindowSurroundsColourChange}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
 
-        {/* Right Side - Colour Selector */}
-        <div style={{ flex: "1", minWidth: "300px", display: "flex", flexDirection: "column" }}>
-          <div style={{ background: "#42464d", borderRadius: "12px", padding: "24px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
             {/* Building Part Selector */}
             <div style={{ marginBottom: "24px" }}>
               <label style={{ display: "block", marginBottom: "8px", fontSize: "1rem", color: WHITE, fontWeight: 500 }}>
@@ -465,7 +409,7 @@ export default function ThreeDVisPortal() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(80px, 1fr))",
                   gap: "12px",
                 }}
               >
@@ -501,19 +445,109 @@ export default function ThreeDVisPortal() {
                     >
                       <div
                         style={{
-                          width: "60px",
-                          height: "60px",
+                          width: "50px",
+                          height: "50px",
                           borderRadius: "4px",
                           backgroundColor: hex,
                           border: "1px solid #ccc",
                         }}
                       />
-                      <div style={{ fontSize: "0.85rem", color: WHITE, textAlign: "center" }}>
+                      <div style={{ fontSize: "0.75rem", color: WHITE, textAlign: "center" }}>
                         {colour.displayName || colour.name}
                       </div>
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Side - 3D Visualiser (2/3 of width, 1:1 aspect ratio) */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, alignItems: "center", justifyContent: "center" }}>
+          <div style={{ 
+            background: "#42464d", 
+            borderRadius: "12px", 
+            padding: "16px", 
+            width: "100%",
+            maxWidth: "100%",
+            display: "flex", 
+            flexDirection: "column", 
+            alignItems: "center",
+            justifyContent: "center"
+          }}>
+            {/* 3D Visualiser - Maintain 1:1 aspect ratio */}
+            <div style={{ 
+              width: "100%", 
+              aspectRatio: "1 / 1",
+              position: "relative", 
+              overflow: "hidden",
+              borderRadius: "8px",
+              maxWidth: "100%"
+            }}>
+              <style>{`
+                .three-d-vis-portal-wrapper > div {
+                  padding: 0 !important;
+                }
+                .three-d-vis-portal-wrapper > div > div:first-child > div:first-child {
+                  display: none !important;
+                }
+                .three-d-vis-portal-wrapper > div > div:first-child > div:last-child > button {
+                  display: none !important;
+                }
+                .three-d-vis-portal-wrapper > div > div:first-child > div:last-child {
+                  width: 100% !important;
+                  max-width: 100% !important;
+                  height: 100% !important;
+                  margin-top: 0 !important;
+                }
+                .three-d-vis-portal-wrapper > div > div:first-child > div:last-child > div {
+                  width: 100% !important;
+                  height: 100% !important;
+                }
+                .three-d-vis-portal-wrapper canvas {
+                  width: 100% !important;
+                  height: 100% !important;
+                  display: block !important;
+                }
+              `}</style>
+              <div className="three-d-vis-portal-wrapper" style={{ 
+                position: "absolute", 
+                top: 0, 
+                left: 0, 
+                width: "100%", 
+                height: "100%"
+              }}>
+                <ThreeDVis
+                  project={project}
+                  onBack={null}
+                  onUpdate={() => {}}
+                  roofColour={roofColour}
+                  claddingColour={claddingColour}
+                  baseboardsColour={baseboardsColour}
+                  setRoofColour={setRoofColour}
+                  setCladdingColour={setCladdingColour}
+                  setBaseboardsColour={setBaseboardsColour}
+                  saveColoursFromProjectPage={saveColoursFromProjectPage}
+                  roofStyle={roofStyle}
+                  setRoofStyle={setRoofStyle}
+                  handleRoofStyleChange={handleRoofStyleChange}
+                  fasciaGutterColour={fasciaGutterColour}
+                  setFasciaGutterColour={setFasciaGutterColour}
+                  handleFasciaGutterColourChange={handleFasciaGutterColourChange}
+                  balustradeColour={balustradeColour}
+                  setBalustradeColour={setBalustradeColour}
+                  handleBalustradeColourChange={handleBalustradeColourChange}
+                  frontDoorColour={frontDoorColour}
+                  setFrontDoorColour={setFrontDoorColour}
+                  handleFrontDoorColourChange={handleFrontDoorColourChange}
+                  windowFramesColour={windowFramesColour}
+                  setWindowFramesColour={setWindowFramesColour}
+                  handleWindowFramesColourChange={handleWindowFramesColourChange}
+                  windowSurroundsColour={windowSurroundsColour}
+                  setWindowSurroundsColour={setWindowSurroundsColour}
+                  handleWindowSurroundsColourChange={handleWindowSurroundsColourChange}
+                />
               </div>
             </div>
           </div>
