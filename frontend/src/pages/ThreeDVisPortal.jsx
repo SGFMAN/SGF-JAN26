@@ -10,7 +10,7 @@ const MONUMENT = "#323233";
 const WHITE = "#fff";
 const API_URL = "";
 
-const ROOF_STYLE_OPTIONS = ["Select", "Affordable", "Superior", "Skillion"];
+const ROOF_STYLE_OPTIONS = ["Affordable", "Superior", "Skillion"];
 const WINDOW_FRAME_COLOUR_OPTIONS = ["Select", "Monument", "Paperbark", "White", "Primrose", "Black", "Surfmist", "Woodland Grey"];
 const WINDOW_SURROUND_COLOUR_OPTIONS = ["Select", ...COLORBOND_COLOURS.map(c => c.name)];
 
@@ -32,7 +32,7 @@ export default function ThreeDVisPortal() {
   const [roofColour, setRoofColour] = useState("Select");
   const [claddingColour, setCladdingColour] = useState("Select");
   const [baseboardsColour, setBaseboardsColour] = useState("Select");
-  const [roofStyle, setRoofStyle] = useState("Select");
+  const [roofStyle, setRoofStyle] = useState("Affordable");
   const [fasciaGutterColour, setFasciaGutterColour] = useState("Select");
   const [balustradeColour, setBalustradeColour] = useState("Select");
   const [frontDoorColour, setFrontDoorColour] = useState("Select");
@@ -40,7 +40,6 @@ export default function ThreeDVisPortal() {
   const [windowSurroundsColour, setWindowSurroundsColour] = useState("Select");
   const [selectedBuildingPart, setSelectedBuildingPart] = useState("roof");
   const [isSaving, setIsSaving] = useState(false);
-  const [isSaved, setIsSaved] = useState(false);
   const [error, setError] = useState("");
 
   // Load project data
@@ -63,7 +62,13 @@ export default function ThreeDVisPortal() {
         setRoofColour(projectData.roof_colour || "Select");
         setCladdingColour(projectData.cladding_colour || "Select");
         setBaseboardsColour(projectData.baseboards_colour || "Select");
-        setRoofStyle(projectData.roof_style || "Select");
+        
+        // Set roof style based on project specs or existing value
+        const defaultRoofStyle = projectData.specs === "Affordable" || projectData.specs === "Superior" 
+          ? projectData.specs 
+          : "Affordable"; // Default to Affordable if specs is not set or invalid
+        setRoofStyle(projectData.roof_style || defaultRoofStyle);
+        
         setFasciaGutterColour(projectData.fascia_gutter_colour || "Select");
         setBalustradeColour(projectData.balustrade_colour || "Select");
         setFrontDoorColour(projectData.front_door_colour || "Select");
@@ -103,8 +108,7 @@ export default function ThreeDVisPortal() {
         throw new Error(errorData.error || "Failed to save");
       }
 
-      setIsSaved(true);
-      setTimeout(() => setIsSaved(false), 3000);
+      // Save silently - no notification
     } catch (error) {
       console.error("Error saving field:", error);
       setError(error.message || "Failed to save. Please try again.");
@@ -328,38 +332,21 @@ export default function ThreeDVisPortal() {
         <div style={{ flex: "0 0 auto", width: "150px" }}></div>
       </div>
 
-      {/* Error/Success Messages */}
-      {(error || isSaved) && (
+      {/* Error Messages */}
+      {error && (
         <div style={{ flexShrink: 0, marginBottom: "12px" }}>
-          {error && (
-            <div
-              style={{
-                background: "#ff6b6b",
-                color: WHITE,
-                padding: "12px 20px",
-                borderRadius: "8px",
-                fontSize: "0.9rem",
-                textAlign: "center",
-              }}
-            >
-              {error}
-            </div>
-          )}
-
-          {isSaved && (
-            <div
-              style={{
-                background: "#28a745",
-                color: WHITE,
-                padding: "12px 20px",
-                borderRadius: "8px",
-                fontSize: "0.9rem",
-                textAlign: "center",
-              }}
-            >
-              Colours saved successfully!
-            </div>
-          )}
+          <div
+            style={{
+              background: "#ff6b6b",
+              color: WHITE,
+              padding: "12px 20px",
+              borderRadius: "8px",
+              fontSize: "0.9rem",
+              textAlign: "center",
+            }}
+          >
+            {error}
+          </div>
         </div>
       )}
 
