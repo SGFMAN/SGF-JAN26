@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import ThreeDVis from "./ThreeDVis";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -9,11 +10,18 @@ const COLOURS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
 const COLOUR_OPTIONS = ["Select", "Monument", "Paperbark", "Wallaby"];
 
 export default function Colours({ project, onUpdate }) {
+  const [show3DVis, setShow3DVis] = useState(false);
   const [coloursStatus, setColoursStatus] = useState(project?.colours_status || "Not Sent");
   const [notes, setNotes] = useState(project?.colours_notes || "");
   const [roofColour, setRoofColour] = useState(project?.roof_colour || "Select");
   const [claddingColour, setCladdingColour] = useState(project?.cladding_colour || "Select");
   const [baseboardsColour, setBaseboardsColour] = useState(project?.baseboards_colour || "Select");
+  const [roofStyle, setRoofStyle] = useState(project?.roof_style || "Select");
+  const [fasciaGutterColour, setFasciaGutterColour] = useState(project?.fascia_gutter_colour || "Select");
+  const [balustradeColour, setBalustradeColour] = useState(project?.balustrade_colour || "Select");
+  const [frontDoorColour, setFrontDoorColour] = useState(project?.front_door_colour || "Select");
+  const [windowFramesColour, setWindowFramesColour] = useState(project?.window_frames_colour || "Select");
+  const [windowSurroundsColour, setWindowSurroundsColour] = useState(project?.window_surrounds_colour || "Select");
   const [showSendModal, setShowSendModal] = useState(false);
   const [attachAffordable, setAttachAffordable] = useState(false);
   const [attachSuperior, setAttachSuperior] = useState(false);
@@ -36,20 +44,36 @@ export default function Colours({ project, onUpdate }) {
   const [portalEmailSubject, setPortalEmailSubject] = useState("");
   const [portalEmailBody, setPortalEmailBody] = useState("");
   const portalEmailBodyRef = useRef(null);
+  const isInitialMount = useRef(true);
+  const lastProjectId = useRef(null);
   
-  const valuesRef = useRef({ coloursStatus, notes, roofColour, claddingColour, baseboardsColour });
+  const valuesRef = useRef({ coloursStatus, notes, roofColour, claddingColour, baseboardsColour, roofStyle, fasciaGutterColour, balustradeColour, frontDoorColour, windowFramesColour, windowSurroundsColour });
   
   useEffect(() => {
-    valuesRef.current = { coloursStatus, notes, roofColour, claddingColour, baseboardsColour };
-  }, [coloursStatus, notes, roofColour, claddingColour, baseboardsColour]);
+    valuesRef.current = { coloursStatus, notes, roofColour, claddingColour, baseboardsColour, roofStyle, fasciaGutterColour, balustradeColour, frontDoorColour, windowFramesColour, windowSurroundsColour };
+  }, [coloursStatus, notes, roofColour, claddingColour, baseboardsColour, roofStyle, fasciaGutterColour, balustradeColour, frontDoorColour, windowFramesColour, windowSurroundsColour]);
 
   useEffect(() => {
     if (project) {
-      setColoursStatus(project.colours_status || "Not Sent");
-      setNotes(project.colours_notes || "");
-      setRoofColour(project.roof_colour || "Select");
-      setCladdingColour(project.cladding_colour || "Select");
-      setBaseboardsColour(project.baseboards_colour || "Select");
+      // Only update on initial mount or when project ID changes (new project loaded)
+      const projectIdChanged = lastProjectId.current !== project.id;
+      
+      if (isInitialMount.current || projectIdChanged) {
+        setColoursStatus(project.colours_status || "Not Sent");
+        setNotes(project.colours_notes || "");
+        setRoofColour(project.roof_colour || "Select");
+        setCladdingColour(project.cladding_colour || "Select");
+        setBaseboardsColour(project.baseboards_colour || "Select");
+        setRoofStyle(project.roof_style || "Select");
+        setFasciaGutterColour(project.fascia_gutter_colour || "Select");
+        setBalustradeColour(project.balustrade_colour || "Select");
+        setFrontDoorColour(project.front_door_colour || "Select");
+        setWindowFramesColour(project.window_frames_colour || "Select");
+        setWindowSurroundsColour(project.window_surrounds_colour || "Select");
+        
+        lastProjectId.current = project.id;
+        isInitialMount.current = false;
+      }
       
       // Set default checkboxes based on specs
       const specs = project.specs || "";
@@ -149,6 +173,12 @@ export default function Colours({ project, onUpdate }) {
         roof_colour: fieldName === "roof_colour" ? (value === "Select" ? null : value) : (currentValues.roofColour === "Select" ? null : currentValues.roofColour),
         cladding_colour: fieldName === "cladding_colour" ? (value === "Select" ? null : value) : (currentValues.claddingColour === "Select" ? null : currentValues.claddingColour),
         baseboards_colour: fieldName === "baseboards_colour" ? (value === "Select" ? null : value) : (currentValues.baseboardsColour === "Select" ? null : currentValues.baseboardsColour),
+        roof_style: fieldName === "roof_style" ? (value === "Select" ? null : value) : (currentValues.roofStyle === "Select" ? null : currentValues.roofStyle),
+        fascia_gutter_colour: fieldName === "fascia_gutter_colour" ? (value === "Select" ? null : value) : (currentValues.fasciaGutterColour === "Select" ? null : currentValues.fasciaGutterColour),
+        balustrade_colour: fieldName === "balustrade_colour" ? (value === "Select" ? null : value) : (currentValues.balustradeColour === "Select" ? null : currentValues.balustradeColour),
+        front_door_colour: fieldName === "front_door_colour" ? (value === "Select" ? null : value) : (currentValues.frontDoorColour === "Select" ? null : currentValues.frontDoorColour),
+        window_frames_colour: fieldName === "window_frames_colour" ? (value === "Select" ? null : value) : (currentValues.windowFramesColour === "Select" ? null : currentValues.windowFramesColour),
+        window_surrounds_colour: fieldName === "window_surrounds_colour" ? (value === "Select" ? null : value) : (currentValues.windowSurroundsColour === "Select" ? null : currentValues.windowSurroundsColour),
       };
       
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
@@ -245,6 +275,48 @@ export default function Colours({ project, onUpdate }) {
     setBaseboardsColour(newValue);
     valuesRef.current.baseboardsColour = newValue;
     await saveColoursFromProjectPage(roofColour, claddingColour, newValue);
+  }
+
+  async function handleRoofStyleChange(e) {
+    const newValue = e.target.value;
+    setRoofStyle(newValue);
+    valuesRef.current.roofStyle = newValue;
+    await saveField("roof_style", newValue);
+  }
+
+  async function handleFasciaGutterColourChange(e) {
+    const newValue = e.target.value;
+    setFasciaGutterColour(newValue);
+    valuesRef.current.fasciaGutterColour = newValue;
+    await saveField("fascia_gutter_colour", newValue);
+  }
+
+  async function handleBalustradeColourChange(e) {
+    const newValue = e.target.value;
+    setBalustradeColour(newValue);
+    valuesRef.current.balustradeColour = newValue;
+    await saveField("balustrade_colour", newValue);
+  }
+
+  async function handleFrontDoorColourChange(e) {
+    const newValue = e.target.value;
+    setFrontDoorColour(newValue);
+    valuesRef.current.frontDoorColour = newValue;
+    await saveField("front_door_colour", newValue);
+  }
+
+  async function handleWindowFramesColourChange(e) {
+    const newValue = e.target.value;
+    setWindowFramesColour(newValue);
+    valuesRef.current.windowFramesColour = newValue;
+    await saveField("window_frames_colour", newValue);
+  }
+
+  async function handleWindowSurroundsColourChange(e) {
+    const newValue = e.target.value;
+    setWindowSurroundsColour(newValue);
+    valuesRef.current.windowSurroundsColour = newValue;
+    await saveField("window_surrounds_colour", newValue);
   }
 
   async function loadEmailTemplate(templateType) {
@@ -1116,6 +1188,41 @@ export default function Colours({ project, onUpdate }) {
     window.open(pdfUrl, "_blank");
   }
 
+  if (show3DVis) {
+    return (
+      <ThreeDVis 
+        project={project} 
+        onBack={() => setShow3DVis(false)}
+        onUpdate={onUpdate}
+        roofColour={roofColour}
+        claddingColour={claddingColour}
+        baseboardsColour={baseboardsColour}
+        setRoofColour={setRoofColour}
+        setCladdingColour={setCladdingColour}
+        setBaseboardsColour={setBaseboardsColour}
+        saveColoursFromProjectPage={saveColoursFromProjectPage}
+        roofStyle={roofStyle}
+        setRoofStyle={setRoofStyle}
+        handleRoofStyleChange={handleRoofStyleChange}
+        fasciaGutterColour={fasciaGutterColour}
+        setFasciaGutterColour={setFasciaGutterColour}
+        handleFasciaGutterColourChange={handleFasciaGutterColourChange}
+        balustradeColour={balustradeColour}
+        setBalustradeColour={setBalustradeColour}
+        handleBalustradeColourChange={handleBalustradeColourChange}
+        frontDoorColour={frontDoorColour}
+        setFrontDoorColour={setFrontDoorColour}
+        handleFrontDoorColourChange={handleFrontDoorColourChange}
+        windowFramesColour={windowFramesColour}
+        setWindowFramesColour={setWindowFramesColour}
+        handleWindowFramesColourChange={handleWindowFramesColourChange}
+        windowSurroundsColour={windowSurroundsColour}
+        setWindowSurroundsColour={setWindowSurroundsColour}
+        handleWindowSurroundsColourChange={handleWindowSurroundsColourChange}
+      />
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <style>{`
@@ -1191,6 +1298,54 @@ export default function Colours({ project, onUpdate }) {
                     ) : null;
                   })()}
                 </div>
+              </div>
+
+              {/* Email Online Colours Button */}
+              <div style={{ marginTop: "16px" }}>
+                <button
+                  type="button"
+                  onClick={handleOpenPortalEmailModal}
+                  style={{
+                    width: "100%",
+                    background: MONUMENT,
+                    color: WHITE,
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "12px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    transition: "background 0.2s",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1b")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
+                >
+                  Email Online Colours
+                </button>
+              </div>
+
+              {/* 3D Visualiser Button */}
+              <div style={{ marginTop: "12px" }}>
+                <button
+                  type="button"
+                  onClick={() => setShow3DVis(true)}
+                  style={{
+                    width: "100%",
+                    background: MONUMENT,
+                    color: WHITE,
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "12px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    transition: "background 0.2s",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1b")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
+                >
+                  3D Visualiser
+                </button>
               </div>
             </div>
           </div>
@@ -1274,113 +1429,8 @@ export default function Colours({ project, onUpdate }) {
             </div>
           </div>
 
-          {/* Column 3 */}
-          <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", gap: "24px" }}>
-            {/* Roof */}
-            <div>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
-                Roof
-              </div>
-              <select
-                value={roofColour}
-                onChange={handleRoofColourChange}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
-              >
-                {COLOUR_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Cladding */}
-            <div>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
-                Cladding
-              </div>
-              <select
-                value={claddingColour}
-                onChange={handleCladdingColourChange}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
-              >
-                {COLOUR_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Baseboards */}
-            <div>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
-                Baseboards
-              </div>
-              <select
-                value={baseboardsColour}
-                onChange={handleBaseboardsColourChange}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
-              >
-                {COLOUR_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Email Online Colours Button */}
-            <div style={{ marginTop: "24px" }}>
-              <button
-                type="button"
-                onClick={handleOpenPortalEmailModal}
-                style={{
-                  width: "100%",
-                  background: MONUMENT,
-                  color: WHITE,
-                  border: "none",
-                  borderRadius: "8px",
-                  padding: "12px 20px",
-                  fontSize: "1rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "background 0.2s",
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1b")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
-              >
-                Email Online Colours
-              </button>
-            </div>
-          </div>
+          {/* Column 3 - Empty for now */}
+          <div style={{ flex: "1", minWidth: "200px" }}></div>
 
           {/* Column 4 - Notes */}
           <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", height: "100%" }}>

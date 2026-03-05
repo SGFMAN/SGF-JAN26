@@ -21,6 +21,7 @@ import SalesTotals from "./pages/SalesTotals";
 import SalesAnalytics from "./pages/SalesAnalytics";
 import ApproveConcept from "./pages/ApproveConcept";
 import ColoursPortal from "./pages/ColoursPortal";
+import ThreeDVisPortal from "./pages/ThreeDVisPortal";
 import AppModeBanner from "./components/AppModeBanner";
 
 export default function App() {
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="/sales-analytics" element={<SalesAnalytics />} />
         <Route path="/approve-concept/:projectId" element={<ApproveConcept />} />
         <Route path="/colours-portal/:projectId" element={<ColoursPortal />} />
+        <Route path="/3d-vis-portal/:projectId" element={<ThreeDVisPortal />} />
       </Routes>
     </BrowserRouter>
   );

@@ -5,6 +5,7 @@ import FileSettings from "./FileSettings";
 import EmailTemplate from "./EmailTemplate";
 import EmailSettings from "./EmailSettings";
 import AccountSettings from "./AccountSettings";
+import ColourSettings from "./ColourSettings";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -19,6 +20,7 @@ const menuOptions = [
   { key: "emailSettings", label: "Email Settings" },
   { key: "users", label: "Users" },
   { key: "account", label: "Account Settings" },
+  { key: "colourSettings", label: "Colour Settings" },
 ];
 
 export default function SettingsPage() {
@@ -36,6 +38,8 @@ export default function SettingsPage() {
         return <Users />;
       case "account":
         return <AccountSettings />;
+      case "colourSettings":
+        return <ColourSettings />;
       default:
         return (
           <div>
