@@ -282,16 +282,19 @@ export default function ThreeDVisPortal() {
   return (
     <div
       style={{
-        minHeight: "100vh",
+        height: "100vh",
+        width: "100vw",
         background: MONUMENT,
         display: "flex",
         flexDirection: "column",
-        padding: "20px",
+        padding: "24px",
         color: WHITE,
+        overflow: "hidden",
+        boxSizing: "border-box",
       }}
     >
       {/* Header */}
-      <div style={{ textAlign: "center", marginBottom: "20px" }}>
+      <div style={{ textAlign: "center", marginBottom: "20px", flexShrink: 0 }}>
         <img
           src={logo}
           alt="SGF Central"
@@ -311,61 +314,72 @@ export default function ThreeDVisPortal() {
       </div>
 
       {/* Error/Success Messages */}
-      {error && (
-        <div
-          style={{
-            background: "#ff6b6b",
-            color: WHITE,
-            padding: "12px 20px",
-            borderRadius: "8px",
-            marginBottom: "20px",
-            fontSize: "0.9rem",
-            textAlign: "center",
-          }}
-        >
-          {error}
-        </div>
-      )}
+      {(error || isSaved) && (
+        <div style={{ flexShrink: 0, marginBottom: "20px" }}>
+          {error && (
+            <div
+              style={{
+                background: "#ff6b6b",
+                color: WHITE,
+                padding: "12px 20px",
+                borderRadius: "8px",
+                fontSize: "0.9rem",
+                textAlign: "center",
+              }}
+            >
+              {error}
+            </div>
+          )}
 
-      {isSaved && (
-        <div
-          style={{
-            background: "#28a745",
-            color: WHITE,
-            padding: "12px 20px",
-            borderRadius: "8px",
-            marginBottom: "20px",
-            fontSize: "0.9rem",
-            textAlign: "center",
-          }}
-        >
-          Colours saved successfully!
+          {isSaved && (
+            <div
+              style={{
+                background: "#28a745",
+                color: WHITE,
+                padding: "12px 20px",
+                borderRadius: "8px",
+                fontSize: "0.9rem",
+                textAlign: "center",
+              }}
+            >
+              Colours saved successfully!
+            </div>
+          )}
         </div>
       )}
 
       {/* Main Content */}
-      <div style={{ display: "flex", gap: "20px", flex: 1, minHeight: 0 }}>
-        {/* Left Side - Colour Selector (1/3 of width) */}
-        <div style={{ width: "30%", minWidth: "280px", display: "flex", flexDirection: "column" }}>
-          <div style={{ background: "#42464d", borderRadius: "12px", padding: "24px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <div style={{ display: "flex", gap: "24px", flex: 1, minHeight: 0, overflow: "hidden" }}>
+        {/* Left Side - Colour Selector (25% of width) */}
+        <div style={{ width: "25%", minWidth: "300px", display: "flex", flexDirection: "column", height: "100%" }}>
+          <div style={{ 
+            background: WHITE, 
+            borderRadius: "8px", 
+            padding: "24px", 
+            height: "100%", 
+            display: "flex", 
+            flexDirection: "column", 
+            overflow: "hidden"
+          }}>
             {/* Roof Style */}
-            <div style={{ marginBottom: "24px" }}>
-              <label style={{ display: "block", marginBottom: "8px", fontSize: "1rem", color: WHITE, fontWeight: 500 }}>
+            <div style={{ marginBottom: "12px", flexShrink: 0 }}>
+              <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "4px", fontWeight: "500" }}>
                 Roof Style
-              </label>
+              </div>
               <select
                 value={roofStyle}
                 onChange={handleRoofStyleChange}
                 style={{
                   width: "100%",
-                  padding: "12px 16px",
+                  padding: "8px 10px",
                   borderRadius: "8px",
                   border: "none",
-                  fontSize: "1rem",
+                  fontSize: "0.9rem",
                   color: MONUMENT,
                   background: WHITE,
                   boxSizing: "border-box",
                   cursor: "pointer",
+                  border: "1px solid #ddd",
                 }}
               >
                 {ROOF_STYLE_OPTIONS.map((option) => (
@@ -377,19 +391,19 @@ export default function ThreeDVisPortal() {
             </div>
 
             {/* Building Part Selector */}
-            <div style={{ marginBottom: "24px" }}>
-              <label style={{ display: "block", marginBottom: "8px", fontSize: "1rem", color: WHITE, fontWeight: 500 }}>
+            <div style={{ marginBottom: "12px", flexShrink: 0 }}>
+              <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "4px", fontWeight: "500" }}>
                 Building Part
-              </label>
+              </div>
               <select
                 value={selectedBuildingPart}
                 onChange={(e) => setSelectedBuildingPart(e.target.value)}
                 style={{
                   width: "100%",
-                  padding: "12px 16px",
+                  padding: "8px 10px",
                   borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
+                  border: "1px solid #ddd",
+                  fontSize: "0.9rem",
                   color: MONUMENT,
                   background: WHITE,
                   boxSizing: "border-box",
@@ -404,13 +418,13 @@ export default function ThreeDVisPortal() {
               </select>
             </div>
 
-            {/* Colour Grid */}
-            <div style={{ flex: 1, overflowY: "auto", paddingRight: "8px" }}>
+            {/* Colour Grid - Scrollable */}
+            <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", minHeight: 0 }}>
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(80px, 1fr))",
-                  gap: "12px",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
+                  gap: "8px",
                 }}
               >
                 {availableColours.map((colour, index) => {
@@ -422,37 +436,38 @@ export default function ThreeDVisPortal() {
                       onClick={() => handleColourClick(colour.name)}
                       style={{
                         cursor: "pointer",
-                        padding: "12px",
+                        padding: "8px",
                         borderRadius: "8px",
-                        background: isSelected ? "#4D93D9" : "transparent",
-                        border: isSelected ? "2px solid #4D93D9" : "1px solid #666",
+                        backgroundColor: isSelected ? "#f0f0f0" : "transparent",
+                        border: isSelected ? "2px solid #ff0000" : "1px solid #ddd",
                         transition: "all 0.2s",
                         display: "flex",
                         flexDirection: "column",
                         alignItems: "center",
-                        gap: "8px",
+                        gap: "6px",
                       }}
                       onMouseEnter={(e) => {
                         if (!isSelected) {
-                          e.currentTarget.style.borderColor = "#999";
+                          e.currentTarget.style.backgroundColor = "#f9f9f9";
                         }
                       }}
                       onMouseLeave={(e) => {
                         if (!isSelected) {
-                          e.currentTarget.style.borderColor = "#666";
+                          e.currentTarget.style.backgroundColor = "transparent";
                         }
                       }}
                     >
                       <div
                         style={{
-                          width: "50px",
-                          height: "50px",
+                          width: "60px",
+                          height: "60px",
                           borderRadius: "4px",
                           backgroundColor: hex,
                           border: "1px solid #ccc",
+                          flexShrink: 0,
                         }}
                       />
-                      <div style={{ fontSize: "0.75rem", color: WHITE, textAlign: "center" }}>
+                      <div style={{ fontSize: "0.85rem", fontWeight: 500, color: MONUMENT, textAlign: "center" }}>
                         {colour.displayName || colour.name}
                       </div>
                     </div>
@@ -463,91 +478,87 @@ export default function ThreeDVisPortal() {
           </div>
         </div>
 
-        {/* Right Side - 3D Visualiser (2/3 of width, 1:1 aspect ratio) */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, alignItems: "center", justifyContent: "center" }}>
+        {/* Right Side - 3D Visualiser (75% of width) */}
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", height: "100%" }}>
           <div style={{ 
-            background: "#42464d", 
-            borderRadius: "12px", 
-            padding: "16px", 
-            width: "100%",
-            maxWidth: "100%",
+            padding: "24px", 
+            height: "100%", 
             display: "flex", 
             flexDirection: "column", 
-            alignItems: "center",
-            justifyContent: "center"
+            overflow: "hidden"
           }}>
-            {/* 3D Visualiser - Maintain 1:1 aspect ratio */}
-            <div style={{ 
-              width: "100%", 
-              aspectRatio: "1 / 1",
-              position: "relative", 
-              overflow: "hidden",
-              borderRadius: "8px",
-              maxWidth: "100%"
-            }}>
-              <style>{`
-                .three-d-vis-portal-wrapper > div {
-                  padding: 0 !important;
-                }
-                .three-d-vis-portal-wrapper > div > div:first-child > div:first-child {
-                  display: none !important;
-                }
-                .three-d-vis-portal-wrapper > div > div:first-child > div:last-child > button {
-                  display: none !important;
-                }
-                .three-d-vis-portal-wrapper > div > div:first-child > div:last-child {
-                  width: 100% !important;
-                  max-width: 100% !important;
-                  height: 100% !important;
-                  margin-top: 0 !important;
-                }
-                .three-d-vis-portal-wrapper > div > div:first-child > div:last-child > div {
-                  width: 100% !important;
-                  height: 100% !important;
-                }
-                .three-d-vis-portal-wrapper canvas {
-                  width: 100% !important;
-                  height: 100% !important;
-                  display: block !important;
-                }
-              `}</style>
-              <div className="three-d-vis-portal-wrapper" style={{ 
-                position: "absolute", 
-                top: 0, 
-                left: 0, 
-                width: "100%", 
-                height: "100%"
-              }}>
-                <ThreeDVis
-                  project={project}
-                  onBack={null}
-                  onUpdate={() => {}}
-                  roofColour={roofColour}
-                  claddingColour={claddingColour}
-                  baseboardsColour={baseboardsColour}
-                  setRoofColour={setRoofColour}
-                  setCladdingColour={setCladdingColour}
-                  setBaseboardsColour={setBaseboardsColour}
-                  saveColoursFromProjectPage={saveColoursFromProjectPage}
-                  roofStyle={roofStyle}
-                  setRoofStyle={setRoofStyle}
-                  handleRoofStyleChange={handleRoofStyleChange}
-                  fasciaGutterColour={fasciaGutterColour}
-                  setFasciaGutterColour={setFasciaGutterColour}
-                  handleFasciaGutterColourChange={handleFasciaGutterColourChange}
-                  balustradeColour={balustradeColour}
-                  setBalustradeColour={setBalustradeColour}
-                  handleBalustradeColourChange={handleBalustradeColourChange}
-                  frontDoorColour={frontDoorColour}
-                  setFrontDoorColour={setFrontDoorColour}
-                  handleFrontDoorColourChange={handleFrontDoorColourChange}
-                  windowFramesColour={windowFramesColour}
-                  setWindowFramesColour={setWindowFramesColour}
-                  handleWindowFramesColourChange={handleWindowFramesColourChange}
-                  windowSurroundsColour={windowSurroundsColour}
-                  setWindowSurroundsColour={setWindowSurroundsColour}
-                  handleWindowSurroundsColourChange={handleWindowSurroundsColourChange}
-                />
+            <div style={{ display: "flex", gap: "24px", flex: 1, minHeight: 0 }}>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+                <div style={{ flex: 1, display: "flex", gap: "12px", alignItems: "flex-start", minHeight: 0 }}>
+                  <div style={{ height: "100%", width: "100%", overflow: "hidden" }}>
+                    <style>{`
+                      .three-d-vis-portal-wrapper {
+                        height: 100% !important;
+                        width: 100% !important;
+                      }
+                      .three-d-vis-portal-wrapper > div {
+                        padding: 0 !important;
+                        height: 100% !important;
+                      }
+                      .three-d-vis-portal-wrapper > div > div:first-child > div:first-child {
+                        display: none !important;
+                      }
+                      .three-d-vis-portal-wrapper > div > div:first-child > div:last-child > button {
+                        display: none !important;
+                      }
+                      .three-d-vis-portal-wrapper > div > div:first-child > div:last-child {
+                        width: 100% !important;
+                        max-width: 100% !important;
+                        height: 100% !important;
+                        margin-top: 0 !important;
+                      }
+                      .three-d-vis-portal-wrapper > div > div:first-child > div:last-child > div {
+                        width: 100% !important;
+                        height: 100% !important;
+                      }
+                      .three-d-vis-portal-wrapper canvas {
+                        width: 100% !important;
+                        height: 100% !important;
+                        display: block !important;
+                      }
+                    `}</style>
+                    <div className="three-d-vis-portal-wrapper" style={{ 
+                      height: "100%", 
+                      width: "100%"
+                    }}>
+                      <ThreeDVis
+                        project={project}
+                        onBack={null}
+                        onUpdate={() => {}}
+                        roofColour={roofColour}
+                        claddingColour={claddingColour}
+                        baseboardsColour={baseboardsColour}
+                        setRoofColour={setRoofColour}
+                        setCladdingColour={setCladdingColour}
+                        setBaseboardsColour={setBaseboardsColour}
+                        saveColoursFromProjectPage={saveColoursFromProjectPage}
+                        roofStyle={roofStyle}
+                        setRoofStyle={setRoofStyle}
+                        handleRoofStyleChange={handleRoofStyleChange}
+                        fasciaGutterColour={fasciaGutterColour}
+                        setFasciaGutterColour={setFasciaGutterColour}
+                        handleFasciaGutterColourChange={handleFasciaGutterColourChange}
+                        balustradeColour={balustradeColour}
+                        setBalustradeColour={setBalustradeColour}
+                        handleBalustradeColourChange={handleBalustradeColourChange}
+                        frontDoorColour={frontDoorColour}
+                        setFrontDoorColour={setFrontDoorColour}
+                        handleFrontDoorColourChange={handleFrontDoorColourChange}
+                        windowFramesColour={windowFramesColour}
+                        setWindowFramesColour={setWindowFramesColour}
+                        handleWindowFramesColourChange={handleWindowFramesColourChange}
+                        windowSurroundsColour={windowSurroundsColour}
+                        setWindowSurroundsColour={setWindowSurroundsColour}
+                        handleWindowSurroundsColourChange={handleWindowSurroundsColourChange}
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
