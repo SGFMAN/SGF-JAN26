@@ -287,35 +287,50 @@ export default function ThreeDVisPortal() {
         background: MONUMENT,
         display: "flex",
         flexDirection: "column",
-        padding: "24px",
+        padding: "16px 24px",
         color: WHITE,
         overflow: "hidden",
         boxSizing: "border-box",
       }}
     >
       {/* Header */}
-      <div style={{ textAlign: "center", marginBottom: "20px", flexShrink: 0 }}>
-        <img
-          src={logo}
-          alt="SGF Central"
-          style={{
-            maxWidth: "200px",
-            marginBottom: "16px",
-          }}
-        />
-        <h1 style={{ fontSize: "1.8rem", marginBottom: "8px", color: WHITE }}>
-          Select Your Colours
-        </h1>
-        {projectName && (
-          <p style={{ fontSize: "1rem", marginBottom: "16px", color: "#ffffff99" }}>
-            Project: {projectName}
-          </p>
-        )}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px", flexShrink: 0, position: "relative" }}>
+        {/* Logo - Top Left */}
+        <div style={{ flex: "0 0 auto" }}>
+          <img
+            src={logo}
+            alt="SGF Central"
+            style={{
+              maxWidth: "150px",
+              height: "auto",
+            }}
+          />
+        </div>
+        
+        {/* Heading - Top Center */}
+        <div style={{ 
+          position: "absolute", 
+          left: "50%", 
+          transform: "translateX(-50%)",
+          textAlign: "center"
+        }}>
+          <h1 style={{ fontSize: "1.8rem", margin: 0, color: WHITE }}>
+            Select Your Colours
+          </h1>
+          {projectName && (
+            <p style={{ fontSize: "1rem", margin: "4px 0 0 0", color: "#ffffff99" }}>
+              Project: {projectName}
+            </p>
+          )}
+        </div>
+        
+        {/* Spacer to balance layout */}
+        <div style={{ flex: "0 0 auto", width: "150px" }}></div>
       </div>
 
       {/* Error/Success Messages */}
       {(error || isSaved) && (
-        <div style={{ flexShrink: 0, marginBottom: "20px" }}>
+        <div style={{ flexShrink: 0, marginBottom: "12px" }}>
           {error && (
             <div
               style={{
