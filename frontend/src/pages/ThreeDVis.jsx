@@ -3278,7 +3278,7 @@ export default function ThreeDVis({
 
   // Section components
   const ExternalSection = () => (
-    <div style={{ display: "flex", flexDirection: "column", gap: "12px", minWidth: "300px", height: "628px" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "12px", minWidth: "300px" }}>
       {/* Roof Style */}
       <div>
         <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "4px", fontWeight: "500" }}>
@@ -3334,7 +3334,7 @@ export default function ThreeDVis({
       </div>
 
       {/* Colour Picker */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "4px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "4px", overflow: "visible" }}>
         {getAvailableColours(selectedBuildingPart).map((colour) => {
           const hex = getColourHex(colour.r, colour.g, colour.b);
           const currentColour = getCurrentColour(selectedBuildingPart);
@@ -3471,7 +3471,7 @@ export default function ThreeDVis({
             />
           </div>
           {/* Submenu Buttons */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "28px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "28px", width: "120px", flexShrink: 0 }}>
             {sections.map((section) => (
               <button
                 key={section.key}
@@ -3487,6 +3487,7 @@ export default function ThreeDVis({
                   cursor: "pointer",
                   transition: "background 0.2s",
                   whiteSpace: "nowrap",
+                  width: "100%",
                 }}
                 onMouseEnter={(e) => {
                   if (activeSection !== section.key) {
