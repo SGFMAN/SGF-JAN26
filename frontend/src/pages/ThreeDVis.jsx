@@ -2915,7 +2915,8 @@ export default function ThreeDVis({
     
     // Add corrugated lines to skillion roof (75mm spacing)
     // For skillion, lines run from left to right (perpendicular to the slope)
-    addCorrugatedLines(skillionRoofMesh, skillionP1, skillionP2, skillionP3, skillionP4, 0.075, skillionThicknessOffset);
+    // Use top surface vertices directly to ensure correct height
+    addCorrugatedLinesFromTopSurface(skillionRoofMesh, skillionTop1, skillionTop2, skillionTop3, skillionTop4, 0.075);
     }
 
     // Create weatherboard lines based on current roofStyle
