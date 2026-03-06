@@ -3334,7 +3334,7 @@ export default function ThreeDVis({
       </div>
 
       {/* Colour Picker */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gridTemplateRows: "repeat(7, 1fr)", gap: "4px", height: "500px", overflow: "hidden" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gridTemplateRows: "repeat(7, 1fr)", gap: "3px", height: "400px", overflow: "hidden" }}>
         {getAvailableColours(selectedBuildingPart).slice(0, 21).map((colour) => {
           const hex = getColourHex(colour.r, colour.g, colour.b);
           const currentColour = getCurrentColour(selectedBuildingPart);
@@ -3348,9 +3348,10 @@ export default function ThreeDVis({
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                gap: "3px",
-                padding: "4px",
-                borderRadius: "4px",
+                justifyContent: "center",
+                gap: "2px",
+                padding: "2px",
+                borderRadius: "3px",
                 cursor: "pointer",
                 backgroundColor: isSelected ? "#f0f0f0" : "transparent",
                 border: isSelected ? "2px solid #ff0000" : "1px solid #ddd",
@@ -3369,15 +3370,15 @@ export default function ThreeDVis({
             >
               <div
                 style={{
-                  width: "35px",
-                  height: "35px",
-                  borderRadius: "3px",
+                  width: "25px",
+                  height: "25px",
+                  borderRadius: "2px",
                   backgroundColor: hex,
                   border: "1px solid #ccc",
                   flexShrink: 0,
                 }}
               />
-              <div style={{ fontSize: "0.7rem", fontWeight: 500, color: MONUMENT, textAlign: "center", lineHeight: "1.1" }}>
+              <div style={{ fontSize: "0.6rem", fontWeight: 500, color: MONUMENT, textAlign: "center", lineHeight: "1.0" }}>
                 {colour.displayName || colour.name}
               </div>
             </div>
@@ -3458,75 +3459,178 @@ export default function ThreeDVis({
 
   return (
     <div style={{ padding: "24px", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <div style={{ display: "flex", gap: "24px", height: "100%", overflow: "hidden" }}>
-        {/* Left side - Controls */}
-        <div style={{ overflow: "hidden" }}>
-          {renderSection()}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 2fr 1fr", gap: "16px", height: "100%", overflow: "hidden" }}>
+        {/* Column 1: Colors */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", overflow: "hidden" }}>
+          <div>
+            <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "4px", fontWeight: "500" }}>
+              Roof Style
+            </div>
+            <select
+              value={roofStyle || "Select"}
+              onChange={handleRoofStyleChange}
+              style={{
+                width: "100%",
+                padding: "8px 10px",
+                borderRadius: "8px",
+                border: "none",
+                fontSize: "0.9rem",
+                color: MONUMENT,
+                background: WHITE,
+                boxSizing: "border-box",
+              }}
+            >
+              {ROOF_STYLE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "4px", fontWeight: "500" }}>
+              Building Part
+            </div>
+            <select
+              value={selectedBuildingPart}
+              onChange={(e) => setSelectedBuildingPart(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "8px 10px",
+                borderRadius: "8px",
+                border: "none",
+                fontSize: "0.9rem",
+                color: MONUMENT,
+                background: WHITE,
+                boxSizing: "border-box",
+              }}
+            >
+              {BUILDING_PARTS.map((part) => (
+                <option key={part.key} value={part.key}>
+                  {part.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {/* Colour Picker - 3x7 grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gridTemplateRows: "repeat(7, 1fr)", gap: "3px", height: "400px", overflow: "hidden" }}>
+            {getAvailableColours(selectedBuildingPart).slice(0, 21).map((colour) => {
+              const hex = getColourHex(colour.r, colour.g, colour.b);
+              const currentColour = getCurrentColour(selectedBuildingPart);
+              const isSelected = currentColour === colour.name;
+              
+              return (
+                <div
+                  key={colour.displayName || colour.name}
+                  onClick={() => handleColourClick(colour.name)}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "2px",
+                    padding: "2px",
+                    borderRadius: "3px",
+                    cursor: "pointer",
+                    backgroundColor: isSelected ? "#f0f0f0" : "transparent",
+                    border: isSelected ? "2px solid #ff0000" : "1px solid #ddd",
+                    transition: "all 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.backgroundColor = "#f9f9f9";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.backgroundColor = "transparent";
+                    }
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "25px",
+                      height: "25px",
+                      borderRadius: "2px",
+                      backgroundColor: hex,
+                      border: "1px solid #ccc",
+                      flexShrink: 0,
+                    }}
+                  />
+                  <div style={{ fontSize: "0.6rem", fontWeight: 500, color: MONUMENT, textAlign: "center", lineHeight: "1.0" }}>
+                    {colour.displayName || colour.name}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Right side - 3D Model and Submenu */}
-        <div style={{ flex: 1, display: "flex", gap: "12px", alignItems: "flex-start", minWidth: 0, overflow: "visible" }}>
-          <div style={{ height: "600px", width: "1000px", minWidth: "800px", flexShrink: 0, overflow: "hidden", marginTop: "28px" }}>
+        {/* Columns 2-3: 3D View */}
+        <div style={{ gridColumn: "span 2", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+          <div style={{ height: "600px", width: "100%", overflow: "hidden" }}>
             <canvas
               ref={canvasRef}
               style={{ width: "100%", height: "100%", display: "block" }}
             />
           </div>
-          {/* Submenu Buttons */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "28px", width: "120px", minWidth: "120px", maxWidth: "120px", flexShrink: 0, position: "relative", zIndex: 10 }}>
-            {sections.map((section) => (
-              <button
-                key={section.key}
-                onClick={() => setActiveSection(section.key)}
-                style={{
-                  background: activeSection === section.key ? "#1a1a1b" : MONUMENT,
-                  color: WHITE,
-                  border: "none",
-                  borderRadius: "8px",
-                  padding: "10px 20px",
-                  fontSize: "1rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "background 0.2s",
-                  whiteSpace: "nowrap",
-                  width: "100%",
-                }}
-                onMouseEnter={(e) => {
-                  if (activeSection !== section.key) {
-                    e.currentTarget.style.background = "#1a1a1b";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (activeSection !== section.key) {
-                    e.currentTarget.style.background = MONUMENT;
-                  }
-                }}
-              >
-                {section.label}
-              </button>
-            ))}
-            {onBack && (
-              <button
-                onClick={onBack}
-                style={{
-                  background: MONUMENT,
-                  color: WHITE,
-                  border: "none",
-                  borderRadius: "8px",
-                  padding: "10px 20px",
-                  fontSize: "1rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "background 0.2s",
-                  marginTop: "8px",
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1b")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
-              >
-                ← Back
-              </button>
-            )}
-          </div>
+        </div>
+
+        {/* Column 4: Submenu */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px", overflow: "hidden" }}>
+          {sections.map((section) => (
+            <button
+              key={section.key}
+              onClick={() => setActiveSection(section.key)}
+              style={{
+                background: activeSection === section.key ? "#1a1a1b" : MONUMENT,
+                color: WHITE,
+                border: "none",
+                borderRadius: "8px",
+                padding: "10px 20px",
+                fontSize: "1rem",
+                fontWeight: 500,
+                cursor: "pointer",
+                transition: "background 0.2s",
+                whiteSpace: "nowrap",
+                width: "100%",
+              }}
+              onMouseEnter={(e) => {
+                if (activeSection !== section.key) {
+                  e.currentTarget.style.background = "#1a1a1b";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (activeSection !== section.key) {
+                  e.currentTarget.style.background = MONUMENT;
+                }
+              }}
+            >
+              {section.label}
+            </button>
+          ))}
+          {onBack && (
+            <button
+              onClick={onBack}
+              style={{
+                background: MONUMENT,
+                color: WHITE,
+                border: "none",
+                borderRadius: "8px",
+                padding: "10px 20px",
+                fontSize: "1rem",
+                fontWeight: 500,
+                cursor: "pointer",
+                transition: "background 0.2s",
+                marginTop: "8px",
+                width: "100%",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1b")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
+            >
+              ← Back
+            </button>
+          )}
         </div>
       </div>
     </div>
