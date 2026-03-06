@@ -13,8 +13,8 @@ const WINDOW_FRAME_COLOUR_OPTIONS = ["Select", "Monument", "Paperbark", "White",
 const WINDOW_SURROUND_COLOUR_OPTIONS = ["Select", ...COLORBOND_COLOURS.map(c => c.name)];
 
 const BUILDING_PARTS = [
-  { key: "roof", label: "Roof" },
   { key: "cladding", label: "Cladding" },
+  { key: "roof", label: "Roof" },
   { key: "baseboards", label: "Baseboards" },
   { key: "fasciaGutter", label: "Fascia & Gutter" },
   { key: "balustrade", label: "Balustrade" },
@@ -105,7 +105,7 @@ export default function ThreeDVis({
     }
   }
 
-  const [selectedBuildingPart, setSelectedBuildingPart] = useState("roof");
+  const [selectedBuildingPart, setSelectedBuildingPart] = useState("cladding");
   const [activeSection, setActiveSection] = useState("external");
 
   // Helper function to get available colours for a building part
@@ -230,6 +230,12 @@ export default function ThreeDVis({
   const previousMouseXRef = useRef(0);
   const rotationSpeedRef = useRef(0.01);
   const cameraDistanceRef = useRef(15.556); // Initial distance from lookAt point
+  const targetCameraHeightRef = useRef(1.8); // Target camera Y position (5000mm for roof, 1800mm for others)
+  const currentCameraHeightRef = useRef(1.8); // Current camera Y position for smooth transitions
+  const targetCameraDistanceRef = useRef(10.0); // Target camera distance for smooth zoom transitions (10000mm default)
+  const currentCameraDistanceRef = useRef(15.556); // Current camera distance for smooth transitions
+  const isInitialMountRef = useRef(true); // Track if this is the initial mount to prevent roofStyle from overriding initial camera position
+  const previousRoofStyleRef = useRef(null); // Track previous roofStyle to detect actual changes
 
   // Initial setup useEffect - runs once
   useEffect(() => {
@@ -257,12 +263,8 @@ export default function ThreeDVis({
     const height = canvasRef.current.clientHeight;
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);
     
-    // Position camera for a tilted view
-    // Looking at the cube from an angle - camera at 1800mm from ground
-    // LookAt point raised to show more of the top of the model
-    // Camera moved further back to make model appear smaller
-    camera.position.set(11, 1.8, 11);
-    camera.lookAt(0, 2, 0);
+    // Initial camera position will be set after storing the camera ref
+    // to match the default selectedBuildingPart (cladding)
 
     // Renderer setup
     const renderer = new THREE.WebGLRenderer({ 
@@ -1712,10 +1714,75 @@ export default function ThreeDVis({
     // Store renderer and camera for later use
     rendererRef.current = renderer;
     cameraRef.current = camera;
+    
+    // Initialize camera position to match default selectedBuildingPart (cladding)
+    // Camera should be at 1.8m height and 10m distance for cladding
+    const lookAtPoint = new THREE.Vector3(0, 2, 0);
+    const initialHeight = 1.8;
+    const initialDistance = 10.0;
+    const heightDiff = initialHeight - lookAtPoint.y;
+    const horizontalDistance = Math.sqrt(
+      Math.max(0, initialDistance * initialDistance - heightDiff * heightDiff)
+    );
+    // Position camera at 45-degree angle (equal X and Z)
+    const angle = Math.PI / 4; // 45 degrees
+    camera.position.set(
+      lookAtPoint.x + Math.cos(angle) * horizontalDistance,
+      initialHeight,
+      lookAtPoint.z + Math.sin(angle) * horizontalDistance
+    );
+    camera.lookAt(lookAtPoint);
+    
+    // Sync refs with initial position
+    currentCameraHeightRef.current = initialHeight;
+    targetCameraHeightRef.current = initialHeight;
+    currentCameraDistanceRef.current = initialDistance;
+    targetCameraDistanceRef.current = initialDistance;
+    cameraDistanceRef.current = initialDistance;
 
     // Animation loop
     const animate = () => {
       animationFrameRef.current = requestAnimationFrame(animate);
+      
+      // Smooth camera height and distance transitions
+      if (cameraRef.current) {
+        const lookAtPoint = new THREE.Vector3(0, 2, 0);
+        
+        // Smooth height interpolation
+        const targetHeight = targetCameraHeightRef.current;
+        const currentHeight = currentCameraHeightRef.current;
+        const lerpFactor = 0.05;
+        const newHeight = currentHeight + (targetHeight - currentHeight) * lerpFactor;
+        currentCameraHeightRef.current = newHeight;
+        
+        // Smooth distance interpolation
+        const targetDistance = targetCameraDistanceRef.current;
+        const currentDistance = currentCameraDistanceRef.current;
+        const newDistance = currentDistance + (targetDistance - currentDistance) * lerpFactor;
+        currentCameraDistanceRef.current = newDistance;
+        cameraDistanceRef.current = newDistance; // Update the main distance ref too
+        
+        // Calculate direction from lookAt point to current camera position
+        const currentDirection = new THREE.Vector3()
+          .subVectors(cameraRef.current.position, lookAtPoint)
+          .normalize();
+        
+        // Get horizontal direction (project onto XZ plane)
+        const horizontalDirection = new THREE.Vector3(currentDirection.x, 0, currentDirection.z).normalize();
+        
+        // Calculate new position maintaining the target height and distance
+        const heightDiff = newHeight - lookAtPoint.y;
+        const horizontalDistance = Math.sqrt(
+          Math.max(0, newDistance * newDistance - heightDiff * heightDiff)
+        );
+        
+        cameraRef.current.position.set(
+          lookAtPoint.x + horizontalDirection.x * horizontalDistance,
+          newHeight,
+          lookAtPoint.z + horizontalDirection.z * horizontalDistance
+        );
+        cameraRef.current.lookAt(lookAtPoint);
+      }
       
       // No automatic rotation - user controls rotation via drag
       
@@ -1763,35 +1830,16 @@ export default function ThreeDVis({
       
       const zoomSpeed = 0.05;
       const delta = e.deltaY > 0 ? 1 + zoomSpeed : 1 - zoomSpeed;
-      cameraDistanceRef.current *= delta;
+      
+      // Update target distance for smooth animation
+      targetCameraDistanceRef.current *= delta;
       
       // Clamp zoom distance
-      cameraDistanceRef.current = Math.max(5, Math.min(30, cameraDistanceRef.current));
+      targetCameraDistanceRef.current = Math.max(5, Math.min(30, targetCameraDistanceRef.current));
       
-      // Calculate direction from lookAt point to current camera position
-      const lookAtPoint = new THREE.Vector3(0, 2, 0);
-      const currentDirection = new THREE.Vector3()
-        .subVectors(cameraRef.current.position, lookAtPoint)
-        .normalize();
-      
-      // Maintain the same horizontal angle but adjust distance
-      // Get horizontal direction (project onto XZ plane)
-      const horizontalDirection = new THREE.Vector3(currentDirection.x, 0, currentDirection.z).normalize();
-      
-      // Calculate new position maintaining height at 1.8m
-      const targetHeight = 1.8;
-      const heightDiff = targetHeight - lookAtPoint.y; // -0.2
-      const horizontalDistance = Math.sqrt(
-        Math.max(0, cameraDistanceRef.current * cameraDistanceRef.current - heightDiff * heightDiff)
-      );
-      
-      cameraRef.current.position.set(
-        lookAtPoint.x + horizontalDirection.x * horizontalDistance,
-        targetHeight,
-        lookAtPoint.z + horizontalDirection.z * horizontalDistance
-      );
-      
-      cameraRef.current.lookAt(lookAtPoint);
+      // Also update current distance immediately for responsive feel
+      currentCameraDistanceRef.current = targetCameraDistanceRef.current;
+      cameraDistanceRef.current = targetCameraDistanceRef.current;
     };
     
     // Add event listeners
@@ -1870,9 +1918,14 @@ export default function ThreeDVis({
       baseboardsRef.current.remove(skillionShapeRef.current);
     }
 
-    // Remove all roof planes
+    // Remove all roof planes (including corrugated lines which are children)
     superiorRoofRef.current.forEach(roof => {
       if (baseboardsRef.current.children.includes(roof)) {
+        // Dispose all children (corrugated lines) before disposing the roof
+        roof.children.forEach(child => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) child.material.dispose();
+        });
         baseboardsRef.current.remove(roof);
         roof.geometry.dispose();
         roof.material.dispose();
@@ -1882,6 +1935,11 @@ export default function ThreeDVis({
     
     affordableRoofRef.current.forEach(roof => {
       if (baseboardsRef.current.children.includes(roof)) {
+        // Dispose all children (corrugated lines) before disposing the roof
+        roof.children.forEach(child => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) child.material.dispose();
+        });
         baseboardsRef.current.remove(roof);
         roof.geometry.dispose();
         roof.material.dispose();
@@ -2398,6 +2456,38 @@ export default function ThreeDVis({
     });
     roofMaterialRef.current = roofMaterial;
 
+    // Helper function to add corrugated lines to a roof plane using top surface vertices directly
+    // topP1, topP2, topP3, topP4 are the 4 corners of the roof plane TOP SURFACE (in order: bottom-left, top-left, top-right, bottom-right)
+    // Lines run perpendicular to the edge from topP2 to topP3 (ridge/eave), from edge topP2-topP3 to edge topP1-topP4
+    const addCorrugatedLinesFromTopSurface = (roofMesh, topP1, topP2, topP3, topP4, spacing) => {
+      if (!roofMesh) return;
+      
+      // Calculate the length along the perpendicular direction (from one edge to the opposite)
+      const perpLength = new THREE.Vector3().subVectors(topP1, topP2).length();
+      if (perpLength <= 0 || spacing <= 0) return;
+      
+      // Calculate number of lines needed based on spacing
+      const numLines = Math.max(1, Math.floor(perpLength / spacing));
+      
+      // Create line geometry
+      const linePoints = [];
+      
+      // Create lines at regular spacing intervals
+      for (let i = 0; i <= numLines; i++) {
+        const t = i / numLines;
+        const startPoint = new THREE.Vector3().lerpVectors(topP2, topP3, t);
+        const endPoint = new THREE.Vector3().lerpVectors(topP1, topP4, t);
+        linePoints.push(startPoint.x, startPoint.y, startPoint.z);
+        linePoints.push(endPoint.x, endPoint.y, endPoint.z);
+      }
+      
+      const lineGeometry = new THREE.BufferGeometry();
+      lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePoints, 3));
+      const lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
+      const lines = new THREE.LineSegments(lineGeometry, lineMaterial);
+      roofMesh.add(lines);
+    };
+
     // Add the appropriate shape and create roof planes based on roofStyle
     if (roofStyle === "Superior") {
       if (!baseboardsRef.current.children.includes(superiorShapeRef.current)) {
@@ -2432,7 +2522,7 @@ export default function ThreeDVis({
       const leftV2 = new THREE.Vector3().subVectors(leftP4, leftP1);
       const leftRoofNormal = new THREE.Vector3().crossVectors(leftV1, leftV2).normalize();
       
-      const leftThicknessOffset = leftRoofNormal.multiplyScalar(roofThickness / 2);
+      const leftThicknessOffset = leftRoofNormal.clone().multiplyScalar(roofThickness / 2);
       
       // Bottom surface vertices (offset inward by half thickness)
       const leftBottom1 = leftP1.clone().sub(leftThicknessOffset);
@@ -2499,7 +2589,7 @@ export default function ThreeDVis({
       const rightV2 = new THREE.Vector3().subVectors(rightP4, rightP1);
       const rightRoofNormal = new THREE.Vector3().crossVectors(rightV1, rightV2).normalize();
       
-      const rightThicknessOffset = rightRoofNormal.multiplyScalar(roofThickness / 2);
+      const rightThicknessOffset = rightRoofNormal.clone().multiplyScalar(roofThickness / 2);
       
       // Bottom surface vertices (offset inward by half thickness)
       const rightBottom1 = rightP1.clone().sub(rightThicknessOffset);
@@ -2549,6 +2639,12 @@ export default function ThreeDVis({
     const superiorRightRoofEdgesMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
     const superiorRightRoofEdges = new THREE.LineSegments(superiorRightRoofEdgesGeometry, superiorRightRoofEdgesMaterial);
     rightRoofMesh.add(superiorRightRoofEdges);
+    
+    // Add corrugated lines to superior left roof (37.5mm spacing - half of 75mm)
+    // Use top surface vertices directly to ensure correct height
+    addCorrugatedLinesFromTopSurface(leftRoofMesh, leftTop1, leftTop2, leftTop3, leftTop4, 0.0375);
+    // Add corrugated lines to superior right roof (37.5mm spacing - half of 75mm)
+    addCorrugatedLinesFromTopSurface(rightRoofMesh, rightTop1, rightTop2, rightTop3, rightTop4, 0.0375);
       
     } else if (roofStyle === "Affordable") {
       if (!baseboardsRef.current.children.includes(affordableShapeRef.current)) {
@@ -2583,7 +2679,7 @@ export default function ThreeDVis({
       const leftV2 = new THREE.Vector3().subVectors(leftP4, leftP1);
       const leftRoofNormal = new THREE.Vector3().crossVectors(leftV1, leftV2).normalize();
       
-      const leftThicknessOffset = leftRoofNormal.multiplyScalar(roofThickness / 2);
+      const leftThicknessOffset = leftRoofNormal.clone().multiplyScalar(roofThickness / 2);
       
       // Bottom surface vertices (offset inward by half thickness)
       const leftBottom1 = leftP1.clone().sub(leftThicknessOffset);
@@ -2650,7 +2746,7 @@ export default function ThreeDVis({
       const rightV2 = new THREE.Vector3().subVectors(rightP4, rightP1);
       const rightRoofNormal = new THREE.Vector3().crossVectors(rightV1, rightV2).normalize();
       
-      const rightThicknessOffset = rightRoofNormal.multiplyScalar(roofThickness / 2);
+      const rightThicknessOffset = rightRoofNormal.clone().multiplyScalar(roofThickness / 2);
       
       // Bottom surface vertices (offset inward by half thickness)
       const rightBottom1 = rightP1.clone().sub(rightThicknessOffset);
@@ -2700,6 +2796,12 @@ export default function ThreeDVis({
     const affordableRightRoofEdgesMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
     const affordableRightRoofEdges = new THREE.LineSegments(affordableRightRoofEdgesGeometry, affordableRightRoofEdgesMaterial);
     rightRoofMesh.add(affordableRightRoofEdges);
+    
+    // Add corrugated lines to affordable left roof (75mm spacing - half of 150mm)
+    // Use top surface vertices directly to ensure correct height
+    addCorrugatedLinesFromTopSurface(leftRoofMesh, leftTop1, leftTop2, leftTop3, leftTop4, 0.075);
+    // Add corrugated lines to affordable right roof (75mm spacing - half of 150mm)
+    addCorrugatedLinesFromTopSurface(rightRoofMesh, rightTop1, rightTop2, rightTop3, rightTop4, 0.075);
       
     } else if (roofStyle === "Skillion") {
       if (!baseboardsRef.current.children.includes(skillionShapeRef.current)) {
@@ -2810,6 +2912,10 @@ export default function ThreeDVis({
     const skillionRoofEdgesMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
     const skillionRoofEdges = new THREE.LineSegments(skillionRoofEdgesGeometry, skillionRoofEdgesMaterial);
     skillionRoofMesh.add(skillionRoofEdges);
+    
+    // Add corrugated lines to skillion roof (75mm spacing)
+    // For skillion, lines run from left to right (perpendicular to the slope)
+    addCorrugatedLines(skillionRoofMesh, skillionP1, skillionP2, skillionP3, skillionP4, 0.075, skillionThicknessOffset);
     }
 
     // Create weatherboard lines based on current roofStyle
@@ -3031,6 +3137,45 @@ export default function ThreeDVis({
     }
   }, [windowSurroundsColour]);
 
+  // Update camera height and distance based on selected building part
+  useEffect(() => {
+    // Set target distance to 10000mm (10m) for all building parts
+    targetCameraDistanceRef.current = 10.0;
+    
+    // Set target height based on building part
+    if (selectedBuildingPart === "roof") {
+      targetCameraHeightRef.current = 5.0; // 5000mm for roof
+    } else if (selectedBuildingPart === "baseboards") {
+      targetCameraHeightRef.current = 0.6; // 600mm for baseboards
+    } else {
+      targetCameraHeightRef.current = 1.8; // 1800mm for everything else
+    }
+  }, [selectedBuildingPart]);
+
+  // Update camera height and distance when roof style changes (treat like selecting roof)
+  // Only trigger when roofStyle actually changes, not on initial mount
+  useEffect(() => {
+    // Skip on initial mount - let selectedBuildingPart control initial camera position
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      previousRoofStyleRef.current = roofStyle;
+      return;
+    }
+    
+    // Only run if roofStyle actually changed
+    if (previousRoofStyleRef.current === roofStyle) {
+      return;
+    }
+    previousRoofStyleRef.current = roofStyle;
+    
+    if (roofStyle) {
+      // Set target distance to 10000mm (10m)
+      targetCameraDistanceRef.current = 10.0;
+      // Set target height to 5000mm (5m) for roof view
+      targetCameraHeightRef.current = 5.0;
+    }
+  }, [roofStyle]);
+
   // Update roof color when roofColour changes (main roof and porch roof)
   useEffect(() => {
     if (!roofMaterialRef.current && !porchRoofMaterialRef.current && superiorPorchRoofPlanesRef.current.length === 0) return;
@@ -3188,7 +3333,7 @@ export default function ThreeDVis({
       </div>
 
       {/* Colour Picker */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: "8px", flex: 1, overflowY: "auto" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "4px" }}>
         {getAvailableColours(selectedBuildingPart).map((colour) => {
           const hex = getColourHex(colour.r, colour.g, colour.b);
           const currentColour = getCurrentColour(selectedBuildingPart);
@@ -3202,9 +3347,9 @@ export default function ThreeDVis({
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                gap: "6px",
-                padding: "8px",
-                borderRadius: "8px",
+                gap: "3px",
+                padding: "4px",
+                borderRadius: "4px",
                 cursor: "pointer",
                 backgroundColor: isSelected ? "#f0f0f0" : "transparent",
                 border: isSelected ? "2px solid #ff0000" : "1px solid #ddd",
@@ -3223,15 +3368,15 @@ export default function ThreeDVis({
             >
               <div
                 style={{
-                  width: "60px",
-                  height: "60px",
-                  borderRadius: "4px",
+                  width: "35px",
+                  height: "35px",
+                  borderRadius: "3px",
                   backgroundColor: hex,
                   border: "1px solid #ccc",
                   flexShrink: 0,
                 }}
               />
-              <div style={{ fontSize: "0.85rem", fontWeight: 500, color: MONUMENT, textAlign: "center" }}>
+              <div style={{ fontSize: "0.7rem", fontWeight: 500, color: MONUMENT, textAlign: "center", lineHeight: "1.1" }}>
                 {colour.displayName || colour.name}
               </div>
             </div>
