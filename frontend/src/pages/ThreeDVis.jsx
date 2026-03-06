@@ -3334,7 +3334,7 @@ export default function ThreeDVis({
       </div>
 
       {/* Colour Picker */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "4px", overflow: "visible" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "4px", overflow: "hidden" }}>
         {getAvailableColours(selectedBuildingPart).map((colour) => {
           const hex = getColourHex(colour.r, colour.g, colour.b);
           const currentColour = getCurrentColour(selectedBuildingPart);
@@ -3457,21 +3457,23 @@ export default function ThreeDVis({
   ];
 
   return (
-    <div style={{ padding: "24px", display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ display: "flex", gap: "24px" }}>
+    <div style={{ padding: "24px", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      <div style={{ display: "flex", gap: "24px", height: "100%", overflow: "hidden" }}>
         {/* Left side - Controls */}
-        {renderSection()}
+        <div style={{ overflowY: "auto", overflowX: "hidden" }}>
+          {renderSection()}
+        </div>
 
         {/* Right side - 3D Model and Submenu */}
-        <div style={{ flex: 1, display: "flex", gap: "12px", alignItems: "flex-start" }}>
-          <div style={{ height: "600px", maxWidth: "1000px", overflow: "hidden", marginTop: "28px" }}>
+        <div style={{ flex: 1, display: "flex", gap: "12px", alignItems: "flex-start", minWidth: 0, overflow: "hidden" }}>
+          <div style={{ height: "600px", width: "1000px", minWidth: "800px", flexShrink: 0, overflow: "hidden", marginTop: "28px", backgroundColor: "#f0f0f0" }}>
             <canvas
               ref={canvasRef}
               style={{ width: "100%", height: "100%", display: "block" }}
             />
           </div>
           {/* Submenu Buttons */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "28px", width: "120px", flexShrink: 0 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "28px", width: "120px", minWidth: "120px", maxWidth: "120px", flexShrink: 0 }}>
             {sections.map((section) => (
               <button
                 key={section.key}
