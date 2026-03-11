@@ -2099,56 +2099,6 @@ app.post("/api/emails/send-drawings", async (req, res) => {
     if (customBody !== undefined && customBody !== null) {
       htmlBody = customBody.toString();
       
-      // Add "Approve Concept Here" button for CONCEPT client emails (when attachDrawings is true)
-      // Check if this is a CONCEPT email by looking for "CONCEPT" in the subject, body, or comment marker
-      const isConceptEmail = attachPdf === true && (
-        (customSubject && customSubject.includes("CONCEPT")) || 
-        htmlBody.includes("CONCEPT") || 
-        htmlBody.includes("<!-- CONCEPT -->")
-      );
-      
-      if (isConceptEmail) {
-        // Add approval button link - make it more prominent
-        const approvalUrl = `http://192.168.0.222:3001/approve-concept/${projectId}`;
-        const approvalButtonHtml = `
-          <br><br>
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${approvalUrl}" style="
-              display: inline-block;
-              padding: 20px 48px;
-              background-color: #4D93D9;
-              color: #ffffff;
-              text-decoration: none;
-              border-radius: 10px;
-              font-weight: 600;
-              font-size: 1.3rem;
-              box-shadow: 0 4px 12px rgba(77, 147, 217, 0.4);
-            ">Approve Concept Here</a>
-          </div>
-        `;
-        
-        // Find the word "approve" (case-insensitive) and insert button right after it
-        const approvePattern = /\bapprove\b/i;
-        const match = htmlBody.match(approvePattern);
-        if (match) {
-          // Find the end of the word "approve" (including any trailing punctuation or whitespace)
-          const insertIndex = match.index + match[0].length;
-          // Insert button right after "approve"
-          htmlBody = htmlBody.slice(0, insertIndex) + approvalButtonHtml + htmlBody.slice(insertIndex);
-        } else {
-          // Fallback: insert before "Powered by" or at the end
-          const poweredByPattern = /Powered by SGF Central/i;
-          const poweredByMatch = htmlBody.match(poweredByPattern);
-          if (poweredByMatch) {
-            const insertIndex = poweredByMatch.index;
-            htmlBody = htmlBody.slice(0, insertIndex) + approvalButtonHtml + htmlBody.slice(insertIndex);
-          } else {
-            // Last resort: append at the end
-            htmlBody += approvalButtonHtml;
-          }
-        }
-      }
-      
       // Only add "View Drawings" button for Drafting Notes emails (Preview & Send Email modal)
       // Do NOT add it for "Email Drawings to Client" emails (when attachDrawings is true)
       if (attachPdf === false) {
