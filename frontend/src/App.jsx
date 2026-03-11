@@ -16,6 +16,7 @@ import Managers from "./pages/Managers";
 import ContractManager from "./pages/ContractManager";
 import ColourManager from "./pages/ColourManager";
 import StatusManager from "./pages/StatusManager";
+import DrawingManager from "./pages/DrawingManager";
 import Sales from "./pages/Sales";
 import SalesTotals from "./pages/SalesTotals";
 import SalesAnalytics from "./pages/SalesAnalytics";
@@ -47,6 +48,7 @@ export default function App() {
         <Route path="/managers/contract-manager" element={<ContractManager />} />
         <Route path="/managers/colour-manager" element={<ColourManager />} />
         <Route path="/managers/status-manager" element={<StatusManager />} />
+        <Route path="/managers/drawing-manager" element={<DrawingManager />} />
         <Route path="/sales" element={<Sales />} />
         <Route path="/sales-totals" element={<SalesTotals />} />
         <Route path="/sales-analytics" element={<SalesAnalytics />} />

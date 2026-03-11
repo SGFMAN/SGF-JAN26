@@ -294,8 +294,8 @@ export default function ThreeDVis({
     grassTexture.wrapT = THREE.RepeatWrapping;
     grassTexture.repeat.set(10, 10); // Repeat the pattern
     
-    const grassGeometry = new THREE.PlaneGeometry(100, 100); // Large ground plane
-    const grassMaterial = new THREE.MeshStandardMaterial({ 
+    const grassGeometry = new THREE.PlaneGeometry(100, 100);
+    const grassMaterial = new THREE.MeshStandardMaterial({
       map: grassTexture,
       metalness: 0.1,
       roughness: 0.9

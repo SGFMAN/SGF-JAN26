@@ -353,6 +353,58 @@ export default function ClientInfo({ project, onUpdate }) {
     }, 1000);
   }
 
+  function handleEmailClientDetails() {
+    // Use current ref values to ensure we have the latest state
+    const currentValues = valuesRef.current;
+    
+    // Build subject: Suburb - street
+    const suburb = project?.suburb || "";
+    const street = project?.street || "";
+    const subject = suburb && street 
+      ? `${suburb} - ${street}`
+      : suburb || street || "Project";
+    
+    // Build body with contact details
+    let body = "Contact details for:\n";
+    body += `${street || ""} - ${suburb || ""}\n\n`;
+    
+    // Contact 1
+    if (currentValues.client1Name || currentValues.client1Email || currentValues.client1Phone) {
+      body += "Contact 1 name\n";
+      body += `${currentValues.client1Name || ""}\n`;
+      body += "Contact 1 email\n";
+      body += `${currentValues.client1Email || ""}\n`;
+      body += "Contact 1 phone\n";
+      body += `${currentValues.client1Phone || ""}\n\n`;
+    }
+    
+    // Contact 2
+    if (currentValues.client2Name || currentValues.client2Email || currentValues.client2Phone) {
+      body += "Contact 2 name\n";
+      body += `${currentValues.client2Name || ""}\n`;
+      body += "Contact 2 email\n";
+      body += `${currentValues.client2Email || ""}\n`;
+      body += "Contact 2 phone\n";
+      body += `${currentValues.client2Phone || ""}\n\n`;
+    }
+    
+    // Contact 3
+    if (currentValues.client3Name || currentValues.client3Email || currentValues.client3Phone) {
+      body += "Contact 3 name\n";
+      body += `${currentValues.client3Name || ""}\n`;
+      body += "Contact 3 email\n";
+      body += `${currentValues.client3Email || ""}\n`;
+      body += "Contact 3 phone\n";
+      body += `${currentValues.client3Phone || ""}\n`;
+    }
+    
+    // Build mailto link with empty To field
+    const mailtoLink = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    
+    // Open email client
+    window.location.href = mailtoLink;
+  }
+
   function handleEmailClients() {
     // Use current ref values to ensure we have the latest state
     const currentValues = valuesRef.current;
@@ -646,7 +698,33 @@ export default function ClientInfo({ project, onUpdate }) {
             />
           </div>
           </div>
-          <div style={{ position: "absolute", bottom: "14px", left: "0px" }}>
+          <div style={{ position: "absolute", bottom: "14px", left: "0px", display: "flex", flexDirection: "column", gap: "8px" }}>
+            <button
+              onClick={handleEmailClientDetails}
+              style={{
+                background: WHITE,
+                color: MONUMENT,
+                border: "none",
+                borderRadius: "10px",
+                padding: "12px 8px",
+                fontSize: "1.05rem",
+                fontWeight: 500,
+                textAlign: "center",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.17s",
+                width: "200px",
+                display: "block",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#f0f0f0";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = WHITE;
+              }}
+            >
+              Email Client Details
+            </button>
             <button
               onClick={handleEmailClients}
               style={{
@@ -663,6 +741,12 @@ export default function ClientInfo({ project, onUpdate }) {
                 transition: "background 0.17s",
                 width: "200px",
                 display: "block",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#f0f0f0";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = WHITE;
               }}
             >
               {activeContactCount === 0

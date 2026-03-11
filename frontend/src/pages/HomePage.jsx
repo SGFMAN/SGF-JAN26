@@ -94,6 +94,21 @@ const FIELD_DEFINITIONS = {
     values: [], // Will be populated dynamically from projects
     defaultValue: new Date().getFullYear().toString(),
   },
+  classification: {
+    label: "Classification",
+    values: [
+      "Small Second Dwelling",
+      "Dependant Persons Unit",
+      "Detached Extension",
+      "Dwelling",
+      "Home Office / Studio",
+      "Dwelling & DPU",
+      "Dwelling & SSD",
+      "SSD & DPU",
+      "Dual Occ"
+    ],
+    defaultValue: "",
+  },
 };
 
 export default function HomePage() {

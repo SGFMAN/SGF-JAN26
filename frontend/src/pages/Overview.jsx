@@ -1593,21 +1593,6 @@ export default function Overview({ project }) {
               </div>
             </div>
           </div>
-
-          {/* Construction Phase Progress Section */}
-          <div
-            style={{
-              background: "transparent",
-              border: "2px solid white",
-              borderRadius: "12px",
-              padding: "24px",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-            }}
-          >
-            <h2 style={{ fontSize: "1.3rem", fontWeight: 600, color: MONUMENT, marginTop: 0, marginBottom: "20px" }}>
-              Construction Phase Progress
-            </h2>
-          </div>
         </div>
       )}
 

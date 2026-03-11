@@ -2374,8 +2374,9 @@ export default function Drawings({ project, onUpdate }) {
                         <button
                           onClick={() => {
                             if (project?.drawings_pdf_location) {
-                              const pdfUrl = `${API_URL}/api/files/drawings/${project.id}`;
-                              window.open(pdfUrl, "_blank");
+                              // Open the actual file from the project folder in a modal
+                              // The API endpoint serves the file directly from drawings_pdf_location (no copy is made)
+                              setShowDrawingsModal(true);
                             } else {
                               alert("No drawings PDF has been set for this project yet.");
                             }
@@ -3310,6 +3311,73 @@ export default function Drawings({ project, onUpdate }) {
                   Send Email
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Drawings PDF Modal */}
+      {showDrawingsModal && project?.drawings_pdf_location && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1001,
+          }}
+          onClick={() => setShowDrawingsModal(false)}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              width: "90%",
+              maxWidth: "1200px",
+              maxHeight: "90vh",
+              display: "flex",
+              flexDirection: "column",
+              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Drawings</h2>
+              <button
+                onClick={() => setShowDrawingsModal(false)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "1.5rem",
+                  cursor: "pointer",
+                  color: MONUMENT,
+                  padding: "0",
+                  width: "30px",
+                  height: "30px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+              <iframe
+                src={`${API_URL}/api/files/drawings/${project.id}?t=${new Date().getTime()}`}
+                style={{
+                  width: "100%",
+                  flex: 1,
+                  border: "none",
+                  borderRadius: "8px",
+                  minHeight: "600px",
+                }}
+                title="Drawings PDF"
+              />
             </div>
           </div>
         </div>
