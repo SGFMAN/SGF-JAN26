@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate, useLocation } from "react-router-dom";
 import Overview from "./Overview";
 import ProjectInfo from "./ProjectInfo";
 import ClientInfo from "./ClientInfo";
@@ -49,6 +49,7 @@ const CONSTRUCTION_MENU_OPTIONS = [
 export default function ProjectPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -69,12 +70,15 @@ export default function ProjectPage() {
 
   // Check for view parameter in URL to preserve active view
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
+    const urlParams = new URLSearchParams(location.search);
     const viewParam = urlParams.get('view');
     if (viewParam && MENU_OPTIONS.some(opt => opt.key === viewParam)) {
       setActiveView(viewParam);
+    } else if (!viewParam) {
+      // If no view parameter, default to overview
+      setActiveView("overview");
     }
-  }, [id]);
+  }, [id, location.search]);
 
   // Set default menu view for Construction Phase projects
   useEffect(() => {

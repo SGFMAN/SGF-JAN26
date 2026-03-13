@@ -15,6 +15,10 @@ export default function DrawingManager() {
   const [error, setError] = useState(null);
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [draftspersonUsers, setDraftspersonUsers] = useState([]);
+  const [showReminderModal, setShowReminderModal] = useState(false);
+  const [selectedProjectForReminder, setSelectedProjectForReminder] = useState(null);
+  const [sortColumn, setSortColumn] = useState(null);
+  const [sortDirection, setSortDirection] = useState("asc");
 
   useEffect(() => {
     fetchProjects();
@@ -402,6 +406,89 @@ export default function DrawingManager() {
     }
   }
 
+  // Helper function to get draftsperson first name
+  function getDraftspersonFirstName(project) {
+    const draftspersonName = getDraftspersonName(project.draftsperson);
+    if (!draftspersonName) return "";
+    const firstName = draftspersonName.split(" ")[0];
+    return firstName.toLowerCase();
+  }
+
+  // Helper function to get holder display with days
+  function getHolderDisplayForSort(project) {
+    const holder = project.drawings_holder || "design team";
+    let daysNum = 0;
+    if (project.drawings_holder_date) {
+      const holderDate = new Date(project.drawings_holder_date);
+      const today = new Date();
+      const diffTime = Math.abs(today - holderDate);
+      daysNum = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    }
+    return { holder: holder, daysNum: daysNum };
+  }
+
+  // Sort function
+  function sortProjects(projectsToSort, column, direction) {
+    const sorted = [...projectsToSort];
+    
+    sorted.sort((a, b) => {
+      let compareA, compareB;
+      
+      switch(column) {
+        case "project":
+          compareA = (a.suburb || "").toLowerCase();
+          compareB = (b.suburb || "").toLowerCase();
+          break;
+        case "concept":
+          compareA = isConceptApproved(a) ? 1 : 0;
+          compareB = isConceptApproved(b) ? 1 : 0;
+          break;
+        case "working":
+          compareA = isWorkingDrawingsApproved(a) ? 1 : 0;
+          compareB = isWorkingDrawingsApproved(b) ? 1 : 0;
+          break;
+        case "draftsperson":
+          compareA = getDraftspersonFirstName(a);
+          compareB = getDraftspersonFirstName(b);
+          break;
+        case "drawingsWith":
+          const holderA = getHolderDisplayForSort(a);
+          const holderB = getHolderDisplayForSort(b);
+          // Sort by department first (Design=1, Client=2, Sales=3)
+          const deptOrder = { "design team": 1, "client": 2, "sales team": 3 };
+          const deptA = deptOrder[holderA.holder] || 0;
+          const deptB = deptOrder[holderB.holder] || 0;
+          if (deptA !== deptB) {
+            return direction === "asc" ? (deptA - deptB) : (deptB - deptA);
+          }
+          // Then by days
+          compareA = holderA.daysNum;
+          compareB = holderB.daysNum;
+          break;
+        default:
+          return 0;
+      }
+      
+      if (compareA < compareB) return direction === "asc" ? -1 : 1;
+      if (compareA > compareB) return direction === "asc" ? 1 : -1;
+      return 0;
+    });
+    
+    return sorted;
+  }
+
+  // Handle column header click
+  function handleSort(column) {
+    if (sortColumn === column) {
+      // Toggle direction
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      // New column, start with ascending
+      setSortColumn(column);
+      setSortDirection("asc");
+    }
+  }
+
   return (
     <div
       className="page-container"
@@ -772,12 +859,17 @@ export default function DrawingManager() {
             <>
               {(() => {
                 // Filter projects by state if specified
-                const filteredProjects = stateFilter !== "All" 
+                let filteredProjects = stateFilter !== "All" 
                   ? projects.filter(project => {
                       const projectState = (project.state || "").toUpperCase();
                       return projectState === stateFilter.toUpperCase();
                     })
                   : projects;
+                
+                // Apply sorting if a column is selected
+                if (sortColumn) {
+                  filteredProjects = sortProjects(filteredProjects, sortColumn, sortDirection);
+                }
                 
                 if (filteredProjects.length === 0) {
                   return (
@@ -785,111 +877,174 @@ export default function DrawingManager() {
                   );
                 }
                 
-                // Helper function to get holder display text
+                // Helper function to get holder display text and days
                 function getHolderDisplay(project) {
                   const holder = project.drawings_holder || "design team";
-                  if (holder === "sales team") return "Sales Team";
-                  if (holder === "client") return "Client";
-                  return "Design Team";
+                  let displayText = "Design Team";
+                  if (holder === "sales team") displayText = "Sales Team";
+                  if (holder === "client") displayText = "Client";
+                  
+                  // Calculate days
+                  let daysText = "";
+                  let daysNum = 0;
+                  if (project.drawings_holder_date) {
+                    const holderDate = new Date(project.drawings_holder_date);
+                    const today = new Date();
+                    const diffTime = Math.abs(today - holderDate);
+                    daysNum = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                    daysText = `${daysNum} day${daysNum !== 1 ? 's' : ''}`;
+                  }
+                  
+                  return { text: displayText, days: daysText, daysNum: daysNum, holder: holder };
                 }
                 
                 return (
-                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1.5fr 1.5fr", gap: "16px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1.5fr 1fr 0.8fr", gap: "12px" }}>
                     {/* Header Row */}
                     <div
+                      onClick={() => handleSort("project")}
                       style={{
-                        padding: "12px 16px",
+                        padding: "8px 12px",
                         background: MONUMENT,
                         color: WHITE,
                         borderRadius: "8px",
                         fontWeight: 600,
-                        fontSize: "0.9rem",
+                        fontSize: "0.85rem",
                         position: "sticky",
                         top: "0",
                         zIndex: 10,
+                        cursor: "pointer",
+                        userSelect: "none",
+                        transition: "opacity 0.2s",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.opacity = "0.8";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.opacity = "1";
                       }}
                     >
-                      Project
+                      Project {sortColumn === "project" && (sortDirection === "asc" ? "↑" : "↓")}
                     </div>
                     <div
+                      onClick={() => handleSort("concept")}
                       style={{
-                        padding: "12px 16px",
+                        padding: "8px 12px",
                         background: MONUMENT,
                         color: WHITE,
                         borderRadius: "8px",
                         fontWeight: 600,
-                        fontSize: "0.9rem",
+                        fontSize: "0.85rem",
+                        textAlign: "center",
+                        position: "sticky",
+                        top: "0",
+                        zIndex: 10,
+                        cursor: "pointer",
+                        userSelect: "none",
+                        transition: "opacity 0.2s",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.opacity = "0.8";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.opacity = "1";
+                      }}
+                    >
+                      Concept {sortColumn === "concept" && (sortDirection === "asc" ? "↑" : "↓")}
+                    </div>
+                    <div
+                      onClick={() => handleSort("working")}
+                      style={{
+                        padding: "8px 12px",
+                        background: MONUMENT,
+                        color: WHITE,
+                        borderRadius: "8px",
+                        fontWeight: 600,
+                        fontSize: "0.85rem",
+                        textAlign: "center",
+                        position: "sticky",
+                        top: "0",
+                        zIndex: 10,
+                        cursor: "pointer",
+                        userSelect: "none",
+                        transition: "opacity 0.2s",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.opacity = "0.8";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.opacity = "1";
+                      }}
+                    >
+                      Working Drawings {sortColumn === "working" && (sortDirection === "asc" ? "↑" : "↓")}
+                    </div>
+                    <div
+                      onClick={() => handleSort("draftsperson")}
+                      style={{
+                        padding: "8px 12px",
+                        background: MONUMENT,
+                        color: WHITE,
+                        borderRadius: "8px",
+                        fontWeight: 600,
+                        fontSize: "0.85rem",
+                        textAlign: "center",
+                        position: "sticky",
+                        top: "0",
+                        zIndex: 10,
+                        cursor: "pointer",
+                        userSelect: "none",
+                        transition: "opacity 0.2s",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.opacity = "0.8";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.opacity = "1";
+                      }}
+                    >
+                      Draftsperson {sortColumn === "draftsperson" && (sortDirection === "asc" ? "↑" : "↓")}
+                    </div>
+                    <div
+                      onClick={() => handleSort("drawingsWith")}
+                      style={{
+                        padding: "8px 12px",
+                        background: MONUMENT,
+                        color: WHITE,
+                        borderRadius: "8px",
+                        fontWeight: 600,
+                        fontSize: "0.85rem",
+                        textAlign: "center",
+                        position: "sticky",
+                        top: "0",
+                        zIndex: 10,
+                        cursor: "pointer",
+                        userSelect: "none",
+                        transition: "opacity 0.2s",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.opacity = "0.8";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.opacity = "1";
+                      }}
+                    >
+                      Drawings With {sortColumn === "drawingsWith" && (sortDirection === "asc" ? "↑" : "↓")}
+                    </div>
+                    <div
+                      style={{
+                        padding: "8px 12px",
+                        background: MONUMENT,
+                        color: WHITE,
+                        borderRadius: "8px",
+                        fontWeight: 600,
+                        fontSize: "0.85rem",
                         textAlign: "center",
                         position: "sticky",
                         top: "0",
                         zIndex: 10,
                       }}
                     >
-                      Concept
-                    </div>
-                    <div
-                      style={{
-                        padding: "12px 16px",
-                        background: MONUMENT,
-                        color: WHITE,
-                        borderRadius: "8px",
-                        fontWeight: 600,
-                        fontSize: "0.9rem",
-                        textAlign: "center",
-                        position: "sticky",
-                        top: "0",
-                        zIndex: 10,
-                      }}
-                    >
-                      Working Drawings
-                    </div>
-                    <div
-                      style={{
-                        padding: "12px 16px",
-                        background: MONUMENT,
-                        color: WHITE,
-                        borderRadius: "8px",
-                        fontWeight: 600,
-                        fontSize: "0.9rem",
-                        textAlign: "center",
-                        position: "sticky",
-                        top: "0",
-                        zIndex: 10,
-                      }}
-                    >
-                      Who Has Project
-                    </div>
-                    <div
-                      style={{
-                        padding: "12px 16px",
-                        background: MONUMENT,
-                        color: WHITE,
-                        borderRadius: "8px",
-                        fontWeight: 600,
-                        fontSize: "0.9rem",
-                        textAlign: "center",
-                        position: "sticky",
-                        top: "0",
-                        zIndex: 10,
-                      }}
-                    >
-                      Draftsperson
-                    </div>
-                    <div
-                      style={{
-                        padding: "12px 16px",
-                        background: MONUMENT,
-                        color: WHITE,
-                        borderRadius: "8px",
-                        fontWeight: 600,
-                        fontSize: "0.9rem",
-                        textAlign: "center",
-                        position: "sticky",
-                        top: "0",
-                        zIndex: 10,
-                      }}
-                    >
-                      Contact 1 Email
+                      Reminder
                     </div>
                     
                     {/* Project Rows */}
@@ -911,12 +1066,12 @@ export default function DrawingManager() {
                             key={`${project.id}-name`}
                             to={`/project/${project.id}`}
                             style={{
-                              padding: "12px 16px",
+                              padding: "8px 12px",
                               background: WHITE,
                               borderRadius: "8px",
                               textDecoration: "none",
                               color: MONUMENT,
-                              fontSize: "0.9rem",
+                              fontSize: "0.85rem",
                               fontWeight: 500,
                               display: "flex",
                               alignItems: "center",
@@ -958,11 +1113,11 @@ export default function DrawingManager() {
                             key={`${project.id}-concept`}
                             onClick={() => handleToggleConcept(project)}
                             style={{
-                              padding: "12px 16px",
+                              padding: "8px 12px",
                               background: conceptApproved ? "#33cc33" : "#cc3333",
                               color: WHITE,
                               borderRadius: "8px",
-                              fontSize: "0.9rem",
+                              fontSize: "0.85rem",
                               fontWeight: 500,
                               display: "flex",
                               alignItems: "center",
@@ -986,11 +1141,11 @@ export default function DrawingManager() {
                             key={`${project.id}-working`}
                             onClick={() => handleToggleWorkingDrawings(project)}
                             style={{
-                              padding: "12px 16px",
+                              padding: "8px 12px",
                               background: workingDrawingsApproved ? "#33cc33" : "#cc3333",
                               color: WHITE,
                               borderRadius: "8px",
-                              fontSize: "0.9rem",
+                              fontSize: "0.85rem",
                               fontWeight: 500,
                               display: "flex",
                               alignItems: "center",
@@ -1009,46 +1164,18 @@ export default function DrawingManager() {
                             Working Drawings
                           </div>
                           
-                          {/* Column 4: Who Has Project */}
-                          <div
-                            key={`${project.id}-holder`}
-                            onClick={() => handleToggleHolder(project)}
-                            style={{
-                              padding: "12px 16px",
-                              background: WHITE,
-                              color: MONUMENT,
-                              borderRadius: "8px",
-                              fontSize: "0.9rem",
-                              fontWeight: 500,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              textAlign: "center",
-                              cursor: "pointer",
-                              transition: "background 0.2s",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#f0f0f0";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = WHITE;
-                            }}
-                          >
-                            {holderDisplay}
-                          </div>
-                          
-                          {/* Column 5: Draftsperson */}
+                          {/* Column 4: Draftsperson */}
                           <select
                             key={`${project.id}-draftsperson`}
                             value={project.draftsperson || ""}
                             onChange={(e) => handleDraftspersonChange(project, e.target.value)}
                             onClick={(e) => e.stopPropagation()}
                             style={{
-                              padding: "12px 16px",
+                              padding: "8px 12px",
                               background: WHITE,
                               color: MONUMENT,
                               borderRadius: "8px",
-                              fontSize: "0.9rem",
+                              fontSize: "0.85rem",
                               fontWeight: 500,
                               border: "none",
                               cursor: "pointer",
@@ -1063,54 +1190,69 @@ export default function DrawingManager() {
                             ))}
                           </select>
                           
-                          {/* Column 6: Contact 1 Email */}
+                          {/* Column 5: Drawings With */}
                           <div
-                            key={`${project.id}-email`}
+                            key={`${project.id}-holder`}
+                            onClick={() => handleToggleHolder(project)}
                             style={{
-                              padding: "12px 16px",
+                              padding: "8px 12px",
                               background: WHITE,
                               color: MONUMENT,
                               borderRadius: "8px",
-                              fontSize: "0.9rem",
+                              fontSize: "0.85rem",
                               fontWeight: 500,
                               display: "flex",
+                              flexDirection: "row",
                               alignItems: "center",
-                              justifyContent: "space-between",
-                              gap: "8px",
+                              justifyContent: "center",
+                              textAlign: "center",
+                              cursor: "pointer",
+                              transition: "background 0.2s",
+                              gap: "4px",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#f0f0f0";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = WHITE;
                             }}
                           >
-                            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {project.client1_email || "No email"}
-                            </span>
-                            {project.client1_email && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleCopyEmail(project.client1_email);
-                                }}
-                                style={{
-                                  padding: "4px 8px",
-                                  background: MONUMENT,
-                                  color: WHITE,
-                                  border: "none",
-                                  borderRadius: "4px",
-                                  fontSize: "0.75rem",
-                                  fontWeight: 500,
-                                  cursor: "pointer",
-                                  flexShrink: 0,
-                                  transition: "background 0.2s",
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.background = "#1a1a1a";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.background = MONUMENT;
-                                }}
-                              >
-                                Copy
-                              </button>
+                            <span>{holderDisplay.text}</span>
+                            {holderDisplay.days && (
+                              <span style={{ color: "#666" }}>
+                                - {holderDisplay.days}
+                              </span>
                             )}
                           </div>
+                          
+                          {/* Column 6: Reminder */}
+                          <button
+                            key={`${project.id}-reminder`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedProjectForReminder(project);
+                              setShowReminderModal(true);
+                            }}
+                            style={{
+                              padding: "8px 16px",
+                              background: "#4D93D9",
+                              color: WHITE,
+                              border: "none",
+                              borderRadius: "6px",
+                              fontSize: "0.9rem",
+                              fontWeight: 500,
+                              cursor: "pointer",
+                              transition: "background 0.2s",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#3d7bc9";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "#4D93D9";
+                            }}
+                          >
+                            Email
+                          </button>
                         </>
                       );
                     })}
@@ -1121,6 +1263,71 @@ export default function DrawingManager() {
           )}
         </div>
       </div>
+
+      {/* Reminder Modal */}
+      {showReminderModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={() => {
+            setShowReminderModal(false);
+            setSelectedProjectForReminder(null);
+          }}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              maxWidth: "500px",
+              width: "90%",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: "16px", color: MONUMENT }}>
+              Reminder Email
+            </h3>
+            <p style={{ color: "#666", marginBottom: "24px" }}>
+              Placeholder for reminder email functionality
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+              <button
+                onClick={() => {
+                  setShowReminderModal(false);
+                  setSelectedProjectForReminder(null);
+                }}
+                style={{
+                  padding: "10px 20px",
+                  background: "#ccc",
+                  color: MONUMENT,
+                  border: "none",
+                  borderRadius: "6px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  transition: "background 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#bbb";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#ccc";
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

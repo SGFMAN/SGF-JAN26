@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { PROCESS_RULES, getRequirementStatus, getUnmetRequirements, getMetRequirements } from "../utils/ProcessRules";
 import craig1 from "../images/craig1.jpg";
 import craig2 from "../images/craig2.jpg";
@@ -10,6 +11,8 @@ const WHITE = "#fff";
 const API_URL = "";
 
 export default function Overview({ project }) {
+  const navigate = useNavigate();
+  const { id } = useParams();
   const [emailTemplates, setEmailTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
@@ -1323,6 +1326,7 @@ export default function Overview({ project }) {
                   Deposit Status
                 </div>
                 <div
+                  onClick={() => navigate(`/project/${project?.id || id}?view=admin&t=${Date.now()}`, { replace: false })}
                   style={{
                     padding: "10px 12px",
                     borderRadius: "8px",
@@ -1336,6 +1340,14 @@ export default function Overview({ project }) {
                     alignItems: "center",
                     justifyContent: "center",
                     textAlign: "center",
+                    cursor: "pointer",
+                    transition: "opacity 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.opacity = "0.8";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = "1";
                   }}
                 >
                   {getDepositStatus()}
@@ -1348,6 +1360,7 @@ export default function Overview({ project }) {
                   Drawings Status
                 </div>
                 <div
+                  onClick={() => navigate(`/project/${project?.id || id}?view=drawings&t=${Date.now()}`, { replace: false })}
                   style={{
                     padding: "10px 12px",
                     borderRadius: "8px",
@@ -1361,6 +1374,14 @@ export default function Overview({ project }) {
                     alignItems: "center",
                     justifyContent: "center",
                     textAlign: "center",
+                    cursor: "pointer",
+                    transition: "opacity 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.opacity = "0.8";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = "1";
                   }}
                 >
                   {project.drawings_status || "Not Assigned"}
@@ -1373,6 +1394,7 @@ export default function Overview({ project }) {
                   Site Visit Status
                 </div>
                 <div
+                  onClick={() => navigate(`/project/${project?.id || id}?view=site-visit&t=${Date.now()}`, { replace: false })}
                   style={{
                     padding: "10px 12px",
                     borderRadius: "8px",
@@ -1386,6 +1408,14 @@ export default function Overview({ project }) {
                     alignItems: "center",
                     justifyContent: "center",
                     textAlign: "center",
+                    cursor: "pointer",
+                    transition: "opacity 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.opacity = "0.8";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = "1";
                   }}
                 >
                   {project.site_visit_status || "Not Complete"}
@@ -1398,6 +1428,7 @@ export default function Overview({ project }) {
                   Colour Status
                 </div>
                 <div
+                  onClick={() => navigate(`/project/${project?.id || id}?view=colours&t=${Date.now()}`, { replace: false })}
                   style={{
                     padding: "10px 12px",
                     borderRadius: "8px",
@@ -1411,6 +1442,14 @@ export default function Overview({ project }) {
                     alignItems: "center",
                     justifyContent: "center",
                     textAlign: "center",
+                    cursor: "pointer",
+                    transition: "opacity 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.opacity = "0.8";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = "1";
                   }}
                 >
                   {project.colours_status || "Not Sent"}
@@ -1423,6 +1462,7 @@ export default function Overview({ project }) {
                   Window Status
                 </div>
                 <div
+                  onClick={() => navigate(`/project/${project?.id || id}?view=windows&t=${Date.now()}`, { replace: false })}
                   style={{
                     padding: "10px 12px",
                     borderRadius: "8px",
@@ -1436,6 +1476,14 @@ export default function Overview({ project }) {
                     alignItems: "center",
                     justifyContent: "center",
                     textAlign: "center",
+                    cursor: "pointer",
+                    transition: "opacity 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.opacity = "0.8";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = "1";
                   }}
                 >
                   {project.window_status || "Not Ordered"}
@@ -1448,6 +1496,7 @@ export default function Overview({ project }) {
                   Contract Status
                 </div>
                 <div
+                  onClick={() => navigate(`/project/${project?.id || id}?view=contract&t=${Date.now()}`, { replace: false })}
                   style={{
                     padding: "10px 12px",
                     borderRadius: "8px",
@@ -1461,6 +1510,14 @@ export default function Overview({ project }) {
                     alignItems: "center",
                     justifyContent: "center",
                     textAlign: "center",
+                    cursor: "pointer",
+                    transition: "opacity 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.opacity = "0.8";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = "1";
                   }}
                 >
                   {getContractStatusText()}
@@ -1473,6 +1530,7 @@ export default function Overview({ project }) {
                   Survey & Soils
                 </div>
                 <div
+                  onClick={() => navigate(`/project/${project?.id || id}?view=survey-soil&t=${Date.now()}`, { replace: false })}
                   style={{
                     padding: "10px 12px",
                     borderRadius: "8px",
@@ -1486,6 +1544,14 @@ export default function Overview({ project }) {
                     alignItems: "center",
                     justifyContent: "center",
                     textAlign: "center",
+                    cursor: "pointer",
+                    transition: "opacity 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.opacity = "0.8";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = "1";
                   }}
                 >
                   {getSurveySoilsStatusText()}
@@ -1498,6 +1564,7 @@ export default function Overview({ project }) {
                   Planning Permit Status
                 </div>
                 <div
+                  onClick={() => navigate(`/project/${project?.id || id}?view=planning&t=${Date.now()}`, { replace: false })}
                   style={{
                     padding: "10px 12px",
                     borderRadius: "8px",
@@ -1511,6 +1578,14 @@ export default function Overview({ project }) {
                     alignItems: "center",
                     justifyContent: "center",
                     textAlign: "center",
+                    cursor: "pointer",
+                    transition: "opacity 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.opacity = "0.8";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = "1";
                   }}
                 >
                   {project.planning_status || "Not Selected"}
@@ -1523,6 +1598,7 @@ export default function Overview({ project }) {
                   Energy Report Status
                 </div>
                 <div
+                  onClick={() => navigate(`/project/${project?.id || id}?view=planning&t=${Date.now()}`, { replace: false })}
                   style={{
                     padding: "10px 12px",
                     borderRadius: "8px",
@@ -1536,6 +1612,15 @@ export default function Overview({ project }) {
                     alignItems: "center",
                     justifyContent: "center",
                     textAlign: "center",
+                    textDecoration: "none",
+                    cursor: "pointer",
+                    transition: "opacity 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.opacity = "0.8";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = "1";
                   }}
                 >
                   {project.energy_report_status || "Not Submitted"}
@@ -1548,6 +1633,7 @@ export default function Overview({ project }) {
                   Footing Certification Status
                 </div>
                 <div
+                  onClick={() => navigate(`/project/${project?.id || id}?view=planning&t=${Date.now()}`, { replace: false })}
                   style={{
                     padding: "10px 12px",
                     borderRadius: "8px",
@@ -1561,6 +1647,15 @@ export default function Overview({ project }) {
                     alignItems: "center",
                     justifyContent: "center",
                     textAlign: "center",
+                    textDecoration: "none",
+                    cursor: "pointer",
+                    transition: "opacity 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.opacity = "0.8";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = "1";
                   }}
                 >
                   {project.footing_certification_status || "Not Submitted"}
@@ -1573,6 +1668,7 @@ export default function Overview({ project }) {
                   Building Permit Status
                 </div>
                 <div
+                  onClick={() => navigate(`/project/${project?.id || id}?view=planning&t=${Date.now()}`, { replace: false })}
                   style={{
                     padding: "10px 12px",
                     borderRadius: "8px",
@@ -1586,6 +1682,15 @@ export default function Overview({ project }) {
                     alignItems: "center",
                     justifyContent: "center",
                     textAlign: "center",
+                    textDecoration: "none",
+                    cursor: "pointer",
+                    transition: "opacity 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.opacity = "0.8";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = "1";
                   }}
                 >
                   {project.building_permit_status || "Not Submitted"}

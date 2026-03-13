@@ -324,7 +324,7 @@ export default function Drawings({ project, onUpdate }) {
           window_ordered_date: project?.window_ordered_date || null,
           window_order_pdf_location: project?.window_order_pdf_location || null,
           window_order_number: project?.window_order_number || null,
-          drawings_status: "Concept Stage",
+          drawings_status: "Working Drawing Stage",
           drawings_pdf_location: project?.drawings_pdf_location || null,
           drawings_history: JSON.stringify(drawingsHistory),
           colours_status: project?.colours_status || null,
@@ -339,8 +339,8 @@ export default function Drawings({ project, onUpdate }) {
         throw new Error("Failed to update drawings status");
       }
 
-      setDrawingsStatus("Concept Stage");
-      valuesRef.current.drawingsStatus = "Concept Stage";
+      setDrawingsStatus("Working Drawing Stage");
+      valuesRef.current.drawingsStatus = "Working Drawing Stage";
       
       if (onUpdate) {
         onUpdate();
@@ -452,7 +452,7 @@ export default function Drawings({ project, onUpdate }) {
           window_ordered_date: project?.window_ordered_date || null,
           window_order_pdf_location: project?.window_order_pdf_location || null,
           window_order_number: project?.window_order_number || null,
-          drawings_status: "Working Drawing Stage",
+          drawings_status: "Drawings Complete",
           drawings_pdf_location: project?.drawings_pdf_location || null,
           drawings_history: JSON.stringify(drawingsHistory),
           colours_status: project?.colours_status || null,
@@ -467,8 +467,8 @@ export default function Drawings({ project, onUpdate }) {
         throw new Error("Failed to update drawings status");
       }
 
-      setDrawingsStatus("Working Drawing Stage");
-      valuesRef.current.drawingsStatus = "Working Drawing Stage";
+      setDrawingsStatus("Drawings Complete");
+      valuesRef.current.drawingsStatus = "Drawings Complete";
       
       if (onUpdate) {
         onUpdate();
@@ -753,6 +753,7 @@ export default function Drawings({ project, onUpdate }) {
           drawings_history: JSON.stringify(drawingsHistory),
           drawings_viewed_date: project?.drawings_viewed_date || null, // Preserve existing viewed date
           drawings_holder: "sales team", // When drawings are uploaded, sales team has them
+          drawings_holder_date: new Date().toISOString().split('T')[0], // Update date when drawings are uploaded
           project_log: logEntry,
           colours_status: project?.colours_status || null,
           planning_status: project?.planning_status || null,
@@ -1275,7 +1276,7 @@ export default function Drawings({ project, onUpdate }) {
       const result = await response.json();
       alert("Drawings email sent successfully!");
       
-      // Client now has the drawings
+      // Client now has the drawings (saveDrawingsHolder will update the date)
       await saveDrawingsHolder("client");
       
       // Close modal after sending
@@ -1402,6 +1403,9 @@ export default function Drawings({ project, onUpdate }) {
     if (!project?.id) return;
     
     try {
+      // Update the date whenever holder changes
+      const holderDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+      
       const projectName = project?.street && project?.suburb 
         ? `${project.street}, ${project.suburb}`.trim() 
         : project?.name || "";
@@ -1462,6 +1466,7 @@ export default function Drawings({ project, onUpdate }) {
           drawings_pdf_location: project?.drawings_pdf_location || null,
           drawings_history: project?.drawings_history || null,
           drawings_viewed_date: project?.drawings_viewed_date || null,
+          drawings_holder_date: holderDate,
           draftsperson: project?.draftsperson || null,
           drawings_holder: holder,
           colours_status: project?.colours_status || null,
@@ -2049,47 +2054,346 @@ export default function Drawings({ project, onUpdate }) {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-        <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: 0, color: MONUMENT }}>
+      <div style={{ marginBottom: "8px", display: "flex", gap: "24px", alignItems: "flex-start" }}>
+        <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: 0, color: MONUMENT, flex: "2.5", minWidth: "200px" }}>
           Drawings
         </h2>
-        <div
-          style={{
-            padding: "4px 12px",
-            borderRadius: "6px",
-            fontSize: "0.85rem",
-            fontWeight: 500,
-            color: WHITE,
-            background: holderDisplay.color,
-            display: "inline-block",
-          }}
-        >
-          {holderDisplay.text}
+        <div style={{ flex: "0.5", minWidth: "200px" }}>
+          <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", marginTop: "20px" }}>
+            Status
+          </div>
         </div>
       </div>
       {project && (
-        <div style={{ marginTop: "24px", display: "flex", gap: "24px", flexWrap: "wrap", alignItems: "stretch" }}>
-          {/* Columns 1, 2, 3 - Drawings History */}
-          <div style={{ flex: "3", minWidth: "200px", display: "flex", flexDirection: "column" }}>
-            <div style={{ marginBottom: "24px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
-                Drawings History
+        <div style={{ marginTop: "18px", display: "flex", gap: "24px", flexWrap: "wrap", alignItems: "stretch" }}>
+          <div style={{ flex: "2.5", minWidth: "200px" }}>
+            <div
+              style={{
+                background: WHITE,
+                border: `1px solid ${SECTION_GREY}`,
+                borderRadius: "8px",
+                padding: "16px",
+                minHeight: "600px",
+                height: "600px",
+                overflowY: "auto",
+                overflowX: "hidden",
+                display: "flex",
+                flexDirection: "column",
+                marginTop: "-18px",
+              }}
+            >
+            {(() => {
+              let drawingsHistory = [];
+              try {
+                const historyValue = project?.drawings_history;
+                if (historyValue) {
+                  drawingsHistory = typeof historyValue === 'string' ? JSON.parse(historyValue) : historyValue;
+                }
+              } catch (e) {
+                console.error("Error parsing drawings_history:", e);
+              }
+
+              if (!drawingsHistory || drawingsHistory.length === 0) {
+                return (
+                  <div style={{ color: "#32323399", fontSize: "0.9rem", fontStyle: "italic" }}>
+                    No drawings uploaded yet
+                  </div>
+                );
+              }
+
+              // Check if this is the current (last) revision
+              const isCurrentRevision = (index) => index === drawingsHistory.length - 1;
+
+              return (
+                <>
+                  {/* Column Headers */}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 70px 90px 100px 100px",
+                      gap: "6px",
+                      padding: "4px 8px",
+                      borderBottom: `1px solid ${SECTION_GREY}`,
+                      marginBottom: "4px",
+                      fontWeight: 500,
+                      fontSize: "0.85rem",
+                      color: MONUMENT,
+                    }}
+                  >
+                    <div>Drawing Name</div>
+                    <div style={{ textAlign: "right" }}>Revision</div>
+                    <div style={{ textAlign: "right" }}>Uploaded</div>
+                    <div style={{ textAlign: "right" }}>Sales Notes</div>
+                    <div style={{ textAlign: "right" }}>Drafting Notes</div>
+                  </div>
+                  {/* Drawing Rows Container - scrollable, grows to fill space but doesn't overlap buttons */}
+                  <div style={{ flex: "1", display: "flex", flexDirection: "column", overflowY: "auto", overflowX: "hidden", minHeight: 0 }}>
+                  {[...drawingsHistory].reverse().map((drawing, index) => {
+                    // Determine background color based on approval status
+                    let backgroundColor = WHITE;
+                    if (drawing.workingDrawingsApproved) {
+                      backgroundColor = "#e3f2fd"; // Light blue
+                    } else if (drawing.conceptApproved) {
+                      backgroundColor = "#e8f5e9"; // Light green
+                    }
+
+                    // Calculate original index for current revision check (since we reversed the array)
+                    // In reversed array, index 0 is the last item (most recent)
+                    const originalIndex = drawingsHistory.length - 1 - index;
+                    const currentRevision = isCurrentRevision(originalIndex);
+
+                    return (
+                      <div key={index}>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 70px 90px 100px 100px",
+                            gap: "6px",
+                            padding: "4px 8px",
+                            marginBottom: currentRevision ? "2px" : (index > 0 ? "4px" : "0"),
+                            borderBottom: currentRevision ? "none" : (index > 0 ? `1px solid ${SECTION_GREY}` : "none"),
+                            backgroundColor: backgroundColor,
+                            borderRadius: currentRevision ? "4px 4px 0 0" : "4px",
+                            minHeight: "32px",
+                            alignItems: "center",
+                          }}
+                        >
+                        <div style={{ fontWeight: "500", color: MONUMENT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}>
+                          {drawing.name}
+                        </div>
+                        <div style={{ fontSize: "0.85rem", color: "#32323399", textAlign: "right" }}>
+                          {drawing.revision !== null ? drawing.revision : "-"}
+                        </div>
+                        <div style={{ fontSize: "0.85rem", color: "#32323399", textAlign: "right" }}>
+                          {drawing.date}
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <button
+                            onClick={() => handleOpenSalesNotesModal(index, drawing.revision, drawing.name)}
+                            style={{
+                              background: WHITE,
+                              color: MONUMENT,
+                              border: `1px solid ${SECTION_GREY}`,
+                              borderRadius: "6px",
+                              padding: "4px 6px",
+                              fontSize: "0.8rem",
+                              fontWeight: 500,
+                              cursor: "pointer",
+                              transition: "background 0.18s, color 0.15s",
+                              lineHeight: "1.2",
+                              width: "100px",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#f0f0f0";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = WHITE;
+                            }}
+                          >
+                            Sales<br />Notes
+                          </button>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <button
+                            onClick={() => handleOpenNotesModal(index, drawing.revision, drawing.name)}
+                            style={{
+                              background: WHITE,
+                              color: MONUMENT,
+                              border: `1px solid ${SECTION_GREY}`,
+                              borderRadius: "6px",
+                              padding: "4px 6px",
+                              fontSize: "0.8rem",
+                              fontWeight: 500,
+                              cursor: "pointer",
+                              transition: "background 0.18s, color 0.15s",
+                              lineHeight: "1.2",
+                              width: "100px",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#f0f0f0";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = WHITE;
+                            }}
+                          >
+                            Drafting<br />Notes
+                          </button>
+                        </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  </div>
+                  {/* Action Buttons - fixed at bottom, no go zone */}
+                  {drawingsHistory.length > 0 && (() => {
+                    const currentIndex = drawingsHistory.length - 1;
+                    const currentDrawing = drawingsHistory[currentIndex];
+                    let backgroundColor = WHITE;
+                    if (currentDrawing.workingDrawingsApproved) {
+                      backgroundColor = "#e3f2fd";
+                    } else if (currentDrawing.conceptApproved) {
+                      backgroundColor = "#e8f5e9";
+                    }
+                    return (
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "flex-end",
+                          gap: "8px",
+                          alignItems: "center",
+                          padding: "8px 12px",
+                          flexShrink: 0,
+                          borderTop: `1px solid ${SECTION_GREY}`,
+                          background: WHITE,
+                        }}
+                      >
+                        {project?.drawings_pdf_location && (
+                          <button
+                            onClick={() => {
+                              if (project?.drawings_pdf_location) {
+                                setShowDrawingsModal(true);
+                              } else {
+                                alert("No drawings PDF has been set for this project yet.");
+                              }
+                            }}
+                            style={{
+                              background: "#28a745",
+                              color: WHITE,
+                              border: `1px solid #28a745`,
+                              borderRadius: "6px",
+                              padding: "6px 8px",
+                              fontSize: "0.8rem",
+                              fontWeight: 500,
+                              cursor: "pointer",
+                              transition: "background 0.18s, color 0.15s",
+                              lineHeight: "1.2",
+                              width: "100px",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#218838";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "#28a745";
+                            }}
+                          >
+                            View<br />Drawings
+                          </button>
+                        )}
+                        <button
+                          onClick={handleEmailDrawingsToClient}
+                          style={{
+                            background: "#4D93D9",
+                            color: WHITE,
+                            border: `1px solid #4D93D9`,
+                            borderRadius: "6px",
+                            padding: "6px 8px",
+                            fontSize: "0.8rem",
+                            fontWeight: 500,
+                            cursor: "pointer",
+                            transition: "background 0.18s, color 0.15s",
+                            lineHeight: "1.2",
+                            width: "100px",
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = "#3d7bc9")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = "#4D93D9")}
+                        >
+                          Send to<br />Client
+                        </button>
+                        <div style={{ 
+                          fontSize: "0.8rem", 
+                          color: WHITE,
+                          textAlign: "center",
+                          background: "#FFA500",
+                          border: `1px solid #FFA500`,
+                          borderRadius: "6px",
+                          padding: "6px 8px",
+                          width: "100px",
+                          lineHeight: "1.2",
+                          fontWeight: 500,
+                        }}>
+                          {project?.drawings_holder_date ? (
+                            <>
+                              {holderDisplay.text}
+                              <br />
+                              {(() => {
+                                const holderDate = new Date(project.drawings_holder_date);
+                                const today = new Date();
+                                const diffTime = Math.abs(today - holderDate);
+                                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                                return `${diffDays} day${diffDays !== 1 ? 's' : ''}`;
+                              })()}
+                            </>
+                          ) : (
+                            "-"
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </>
+              );
+            })()}
+            </div>
+          </div>
+
+          {/* Column 4 - Status, Buttons, and Drop Zone */}
+          <div style={{ flex: "0.5", minWidth: "200px", display: "flex", flexDirection: "column", minHeight: "600px" }}>
+            <div style={{ display: "flex", flexDirection: "column", flex: "0 0 auto" }}>
+              {/* Status dropdown - aligned with top of drawings rectangle */}
+              <div style={{ marginBottom: "24px", marginTop: "-18px" }}>
+                <select
+                  name="drawingsStatus"
+                  value={drawingsStatus}
+                  onChange={handleDrawingsStatusChange}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                >
+                  {DRAWINGS_STATUS_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div
-                style={{
-                  background: WHITE,
-                  border: `1px solid ${SECTION_GREY}`,
-                  borderRadius: "8px",
-                  padding: "16px",
-                  flex: 1,
-                  minHeight: "550px",
-                  overflowY: "auto",
-                  overflowX: "hidden",
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-              >
+              <div style={{ marginBottom: "24px" }}>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                  Draftsperson
+                </div>
+                <select
+                  name="draftsperson"
+                  value={draftsperson || ""}
+                  onChange={handleDraftspersonChange}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="">Select draftsperson...</option>
+                  {draftspersonUsers.map((user) => (
+                    <option key={user.id} value={String(user.id)}>
+                      {user.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px", alignItems: "flex-start", width: "100%", marginBottom: "24px" }}>
                 {(() => {
+                  // Get drawings history to check if there are any drawings
                   let drawingsHistory = [];
                   try {
                     const historyValue = project?.drawings_history;
@@ -2100,291 +2404,33 @@ export default function Drawings({ project, onUpdate }) {
                     console.error("Error parsing drawings_history:", e);
                   }
 
-                  if (!drawingsHistory || drawingsHistory.length === 0) {
-                    return (
-                      <div style={{ color: "#32323399", fontSize: "0.9rem", fontStyle: "italic" }}>
-                        No drawings uploaded yet
-                      </div>
-                    );
-                  }
+                  const hasDrawings = drawingsHistory && drawingsHistory.length > 0;
+                  
+                  // Check if concept has been approved
+                  const conceptApprovedIndex = drawingsHistory.findIndex(entry => entry.conceptApproved === true);
+                  const hasConceptApproved = conceptApprovedIndex !== -1;
+                  
+                  // Check if there are new drawings after concept approval
+                  // If concept is approved, we need new drawings after that entry to approve working drawings
+                  const hasNewDrawingsAfterConcept = hasConceptApproved && conceptApprovedIndex < drawingsHistory.length - 1;
+                  
+                  // Can approve working drawings if:
+                  // 1. There are drawings, AND
+                  // 2. Either concept hasn't been approved yet (can approve first time), OR
+                  // 3. Concept has been approved AND there are new drawings after the concept-approved entry
+                  const canApproveWorkingDrawings = hasDrawings && (!hasConceptApproved || hasNewDrawingsAfterConcept);
 
-                  return drawingsHistory.map((drawing, index) => {
-                    // Determine background color based on approval status
-                    let backgroundColor = WHITE;
-                    if (drawing.workingDrawingsApproved) {
-                      backgroundColor = "#e3f2fd"; // Light blue
-                    } else if (drawing.conceptApproved) {
-                      backgroundColor = "#e8f5e9"; // Light green
-                    }
-
-                    // Check if this is the current (last) revision
-                    const isCurrentRevision = index === drawingsHistory.length - 1;
-
-                    return (
-                      <div
-                        key={index}
-                        style={{
-                          padding: "12px",
-                          marginBottom: index < drawingsHistory.length - 1 ? "12px" : "0",
-                          borderBottom: index < drawingsHistory.length - 1 ? `1px solid ${SECTION_GREY}` : "none",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "16px",
-                          flexWrap: "wrap",
-                          backgroundColor: backgroundColor,
-                          borderRadius: "4px",
-                        }}
-                      >
-                        <div style={{ fontWeight: "500", color: MONUMENT, minWidth: "150px" }}>
-                          {drawing.name}
-                        </div>
-                        <div style={{ fontSize: "0.85rem", color: "#32323399" }}>
-                          Date: {drawing.date}
-                        </div>
-                        <div style={{ fontSize: "0.85rem", color: "#32323399" }}>
-                          Time: {drawing.time}
-                        </div>
-                        {drawing.revision !== null && (
-                          <div style={{ fontSize: "0.85rem", color: "#32323399" }}>
-                            Revision: {drawing.revision}
-                          </div>
-                        )}
-                        {drawing.markup_pdf_location && (
-                          <button
-                            onClick={() => {
-                              // Open markup PDF in new tab
-                              const markupUrl = `${API_URL}/api/files/markup/${project.id}/${index}`;
-                              window.open(markupUrl, "_blank");
-                            }}
-                            style={{
-                              background: WHITE,
-                              color: MONUMENT,
-                              border: `1px solid ${SECTION_GREY}`,
-                              borderRadius: "6px",
-                              padding: "4px 12px",
-                              fontSize: "0.85rem",
-                              fontWeight: 500,
-                              cursor: "pointer",
-                              transition: "background 0.18s, color 0.15s",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#f0f0f0";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = WHITE;
-                            }}
-                          >
-                            View Markup
-                          </button>
-                        )}
-                        <div style={{ display: "flex", gap: "8px", marginLeft: "auto" }}>
-                          <button
-                            onClick={() => handleOpenNotesModal(index, drawing.revision, drawing.name)}
-                            style={{
-                              background: WHITE,
-                              color: MONUMENT,
-                              border: `1px solid ${SECTION_GREY}`,
-                              borderRadius: "6px",
-                              padding: "4px 12px",
-                              fontSize: "0.85rem",
-                              fontWeight: 500,
-                              cursor: "pointer",
-                              transition: "background 0.18s, color 0.15s",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#f0f0f0";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = WHITE;
-                            }}
-                          >
-                            Drafting Notes
-                          </button>
-                          {isCurrentRevision && (
-                            <button
-                              onClick={() => handleOpenSalesNotesModal(index, drawing.revision, drawing.name)}
-                              style={{
-                                background: WHITE,
-                                color: MONUMENT,
-                                border: `1px solid ${SECTION_GREY}`,
-                                borderRadius: "6px",
-                                padding: "4px 12px",
-                                fontSize: "0.85rem",
-                                fontWeight: 500,
-                                cursor: "pointer",
-                                transition: "background 0.18s, color 0.15s",
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = "#f0f0f0";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = WHITE;
-                              }}
-                            >
-                              Sales Notes
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
-            </div>
-          </div>
-
-          {/* Column 4 - Status, Buttons, and Drop Zone */}
-          <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column" }}>
-            {/* Status and Approval Buttons */}
-            <div style={{ marginBottom: "24px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
-                Status
-              </div>
-              <select
-                name="drawingsStatus"
-                value={drawingsStatus}
-                onChange={handleDrawingsStatusChange}
-                style={{
-                  width: "100%",
-                  maxWidth: "300px",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
-              >
-                {DRAWINGS_STATUS_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div style={{ marginBottom: "24px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
-                Draftsperson
-              </div>
-              <select
-                name="draftsperson"
-                value={draftsperson || ""}
-                onChange={handleDraftspersonChange}
-                style={{
-                  width: "100%",
-                  maxWidth: "300px",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                  cursor: "pointer",
-                }}
-              >
-                <option value="">Select draftsperson...</option>
-                {draftspersonUsers.map((user) => (
-                  <option key={user.id} value={String(user.id)}>
-                    {user.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px", alignItems: "flex-start", width: "100%", maxWidth: "300px", marginBottom: "24px" }}>
-              {(() => {
-                // Get drawings history to check if there are any drawings
-                let drawingsHistory = [];
-                try {
-                  const historyValue = project?.drawings_history;
-                  if (historyValue) {
-                    drawingsHistory = typeof historyValue === 'string' ? JSON.parse(historyValue) : historyValue;
-                  }
-                } catch (e) {
-                  console.error("Error parsing drawings_history:", e);
-                }
-
-                const hasDrawings = drawingsHistory && drawingsHistory.length > 0;
-                
-                // Check if concept has been approved
-                const conceptApprovedIndex = drawingsHistory.findIndex(entry => entry.conceptApproved === true);
-                const hasConceptApproved = conceptApprovedIndex !== -1;
-                
-                // Check if there are new drawings after concept approval
-                // If concept is approved, we need new drawings after that entry to approve working drawings
-                const hasNewDrawingsAfterConcept = hasConceptApproved && conceptApprovedIndex < drawingsHistory.length - 1;
-                
-                // Can approve working drawings if:
-                // 1. There are drawings, AND
-                // 2. Either concept hasn't been approved yet (can approve first time), OR
-                // 3. Concept has been approved AND there are new drawings after the concept-approved entry
-                const canApproveWorkingDrawings = hasDrawings && (!hasConceptApproved || hasNewDrawingsAfterConcept);
-
-                return (
-                  <>
-                    {/* Row 1: Approve Concept | Approve Working Drawings */}
-                    <div style={{ display: "flex", gap: "12px", width: "100%" }}>
-                      <button
-                        onClick={handleMarkConceptConfirmed}
-                        disabled={!hasDrawings}
-                        style={{
-                          flex: 1,
-                          background: !hasDrawings ? "#e0e0e0" : WHITE,
-                          color: !hasDrawings ? "#999" : MONUMENT,
-                          border: `1px solid ${SECTION_GREY}`,
-                          borderRadius: "10px",
-                          padding: "8px 8px",
-                          fontSize: "0.95rem",
-                          fontWeight: 500,
-                          textAlign: "center",
-                          letterSpacing: "0.5px",
-                          cursor: !hasDrawings ? "not-allowed" : "pointer",
-                          transition: "background 0.18s, color 0.15s",
-                          opacity: !hasDrawings ? 0.6 : 1,
-                        }}
-                      >
-                        Approve Concept
-                      </button>
-                      <button
-                        onClick={handleMarkWorkingDrawingsConfirmed}
-                        disabled={!canApproveWorkingDrawings}
-                        style={{
-                          flex: 1,
-                          background: !canApproveWorkingDrawings ? "#e0e0e0" : WHITE,
-                          color: !canApproveWorkingDrawings ? "#999" : MONUMENT,
-                          border: `1px solid ${SECTION_GREY}`,
-                          borderRadius: "10px",
-                          padding: "8px 8px",
-                          fontSize: "0.95rem",
-                          fontWeight: 500,
-                          textAlign: "center",
-                          letterSpacing: "0.5px",
-                          cursor: !canApproveWorkingDrawings ? "not-allowed" : "pointer",
-                          transition: "background 0.18s, color 0.15s",
-                          opacity: !canApproveWorkingDrawings ? 0.6 : 1,
-                        }}
-                      >
-                        Approve Working Drawings
-                      </button>
-                    </div>
-                    {/* Row 2: Show Drawings | Email Drawings to Client */}
-                    <div style={{ display: "flex", gap: "12px", width: "100%" }}>
-                      {project.drawings_pdf_location && (
+                  return (
+                    <>
+                      {/* Row 1: Approve Concept | Approve Working Drawings */}
+                      <div style={{ display: "flex", gap: "12px", width: "100%" }}>
                         <button
-                          onClick={() => {
-                            if (project?.drawings_pdf_location) {
-                              // Open the actual file from the project folder in a modal
-                              // The API endpoint serves the file directly from drawings_pdf_location (no copy is made)
-                              setShowDrawingsModal(true);
-                            } else {
-                              alert("No drawings PDF has been set for this project yet.");
-                            }
-                          }}
+                          onClick={handleMarkConceptConfirmed}
+                          disabled={!hasDrawings}
                           style={{
                             flex: 1,
-                            background: WHITE,
-                            color: MONUMENT,
+                            background: !hasDrawings ? "#e0e0e0" : WHITE,
+                            color: !hasDrawings ? "#999" : MONUMENT,
                             border: `1px solid ${SECTION_GREY}`,
                             borderRadius: "10px",
                             padding: "8px 8px",
@@ -2392,63 +2438,43 @@ export default function Drawings({ project, onUpdate }) {
                             fontWeight: 500,
                             textAlign: "center",
                             letterSpacing: "0.5px",
-                            cursor: "pointer",
+                            cursor: !hasDrawings ? "not-allowed" : "pointer",
                             transition: "background 0.18s, color 0.15s",
+                            opacity: !hasDrawings ? 0.6 : 1,
                           }}
                         >
-                          Show Drawings
+                          Approve Concept
                         </button>
-                      )}
-                      <button
-                        onClick={handleEmailDrawingsToClient}
-                        style={{
-                          flex: 1,
-                          background: "#4D93D9",
-                          color: WHITE,
-                          border: `1px solid #4D93D9`,
-                          borderRadius: "10px",
-                          padding: "8px 8px",
-                          fontSize: "0.95rem",
-                          fontWeight: 500,
-                          textAlign: "center",
-                          letterSpacing: "0.5px",
-                          cursor: "pointer",
-                          transition: "background 0.18s, color 0.15s",
-                        }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = "#3d7bc9")}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = "#4D93D9")}
-                      >
-                        Email Drawings to Client
-                      </button>
-                    </div>
-                  </>
-                );
-              })()}
-              {/* Row 3: Clear Drawing Data (on its own line) */}
-              <button
-                onClick={handleClearDrawingData}
-                style={{
-                  background: "#ff6b6b",
-                  color: WHITE,
-                  border: `1px solid #ff6b6b`,
-                  borderRadius: "10px",
-                  padding: "8px 8px",
-                  fontSize: "0.95rem",
-                  fontWeight: 500,
-                  textAlign: "center",
-                  letterSpacing: "0.5px",
-                  cursor: "pointer",
-                  transition: "background 0.18s, color 0.15s",
-                  display: "block",
-                  width: "100%",
-                }}
-              >
-                Clear Drawing Data
-              </button>
+                        <button
+                          onClick={handleMarkWorkingDrawingsConfirmed}
+                          disabled={!canApproveWorkingDrawings}
+                          style={{
+                            flex: 1,
+                            background: !canApproveWorkingDrawings ? "#e0e0e0" : WHITE,
+                            color: !canApproveWorkingDrawings ? "#999" : MONUMENT,
+                            border: `1px solid ${SECTION_GREY}`,
+                            borderRadius: "10px",
+                            padding: "8px 8px",
+                            fontSize: "0.95rem",
+                            fontWeight: 500,
+                            textAlign: "center",
+                            letterSpacing: "0.5px",
+                            cursor: !canApproveWorkingDrawings ? "not-allowed" : "pointer",
+                            transition: "background 0.18s, color 0.15s",
+                            opacity: !canApproveWorkingDrawings ? 0.6 : 1,
+                          }}
+                        >
+                          Approve Working Drawings
+                        </button>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
             </div>
 
             {/* Drawings PDF Upload Drop Zone */}
-            <div style={{ display: "flex", flexDirection: "column", marginBottom: "24px" }}>
+            <div style={{ display: "flex", flexDirection: "column", width: "100%", marginTop: "24px" }}>
               <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
                 Drawings PDF
               </div>
@@ -2470,6 +2496,9 @@ export default function Drawings({ project, onUpdate }) {
                   flexDirection: "column",
                   justifyContent: "center",
                   alignItems: "center",
+                  width: "100%",
+                  minHeight: "200px",
+                  boxSizing: "border-box",
                 }}
               >
                 {selectedFile ? (
@@ -2499,6 +2528,141 @@ export default function Drawings({ project, onUpdate }) {
                   style={{ display: "none" }}
                 />
               </div>
+            </div>
+
+            {/* Clear Drawing Data and Test Date Buttons */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "12px", width: "100%" }}>
+              <button
+                onClick={handleClearDrawingData}
+                style={{
+                  background: "#ff6b6b",
+                  color: WHITE,
+                  border: `1px solid #ff6b6b`,
+                  borderRadius: "10px",
+                  padding: "8px 8px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  display: "block",
+                  width: "100%",
+                }}
+              >
+                Clear Drawing Data
+              </button>
+              {/* Test button to set date to 9/3/26 */}
+              <button
+                onClick={async () => {
+                  if (!project?.id) {
+                    alert("Error: Project ID is missing");
+                    return;
+                  }
+                  try {
+                    const testDate = "2026-03-09"; // 9/3/26 in YYYY-MM-DD format
+                    const projectName = project?.street && project?.suburb 
+                      ? `${project.street}, ${project.suburb}`.trim() 
+                      : project?.name || "";
+
+                    const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
+                      method: "PUT",
+                      headers: {
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify({
+                        name: projectName,
+                        status: project?.status || null,
+                        stream: project?.stream || null,
+                        suburb: project?.suburb || null,
+                        street: project?.street || null,
+                        state: project?.state || null,
+                        deposit: project?.deposit || null,
+                        project_cost: project?.project_cost || null,
+                        client_name: project?.client_name || null,
+                        email: project?.email || null,
+                        phone: project?.phone || null,
+                        client1_name: project?.client1_name || null,
+                        client1_email: project?.client1_email || null,
+                        client1_phone: project?.client1_phone || null,
+                        client1_active: project?.client1_active || null,
+                        client2_name: project?.client2_name || null,
+                        client2_email: project?.client2_email || null,
+                        client2_phone: project?.client2_phone || null,
+                        client2_active: project?.client2_active || null,
+                        client3_name: project?.client3_name || null,
+                        client3_email: project?.client3_email || null,
+                        client3_phone: project?.client3_phone || null,
+                        client3_active: project?.client3_active || null,
+                        site_visit_status: project?.site_visit_status || null,
+                        site_visit_date: project?.site_visit_date || null,
+                        site_visit_time: project?.site_visit_time || null,
+                        contract_status: project?.contract_status || null,
+                        contract_sent_date: project?.contract_sent_date || null,
+                        contract_complete_date: project?.contract_complete_date || null,
+                        supporting_documents_status: project?.supporting_documents_status || null,
+                        supporting_documents_sent_date: project?.supporting_documents_sent_date || null,
+                        supporting_documents_complete_date: project?.supporting_documents_complete_date || null,
+                        water_declaration_status: project?.water_declaration_status || null,
+                        water_declaration_sent_date: project?.water_declaration_sent_date || null,
+                        water_declaration_complete_date: project?.water_declaration_complete_date || null,
+                        notes: project?.notes || null,
+                        window_status: project?.window_status || null,
+                        window_colour: project?.window_colour || null,
+                        window_reveal: project?.window_reveal || null,
+                        window_reveal_other: project?.window_reveal_other || null,
+                        window_glazing: project?.window_glazing || null,
+                        window_bal_rating: project?.window_bal_rating || null,
+                        window_date_required: project?.window_date_required || null,
+                        window_ordered_date: project?.window_ordered_date || null,
+                        window_order_pdf_location: project?.window_order_pdf_location || null,
+                        window_order_number: project?.window_order_number || null,
+                        drawings_status: project?.drawings_status || null,
+                        drawings_pdf_location: project?.drawings_pdf_location || null,
+                        drawings_history: project?.drawings_history || null,
+                        drawings_viewed_date: project?.drawings_viewed_date || null,
+                        drawings_holder_date: testDate,
+                        draftsperson: project?.draftsperson || null,
+                        drawings_holder: project?.drawings_holder || null,
+                        colours_status: project?.colours_status || null,
+                        planning_status: project?.planning_status || null,
+                        energy_report_status: project?.energy_report_status || null,
+                        footing_certification_status: project?.footing_certification_status || null,
+                        building_permit_status: project?.building_permit_status || null,
+                      }),
+                    });
+
+                    if (!response.ok) {
+                      throw new Error("Failed to update date");
+                    }
+
+                    alert("Date set to 9/3/26");
+                    if (onUpdate) {
+                      onUpdate();
+                    }
+                  } catch (error) {
+                    console.error("Error setting test date:", error);
+                    alert(`Error: ${error.message}`);
+                  }
+                }}
+                style={{
+                  background: "#9b59b6",
+                  color: WHITE,
+                  border: `1px solid #9b59b6`,
+                  borderRadius: "10px",
+                  padding: "8px 8px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  display: "block",
+                  width: "100%",
+                }}
+              >
+                Test: Set Date to 9/3/26
+              </button>
             </div>
           </div>
         </div>
@@ -3165,7 +3329,7 @@ export default function Drawings({ project, onUpdate }) {
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Email Drawings to Client</h2>
+              <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Send to Client</h2>
               <button
                 onClick={() => setShowEmailDrawingsToClientModal(false)}
                 style={{
