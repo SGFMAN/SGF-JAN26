@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -6,6 +7,8 @@ const WHITE = "#fff";
 const API_URL = "";
 
 export default function ClientInfo({ project, onUpdate }) {
+  const navigate = useNavigate();
+  
   // Contact 1 state
   const [client1Name, setClient1Name] = useState(project?.client1_name || "");
   const [client1Email, setClient1Email] = useState(project?.client1_email || "");

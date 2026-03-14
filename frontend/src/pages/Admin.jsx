@@ -33,6 +33,9 @@ export default function Admin({ project, onUpdate }) {
   const [salesperson, setSalesperson] = useState(project?.salesperson || "");
   const [salesTeamUsers, setSalesTeamUsers] = useState([]);
   const [loadingSalesUsers, setLoadingSalesUsers] = useState(false);
+  const [variationsFiles, setVariationsFiles] = useState([]);
+  const [loadingVariations, setLoadingVariations] = useState(false);
+  const [variationsPath, setVariationsPath] = useState("");
   
   useEffect(() => {
     // Initialize deposit amount - format with commas
@@ -52,6 +55,11 @@ export default function Admin({ project, onUpdate }) {
       setProjectCost(numericValue > 0 ? `$${numericValue.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : "");
     } else {
       setProjectCost("");
+    }
+
+    // Fetch variations files
+    if (project?.id) {
+      fetchVariationsFiles();
     }
 
     // Initialize project date
@@ -256,6 +264,30 @@ export default function Admin({ project, onUpdate }) {
     valuesRef.current.deposit = formattedDeposit;
     await saveField("deposit", formattedDeposit);
   }
+
+  const fetchVariationsFiles = async () => {
+    if (!project?.id) return;
+
+    setLoadingVariations(true);
+    try {
+      const response = await fetch(`${API_URL}/api/files/variations/${project.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        setVariationsFiles(data.files || []);
+        setVariationsPath(data.path || "");
+      } else {
+        console.error("Failed to fetch variations files");
+        setVariationsFiles([]);
+        setVariationsPath("");
+      }
+    } catch (error) {
+      console.error("Error fetching variations files:", error);
+      setVariationsFiles([]);
+      setVariationsPath("");
+    } finally {
+      setLoadingVariations(false);
+    }
+  };
 
   return (
     <div>
@@ -476,8 +508,46 @@ export default function Admin({ project, onUpdate }) {
             )}
           </div>
 
-          {/* Column 3 - Empty for now */}
+          {/* Column 3 - Variations */}
           <div style={{ flex: "1", minWidth: "200px" }}>
+            <div style={{ marginBottom: "16px" }}>
+              <h3 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: "8px", color: MONUMENT }}>
+                Variations
+              </h3>
+              {variationsPath && (
+                <div style={{ 
+                  color: "#666", 
+                  fontSize: "0.75rem", 
+                  fontFamily: "monospace",
+                  wordBreak: "break-all",
+                  marginBottom: "8px"
+                }}>
+                  {variationsPath}
+                </div>
+              )}
+            </div>
+            {loadingVariations ? (
+              <div style={{ color: "#32323399", fontSize: "0.9rem" }}>Loading files...</div>
+            ) : variationsFiles.length === 0 ? (
+              <div style={{ color: "#32323399", fontSize: "0.9rem" }}>No files found</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {variationsFiles.map((file, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      padding: "8px 12px",
+                      background: WHITE,
+                      borderRadius: "6px",
+                      fontSize: "0.9rem",
+                      color: MONUMENT,
+                    }}
+                  >
+                    {file.name}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Column 4 - Empty for now */}

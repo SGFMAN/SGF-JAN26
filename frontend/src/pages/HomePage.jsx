@@ -876,6 +876,67 @@ export default function HomePage() {
               Sales
             </Link>
           </div>
+
+          {/* Inbox and Email Generator - Purple (Admin Only) */}
+          {isAdmin && (
+            <div
+              style={{
+                background: "#B19CD9",
+                borderRadius: "10px",
+                padding: "4px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px",
+                border: "2px solid #000",
+              }}
+            >
+              <Link
+                to="/inbox"
+                style={{
+                  background: "transparent",
+                  color: "#404049",
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "8px 8px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  textDecoration: "none",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  marginBottom: "0px",
+                  lineHeight: "1.4",
+                  display: "block",
+                }}
+              >
+                Inbox
+              </Link>
+              <Link
+                to="/email-generator"
+                style={{
+                  background: "transparent",
+                  color: "#404049",
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "8px 8px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  textDecoration: "none",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  marginBottom: "0px",
+                  lineHeight: "1.4",
+                  display: "block",
+                }}
+              >
+                Email Generator
+              </Link>
+            </div>
+          )}
+
           <div style={{ flex: 1 }} />
           {isAdmin && (
             <Link
@@ -1382,28 +1443,14 @@ export default function HomePage() {
         onNext={async () => {
           // Check settings to determine if we should skip the proposal upload step
           try {
-            const settingsResponse = await fetch(`${API_URL}/api/settings`);
-            if (settingsResponse.ok) {
-              const settings = await settingsResponse.json();
-              const state = (newProjectFormData.state || "").toUpperCase();
-              
-              // Check if "Create folders" is enabled for the selected state
-              let createFolders = false;
-              if (state === "VIC") {
-                createFolders = settings.create_folders === 'true' || settings.create_folders === true;
-              } else if (state === "QLD") {
-                createFolders = settings.create_folders_qld === 'true' || settings.create_folders_qld === true;
-              }
-              
-              // If createFolders is false, skip step 3 (proposal upload) and go directly to step 4
-              if (!createFolders) {
-                setNewProjectStep(4);
-              } else {
-                setNewProjectStep(3);
-              }
-            } else {
-              // If settings fetch fails, default to showing step 3
+            // Check the checkbox value from formData (user's choice)
+            const createFolders = newProjectFormData.createFolders === true || newProjectFormData.createFolders === "true" || newProjectFormData.createFolders === 1 || newProjectFormData.createFolders === "1";
+            
+            // If createFolders checkbox is checked, show step 3 (proposal upload), otherwise skip to step 4
+            if (createFolders) {
               setNewProjectStep(3);
+            } else {
+              setNewProjectStep(4);
             }
           } catch (error) {
             console.error("Error checking settings:", error);
@@ -1457,36 +1504,15 @@ export default function HomePage() {
         }}
         formData={newProjectFormData}
         onFormDataChange={setNewProjectFormData}
-        onBack={async () => {
-          // Check settings to determine which step to go back to
-          try {
-            const settingsResponse = await fetch(`${API_URL}/api/settings`);
-            if (settingsResponse.ok) {
-              const settings = await settingsResponse.json();
-              const state = (newProjectFormData.state || "").toUpperCase();
-              
-              // Check if "Create folders" is enabled for the selected state
-              let createFolders = false;
-              if (state === "VIC") {
-                createFolders = settings.create_folders === 'true' || settings.create_folders === true;
-              } else if (state === "QLD") {
-                createFolders = settings.create_folders_qld === 'true' || settings.create_folders_qld === true;
-              }
-              
-              // If createFolders is false, we skipped step 3, so go back to step 2
-              if (!createFolders) {
-                setNewProjectStep(2);
-              } else {
-                setNewProjectStep(3);
-              }
-            } else {
-              // If settings fetch fails, default to step 3
-              setNewProjectStep(3);
-            }
-          } catch (error) {
-            console.error("Error checking settings:", error);
-            // If error, default to step 3
+          onBack={() => {
+          // Check the checkbox value from formData (user's choice)
+          const createFolders = newProjectFormData.createFolders === true || newProjectFormData.createFolders === "true" || newProjectFormData.createFolders === 1 || newProjectFormData.createFolders === "1";
+          
+          // If createFolders checkbox is checked, go back to step 3, otherwise go back to step 2
+          if (createFolders) {
             setNewProjectStep(3);
+          } else {
+            setNewProjectStep(2);
           }
         }}
         onCreate={handleCreateProject}

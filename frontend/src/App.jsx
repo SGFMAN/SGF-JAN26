@@ -23,6 +23,8 @@ import SalesAnalytics from "./pages/SalesAnalytics";
 import ApproveConcept from "./pages/ApproveConcept";
 import ColoursPortal from "./pages/ColoursPortal";
 import ThreeDVisPortal from "./pages/ThreeDVisPortal";
+import EmailGenerator from "./pages/EmailGenerator";
+import Inbox from "./pages/Inbox";
 import AppModeBanner from "./components/AppModeBanner";
 
 export default function App() {
@@ -52,6 +54,8 @@ export default function App() {
         <Route path="/sales" element={<Sales />} />
         <Route path="/sales-totals" element={<SalesTotals />} />
         <Route path="/sales-analytics" element={<SalesAnalytics />} />
+        <Route path="/email-generator" element={<EmailGenerator />} />
+        <Route path="/inbox" element={<Inbox />} />
         <Route path="/approve-concept/:projectId" element={<ApproveConcept />} />
         <Route path="/colours-portal/:projectId" element={<ColoursPortal />} />
         <Route path="/3d-vis-portal/:projectId" element={<ThreeDVisPortal />} />

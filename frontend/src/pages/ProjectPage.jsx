@@ -215,10 +215,10 @@ export default function ProjectPage() {
           maxWidth: "100%",
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
+          justifyContent: "center",
+          position: "relative",
           padding: "0 32px",
           boxSizing: "border-box",
-          position: "relative",
         }}
       >
         <img
@@ -231,92 +231,84 @@ export default function ProjectPage() {
             left: "40px",
           }}
         />
-        <div style={{ display: "flex", alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+          {(() => {
+            const currentProjectId = parseInt(id);
+            const currentIndex = allProjects.findIndex(p => p.id === currentProjectId);
+            const hasPrevious = currentIndex > 0;
+            const hasNext = currentIndex >= 0 && currentIndex < allProjects.length - 1;
+            const previousProject = hasPrevious ? allProjects[currentIndex - 1] : null;
+            const nextProject = hasNext ? allProjects[currentIndex + 1] : null;
+
+            return (
+              <>
+                {hasPrevious && (
+                  <button
+                    onClick={() => {
+                      if (previousProject) {
+                        navigate(`/project/${previousProject.id}?view=${activeView}`, { replace: true });
+                      }
+                    }}
+                    style={{
+                      padding: "8px 16px",
+                      fontSize: "1rem",
+                      fontWeight: 500,
+                      color: WHITE,
+                      background: MONUMENT,
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                      transition: "background 0.2s",
+                      minWidth: "100px",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
+                  >
+                    ← Previous
+                  </button>
+                )}
+                
+                <h1
+                  style={{
+                    margin: 0,
+                    fontSize: "2.4rem",
+                    fontWeight: 700,
+                    color: WHITE,
+                    letterSpacing: "1px",
+                  }}
+                >
+                  {loading ? "Loading..." : error ? "Error" : project?.name || "Project"}
+                </h1>
+
+                {hasNext && (
+                  <button
+                    onClick={() => {
+                      if (nextProject) {
+                        navigate(`/project/${nextProject.id}?view=${activeView}`, { replace: true });
+                      }
+                    }}
+                    style={{
+                      padding: "8px 16px",
+                      fontSize: "1rem",
+                      fontWeight: 500,
+                      color: WHITE,
+                      background: MONUMENT,
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                      transition: "background 0.2s",
+                      minWidth: "100px",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
+                  >
+                    Next →
+                  </button>
+                )}
+              </>
+            );
+          })()}
         </div>
-        {(() => {
-          const currentProjectId = parseInt(id);
-          const currentIndex = allProjects.findIndex(p => p.id === currentProjectId);
-          const hasPrevious = currentIndex > 0;
-          const hasNext = currentIndex >= 0 && currentIndex < allProjects.length - 1;
-          const previousProject = hasPrevious ? allProjects[currentIndex - 1] : null;
-          const nextProject = hasNext ? allProjects[currentIndex + 1] : null;
-
-          return (
-            <>
-              {hasPrevious ? (
-                <button
-                  onClick={() => {
-                    if (previousProject) {
-                      navigate(`/project/${previousProject.id}?view=${activeView}`, { replace: true });
-                    }
-                  }}
-                  style={{
-                    padding: "8px 16px",
-                    fontSize: "1rem",
-                    fontWeight: 500,
-                    color: WHITE,
-                    background: MONUMENT,
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    transition: "background 0.2s",
-                    minWidth: "100px",
-                    position: "absolute",
-                    left: "264px",
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
-                >
-                  ← Previous
-                </button>
-              ) : (
-                <div style={{ width: "100px" }}></div>
-              )}
-              
-              <h1
-                style={{
-                  margin: 0,
-                  fontSize: "2.4rem",
-                  fontWeight: 700,
-                  textAlign: "center",
-                  flex: 1,
-                  color: WHITE,
-                  letterSpacing: "1px",
-                }}
-              >
-                {loading ? "Loading..." : error ? "Error" : project?.name || "Project"}
-              </h1>
-
-              {hasNext ? (
-                <button
-                  onClick={() => {
-                    if (nextProject) {
-                      navigate(`/project/${nextProject.id}?view=${activeView}`, { replace: true });
-                    }
-                  }}
-                  style={{
-                    padding: "8px 16px",
-                    fontSize: "1rem",
-                    fontWeight: 500,
-                    color: WHITE,
-                    background: MONUMENT,
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    transition: "background 0.2s",
-                    minWidth: "100px",
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
-                >
-                  Next →
-                </button>
-              ) : (
-                <div style={{ width: "100px" }}></div>
-              )}
-            </>
-          );
-        })()}
       </div>
 
       {/* Sections 2 & 3 */}
@@ -348,6 +340,7 @@ export default function ProjectPage() {
             alignItems: "stretch",
             gap: "18px",
             color: MONUMENT,
+            overflowY: "auto",
           }}
         >
           {/* Toggle Switch - Only show for Construction Phase projects */}
@@ -481,22 +474,21 @@ export default function ProjectPage() {
               color: MONUMENT,
               border: "none",
               borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
+              padding: "13px 8px",
+              fontSize: "1.05rem",
               fontWeight: 500,
               textAlign: "center",
               textDecoration: "none",
               letterSpacing: "0.5px",
               cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
+              transition: "background 0.17s",
+              marginBottom: "4px",
               display: "block",
               width: "100%",
               boxSizing: "border-box",
             }}
           >
-            ← Main
+            ← Back to Main
           </Link>
         </div>
         {/* Section 3: Project Content */}

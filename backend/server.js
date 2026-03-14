@@ -8,6 +8,7 @@ const path = require("path");
 const fs = require("fs").promises;
 const multer = require("multer");
 const nodemailer = require("nodemailer");
+const OpenAI = require("openai");
 const app = express();
 app.use(cors({ origin: true }));
 
@@ -532,6 +533,29 @@ async function ensureSchema() {
       CONSTRAINT single_row CHECK (id = 1)
     );
   `);
+  // Create learned_answers table for email generator suggestions
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS learned_answers (
+      id SERIAL PRIMARY KEY,
+      question_text TEXT NOT NULL,
+      normalized_question TEXT NOT NULL,
+      answer_text TEXT NOT NULL,
+      category TEXT,
+      times_used INTEGER NOT NULL DEFAULT 1,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_used_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  // Create index on normalized_question for faster searches
+  try {
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_learned_answers_normalized_question 
+      ON learned_answers(normalized_question);
+    `);
+  } catch (e) {
+    console.log(`Index might already exist:`, e.message);
+  }
   // Add create_folders column if it doesn't exist (for existing tables)
   try {
     await pool.query(`
@@ -4484,6 +4508,113 @@ app.get("/api/files/colours/:id", async (req, res) => {
   }
 });
 
+// List files in Variations folder
+app.get("/api/files/variations/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    if (!pool) {
+      return res.status(500).json({ error: "DATABASE_URL not set" });
+    }
+
+    // Get project details
+    const projectResult = await pool.query(
+      "SELECT suburb, street, state, year FROM projects WHERE id = $1",
+      [id]
+    );
+
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    const project = projectResult.rows[0];
+    const { suburb, street, state, year } = project;
+
+    if (!suburb || !street || !state || !year) {
+      return res.status(400).json({ error: "Project missing required fields (suburb, street, state, year)" });
+    }
+
+    // Get root directory from settings
+    const settingsResult = await pool.query(
+      "SELECT root_directory, root_directory_qld FROM settings WHERE id = 1"
+    );
+
+    if (settingsResult.rows.length === 0) {
+      return res.status(500).json({ error: "Settings not found" });
+    }
+
+    const rootDir = state === "QLD" 
+      ? (settingsResult.rows[0].root_directory_qld || settingsResult.rows[0].root_directory)
+      : settingsResult.rows[0].root_directory;
+
+    if (!rootDir) {
+      return res.status(500).json({ error: "Root directory not configured" });
+    }
+
+    // Build project folder path: root_directory/year/state/suburb - street
+    const suburbUpper = suburb.toUpperCase();
+    const projectFolderName = `${suburbUpper} - ${street}`.replace(/[<>:"/\\|?*]/g, '_');
+    const projectPath = path.join(rootDir, year.toString(), state, projectFolderName);
+
+    // Build Variations folder path
+    const variationsFolderPath = path.join(
+      projectPath,
+      "3. CONTRACT ADMIN - Quotations, Contract, E-Contracts,Variations",
+      "Variations"
+    );
+
+    // Check if Variations folder exists
+    let folderExists = false;
+    try {
+      await fs.access(variationsFolderPath);
+      folderExists = true;
+    } catch (e) {
+      // Folder doesn't exist, return empty list with path for debugging
+      console.log(`Variations folder does not exist: ${variationsFolderPath}`);
+      return res.json({ 
+        files: [],
+        path: variationsFolderPath,
+        exists: false,
+        error: `Folder does not exist: ${variationsFolderPath}`
+      });
+    }
+
+    // Read directory contents
+    const entries = await fs.readdir(variationsFolderPath, { withFileTypes: true });
+
+    // Get all files (no filtering)
+    const files = [];
+    for (const entry of entries) {
+      if (entry.isFile()) {
+        const fileName = entry.name;
+        const filePath = path.join(variationsFolderPath, fileName);
+        try {
+          const stats = await fs.stat(filePath);
+          files.push({
+            name: fileName,
+            size: stats.size,
+            modified: stats.mtime,
+          });
+        } catch (e) {
+          console.error(`Error getting stats for ${fileName}:`, e);
+        }
+      }
+    }
+
+    // Sort by name
+    files.sort((a, b) => a.name.localeCompare(b.name));
+
+    res.json({ 
+      files,
+      path: variationsFolderPath,
+      exists: true
+    });
+  } catch (error) {
+    console.error("Error listing variations files:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Serve markup PDF for a specific revision
 app.get("/api/files/markup/:id/:revisionIndex", async (req, res) => {
   try {
@@ -5182,6 +5313,560 @@ app.post("/api/hotlist/:id/sold", async (req, res) => {
     res.json({ success: true, project: updatedProject });
   } catch (e) {
     res.status(500).json({ error: e.message || "Failed to upgrade hotlist item to project" });
+  }
+});
+
+// Initialize OpenAI client (only if API key is set)
+let openaiClient = null;
+if (process.env.OPENAI_API_KEY) {
+  openaiClient = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+  console.log("✅ OpenAI client initialized");
+} else {
+  console.warn("⚠️  OPENAI_API_KEY not set - AI features will be disabled");
+}
+
+// Email Generator: Analyze text and break into response points
+app.post("/api/email-generator/analyze", async (req, res) => {
+  if (!openaiClient) {
+    return res.status(503).json({ error: "OpenAI API key not configured" });
+  }
+
+  const { text } = req.body;
+
+  if (!text || typeof text !== "string" || text.trim().length === 0) {
+    return res.status(400).json({ error: "Text is required and cannot be empty" });
+  }
+
+  try {
+    const prompt = `You are assisting a construction/admin workflow. Your task is to analyze the following incoming message (which could be an email, legal text, or other written communication) and break it into clear, practical response points.
+
+IMPORTANT GUIDELINES:
+- Break the input into clear, practical response points
+- Keep each point short and easy to answer (one sentence question maximum)
+- Do NOT write the final reply yet - only identify what needs to be answered
+- Do NOT overwhelm the user with long explanations
+- One point should represent one issue, clause, request, or decision
+- Use plain English
+- If the input is legal or contractual, split it clause by clause where possible
+- If the input is an email, identify each question or request separately
+- Make questions actionable and specific
+
+Output ONLY valid JSON in this exact format:
+{
+  "title": "Brief summary of the message (optional, max 50 chars)",
+  "points": [
+    {
+      "id": 1,
+      "sourceText": "Brief summary of the original clause/paragraph/request this point addresses",
+      "question": "Simple, clear question for the user to answer"
+    }
+  ]
+}
+
+Input text to analyze:
+${text.trim()}
+
+Respond with ONLY the JSON object, no additional text or explanation.`;
+
+    const completion = await openaiClient.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: "You are a helpful assistant that analyzes text and breaks it into structured response points. Always respond with valid JSON only.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3,
+    });
+
+    const responseText = completion.choices[0]?.message?.content;
+    
+    if (!responseText) {
+      console.error("OpenAI returned empty response");
+      return res.status(500).json({ error: "AI returned an empty response. Please try again." });
+    }
+    
+    let parsedResponse;
+
+    try {
+      parsedResponse = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error("Failed to parse OpenAI response:", responseText);
+      console.error("Parse error:", parseError);
+      return res.status(500).json({ 
+        error: "Failed to parse AI response. The AI may have returned invalid JSON.",
+        details: process.env.NODE_ENV === "development" ? responseText : undefined,
+      });
+    }
+
+    // Validate response structure
+    if (!parsedResponse.points || !Array.isArray(parsedResponse.points) || parsedResponse.points.length === 0) {
+      return res.status(500).json({ error: "AI did not generate valid response points" });
+    }
+
+    // Ensure each point has required fields
+    const validatedPoints = parsedResponse.points.map((point, index) => ({
+      id: point.id || index + 1,
+      sourceText: point.sourceText || `Point ${index + 1}`,
+      question: point.question || "Please provide your response",
+    }));
+
+    res.json({
+      title: parsedResponse.title || "Response Points",
+      points: validatedPoints,
+    });
+  } catch (error) {
+    console.error("Error in email-generator/analyze:", error);
+    console.error("Error details:", {
+      message: error.message,
+      status: error.status,
+      statusText: error.statusText,
+      code: error.code,
+      type: error.type,
+    });
+    
+    // Provide more specific error messages
+    let errorMessage = "Failed to analyze text";
+    if (error.status === 401) {
+      errorMessage = "Invalid OpenAI API key. Please check your API key configuration.";
+    } else if (error.status === 429) {
+      errorMessage = "OpenAI API rate limit exceeded. Please try again in a moment.";
+    } else if (error.status === 500) {
+      errorMessage = "OpenAI API server error. Please try again.";
+    } else if (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED") {
+      errorMessage = "Network error connecting to OpenAI API. Please check your internet connection.";
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    res.status(500).json({
+      error: errorMessage,
+      details: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
+  }
+});
+
+// Email Generator: Compile answers into professional email draft
+app.post("/api/email-generator/compile", async (req, res) => {
+  if (!openaiClient) {
+    return res.status(503).json({ error: "OpenAI API key not configured" });
+  }
+
+  const { points, answers, originalText } = req.body;
+
+  if (!points || !Array.isArray(points) || points.length === 0) {
+    return res.status(400).json({ error: "Points array is required" });
+  }
+
+  if (!answers || !Array.isArray(answers) || answers.length !== points.length) {
+    return res.status(400).json({ error: "Answers array must match points array length" });
+  }
+
+  try {
+    // Build context for the AI
+    const answersContext = points
+      .map((point, index) => {
+        const answer = answers[index] || "";
+        return `Question: ${point.question}\nYour Answer: ${answer}`;
+      })
+      .join("\n\n");
+
+    const prompt = `You are drafting a professional email reply for a construction/admin business. Use the user's answers below to create a professional, concise email response.
+
+IMPORTANT GUIDELINES:
+- Preserve the exact meaning of the user's answers
+- Keep the tone professional, direct, and concise
+- Do NOT invent agreements, approvals, or concessions not stated by the user
+- If the user was uncertain or said "I don't know", preserve that uncertainty clearly
+- Structure the email logically, addressing each point naturally
+- Use proper business email formatting
+- Be respectful and clear
+- Do not add information the user did not provide
+
+Original message context (for reference only):
+${originalText || "Not provided"}
+
+User's answers to address:
+${answersContext}
+
+Output ONLY valid JSON in this exact format:
+{
+  "subject": "Professional email subject line (max 80 chars)",
+  "body": "Full professional email draft in plain text (use \\n for line breaks)"
+}
+
+Respond with ONLY the JSON object, no additional text or explanation.`;
+
+    const completion = await openaiClient.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: "You are a professional email writing assistant. Always respond with valid JSON only.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.5,
+    });
+
+    const responseText = completion.choices[0]?.message?.content;
+    
+    if (!responseText) {
+      console.error("OpenAI returned empty response");
+      return res.status(500).json({ error: "AI returned an empty response. Please try again." });
+    }
+    
+    let parsedResponse;
+
+    try {
+      parsedResponse = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error("Failed to parse OpenAI response:", responseText);
+      console.error("Parse error:", parseError);
+      return res.status(500).json({ 
+        error: "Failed to parse AI response. The AI may have returned invalid JSON.",
+        details: process.env.NODE_ENV === "development" ? responseText : undefined,
+      });
+    }
+
+    // Validate response structure
+    if (!parsedResponse.subject || !parsedResponse.body) {
+      return res.status(500).json({ error: "AI did not generate valid email draft" });
+    }
+
+    // Convert \n to actual newlines for display
+    const formattedBody = parsedResponse.body.replace(/\\n/g, "\n");
+
+    res.json({
+      subject: parsedResponse.subject,
+      body: formattedBody,
+    });
+  } catch (error) {
+    console.error("Error in email-generator/compile:", error);
+    console.error("Error details:", {
+      message: error.message,
+      status: error.status,
+      statusText: error.statusText,
+      code: error.code,
+      type: error.type,
+    });
+    
+    // Provide more specific error messages
+    let errorMessage = "Failed to compile email draft";
+    if (error.status === 401) {
+      errorMessage = "Invalid OpenAI API key. Please check your API key configuration.";
+    } else if (error.status === 429) {
+      errorMessage = "OpenAI API rate limit exceeded. Please try again in a moment.";
+    } else if (error.status === 500) {
+      errorMessage = "OpenAI API server error. Please try again.";
+    } else if (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED") {
+      errorMessage = "Network error connecting to OpenAI API. Please check your internet connection.";
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    res.status(500).json({
+      error: errorMessage,
+      details: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
+  }
+});
+
+// Helper function to normalize question text for matching
+function normalizeQuestion(text) {
+  if (!text || typeof text !== "string") return "";
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s]/g, "") // Remove punctuation
+    .replace(/\s+/g, " ") // Normalize whitespace
+    .trim();
+}
+
+// Common stop words to filter out when matching
+const STOP_WORDS = new Set([
+  "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by",
+  "from", "up", "about", "into", "through", "during", "including", "against", "among",
+  "throughout", "despite", "towards", "upon", "concerning", "to", "of", "in", "for",
+  "on", "at", "by", "with", "from", "up", "about", "into", "through", "during",
+  "client", "wants", "want", "would", "like", "needs", "need", "should", "could",
+  "what", "how", "when", "where", "why", "which", "who", "this", "that", "these", "those"
+]);
+
+// Extract meaningful words from a normalized question (excluding stop words)
+function extractMeaningfulWords(normalizedText) {
+  if (!normalizedText) return [];
+  return normalizedText
+    .split(" ")
+    .filter(word => word.length > 2 && !STOP_WORDS.has(word));
+}
+
+// Calculate similarity score between two sets of words
+function calculateSimilarity(words1, words2) {
+  if (words1.length === 0 || words2.length === 0) return 0;
+  
+  const set1 = new Set(words1);
+  const set2 = new Set(words2);
+  
+  // Count matching words
+  let matches = 0;
+  for (const word of set1) {
+    if (set2.has(word)) {
+      matches++;
+    }
+  }
+  
+  // Use Jaccard similarity: intersection / union
+  const union = new Set([...set1, ...set2]);
+  return matches / union.size;
+}
+
+// Email Generator: Get suggested answer for a question
+app.post("/api/email-generator/suggest", async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: "Database not available" });
+  }
+
+  const { question } = req.body;
+
+  if (!question || typeof question !== "string" || question.trim().length === 0) {
+    return res.status(400).json({ error: "Question is required" });
+  }
+
+  try {
+    const normalizedQuestion = normalizeQuestion(question);
+    const questionWords = extractMeaningfulWords(normalizedQuestion);
+
+    // Need at least 2 meaningful words to do meaningful matching
+    if (questionWords.length < 2) {
+      return res.json({ suggested: false });
+    }
+
+    // Search for matching learned answers
+    // First try exact normalized match
+    let result = await pool.query(
+      `SELECT id, question_text, normalized_question, answer_text, times_used, last_used_at 
+       FROM learned_answers 
+       WHERE normalized_question = $1 
+       ORDER BY times_used DESC, last_used_at DESC 
+       LIMIT 1`,
+      [normalizedQuestion]
+    );
+
+    // If no exact match, try similarity-based matching
+    if (result.rows.length === 0) {
+      // Get all learned answers and calculate similarity
+      const allAnswers = await pool.query(
+        `SELECT id, question_text, normalized_question, answer_text, times_used, last_used_at 
+         FROM learned_answers 
+         ORDER BY times_used DESC, last_used_at DESC`
+      );
+
+      let bestMatch = null;
+      let bestScore = 0;
+      const MIN_SIMILARITY = 0.3; // Require at least 30% similarity
+
+      for (const row of allAnswers.rows) {
+        const savedWords = extractMeaningfulWords(row.normalized_question);
+        
+        // Need at least 2 meaningful words in saved question too
+        if (savedWords.length < 2) continue;
+
+        const similarity = calculateSimilarity(questionWords, savedWords);
+        
+        // Also check if there's a significant word overlap (at least 2 unique words match)
+        const matchingWords = questionWords.filter(w => savedWords.includes(w));
+        const hasSignificantOverlap = matchingWords.length >= 2;
+
+        // Use similarity score, but boost if there's significant word overlap
+        const finalScore = hasSignificantOverlap ? Math.max(similarity, 0.4) : similarity;
+
+        if (finalScore > bestScore && finalScore >= MIN_SIMILARITY) {
+          bestScore = finalScore;
+          bestMatch = row;
+        }
+      }
+
+      if (bestMatch) {
+        result = { rows: [bestMatch] };
+      }
+    }
+
+    if (result.rows.length > 0) {
+      res.json({
+        suggested: true,
+        answer: result.rows[0].answer_text,
+        question: result.rows[0].question_text,
+        timesUsed: result.rows[0].times_used,
+      });
+    } else {
+      res.json({
+        suggested: false,
+      });
+    }
+  } catch (error) {
+    console.error("Error in email-generator/suggest:", error);
+    res.status(500).json({
+      error: "Failed to get suggestion",
+      details: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
+  }
+});
+
+// Email Generator: Save or update learned answer
+app.post("/api/email-generator/save-answer", async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: "Database not available" });
+  }
+
+  const { question, answer } = req.body;
+
+  if (!question || typeof question !== "string" || question.trim().length === 0) {
+    return res.status(400).json({ error: "Question is required" });
+  }
+
+  if (!answer || typeof answer !== "string" || answer.trim().length === 0) {
+    return res.status(400).json({ error: "Answer is required" });
+  }
+
+  try {
+    const normalizedQuestion = normalizeQuestion(question);
+    const trimmedAnswer = answer.trim();
+
+    // Check if this question already exists
+    const existing = await pool.query(
+      `SELECT id, times_used FROM learned_answers WHERE normalized_question = $1`,
+      [normalizedQuestion]
+    );
+
+    if (existing.rows.length > 0) {
+      // Update existing answer
+      const existingId = existing.rows[0].id;
+      const newTimesUsed = existing.rows[0].times_used + 1;
+      
+      await pool.query(
+        `UPDATE learned_answers 
+         SET answer_text = $1, 
+             times_used = $2, 
+             last_used_at = NOW(), 
+             updated_at = NOW() 
+         WHERE id = $3`,
+        [trimmedAnswer, newTimesUsed, existingId]
+      );
+
+      res.json({
+        success: true,
+        action: "updated",
+        id: existingId,
+        timesUsed: newTimesUsed,
+      });
+    } else {
+      // Insert new answer
+      const result = await pool.query(
+        `INSERT INTO learned_answers 
+         (question_text, normalized_question, answer_text, times_used, created_at, updated_at, last_used_at) 
+         VALUES ($1, $2, $3, 1, NOW(), NOW(), NOW()) 
+         RETURNING id`,
+        [question.trim(), normalizedQuestion, trimmedAnswer]
+      );
+
+      res.json({
+        success: true,
+        action: "created",
+        id: result.rows[0].id,
+        timesUsed: 1,
+      });
+    }
+  } catch (error) {
+    console.error("Error in email-generator/save-answer:", error);
+    res.status(500).json({
+      error: "Failed to save answer",
+      details: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
+  }
+});
+
+// Email Generator: Get all learned answers (for management UI)
+app.get("/api/email-generator/learned-answers", async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: "Database not available" });
+  }
+
+  try {
+    const { sort = "times_used", order = "desc", search = "" } = req.query;
+
+    let query = `SELECT id, question_text, answer_text, category, times_used, created_at, updated_at, last_used_at 
+                 FROM learned_answers`;
+    const params = [];
+    let paramIndex = 1;
+
+    // Add search filter if provided
+    if (search && search.trim().length > 0) {
+      query += ` WHERE question_text ILIKE $${paramIndex} OR answer_text ILIKE $${paramIndex}`;
+      params.push(`%${search.trim()}%`);
+      paramIndex++;
+    }
+
+    // Add sorting
+    const validSortColumns = ["times_used", "created_at", "updated_at", "last_used_at", "question_text"];
+    const sortColumn = validSortColumns.includes(sort) ? sort : "times_used";
+    const sortOrder = order.toLowerCase() === "asc" ? "ASC" : "DESC";
+
+    query += ` ORDER BY ${sortColumn} ${sortOrder}`;
+    query += ` LIMIT 100`; // Limit to 100 results
+
+    const result = await pool.query(query, params);
+
+    res.json({
+      answers: result.rows,
+      count: result.rows.length,
+    });
+  } catch (error) {
+    console.error("Error in email-generator/learned-answers:", error);
+    res.status(500).json({
+      error: "Failed to get learned answers",
+      details: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
+  }
+});
+
+// Email Generator: Delete a learned answer
+app.delete("/api/email-generator/learned-answers/:id", async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: "Database not available" });
+  }
+
+  const { id } = req.params;
+
+  if (!id || isNaN(parseInt(id))) {
+    return res.status(400).json({ error: "Valid ID is required" });
+  }
+
+  try {
+    const result = await pool.query(`DELETE FROM learned_answers WHERE id = $1 RETURNING id`, [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Answer not found" });
+    }
+
+    res.json({ success: true, deletedId: parseInt(id) });
+  } catch (error) {
+    console.error("Error in email-generator/delete-learned-answer:", error);
+    res.status(500).json({
+      error: "Failed to delete answer",
+      details: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
   }
 });
 
