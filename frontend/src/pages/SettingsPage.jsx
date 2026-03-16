@@ -76,16 +76,16 @@ export default function SettingsPage() {
           boxSizing: "border-box",
         }}
       >
-        <img
-          src={logo}
-          alt="SGF Logo"
-          style={{
-            width: "120px",
-            height: "auto",
-            position: "absolute",
-            left: "40px",
-          }}
-        />
+        <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
+          <img
+            src={logo}
+            alt="SGF Logo"
+            style={{
+              width: "120px",
+              height: "auto",
+            }}
+          />
+        </Link>
         <div style={{ display: "flex", alignItems: "center" }}>
           <h1
             style={{

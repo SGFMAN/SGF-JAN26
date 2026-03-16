@@ -52,8 +52,8 @@ export default function Cancelled() {
 
   // Filter projects based on search query and state filter
   function getFilteredProjects() {
-    // Only show "Cancelled" projects
-    let filtered = projects.filter((project) => project.status === "Cancelled");
+    // Only show "Cancelled" projects, exclude Hotlist
+    let filtered = projects.filter((project) => project.status === "Cancelled" && project.status !== "Hotlist");
 
     // Filter by state if specified
     if (stateFilter !== "All") {
@@ -117,16 +117,16 @@ export default function Cancelled() {
           position: "relative",
         }}
       >
-        <img
-          src={logo}
-          alt="SGF Logo"
-          style={{
-            width: "120px",
-            height: "auto",
-            position: "absolute",
-            left: "40px",
-          }}
-        />
+        <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
+          <img
+            src={logo}
+            alt="SGF Logo"
+            style={{
+              width: "120px",
+              height: "auto",
+            }}
+          />
+        </Link>
         <div style={{ display: "flex", alignItems: "center" }}>
           <h1
             style={{

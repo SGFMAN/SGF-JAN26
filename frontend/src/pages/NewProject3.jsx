@@ -5,7 +5,7 @@ const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 const API_URL = "";
 
-export default function NewProject3({ isOpen, onClose, formData, onFormDataChange, onBack, onNext }) {
+export default function NewProject3({ isOpen, onClose, formData, onFormDataChange, onBack, onNext, onCreate }) {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
@@ -63,7 +63,7 @@ export default function NewProject3({ isOpen, onClose, formData, onFormDataChang
     fileInputRef.current?.click();
   }
 
-  function handleNext() {
+  async function handleNext() {
     // Store the selected file in formData temporarily
     if (selectedFile) {
       onFormDataChange({
@@ -71,8 +71,14 @@ export default function NewProject3({ isOpen, onClose, formData, onFormDataChang
         proposalFile: selectedFile,
       });
     }
-    // Move to next step (NewProject4)
-    if (onNext) {
+    // If onCreate is provided, create project and show email (new flow)
+    // Otherwise, use onNext (old flow)
+    if (onCreate) {
+      // This will be handled by the parent (HomePage) which will call handleCreateProjectAndEmail
+      if (onNext) {
+        await onNext();
+      }
+    } else if (onNext) {
       onNext();
     }
   }

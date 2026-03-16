@@ -88,6 +88,10 @@ export default function DrawingManager() {
       // Filter for "Design Phase" projects only, excluding "Home Office / Studio" classification and on_hold projects
       // Match the exact logic from HomePage.jsx
       const designPhaseProjects = data.filter((project) => {
+        // Exclude Hotlist and Cancelled status
+        if (project.status === "Hotlist" || project.status === "Cancelled") {
+          return false;
+        }
         // Only accept "Design Phase" status
         if (project.status !== "Design Phase") {
           return false;
@@ -515,16 +519,16 @@ export default function DrawingManager() {
           boxSizing: "border-box",
         }}
       >
-        <img
-          src={logo}
-          alt="SGF Logo"
-          style={{
-            width: "120px",
-            height: "auto",
-            position: "absolute",
-            left: "40px",
-          }}
-        />
+        <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
+          <img
+            src={logo}
+            alt="SGF Logo"
+            style={{
+              width: "120px",
+              height: "auto",
+            }}
+          />
+        </Link>
         <div style={{ display: "flex", alignItems: "center" }}>
           <h1
             style={{

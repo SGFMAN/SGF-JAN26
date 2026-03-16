@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -184,27 +184,29 @@ export default function SplashPage() {
         paddingTop: "calc(15% - 500px)",
       }}
     >
-      <img
-        src={logo}
-        alt="SGF Logo"
-        style={{
-          maxWidth: "1000px",
-          maxHeight: "80%",
-          objectFit: "contain",
-          transition: "opacity 0.3s, transform 0.3s",
-          position: "relative",
-          zIndex: 1,
-          marginTop: "-50px",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.opacity = "0.8";
-          e.currentTarget.style.transform = "scale(1.05)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.opacity = "1";
-          e.currentTarget.style.transform = "scale(1)";
-        }}
-      />
+      <Link to="/projects" style={{ cursor: "pointer", display: "inline-block" }}>
+        <img
+          src={logo}
+          alt="SGF Logo"
+          style={{
+            maxWidth: "1000px",
+            maxHeight: "80%",
+            objectFit: "contain",
+            transition: "opacity 0.3s, transform 0.3s",
+            position: "relative",
+            zIndex: 1,
+            marginTop: "-50px",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.opacity = "0.8";
+            e.currentTarget.style.transform = "scale(1.05)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.opacity = "1";
+            e.currentTarget.style.transform = "scale(1)";
+          }}
+        />
+      </Link>
       
       {/* Login Form */}
       <div

@@ -184,7 +184,8 @@ export default function ApplyFields() {
 
   // Filter projects based on selected field, value, and search query
   function getFilteredProjects() {
-    let filtered = projects;
+    // Exclude Cancelled and Hotlist projects
+    let filtered = projects.filter((project) => project.status !== "Cancelled" && project.status !== "Hotlist");
 
     // First filter by field/value if specified
     if (selectedField && selectedValue) {
@@ -415,16 +416,16 @@ export default function ApplyFields() {
           boxSizing: "border-box",
         }}
       >
-        <img
-          src={logo}
-          alt="SGF Logo"
-          style={{
-            width: "120px",
-            height: "auto",
-            position: "absolute",
-            left: "40px",
-          }}
-        />
+        <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
+          <img
+            src={logo}
+            alt="SGF Logo"
+            style={{
+              width: "120px",
+              height: "auto",
+            }}
+          />
+        </Link>
         <div style={{ display: "flex", alignItems: "center" }}>
           <h1
             style={{

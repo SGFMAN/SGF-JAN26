@@ -61,7 +61,7 @@ export default function ContractManager() {
       }
       const data = await response.json();
       // Filter for Design Phase projects (exclude Hotlist)
-      const designPhaseProjects = data.filter((project) => project.status === "Design Phase" && project.status !== "Hotlist");
+      const designPhaseProjects = data.filter((project) => project.status === "Design Phase" && project.status !== "Hotlist" && project.status !== "Cancelled");
       // Sort by date
       const sortedProjects = sortProjectsByDate(designPhaseProjects, sortOrder);
       setProjects(sortedProjects);
@@ -187,16 +187,16 @@ export default function ContractManager() {
           boxSizing: "border-box",
         }}
       >
-        <img
-          src={logo}
-          alt="SGF Logo"
-          style={{
-            width: "120px",
-            height: "auto",
-            position: "absolute",
-            left: "40px",
-          }}
-        />
+        <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
+          <img
+            src={logo}
+            alt="SGF Logo"
+            style={{
+              width: "120px",
+              height: "auto",
+            }}
+          />
+        </Link>
         <div style={{ display: "flex", alignItems: "center" }}>
           <h1
             style={{

@@ -12,6 +12,7 @@ import Contract from "./Contract";
 import Planning from "./Planning";
 import Admin from "./Admin";
 import Robes from "./Robes";
+import { isUserAdmin } from "../utils/auth";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -58,6 +59,7 @@ export default function ProjectPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [allProjects, setAllProjects] = useState([]);
   const [showProjectMenu, setShowProjectMenu] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const updateTimeoutRef = useRef(null);
 
   useEffect(() => {
@@ -65,8 +67,14 @@ export default function ProjectPage() {
       fetchProject();
       fetchAllProjects();
     }
+    checkAdminStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  async function checkAdminStatus() {
+    const admin = await isUserAdmin();
+    setIsAdmin(admin);
+  }
 
   // Check for view parameter in URL to preserve active view
   useEffect(() => {
@@ -97,8 +105,9 @@ export default function ProjectPage() {
       }
       const data = await response.json();
       // Filter to only current projects (not Complete or Cancelled) and sort alphabetically
+      // Exclude Hotlist status
       const currentProjects = data
-        .filter((p) => p.status !== "Complete" && p.status !== "Cancelled" && p.status !== "Construction Phase")
+        .filter((p) => p.status !== "Complete" && p.status !== "Cancelled" && p.status !== "Construction Phase" && p.status !== "Hotlist")
         .sort((a, b) => {
           const suburbA = (a.suburb || "").toLowerCase();
           const suburbB = (b.suburb || "").toLowerCase();
@@ -221,16 +230,16 @@ export default function ProjectPage() {
           boxSizing: "border-box",
         }}
       >
-        <img
-          src={logo}
-          alt="SGF Logo"
-          style={{
-            width: "120px",
-            height: "auto",
-            position: "absolute",
-            left: "40px",
-          }}
-        />
+        <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
+          <img
+            src={logo}
+            alt="SGF Logo"
+            style={{
+              width: "120px",
+              height: "auto",
+            }}
+          />
+        </Link>
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           {(() => {
             const currentProjectId = parseInt(id);
@@ -444,29 +453,31 @@ export default function ProjectPage() {
             );
           })}
           <div style={{ flex: 1 }} />
-          <button
-            onClick={() => setShowDeleteModal(true)}
-            style={{
-              background: "#dc3545",
-              color: WHITE,
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              display: "block",
-              width: "100%",
-            }}
-            type="button"
-          >
-            Delete Project
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              style={{
+                background: "#dc3545",
+                color: WHITE,
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                display: "block",
+                width: "100%",
+              }}
+              type="button"
+            >
+              Delete Project
+            </button>
+          )}
           <Link
             to="/projects"
             style={{

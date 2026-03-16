@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import NewProject from "./NewProject";
 import NewProject2 from "./NewProject2";
 import NewProject3 from "./NewProject3";
@@ -15,6 +15,7 @@ const WHITE = "#fff";
 const API_URL = "";
 
 export default function Hotlist() {
+  const location = useLocation();
   const [hotlistItems, setHotlistItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -46,6 +47,38 @@ export default function Hotlist() {
     checkAdminStatus();
     fetchHotlist();
   }, []);
+
+  // Re-check admin status when navigating back to this page
+  useEffect(() => {
+    let isMounted = true;
+    
+    const handleFocus = () => {
+      if (isMounted && location.pathname === "/hotlist") {
+        checkAdminStatus();
+      }
+    };
+    
+    const handleVisibilityChange = () => {
+      if (isMounted && !document.hidden && location.pathname === "/hotlist") {
+        checkAdminStatus();
+      }
+    };
+    
+    // Check when navigating to this page
+    if (location.pathname === "/hotlist") {
+      checkAdminStatus();
+    }
+    
+    // Also check when window gains focus
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    
+    return () => {
+      isMounted = false;
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [location.pathname]);
 
   async function checkAdminStatus() {
     const admin = await isUserAdmin();
@@ -264,8 +297,22 @@ export default function Hotlist() {
   }
 
   async function handleAgreementSentClick(item) {
-    // Mark this item as having agreement sent
-    setAgreementSentItems(prev => new Set(prev).add(item.id));
+    try {
+      const response = await fetch(`${API_URL}/api/hotlist/${item.id}/agreement-sent`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => response.statusText);
+        throw new Error(errorText);
+      }
+
+      // Refresh the hotlist to get updated data
+      await fetchHotlist();
+    } catch (err) {
+      console.error("Error marking agreement as sent:", err);
+      alert("Error marking agreement as sent: " + err.message);
+    }
   }
 
   function handleEmailClick(item) {
@@ -358,17 +405,39 @@ export default function Hotlist() {
     }
   }
 
-  // Sort hotlist items alphabetically by suburb, then street
-  const sortedItems = [...hotlistItems].sort((a, b) => {
-    const suburbA = (a.suburb || "").toLowerCase();
-    const suburbB = (b.suburb || "").toLowerCase();
-    if (suburbA !== suburbB) {
-      return suburbA.localeCompare(suburbB);
-    }
-    const streetA = (a.street || "").toLowerCase();
-    const streetB = (b.street || "").toLowerCase();
-    return streetA.localeCompare(streetB);
-  });
+  // Helper function to check if agreement is sent
+  const isAgreementSent = (item) => {
+    return item.agreement_sent === 'true' || item.agreement_sent === true || agreementSentItems.has(item.id);
+  };
+
+  // Filter and sort items by state, with Agreement Sent items at the top
+  const filterAndSortByState = (items, stateFilter) => {
+    return items
+      .filter(item => {
+        const itemState = (item.state || "").toUpperCase();
+        return itemState === stateFilter;
+      })
+      .sort((a, b) => {
+        // First, sort by Agreement Sent status (Agreement Sent items first)
+        const aSent = isAgreementSent(a);
+        const bSent = isAgreementSent(b);
+        if (aSent !== bSent) {
+          return aSent ? -1 : 1;
+        }
+        // Then sort alphabetically by suburb, then street
+        const suburbA = (a.suburb || "").toLowerCase();
+        const suburbB = (b.suburb || "").toLowerCase();
+        if (suburbA !== suburbB) {
+          return suburbA.localeCompare(suburbB);
+        }
+        const streetA = (a.street || "").toLowerCase();
+        const streetB = (b.street || "").toLowerCase();
+        return streetA.localeCompare(streetB);
+      });
+  };
+
+  const vicItems = filterAndSortByState(hotlistItems, "VIC");
+  const qldItems = filterAndSortByState(hotlistItems, "QLD");
 
   return (
     <>
@@ -459,16 +528,16 @@ export default function Hotlist() {
           position: "relative",
         }}
       >
-        <img
-          src={logo}
-          alt="SGF Logo"
-          style={{
-            width: "120px",
-            height: "auto",
-            position: "absolute",
-            left: "40px",
-          }}
-        />
+        <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
+          <img
+            src={logo}
+            alt="SGF Logo"
+            style={{
+              width: "120px",
+              height: "auto",
+            }}
+          />
+        </Link>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
             <span
@@ -532,29 +601,27 @@ export default function Hotlist() {
             </span>
           </span>
         </div>
-        {isAdmin && (
-          <button
-            onClick={handleNewItemClick}
-            style={{
-              position: "absolute",
-              top: "20px",
-              right: "20px",
-              background: "#33cc33",
-              color: WHITE,
-              border: "none",
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "#2bb32b")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "#33cc33")}
-          >
-            + New Address
-          </button>
-        )}
+        <button
+          onClick={handleNewItemClick}
+          style={{
+            position: "absolute",
+            top: "20px",
+            right: "20px",
+            background: "#33cc33",
+            color: WHITE,
+            border: "none",
+            borderRadius: "8px",
+            padding: "10px 20px",
+            fontSize: "1rem",
+            fontWeight: 500,
+            cursor: "pointer",
+            transition: "background 0.2s",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#2bb32b")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#33cc33")}
+        >
+          + New Address
+        </button>
       </div>
 
       {/* Sections 2 & 3 */}
@@ -836,130 +903,151 @@ export default function Hotlist() {
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             minHeight: "758px",
             boxSizing: "border-box",
+            display: "flex",
+            flexDirection: "column",
+            gap: "24px",
           }}
         >
           {loading ? (
             <div style={{ color: MONUMENT, fontSize: "1rem" }}>Loading...</div>
           ) : error ? (
             <div style={{ color: "#d32f2f", fontSize: "1rem" }}>Error: {error}</div>
-          ) : sortedItems.length === 0 ? (
+          ) : (vicItems.length === 0 && qldItems.length === 0) ? (
             <div style={{ color: MONUMENT, fontSize: "1rem" }}>No hotlist items yet. Click "+ New Address" to add one.</div>
           ) : (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "12px",
-              }}
-            >
-              {sortedItems.map((item) => {
-                const displayName = `${item.street || ""}, ${item.suburb || ""}`.trim() || "Unnamed Address";
-                const isAgreementSent = agreementSentItems.has(item.id);
-                return (
-                  <div
-                    key={item.id}
-                    style={{
-                      background: isAgreementSent ? "#2196F3" : WHITE,
-                      borderRadius: "10px",
-                      padding: "8px 16px",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-                    }}
-                  >
-                    <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-                      <span
-                        style={{
-                          fontSize: "1rem",
-                          fontWeight: 600,
-                          color: isAgreementSent ? WHITE : MONUMENT,
-                        }}
-                      >
-                        {displayName}
-                      </span>
-                      {item.state && (
-                        <>
-                          <span style={{ color: isAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
-                          <span
-                            style={{
-                              fontSize: "0.9rem",
-                              color: isAgreementSent ? "rgba(255,255,255,0.9)" : "#666",
-                            }}
-                          >
-                            {item.state}
-                          </span>
-                        </>
-                      )}
-                      {item.client_name && (
-                        <>
-                          <span style={{ color: isAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
-                          <span
-                            style={{
-                              fontSize: "0.9rem",
-                              color: isAgreementSent ? "rgba(255,255,255,0.9)" : "#666",
-                            }}
-                          >
-                            {item.client_name}
-                          </span>
-                        </>
-                      )}
-                      {item.email && (
-                        <>
-                          <span style={{ color: isAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
-                          <span
-                            style={{
-                              fontSize: "0.9rem",
-                              color: isAgreementSent ? "rgba(255,255,255,0.8)" : "#888",
-                            }}
-                          >
-                            {item.email}
-                          </span>
-                        </>
-                      )}
-                      {item.phone && (
-                        <>
-                          <span style={{ color: isAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
-                          <span
-                            style={{
-                              fontSize: "0.9rem",
-                              color: isAgreementSent ? "rgba(255,255,255,0.8)" : "#888",
-                            }}
-                          >
-                            {item.phone}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                    {isAdmin && (
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: "8px",
-                          alignItems: "center",
-                        }}
-                      >
-                        {!isAgreementSent && (
-                          <button
-                            onClick={() => handleAgreementSentClick(item)}
-                            style={{
-                              background: "#2196F3",
-                              color: WHITE,
-                              border: "none",
-                              borderRadius: "8px",
-                              padding: "8px 16px",
-                              fontSize: "0.9rem",
-                              fontWeight: 500,
-                              cursor: "pointer",
-                              transition: "background 0.2s",
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.background = "#1976D2")}
-                            onMouseLeave={(e) => (e.currentTarget.style.background = "#2196F3")}
-                          >
-                            Agreement Sent
-                          </button>
-                        )}
-                        <button
+            <>
+              {/* VIC Section - Top Half */}
+              <div
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  minHeight: 0,
+                }}
+              >
+                <h2 style={{ color: MONUMENT, fontSize: "1.2rem", fontWeight: 600, marginBottom: "16px", marginTop: 0 }}>
+                  VIC
+                </h2>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "12px",
+                    overflowY: "auto",
+                    flex: 1,
+                  }}
+                >
+                  {vicItems.length === 0 ? (
+                    <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No VIC items</div>
+                  ) : (
+                    vicItems.map((item) => {
+                      const displayName = `${item.street || ""}, ${item.suburb || ""}`.trim() || "Unnamed Address";
+                      const itemIsAgreementSent = isAgreementSent(item);
+                      return (
+                        <div
+                          key={item.id}
+                          style={{
+                            background: itemIsAgreementSent ? "#2196F3" : WHITE,
+                            borderRadius: "10px",
+                            padding: "8px 16px",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+                          }}
+                        >
+                          <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                            <span
+                              style={{
+                                fontSize: "1rem",
+                                fontWeight: 600,
+                                color: itemIsAgreementSent ? WHITE : MONUMENT,
+                              }}
+                            >
+                              {displayName}
+                            </span>
+                            {item.state && (
+                              <>
+                                <span style={{ color: itemIsAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
+                                <span
+                                  style={{
+                                    fontSize: "0.9rem",
+                                    color: itemIsAgreementSent ? "rgba(255,255,255,0.9)" : "#666",
+                                  }}
+                                >
+                                  {item.state}
+                                </span>
+                              </>
+                            )}
+                            {item.client_name && (
+                              <>
+                                <span style={{ color: itemIsAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
+                                <span
+                                  style={{
+                                    fontSize: "0.9rem",
+                                    color: itemIsAgreementSent ? "rgba(255,255,255,0.9)" : "#666",
+                                  }}
+                                >
+                                  {item.client_name}
+                                </span>
+                              </>
+                            )}
+                            {item.email && (
+                              <>
+                                <span style={{ color: itemIsAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
+                                <span
+                                  style={{
+                                    fontSize: "0.9rem",
+                                    color: itemIsAgreementSent ? "rgba(255,255,255,0.8)" : "#888",
+                                  }}
+                                >
+                                  {item.email}
+                                </span>
+                              </>
+                            )}
+                            {item.phone && (
+                              <>
+                                <span style={{ color: itemIsAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
+                                <span
+                                  style={{
+                                    fontSize: "0.9rem",
+                                    color: itemIsAgreementSent ? "rgba(255,255,255,0.8)" : "#888",
+                                  }}
+                                >
+                                  {item.phone}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                          {isAdmin && (
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "8px",
+                                alignItems: "center",
+                              }}
+                            >
+                              {!itemIsAgreementSent && (
+                                <button
+                                  onClick={() => handleAgreementSentClick(item)}
+                                  style={{
+                                    background: "#2196F3",
+                                    color: WHITE,
+                                    border: "none",
+                                    borderRadius: "8px",
+                                    padding: "8px 16px",
+                                    fontSize: "0.9rem",
+                                    fontWeight: 500,
+                                    cursor: "pointer",
+                                    transition: "background 0.2s",
+                                  }}
+                                  onMouseEnter={(e) => (e.currentTarget.style.background = "#1976D2")}
+                                  onMouseLeave={(e) => (e.currentTarget.style.background = "#2196F3")}
+                                >
+                                  Agreement Sent
+                                </button>
+                              )}
+                              <button
                           onClick={() => handleSoldClick(item)}
                           style={{
                             background: "#33cc33",
@@ -1031,12 +1119,227 @@ export default function Hotlist() {
                         >
                           Delete
                         </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* QLD Section - Bottom Half */}
+              <div
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  minHeight: 0,
+                }}
+              >
+                <h2 style={{ color: MONUMENT, fontSize: "1.2rem", fontWeight: 600, marginBottom: "16px", marginTop: 0 }}>
+                  QLD
+                </h2>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "12px",
+                    overflowY: "auto",
+                    flex: 1,
+                  }}
+                >
+                  {qldItems.length === 0 ? (
+                    <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No QLD items</div>
+                  ) : (
+                    qldItems.map((item) => {
+                      const displayName = `${item.street || ""}, ${item.suburb || ""}`.trim() || "Unnamed Address";
+                      const itemIsAgreementSent = isAgreementSent(item);
+                      return (
+                        <div
+                          key={item.id}
+                          style={{
+                            background: itemIsAgreementSent ? "#2196F3" : WHITE,
+                            borderRadius: "10px",
+                            padding: "8px 16px",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+                          }}
+                        >
+                          <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                            <span
+                              style={{
+                                fontSize: "1rem",
+                                fontWeight: 600,
+                                color: itemIsAgreementSent ? WHITE : MONUMENT,
+                              }}
+                            >
+                              {displayName}
+                            </span>
+                            {item.state && (
+                              <>
+                                <span style={{ color: itemIsAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
+                                <span
+                                  style={{
+                                    fontSize: "0.9rem",
+                                    color: itemIsAgreementSent ? "rgba(255,255,255,0.9)" : "#666",
+                                  }}
+                                >
+                                  {item.state}
+                                </span>
+                              </>
+                            )}
+                            {item.client_name && (
+                              <>
+                                <span style={{ color: itemIsAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
+                                <span
+                                  style={{
+                                    fontSize: "0.9rem",
+                                    color: itemIsAgreementSent ? "rgba(255,255,255,0.9)" : "#666",
+                                  }}
+                                >
+                                  {item.client_name}
+                                </span>
+                              </>
+                            )}
+                            {item.email && (
+                              <>
+                                <span style={{ color: itemIsAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
+                                <span
+                                  style={{
+                                    fontSize: "0.9rem",
+                                    color: itemIsAgreementSent ? "rgba(255,255,255,0.8)" : "#888",
+                                  }}
+                                >
+                                  {item.email}
+                                </span>
+                              </>
+                            )}
+                            {item.phone && (
+                              <>
+                                <span style={{ color: itemIsAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
+                                <span
+                                  style={{
+                                    fontSize: "0.9rem",
+                                    color: itemIsAgreementSent ? "rgba(255,255,255,0.8)" : "#888",
+                                  }}
+                                >
+                                  {item.phone}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                          {isAdmin && (
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "8px",
+                                alignItems: "center",
+                              }}
+                            >
+                              {!itemIsAgreementSent && (
+                                <button
+                                  onClick={() => handleAgreementSentClick(item)}
+                                  style={{
+                                    background: "#2196F3",
+                                    color: WHITE,
+                                    border: "none",
+                                    borderRadius: "8px",
+                                    padding: "8px 16px",
+                                    fontSize: "0.9rem",
+                                    fontWeight: 500,
+                                    cursor: "pointer",
+                                    transition: "background 0.2s",
+                                  }}
+                                  onMouseEnter={(e) => (e.currentTarget.style.background = "#1976D2")}
+                                  onMouseLeave={(e) => (e.currentTarget.style.background = "#2196F3")}
+                                >
+                                  Agreement Sent
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleSoldClick(item)}
+                                style={{
+                                  background: "#FF9800",
+                                  color: WHITE,
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  padding: "8px 16px",
+                                  fontSize: "0.9rem",
+                                  fontWeight: 500,
+                                  cursor: "pointer",
+                                  transition: "background 0.2s",
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = "#F57C00")}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = "#FF9800")}
+                              >
+                                Sold
+                              </button>
+                              <button
+                                onClick={() => handleEmailClick(item)}
+                                style={{
+                                  background: "#FF9800",
+                                  color: WHITE,
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  padding: "8px 16px",
+                                  fontSize: "0.9rem",
+                                  fontWeight: 500,
+                                  cursor: "pointer",
+                                  transition: "background 0.2s",
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = "#F57C00")}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = "#FF9800")}
+                              >
+                                Email
+                              </button>
+                              <button
+                                onClick={() => handleEditItemClick(item)}
+                                style={{
+                                  background: MONUMENT,
+                                  color: WHITE,
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  padding: "8px 16px",
+                                  fontSize: "0.9rem",
+                                  fontWeight: 500,
+                                  cursor: "pointer",
+                                  transition: "background 0.2s",
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeleteItem(item.id)}
+                                style={{
+                                  background: "#d32f2f",
+                                  color: WHITE,
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  padding: "8px 16px",
+                                  fontSize: "0.9rem",
+                                  fontWeight: 500,
+                                  cursor: "pointer",
+                                  transition: "background 0.2s",
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = "#b71c1c")}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = "#d32f2f")}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>

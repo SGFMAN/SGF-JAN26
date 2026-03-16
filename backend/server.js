@@ -268,6 +268,19 @@ app.get(["/", "/index.html"], async (req, res) => {
   res.sendFile(path.join(frontendDist, "index.html"));
 });
 
+// Serve playground.html from root directory - BEFORE static middleware
+app.get("/playground.html", async (req, res) => {
+  try {
+    const playgroundPath = path.join(__dirname, "..", "playground.html");
+    const html = await fs.readFile(playgroundPath, "utf8");
+    res.setHeader("Content-Type", "text/html");
+    res.send(html);
+  } catch (error) {
+    console.error("Error serving playground.html:", error);
+    res.status(404).send("Playground file not found");
+  }
+});
+
 // Serve static assets (JS, CSS, images) - these are always allowed
 // This comes AFTER the root route handler so index.html is handled above
 app.use(express.static(frontendDist, { index: false })); // index: false prevents serving index.html automatically
@@ -505,7 +518,7 @@ async function ensureSchema() {
     'notes', 'project_info_notes', 'specs', 'classification', 'project_log',
     'window_status', 'window_colour', 'window_reveal', 'window_reveal_other', 'window_glazing', 'window_bal_rating', 'window_date_required', 'window_ordered_date', 'window_order_pdf_location', 'window_order_number',
     'drawings_status', 'drawings_pdf_location', 'drawings_history', 'drawings_viewed_date', 'drawings_sent_to_client_date', 'drawings_holder_date', 'draftsperson', 'drawings_holder', 'colours_status', 'colours_notes', 'colours_pdf_location', 'colours_sent_date', 'colours_reminder_sent_date', 'roof_colour', 'cladding_colour', 'baseboards_colour', 'roof_style', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status',
-    'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail', 'on_hold', 'survey_status', 'soil_status'];
+    'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail', 'on_hold', 'survey_status', 'soil_status', 'agreement_sent'];
   for (const column of columnsToAdd) {
     try {
       await pool.query(`
@@ -4995,7 +5008,7 @@ app.get("/api/hotlist", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, updated_at FROM projects WHERE status = $1 ORDER BY updated_at DESC, id DESC",
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, agreement_sent, updated_at FROM projects WHERE status = $1 ORDER BY updated_at DESC, id DESC",
       ["Hotlist"]
     );
     res.json(r.rows);
@@ -5015,7 +5028,7 @@ app.get("/api/hotlist/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, updated_at FROM projects WHERE id = $1 AND status = $2",
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, agreement_sent, updated_at FROM projects WHERE id = $1 AND status = $2",
       [id, "Hotlist"]
     );
     
@@ -5138,6 +5151,34 @@ app.put("/api/hotlist/:id", async (req, res) => {
 });
 
 // Delete hotlist item
+// Update agreement sent status for hotlist item
+app.post("/api/hotlist/:id/agreement-sent", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: "invalid id" });
+  }
+
+  try {
+    const r = await pool.query(
+      `UPDATE projects 
+       SET agreement_sent = 'true', updated_at = NOW()
+       WHERE id = $1 AND status = $2 
+       RETURNING id, name, status, suburb, street, state, client_name, email, phone, agreement_sent, updated_at`,
+      [id, "Hotlist"]
+    );
+
+    if (r.rowCount === 0) {
+      return res.status(404).json({ error: "not found" });
+    }
+
+    res.json(r.rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.delete("/api/hotlist/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
 
@@ -5478,31 +5519,34 @@ app.post("/api/email-generator/compile", async (req, res) => {
       })
       .join("\n\n");
 
-    const prompt = `You are drafting a professional email reply for a construction/admin business. Use the user's answers below to create a professional, concise email response.
+    const prompt = `You are drafting a professional, concise email reply for a construction/admin business.
 
-IMPORTANT GUIDELINES:
-- Preserve the exact meaning of the user's answers
-- Keep the tone professional, direct, and concise
-- Do NOT invent agreements, approvals, or concessions not stated by the user
-- If the user was uncertain or said "I don't know", preserve that uncertainty clearly
-- Structure the email logically, addressing each point naturally
-- Use proper business email formatting
-- Be respectful and clear
-- Do not add information the user did not provide
+CRITICAL RULES:
+- You MUST use the EXACT answer text provided by the user - copy it directly into the email
+- NEVER use placeholders like "[User's Answer]" or "[Recipient's Name]" - use the actual answer text
+- If the user provided "$4,980 inc GST" or "The cost is $4,980 inc GST", you MUST include that exact text in the email
+- ALL prices in the email MUST include "inc GST" after the dollar amount (e.g., "$150 inc GST", "$4,980 inc GST")
+- If you mention any price or cost in the email, you MUST add "inc GST" after it
+- Be professional but concise - avoid unnecessary pleasantries and fluff
+- Get straight to the point - answer the question directly using the user's provided answer
+- Do NOT add information the user did not provide
+- Do NOT ask for more information if the user already provided a complete answer
 
-Original message context (for reference only):
+Original message (for context):
 ${originalText || "Not provided"}
 
-User's answers to address:
+User's answers - USE THESE EXACT ANSWERS IN THE EMAIL:
 ${answersContext}
 
-Output ONLY valid JSON in this exact format:
+Write a concise, professional email that directly addresses each question using the user's exact answers provided above.
+
+Output ONLY valid JSON:
 {
-  "subject": "Professional email subject line (max 80 chars)",
-  "body": "Full professional email draft in plain text (use \\n for line breaks)"
+  "subject": "Concise subject line (max 80 chars)",
+  "body": "Professional, concise email using the user's exact answers (use \\n for line breaks)"
 }
 
-Respond with ONLY the JSON object, no additional text or explanation.`;
+Respond with ONLY the JSON object, no additional text.`;
 
     const completion = await openaiClient.chat.completions.create({
       model: "gpt-4o",
@@ -5725,6 +5769,179 @@ app.post("/api/email-generator/suggest", async (req, res) => {
 });
 
 // Email Generator: Save or update learned answer
+// Reset playground.html to original state
+app.post("/api/playground/reset", async (req, res) => {
+  try {
+    const playgroundPath = path.join(__dirname, "..", "playground.html");
+    
+    // Original playground.html content (red triangle with "Playground" text)
+    const originalHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Playground</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #fff;
+            font-family: Arial, sans-serif;
+        }
+        .triangle-container {
+            position: relative;
+            width: 300px;
+            height: 300px;
+        }
+        .triangle {
+            width: 0;
+            height: 0;
+            border-left: 150px solid transparent;
+            border-right: 150px solid transparent;
+            border-bottom: 260px solid red;
+            position: relative;
+        }
+        .text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="triangle-container">
+        <div class="triangle"></div>
+        <div class="text">Playground</div>
+    </div>
+</body>
+</html>`;
+
+    // Write the original HTML to the file
+    await fs.writeFile(playgroundPath, originalHtml, "utf8");
+
+    console.log("Playground.html reset to original state");
+
+    res.json({
+      success: true,
+      message: "Playground reset successfully",
+      html: originalHtml,
+    });
+  } catch (error) {
+    console.error("Error resetting playground:", error);
+    
+    let errorMessage = "Failed to reset playground file";
+    if (error.code === "ENOENT") {
+      errorMessage = "Playground file not found";
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    res.status(500).json({
+      error: errorMessage,
+      details: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
+  }
+});
+
+// Edit playground.html using AI
+app.post("/api/playground/edit", async (req, res) => {
+  if (!openaiClient) {
+    return res.status(503).json({ error: "OpenAI API key not configured" });
+  }
+
+  const { request } = req.body;
+
+  if (!request || !request.trim()) {
+    return res.status(400).json({ error: "Request is required" });
+  }
+
+  try {
+    // Read current playground.html file
+    const playgroundPath = path.join(__dirname, "..", "playground.html");
+    const currentHtml = await fs.readFile(playgroundPath, "utf8");
+
+    // Send to OpenAI to modify
+    const prompt = `You are a web developer assistant. The user wants to modify an HTML file.
+
+Current HTML file:
+\`\`\`html
+${currentHtml}
+\`\`\`
+
+User's request: ${request}
+
+Please modify the HTML file according to the user's request. Return ONLY the complete, valid HTML file with all necessary DOCTYPE, html, head, and body tags. Do not include any explanations or markdown formatting - just the raw HTML code.`;
+
+    const completion = await openaiClient.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: "You are a web developer assistant. Always return only valid HTML code without any explanations or markdown formatting.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      temperature: 0.7,
+    });
+
+    const modifiedHtml = completion.choices[0]?.message?.content?.trim() || "";
+
+    if (!modifiedHtml) {
+      throw new Error("No HTML content returned from AI");
+    }
+
+    // Clean up the response - remove markdown code blocks if present
+    let cleanedHtml = modifiedHtml;
+    if (cleanedHtml.startsWith("```html")) {
+      cleanedHtml = cleanedHtml.replace(/^```html\s*/, "").replace(/\s*```$/, "");
+    } else if (cleanedHtml.startsWith("```")) {
+      cleanedHtml = cleanedHtml.replace(/^```\s*/, "").replace(/\s*```$/, "");
+    }
+
+    // Save the modified HTML to the file
+    await fs.writeFile(playgroundPath, cleanedHtml, "utf8");
+
+    console.log("Playground.html updated successfully");
+
+    res.json({
+      success: true,
+      message: "Playground updated successfully",
+      html: cleanedHtml,
+    });
+  } catch (error) {
+    console.error("Error editing playground:", error);
+    
+    let errorMessage = "Failed to edit playground file";
+    if (error.response?.status === 401) {
+      errorMessage = "Invalid OpenAI API key";
+    } else if (error.response?.status === 429) {
+      errorMessage = "OpenAI API rate limit exceeded. Please try again later.";
+    } else if (error.code === "ENOENT") {
+      errorMessage = "Playground file not found";
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    res.status(500).json({
+      error: errorMessage,
+      details: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
+  }
+});
+
 app.post("/api/email-generator/save-answer", async (req, res) => {
   if (!pool) {
     return res.status(503).json({ error: "Database not available" });

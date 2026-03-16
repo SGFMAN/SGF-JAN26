@@ -909,11 +909,12 @@ export default function Colours({ project, onUpdate }) {
         }
         
         // Refresh project data to get updated colours_sent_date or colours_reminder_sent_date
+        // Use a longer delay to ensure backend has finished updating
         setTimeout(() => {
           if (onUpdate) {
             onUpdate();
           }
-        }, 500);
+        }, 1000);
       }, 300);
     } catch (error) {
       if (progressIntervalRef.current) {
@@ -1288,7 +1289,7 @@ export default function Colours({ project, onUpdate }) {
                   Email Client
                 </button>
                 <div style={{ flex: 1, padding: "10px 12px", fontSize: "0.9rem", color: MONUMENT, display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span>{project?.colours_sent_date ? formatDateTime(project.colours_sent_date) : "Not sent"}</span>
+                  <span>{project?.colours_sent_date ? formatDateTime(project.colours_sent_date) : (coloursStatus === "Sent" ? "Sent (refreshing...)" : "Not sent")}</span>
                   {project?.colours_sent_date && (() => {
                     const daysSince = getDaysSinceSent(project.colours_sent_date);
                     return daysSince !== null ? (

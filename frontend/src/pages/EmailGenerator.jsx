@@ -79,6 +79,159 @@ export default function EmailGenerator() {
     }
   };
 
+  // Process answer text to format prices and add variation line if needed
+  const processAnswerText = (text, question = "") => {
+    if (!text || !text.trim()) return text;
+    
+    let processed = text.trim();
+    let hasPrice = false;
+    
+    // Check if already has formatted prices
+    if (/\$\d+[\d,]*\s+inc\s+GST/gi.test(processed)) {
+      hasPrice = true;
+    }
+    
+    // If the answer is just a number (likely a price), enhance it to be more complete
+    // Do this FIRST before other formatting to avoid double-processing
+    // Match any number (1 or more digits) that is the entire answer
+    const isJustNumber = /^\s*\d+(?:,\d{3})*(?:\.\d{2})?\s*$/g.test(processed);
+    const isJustDollarAmount = /^\s*\$\s*\d+(?:,\d{3})*(?:\.\d{2})?\s*$/g.test(processed);
+    if (isJustNumber || isJustDollarAmount) {
+      // Extract the number - match any sequence of digits
+      const numberMatch = processed.match(/\d+(?:,\d{3})*(?:\.\d{2})?/);
+      if (numberMatch) {
+        const cleanAmount = numberMatch[0].replace(/,/g, '').replace(/\.\d{2}$/, '');
+        const numAmount = parseInt(cleanAmount);
+        // Use question context to make it more natural
+        // Only format as price if question is about cost/price, NOT about measurements
+        const questionLower = (question || "").toLowerCase();
+        if (questionLower.includes('cost') || questionLower.includes('price')) {
+          // Only format as price if it's clearly about cost/price, not measurements
+          if (!questionLower.includes('meter') && !questionLower.includes('metre') && 
+              !questionLower.includes('length') && !questionLower.includes('width') && 
+              !questionLower.includes('height') && !questionLower.includes('size') &&
+              !questionLower.includes('dimension')) {
+            processed = `The cost is $${numAmount.toLocaleString()} inc GST`;
+          } else {
+            // It's a measurement, not a price - return as is
+            return processed;
+          }
+        } else {
+          processed = `$${numAmount.toLocaleString()} inc GST`;
+        }
+        hasPrice = true;
+        // Return early since we've already formatted it completely
+        // Add variation line if needed
+        if (hasPrice && !processed.toLowerCase().includes('please confirm these requests')) {
+          processed = processed.trim();
+          if (!processed.endsWith('.') && !processed.endsWith('!') && !processed.endsWith('?')) {
+            processed += '.';
+          }
+          processed += '\n\nPlease confirm these requests and we will organise a variation';
+        }
+        return processed;
+      }
+    }
+    
+    // Format dollar amounts: $150, $1,500, $150.00 -> $150 inc GST, $1,500 inc GST
+    processed = processed.replace(/\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)(?!\s+inc\s+GST)/g, (match, amount) => {
+      hasPrice = true;
+      const cleanAmount = amount.replace(/,/g, '').replace(/\.\d{2}$/, ''); // Remove commas and cents
+      const numAmount = parseInt(cleanAmount);
+      return `$${numAmount.toLocaleString()} inc GST`;
+    });
+    
+    // Format "X dollars" or "X dollar" patterns
+    processed = processed.replace(/\b(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*(?:dollar|dollars|doll?)\b(?!\s+inc\s+GST)/gi, (match, amount) => {
+      hasPrice = true;
+      const cleanAmount = amount.replace(/,/g, '').replace(/\.\d{2}$/, '');
+      const numAmount = parseInt(cleanAmount);
+      return `$${numAmount.toLocaleString()} inc GST`;
+    });
+    
+    // Format standalone numbers (like "150") - be careful to avoid dates/times
+    // Use a more targeted approach: find all potential number matches, then filter and replace
+    const numberPattern = /\b(\d{1,4}(?:,\d{3})*)\b/g;
+    const matches = [];
+    let m;
+    
+    // Collect all matches with their positions
+    while ((m = numberPattern.exec(processed)) !== null) {
+      matches.push({
+        index: m.index,
+        value: m[0],
+        amount: m[1],
+      });
+    }
+    
+    // Process matches in reverse order to maintain correct indices
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const match = matches[i];
+      const start = Math.max(0, match.index - 15);
+      const end = Math.min(processed.length, match.index + match.value.length + 15);
+      const context = processed.substring(start, end);
+      
+      // Skip if already formatted as price
+      if (context.includes('$') && context.includes('inc GST')) {
+        continue;
+      }
+      
+      // Skip if part of date/time/phone patterns
+      if (/\d{1,2}[\/\-]\d{1,2}[\/\-]|\d{4}[\/\-]|\d{1,2}:\d{2}|\(?\d{2,4}\)?\s*\d/.test(context)) {
+        continue;
+      }
+      
+      // Skip if followed by time/date units
+      const after = processed.substring(match.index + match.value.length, match.index + match.value.length + 10);
+      if (/^\s*(?:am|pm|th|st|nd|rd|years?|months?|days?|hours?|minutes?|seconds?|weeks?)/i.test(after)) {
+        continue;
+      }
+      
+      // Skip if followed by measurement units (meters, m, cm, mm, etc.)
+      if (/^\s*(?:m\b|meters?|metres?|cm|mm|km|inches?|feet|ft|yards?|miles?)/i.test(after)) {
+        continue;
+      }
+      
+      // Skip if preceded by measurement context
+      const before = processed.substring(Math.max(0, match.index - 10), match.index);
+      if (/(?:meter|metre|length|width|height|size|dimension|distance|area|volume)\s*$/i.test(before)) {
+        continue;
+      }
+      
+      // Only format numbers that are 3+ digits (likely prices) or in price context
+      // Skip single/double digit numbers unless they're clearly prices
+      const numValue = parseInt(match.amount.replace(/,/g, ''));
+      if (numValue < 100) {
+        // For numbers less than 100, only format if in price context
+        const fullContext = before + match.value + after;
+        if (!fullContext.toLowerCase().includes('cost') && 
+            !fullContext.toLowerCase().includes('price') && 
+            !fullContext.toLowerCase().includes('$') &&
+            !fullContext.toLowerCase().includes('dollar')) {
+          continue;
+        }
+      }
+      
+      // Format as price
+      const cleanAmount = match.amount.replace(/,/g, '');
+      const numAmount = parseInt(cleanAmount);
+      const replacement = `$${numAmount.toLocaleString()} inc GST`;
+      processed = processed.substring(0, match.index) + replacement + processed.substring(match.index + match.value.length);
+      hasPrice = true;
+    }
+    
+    // Add variation line if prices were found and it's not already there
+    if (hasPrice && !processed.toLowerCase().includes('please confirm these requests')) {
+      processed = processed.trim();
+      if (!processed.endsWith('.') && !processed.endsWith('!') && !processed.endsWith('?')) {
+        processed += '.';
+      }
+      processed += '\n\nPlease confirm these requests and we will organise a variation';
+    }
+    
+    return processed;
+  };
+
   const handleAnswerChange = (value) => {
     const newAnswers = [...answers];
     newAnswers[currentPointIndex] = value;
@@ -126,9 +279,23 @@ export default function EmailGenerator() {
   const handleAcceptSuggestion = async () => {
     const suggestion = suggestions[currentPointIndex];
     if (suggestion && suggestion.answer) {
-      handleAnswerChange(suggestion.answer);
-      // Automatically move to next point after accepting
-      await handleNext();
+      // Update the answer immediately
+      const newAnswers = [...answers];
+      newAnswers[currentPointIndex] = suggestion.answer;
+      setAnswers(newAnswers);
+      
+      // Save the answer
+      await saveAnswer(analysisResult.points[currentPointIndex].question, suggestion.answer);
+      
+      // Move to next point using the updated answers array
+      if (currentPointIndex < analysisResult.points.length - 1) {
+        const nextIndex = currentPointIndex + 1;
+        setCurrentPointIndex(nextIndex);
+        fetchSuggestion(analysisResult.points[nextIndex].question, nextIndex);
+      } else {
+        // Last point - finish and compile
+        handleFinish();
+      }
     }
   };
 
@@ -214,15 +381,27 @@ export default function EmailGenerator() {
   };
 
   const handleFinish = async () => {
-    // Save current answer before finishing
-    if (answers[currentPointIndex] && answers[currentPointIndex].trim()) {
-      await saveAnswer(analysisResult.points[currentPointIndex].question, answers[currentPointIndex]);
+    // Get the most current answers - ensure we have the latest state
+    const currentAnswers = [...answers];
+    
+    // Process all answers to format prices and add variation line
+    const processedAnswers = currentAnswers.map((answer, index) => 
+      processAnswerText(answer || "", analysisResult.points[index]?.question || "")
+    );
+    
+    // Debug: log what we're sending
+    console.log("Answers being sent:", currentAnswers);
+    console.log("Processed answers:", processedAnswers);
+    
+    // Save current answer before finishing (save original, not processed)
+    if (currentAnswers[currentPointIndex] && currentAnswers[currentPointIndex].trim()) {
+      await saveAnswer(analysisResult.points[currentPointIndex].question, currentAnswers[currentPointIndex]);
     }
 
-    // Save all answers
+    // Save all answers (save original, not processed)
     for (let i = 0; i < analysisResult.points.length; i++) {
-      if (answers[i] && answers[i].trim()) {
-        await saveAnswer(analysisResult.points[i].question, answers[i]);
+      if (currentAnswers[i] && currentAnswers[i].trim()) {
+        await saveAnswer(analysisResult.points[i].question, currentAnswers[i]);
       }
     }
 
@@ -237,7 +416,7 @@ export default function EmailGenerator() {
         },
         body: JSON.stringify({
           points: analysisResult.points,
-          answers: answers,
+          answers: processedAnswers,
           originalText: inputText,
         }),
       });
@@ -303,16 +482,16 @@ export default function EmailGenerator() {
           boxSizing: "border-box",
         }}
       >
-        <img
-          src={logo}
-          alt="SGF Logo"
-          style={{
-            width: "120px",
-            height: "auto",
-            position: "absolute",
-            left: "40px",
-          }}
-        />
+        <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
+          <img
+            src={logo}
+            alt="SGF Logo"
+            style={{
+              width: "120px",
+              height: "auto",
+            }}
+          />
+        </Link>
         <div style={{ display: "flex", alignItems: "center" }}>
           <h1
             style={{
@@ -621,27 +800,23 @@ export default function EmailGenerator() {
             <div style={{ marginBottom: "20px" }}>
               <div
                 style={{
-                  background: "#f5f5f5",
+                  background: "#f5f0ff",
                   borderRadius: "8px",
                   padding: "12px",
                   marginBottom: "16px",
-                  fontSize: "0.9rem",
-                  color: "#666",
+                  border: `1px solid #d0b3ff`,
                 }}
               >
-                <strong>Context:</strong> {currentPoint.sourceText}
+                <div
+                  style={{
+                    fontSize: "0.9rem",
+                    color: MONUMENT,
+                    fontWeight: 500,
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>Question:</span> {currentPoint.question}
+                </div>
               </div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: "#32323399",
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                {currentPoint.question}
-              </label>
               
               {/* Suggestion Display */}
               {loadingSuggestions && (

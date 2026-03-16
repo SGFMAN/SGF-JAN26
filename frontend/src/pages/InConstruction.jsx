@@ -163,16 +163,16 @@ export default function InConstruction() {
           position: "relative",
         }}
       >
-        <img
-          src={logo}
-          alt="SGF Logo"
-          style={{
-            width: "120px",
-            height: "auto",
-            position: "absolute",
-            left: "40px",
-          }}
-        />
+        <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
+          <img
+            src={logo}
+            alt="SGF Logo"
+            style={{
+              width: "120px",
+              height: "auto",
+            }}
+          />
+        </Link>
         <div style={{ display: "flex", alignItems: "center" }}>
           <h1
             style={{
@@ -622,6 +622,10 @@ export default function InConstruction() {
           <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "16px" }}>
             In Construction {(() => {
               const constructionProjects = projects.filter((project) => {
+                // Exclude Hotlist and Cancelled status
+                if (project.status === "Hotlist" || project.status === "Cancelled") {
+                  return false;
+                }
                 if (project.status !== "Construction Phase") {
                   return false;
                 }
@@ -675,6 +679,10 @@ export default function InConstruction() {
             // Filter to only show projects with "Construction Phase" status, excluding those that are on hold
             // Note: We don't handle legacy "On Hold" status here since Construction Phase is different
             let constructionProjects = projects.filter((project) => {
+              // Exclude Hotlist and Cancelled status
+              if (project.status === "Hotlist" || project.status === "Cancelled") {
+                return false;
+              }
               if (project.status !== "Construction Phase") {
                 return false;
               }

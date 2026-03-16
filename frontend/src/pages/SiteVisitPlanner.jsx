@@ -282,7 +282,7 @@ export default function SiteVisitPlanner() {
     const idToProject = new Map();
 
     projects.forEach((project) => {
-      if (idSet.has(project.id) && project.status !== "Hotlist") {
+      if (idSet.has(project.id) && project.status !== "Hotlist" && project.status !== "Cancelled") {
         idToProject.set(project.id, project);
       }
     });
@@ -722,16 +722,16 @@ export default function SiteVisitPlanner() {
           boxSizing: "border-box",
         }}
       >
-        <img
-          src={logo}
-          alt="SGF Logo"
-          style={{
-            width: "120px",
-            height: "auto",
-            position: "absolute",
-            left: "40px",
-          }}
-        />
+        <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
+          <img
+            src={logo}
+            alt="SGF Logo"
+            style={{
+              width: "120px",
+              height: "auto",
+            }}
+          />
+        </Link>
         <div style={{ display: "flex", alignItems: "center" }}>
           <h1
             style={{

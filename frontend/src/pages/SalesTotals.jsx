@@ -63,7 +63,9 @@ export default function SalesTotals() {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
       const data = await response.json();
-      setProjects(data);
+      // Exclude Hotlist status projects
+      const filteredData = data.filter((project) => project.status !== "Hotlist");
+      setProjects(filteredData);
     } catch (err) {
       setError(err.message);
       console.error("Error fetching projects:", err);
@@ -394,16 +396,16 @@ export default function SalesTotals() {
           boxSizing: "border-box",
         }}
       >
-        <img
-          src={logo}
-          alt="SGF Logo"
-          style={{
-            width: "120px",
-            height: "auto",
-            position: "absolute",
-            left: "40px",
-          }}
-        />
+        <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
+          <img
+            src={logo}
+            alt="SGF Logo"
+            style={{
+              width: "120px",
+              height: "auto",
+            }}
+          />
+        </Link>
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           <h1
             style={{

@@ -258,6 +258,10 @@ export default function Sales() {
   // The year field stores dates in YYYY-MM-DD format
   const monthFilteredProjects = React.useMemo(() => {
     return projects.filter((project) => {
+      // Exclude Hotlist status
+      if (project.status === "Hotlist") {
+        return false;
+      }
       // Exclude projects with classification "Home Office / Studio"
       if (project.classification === "Home Office / Studio") {
         return false;
@@ -418,16 +422,16 @@ export default function Sales() {
           boxSizing: "border-box",
         }}
       >
-        <img
-          src={logo}
-          alt="SGF Logo"
-          style={{
-            width: "120px",
-            height: "auto",
-            position: "absolute",
-            left: "40px",
-          }}
-        />
+        <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
+          <img
+            src={logo}
+            alt="SGF Logo"
+            style={{
+              width: "120px",
+              height: "auto",
+            }}
+          />
+        </Link>
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           <h1
             style={{

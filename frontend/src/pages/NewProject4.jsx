@@ -45,7 +45,7 @@ const CLASSIFICATION_MAP = {
   "Dual Occ": "DOC",
 };
 
-export default function NewProject4({ isOpen, onClose, formData, onFormDataChange, onBack, onCreate, onNext }) {
+export default function NewProject4({ isOpen, onClose, formData, onFormDataChange, onBack, onCreate, onNext, createdProjectForEmail }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -135,6 +135,13 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
       }
     }
   }, [showEmailModal, emailBody]);
+
+  // When createdProjectForEmail is set, prepare and show email modal
+  useEffect(() => {
+    if (createdProjectForEmail && isOpen) {
+      prepareNewJobEmail(createdProjectForEmail);
+    }
+  }, [createdProjectForEmail, isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -488,6 +495,10 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
       }
       alert(data.message || "Email sent successfully!");
       setShowEmailModal(false);
+      // Clear createdProjectForEmail if it was set
+      if (createdProjectForEmail) {
+        // onClose will handle clearing it in HomePage
+      }
       onClose();
     } catch (err) {
       console.error("Send email error:", err);
@@ -519,11 +530,11 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
         rootDirectory = settings.root_directory || "";
       }
       
-      // Use createFolders from formData (set in NewProject modal)
+      // Use createFolders from formData (set by confirmation modal)
       const createFolders = formData.createFolders === true || formData.createFolders === "true" || formData.createFolders === 1 || formData.createFolders === "1";
 
-      // Only create folders if the setting is enabled
-      if (createFolders) {
+      // Only create folders if the setting is enabled AND proposal file exists
+      if (createFolders && formData.proposalFile) {
         if (!rootDirectory) {
           alert("Error: Root directory is not set. Please configure it in File Settings.");
           setIsSubmitting(false);
@@ -577,8 +588,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
       // Then create the project
       const newProject = await onCreate(formData);
       
-      // Only upload proposal if createFolders is enabled AND folderPath exists
-      // (proposal upload should only happen when folders are being created)
+      // Upload proposal if createFolders is enabled, proposal file exists, and folderPath exists
       if (createFolders && formData.proposalFile && newProject && newProject.id && folderPath) {
         try {
           const uploadFormData = new FormData();
@@ -979,8 +989,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
             </button>
             <button
               type="button"
-              onClick={handleCreateProject}
-              disabled={isSubmitting}
+              onClick={onNext}
               style={{
                 background: MONUMENT,
                 color: WHITE,
@@ -991,10 +1000,9 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
                 fontWeight: 500,
                 cursor: "pointer",
                 transition: "background 0.17s",
-                opacity: isSubmitting ? 0.7 : 1,
               }}
             >
-              {isSubmitting ? "Creating..." : "Create Project"}
+              Next
             </button>
           </div>
         </div>
@@ -1112,10 +1120,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
             alignItems: "center",
             justifyContent: "center",
             zIndex: 1001,
-          }}
-          onClick={() => {
-            setShowEmailModal(false);
-            onClose();
+            pointerEvents: "auto",
           }}
         >
           <div
