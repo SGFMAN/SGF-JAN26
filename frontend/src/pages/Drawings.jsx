@@ -2183,7 +2183,7 @@ export default function Drawings({ project, onUpdate }) {
                         </div>
                         <div style={{ textAlign: "right" }}>
                           <button
-                            onClick={() => handleOpenSalesNotesModal(index, drawing.revision, drawing.name)}
+                            onClick={() => handleOpenSalesNotesModal(originalIndex, drawing.revision, drawing.name)}
                             style={{
                               background: WHITE,
                               color: MONUMENT,
@@ -2209,7 +2209,7 @@ export default function Drawings({ project, onUpdate }) {
                         </div>
                         <div style={{ textAlign: "right" }}>
                           <button
-                            onClick={() => handleOpenNotesModal(index, drawing.revision, drawing.name)}
+                            onClick={() => handleOpenNotesModal(originalIndex, drawing.revision, drawing.name)}
                             style={{
                               background: WHITE,
                               color: MONUMENT,
@@ -2886,6 +2886,7 @@ export default function Drawings({ project, onUpdate }) {
                 resize: "vertical",
                 boxSizing: "border-box",
                 marginBottom: "16px",
+                color: "#000",
                 backgroundColor: (!notesForRevision.isNewDrawing && !notesForRevision.isCurrentRevision) ? "#f5f5f5" : WHITE,
                 cursor: (!notesForRevision.isNewDrawing && !notesForRevision.isCurrentRevision) ? "not-allowed" : "text",
               }}
@@ -3060,6 +3061,7 @@ export default function Drawings({ project, onUpdate }) {
                 resize: "vertical",
                 boxSizing: "border-box",
                 marginBottom: "16px",
+                color: "#000",
                 backgroundColor: !salesNotesForRevision.isCurrentRevision ? "#f5f5f5" : WHITE,
                 cursor: !salesNotesForRevision.isCurrentRevision ? "not-allowed" : "text",
               }}
