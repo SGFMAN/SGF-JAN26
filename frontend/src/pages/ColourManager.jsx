@@ -119,6 +119,13 @@ export default function ColourManager() {
 
       const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "";
       
+      // Optimistically update the local state immediately (no flash)
+      setProjects(prevProjects =>
+        prevProjects.map(p =>
+          p.id === projectId ? { ...p, [fieldName]: value === "" ? null : value } : p
+        )
+      );
+      
       const response = await fetch(`${API_URL}/api/projects/${projectId}`, {
         method: "PUT",
         headers: {
@@ -132,15 +139,20 @@ export default function ColourManager() {
       });
 
       if (!response.ok) {
+        // Revert optimistic update on error
         const errorData = await response.json().catch(() => ({ error: response.statusText }));
         console.error("Failed to save field:", errorData.error || response.statusText);
+        // Revert by refetching (only on error)
+        await fetchProjects();
         return;
       }
 
-      // Refresh projects list
-      await fetchProjects();
+      // Success - local state already updated, no need to refetch
+      console.log("Field saved successfully");
     } catch (error) {
       console.error("Error saving field:", error);
+      // Revert optimistic update on error
+      await fetchProjects();
     }
   }
 

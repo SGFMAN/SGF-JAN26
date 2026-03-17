@@ -5,10 +5,12 @@ const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 const API_URL = "";
 
-export default function NewProject3({ isOpen, onClose, formData, onFormDataChange, onBack, onNext, onCreate }) {
+export default function NewProject_5_PDFUpload({ isOpen, onClose, formData, onFormDataChange, onBack, onNext, onCreate }) {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef(null);
+  const API_URL = "";
 
   if (!isOpen) return null;
 
@@ -29,7 +31,7 @@ export default function NewProject3({ isOpen, onClose, formData, onFormDataChang
     e.stopPropagation();
   }
 
-  function handleDrop(e) {
+  async function handleDrop(e) {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
@@ -40,19 +42,23 @@ export default function NewProject3({ isOpen, onClose, formData, onFormDataChang
       // Only accept PDF files
       if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
         setSelectedFile(file);
+        // Upload immediately when file is dropped
+        await handleFileUpload(file);
       } else {
         alert("Please select a PDF file");
       }
     }
   }
 
-  function handleFileSelect(e) {
+  async function handleFileSelect(e) {
     const files = e.target.files;
     if (files && files.length > 0) {
       const file = files[0];
       // Only accept PDF files
       if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
         setSelectedFile(file);
+        // Upload immediately when file is selected
+        await handleFileUpload(file);
       } else {
         alert("Please select a PDF file");
       }
@@ -63,23 +69,89 @@ export default function NewProject3({ isOpen, onClose, formData, onFormDataChang
     fileInputRef.current?.click();
   }
 
-  async function handleNext() {
-    // Store the selected file in formData temporarily
-    if (selectedFile) {
+  async function handleFileUpload(file) {
+    if (!file || !formData.folderPath) {
+      console.error("Cannot upload: missing file or folder path");
+      return;
+    }
+
+    setIsUploading(true);
+    
+    try {
+      // First, create the project to get the projectId
+      const projectResponse = await fetch(`${API_URL}/api/projects`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: `${formData.street}, ${formData.suburb}`.trim() || "New Project",
+          suburb: formData.suburb || null,
+          street: formData.street || null,
+          state: formData.state || null,
+          stream: formData.stream || null,
+          deposit: formData.deposit || null,
+          project_cost: formData.projectCost || null,
+          salesperson: formData.salesperson || null,
+          client_name: formData.clientName || null,
+          email: formData.email || null,
+          phone: formData.phone || null,
+        }),
+      });
+
+      if (!projectResponse.ok) {
+        const errorData = await projectResponse.json().catch(() => ({ error: "Failed to create project" }));
+        throw new Error(errorData.error || "Failed to create project");
+      }
+
+      const newProject = await projectResponse.json();
+
+      // Now upload the PDF to the project folder
+      const uploadFormData = new FormData();
+      uploadFormData.append("file", file);
+      uploadFormData.append("projectId", newProject.id.toString());
+      uploadFormData.append("projectPath", formData.folderPath);
+
+      const uploadResponse = await fetch(`${API_URL}/api/files/upload-proposal`, {
+        method: "POST",
+        body: uploadFormData,
+      });
+
+      if (!uploadResponse.ok) {
+        const errorData = await uploadResponse.json().catch(() => ({ error: "Failed to upload proposal" }));
+        throw new Error(errorData.error || "Failed to upload proposal");
+      }
+
+      // Store project in formData
       onFormDataChange({
         ...formData,
-        proposalFile: selectedFile,
+        createdProject: newProject,
       });
-    }
-    // If onCreate is provided, create project and show email (new flow)
-    // Otherwise, use onNext (old flow)
-    if (onCreate) {
-      // This will be handled by the parent (HomePage) which will call handleCreateProjectAndEmail
+
+      setIsUploading(false);
+      
+      // Proceed to email modal - pass project directly
       if (onNext) {
-        await onNext();
+        // Call onNext with the project so it can be used immediately
+        await onNext(newProject);
       }
-    } else if (onNext) {
-      onNext();
+    } catch (error) {
+      console.error("Error uploading proposal:", error);
+      alert(`Failed to upload proposal: ${error.message || "Unknown error"}`);
+      setIsUploading(false);
+    }
+  }
+
+  async function handleNext() {
+    // If file was already uploaded and project created, just proceed
+    if (formData.createdProject && onNext) {
+      await onNext(formData.createdProject);
+      return;
+    }
+
+    // If file is selected but not uploaded yet, upload it now
+    if (selectedFile && !isUploading) {
+      await handleFileUpload(selectedFile);
     }
   }
 
@@ -176,15 +248,39 @@ export default function NewProject3({ isOpen, onClose, formData, onFormDataChang
               >
                 {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
               </div>
-              <div
-                style={{
-                  fontSize: "0.85rem",
-                  color: "#666",
-                  marginTop: "8px",
-                }}
-              >
-                Click to select a different file
-              </div>
+              {isUploading ? (
+                <div
+                  style={{
+                    fontSize: "0.85rem",
+                    color: MONUMENT,
+                    marginTop: "8px",
+                    fontWeight: 500,
+                  }}
+                >
+                  Uploading and creating project...
+                </div>
+              ) : formData.createdProject ? (
+                <div
+                  style={{
+                    fontSize: "0.85rem",
+                    color: "#4caf50",
+                    marginTop: "8px",
+                    fontWeight: 500,
+                  }}
+                >
+                  ✓ Uploaded successfully
+                </div>
+              ) : (
+                <div
+                  style={{
+                    fontSize: "0.85rem",
+                    color: "#666",
+                    marginTop: "8px",
+                  }}
+                >
+                  Click to select a different file
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -255,7 +351,7 @@ export default function NewProject3({ isOpen, onClose, formData, onFormDataChang
           <button
             type="button"
             onClick={handleNext}
-            disabled={!selectedFile}
+            disabled={!selectedFile || isUploading}
             style={{
               background: MONUMENT,
               color: WHITE,
@@ -264,12 +360,12 @@ export default function NewProject3({ isOpen, onClose, formData, onFormDataChang
               padding: "10px 20px",
               fontSize: "1rem",
               fontWeight: 500,
-              cursor: selectedFile ? "pointer" : "not-allowed",
+              cursor: (selectedFile && !isUploading) ? "pointer" : "not-allowed",
               transition: "background 0.17s",
-              opacity: selectedFile ? 1 : 0.6,
+              opacity: (selectedFile && !isUploading) ? 1 : 0.6,
             }}
           >
-            Next
+            {isUploading ? "Uploading..." : (formData.createdProject ? "Next" : "Next")}
           </button>
         </div>
       </div>

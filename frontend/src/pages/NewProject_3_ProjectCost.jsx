@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -45,16 +45,9 @@ const CLASSIFICATION_MAP = {
   "Dual Occ": "DOC",
 };
 
-export default function NewProject4({ isOpen, onClose, formData, onFormDataChange, onBack, onCreate, onNext, createdProjectForEmail }) {
+export default function NewProject_3_ProjectCost({ isOpen, onClose, formData, onFormDataChange, onBack, onCreate, onNext }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDepositModal, setShowDepositModal] = useState(false);
-  const [showEmailModal, setShowEmailModal] = useState(false);
-  const [emailTo, setEmailTo] = useState("");
-  const [emailFrom, setEmailFrom] = useState("");
-  const [emailSubject, setEmailSubject] = useState("");
-  const [emailBody, setEmailBody] = useState("");
-  const emailBodyRef = useRef(null);
-  const [createdProject, setCreatedProject] = useState(null);
   const [tempDepositAmount, setTempDepositAmount] = useState("");
   const [previousDepositType, setPreviousDepositType] = useState("");
   const [depositType, setDepositType] = useState(""); // "Full 5%", "$5k only", "Other", or ""
@@ -127,24 +120,6 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
   }
 
   // Initialize deposit type from formData when modal opens
-  // Update emailBody when contentEditable changes
-  useEffect(() => {
-    if (showEmailModal && emailBodyRef.current && emailBody) {
-      if (emailBodyRef.current.innerHTML !== emailBody) {
-        emailBodyRef.current.innerHTML = emailBody;
-      }
-    }
-  }, [showEmailModal, emailBody]);
-
-  // When createdProjectForEmail is set, prepare and show email modal
-  // Only trigger when component is actually open and visible
-  useEffect(() => {
-    if (createdProjectForEmail && isOpen) {
-      // Only prepare email if we're not currently showing the form (i.e., we're showing email modal)
-      // This prevents triggering when NewProject3 (PDF upload) is open
-      prepareNewJobEmail(createdProjectForEmail);
-    }
-  }, [createdProjectForEmail, isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -174,10 +149,6 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
   }, [isOpen, formData.deposit, formData.projectCost]);
 
   if (!isOpen) return null;
-
-  // If createdProjectForEmail is set, we should only show the email modal, not the form
-  // Don't render the form if we have a project ready for email
-  const shouldShowForm = !createdProjectForEmail;
 
   function handleChange(e) {
     const { name, value } = e.target;
@@ -309,209 +280,6 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
     setTempDepositAmount("");
   }
 
-  // Helper function to get salesperson details
-  async function getSalespersonDetails(salespersonName) {
-    if (!salespersonName) return { position: "", phone: "", email: "" };
-    try {
-      const response = await fetch(`${API_URL}/api/users`);
-      if (!response.ok) return { position: "", phone: "", email: "" };
-      const users = await response.json();
-      const user = users.find((u) => u.name === salespersonName);
-      if (!user) return { position: "", phone: "", email: "" };
-      const position =
-        user.positions && Array.isArray(user.positions) && user.positions.length > 0
-          ? user.positions[0].name
-          : "";
-      return {
-        position,
-        phone: user.phone || "",
-        email: user.email || "",
-      };
-    } catch (error) {
-      console.error("Error fetching salesperson details:", error);
-      return { position: "", phone: "", email: "" };
-    }
-  }
-
-  // Helper function to replace tokens in email template
-  async function replaceTokens(text, project, opts = {}) {
-    if (!text || !project) return text;
-    const html = !!opts.html;
-
-    let replaced = text;
-
-    replaced = replaced.replace(/{ProjectName}/g, project.name || "");
-    replaced = replaced.replace(/{ClientName}/g, project.client_name || "");
-    replaced = replaced.replace(/{ProjectCost}/g, project.project_cost ? `$${project.project_cost.toLocaleString()}` : "");
-    replaced = replaced.replace(/{Street}/g, project.street || "");
-    replaced = replaced.replace(/{Suburb}/g, project.suburb || "");
-
-    let depositPaid = "$0";
-    let depositNum = 0;
-    if (project.deposit != null && project.deposit !== "") {
-      if (typeof project.deposit === "string") {
-        const cleaned = project.deposit.replace(/[$,\s]/g, "");
-        depositNum = parseFloat(cleaned);
-      } else {
-        depositNum = Number(project.deposit);
-      }
-      if (!isNaN(depositNum) && depositNum > 0) {
-        depositPaid = `$${depositNum.toLocaleString()}`;
-      }
-    }
-    replaced = replaced.replace(/{DepositPaid}/g, depositPaid);
-
-    let depositStatus = "$0 only";
-    if (depositNum > 0) {
-      const projectCostNum =
-        typeof project.project_cost === "string"
-          ? parseFloat(project.project_cost.replace(/[$,\s]/g, ""))
-          : Number(project.project_cost || 0);
-      if (!isNaN(projectCostNum) && projectCostNum > 0) {
-        const fullDepositAmount = Math.floor(projectCostNum / 20);
-        depositStatus = depositNum === fullDepositAmount ? "Full Deposit Paid" : `${depositPaid} only`;
-      } else {
-        depositStatus = `${depositPaid} only`;
-      }
-    }
-    replaced = replaced.replace(/{DepositStatus}/g, depositStatus);
-
-    replaced = replaced.replace(/{Contact1}/g, project.client1_email && project.client1_active ? project.client1_email : "");
-    replaced = replaced.replace(/{Contact2}/g, project.client2_email && project.client2_active ? project.client2_email : "");
-    replaced = replaced.replace(/{Contact3}/g, project.client3_email && project.client3_active ? project.client3_email : "");
-    replaced = replaced.replace(/{Salesperson}/g, project.salesperson || "");
-
-    const needsDetails =
-      replaced.includes("{SalespersonPosition}") ||
-      replaced.includes("{SalespersonPhone}") ||
-      replaced.includes("{SalespersonEmail}");
-    if (needsDetails) {
-      const { position, phone, email } = await getSalespersonDetails(project.salesperson);
-      const formattedPosition = position
-        ? html
-          ? `<br>${position}`
-          : `\n${position}`
-        : "";
-      replaced = replaced.replace(/{SalespersonPosition}/g, formattedPosition);
-      replaced = replaced.replace(/{SalespersonPhone}/g, phone);
-      replaced = replaced.replace(/{SalespersonEmail}/g, email);
-    }
-
-    return replaced;
-  }
-
-  // Prepare and show email modal for new job
-  async function prepareNewJobEmail(project) {
-    try {
-      console.log("Preparing new job email for project:", project);
-      // Fetch email templates
-      const templatesResponse = await fetch(`${API_URL}/api/email-templates`);
-      if (!templatesResponse.ok) {
-        throw new Error("Failed to fetch email templates");
-      }
-      const templates = await templatesResponse.json();
-      console.log("Fetched templates:", templates);
-      
-      // Find "NEW JOB - Internal" template (case-insensitive search)
-      const template = templates.find(t => 
-        t.name && t.name.toLowerCase().trim() === "new job - internal".toLowerCase()
-      );
-      
-      if (!template) {
-        console.warn("Template 'NEW JOB - Internal' not found. Available templates:", templates.map(t => t.name));
-        alert("Template 'NEW JOB - Internal' not found. Please create it in Settings → Email Settings.");
-        // Don't close modal, just return
-        return;
-      }
-
-      console.log("Found template:", template);
-
-      if (!template.from_address || !template.from_address.trim()) {
-        alert("Template has no From address. Edit the template in Settings → Email Settings.");
-        // Don't close modal, just return
-        return;
-      }
-
-      // Replace tokens in to addresses
-      let toAddresses = template.to_addresses || [];
-      if (Array.isArray(toAddresses)) {
-        const replacedAddresses = await Promise.all(
-          toAddresses.map(addr => replaceTokens(addr, project))
-        );
-        toAddresses = replacedAddresses.filter(addr => addr.trim().length > 0);
-      } else if (toAddresses) {
-        const replaced = await replaceTokens(toAddresses, project);
-        toAddresses = replaced.split(",").map(a => a.trim()).filter(a => a.length > 0);
-      } else {
-        toAddresses = [];
-      }
-
-      console.log("To addresses after replacement:", toAddresses);
-
-      if (toAddresses.length === 0) {
-        console.warn("No valid email addresses found after replacing tokens");
-        alert("No valid email addresses found in template. Please check the template's 'To' addresses.");
-        // Don't close modal, just return
-        return;
-      }
-
-      const subject = await replaceTokens(template.subject || "", project);
-      const htmlBody = await replaceTokens(template.body || "", project, { html: true });
-
-      console.log("Setting email modal state");
-      // Set email modal state
-      setEmailTo(toAddresses.join(", "));
-      setEmailFrom(template.from_address || "");
-      setEmailSubject(subject);
-      setEmailBody(htmlBody);
-      setShowEmailModal(true);
-      console.log("Email modal should now be visible");
-    } catch (error) {
-      console.error("Error preparing email:", error);
-      alert(`Failed to prepare email: ${error.message}`);
-      // Don't close modal on error, let user see what happened
-    }
-  }
-
-  // Send email from modal
-  async function handleSendEmail() {
-    const toAddresses = emailTo.split(",").map(a => a.trim()).filter(a => a.length > 0);
-    if (toAddresses.length === 0) {
-      alert("Please enter at least one email address");
-      return;
-    }
-    if (!emailFrom || !emailFrom.trim()) {
-      alert("From address is required");
-      return;
-    }
-
-    try {
-      const res = await fetch(`${API_URL}/api/emails/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: toAddresses,
-          from: emailFrom,
-          subject: emailSubject,
-          htmlBody: emailBody,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || `Send failed (${res.status})`);
-      }
-      alert(data.message || "Email sent successfully!");
-      setShowEmailModal(false);
-      // Clear createdProjectForEmail if it was set
-      if (createdProjectForEmail) {
-        // onClose will handle clearing it in HomePage
-      }
-      onClose();
-    } catch (err) {
-      console.error("Send email error:", err);
-      alert(err.message || "Failed to send email.");
-    }
-  }
 
   async function handleCreateProject() {
     setIsSubmitting(true);
@@ -639,12 +407,6 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
       
       // Reset submitting state immediately so button doesn't stay on "Creating..."
       setIsSubmitting(false);
-      
-      // Store the created project for email
-      setCreatedProject(newProject);
-      
-      // Fetch and show email modal
-      await prepareNewJobEmail(newProject);
     } catch (error) {
       console.error("Error creating project:", error);
       alert(error.message || "Failed to create project");
@@ -655,7 +417,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
 
   return (
     <>
-      {shouldShowForm && (
+      {(
         <div
           style={{
             position: "fixed",
@@ -1118,190 +880,6 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
         </div>
       )}
 
-      {/* Email Modal */}
-      {showEmailModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 3000,
-            pointerEvents: "auto",
-          }}
-        >
-          <div
-            style={{
-              background: WHITE,
-              borderRadius: "12px",
-              padding: "24px",
-              width: "90%",
-              maxWidth: "800px",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Preview & Send Email</h2>
-              <button
-                onClick={() => {
-                  setShowEmailModal(false);
-                  onClose();
-                }}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  fontSize: "1.5rem",
-                  cursor: "pointer",
-                  color: MONUMENT,
-                  padding: "0",
-                  width: "30px",
-                  height: "30px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                ×
-              </button>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
-                  To (comma-separated)
-                </label>
-                <input
-                  type="text"
-                  value={emailTo}
-                  onChange={(e) => setEmailTo(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: `1px solid ${SECTION_GREY}`,
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    background: WHITE,
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
-                  From
-                </label>
-                <input
-                  type="text"
-                  value={emailFrom}
-                  onChange={(e) => setEmailFrom(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: `1px solid ${SECTION_GREY}`,
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    background: WHITE,
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
-                  Subject
-                </label>
-                <input
-                  type="text"
-                  value={emailSubject}
-                  onChange={(e) => setEmailSubject(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: `1px solid ${SECTION_GREY}`,
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    background: WHITE,
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
-                  Body
-                </label>
-                <div
-                  ref={emailBodyRef}
-                  contentEditable
-                  onInput={(e) => {
-                    setEmailBody(e.currentTarget.innerHTML);
-                  }}
-                  onBlur={(e) => {
-                    setEmailBody(e.currentTarget.innerHTML);
-                  }}
-                  style={{
-                    width: "100%",
-                    minHeight: "300px",
-                    padding: "12px",
-                    borderRadius: "8px",
-                    border: `1px solid ${SECTION_GREY}`,
-                    fontSize: "0.9rem",
-                    color: MONUMENT,
-                    background: WHITE,
-                    boxSizing: "border-box",
-                    lineHeight: "1.6",
-                    outline: "none",
-                  }}
-                />
-              </div>
-
-              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
-                <button
-                  onClick={() => {
-                    setShowEmailModal(false);
-                    onClose();
-                  }}
-                  style={{
-                    padding: "10px 20px",
-                    fontSize: "1rem",
-                    fontWeight: 500,
-                    color: MONUMENT,
-                    background: "transparent",
-                    border: `1px solid ${SECTION_GREY}`,
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSendEmail}
-                  style={{
-                    padding: "10px 20px",
-                    fontSize: "1rem",
-                    fontWeight: 500,
-                    color: WHITE,
-                    background: MONUMENT,
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Send Email
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

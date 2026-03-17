@@ -19,6 +19,11 @@ export default function DrawingManager() {
   const [selectedProjectForReminder, setSelectedProjectForReminder] = useState(null);
   const [sortColumn, setSortColumn] = useState(null);
   const [sortDirection, setSortDirection] = useState("asc");
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailTo, setEmailTo] = useState("ben@superiorgrannyflats.com.au");
+  const [emailFrom, setEmailFrom] = useState("info@superiorgrannyflats.com.au");
+  const [emailSubject, setEmailSubject] = useState("Drawing Manager Projects List");
+  const [emailHtmlBody, setEmailHtmlBody] = useState("");
 
   useEffect(() => {
     fetchProjects();
@@ -113,8 +118,24 @@ export default function DrawingManager() {
         
         return !isOnHold;
       });
-      // Sort alphabetically by suburb, then street
+      // Sort by concept/working drawings status first, then alphabetically by suburb, then street
       const sortedProjects = designPhaseProjects.sort((a, b) => {
+        // Get approval status for both projects
+        const conceptA = isConceptApproved(a);
+        const workingA = isWorkingDrawingsApproved(a);
+        const conceptB = isConceptApproved(b);
+        const workingB = isWorkingDrawingsApproved(b);
+        
+        // Calculate priority: 0 = neither, 1 = concept only, 2 = both
+        const priorityA = (!conceptA && !workingA) ? 0 : (conceptA && !workingA) ? 1 : 2;
+        const priorityB = (!conceptB && !workingB) ? 0 : (conceptB && !workingB) ? 1 : 2;
+        
+        // Sort by priority first
+        if (priorityA !== priorityB) {
+          return priorityA - priorityB;
+        }
+        
+        // If same priority, sort alphabetically by suburb, then street
         const suburbA = (a.suburb || "").toLowerCase();
         const suburbB = (b.suburb || "").toLowerCase();
         if (suburbA !== suburbB) {
@@ -207,6 +228,19 @@ export default function DrawingManager() {
       newDrawingsStatus = "Working Drawing Stage";
     }
 
+    // Optimistically update local state immediately
+    setProjects(prevProjects =>
+      prevProjects.map(p =>
+        p.id === project.id
+          ? {
+              ...p,
+              drawings_status: newDrawingsStatus,
+              drawings_history: JSON.stringify(drawingsHistory),
+            }
+          : p
+      )
+    );
+
     try {
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "PUT",
@@ -225,11 +259,13 @@ export default function DrawingManager() {
         throw new Error("Failed to update concept approval");
       }
 
-      // Refresh projects list
-      await fetchProjects();
+      // Success - local state already updated, no need to refetch
+      console.log("Concept approval updated successfully");
     } catch (error) {
       console.error("Error toggling concept approval:", error);
       alert("Failed to update concept approval");
+      // Revert on error by refetching
+      await fetchProjects();
     }
   }
 
@@ -281,6 +317,19 @@ export default function DrawingManager() {
       newDrawingsStatus = "Drawings Complete";
     }
 
+    // Optimistically update local state immediately
+    setProjects(prevProjects =>
+      prevProjects.map(p =>
+        p.id === project.id
+          ? {
+              ...p,
+              drawings_status: newDrawingsStatus,
+              drawings_history: JSON.stringify(drawingsHistory),
+            }
+          : p
+      )
+    );
+
     try {
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "PUT",
@@ -299,11 +348,13 @@ export default function DrawingManager() {
         throw new Error("Failed to update working drawings approval");
       }
 
-      // Refresh projects list
-      await fetchProjects();
+      // Success - local state already updated, no need to refetch
+      console.log("Working drawings approval updated successfully");
     } catch (error) {
       console.error("Error toggling working drawings approval:", error);
       alert("Failed to update working drawings approval");
+      // Revert on error by refetching
+      await fetchProjects();
     }
   }
 
@@ -325,6 +376,19 @@ export default function DrawingManager() {
 
     const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "";
 
+    // Optimistically update local state immediately
+    setProjects(prevProjects =>
+      prevProjects.map(p =>
+        p.id === project.id
+          ? {
+              ...p,
+              drawings_holder: newHolder,
+              drawings_holder_date: new Date().toISOString().split('T')[0], // Update date when holder changes
+            }
+          : p
+      )
+    );
+
     try {
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "PUT",
@@ -335,6 +399,7 @@ export default function DrawingManager() {
           name: projectName,
           status: project.status || null,
           drawings_holder: newHolder,
+          drawings_holder_date: new Date().toISOString().split('T')[0], // Update date when holder changes
         }),
       });
 
@@ -342,11 +407,13 @@ export default function DrawingManager() {
         throw new Error("Failed to update drawings holder");
       }
 
-      // Refresh projects list
-      await fetchProjects();
+      // Success - local state already updated, no need to refetch
+      console.log("Drawings holder updated successfully");
     } catch (error) {
       console.error("Error toggling drawings holder:", error);
       alert("Failed to update who has the project");
+      // Revert on error by refetching
+      await fetchProjects();
     }
   }
 
@@ -356,6 +423,18 @@ export default function DrawingManager() {
 
     const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "";
     const newDraftsperson = newDraftspersonId === "" ? null : newDraftspersonId;
+
+    // Optimistically update local state immediately
+    setProjects(prevProjects =>
+      prevProjects.map(p =>
+        p.id === project.id
+          ? {
+              ...p,
+              draftsperson: newDraftsperson,
+            }
+          : p
+      )
+    );
 
     try {
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
@@ -374,12 +453,30 @@ export default function DrawingManager() {
         throw new Error("Failed to update draftsperson");
       }
 
-      // Refresh projects list
-      await fetchProjects();
+      // Success - local state already updated, no need to refetch
+      console.log("Draftsperson updated successfully");
     } catch (error) {
       console.error("Error updating draftsperson:", error);
       alert("Failed to update draftsperson");
+      // Revert on error by refetching
+      await fetchProjects();
     }
+  }
+
+  // Get main email contact for a project
+  function getMainEmailContact(project) {
+    // Priority: client1_email (if active) > client2_email (if active) > client3_email (if active) > email field
+    if (project.client1_email && project.client1_active) {
+      return project.client1_email;
+    }
+    if (project.client2_email && project.client2_active) {
+      return project.client2_email;
+    }
+    if (project.client3_email && project.client3_active) {
+      return project.client3_email;
+    }
+    // Fallback to main email field
+    return project.email || "";
   }
 
   // Copy email to clipboard
@@ -849,6 +946,221 @@ export default function DrawingManager() {
                 <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: 0 }}>
                   Design Phase Projects {filteredProjectsForCount.length > 0 && `(${filteredProjectsForCount.length})`}
                 </h2>
+                <button
+                  onClick={() => {
+                    // Get the filtered projects (respecting state filter and sorting)
+                    let filteredProjectsForEmail = stateFilter !== "All" 
+                      ? projects.filter(project => {
+                          const projectState = (project.state || "").toUpperCase();
+                          return projectState === stateFilter.toUpperCase();
+                        })
+                      : projects;
+                    
+                    // Apply sorting if a column is selected
+                    if (sortColumn) {
+                      filteredProjectsForEmail = sortProjects(filteredProjectsForEmail, sortColumn, sortDirection);
+                    }
+                    
+                    // Color constants
+                    const COLOR_RED = "#cc3333";
+                    const COLOR_GREEN = "#33cc33";
+                    
+                    // Helper function to create project row HTML
+                    const createProjectRow = (project) => {
+                      const suburb = project.suburb || "";
+                      const street = project.street || "";
+                      // Format project name
+                      let projectNameDisplay = "";
+                      if (suburb && street) {
+                        projectNameDisplay = `${suburb}<br>${street}`;
+                      } else if (suburb) {
+                        projectNameDisplay = suburb;
+                      } else if (street) {
+                        projectNameDisplay = street;
+                      } else {
+                        projectNameDisplay = project.name || "Unknown Project";
+                      }
+                      
+                      // Get approval statuses
+                      const conceptApproved = isConceptApproved(project);
+                      const workingApproved = isWorkingDrawingsApproved(project);
+                      
+                      // Get status colors
+                      const conceptColor = conceptApproved ? COLOR_GREEN : COLOR_RED;
+                      const workingColor = workingApproved ? COLOR_GREEN : COLOR_RED;
+                      
+                      // Check if deposit is paid (not partial)
+                      const needsDeposit = isPartialDeposit(project);
+                      const depositColor = needsDeposit ? COLOR_RED : COLOR_GREEN;
+                      
+                      // Get site visit status
+                      const siteVisitRaw = project.site_visit_status || "";
+                      const siteVisitStatus = (siteVisitRaw === "Complete" || siteVisitRaw === "") ? (siteVisitRaw || "NOT DONE") : siteVisitRaw;
+                      const siteVisitColor = siteVisitStatus === "Complete" ? COLOR_GREEN : COLOR_RED;
+                      
+                      // Get contract status
+                      const contractRaw = project.contract_status || "";
+                      const contractStatus = contractRaw || "Not Sent";
+                      const contractColor = contractStatus === "Sent" ? COLOR_GREEN : COLOR_RED;
+                      
+                      // Get building permit status
+                      const buildingPermitStatus = project.building_permit_status || "-";
+                      const buildingPermitColor = buildingPermitStatus === "Complete" ? COLOR_GREEN : COLOR_RED;
+                      
+                      // Helper function to create colored rectangle
+                      const createStatusRect = (label, color) => {
+                        return `<td style="padding: 2px; width: 80px;">
+                          <div style="width: 100%; height: 24px; border-radius: 4px; background: ${color}; border: 1px solid white; box-sizing: border-box; text-align: center; color: white; font-size: 10px; font-weight: 500; line-height: 24px; vertical-align: middle;">
+                            ${label}
+                          </div>
+                        </td>`;
+                      };
+                      
+                      return `<tr style="background: white;">
+  <td style="padding: 8px 12px; vertical-align: middle; font-weight: 500; color: #323233; font-size: 14px; width: 200px; border-radius: 8px 0 0 8px;">${projectNameDisplay}</td>
+  ${createStatusRect("CONCEPT", conceptColor)}
+  ${createStatusRect("WD", workingColor)}
+  ${createStatusRect("DEPOSIT", depositColor)}
+  ${createStatusRect("SITE VISIT", siteVisitColor)}
+  ${createStatusRect("CONTRACT", contractColor)}
+  ${createStatusRect("BUILDING PERMIT", buildingPermitColor)}
+</tr>`;
+                    };
+                    
+                    // Group projects by drawings_holder
+                    const groupedProjects = {
+                      client: [],
+                      "sales team": [],
+                      "design team": {}
+                    };
+                    
+                    filteredProjectsForEmail.forEach((project) => {
+                      const drawingsHolder = (project.drawings_holder || "design team").toLowerCase();
+                      
+                      if (drawingsHolder === "client") {
+                        groupedProjects.client.push(project);
+                      } else if (drawingsHolder === "sales team") {
+                        groupedProjects["sales team"].push(project);
+                      } else {
+                        // Design team - sub-group by draftsperson
+                        const draftspersonId = project.draftsperson || "unassigned";
+                        if (!groupedProjects["design team"][draftspersonId]) {
+                          groupedProjects["design team"][draftspersonId] = [];
+                        }
+                        groupedProjects["design team"][draftspersonId].push(project);
+                      }
+                    });
+                    
+                    // Build HTML sections for each group
+                    let htmlSections = [];
+                    
+                    // 1. With Client
+                    if (groupedProjects.client.length > 0) {
+                      const clientRows = groupedProjects.client.map(createProjectRow).join("");
+                      htmlSections.push(`
+                        <div style="margin-bottom: 30px;">
+                          <h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: bold; color: #323233; background: #f0f0f0; padding: 8px 12px; border-radius: 4px;">With Client (${groupedProjects.client.length})</h3>
+                          <table style="width: 100%; border-collapse: separate; border-spacing: 0 8px;">
+                            <tbody>${clientRows}</tbody>
+                          </table>
+                        </div>
+                      `);
+                    }
+                    
+                    // 2. With Sales Team
+                    if (groupedProjects["sales team"].length > 0) {
+                      const salesRows = groupedProjects["sales team"].map(createProjectRow).join("");
+                      htmlSections.push(`
+                        <div style="margin-bottom: 30px;">
+                          <h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: bold; color: #323233; background: #f0f0f0; padding: 8px 12px; border-radius: 4px;">With Sales Team (${groupedProjects["sales team"].length})</h3>
+                          <table style="width: 100%; border-collapse: separate; border-spacing: 0 8px;">
+                            <tbody>${salesRows}</tbody>
+                          </table>
+                        </div>
+                      `);
+                    }
+                    
+                    // 3. With Design Team (sub-grouped by draftsperson)
+                    const designTeamGroups = Object.keys(groupedProjects["design team"]);
+                    if (designTeamGroups.length > 0) {
+                      let designTeamSections = [];
+                      
+                      // Sort draftspersons by name (unassigned first, then alphabetically)
+                      const sortedDraftspersonIds = designTeamGroups.sort((a, b) => {
+                        if (a === "unassigned") return -1;
+                        if (b === "unassigned") return 1;
+                        const nameA = getDraftspersonName(a) || "";
+                        const nameB = getDraftspersonName(b) || "";
+                        return nameA.localeCompare(nameB);
+                      });
+                      
+                      sortedDraftspersonIds.forEach((draftspersonId) => {
+                        const projects = groupedProjects["design team"][draftspersonId];
+                        const draftspersonName = draftspersonId === "unassigned" 
+                          ? "Unassigned" 
+                          : (getDraftspersonName(draftspersonId) || "Unknown");
+                        const projectRows = projects.map(createProjectRow).join("");
+                        
+                        designTeamSections.push(`
+                          <div style="margin-bottom: 20px;">
+                            <h4 style="margin: 0 0 8px 0; font-size: 14px; font-weight: bold; color: #323233; padding: 6px 10px; background: #e8e8e8; border-radius: 4px;">${draftspersonName} (${projects.length})</h4>
+                            <table style="width: 100%; border-collapse: separate; border-spacing: 0 8px;">
+                              <tbody>${projectRows}</tbody>
+                            </table>
+                          </div>
+                        `);
+                      });
+                      
+                      htmlSections.push(`
+                        <div style="margin-bottom: 30px;">
+                          <h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: bold; color: #323233; background: #f0f0f0; padding: 8px 12px; border-radius: 4px;">With Design Team</h3>
+                          ${designTeamSections.join("")}
+                        </div>
+                      `);
+                    }
+                    
+                    const htmlBody = `<div style="font-family: Arial, sans-serif; padding: 20px;">
+  <h2 style="margin: 0 0 20px 0; font-size: 20px; font-weight: bold; color: #323233;">Drawing Manager Projects List</h2>
+  <table style="width: 100%; border-collapse: separate; border-spacing: 0 8px; margin-bottom: 20px;">
+    <thead>
+      <tr>
+        <th style="padding: 8px 12px; text-align: left; background: #323233; color: white; font-weight: 600; font-size: 12px; border-radius: 8px 0 0 0;">Project</th>
+        <th style="padding: 2px; text-align: center; background: #323233; color: white; font-weight: 600; font-size: 10px;">CONCEPT</th>
+        <th style="padding: 2px; text-align: center; background: #323233; color: white; font-weight: 600; font-size: 10px;">WD</th>
+        <th style="padding: 2px; text-align: center; background: #323233; color: white; font-weight: 600; font-size: 10px;">DEPOSIT</th>
+        <th style="padding: 2px; text-align: center; background: #323233; color: white; font-weight: 600; font-size: 10px;">SITE VISIT</th>
+        <th style="padding: 2px; text-align: center; background: #323233; color: white; font-weight: 600; font-size: 10px;">CONTRACT</th>
+        <th style="padding: 2px; text-align: center; background: #323233; color: white; font-weight: 600; font-size: 10px; border-radius: 0 8px 0 0;">BUILDING PERMIT</th>
+      </tr>
+    </thead>
+  </table>
+  ${htmlSections.join("")}
+  <p style="margin: 20px 0 0 0; font-weight: bold; color: #323233;">Total: ${filteredProjectsForEmail.length} projects</p>
+</div>`;
+                    
+                    setEmailHtmlBody(htmlBody);
+                    setShowEmailModal(true);
+                  }}
+                  style={{
+                    padding: "10px 20px",
+                    background: "#4D93D9",
+                    color: WHITE,
+                    border: "none",
+                    borderRadius: "8px",
+                    fontSize: "0.9rem",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    transition: "background 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "#3d7bc9";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "#4D93D9";
+                  }}
+                >
+                  Email List
+                </button>
               </div>
             );
           })()}
@@ -870,9 +1182,37 @@ export default function DrawingManager() {
                     })
                   : projects;
                 
-                // Apply sorting if a column is selected
+                // Apply sorting if a column is selected, otherwise use default concept/working drawings sort
                 if (sortColumn) {
                   filteredProjects = sortProjects(filteredProjects, sortColumn, sortDirection);
+                } else {
+                  // Default sort: by concept/working drawings status, then alphabetically
+                  filteredProjects = filteredProjects.sort((a, b) => {
+                    // Get approval status for both projects
+                    const conceptA = isConceptApproved(a);
+                    const workingA = isWorkingDrawingsApproved(a);
+                    const conceptB = isConceptApproved(b);
+                    const workingB = isWorkingDrawingsApproved(b);
+                    
+                    // Calculate priority: 0 = neither, 1 = concept only, 2 = both
+                    const priorityA = (!conceptA && !workingA) ? 0 : (conceptA && !workingA) ? 1 : 2;
+                    const priorityB = (!conceptB && !workingB) ? 0 : (conceptB && !workingB) ? 1 : 2;
+                    
+                    // Sort by priority first
+                    if (priorityA !== priorityB) {
+                      return priorityA - priorityB;
+                    }
+                    
+                    // If same priority, sort alphabetically by suburb, then street
+                    const suburbA = (a.suburb || "").toLowerCase();
+                    const suburbB = (b.suburb || "").toLowerCase();
+                    if (suburbA !== suburbB) {
+                      return suburbA.localeCompare(suburbB);
+                    }
+                    const streetA = (a.street || "").toLowerCase();
+                    const streetB = (b.street || "").toLowerCase();
+                    return streetA.localeCompare(streetB);
+                  });
                 }
                 
                 if (filteredProjects.length === 0) {
@@ -1229,34 +1569,69 @@ export default function DrawingManager() {
                             )}
                           </div>
                           
-                          {/* Column 6: Reminder */}
-                          <button
-                            key={`${project.id}-reminder`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedProjectForReminder(project);
-                              setShowReminderModal(true);
-                            }}
+                          {/* Column 6: Email Contact */}
+                          <div
+                            key={`${project.id}-email`}
                             style={{
-                              padding: "8px 16px",
-                              background: "#4D93D9",
-                              color: WHITE,
-                              border: "none",
-                              borderRadius: "6px",
-                              fontSize: "0.9rem",
+                              padding: "8px 12px",
+                              background: WHITE,
+                              borderRadius: "8px",
+                              fontSize: "0.85rem",
                               fontWeight: 500,
-                              cursor: "pointer",
-                              transition: "background 0.2s",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#3d7bc9";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = "#4D93D9";
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: "8px",
                             }}
                           >
-                            Email
-                          </button>
+                            <span
+                              style={{
+                                flex: 1,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                color: MONUMENT,
+                              }}
+                            >
+                              {(() => {
+                                const mainEmail = getMainEmailContact(project);
+                                return mainEmail || "No email";
+                              })()}
+                            </span>
+                            {(() => {
+                              const mainEmail = getMainEmailContact(project);
+                              if (!mainEmail) return null;
+                              return (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCopyEmail(mainEmail);
+                                  }}
+                                  style={{
+                                    padding: "4px 8px",
+                                    background: "#4D93D9",
+                                    color: WHITE,
+                                    border: "none",
+                                    borderRadius: "4px",
+                                    fontSize: "0.75rem",
+                                    fontWeight: 500,
+                                    cursor: "pointer",
+                                    transition: "background 0.2s",
+                                    flexShrink: 0,
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = "#3d7bc9";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = "#4D93D9";
+                                  }}
+                                  title="Copy email to clipboard"
+                                >
+                                  Copy
+                                </button>
+                              );
+                            })()}
+                          </div>
                         </>
                       );
                     })}
@@ -1267,6 +1642,203 @@ export default function DrawingManager() {
           )}
         </div>
       </div>
+
+      {/* Email List Modal */}
+      {showEmailModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={() => {
+            setShowEmailModal(false);
+            setEmailTo("ben@superiorgrannyflats.com.au");
+            setEmailFrom("info@superiorgrannyflats.com.au");
+            setEmailSubject("Drawing Manager Projects List");
+            setEmailHtmlBody("");
+          }}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              maxWidth: "900px",
+              width: "90%",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginTop: 0, marginBottom: "20px", color: MONUMENT }}>
+              Email Projects List
+            </h2>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "20px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  To (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={emailTo}
+                  onChange={(e) => setEmailTo(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+              
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  From
+                </label>
+                <input
+                  type="text"
+                  value={emailFrom}
+                  onChange={(e) => setEmailFrom(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+              
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  Subject
+                </label>
+                <input
+                  type="text"
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: "20px" }}>
+              <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                Preview
+              </label>
+              <div
+                style={{
+                  border: `1px solid ${SECTION_GREY}`,
+                  borderRadius: "8px",
+                  padding: "16px",
+                  background: WHITE,
+                  maxHeight: "400px",
+                  overflow: "auto",
+                }}
+                dangerouslySetInnerHTML={{ __html: emailHtmlBody }}
+              />
+            </div>
+            
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => {
+                  setShowEmailModal(false);
+                  setEmailTo("ben@superiorgrannyflats.com.au");
+                  setEmailFrom("info@superiorgrannyflats.com.au");
+                  setEmailSubject("Drawing Manager Projects List");
+                  setEmailHtmlBody("");
+                }}
+                style={{
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: 500,
+                  color: MONUMENT,
+                  background: "transparent",
+                  border: `1px solid ${SECTION_GREY}`,
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const toAddresses = emailTo.split(",").map(a => a.trim()).filter(a => a.length > 0);
+                  if (toAddresses.length === 0) {
+                    alert("Please enter at least one email address");
+                    return;
+                  }
+                  if (!emailFrom || !emailFrom.trim()) {
+                    alert("From address is required");
+                    return;
+                  }
+
+                  try {
+                    const res = await fetch(`${API_URL}/api/emails/send`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        to: toAddresses,
+                        from: emailFrom,
+                        subject: emailSubject,
+                        htmlBody: emailHtmlBody,
+                      }),
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                      throw new Error(data.error || `Send failed (${res.status})`);
+                    }
+                    alert(data.message || "Email sent successfully!");
+                    setShowEmailModal(false);
+                    setEmailTo("ben@superiorgrannyflats.com.au");
+                    setEmailFrom("info@superiorgrannyflats.com.au");
+                    setEmailSubject("Drawing Manager Projects List");
+                    setEmailHtmlBody("");
+                  } catch (err) {
+                    console.error("Send email error:", err);
+                    alert(err.message || "Failed to send email.");
+                  }
+                }}
+                style={{
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: 500,
+                  color: WHITE,
+                  background: MONUMENT,
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                }}
+              >
+                Send Email
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Reminder Modal */}
       {showReminderModal && (

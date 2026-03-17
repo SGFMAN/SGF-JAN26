@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import NewProject from "./NewProject";
-import NewProject2 from "./NewProject2";
-import NewProject3 from "./NewProject3";
-import NewProject4 from "./NewProject4";
+import NewProject from "./NewProject_1_Address";
+import NewProject2 from "./NewProject_2_ClientDetails";
+import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
+import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
 import { isUserAdmin } from "../utils/auth";
 import logo from "../images/logo.png";
 
@@ -25,7 +25,7 @@ export default function Hotlist() {
   const [editingItem, setEditingItem] = useState(null);
   const [isSoldFlowOpen, setIsSoldFlowOpen] = useState(false);
   const [soldItemId, setSoldItemId] = useState(null);
-  const [currentModal, setCurrentModal] = useState(1); // 1 = NewProject, 2 = NewProject2, 3 = NewProject3, 4 = NewProject4
+  const [currentModal, setCurrentModal] = useState(1); // 1 = NewProject, 2 = NewProject2, 3 = PDF Upload, 4 = Project Cost
   const [createdProjectId, setCreatedProjectId] = useState(null);
   const [agreementSentItems, setAgreementSentItems] = useState(new Set());
   const [formData, setFormData] = useState({
@@ -1396,7 +1396,7 @@ export default function Hotlist() {
       {isSoldFlowOpen && (
         <>
           {currentModal === 3 && (
-            <NewProject3
+            <NewProject_5_PDFUpload
               isOpen={true}
               onClose={handleModalClose}
               formData={formData}
@@ -1406,7 +1406,7 @@ export default function Hotlist() {
             />
           )}
           {currentModal === 4 && (
-            <NewProject4
+            <NewProject_3_ProjectCost
               isOpen={true}
               onClose={handleModalClose}
               formData={formData}

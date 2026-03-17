@@ -1950,7 +1950,7 @@ async function addLogoToEmail(htmlBody, attachments = []) {
 
 // Send HTML email via SMTP
 app.post("/api/emails/send", async (req, res) => {
-  const { to, from, subject, htmlBody } = req.body || {};
+  const { to, from, subject, htmlBody, projectId } = req.body || {};
 
   if (!to || (Array.isArray(to) && to.length === 0)) {
     return res.status(400).json({ error: "To address is required" });
@@ -1990,12 +1990,53 @@ app.post("/api/emails/send", async (req, res) => {
     const logoResult = await addLogoToEmail(htmlEmailBody, []);
     htmlEmailBody = logoResult.htmlBody;
 
+    // Prepare attachments array starting with logo
+    let attachments = [...logoResult.attachments];
+
+    // If projectId is provided, try to attach the proposal PDF
+    if (projectId && pool) {
+      try {
+        const projectResult = await pool.query(
+          "SELECT proposal_pdf_location FROM projects WHERE id = $1",
+          [projectId]
+        );
+
+        if (projectResult.rows.length > 0) {
+          const proposalPdfPath = projectResult.rows[0].proposal_pdf_location;
+          
+          if (proposalPdfPath) {
+            // Check if file exists
+            try {
+              await fs.access(proposalPdfPath);
+              // Read the PDF file
+              const proposalBuffer = await fs.readFile(proposalPdfPath);
+              const proposalFileName = proposalPdfPath.split("\\").pop() || proposalPdfPath.split("/").pop() || "Proposal.PDF";
+              
+              // Add proposal PDF to attachments
+              attachments.push({
+                filename: proposalFileName,
+                content: proposalBuffer,
+                contentType: "application/pdf",
+              });
+              
+              console.log(`Proposal PDF attached: ${proposalPdfPath}`);
+            } catch (fileError) {
+              console.warn(`Proposal PDF file not found at ${proposalPdfPath}, skipping attachment`);
+            }
+          }
+        }
+      } catch (dbError) {
+        console.error("Error fetching proposal PDF location:", dbError);
+        // Continue without proposal PDF attachment
+      }
+    }
+
     const mailOptions = {
       from: from,
       to: Array.isArray(to) ? to.join(", ") : to,
       subject: subject || "",
       html: htmlEmailBody,
-      attachments: logoResult.attachments,
+      attachments: attachments,
     };
 
     const info = await transporter.sendMail(mailOptions);
@@ -3378,8 +3419,8 @@ app.post("/api/files/upload-proposal", upload.single("file"), async (req, res) =
     }
 
     // DO NOT create folders - folders should ONLY be created when a new project is first created
-    // Save the file directly to the project root directory as "Proposal.pdf"
-    const fileName = "Proposal.pdf";
+    // Save the file directly to the project root directory as "Proposal.PDF"
+    const fileName = "Proposal.PDF";
     const filePath = path.join(projectPath, fileName);
 
     // Write file from buffer (this will fail if folder doesn't exist, which is correct behavior)

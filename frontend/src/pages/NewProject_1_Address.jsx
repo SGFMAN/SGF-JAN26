@@ -11,9 +11,14 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
 
   function handleChange(e) {
     const { name, value } = e.target;
+    // Replace "/" and "\" with "_" for street and suburb fields
+    let processedValue = value;
+    if (name === "street" || name === "suburb") {
+      processedValue = value.replace(/[/\\]/g, "_");
+    }
     onFormDataChange({
       ...formData,
-      [name]: value,
+      [name]: processedValue,
     });
   }
 
@@ -33,12 +38,12 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
       
       // First part = street
       if (parts.length > 0) {
-        street = parts[0];
+        street = parts[0].replace(/[/\\]/g, "_");
       }
       
       // Second part = suburb
       if (parts.length > 1) {
-        suburb = parts[1];
+        suburb = parts[1].replace(/[/\\]/g, "_");
       }
       
       // Third part (if exists) = state (may include postcode like "VIC 3029")
@@ -72,16 +77,16 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
         
         if (stateIndex > 0) {
           // Suburb is before state
-          suburb = parts.slice(stateIndex - 1, stateIndex).join(" ");
-          street = parts.slice(0, stateIndex - 1).join(" ");
+          suburb = parts.slice(stateIndex - 1, stateIndex).join(" ").replace(/[/\\]/g, "_");
+          street = parts.slice(0, stateIndex - 1).join(" ").replace(/[/\\]/g, "_");
         } else {
           // No state found, treat last word as suburb
-          suburb = parts.slice(-1)[0];
-          street = parts.slice(0, -1).join(" ");
+          suburb = parts.slice(-1)[0].replace(/[/\\]/g, "_");
+          street = parts.slice(0, -1).join(" ").replace(/[/\\]/g, "_");
         }
       } else {
         // Fallback: just use as street
-        street = value;
+        street = value.replace(/[/\\]/g, "_");
       }
     }
 

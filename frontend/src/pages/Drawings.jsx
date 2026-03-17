@@ -208,14 +208,20 @@ export default function Drawings({ project, onUpdate }) {
       if (!response.ok) {
         const errorText = await response.text().catch(() => response.statusText);
         console.error("Error saving field - Status:", response.status, "Error:", errorText);
-      } else {
-        const savedData = await response.json().catch(() => null);
+        // Revert on error by calling onUpdate to refresh from server
         if (onUpdate) {
           onUpdate();
         }
+      } else {
+        // Success - local state already updated optimistically, no need to call onUpdate
+        console.log("Field saved successfully");
       }
     } catch (error) {
       console.error("Error saving field:", error);
+      // Revert on error by calling onUpdate to refresh from server
+      if (onUpdate) {
+        onUpdate();
+      }
     }
   }
 
@@ -342,12 +348,15 @@ export default function Drawings({ project, onUpdate }) {
       setDrawingsStatus("Working Drawing Stage");
       valuesRef.current.drawingsStatus = "Working Drawing Stage";
       
-      if (onUpdate) {
-        onUpdate();
-      }
+      // Success - local state already updated, no need to call onUpdate
+      console.log("Concept approved successfully");
     } catch (error) {
       console.error("Error approving concept:", error);
       alert("Failed to approve concept");
+      // Revert on error by calling onUpdate to refresh from server
+      if (onUpdate) {
+        onUpdate();
+      }
     }
   }
 
@@ -470,11 +479,14 @@ export default function Drawings({ project, onUpdate }) {
       setDrawingsStatus("Drawings Complete");
       valuesRef.current.drawingsStatus = "Drawings Complete";
       
+      // Success - local state already updated, no need to call onUpdate
+      console.log("Working drawings approved successfully");
+    } catch (error) {
+      console.error("Error approving working drawings:", error);
+      // Revert on error by calling onUpdate to refresh from server
       if (onUpdate) {
         onUpdate();
       }
-    } catch (error) {
-      console.error("Error approving working drawings:", error);
       alert("Failed to approve working drawings");
     }
   }
@@ -1481,15 +1493,17 @@ export default function Drawings({ project, onUpdate }) {
         throw new Error("Failed to save drawings holder");
       }
 
-      // Update local state
+      // Update local state optimistically
       setDrawingsHolder(holder);
       
-      // Refresh project data
+      // Success - local state already updated, no need to call onUpdate
+      console.log("Drawings holder saved successfully");
+    } catch (error) {
+      console.error("Error saving drawings holder:", error);
+      // Revert on error by calling onUpdate to refresh from server
       if (onUpdate) {
         onUpdate();
       }
-    } catch (error) {
-      console.error("Error saving drawings holder:", error);
     }
   }
 

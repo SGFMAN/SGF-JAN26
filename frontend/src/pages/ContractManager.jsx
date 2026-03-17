@@ -125,6 +125,13 @@ export default function ContractManager() {
 
       const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "";
       
+      // Optimistically update the local state immediately (no flash)
+      setProjects(prevProjects =>
+        prevProjects.map(p =>
+          p.id === projectId ? { ...p, [fieldName]: value === "" ? null : value } : p
+        )
+      );
+      
       const response = await fetch(`${API_URL}/api/projects/${projectId}`, {
         method: "PUT",
         headers: {
@@ -138,15 +145,20 @@ export default function ContractManager() {
       });
 
       if (!response.ok) {
+        // Revert optimistic update on error
         const errorData = await response.json().catch(() => ({ error: response.statusText }));
         console.error("Failed to save field:", errorData.error || response.statusText);
+        // Revert by refetching (only on error)
+        await fetchProjects();
         return;
       }
 
-      // Refresh projects list
-      await fetchProjects();
+      // Success - local state already updated, no need to refetch
+      console.log("Field saved successfully");
     } catch (error) {
       console.error("Error saving field:", error);
+      // Revert optimistic update on error
+      await fetchProjects();
     }
   }
 
@@ -155,9 +167,44 @@ export default function ContractManager() {
     await saveField(projectId, fieldName, newValue);
     
     // Special handling: if water authority changes to "Not Required", set water declaration to "Not Sent" (it will display as "Not Required")
-    if (fieldName === "water_authority") {
-      if (newValue === "Not Required") {
-        await saveField(projectId, "water_declaration_status", "Not Sent");
+    if (fieldName === "water_authority" && newValue === "Not Required") {
+      // Update both fields in a single operation to avoid double state updates
+      const project = projects.find(p => p.id === projectId);
+      if (project) {
+        const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "";
+        
+        // Optimistically update both fields
+        setProjects(prevProjects =>
+          prevProjects.map(p =>
+            p.id === projectId 
+              ? { ...p, water_authority: newValue, water_declaration_status: "Not Sent" }
+              : p
+          )
+        );
+        
+        // Save both fields to backend
+        try {
+          const response = await fetch(`${API_URL}/api/projects/${projectId}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              name: projectName,
+              status: project.status || null,
+              water_authority: newValue,
+              water_declaration_status: "Not Sent",
+            }),
+          });
+
+          if (!response.ok) {
+            // Revert on error
+            await fetchProjects();
+          }
+        } catch (error) {
+          console.error("Error saving water authority fields:", error);
+          await fetchProjects();
+        }
       }
     }
   }

@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import NewProject from "./NewProject";
-import NewProject2 from "./NewProject2";
-import NewProject3 from "./NewProject3";
-import NewProject4 from "./NewProject4";
+import NewProject from "./NewProject_1_Address";
+import NewProject2 from "./NewProject_2_ClientDetails";
+import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
+import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
+import NewProject_4_FoldersOption from "./NewProject_4_FoldersOption";
+import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import logo from "../images/logo.png";
@@ -122,7 +124,6 @@ export default function HomePage() {
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [newProjectStep, setNewProjectStep] = useState(1);
-  const [showFolderConfirmModal, setShowFolderConfirmModal] = useState(false);
   const [createdProjectForEmail, setCreatedProjectForEmail] = useState(null);
   const [newProjectFormData, setNewProjectFormData] = useState({
     suburb: "",
@@ -283,109 +284,15 @@ export default function HomePage() {
     return newProject;
   }
 
-  // Create project and show email modal
+  // Create project and show email modal (used when "No" is clicked - no folders, no PDF)
   async function handleCreateProjectAndEmail() {
     try {
-      // Create the project using the existing logic from NewProject4
-      const settingsResponse = await fetch(`${API_URL}/api/settings`);
-      if (!settingsResponse.ok) {
-        throw new Error("Failed to fetch settings");
-      }
-      const settings = await settingsResponse.json();
-      const state = (newProjectFormData.state || "").toUpperCase();
-      
-      let rootDirectory = "";
-      if (state === "VIC") {
-        rootDirectory = settings.root_directory || "";
-      } else if (state === "QLD") {
-        rootDirectory = settings.root_directory_qld || "";
-      } else {
-        rootDirectory = settings.root_directory || "";
-      }
-      
-      const createFolders = newProjectFormData.createFolders === true || newProjectFormData.createFolders === "true" || newProjectFormData.createFolders === 1 || newProjectFormData.createFolders === "1";
-      let folderPath = "";
-
-      // Create folders if needed and proposal file exists
-      if (createFolders && newProjectFormData.proposalFile) {
-        if (!rootDirectory) {
-          alert("Error: Root directory is not set. Please configure it in File Settings.");
-          return;
-        }
-
-        const currentYear = new Date().getFullYear().toString();
-        const suburb = (newProjectFormData.suburb || "").toUpperCase();
-        const street = newProjectFormData.street || "";
-        const state = (newProjectFormData.state || "").toUpperCase();
-        
-        if (!state) {
-          alert("Error: State is required to create project folder. Please enter the state.");
-          return;
-        }
-        
-        folderPath = `${rootDirectory}\\${currentYear}\\${state}\\${suburb} - ${street}`;
-        
-        const folderResponse = await fetch(`${API_URL}/api/folders/create`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            path: folderPath,
-            rootDirectory: rootDirectory,
-            year: currentYear,
-            state: state,
-          }),
-        });
-
-        if (!folderResponse.ok) {
-          const errorData = await folderResponse.json().catch(() => ({ error: "Failed to create folder" }));
-          const errorMsg = errorData.error || "Failed to create project folder";
-          throw new Error(errorMsg);
-        }
-      }
-
       // Create the project
       const newProject = await handleCreateProject(newProjectFormData);
       
-      // Upload proposal if needed
-      if (createFolders && newProjectFormData.proposalFile && newProject && newProject.id && folderPath) {
-        try {
-          const uploadFormData = new FormData();
-          uploadFormData.append("file", newProjectFormData.proposalFile);
-          uploadFormData.append("projectId", newProject.id.toString());
-          uploadFormData.append("projectPath", folderPath);
-
-          const uploadResponse = await fetch(`${API_URL}/api/files/upload-proposal`, {
-            method: "POST",
-            body: uploadFormData,
-          });
-
-          if (!uploadResponse.ok) {
-            let errorMessage = "Unknown error";
-            try {
-              const errorData = await uploadResponse.json();
-              errorMessage = errorData.error || errorData.message || `HTTP ${uploadResponse.status}: ${uploadResponse.statusText}`;
-            } catch (parseError) {
-              try {
-                const errorText = await uploadResponse.text();
-                errorMessage = errorText || `HTTP ${uploadResponse.status}: ${uploadResponse.statusText}`;
-              } catch (textError) {
-                errorMessage = `HTTP ${uploadResponse.status}: ${uploadResponse.statusText}`;
-              }
-            }
-            alert(`Warning: Project created but proposal upload failed: ${errorMessage}`);
-          }
-        } catch (uploadError) {
-          console.error("Error uploading proposal after project creation:", uploadError);
-          alert(`Warning: Project created but proposal upload failed: ${uploadError.message || "Unknown error"}`);
-        }
-      }
-      
-      // Store project and show email modal via NewProject4
+      // Store project and show email modal (step 6)
       setCreatedProjectForEmail(newProject);
-      // Keep NewProject4 open to show email modal
-      // NewProject4 will detect createdProjectForEmail and show email modal
+      setNewProjectStep(6); // Go to email modal
     } catch (error) {
       console.error("Error creating project:", error);
       alert(error.message || "Failed to create project");
@@ -1139,35 +1046,73 @@ export default function HomePage() {
             flexDirection: "column",
           }}
         >
-          <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "16px" }}>
-            In Design {(() => {
-              const currentProjects = projects.filter((project) => {
-                // Exclude Hotlist and Cancelled status
-                if (project.status === "Hotlist" || project.status === "Cancelled") {
-                  return false;
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+            <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: 0 }}>
+              In Design {(() => {
+                const currentProjects = projects.filter((project) => {
+                  // Exclude Hotlist and Cancelled status
+                  if (project.status === "Hotlist" || project.status === "Cancelled") {
+                    return false;
+                  }
+                  // Accept "Design Phase" or legacy "On Hold" status
+                  if (project.status !== "Design Phase" && project.status !== "On Hold") {
+                    return false;
+                  }
+                  // Exclude if on_hold is explicitly true (boolean or string)
+                  // Handle all possible values: true, 'true', false, 'false', null, undefined, 1, '1', 0, '0'
+                  const onHoldValue = project.on_hold;
+                  const isOnHold = onHoldValue === true || onHoldValue === 'true' || onHoldValue === 1 || onHoldValue === '1';
+                  return !isOnHold;
+                });
+                const totalCount = currentProjects.length;
+                
+                if (selectedField && selectedValue) {
+                  return `(${filteredProjects.length} found)`;
+                } else if (searchQuery.trim()) {
+                  return `(${filteredProjects.length} found)`;
+                } else if (stateFilter !== "All") {
+                  return `(${filteredProjects.length} total)`;
                 }
-                // Accept "Design Phase" or legacy "On Hold" status
-                if (project.status !== "Design Phase" && project.status !== "On Hold") {
-                  return false;
-                }
-                // Exclude if on_hold is explicitly true (boolean or string)
-                // Handle all possible values: true, 'true', false, 'false', null, undefined, 1, '1', 0, '0'
-                const onHoldValue = project.on_hold;
-                const isOnHold = onHoldValue === true || onHoldValue === 'true' || onHoldValue === 1 || onHoldValue === '1';
-                return !isOnHold;
-              });
-              const totalCount = currentProjects.length;
-              
-              if (selectedField && selectedValue) {
-                return `(${filteredProjects.length} found)`;
-              } else if (searchQuery.trim()) {
-                return `(${filteredProjects.length} found)`;
-              } else if (stateFilter !== "All") {
-                return `(${filteredProjects.length} total)`;
-              }
-              return totalCount > 0 ? `(${totalCount} total)` : "";
-            })()}
-          </h2>
+                return totalCount > 0 ? `(${totalCount} total)` : "";
+              })()}
+            </h2>
+            <button
+              onClick={() => {
+                // Generate email list from filtered projects
+                const projectList = filteredProjects.map((project, index) => {
+                  const suburb = project.suburb || "";
+                  const street = project.street || "";
+                  const projectName = suburb && street 
+                    ? `${suburb} - ${street}`
+                    : suburb || street || project.name || "Unknown Project";
+                  return `${index + 1}. ${projectName}`;
+                }).join("\n");
+                
+                const emailBody = `In Design Projects List:\n\n${projectList}\n\nTotal: ${filteredProjects.length} projects`;
+                const mailtoLink = `mailto:?subject=In Design Projects List&body=${encodeURIComponent(emailBody)}`;
+                window.location.href = mailtoLink;
+              }}
+              style={{
+                padding: "10px 20px",
+                background: "#4D93D9",
+                color: WHITE,
+                border: "none",
+                borderRadius: "8px",
+                fontSize: "0.9rem",
+                fontWeight: 500,
+                cursor: "pointer",
+                transition: "background 0.2s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#3d7bc9";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "#4D93D9";
+              }}
+            >
+              Email List
+            </button>
+          </div>
           
           {/* Search Bar and Filter Dropdowns - All on one line */}
           <div style={{ display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "nowrap", alignItems: "flex-start", marginTop: 0, position: "relative" }}>
@@ -1582,12 +1527,11 @@ export default function HomePage() {
         onBack={() => setNewProjectStep(1)}
         onNext={() => setNewProjectStep(3)}
       />
-      <NewProject4
-        isOpen={isNewProjectOpen && (newProjectStep === 3 || createdProjectForEmail !== null)}
+      <NewProject_3_ProjectCost
+        isOpen={isNewProjectOpen && newProjectStep === 3}
         onClose={() => {
           setIsNewProjectOpen(false);
           setNewProjectStep(1);
-          setCreatedProjectForEmail(null);
           setNewProjectFormData({
             suburb: "",
             street: "",
@@ -1605,20 +1549,15 @@ export default function HomePage() {
         formData={newProjectFormData}
         onFormDataChange={setNewProjectFormData}
         onBack={() => {
-          if (createdProjectForEmail) {
-            // If showing email modal, can't go back
-            return;
-          }
           setNewProjectStep(2);
         }}
         onNext={() => {
-          // Show confirmation modal asking about folders
-          setShowFolderConfirmModal(true);
+          // Go to folders option modal (step 4)
+          setNewProjectStep(4);
         }}
-        createdProjectForEmail={createdProjectForEmail}
         onCreate={handleCreateProject}
       />
-      <NewProject3
+      <NewProject_4_FoldersOption
         isOpen={isNewProjectOpen && newProjectStep === 4}
         onClose={() => {
           setIsNewProjectOpen(false);
@@ -1640,106 +1579,82 @@ export default function HomePage() {
         formData={newProjectFormData}
         onFormDataChange={setNewProjectFormData}
         onBack={() => {
-          // Go back to folder confirmation modal
-          setShowFolderConfirmModal(true);
+          setNewProjectStep(3); // Go back to Project Cost
         }}
-        onNext={async () => {
-          // After PDF is selected, create project and show email
+        onYes={() => {
+          // Yes - set flag and go to proposal upload step (step 5)
+          setNewProjectStep(5);
+        }}
+        onNo={async () => {
+          // No - just create project without folders and show email
+          setNewProjectStep(0); // Close modal
+          await new Promise(resolve => setTimeout(resolve, 50));
           await handleCreateProjectAndEmail();
+        }}
+      />
+      <NewProject_5_PDFUpload
+        isOpen={isNewProjectOpen && newProjectStep === 5}
+        onClose={() => {
+          setIsNewProjectOpen(false);
+          setNewProjectStep(1);
+          setCreatedProjectForEmail(null);
+          setNewProjectFormData({
+            suburb: "",
+            street: "",
+            state: "",
+            stream: "",
+            deposit: "",
+            customDeposit: "",
+            projectCost: "",
+            salesperson: "",
+            clientName: "",
+            email: "",
+            phone: "",
+          });
+        }}
+        formData={newProjectFormData}
+        onFormDataChange={setNewProjectFormData}
+        onBack={() => {
+          // Go back to folders option modal
+          setNewProjectStep(4);
+        }}
+        onNext={async (project) => {
+          // Project was already created and PDF uploaded in handleFileUpload
+          // Use the project passed as parameter, or fall back to formData
+          const projectToUse = project || newProjectFormData.createdProject;
+          if (projectToUse) {
+            setCreatedProjectForEmail(projectToUse);
+            setNewProjectStep(6); // Go to email modal
+          } else {
+            // Fallback: if project wasn't created yet, create it now
+            // This shouldn't happen, but just in case
+            await handleCreateProjectAndEmail();
+          }
         }}
         onCreate={handleCreateProject}
       />
-
-      {/* Folder Creation Confirmation Modal */}
-      {showFolderConfirmModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1001,
-          }}
-          onClick={() => setShowFolderConfirmModal(false)}
-        >
-          <div
-            style={{
-              background: WHITE,
-              borderRadius: "12px",
-              padding: "32px",
-              width: "90%",
-              maxWidth: "500px",
-              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 style={{ fontSize: "1.3rem", margin: "0 0 20px 0", color: MONUMENT, fontWeight: 600 }}>
-              Create Project Folders?
-            </h3>
-            <p style={{ fontSize: "1rem", color: MONUMENT, marginBottom: "24px" }}>
-              Would you like to create project folders and copy the template structure?
-            </p>
-            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
-              <button
-                onClick={async () => {
-                  setShowFolderConfirmModal(false);
-                  // No - just create project without folders and show email
-                  setNewProjectFormData({ ...newProjectFormData, createFolders: false });
-                  await handleCreateProjectAndEmail();
-                }}
-                style={{
-                  padding: "10px 20px",
-                  border: "1px solid #ddd",
-                  borderRadius: "8px",
-                  backgroundColor: WHITE,
-                  color: MONUMENT,
-                  fontSize: "0.9rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "background 0.2s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "#f5f5f5";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = WHITE;
-                }}
-              >
-                No
-              </button>
-              <button
-                onClick={() => {
-                  setShowFolderConfirmModal(false);
-                  // Yes - set flag and go to proposal upload step
-                  setNewProjectFormData({ ...newProjectFormData, createFolders: true });
-                  setNewProjectStep(4); // Go to proposal upload (step 4)
-                }}
-                style={{
-                  padding: "10px 20px",
-                  border: "none",
-                  borderRadius: "8px",
-                  backgroundColor: MONUMENT,
-                  color: WHITE,
-                  fontSize: "0.9rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "background 0.2s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "#1a1a1b";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = MONUMENT;
-                }}
-              >
-                Yes
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <NewProject_6_EmailInternal
+        isOpen={isNewProjectOpen && newProjectStep === 6}
+        onClose={() => {
+          setIsNewProjectOpen(false);
+          setNewProjectStep(1);
+          setCreatedProjectForEmail(null);
+          setNewProjectFormData({
+            suburb: "",
+            street: "",
+            state: "",
+            stream: "",
+            deposit: "",
+            customDeposit: "",
+            projectCost: "",
+            salesperson: "",
+            clientName: "",
+            email: "",
+            phone: "",
+          });
+        }}
+        createdProjectForEmail={createdProjectForEmail}
+      />
     </div>
   );
   }

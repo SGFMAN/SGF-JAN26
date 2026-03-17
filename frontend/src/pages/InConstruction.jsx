@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import NewProject from "./NewProject";
-import NewProject2 from "./NewProject2";
-import NewProject3 from "./NewProject3";
-import NewProject4 from "./NewProject4";
+import NewProject from "./NewProject_1_Address";
+import NewProject2 from "./NewProject_2_ClientDetails";
+import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
+import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter, setStateFilter } from "../utils/stateFilter";
 import logo from "../images/logo.png";
@@ -919,7 +919,7 @@ export default function InConstruction() {
         onBack={() => setNewProjectStep(1)}
         onNext={() => setNewProjectStep(3)}
       />
-      <NewProject3
+      <NewProject_5_PDFUpload
         isOpen={isNewProjectOpen && newProjectStep === 3}
         onClose={() => {
           setIsNewProjectOpen(false);
@@ -943,7 +943,7 @@ export default function InConstruction() {
         onBack={() => setNewProjectStep(2)}
         onNext={() => setNewProjectStep(4)}
       />
-      <NewProject4
+      <NewProject_3_ProjectCost
         isOpen={isNewProjectOpen && newProjectStep === 4}
         onClose={() => {
           setIsNewProjectOpen(false);
