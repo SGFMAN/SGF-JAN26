@@ -2,8 +2,10 @@ import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import NewProject from "./NewProject_1_Address";
 import NewProject2 from "./NewProject_2_ClientDetails";
-import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
 import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
+import NewProject_4_FoldersOption from "./NewProject_4_FoldersOption";
+import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
+import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
 import { isUserAdmin } from "../utils/auth";
 import logo from "../images/logo.png";
 
@@ -25,8 +27,9 @@ export default function Hotlist() {
   const [editingItem, setEditingItem] = useState(null);
   const [isSoldFlowOpen, setIsSoldFlowOpen] = useState(false);
   const [soldItemId, setSoldItemId] = useState(null);
-  const [currentModal, setCurrentModal] = useState(1); // 1 = NewProject, 2 = NewProject2, 3 = PDF Upload, 4 = Project Cost
+  const [currentModal, setCurrentModal] = useState(1); // 1–2 = New/Edit address+client, 3–6 = Sold flow (ProjectCost→Folders→PDF→Email)
   const [createdProjectId, setCreatedProjectId] = useState(null);
+  const [createdProjectForEmail, setCreatedProjectForEmail] = useState(null);
   const [agreementSentItems, setAgreementSentItems] = useState(new Set());
   const [formData, setFormData] = useState({
     street: "",
@@ -210,6 +213,7 @@ export default function Hotlist() {
     }
     
     setCreatedProjectId(null);
+    setCreatedProjectForEmail(null);
   }
 
   async function handleCreateHotlistItem() {
@@ -346,7 +350,8 @@ export default function Hotlist() {
       proposalFile: null,
       customDeposit: "",
     });
-    setCurrentModal(3); // Start with modal 3 (Upload Proposal)
+    setCreatedProjectForEmail(null);
+    setCurrentModal(3); // Sold flow: start at step 3 (Project Cost), then 4=Folders, 5=PDF, 6=Email
     setIsSoldFlowOpen(true);
   }
 
@@ -1259,7 +1264,7 @@ export default function Hotlist() {
                             <button
                               onClick={() => handleSoldClick(item)}
                               style={{
-                                background: "#FF9800",
+                                background: "#33cc33",
                                 color: WHITE,
                                 border: "none",
                                 borderRadius: "8px",
@@ -1269,8 +1274,8 @@ export default function Hotlist() {
                                 cursor: "pointer",
                                 transition: "background 0.2s",
                               }}
-                              onMouseEnter={(e) => (e.currentTarget.style.background = "#F57C00")}
-                              onMouseLeave={(e) => (e.currentTarget.style.background = "#FF9800")}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = "#2bb32b")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = "#33cc33")}
                             >
                               Sold
                             </button>
@@ -1392,23 +1397,53 @@ export default function Hotlist() {
       {isSoldFlowOpen && (
         <>
           {currentModal === 3 && (
-            <NewProject_5_PDFUpload
-              isOpen={true}
-              onClose={handleModalClose}
-              formData={formData}
-              onFormDataChange={handleFormDataChange}
-              onBack={handleModalBack}
-              onNext={handleModalNext}
-            />
-          )}
-          {currentModal === 4 && (
             <NewProject_3_ProjectCost
               isOpen={true}
               onClose={handleModalClose}
               formData={formData}
               onFormDataChange={handleFormDataChange}
-              onBack={handleModalBack}
+              onBack={handleModalClose}
+              onNext={() => setCurrentModal(4)}
+            />
+          )}
+          {currentModal === 4 && (
+            <NewProject_4_FoldersOption
+              isOpen={true}
+              onClose={handleModalClose}
+              formData={formData}
+              onFormDataChange={handleFormDataChange}
+              onBack={() => setCurrentModal(3)}
+              onYes={() => setCurrentModal(5)}
+              onNo={async () => {
+                try {
+                  const project = await handleCreateProjectFromSold(formData);
+                  if (project) setCreatedProjectForEmail(project);
+                  setCurrentModal(6);
+                } catch (e) {
+                  // Error already shown in handleCreateProjectFromSold
+                }
+              }}
+            />
+          )}
+          {currentModal === 5 && (
+            <NewProject_5_PDFUpload
+              isOpen={true}
+              onClose={handleModalClose}
+              formData={formData}
+              onFormDataChange={handleFormDataChange}
+              onBack={() => setCurrentModal(4)}
+              onNext={(project) => {
+                if (project) setCreatedProjectForEmail(project);
+                setCurrentModal(6);
+              }}
               onCreate={handleCreateProjectFromSold}
+            />
+          )}
+          {currentModal === 6 && (
+            <NewProject_6_EmailInternal
+              isOpen={true}
+              onClose={handleModalClose}
+              createdProjectForEmail={createdProjectForEmail}
             />
           )}
         </>

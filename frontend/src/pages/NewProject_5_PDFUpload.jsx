@@ -78,33 +78,40 @@ export default function NewProject_5_PDFUpload({ isOpen, onClose, formData, onFo
     setIsUploading(true);
     
     try {
-      // First, create the project to get the projectId
-      const projectResponse = await fetch(`${API_URL}/api/projects`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: `${formData.street}, ${formData.suburb}`.trim() || "New Project",
-          suburb: formData.suburb || null,
-          street: formData.street || null,
-          state: formData.state || null,
-          stream: formData.stream || null,
-          deposit: formData.deposit || null,
-          project_cost: formData.projectCost || null,
-          salesperson: formData.salesperson || null,
-          client_name: formData.clientName || null,
-          email: formData.email || null,
-          phone: formData.phone || null,
-        }),
-      });
+      let newProject;
+      if (onCreate) {
+        // Hotlist "Sold" flow: upgrade hotlist item to project via API, then upload PDF
+        newProject = await onCreate(formData);
+        if (!newProject || !newProject.id) throw new Error("Failed to create project");
+      } else {
+        // Normal new project: create via POST /api/projects
+        const projectResponse = await fetch(`${API_URL}/api/projects`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: `${formData.street}, ${formData.suburb}`.trim() || "New Project",
+            suburb: formData.suburb || null,
+            street: formData.street || null,
+            state: formData.state || null,
+            stream: formData.stream || null,
+            deposit: formData.deposit || null,
+            project_cost: formData.projectCost || null,
+            salesperson: formData.salesperson || null,
+            client_name: formData.clientName || null,
+            email: formData.email || null,
+            phone: formData.phone || null,
+          }),
+        });
 
-      if (!projectResponse.ok) {
-        const errorData = await projectResponse.json().catch(() => ({ error: "Failed to create project" }));
-        throw new Error(errorData.error || "Failed to create project");
+        if (!projectResponse.ok) {
+          const errorData = await projectResponse.json().catch(() => ({ error: "Failed to create project" }));
+          throw new Error(errorData.error || "Failed to create project");
+        }
+
+        newProject = await projectResponse.json();
       }
-
-      const newProject = await projectResponse.json();
 
       // Now upload the PDF to the project folder
       const uploadFormData = new FormData();
