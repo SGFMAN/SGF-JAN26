@@ -6,6 +6,7 @@ import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
 import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
 import NewProject_4_FoldersOption from "./NewProject_4_FoldersOption";
 import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
+import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import logo from "../images/logo.png";
@@ -1635,6 +1636,29 @@ export default function HomePage() {
       />
       <NewProject_6_EmailInternal
         isOpen={isNewProjectOpen && newProjectStep === 6}
+        onClose={() => {
+          setIsNewProjectOpen(false);
+          setNewProjectStep(1);
+          setCreatedProjectForEmail(null);
+          setNewProjectFormData({
+            suburb: "",
+            street: "",
+            state: "",
+            stream: "",
+            deposit: "",
+            customDeposit: "",
+            projectCost: "",
+            salesperson: "",
+            clientName: "",
+            email: "",
+            phone: "",
+          });
+        }}
+        createdProjectForEmail={createdProjectForEmail}
+        onSendSuccess={() => setNewProjectStep(7)}
+      />
+      <NewProject_7_EmailClient
+        isOpen={isNewProjectOpen && newProjectStep === 7}
         onClose={() => {
           setIsNewProjectOpen(false);
           setNewProjectStep(1);

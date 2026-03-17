@@ -96,8 +96,12 @@ export default function StatusManager() {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
       const data = await response.json();
-      // Filter for Design Phase projects (exclude Hotlist and Cancelled)
-      const designPhaseProjects = data.filter((project) => project.status === "Design Phase" && project.status !== "Hotlist" && project.status !== "Cancelled");
+      // Filter for In Design projects (Design Phase or "In Design"), exclude Hotlist and Cancelled
+      const isInDesignStatus = (s) => s === "Design Phase" || s === "In Design";
+      const designPhaseProjects = data.filter((project) => {
+        if (project.status === "Hotlist" || project.status === "Cancelled") return false;
+        return isInDesignStatus(project.status);
+      });
       // Sort alphabetically by suburb
       designPhaseProjects.sort((a, b) => {
         const suburbA = (a.suburb || "").toUpperCase();

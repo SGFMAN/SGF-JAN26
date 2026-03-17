@@ -6,6 +6,7 @@ import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
 import NewProject_4_FoldersOption from "./NewProject_4_FoldersOption";
 import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
 import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
+import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
 import { isUserAdmin } from "../utils/auth";
 import logo from "../images/logo.png";
 
@@ -327,8 +328,9 @@ export default function Hotlist() {
 
     const projectAddress = `${item.street || ""}, ${item.suburb || ""}`.trim() || "Project";
     const clientName = item.client_name || "Client";
+    const firstName = clientName.trim().split(/\s+/)[0] || clientName;
     const subject = encodeURIComponent(projectAddress);
-    const body = encodeURIComponent(`Hi ${clientName}\n\n`);
+    const body = encodeURIComponent(`Hi ${firstName},\n\n`);
     
     const mailtoLink = `mailto:${item.email}?subject=${subject}&body=${body}`;
     window.location.href = mailtoLink;
@@ -395,14 +397,18 @@ export default function Hotlist() {
         console.error("Failed to update project with additional data");
       }
 
-      // Return the project so NewProject4 can handle folder creation and file upload
       await fetchHotlist();
-      
-      // Store the project ID for navigation after modal closes
       setCreatedProjectId(newProject.id);
-      
-      // Return the updated project
-      return newProject;
+
+      // Merge form data into project so email modal (step 6) has deposit, project_cost, etc.
+      const projectForEmail = {
+        ...newProject,
+        project_cost: formData.projectCost || newProject.project_cost,
+        deposit: formData.deposit || newProject.deposit,
+        stream: formData.stream || newProject.stream,
+        salesperson: formData.salesperson || newProject.salesperson,
+      };
+      return projectForEmail;
     } catch (err) {
       console.error("Error creating project from sold item:", err);
       alert("Error creating project: " + err.message);
@@ -1441,6 +1447,14 @@ export default function Hotlist() {
           )}
           {currentModal === 6 && (
             <NewProject_6_EmailInternal
+              isOpen={true}
+              onClose={handleModalClose}
+              createdProjectForEmail={createdProjectForEmail}
+              onSendSuccess={() => setCurrentModal(7)}
+            />
+          )}
+          {currentModal === 7 && (
+            <NewProject_7_EmailClient
               isOpen={true}
               onClose={handleModalClose}
               createdProjectForEmail={createdProjectForEmail}

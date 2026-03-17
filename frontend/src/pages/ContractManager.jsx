@@ -60,8 +60,20 @@ export default function ContractManager() {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
       const data = await response.json();
-      // Filter for Design Phase projects (exclude Hotlist)
-      const designPhaseProjects = data.filter((project) => project.status === "Design Phase" && project.status !== "Hotlist" && project.status !== "Cancelled");
+      // Show all projects that are "in design" (Design Phase, In Design, or null/empty). Exclude only Hotlist and Cancelled.
+      const statusNorm = (s) => (s != null && typeof s === "string" ? s.trim() : "") || "";
+      const isExcluded = (s) => {
+        const n = statusNorm(s);
+        return n === "Hotlist" || n === "Cancelled";
+      };
+      const isInDesign = (s) => {
+        const n = statusNorm(s);
+        return n === "" || n === "Design Phase" || n === "In Design";
+      };
+      const designPhaseProjects = data.filter((project) => {
+        if (isExcluded(project.status)) return false;
+        return isInDesign(project.status);
+      });
       // Sort by date
       const sortedProjects = sortProjectsByDate(designPhaseProjects, sortOrder);
       setProjects(sortedProjects);

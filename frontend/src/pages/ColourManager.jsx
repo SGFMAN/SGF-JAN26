@@ -59,13 +59,21 @@ export default function ColourManager() {
       if (!response.ok) {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
-      const data = await response.json();
-      // Filter for Design Phase projects (exclude Hotlist and on_hold projects)
+const data = await response.json();
+      // Show all projects that are "in design" (Design Phase, In Design, or null/empty). Exclude Hotlist, Cancelled, on_hold.
+      const statusNorm = (s) => (s != null && typeof s === "string" ? s.trim() : "") || "";
+      const isExcluded = (s) => {
+        const n = statusNorm(s);
+        return n === "Hotlist" || n === "Cancelled";
+      };
+      const isInDesign = (s) => {
+        const n = statusNorm(s);
+        return n === "" || n === "Design Phase" || n === "In Design";
+      };
       const designPhaseProjects = data.filter((project) => {
-        return project.status === "Design Phase" 
-          && project.status !== "Hotlist"
-          && project.status !== "Cancelled"
-          && (project.on_hold !== true && project.on_hold !== 'true');
+        if (isExcluded(project.status)) return false;
+        if (project.on_hold === true || project.on_hold === "true") return false;
+        return isInDesign(project.status);
       });
       // Sort by date
       const sortedProjects = sortProjectsByDate(designPhaseProjects, sortOrder);

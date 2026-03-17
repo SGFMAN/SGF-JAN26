@@ -90,32 +90,14 @@ export default function DrawingManager() {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
       const data = await response.json();
-      // Filter for "Design Phase" projects only, excluding "Home Office / Studio" classification and on_hold projects
-      // Match the exact logic from HomePage.jsx
+      // Filter for In Design projects (Design Phase or "In Design"), excluding Home Office/Studio and on_hold
+      const isInDesignStatus = (s) => s === "Design Phase" || s === "In Design";
       const designPhaseProjects = data.filter((project) => {
-        // Exclude Hotlist and Cancelled status
-        if (project.status === "Hotlist" || project.status === "Cancelled") {
-          return false;
-        }
-        // Only accept "Design Phase" status
-        if (project.status !== "Design Phase") {
-          return false;
-        }
-        
-        // Exclude "Home Office / Studio" classification
-        if (project.classification === "Home Office / Studio") {
-          return false;
-        }
-        
-        // Exclude if on_hold is explicitly true
-        // Accept: true (boolean), 'true' (string), 1 (number), '1' (string)
-        // Include everything else: false, 'false', null, undefined, 0, '0', etc.
+        if (project.status === "Hotlist" || project.status === "Cancelled") return false;
+        if (!isInDesignStatus(project.status)) return false;
+        if (project.classification === "Home Office / Studio") return false;
         const onHoldValue = project.on_hold;
-        const isOnHold = onHoldValue === true || 
-                         onHoldValue === 'true' || 
-                         onHoldValue === 1 || 
-                         onHoldValue === '1';
-        
+        const isOnHold = onHoldValue === true || onHoldValue === 'true' || onHoldValue === 1 || onHoldValue === '1';
         return !isOnHold;
       });
       // Sort by concept/working drawings status first, then alphabetically by suburb, then street

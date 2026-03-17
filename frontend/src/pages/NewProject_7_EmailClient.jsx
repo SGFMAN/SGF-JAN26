@@ -5,7 +5,7 @@ const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 const API_URL = "";
 
-export default function NewProject_6_EmailInternal({ isOpen, onClose, createdProjectForEmail, onSendSuccess }) {
+export default function NewProject_7_EmailClient({ isOpen, onClose, createdProjectForEmail }) {
   const [emailTo, setEmailTo] = useState("");
   const [emailFrom, setEmailFrom] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
@@ -13,7 +13,6 @@ export default function NewProject_6_EmailInternal({ isOpen, onClose, createdPro
   const emailBodyRef = useRef(null);
   const [isPreparing, setIsPreparing] = useState(false);
 
-  // Update emailBody when contentEditable changes
   useEffect(() => {
     if (isOpen && emailBodyRef.current && emailBody) {
       if (emailBodyRef.current.innerHTML !== emailBody) {
@@ -22,14 +21,12 @@ export default function NewProject_6_EmailInternal({ isOpen, onClose, createdPro
     }
   }, [isOpen, emailBody]);
 
-  // When createdProjectForEmail is set, prepare and show email
   useEffect(() => {
     if (createdProjectForEmail && isOpen) {
-      prepareNewJobEmail(createdProjectForEmail);
+      prepareClientEmail(createdProjectForEmail);
     }
   }, [createdProjectForEmail, isOpen]);
 
-  // Helper function to get salesperson details
   async function getSalespersonDetails(salespersonName) {
     if (!salespersonName) return { position: "", phone: "", email: "" };
     try {
@@ -53,29 +50,31 @@ export default function NewProject_6_EmailInternal({ isOpen, onClose, createdPro
     }
   }
 
-  // Helper function to replace tokens in email template
+  /** Replace tokens: Contact1, ProjectName, ClientName, Salesperson, SalespersonPosition, DepositPaid, DepositStatus, ProjectCost */
   async function replaceTokens(text, project, opts = {}) {
     if (!text || !project) return text;
     const html = !!opts.html;
 
     let replaced = text;
-
+    const contact1 = (project.client1_email && project.client1_active) ? project.client1_email : (project.email || "");
+    replaced = replaced.replace(/{Contact1}/g, contact1);
     replaced = replaced.replace(/{ProjectName}/g, project.name || "");
-    replaced = replaced.replace(/{ClientName}/g, project.client_name || "");
-    // Project cost: support both number and string (e.g. "$500,000" from form)
+    const clientFullName = project.client_name || "";
+    const clientFirstName = clientFullName.trim().split(/\s+/)[0] || clientFullName;
+    replaced = replaced.replace(/{ClientName}/g, clientFirstName);
+    replaced = replaced.replace(/{Salesperson}/g, project.salesperson || "");
+
+    // Project cost
     let projectCostDisplay = "";
     if (project.project_cost != null && project.project_cost !== "") {
       const costNum = typeof project.project_cost === "string"
         ? parseFloat(project.project_cost.replace(/[$,\s]/g, ""))
         : Number(project.project_cost);
-      if (!isNaN(costNum)) {
-        projectCostDisplay = `$${costNum.toLocaleString()}`;
-      }
+      if (!isNaN(costNum)) projectCostDisplay = `$${costNum.toLocaleString()}`;
     }
     replaced = replaced.replace(/{ProjectCost}/g, projectCostDisplay);
-    replaced = replaced.replace(/{Street}/g, project.street || "");
-    replaced = replaced.replace(/{Suburb}/g, project.suburb || "");
 
+    // Deposit
     let depositPaid = "$0";
     let depositNum = 0;
     if (project.deposit != null && project.deposit !== "") {
@@ -106,56 +105,55 @@ export default function NewProject_6_EmailInternal({ isOpen, onClose, createdPro
     }
     replaced = replaced.replace(/{DepositStatus}/g, depositStatus);
 
-    replaced = replaced.replace(/{Contact1}/g, project.client1_email && project.client1_active ? project.client1_email : "");
-    replaced = replaced.replace(/{Contact2}/g, project.client2_email && project.client2_active ? project.client2_email : "");
-    replaced = replaced.replace(/{Contact3}/g, project.client3_email && project.client3_active ? project.client3_email : "");
-    replaced = replaced.replace(/{Salesperson}/g, project.salesperson || "");
-
-    const needsDetails =
-      replaced.includes("{SalespersonPosition}") ||
-      replaced.includes("{SalespersonPhone}") ||
-      replaced.includes("{SalespersonEmail}");
-    if (needsDetails) {
-      const { position, phone, email } = await getSalespersonDetails(project.salesperson);
-      const formattedPosition = position
-        ? html
-          ? `<br>${position}`
-          : `\n${position}`
-        : "";
+    const hasPosition = replaced.includes("{SalespersonPosition}");
+    if (hasPosition) {
+      const { position } = await getSalespersonDetails(project.salesperson);
+      const formattedPosition = position ? (html ? `<br>${position}` : `\n${position}`) : "";
       replaced = replaced.replace(/{SalespersonPosition}/g, formattedPosition);
-      replaced = replaced.replace(/{SalespersonPhone}/g, phone);
-      replaced = replaced.replace(/{SalespersonEmail}/g, email);
     }
 
     return replaced;
   }
 
-  // Prepare and show email modal for new job
-  async function prepareNewJobEmail(project) {
+  /** True if project has full 5% deposit (so use Full Deposit template). */
+  function isFullDeposit(project) {
+    let depositNum = 0;
+    if (project.deposit != null && project.deposit !== "") {
+      if (typeof project.deposit === "string") {
+        const cleaned = project.deposit.replace(/[$,\s]/g, "");
+        depositNum = parseFloat(cleaned);
+      } else {
+        depositNum = Number(project.deposit);
+      }
+    }
+    if (depositNum <= 0) return false;
+    const projectCostNum =
+      typeof project.project_cost === "string"
+        ? parseFloat(project.project_cost.replace(/[$,\s]/g, ""))
+        : Number(project.project_cost || 0);
+    if (!projectCostNum || isNaN(projectCostNum)) return false;
+    const fullDepositAmount = Math.floor(projectCostNum / 20);
+    return depositNum === fullDepositAmount;
+  }
+
+  async function prepareClientEmail(project) {
     setIsPreparing(true);
     try {
-      console.log("Preparing new job email for project:", project);
-      // Fetch email templates
       const templatesResponse = await fetch(`${API_URL}/api/email-templates`);
-      if (!templatesResponse.ok) {
-        throw new Error("Failed to fetch email templates");
-      }
+      if (!templatesResponse.ok) throw new Error("Failed to fetch email templates");
       const templates = await templatesResponse.json();
-      console.log("Fetched templates:", templates);
-      
-      // Find "NEW JOB - Internal" template (case-insensitive search)
-      const template = templates.find(t => 
-        t.name && t.name.toLowerCase().trim() === "new job - internal".toLowerCase()
+
+      const fullDeposit = isFullDeposit(project);
+      const templateName = fullDeposit ? "NEW JOB - Client Full Deposit" : "NEW JOB - Client Part Deposit";
+      const template = templates.find(
+        (t) => t.name && t.name.toLowerCase().trim() === templateName.toLowerCase()
       );
-      
+
       if (!template) {
-        console.warn("Template 'NEW JOB - Internal' not found. Available templates:", templates.map(t => t.name));
-        alert("Template 'NEW JOB - Internal' not found. Please create it in Settings → Email Settings.");
+        alert(`Template "${templateName}" not found. Please create it in Settings → Email Settings.`);
         setIsPreparing(false);
         return;
       }
-
-      console.log("Found template:", template);
 
       if (!template.from_address || !template.from_address.trim()) {
         alert("Template has no From address. Edit the template in Settings → Email Settings.");
@@ -163,25 +161,12 @@ export default function NewProject_6_EmailInternal({ isOpen, onClose, createdPro
         return;
       }
 
-      // Replace tokens in to addresses
-      let toAddresses = template.to_addresses || [];
-      if (Array.isArray(toAddresses)) {
-        const replacedAddresses = await Promise.all(
-          toAddresses.map(addr => replaceTokens(addr, project))
-        );
-        toAddresses = replacedAddresses.filter(addr => addr.trim().length > 0);
-      } else if (toAddresses) {
-        const replaced = await replaceTokens(toAddresses, project);
-        toAddresses = replaced.split(",").map(a => a.trim()).filter(a => a.length > 0);
-      } else {
-        toAddresses = [];
-      }
-
-      console.log("To addresses after replacement:", toAddresses);
+      // To = {Contact1} → client email
+      const contact1 = (project.client1_email && project.client1_active) ? project.client1_email : (project.email || "");
+      const toAddresses = contact1 ? [contact1] : [];
 
       if (toAddresses.length === 0) {
-        console.warn("No valid email addresses found after replacing tokens");
-        alert("No valid email addresses found in template. Please check the template's 'To' addresses.");
+        alert("No client email (Contact1) available for this project.");
         setIsPreparing(false);
         return;
       }
@@ -189,24 +174,20 @@ export default function NewProject_6_EmailInternal({ isOpen, onClose, createdPro
       const subject = await replaceTokens(template.subject || "", project);
       const htmlBody = await replaceTokens(template.body || "", project, { html: true });
 
-      console.log("Setting email modal state");
-      // Set email modal state
       setEmailTo(toAddresses.join(", "));
       setEmailFrom(template.from_address || "");
       setEmailSubject(subject);
       setEmailBody(htmlBody);
-      console.log("Email modal should now be visible");
     } catch (error) {
-      console.error("Error preparing email:", error);
+      console.error("Error preparing client email:", error);
       alert(`Failed to prepare email: ${error.message}`);
     } finally {
       setIsPreparing(false);
     }
   }
 
-  // Send email from modal
   async function handleSendEmail() {
-    const toAddresses = emailTo.split(",").map(a => a.trim()).filter(a => a.length > 0);
+    const toAddresses = emailTo.split(",").map((a) => a.trim()).filter((a) => a.length > 0);
     if (toAddresses.length === 0) {
       alert("Please enter at least one email address");
       return;
@@ -217,15 +198,12 @@ export default function NewProject_6_EmailInternal({ isOpen, onClose, createdPro
     }
 
     try {
-      // Include projectId if available to attach proposal PDF
       const requestBody = {
         to: toAddresses,
         from: emailFrom,
         subject: emailSubject,
         htmlBody: emailBody,
       };
-      
-      // Add projectId if the project is available
       if (createdProjectForEmail && createdProjectForEmail.id) {
         requestBody.projectId = createdProjectForEmail.id;
       }
@@ -236,15 +214,9 @@ export default function NewProject_6_EmailInternal({ isOpen, onClose, createdPro
         body: JSON.stringify(requestBody),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || `Send failed (${res.status})`);
-      }
+      if (!res.ok) throw new Error(data.error || `Send failed (${res.status})`);
       alert(data.message || "Email sent successfully!");
-      if (onSendSuccess) {
-        onSendSuccess(createdProjectForEmail);
-      } else {
-        onClose();
-      }
+      onClose();
     } catch (err) {
       console.error("Send email error:", err);
       alert(err.message || "Failed to send email.");
@@ -280,13 +252,9 @@ export default function NewProject_6_EmailInternal({ isOpen, onClose, createdPro
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-          <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Preview & Send Email</h2>
+          <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Preview & Send Email (Client)</h2>
           <button
-            onClick={() => {
-              // Close button: Close modal without sending email
-              // Project is already saved in the database at this point
-              onClose();
-            }}
+            onClick={onClose}
             style={{
               background: "transparent",
               border: "none",
@@ -306,9 +274,7 @@ export default function NewProject_6_EmailInternal({ isOpen, onClose, createdPro
         </div>
 
         {isPreparing ? (
-          <div style={{ textAlign: "center", padding: "40px", color: MONUMENT }}>
-            Preparing email...
-          </div>
+          <div style={{ textAlign: "center", padding: "40px", color: MONUMENT }}>Preparing email...</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             <div>
@@ -381,12 +347,8 @@ export default function NewProject_6_EmailInternal({ isOpen, onClose, createdPro
               <div
                 ref={emailBodyRef}
                 contentEditable
-                onInput={(e) => {
-                  setEmailBody(e.currentTarget.innerHTML);
-                }}
-                onBlur={(e) => {
-                  setEmailBody(e.currentTarget.innerHTML);
-                }}
+                onInput={(e) => setEmailBody(e.currentTarget.innerHTML)}
+                onBlur={(e) => setEmailBody(e.currentTarget.innerHTML)}
                 style={{
                   width: "100%",
                   minHeight: "300px",
@@ -405,11 +367,7 @@ export default function NewProject_6_EmailInternal({ isOpen, onClose, createdPro
 
             <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
               <button
-                onClick={() => {
-                  // Cancel: Close modal without sending email
-                  // Project is already saved in the database at this point
-                  onClose();
-                }}
+                onClick={onClose}
                 style={{
                   padding: "10px 20px",
                   fontSize: "1rem",

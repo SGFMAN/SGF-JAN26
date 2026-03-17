@@ -375,7 +375,7 @@ async function ensureSchema() {
     CREATE TABLE IF NOT EXISTS projects (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'Design Phase',
+      status TEXT NOT NULL DEFAULT 'In Design',
       suburb TEXT,
       street TEXT,
       client_name TEXT,
@@ -797,7 +797,7 @@ app.post("/api/projects/bulk", async (req, res) => {
          RETURNING id, name`,
         [
           name.trim(),
-          (status || "Design Phase").trim(),
+          (status || "In Design").trim(),
           suburb ? suburb.trim() : null,
           street ? street.trim() : null,
           (state || "QLD").trim(),
@@ -892,7 +892,7 @@ app.post("/api/projects", async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32) RETURNING *`,
       [
         name.trim(),
-        (status || "Design Phase").trim(),
+        (status || "In Design").trim(),
         suburb ? suburb.trim() : null,
         street ? street.trim() : null,
         state ? state.trim() : null,
@@ -5353,7 +5353,7 @@ app.post("/api/substatuses", async (req, res) => {
   }
 });
 
-// Upgrade hotlist item to project (Sold) - changes status from "Hotlist" to "Design Phase"
+// Upgrade hotlist item to project (Sold) - changes status from "Hotlist" to "In Design"
 app.post("/api/hotlist/:id/sold", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
 
@@ -5379,15 +5379,15 @@ app.post("/api/hotlist/:id/sold", async (req, res) => {
     const now = new Date();
     const dateTimeStr = now.toISOString().replace('T', ' ').substring(0, 19);
     const logEntry = project.project_log 
-      ? `${project.project_log}\n${dateTimeStr} - Status changed from Hotlist to Design Phase (Sold)`
-      : `${dateTimeStr} - Status changed from Hotlist to Design Phase (Sold)`;
+      ? `${project.project_log}\n${dateTimeStr} - Status changed from Hotlist to In Design (Sold)`
+      : `${dateTimeStr} - Status changed from Hotlist to In Design (Sold)`;
 
-    // Update status from "Hotlist" to "Design Phase"
+    // Update status from "Hotlist" to "In Design"
     const updateResult = await pool.query(
       `UPDATE projects 
        SET status = $1, project_log = $2, updated_at = NOW()
        WHERE id = $3 RETURNING *`,
-      ["Design Phase", logEntry, id]
+      ["In Design", logEntry, id]
     );
 
     const updatedProject = updateResult.rows[0];
