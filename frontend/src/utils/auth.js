@@ -30,10 +30,16 @@ export function getApiHeaders(additionalHeaders = {}) {
 }
 
 /**
- * Check if running in development mode (localhost:5173)
+ * Check if running in development mode (localhost:5173 or LAN IP:5173)
+ * When using the dev server via WiFi/LAN (e.g. 192.168.x.x:5173), treat as dev so admin buttons work.
  */
 export function isDevelopmentMode() {
-  return window.location.hostname === 'localhost' && window.location.port === '5173';
+  const hostname = window.location.hostname;
+  const port = window.location.port;
+  if (hostname === 'localhost' && port === '5173') return true;
+  // Private IPv4 (e.g. 192.168.x.x, 10.x.x.x) on Vite dev port = same dev server
+  const isPrivateIP = /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/.test(hostname);
+  return isPrivateIP && port === '5173';
 }
 
 /**

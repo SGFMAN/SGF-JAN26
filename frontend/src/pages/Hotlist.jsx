@@ -1019,108 +1019,106 @@ export default function Hotlist() {
                               </>
                             )}
                           </div>
-                          {isAdmin && (
-                            <div
-                              style={{
-                                display: "flex",
-                                gap: "8px",
-                                alignItems: "center",
-                              }}
-                            >
-                              {!itemIsAgreementSent && (
-                                <button
-                                  onClick={() => handleAgreementSentClick(item)}
-                                  style={{
-                                    background: "#2196F3",
-                                    color: WHITE,
-                                    border: "none",
-                                    borderRadius: "8px",
-                                    padding: "8px 16px",
-                                    fontSize: "0.9rem",
-                                    fontWeight: 500,
-                                    cursor: "pointer",
-                                    transition: "background 0.2s",
-                                  }}
-                                  onMouseEnter={(e) => (e.currentTarget.style.background = "#1976D2")}
-                                  onMouseLeave={(e) => (e.currentTarget.style.background = "#2196F3")}
-                                >
-                                  Agreement Sent
-                                </button>
-                              )}
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: "8px",
+                              alignItems: "center",
+                            }}
+                          >
+                            {!itemIsAgreementSent && (
                               <button
-                          onClick={() => handleSoldClick(item)}
-                          style={{
-                            background: "#33cc33",
-                            color: WHITE,
-                            border: "none",
-                            borderRadius: "8px",
-                            padding: "8px 16px",
-                            fontSize: "0.9rem",
-                            fontWeight: 500,
-                            cursor: "pointer",
-                            transition: "background 0.2s",
-                          }}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = "#2bb32b")}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = "#33cc33")}
-                        >
-                          Sold
-                        </button>
-                        <button
-                          onClick={() => handleEmailClick(item)}
-                          style={{
-                            background: "#FF9800",
-                            color: WHITE,
-                            border: "none",
-                            borderRadius: "8px",
-                            padding: "8px 16px",
-                            fontSize: "0.9rem",
-                            fontWeight: 500,
-                            cursor: "pointer",
-                            transition: "background 0.2s",
-                          }}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = "#F57C00")}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = "#FF9800")}
-                        >
-                          Email
-                        </button>
-                        <button
-                          onClick={() => handleEditItemClick(item)}
-                          style={{
-                            background: MONUMENT,
-                            color: WHITE,
-                            border: "none",
-                            borderRadius: "8px",
-                            padding: "8px 16px",
-                            fontSize: "0.9rem",
-                            fontWeight: 500,
-                            cursor: "pointer",
-                            transition: "background 0.2s",
-                          }}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeleteItem(item.id)}
-                          style={{
-                            background: "#d32f2f",
-                            color: WHITE,
-                            border: "none",
-                            borderRadius: "8px",
-                            padding: "8px 16px",
-                            fontSize: "0.9rem",
-                            fontWeight: 500,
-                            cursor: "pointer",
-                            transition: "background 0.2s",
-                          }}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = "#b71c1c")}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = "#d32f2f")}
-                        >
-                          Delete
-                        </button>
-                            </div>
-                          )}
+                                onClick={() => handleAgreementSentClick(item)}
+                                style={{
+                                  background: "#2196F3",
+                                  color: WHITE,
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  padding: "8px 16px",
+                                  fontSize: "0.9rem",
+                                  fontWeight: 500,
+                                  cursor: "pointer",
+                                  transition: "background 0.2s",
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = "#1976D2")}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = "#2196F3")}
+                              >
+                                Agreement Sent
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleSoldClick(item)}
+                              style={{
+                                background: "#33cc33",
+                                color: WHITE,
+                                border: "none",
+                                borderRadius: "8px",
+                                padding: "8px 16px",
+                                fontSize: "0.9rem",
+                                fontWeight: 500,
+                                cursor: "pointer",
+                                transition: "background 0.2s",
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = "#2bb32b")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = "#33cc33")}
+                            >
+                              Sold
+                            </button>
+                            <button
+                              onClick={() => handleEmailClick(item)}
+                              style={{
+                                background: "#FF9800",
+                                color: WHITE,
+                                border: "none",
+                                borderRadius: "8px",
+                                padding: "8px 16px",
+                                fontSize: "0.9rem",
+                                fontWeight: 500,
+                                cursor: "pointer",
+                                transition: "background 0.2s",
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = "#F57C00")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = "#FF9800")}
+                            >
+                              Email
+                            </button>
+                            <button
+                              onClick={() => handleEditItemClick(item)}
+                              style={{
+                                background: MONUMENT,
+                                color: WHITE,
+                                border: "none",
+                                borderRadius: "8px",
+                                padding: "8px 16px",
+                                fontSize: "0.9rem",
+                                fontWeight: 500,
+                                cursor: "pointer",
+                                transition: "background 0.2s",
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteItem(item.id)}
+                              style={{
+                                background: "#d32f2f",
+                                color: WHITE,
+                                border: "none",
+                                borderRadius: "8px",
+                                padding: "8px 16px",
+                                fontSize: "0.9rem",
+                                fontWeight: 500,
+                                cursor: "pointer",
+                                transition: "background 0.2s",
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = "#b71c1c")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = "#d32f2f")}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
                       );
                     })
@@ -1231,108 +1229,106 @@ export default function Hotlist() {
                               </>
                             )}
                           </div>
-                          {isAdmin && (
-                            <div
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: "8px",
+                              alignItems: "center",
+                            }}
+                          >
+                            {!itemIsAgreementSent && (
+                              <button
+                                onClick={() => handleAgreementSentClick(item)}
+                                style={{
+                                  background: "#2196F3",
+                                  color: WHITE,
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  padding: "8px 16px",
+                                  fontSize: "0.9rem",
+                                  fontWeight: 500,
+                                  cursor: "pointer",
+                                  transition: "background 0.2s",
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = "#1976D2")}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = "#2196F3")}
+                              >
+                                Agreement Sent
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleSoldClick(item)}
                               style={{
-                                display: "flex",
-                                gap: "8px",
-                                alignItems: "center",
+                                background: "#FF9800",
+                                color: WHITE,
+                                border: "none",
+                                borderRadius: "8px",
+                                padding: "8px 16px",
+                                fontSize: "0.9rem",
+                                fontWeight: 500,
+                                cursor: "pointer",
+                                transition: "background 0.2s",
                               }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = "#F57C00")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = "#FF9800")}
                             >
-                              {!itemIsAgreementSent && (
-                                <button
-                                  onClick={() => handleAgreementSentClick(item)}
-                                  style={{
-                                    background: "#2196F3",
-                                    color: WHITE,
-                                    border: "none",
-                                    borderRadius: "8px",
-                                    padding: "8px 16px",
-                                    fontSize: "0.9rem",
-                                    fontWeight: 500,
-                                    cursor: "pointer",
-                                    transition: "background 0.2s",
-                                  }}
-                                  onMouseEnter={(e) => (e.currentTarget.style.background = "#1976D2")}
-                                  onMouseLeave={(e) => (e.currentTarget.style.background = "#2196F3")}
-                                >
-                                  Agreement Sent
-                                </button>
-                              )}
-                              <button
-                                onClick={() => handleSoldClick(item)}
-                                style={{
-                                  background: "#FF9800",
-                                  color: WHITE,
-                                  border: "none",
-                                  borderRadius: "8px",
-                                  padding: "8px 16px",
-                                  fontSize: "0.9rem",
-                                  fontWeight: 500,
-                                  cursor: "pointer",
-                                  transition: "background 0.2s",
-                                }}
-                                onMouseEnter={(e) => (e.currentTarget.style.background = "#F57C00")}
-                                onMouseLeave={(e) => (e.currentTarget.style.background = "#FF9800")}
-                              >
-                                Sold
-                              </button>
-                              <button
-                                onClick={() => handleEmailClick(item)}
-                                style={{
-                                  background: "#FF9800",
-                                  color: WHITE,
-                                  border: "none",
-                                  borderRadius: "8px",
-                                  padding: "8px 16px",
-                                  fontSize: "0.9rem",
-                                  fontWeight: 500,
-                                  cursor: "pointer",
-                                  transition: "background 0.2s",
-                                }}
-                                onMouseEnter={(e) => (e.currentTarget.style.background = "#F57C00")}
-                                onMouseLeave={(e) => (e.currentTarget.style.background = "#FF9800")}
-                              >
-                                Email
-                              </button>
-                              <button
-                                onClick={() => handleEditItemClick(item)}
-                                style={{
-                                  background: MONUMENT,
-                                  color: WHITE,
-                                  border: "none",
-                                  borderRadius: "8px",
-                                  padding: "8px 16px",
-                                  fontSize: "0.9rem",
-                                  fontWeight: 500,
-                                  cursor: "pointer",
-                                  transition: "background 0.2s",
-                                }}
-                                onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
-                                onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => handleDeleteItem(item.id)}
-                                style={{
-                                  background: "#d32f2f",
-                                  color: WHITE,
-                                  border: "none",
-                                  borderRadius: "8px",
-                                  padding: "8px 16px",
-                                  fontSize: "0.9rem",
-                                  fontWeight: 500,
-                                  cursor: "pointer",
-                                  transition: "background 0.2s",
-                                }}
-                                onMouseEnter={(e) => (e.currentTarget.style.background = "#b71c1c")}
-                                onMouseLeave={(e) => (e.currentTarget.style.background = "#d32f2f")}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          )}
+                              Sold
+                            </button>
+                            <button
+                              onClick={() => handleEmailClick(item)}
+                              style={{
+                                background: "#FF9800",
+                                color: WHITE,
+                                border: "none",
+                                borderRadius: "8px",
+                                padding: "8px 16px",
+                                fontSize: "0.9rem",
+                                fontWeight: 500,
+                                cursor: "pointer",
+                                transition: "background 0.2s",
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = "#F57C00")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = "#FF9800")}
+                            >
+                              Email
+                            </button>
+                            <button
+                              onClick={() => handleEditItemClick(item)}
+                              style={{
+                                background: MONUMENT,
+                                color: WHITE,
+                                border: "none",
+                                borderRadius: "8px",
+                                padding: "8px 16px",
+                                fontSize: "0.9rem",
+                                fontWeight: 500,
+                                cursor: "pointer",
+                                transition: "background 0.2s",
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteItem(item.id)}
+                              style={{
+                                background: "#d32f2f",
+                                color: WHITE,
+                                border: "none",
+                                borderRadius: "8px",
+                                padding: "8px 16px",
+                                fontSize: "0.9rem",
+                                fontWeight: 500,
+                                cursor: "pointer",
+                                transition: "background 0.2s",
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = "#b71c1c")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = "#d32f2f")}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
                       );
                     })
