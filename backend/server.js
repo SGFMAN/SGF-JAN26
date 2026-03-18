@@ -153,6 +153,10 @@ async function appModeMiddleware(req, res, next) {
   
   // Block all other requests in EDIT mode
   if (req.path.startsWith("/api/")) {
+    // Allow the WWW portal (read-only) to work without admin access
+    if (req.path.startsWith("/api/portal/")) {
+      return next();
+    }
     // API request - return 503 JSON
     return res.status(503).json({
       ok: false,
@@ -4520,6 +4524,8 @@ app.get("/api/files/drawings/:id", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+require("./portalRoutes")(app, pool, fs);
 
 // Serve colours PDF
 app.get("/api/files/colours/:id", async (req, res) => {

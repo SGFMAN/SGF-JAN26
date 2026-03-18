@@ -481,8 +481,11 @@ export default function Drawings({ project, onUpdate }) {
 
       setDrawingsStatus("Drawings Complete");
       valuesRef.current.drawingsStatus = "Drawings Complete";
-      
-      // Success - local state already updated, no need to call onUpdate
+
+      // Refresh project so the drawings table re-renders (blue highlight)
+      if (onUpdate) {
+        onUpdate();
+      }
       console.log("Working drawings approved successfully");
     } catch (error) {
       console.error("Error approving working drawings:", error);

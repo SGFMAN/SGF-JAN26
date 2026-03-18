@@ -27,6 +27,8 @@ import EmailGenerator from "./pages/EmailGenerator";
 import Inbox from "./pages/Inbox";
 import FAQ from "./pages/FAQ";
 import AppModeBanner from "./components/AppModeBanner";
+import PortalProjects from "./pages/PortalProjects";
+import PortalProjectDetail from "./pages/PortalProjectDetail";
 
 export default function App() {
   return (
@@ -61,6 +63,8 @@ export default function App() {
         <Route path="/approve-concept/:projectId" element={<ApproveConcept />} />
         <Route path="/colours-portal/:projectId" element={<ColoursPortal />} />
         <Route path="/3d-vis-portal/:projectId" element={<ThreeDVisPortal />} />
+        <Route path="/portal" element={<PortalProjects />} />
+        <Route path="/portal/projects/:id" element={<PortalProjectDetail />} />
       </Routes>
     </BrowserRouter>
   );
