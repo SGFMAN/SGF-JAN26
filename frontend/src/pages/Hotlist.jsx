@@ -922,7 +922,7 @@ export default function Hotlist() {
           {loading ? (
             <div style={{ color: MONUMENT, fontSize: "1rem" }}>Loading...</div>
           ) : error ? (
-            <div style={{ color: "#d32f2f", fontSize: "1rem" }}>Error: {error}</div>
+            <div style={{ color: "#cc3333", fontSize: "1rem" }}>Error: {error}</div>
           ) : (vicItems.length === 0 && qldItems.length === 0) ? (
             <div style={{ color: MONUMENT, fontSize: "1rem" }}>No hotlist items yet. Click "+ New Address" to add one.</div>
           ) : (
@@ -958,7 +958,7 @@ export default function Hotlist() {
                         <div
                           key={item.id}
                           style={{
-                            background: itemIsAgreementSent ? "#2196F3" : WHITE,
+                            background: itemIsAgreementSent ? "#4D93D9" : WHITE,
                             borderRadius: "10px",
                             padding: "8px 16px",
                             display: "flex",
@@ -1041,9 +1041,9 @@ export default function Hotlist() {
                               <button
                                 onClick={() => handleAgreementSentClick(item)}
                                 style={{
-                                  background: "#2196F3",
+                                background: "#4D93D9",
                                   color: WHITE,
-                                  border: "none",
+                                border: `1px solid #4D93D9`,
                                   borderRadius: "8px",
                                   padding: "8px 16px",
                                   fontSize: "0.9rem",
@@ -1051,8 +1051,8 @@ export default function Hotlist() {
                                   cursor: "pointer",
                                   transition: "background 0.2s",
                                 }}
-                                onMouseEnter={(e) => (e.currentTarget.style.background = "#1976D2")}
-                                onMouseLeave={(e) => (e.currentTarget.style.background = "#2196F3")}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = "#3d7bc9")}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = "#4D93D9")}
                               >
                                 Agreement Sent
                               </button>
@@ -1062,7 +1062,7 @@ export default function Hotlist() {
                               style={{
                                 background: "#33cc33",
                                 color: WHITE,
-                                border: "none",
+                                border: `1px solid #33cc33`,
                                 borderRadius: "8px",
                                 padding: "8px 16px",
                                 fontSize: "0.9rem",
@@ -1078,9 +1078,9 @@ export default function Hotlist() {
                             <button
                               onClick={() => handleEmailClick(item)}
                               style={{
-                                background: "#FF9800",
+                                background: "#FFA500",
                                 color: WHITE,
-                                border: "none",
+                                border: `1px solid #FFA500`,
                                 borderRadius: "8px",
                                 padding: "8px 16px",
                                 fontSize: "0.9rem",
@@ -1088,8 +1088,8 @@ export default function Hotlist() {
                                 cursor: "pointer",
                                 transition: "background 0.2s",
                               }}
-                              onMouseEnter={(e) => (e.currentTarget.style.background = "#F57C00")}
-                              onMouseLeave={(e) => (e.currentTarget.style.background = "#FF9800")}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = "#FF8C42")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = "#FFA500")}
                             >
                               Email
                             </button>
@@ -1114,7 +1114,7 @@ export default function Hotlist() {
                             <button
                               onClick={() => handleDeleteItem(item.id)}
                               style={{
-                                background: "#d32f2f",
+                                background: "#cc3333",
                                 color: WHITE,
                                 border: "none",
                                 borderRadius: "8px",
@@ -1125,7 +1125,7 @@ export default function Hotlist() {
                                 transition: "background 0.2s",
                               }}
                               onMouseEnter={(e) => (e.currentTarget.style.background = "#b71c1c")}
-                              onMouseLeave={(e) => (e.currentTarget.style.background = "#d32f2f")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = "#cc3333")}
                             >
                               Delete
                             </button>
@@ -1168,7 +1168,7 @@ export default function Hotlist() {
                         <div
                           key={item.id}
                           style={{
-                            background: itemIsAgreementSent ? "#2196F3" : WHITE,
+                            background: itemIsAgreementSent ? "#4D93D9" : WHITE,
                             borderRadius: "10px",
                             padding: "8px 16px",
                             display: "flex",
@@ -1251,9 +1251,9 @@ export default function Hotlist() {
                               <button
                                 onClick={() => handleAgreementSentClick(item)}
                                 style={{
-                                  background: "#2196F3",
+                                background: "#4D93D9",
                                   color: WHITE,
-                                  border: "none",
+                                border: `1px solid #4D93D9`,
                                   borderRadius: "8px",
                                   padding: "8px 16px",
                                   fontSize: "0.9rem",
@@ -1261,8 +1261,8 @@ export default function Hotlist() {
                                   cursor: "pointer",
                                   transition: "background 0.2s",
                                 }}
-                                onMouseEnter={(e) => (e.currentTarget.style.background = "#1976D2")}
-                                onMouseLeave={(e) => (e.currentTarget.style.background = "#2196F3")}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = "#3d7bc9")}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = "#4D93D9")}
                               >
                                 Agreement Sent
                               </button>
@@ -1272,7 +1272,7 @@ export default function Hotlist() {
                               style={{
                                 background: "#33cc33",
                                 color: WHITE,
-                                border: "none",
+                                border: `1px solid #33cc33`,
                                 borderRadius: "8px",
                                 padding: "8px 16px",
                                 fontSize: "0.9rem",
@@ -1288,9 +1288,9 @@ export default function Hotlist() {
                             <button
                               onClick={() => handleEmailClick(item)}
                               style={{
-                                background: "#FF9800",
+                                background: "#FFA500",
                                 color: WHITE,
-                                border: "none",
+                                border: `1px solid #FFA500`,
                                 borderRadius: "8px",
                                 padding: "8px 16px",
                                 fontSize: "0.9rem",
@@ -1298,8 +1298,8 @@ export default function Hotlist() {
                                 cursor: "pointer",
                                 transition: "background 0.2s",
                               }}
-                              onMouseEnter={(e) => (e.currentTarget.style.background = "#F57C00")}
-                              onMouseLeave={(e) => (e.currentTarget.style.background = "#FF9800")}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = "#FF8C42")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = "#FFA500")}
                             >
                               Email
                             </button>
@@ -1324,7 +1324,7 @@ export default function Hotlist() {
                             <button
                               onClick={() => handleDeleteItem(item.id)}
                               style={{
-                                background: "#d32f2f",
+                              background: "#cc3333",
                                 color: WHITE,
                                 border: "none",
                                 borderRadius: "8px",
@@ -1335,7 +1335,7 @@ export default function Hotlist() {
                                 transition: "background 0.2s",
                               }}
                               onMouseEnter={(e) => (e.currentTarget.style.background = "#b71c1c")}
-                              onMouseLeave={(e) => (e.currentTarget.style.background = "#d32f2f")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = "#cc3333")}
                             >
                               Delete
                             </button>

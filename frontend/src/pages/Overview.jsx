@@ -556,6 +556,10 @@ export default function Overview({ project }) {
     return COLOR_RED;
   }
 
+  function getPicStatusColor() {
+    return (project?.pic || "No") === "Yes" ? COLOR_GREEN : COLOR_RED;
+  }
+
   // Get survey and soils status text
   function getSurveySoilsStatusText() {
     const surveyStatus = project?.survey_status || "Not Booked";
@@ -1318,24 +1322,24 @@ export default function Overview({ project }) {
               Design Phase Progress
             </h2>
 
-            {/* Status Rectangles - 11 columns in a single row */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(11, 1fr)", gap: "12px" }}>
+            {/* Status Rectangles - 12 columns in a single row */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: "10px" }}>
               {/* Deposit Status */}
               <div>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
                   Deposit Status
                 </div>
                 <div
                   onClick={() => navigate(`/project/${project?.id || id}?view=admin&t=${Date.now()}`, { replace: false })}
                   style={{
-                    padding: "10px 12px",
+                    padding: "8px 10px",
                     borderRadius: "8px",
                     border: "2px solid white",
-                    fontSize: "1rem",
+                    fontSize: "0.85rem",
                     color: WHITE,
                     background: getDepositStatusColor(),
                     boxSizing: "border-box",
-                    height: "100px",
+                    height: "82px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1356,20 +1360,20 @@ export default function Overview({ project }) {
 
               {/* Drawings Status */}
               <div>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
                   Drawings Status
                 </div>
                 <div
                   onClick={() => navigate(`/project/${project?.id || id}?view=drawings&t=${Date.now()}`, { replace: false })}
                   style={{
-                    padding: "10px 12px",
+                    padding: "8px 10px",
                     borderRadius: "8px",
                     border: "2px solid white",
-                    fontSize: "1rem",
+                    fontSize: "0.85rem",
                     color: WHITE,
                     background: getDrawingsStatusColor(),
                     boxSizing: "border-box",
-                    height: "100px",
+                    height: "82px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1390,20 +1394,20 @@ export default function Overview({ project }) {
 
               {/* Site Visit Status */}
               <div>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
                   Site Visit Status
                 </div>
                 <div
                   onClick={() => navigate(`/project/${project?.id || id}?view=site-visit&t=${Date.now()}`, { replace: false })}
                   style={{
-                    padding: "10px 12px",
+                    padding: "8px 10px",
                     borderRadius: "8px",
                     border: "2px solid white",
-                    fontSize: "1rem",
+                    fontSize: "0.85rem",
                     color: WHITE,
                     background: getSiteVisitStatusColor(),
                     boxSizing: "border-box",
-                    height: "100px",
+                    height: "82px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1424,20 +1428,20 @@ export default function Overview({ project }) {
 
               {/* Colour Status */}
               <div>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
                   Colour Status
                 </div>
                 <div
                   onClick={() => navigate(`/project/${project?.id || id}?view=colours&t=${Date.now()}`, { replace: false })}
                   style={{
-                    padding: "10px 12px",
+                    padding: "8px 10px",
                     borderRadius: "8px",
                     border: "2px solid white",
-                    fontSize: "1rem",
+                    fontSize: "0.85rem",
                     color: WHITE,
                     background: getColoursStatusColor(),
                     boxSizing: "border-box",
-                    height: "100px",
+                    height: "82px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1458,20 +1462,20 @@ export default function Overview({ project }) {
 
               {/* Window Status */}
               <div>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
                   Window Status
                 </div>
                 <div
                   onClick={() => navigate(`/project/${project?.id || id}?view=windows&t=${Date.now()}`, { replace: false })}
                   style={{
-                    padding: "10px 12px",
+                    padding: "8px 10px",
                     borderRadius: "8px",
                     border: "2px solid white",
-                    fontSize: "1rem",
+                    fontSize: "0.85rem",
                     color: WHITE,
                     background: getWindowStatusColor(),
                     boxSizing: "border-box",
-                    height: "100px",
+                    height: "82px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1492,20 +1496,20 @@ export default function Overview({ project }) {
 
               {/* Contract Status */}
               <div>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
                   Contract Status
                 </div>
                 <div
                   onClick={() => navigate(`/project/${project?.id || id}?view=contract&t=${Date.now()}`, { replace: false })}
                   style={{
-                    padding: "10px 12px",
+                    padding: "8px 10px",
                     borderRadius: "8px",
                     border: "2px solid white",
-                    fontSize: "1rem",
+                    fontSize: "0.85rem",
                     color: WHITE,
                     background: getContractStatusColor(),
                     boxSizing: "border-box",
-                    height: "100px",
+                    height: "82px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1526,20 +1530,20 @@ export default function Overview({ project }) {
 
               {/* Survey & Soils Status */}
               <div>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
                   Survey & Soils
                 </div>
                 <div
                   onClick={() => navigate(`/project/${project?.id || id}?view=survey-soil&t=${Date.now()}`, { replace: false })}
                   style={{
-                    padding: "10px 12px",
+                    padding: "8px 10px",
                     borderRadius: "8px",
                     border: "2px solid white",
-                    fontSize: "1rem",
+                    fontSize: "0.85rem",
                     color: WHITE,
                     background: getSurveySoilsStatusColor(),
                     boxSizing: "border-box",
-                    height: "100px",
+                    height: "82px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1560,20 +1564,20 @@ export default function Overview({ project }) {
 
               {/* Planning Permit Status */}
               <div>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
                   Planning Permit Status
                 </div>
                 <div
                   onClick={() => navigate(`/project/${project?.id || id}?view=planning&t=${Date.now()}`, { replace: false })}
                   style={{
-                    padding: "10px 12px",
+                    padding: "8px 10px",
                     borderRadius: "8px",
                     border: "2px solid white",
-                    fontSize: "1rem",
+                    fontSize: "0.85rem",
                     color: WHITE,
                     background: getPlanningPermitStatusColor(),
                     boxSizing: "border-box",
-                    height: "100px",
+                    height: "82px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1594,20 +1598,20 @@ export default function Overview({ project }) {
 
               {/* Energy Report Status */}
               <div>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
                   Energy Report Status
                 </div>
                 <div
                   onClick={() => navigate(`/project/${project?.id || id}?view=planning&t=${Date.now()}`, { replace: false })}
                   style={{
-                    padding: "10px 12px",
+                    padding: "8px 10px",
                     borderRadius: "8px",
                     border: "2px solid white",
-                    fontSize: "1rem",
+                    fontSize: "0.85rem",
                     color: WHITE,
                     background: getEnergyReportStatusColor(),
                     boxSizing: "border-box",
-                    height: "100px",
+                    height: "82px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1629,20 +1633,20 @@ export default function Overview({ project }) {
 
               {/* Footing Certification Status */}
               <div>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
                   Footing Certification Status
                 </div>
                 <div
                   onClick={() => navigate(`/project/${project?.id || id}?view=planning&t=${Date.now()}`, { replace: false })}
                   style={{
-                    padding: "10px 12px",
+                    padding: "8px 10px",
                     borderRadius: "8px",
                     border: "2px solid white",
-                    fontSize: "1rem",
+                    fontSize: "0.85rem",
                     color: WHITE,
                     background: getFootingCertificationStatusColor(),
                     boxSizing: "border-box",
-                    height: "100px",
+                    height: "82px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1664,20 +1668,20 @@ export default function Overview({ project }) {
 
               {/* Building Permit Status */}
               <div>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500", textAlign: "center", minHeight: "48px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.4" }}>
+                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
                   Building Permit Status
                 </div>
                 <div
                   onClick={() => navigate(`/project/${project?.id || id}?view=planning&t=${Date.now()}`, { replace: false })}
                   style={{
-                    padding: "10px 12px",
+                    padding: "8px 10px",
                     borderRadius: "8px",
                     border: "2px solid white",
-                    fontSize: "1rem",
+                    fontSize: "0.85rem",
                     color: WHITE,
                     background: getBuildingPermitStatusColor(),
                     boxSizing: "border-box",
-                    height: "100px",
+                    height: "82px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1694,6 +1698,40 @@ export default function Overview({ project }) {
                   }}
                 >
                   {project.building_permit_status || "Not Submitted"}
+                </div>
+              </div>
+
+              {/* PIC */}
+              <div>
+                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
+                  PIC
+                </div>
+                <div
+                  onClick={() => navigate(`/project/${project?.id || id}?view=planning&t=${Date.now()}`, { replace: false })}
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: "8px",
+                    border: "2px solid white",
+                    fontSize: "0.85rem",
+                    color: WHITE,
+                    background: getPicStatusColor(),
+                    boxSizing: "border-box",
+                    height: "82px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                    cursor: "pointer",
+                    transition: "opacity 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.opacity = "0.8";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = "1";
+                  }}
+                >
+                  {project?.pic === "Yes" ? "Yes" : "No"}
                 </div>
               </div>
             </div>

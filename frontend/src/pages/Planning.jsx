@@ -7,18 +7,20 @@ const API_URL = "";
 
 const PLANNING_STATUS_OPTIONS = ["Not Selected", "No Planning Required", "Planning Required", "Planning Permit Issued"];
 const STATUS_OPTIONS = ["Not Submitted", "Sent", "Complete"];
+const PIC_OPTIONS = ["Yes", "No"];
 
 export default function Planning({ project, onUpdate }) {
   const [planningStatus, setPlanningStatus] = useState(project?.planning_status || "Not Selected");
   const [energyReportStatus, setEnergyReportStatus] = useState(project?.energy_report_status || "Not Submitted");
   const [footingCertificationStatus, setFootingCertificationStatus] = useState(project?.footing_certification_status || "Not Submitted");
   const [buildingPermitStatus, setBuildingPermitStatus] = useState(project?.building_permit_status || "Not Submitted");
+  const [pic, setPic] = useState(project?.pic || "No");
   
-  const valuesRef = useRef({ planningStatus, energyReportStatus, footingCertificationStatus, buildingPermitStatus });
+  const valuesRef = useRef({ planningStatus, energyReportStatus, footingCertificationStatus, buildingPermitStatus, pic });
   
   useEffect(() => {
-    valuesRef.current = { planningStatus, energyReportStatus, footingCertificationStatus, buildingPermitStatus };
-  }, [planningStatus, energyReportStatus, footingCertificationStatus, buildingPermitStatus]);
+    valuesRef.current = { planningStatus, energyReportStatus, footingCertificationStatus, buildingPermitStatus, pic };
+  }, [planningStatus, energyReportStatus, footingCertificationStatus, buildingPermitStatus, pic]);
 
   useEffect(() => {
     if (project) {
@@ -26,6 +28,7 @@ export default function Planning({ project, onUpdate }) {
       setEnergyReportStatus(project.energy_report_status || "Not Submitted");
       setFootingCertificationStatus(project.footing_certification_status || "Not Submitted");
       setBuildingPermitStatus(project.building_permit_status || "Not Submitted");
+      setPic(project.pic === "Yes" ? "Yes" : "No");
     }
   }, [project]);
 
@@ -50,6 +53,7 @@ export default function Planning({ project, onUpdate }) {
         energy_report_status: fieldName === "energy_report_status" ? (value === "" ? null : value) : currentValues.energyReportStatus,
         footing_certification_status: fieldName === "footing_certification_status" ? (value === "" ? null : value) : currentValues.footingCertificationStatus,
         building_permit_status: fieldName === "building_permit_status" ? (value === "" ? null : value) : currentValues.buildingPermitStatus,
+        pic: fieldName === "pic" ? (value === "" ? null : value) : currentValues.pic,
       };
 
       // Add all other fields to maintain them
@@ -120,13 +124,19 @@ export default function Planning({ project, onUpdate }) {
     saveField("building_permit_status", newValue);
   }
 
+  function handlePicChange(e) {
+    const newValue = e.target.value;
+    setPic(newValue);
+    saveField("pic", newValue);
+  }
+
   return (
     <div>
       <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT }}>
         Planning
       </h2>
       {project && (
-        <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "24px" }}>
+        <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr", gap: "24px" }}>
           {/* Column 1 - Planning Status */}
           <div>
             <div style={{ marginBottom: "24px" }}>
@@ -267,6 +277,43 @@ export default function Planning({ project, onUpdate }) {
                 }}
               >
                 {STATUS_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Column 5 - PIC */}
+          <div>
+            <div style={{ marginBottom: "24px" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  color: "#32323399",
+                  marginBottom: "6px",
+                  fontWeight: "500",
+                }}
+              >
+                PIC
+              </label>
+              <select
+                value={pic}
+                onChange={handlePicChange}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #ddd",
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                }}
+              >
+                {PIC_OPTIONS.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>

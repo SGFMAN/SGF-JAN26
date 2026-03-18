@@ -114,6 +114,20 @@ const FIELD_DEFINITIONS = {
   },
 };
 
+const CLASSIFICATION_SORT_ORDER = FIELD_DEFINITIONS.classification.values;
+const STREAM_SORT_ORDER = [
+  "SGF - VIC",
+  "SGF - QLD",
+  "Dual Dwelling",
+  "ATA",
+  "Pumped on Property",
+  "Pumped On Property",
+  "Henderson",
+  "Creat Cash Flow",
+  "Create Cash Flow",
+  "Maple Group",
+];
+
 export default function HomePage() {
   const location = useLocation();
   const [projects, setProjects] = useState([]);
@@ -123,6 +137,7 @@ export default function HomePage() {
   const [selectedField, setSelectedField] = useState("");
   const [selectedValue, setSelectedValue] = useState("");
   const [stateFilter, setStateFilter] = useState(getStateFilter());
+  const [sortMode, setSortMode] = useState("suburb"); // default view
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [newProjectStep, setNewProjectStep] = useState(1);
   const [createdProjectForEmail, setCreatedProjectForEmail] = useState(null);
@@ -375,6 +390,12 @@ export default function HomePage() {
       return fieldDef.values;
     }
 
+    // For drawings status, only show the predefined ordered values
+    // (Not Assigned, Concept Stage, Working Drawing Stage, Drawings Complete)
+    if (selectedField === "drawings_status") {
+      return fieldDef.values;
+    }
+
     // Get unique values from projects (using effective values)
     const projectValues = new Set();
     projects.forEach(project => {
@@ -466,15 +487,39 @@ export default function HomePage() {
       });
     }
 
-    // Sort alphabetically by suburb, then by street
+    // Sort based on selected sort mode
     filtered.sort((a, b) => {
       const suburbA = (a.suburb || "").toLowerCase();
       const suburbB = (b.suburb || "").toLowerCase();
-      if (suburbA !== suburbB) {
-        return suburbA.localeCompare(suburbB);
-      }
       const streetA = (a.street || "").toLowerCase();
       const streetB = (b.street || "").toLowerCase();
+
+      if (sortMode === "class") {
+        const classA = a.classification || "";
+        const classB = b.classification || "";
+        const idxA = CLASSIFICATION_SORT_ORDER.indexOf(classA);
+        const idxB = CLASSIFICATION_SORT_ORDER.indexOf(classB);
+        const safeIdxA = idxA === -1 ? Number.MAX_SAFE_INTEGER : idxA;
+        const safeIdxB = idxB === -1 ? Number.MAX_SAFE_INTEGER : idxB;
+        if (safeIdxA !== safeIdxB) return safeIdxA - safeIdxB;
+        if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
+        return streetA.localeCompare(streetB);
+      }
+
+      if (sortMode === "stream") {
+        const streamA = a.stream || "";
+        const streamB = b.stream || "";
+        const idxA = STREAM_SORT_ORDER.indexOf(streamA);
+        const idxB = STREAM_SORT_ORDER.indexOf(streamB);
+        const safeIdxA = idxA === -1 ? Number.MAX_SAFE_INTEGER : idxA;
+        const safeIdxB = idxB === -1 ? Number.MAX_SAFE_INTEGER : idxB;
+        if (safeIdxA !== safeIdxB) return safeIdxA - safeIdxB;
+        if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
+        return streetA.localeCompare(streetB);
+      }
+
+      // suburb (default) or any fallback:
+      if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
       return streetA.localeCompare(streetB);
     });
 
@@ -1077,42 +1122,98 @@ export default function HomePage() {
                 return totalCount > 0 ? `(${totalCount} total)` : "";
               })()}
             </h2>
-            <button
-              onClick={() => {
-                // Generate email list from filtered projects
-                const projectList = filteredProjects.map((project, index) => {
-                  const suburb = project.suburb || "";
-                  const street = project.street || "";
-                  const projectName = suburb && street 
-                    ? `${suburb} - ${street}`
-                    : suburb || street || project.name || "Unknown Project";
-                  return `${index + 1}. ${projectName}`;
-                }).join("\n");
-                
-                const emailBody = `In Design Projects List:\n\n${projectList}\n\nTotal: ${filteredProjects.length} projects`;
-                const mailtoLink = `mailto:?subject=In Design Projects List&body=${encodeURIComponent(emailBody)}`;
-                window.location.href = mailtoLink;
-              }}
-              style={{
-                padding: "10px 20px",
-                background: "#4D93D9",
-                color: WHITE,
-                border: "none",
-                borderRadius: "8px",
-                fontSize: "0.9rem",
-                fontWeight: 500,
-                cursor: "pointer",
-                transition: "background 0.2s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "#3d7bc9";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "#4D93D9";
-              }}
-            >
-              Email List
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <button
+                type="button"
+                onClick={() => setSortMode("suburb")}
+                style={{
+                  background: sortMode === "suburb" ? MONUMENT : WHITE,
+                  color: sortMode === "suburb" ? WHITE : MONUMENT,
+                  border: `2px solid ${MONUMENT}`,
+                  borderRadius: "8px",
+                  padding: "10px 14px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  transition: "background 0.2s, color 0.2s",
+                }}
+              >
+                Sort by Suburb
+              </button>
+              <button
+                type="button"
+                onClick={() => setSortMode("class")}
+                style={{
+                  background: sortMode === "class" ? MONUMENT : WHITE,
+                  color: sortMode === "class" ? WHITE : MONUMENT,
+                  border: `2px solid ${MONUMENT}`,
+                  borderRadius: "8px",
+                  padding: "10px 14px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  transition: "background 0.2s, color 0.2s",
+                }}
+              >
+                Sort By Class
+              </button>
+              <button
+                type="button"
+                onClick={() => setSortMode("stream")}
+                style={{
+                  background: sortMode === "stream" ? MONUMENT : WHITE,
+                  color: sortMode === "stream" ? WHITE : MONUMENT,
+                  border: `2px solid ${MONUMENT}`,
+                  borderRadius: "8px",
+                  padding: "10px 14px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  transition: "background 0.2s, color 0.2s",
+                }}
+              >
+                Sort By Stream
+              </button>
+              <button
+                onClick={() => {
+                  // Generate email list from filtered projects
+                  const projectList = filteredProjects
+                    .map((project, index) => {
+                      const suburb = project.suburb || "";
+                      const street = project.street || "";
+                      const projectName =
+                        suburb && street
+                          ? `${suburb} - ${street}`
+                          : suburb || street || project.name || "Unknown Project";
+                      return `${index + 1}. ${projectName}`;
+                    })
+                    .join("\n");
+
+                  const emailBody = `In Design Projects List:\n\n${projectList}\n\nTotal: ${filteredProjects.length} projects`;
+                  const mailtoLink = `mailto:?subject=In Design Projects List&body=${encodeURIComponent(emailBody)}`;
+                  window.location.href = mailtoLink;
+                }}
+                style={{
+                  padding: "10px 20px",
+                  background: "#4D93D9",
+                  color: WHITE,
+                  border: "none",
+                  borderRadius: "8px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  transition: "background 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#3d7bc9";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#4D93D9";
+                }}
+              >
+                Email List
+              </button>
+            </div>
           </div>
           
           {/* Search Bar and Filter Dropdowns - All on one line */}
@@ -1285,14 +1386,14 @@ export default function HomePage() {
                   alignItems: "flex-start",
                 }}
               >
-                {filteredProjects.map((project) => {
+                {filteredProjects.map((project, index) => {
                   // Classification mapping - all grey
                   const classificationMap = {
                     "Small Second Dwelling": { acronym: "SSD", color: "#a1a1a3" }, // Grey
                     "Dependant Persons Unit": { acronym: "DPU", color: "#a1a1a3" }, // Grey
                     "Detached Extension": { acronym: "DEX", color: "#a1a1a3" }, // Grey
                     "Dwelling": { acronym: "DWE", color: "#a1a1a3" }, // Grey
-                    "Home Office / Studio": { acronym: "STU", color: "#a1a1a3" }, // Grey
+                    "Home Office / Studio": { acronym: "OFFICE", color: "#a1a1a3" }, // Grey
                     "Dwelling & DPU": { acronym: "D&DPU", color: "#a1a1a3" }, // Grey
                     "Dwelling & SSD": { acronym: "D&SSD", color: "#a1a1a3" }, // Grey
                     "SSD & DPU": { acronym: "SSD&DPU", color: "#a1a1a3" }, // Grey
@@ -1315,34 +1416,73 @@ export default function HomePage() {
                   };
                   const streamInfo = project.stream ? streamMap[project.stream] : null;
 
+                  const suburbName = (project.suburb || "").trim();
+                  const prevSuburbName = index > 0 ? (filteredProjects[index - 1]?.suburb || "").trim() : "";
+
+                  const classificationName = (project.classification || "").trim();
+                  const prevClassificationName = index > 0 ? (filteredProjects[index - 1]?.classification || "").trim() : "";
+
+                  const streamName = (project.stream || "").trim();
+                  const prevStreamName = index > 0 ? (filteredProjects[index - 1]?.stream || "").trim() : "";
+
+                  const groupKey =
+                    sortMode === "suburb"
+                      ? (suburbName ? suburbName[0].toUpperCase() : "")
+                      : sortMode === "class"
+                      ? classificationName
+                      : sortMode === "stream"
+                      ? streamName
+                      : "";
+
+                  const prevGroupKey =
+                    sortMode === "suburb"
+                      ? (prevSuburbName ? prevSuburbName[0].toUpperCase() : "")
+                      : sortMode === "class"
+                      ? prevClassificationName
+                      : sortMode === "stream"
+                      ? prevStreamName
+                      : "";
+
+                  const showGroupHeader = groupKey && groupKey !== prevGroupKey;
+                  const groupLabel = groupKey;
+
                   return (
-                    <Link
-                      key={project.id}
-                      to={`/project/${project.id}`}
-                      style={{
-                        textDecoration: "none",
-                        display: "block",
-                      }}
-                    >
-                      <div
+                    <React.Fragment key={project.id}>
+                      {showGroupHeader && (
+                        <div style={{ flexBasis: "100%", width: "100%", marginTop: "18px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                            <div style={{ fontSize: "1.3rem", fontWeight: 800, color: MONUMENT, whiteSpace: "nowrap" }}>{groupLabel}</div>
+                            <div style={{ height: "2px", background: MONUMENT, flex: 1, opacity: 0.4 }} />
+                          </div>
+                        </div>
+                      )}
+                      <Link
+                        key={project.id}
+                        to={`/project/${project.id}`}
                         style={{
-                          background: MONUMENT,
-                          borderRadius: "8px",
-                          width: "200px",
-                          height: "100px",
-                          color: SECTION_GREY,
-                          cursor: "pointer",
-                          transition: "opacity 0.2s",
-                          display: "flex",
-                          flexDirection: "column",
-                          justifyContent: "center",
-                          alignItems: "center",
-                          position: "relative",
-                          overflow: "hidden",
+                          textDecoration: "none",
+                          display: "block",
                         }}
-                        onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
-                        onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
                       >
+                        <div
+                          style={{
+                            background: MONUMENT,
+                            borderRadius: "8px",
+                            width: "200px",
+                            height: "100px",
+                            color: SECTION_GREY,
+                            cursor: "pointer",
+                            transition: "opacity 0.2s",
+                            display: "flex",
+                            flexDirection: "column",
+                            justifyContent: "center",
+                            alignItems: "center",
+                            position: "relative",
+                            overflow: "hidden",
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+                          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                        >
                         {/* On Hold Diagonal Band */}
                         {(project.on_hold === 'true' || project.on_hold === true) && (
                           <div
@@ -1475,7 +1615,8 @@ export default function HomePage() {
                           Status: {project.status}
                         </div>
                       </div>
-                    </Link>
+                      </Link>
+                    </React.Fragment>
                   );
                 })}
               </div>

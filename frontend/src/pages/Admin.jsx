@@ -36,6 +36,13 @@ export default function Admin({ project, onUpdate }) {
   const [variationsFiles, setVariationsFiles] = useState([]);
   const [loadingVariations, setLoadingVariations] = useState(false);
   const [variationsPath, setVariationsPath] = useState("");
+  const [showDepositBalanceEmailModal, setShowDepositBalanceEmailModal] = useState(false);
+  const [depositEmailTo, setDepositEmailTo] = useState("");
+  const [depositEmailFrom, setDepositEmailFrom] = useState("");
+  const [depositEmailSubject, setDepositEmailSubject] = useState("");
+  const [depositEmailBody, setDepositEmailBody] = useState("");
+  const [depositEmailPreparing, setDepositEmailPreparing] = useState(false);
+  const depositEmailBodyRef = useRef(null);
   
   useEffect(() => {
     // Initialize deposit amount - format with commas
@@ -263,6 +270,86 @@ export default function Admin({ project, onUpdate }) {
     setCustomDeposit(formattedDeposit);
     valuesRef.current.deposit = formattedDeposit;
     await saveField("deposit", formattedDeposit);
+    setShowDepositBalanceEmailModal(true);
+    prepareDepositBalanceEmail();
+  }
+
+  async function prepareDepositBalanceEmail() {
+    setDepositEmailPreparing(true);
+    try {
+      const res = await fetch(`${API_URL}/api/email-templates`);
+      if (!res.ok) throw new Error("Failed to fetch templates");
+      const templates = await res.json();
+      const template = templates.find(
+        (t) => t.name && t.name.trim().toLowerCase() === "deposit balance paid"
+      );
+      if (!template) {
+        alert('Template "Deposit Balance Paid" not found. Create it in Settings → Email Settings.');
+        setShowDepositBalanceEmailModal(false);
+        setDepositEmailPreparing(false);
+        return;
+      }
+      const projectName = project?.name || "";
+      const replaceProjectName = (text) =>
+        text != null ? String(text).replace(/{ProjectName}/g, projectName) : "";
+      let toAddresses = template.to_addresses;
+      if (Array.isArray(toAddresses)) {
+        toAddresses = toAddresses.map(replaceProjectName).filter((a) => a.trim()).join(", ");
+      } else if (toAddresses) {
+        toAddresses = replaceProjectName(toAddresses).split(",").map((a) => a.trim()).filter((a) => a).join(", ");
+      } else {
+        toAddresses = "";
+      }
+      setDepositEmailTo(toAddresses);
+      setDepositEmailFrom(template.from_address || "");
+      setDepositEmailSubject(replaceProjectName(template.subject || ""));
+      setDepositEmailBody(replaceProjectName(template.body || ""));
+    } catch (err) {
+      console.error("Error preparing deposit balance email:", err);
+      alert("Failed to prepare email: " + (err.message || err));
+    } finally {
+      setDepositEmailPreparing(false);
+    }
+  }
+
+  useEffect(() => {
+    if (showDepositBalanceEmailModal && depositEmailBodyRef.current && depositEmailBody) {
+      if (depositEmailBodyRef.current.innerHTML !== depositEmailBody) {
+        depositEmailBodyRef.current.innerHTML = depositEmailBody;
+      }
+    }
+  }, [showDepositBalanceEmailModal, depositEmailBody]);
+
+  async function handleSendDepositBalanceEmail() {
+    const toAddresses = depositEmailTo.split(",").map((a) => a.trim()).filter((a) => a.length > 0);
+    if (toAddresses.length === 0) {
+      alert("Please enter at least one email address");
+      return;
+    }
+    if (!depositEmailFrom || !depositEmailFrom.trim()) {
+      alert("From address is required");
+      return;
+    }
+    try {
+      const res = await fetch(`${API_URL}/api/emails/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: toAddresses,
+          from: depositEmailFrom,
+          subject: depositEmailSubject,
+          htmlBody: depositEmailBody,
+          projectId: project?.id || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Send failed");
+      alert(data.message || "Email sent successfully!");
+      setShowDepositBalanceEmailModal(false);
+    } catch (err) {
+      console.error("Send deposit balance email error:", err);
+      alert(err.message || "Failed to send email.");
+    }
   }
 
   const fetchVariationsFiles = async () => {
@@ -552,6 +639,175 @@ export default function Admin({ project, onUpdate }) {
 
           {/* Column 4 - Empty for now */}
           <div style={{ flex: "1", minWidth: "200px" }}>
+          </div>
+        </div>
+      )}
+
+      {/* Deposit Balance Paid – Email Modal */}
+      {showDepositBalanceEmailModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 3000,
+            pointerEvents: "auto",
+          }}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              width: "90%",
+              maxWidth: "800px",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Preview & Send Email (Deposit Balance Paid)</h2>
+              <button
+                type="button"
+                onClick={() => setShowDepositBalanceEmailModal(false)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "1.5rem",
+                  cursor: "pointer",
+                  color: MONUMENT,
+                  padding: 0,
+                  width: 30,
+                  height: 30,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ×
+              </button>
+            </div>
+            {depositEmailPreparing ? (
+              <div style={{ textAlign: "center", padding: "40px", color: MONUMENT }}>Preparing email...</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>To (comma-separated)</label>
+                  <input
+                    type="text"
+                    value={depositEmailTo}
+                    onChange={(e) => setDepositEmailTo(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: `1px solid ${SECTION_GREY}`,
+                      fontSize: "1rem",
+                      color: MONUMENT,
+                      background: WHITE,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>From</label>
+                  <input
+                    type="text"
+                    value={depositEmailFrom}
+                    onChange={(e) => setDepositEmailFrom(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: `1px solid ${SECTION_GREY}`,
+                      fontSize: "1rem",
+                      color: MONUMENT,
+                      background: WHITE,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>Subject</label>
+                  <input
+                    type="text"
+                    value={depositEmailSubject}
+                    onChange={(e) => setDepositEmailSubject(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: `1px solid ${SECTION_GREY}`,
+                      fontSize: "1rem",
+                      color: MONUMENT,
+                      background: WHITE,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>Body</label>
+                  <div
+                    ref={depositEmailBodyRef}
+                    contentEditable
+                    onInput={(e) => setDepositEmailBody(e.currentTarget.innerHTML)}
+                    onBlur={(e) => setDepositEmailBody(e.currentTarget.innerHTML)}
+                    style={{
+                      width: "100%",
+                      minHeight: "300px",
+                      padding: "12px",
+                      borderRadius: "8px",
+                      border: `1px solid ${SECTION_GREY}`,
+                      fontSize: "0.9rem",
+                      color: MONUMENT,
+                      background: WHITE,
+                      boxSizing: "border-box",
+                      lineHeight: "1.6",
+                      outline: "none",
+                    }}
+                  />
+                </div>
+                <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowDepositBalanceEmailModal(false)}
+                    style={{
+                      padding: "10px 20px",
+                      fontSize: "1rem",
+                      fontWeight: 500,
+                      color: MONUMENT,
+                      background: "transparent",
+                      border: `1px solid ${SECTION_GREY}`,
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSendDepositBalanceEmail}
+                    style={{
+                      padding: "10px 20px",
+                      fontSize: "1rem",
+                      fontWeight: 500,
+                      color: WHITE,
+                      background: MONUMENT,
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Send Email
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

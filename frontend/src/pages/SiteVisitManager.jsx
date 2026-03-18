@@ -558,7 +558,7 @@ export default function SiteVisitManager() {
                       "Dependant Persons Unit": { acronym: "DPU", color: "#a1a1a3" }, // Grey
                       "Detached Extension": { acronym: "DEX", color: "#a1a1a3" }, // Grey
                       "Dwelling": { acronym: "DWE", color: "#a1a1a3" }, // Grey
-                      "Home Office / Studio": { acronym: "STU", color: "#a1a1a3" }, // Grey
+                      "Home Office / Studio": { acronym: "OFFICE", color: "#a1a1a3" }, // Grey
                       "Dwelling & DPU": { acronym: "D&DPU", color: "#a1a1a3" }, // Grey
                       "Dwelling & SSD": { acronym: "D&SSD", color: "#a1a1a3" }, // Grey
                       "SSD & DPU": { acronym: "SSD&DPU", color: "#a1a1a3" }, // Grey

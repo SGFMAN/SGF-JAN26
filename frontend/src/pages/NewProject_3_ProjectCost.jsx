@@ -38,7 +38,7 @@ const CLASSIFICATION_MAP = {
   "Dependant Persons Unit": "DPU",
   "Detached Extension": "DEX",
   "Dwelling": "DWE",
-  "Home Office / Studio": "STU",
+  "Home Office / Studio": "OFFICE",
   "Dwelling & DPU": "D&DPU",
   "Dwelling & SSD": "D&SSD",
   "SSD & DPU": "SSD&DPU",

@@ -348,7 +348,10 @@ export default function Drawings({ project, onUpdate }) {
       setDrawingsStatus("Working Drawing Stage");
       valuesRef.current.drawingsStatus = "Working Drawing Stage";
       
-      // Success - local state already updated, no need to call onUpdate
+      // Refresh project so table gets updated drawings_history (green highlight for concept approved)
+      if (onUpdate) {
+        onUpdate();
+      }
       console.log("Concept approved successfully");
     } catch (error) {
       console.error("Error approving concept:", error);
