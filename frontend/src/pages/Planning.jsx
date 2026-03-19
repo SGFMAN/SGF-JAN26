@@ -21,6 +21,7 @@ export default function Planning({ project, onUpdate }) {
       : "Not Required"
   );
   const [septicNotes, setSepticNotes] = useState(project?.septic_notes || "");
+  const [septicEmailSentDate, setSepticEmailSentDate] = useState(project?.septic_email_sent_date || "");
   const [pic, setPic] = useState(project?.pic || "No");
   const [showSepticEmailModal, setShowSepticEmailModal] = useState(false);
   const [isPreparingEmail, setIsPreparingEmail] = useState(false);
@@ -68,6 +69,7 @@ export default function Planning({ project, onUpdate }) {
         return incoming;
       });
       setSepticNotes((prev) => project.septic_notes ?? prev);
+      setSepticEmailSentDate(project.septic_email_sent_date || "");
       setPic(project.pic === "Yes" ? "Yes" : "No");
     }
   }, [project]);
@@ -192,7 +194,7 @@ export default function Planning({ project, onUpdate }) {
   function handleSepticPermitChange(e) {
     const newValue = e.target.value;
     setSepticPermit(newValue);
-    saveField("septic_permit", newValue);
+    saveSepticFields({ septic_permit: newValue });
   }
 
   function handleSepticNotesChange(e) {
@@ -200,7 +202,32 @@ export default function Planning({ project, onUpdate }) {
   }
 
   function handleSepticNotesBlur() {
-    saveField("septic_notes", septicNotes || "");
+    saveSepticFields({ septic_notes: septicNotes || "" });
+  }
+
+  async function saveSepticFields(partial) {
+    if (!project?.id) return;
+    try {
+      const response = await fetch(`${API_URL}/api/projects/${project.id}/septic`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(partial),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(errorData.error || "Failed to save septic fields");
+      }
+      const updated = await response.json();
+      if (updated.septic_permit !== undefined && updated.septic_permit !== null) {
+        setSepticPermit(updated.septic_permit);
+      }
+      setSepticNotes(updated.septic_notes || "");
+      setSepticEmailSentDate(updated.septic_email_sent_date || "");
+      if (onUpdate) onUpdate();
+    } catch (error) {
+      console.error("Error saving septic fields:", error);
+      alert(`Error saving septic fields: ${error.message}`);
+    }
   }
 
   async function getSalespersonDetails(salespersonName) {
@@ -340,6 +367,8 @@ export default function Planning({ project, onUpdate }) {
         throw new Error(data.error || `Send failed (${response.status})`);
       }
 
+      const sentDate = new Date().toISOString().split("T")[0];
+      await saveSepticFields({ septic_email_sent_date: sentDate });
       alert("Email sent successfully.");
       setShowSepticEmailModal(false);
     } catch (error) {
@@ -628,6 +657,11 @@ export default function Planning({ project, onUpdate }) {
             >
               {isPreparingEmail ? "Preparing..." : "Organise Inspection"}
             </button>
+            {septicEmailSentDate && (
+              <div style={{ marginTop: "8px", fontSize: "0.82rem", color: "#32323399" }}>
+                Email sent: {septicEmailSentDate}
+              </div>
+            )}
           </div>
         </div>
       )}
