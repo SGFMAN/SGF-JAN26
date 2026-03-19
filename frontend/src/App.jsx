@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import SplashPage from "./pages/SplashPage";
 import HomePage from "./pages/HomePage";
 import ProjectPage from "./pages/ProjectPage";
@@ -31,40 +31,59 @@ import PortalProjects from "./pages/PortalProjects";
 import PortalProjectDetail from "./pages/PortalProjectDetail";
 
 export default function App() {
+  const isCloudflarePublicHost =
+    typeof window !== "undefined" &&
+    typeof window.location?.hostname === "string" &&
+    window.location.hostname.toLowerCase().endsWith("trycloudflare.com");
+
   return (
     <BrowserRouter>
-      <AppModeBanner />
+      {!isCloudflarePublicHost && <AppModeBanner />}
       <Routes>
-        <Route path="/" element={<SplashPage />} />
-        <Route path="/projects" element={<HomePage />} />
-        <Route path="/project/:id" element={<ProjectPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/apply-fields" element={<ApplyFields />} />
-        <Route path="/finished-projects" element={<FinishedProjects />} />
-        <Route path="/in-construction" element={<InConstruction />} />
-        <Route path="/site-visit-manager" element={<SiteVisitManager />} />
-        <Route path="/site-visit-planner" element={<SiteVisitPlanner />} />
-        <Route path="/hotlist" element={<Hotlist />} />
-        <Route path="/all-projects" element={<AllProjects />} />
-        <Route path="/cancelled" element={<Cancelled />} />
-        <Route path="/on-hold" element={<OnHold />} />
-        <Route path="/managers" element={<Managers />} />
-        <Route path="/managers/site-visit-manager" element={<SiteVisitManager />} />
-        <Route path="/managers/contract-manager" element={<ContractManager />} />
-        <Route path="/managers/colour-manager" element={<ColourManager />} />
-        <Route path="/managers/status-manager" element={<StatusManager />} />
-        <Route path="/managers/drawing-manager" element={<DrawingManager />} />
-        <Route path="/sales" element={<Sales />} />
-        <Route path="/sales-totals" element={<SalesTotals />} />
-        <Route path="/sales-analytics" element={<SalesAnalytics />} />
-        <Route path="/email-generator" element={<EmailGenerator />} />
-        <Route path="/inbox" element={<Inbox />} />
-        <Route path="/faq" element={<FAQ />} />
-        <Route path="/approve-concept/:projectId" element={<ApproveConcept />} />
-        <Route path="/colours-portal/:projectId" element={<ColoursPortal />} />
-        <Route path="/3d-vis-portal/:projectId" element={<ThreeDVisPortal />} />
-        <Route path="/portal" element={<PortalProjects />} />
-        <Route path="/portal/projects/:id" element={<PortalProjectDetail />} />
+        {isCloudflarePublicHost ? (
+          <>
+            {/* Public portal-only mode when accessed via Cloudflare tunnel */}
+            <Route path="/portal" element={<PortalProjects />} />
+            <Route path="/portal/projects/:id" element={<PortalProjectDetail />} />
+            <Route path="/approve-concept/:projectId" element={<ApproveConcept />} />
+            <Route path="/colours-portal/:projectId" element={<ColoursPortal />} />
+            <Route path="/3d-vis-portal/:projectId" element={<ThreeDVisPortal />} />
+            <Route path="*" element={<Navigate to="/portal" replace />} />
+          </>
+        ) : (
+          <>
+            <Route path="/" element={<SplashPage />} />
+            <Route path="/projects" element={<HomePage />} />
+            <Route path="/project/:id" element={<ProjectPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/apply-fields" element={<ApplyFields />} />
+            <Route path="/finished-projects" element={<FinishedProjects />} />
+            <Route path="/in-construction" element={<InConstruction />} />
+            <Route path="/site-visit-manager" element={<SiteVisitManager />} />
+            <Route path="/site-visit-planner" element={<SiteVisitPlanner />} />
+            <Route path="/hotlist" element={<Hotlist />} />
+            <Route path="/all-projects" element={<AllProjects />} />
+            <Route path="/cancelled" element={<Cancelled />} />
+            <Route path="/on-hold" element={<OnHold />} />
+            <Route path="/managers" element={<Managers />} />
+            <Route path="/managers/site-visit-manager" element={<SiteVisitManager />} />
+            <Route path="/managers/contract-manager" element={<ContractManager />} />
+            <Route path="/managers/colour-manager" element={<ColourManager />} />
+            <Route path="/managers/status-manager" element={<StatusManager />} />
+            <Route path="/managers/drawing-manager" element={<DrawingManager />} />
+            <Route path="/sales" element={<Sales />} />
+            <Route path="/sales-totals" element={<SalesTotals />} />
+            <Route path="/sales-analytics" element={<SalesAnalytics />} />
+            <Route path="/email-generator" element={<EmailGenerator />} />
+            <Route path="/inbox" element={<Inbox />} />
+            <Route path="/faq" element={<FAQ />} />
+            <Route path="/approve-concept/:projectId" element={<ApproveConcept />} />
+            <Route path="/colours-portal/:projectId" element={<ColoursPortal />} />
+            <Route path="/3d-vis-portal/:projectId" element={<ThreeDVisPortal />} />
+            <Route path="/portal" element={<PortalProjects />} />
+            <Route path="/portal/projects/:id" element={<PortalProjectDetail />} />
+          </>
+        )}
       </Routes>
     </BrowserRouter>
   );
