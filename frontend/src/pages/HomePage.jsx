@@ -400,7 +400,8 @@ export default function HomePage() {
     const projectValues = new Set();
     projects.forEach(project => {
       // Only include design phase projects (including those that are on hold)
-      if (project.status === "Design Phase") {
+      // Also accept legacy older status value "In Design"
+      if (project.status === "Design Phase" || project.status === "In Design") {
         const effectiveValue = getEffectiveValue(project, selectedField);
         if (effectiveValue) {
           projectValues.add(effectiveValue);
@@ -430,8 +431,8 @@ export default function HomePage() {
       if (project.status === "Hotlist" || project.status === "Cancelled") {
         return false;
       }
-      // Accept "Design Phase" or legacy "On Hold" status
-      if (project.status !== "Design Phase" && project.status !== "On Hold") {
+      // Accept "Design Phase" (and legacy older values) or "On Hold"
+      if (project.status !== "Design Phase" && project.status !== "On Hold" && project.status !== "In Design") {
         return false;
       }
       
@@ -1100,8 +1101,8 @@ export default function HomePage() {
                   if (project.status === "Hotlist" || project.status === "Cancelled") {
                     return false;
                   }
-                  // Accept "Design Phase" or legacy "On Hold" status
-                  if (project.status !== "Design Phase" && project.status !== "On Hold") {
+                  // Accept "Design Phase", legacy "In Design", or legacy "On Hold"
+                  if (project.status !== "Design Phase" && project.status !== "On Hold" && project.status !== "In Design") {
                     return false;
                   }
                   // Exclude if on_hold is explicitly true (boolean or string)

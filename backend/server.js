@@ -379,7 +379,7 @@ async function ensureSchema() {
     CREATE TABLE IF NOT EXISTS projects (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'In Design',
+      status TEXT NOT NULL DEFAULT 'Design Phase',
       suburb TEXT,
       street TEXT,
       client_name TEXT,
@@ -767,27 +767,8 @@ app.post("/api/projects/bulk", async (req, res) => {
 
       // Create project name
       const name = `${suburb} - ${street}`;
-      
-      // Normalize date
-      let projectDate = year || "2025-01-01";
-      if (year && typeof year === 'string') {
-        const yearStr = year.trim();
-        if (/^\d{4}$/.test(yearStr)) {
-          projectDate = `${yearStr}-01-01`;
-        } else if (yearStr.includes("/")) {
-          const parts = yearStr.split("/");
-          if (parts.length === 3) {
-            const part1 = parts[0].trim();
-            const part2 = parts[1].trim();
-            const part3 = parts[2].trim();
-            if (parseInt(part1) > 12 && parseInt(part2) <= 12) {
-              projectDate = `${part3}-${part2.padStart(2, "0")}-${part1.padStart(2, "0")}`;
-            } else {
-              projectDate = `${part3}-${part1.padStart(2, "0")}-${part2.padStart(2, "0")}`;
-            }
-          }
-        }
-      }
+      // Start date: always use today when creating a new project
+      const projectDate = new Date().toISOString().split('T')[0];
 
       // Create initial project log entry
       const now = new Date();
@@ -801,7 +782,7 @@ app.post("/api/projects/bulk", async (req, res) => {
          RETURNING id, name`,
         [
           name.trim(),
-          (status || "In Design").trim(),
+          (status || "Design Phase").trim(),
           suburb ? suburb.trim() : null,
           street ? street.trim() : null,
           (state || "QLD").trim(),
@@ -857,31 +838,8 @@ app.post("/api/projects", async (req, res) => {
     const { name, status, suburb, street, state, stream, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, specs, classification, year } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
 
-    // Normalize date: 'year' field stores project start DATE in YYYY-MM-DD format
-    // If only a year is provided (e.g., "2024"), convert to full date (e.g., "2024-01-01")
-    // The year is ALWAYS derived from this date field - never stored separately
-    let projectDate = year || new Date().toISOString().split('T')[0];
-    if (year && typeof year === 'string') {
-      const yearStr = year.trim();
-      if (/^\d{4}$/.test(yearStr)) {
-        // Only year provided, set to January 1st
-        projectDate = `${yearStr}-01-01`;
-      } else if (yearStr.includes("/")) {
-        // Handle MM/DD/YYYY or DD/MM/YYYY format
-        const parts = yearStr.split("/");
-        if (parts.length === 3) {
-          const part1 = parts[0].trim();
-          const part2 = parts[1].trim();
-          const part3 = parts[2].trim();
-          // If part1 > 12, assume DD/MM/YYYY, otherwise MM/DD/YYYY
-          if (parseInt(part1) > 12 && parseInt(part2) <= 12) {
-            projectDate = `${part3}-${part2.padStart(2, "0")}-${part1.padStart(2, "0")}`;
-          } else {
-            projectDate = `${part3}-${part1.padStart(2, "0")}-${part2.padStart(2, "0")}`;
-          }
-        }
-      }
-    }
+    // Start date: always use today when creating a new project (sales table uses this for "this month")
+    const projectDate = new Date().toISOString().split('T')[0];
 
     // Create initial project log entry
     const now = new Date();
@@ -896,7 +854,7 @@ app.post("/api/projects", async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32) RETURNING *`,
       [
         name.trim(),
-        (status || "In Design").trim(),
+        (status || "Design Phase").trim(),
         suburb ? suburb.trim() : null,
         street ? street.trim() : null,
         state ? state.trim() : null,
@@ -5100,8 +5058,8 @@ app.post("/api/hotlist", async (req, res) => {
     // Derive name from street + suburb (same as normal projects)
     const projectName = `${street || ""}, ${suburb || ""}`.trim() || "New Hotlist Item";
     
-    // Derive year from current date
-    const currentYear = new Date().getFullYear().toString();
+    // year = project start date (YYYY-MM-DD). When user clicks Sold, we set it to Sold date; until then use today.
+    const projectDate = new Date().toISOString().split('T')[0];
 
     // Create initial project log entry
     const now = new Date();
@@ -5121,7 +5079,7 @@ app.post("/api/hotlist", async (req, res) => {
         client_name ? client_name.trim() : null,
         email ? email.trim() : null,
         phone ? phone.trim() : null,
-        currentYear,
+        projectDate,
         client_name ? client_name.trim() : null, // client1_name (same as client_name)
         email ? email.trim() : null, // client1_email (same as email)
         phone ? phone.trim() : null, // client1_phone (same as phone)
@@ -5383,19 +5341,20 @@ app.post("/api/hotlist/:id/sold", async (req, res) => {
 
     const project = projectResult.rows[0];
     
-    // Update project log
+    // Update project log and set start date to today (Sold date) so it appears in sales for this month
     const now = new Date();
     const dateTimeStr = now.toISOString().replace('T', ' ').substring(0, 19);
+    const soldDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
     const logEntry = project.project_log 
       ? `${project.project_log}\n${dateTimeStr} - Status changed from Hotlist to In Design (Sold)`
       : `${dateTimeStr} - Status changed from Hotlist to In Design (Sold)`;
 
-    // Update status from "Hotlist" to "In Design"
+    // Update status to "In Design", set start date (year) to Sold date, update log
     const updateResult = await pool.query(
       `UPDATE projects 
-       SET status = $1, project_log = $2, updated_at = NOW()
+       SET status = $1, project_log = $2, year = $4, updated_at = NOW()
        WHERE id = $3 RETURNING *`,
-      ["In Design", logEntry, id]
+      ["In Design", logEntry, id, soldDate]
     );
 
     const updatedProject = updateResult.rows[0];

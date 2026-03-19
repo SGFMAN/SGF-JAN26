@@ -46,7 +46,7 @@ export default function PortalProjectDetail() {
     if (id) fetchPortalProject();
   }, [id]);
 
-  const drawingUrl = `/api/portal/projects/${id}/drawing`;
+  const drawingUrl = `${API_URL}/api/portal/projects/${id}/drawing`;
 
   return (
     <div

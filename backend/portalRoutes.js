@@ -13,9 +13,13 @@ module.exports = function registerPortalRoutes(app, pool, fs) {
             suburb,
             street,
             classification,
+            stream,
+            state,
             client_name AS "clientName"
           FROM projects
-          WHERE status = 'Design Phase'
+          WHERE status IN ('Design Phase', 'In Design')
+            -- on_hold can be stored as boolean or as string values; compare via ::text for safety
+            AND (on_hold IS NULL OR on_hold::text IN ('f', 'false', '0'))
           ORDER BY suburb ASC NULLS LAST, street ASC NULLS LAST, updated_at DESC, id DESC
         `
       );
@@ -45,11 +49,15 @@ module.exports = function registerPortalRoutes(app, pool, fs) {
             suburb,
             street,
             classification,
+            stream,
+            state,
             client_name AS "clientName",
             email AS "clientEmail",
             phone AS "phoneNumber"
           FROM projects
-          WHERE id = $1 AND status = 'Design Phase'
+          WHERE id = $1
+            AND status IN ('Design Phase', 'In Design')
+            AND (on_hold IS NULL OR on_hold::text IN ('f', 'false', '0'))
         `,
         [id]
       );
@@ -82,7 +90,7 @@ module.exports = function registerPortalRoutes(app, pool, fs) {
         `
           SELECT drawings_pdf_location
           FROM projects
-          WHERE id = $1 AND status = 'Design Phase'
+          WHERE id = $1 AND status IN ('Design Phase', 'In Design')
         `,
         [id]
       );

@@ -50,6 +50,37 @@ export default function SalesTotals() {
     return new Date().getFullYear().toString();
   });
 
+  // Modal shown when user clicks the VIC/QLD total rectangles.
+  // "VIC" | "QLD" | null
+  const [stateJobsModalState, setStateJobsModalState] = useState(null);
+  const todayISO = React.useMemo(() => new Date().toISOString().split("T")[0], []);
+
+  useEffect(() => {
+    if (!stateJobsModalState) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [stateJobsModalState]);
+
+  useEffect(() => {
+    if (!stateJobsModalState) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setStateJobsModalState(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [stateJobsModalState]);
+
+  function openStateJobsModal(state) {
+    setStateJobsModalState(state);
+  }
+
+  function closeStateJobsModal() {
+    setStateJobsModalState(null);
+  }
+
   useEffect(() => {
     fetchProjects();
   }, []);
@@ -338,6 +369,97 @@ export default function SalesTotals() {
     if (!amount || amount === 0) return "$0";
     return `$${amount.toLocaleString()}`;
   }
+
+  const RANGE_START_ISO = "2026-01-01";
+
+  function normalizeProjectYearToISO(yearValue) {
+    if (!yearValue) return null;
+    const v = yearValue.toString().trim();
+    if (!v) return null;
+
+    // Already in YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+
+    // Legacy: YYYY only -> interpret as Jan 1st
+    if (/^\d{4}$/.test(v)) return `${v}-01-01`;
+
+    // Legacy: MM/DD/YYYY or DD/MM/YYYY
+    if (v.includes("/")) {
+      const parts = v.split("/").map((p) => p.trim());
+      if (parts.length === 3) {
+        const part1 = parts[0];
+        const part2 = parts[1];
+        const part3 = parts[2];
+
+        if (!/^\d{4}$/.test(part3)) return null;
+
+        // If part1 > 12 assume DD/MM/YYYY, else MM/DD/YYYY
+        const day = parseInt(part1, 10) > 12 ? part1 : part2;
+        const month = parseInt(part1, 10) > 12 ? part2 : part1;
+        const year = part3;
+
+        const dd = String(parseInt(day, 10)).padStart(2, "0");
+        const mm = String(parseInt(month, 10)).padStart(2, "0");
+        return `${year}-${mm}-${dd}`;
+      }
+    }
+
+    return null;
+  }
+
+  function isHomeOfficeStudio(project) {
+    return (project?.classification || "").trim() === "Home Office / Studio";
+  }
+
+  function isVICProject(project) {
+    const state = (project.state || "").trim().toUpperCase();
+    return state === "VIC" || state === "VICTORIA";
+  }
+
+  function isQLDProject(project) {
+    const state = (project.state || "").trim().toUpperCase();
+    return state === "QLD" || state === "QUEENSLAND";
+  }
+
+  function getProjectCostDisplay(project) {
+    if (!project?.project_cost) return "";
+    const cost = parseInt(project.project_cost.toString().replace(/[^0-9]/g, "") || "0", 10);
+    if (!cost) return "";
+    return `$${cost.toLocaleString()}`;
+  }
+
+  const vicJobs2026ToDate = React.useMemo(() => {
+    return projects
+      .map((project) => ({ project, isoStart: normalizeProjectYearToISO(project.year) }))
+      .filter(({ project, isoStart }) => {
+        if (!isoStart) return false;
+        if (isoStart < RANGE_START_ISO || isoStart > todayISO) return false;
+        if (isHomeOfficeStudio(project)) return false;
+        return isVICProject(project);
+      })
+      .sort((a, b) => b.isoStart.localeCompare(a.isoStart))
+      .map(({ project, isoStart }) => ({ project, isoStart }));
+  }, [projects, todayISO]);
+
+  const qldJobs2026ToDate = React.useMemo(() => {
+    return projects
+      .map((project) => ({ project, isoStart: normalizeProjectYearToISO(project.year) }))
+      .filter(({ project, isoStart }) => {
+        if (!isoStart) return false;
+        if (isoStart < RANGE_START_ISO || isoStart > todayISO) return false;
+        if (isHomeOfficeStudio(project)) return false;
+        return isQLDProject(project);
+      })
+      .sort((a, b) => b.isoStart.localeCompare(a.isoStart))
+      .map(({ project, isoStart }) => ({ project, isoStart }));
+  }, [projects, todayISO]);
+
+  const stateJobsModalProjects =
+    stateJobsModalState === "VIC"
+      ? vicJobs2026ToDate
+      : stateJobsModalState === "QLD"
+        ? qldJobs2026ToDate
+        : [];
 
   // Format stream name into 2 lines for consistent height
   function formatStreamName(stream) {
@@ -869,6 +991,13 @@ export default function SalesTotals() {
                     padding: "20px",
                     border: `2px solid ${MONUMENT}`,
                     boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                    cursor: "pointer",
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openStateJobsModal("VIC")}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") openStateJobsModal("VIC");
                   }}
                 >
                   <div
@@ -925,6 +1054,13 @@ export default function SalesTotals() {
                     border: `2px solid ${MONUMENT}`,
                     boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
                     alignSelf: "flex-start",
+                    cursor: "pointer",
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openStateJobsModal("QLD")}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") openStateJobsModal("QLD");
                   }}
                 >
                   <div
@@ -1022,6 +1158,118 @@ export default function SalesTotals() {
           )}
         </div>
       </div>
+
+      {/* State jobs modal (2026 to date) */}
+      {stateJobsModalState && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            overflow: "hidden",
+            padding: "16px",
+          }}
+          onClick={closeStateJobsModal}
+          onWheel={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+        >
+          <div
+            style={{
+              backgroundColor: WHITE,
+              padding: "24px",
+              borderRadius: "8px",
+              minWidth: "760px",
+              maxWidth: "95%",
+              maxHeight: "80vh",
+              overflow: "hidden",
+              boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
+              display: "flex",
+              flexDirection: "column",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px" }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: "1.25rem", color: MONUMENT }}>
+                  {stateJobsModalState} jobs
+                </h2>
+                <div style={{ fontSize: "0.95rem", color: MONUMENT, marginTop: "6px", opacity: 0.85 }}>
+                  {RANGE_START_ISO} to {todayISO}
+                </div>
+                <div style={{ fontSize: "0.85rem", color: MONUMENT, marginTop: "4px", opacity: 0.85 }}>
+                  Total: {stateJobsModalProjects.length}
+                </div>
+              </div>
+              <button
+                onClick={closeStateJobsModal}
+                style={{
+                  padding: "8px 12px",
+                  fontSize: "0.9rem",
+                  border: "1px solid #ccc",
+                  borderRadius: "4px",
+                  backgroundColor: WHITE,
+                  color: MONUMENT,
+                  cursor: "pointer",
+                  height: "fit-content",
+                }}
+              >
+                Close
+              </button>
+            </div>
+
+            <div style={{ marginTop: "16px", overflowY: "auto", flex: 1 }}>
+              {stateJobsModalProjects.length === 0 ? (
+                <div style={{ color: MONUMENT, opacity: 0.85, padding: "12px 4px" }}>
+                  No jobs found for this range.
+                </div>
+              ) : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.92rem" }}>
+                  <thead>
+                    <tr style={{ backgroundColor: "#f3f3f3" }}>
+                      <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>Start</th>
+                      <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>Project</th>
+                      <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>Stream</th>
+                      <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>Cost</th>
+                      <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>Client</th>
+                      <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stateJobsModalProjects.map(({ project, isoStart }) => {
+                      const projectLabel =
+                        project?.suburb && project?.street
+                          ? `${project.suburb.toUpperCase()} - ${project.street}`
+                          : project?.name || "Unknown Project";
+                      const clientLabel = project?.client_name || project?.client1_name || "";
+                      return (
+                        <tr key={project.id} style={{ borderTop: "1px solid #eee" }}>
+                          <td style={{ padding: "10px", whiteSpace: "nowrap", color: MONUMENT, opacity: 0.9 }}>
+                            {isoStart}
+                          </td>
+                          <td style={{ padding: "10px", color: MONUMENT, opacity: 0.95 }}>
+                            {projectLabel}
+                          </td>
+                          <td style={{ padding: "10px", color: MONUMENT, opacity: 0.9 }}>{project?.stream || ""}</td>
+                          <td style={{ padding: "10px", whiteSpace: "nowrap", color: MONUMENT, opacity: 0.95 }}>
+                            {getProjectCostDisplay(project)}
+                          </td>
+                          <td style={{ padding: "10px", color: MONUMENT, opacity: 0.9 }}>{clientLabel}</td>
+                          <td style={{ padding: "10px", color: MONUMENT, opacity: 0.9 }}>{project?.status || ""}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
