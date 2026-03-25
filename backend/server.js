@@ -521,7 +521,7 @@ async function ensureSchema() {
     'water_authority', 'water_declaration_status', 'water_declaration_sent_date', 'water_declaration_complete_date',
     'notes', 'project_info_notes', 'specs', 'classification', 'project_log',
     'window_status', 'window_colour', 'window_reveal', 'window_reveal_other', 'window_glazing', 'window_bal_rating', 'window_date_required', 'window_ordered_date', 'window_order_pdf_location', 'window_order_number',
-    'drawings_status', 'drawings_pdf_location', 'drawings_history', 'drawings_viewed_date', 'drawings_sent_to_client_date', 'drawings_holder_date', 'draftsperson', 'drawings_holder', 'colours_status', 'colours_notes', 'colours_pdf_location', 'colours_sent_date', 'colours_reminder_sent_date', 'roof_colour', 'cladding_colour', 'baseboards_colour', 'roof_style', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status', 'septic_permit', 'septic_notes', 'septic_email_sent_date', 'pic',
+    'drawings_status', 'drawings_pdf_location', 'drawings_history', 'drawings_viewed_date', 'drawings_sent_to_client_date', 'drawings_holder_date', 'draftsperson', 'drawings_holder', 'drawing_manager_notes', 'colours_status', 'colours_notes', 'colours_pdf_location', 'colours_sent_date', 'colours_reminder_sent_date', 'roof_colour', 'cladding_colour', 'baseboards_colour', 'roof_style', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status', 'septic_permit', 'septic_notes', 'septic_email_sent_date', 'pic',
     'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail', 'on_hold', 'survey_status', 'soil_status', 'agreement_sent'];
   for (const column of columnsToAdd) {
     try {
@@ -623,6 +623,16 @@ async function ensureSchema() {
       }
     }
   }
+  // VIC - SMTP (third account) columns
+  for (const col of ["smtp_user_vic_smtp", "smtp_pass_vic_smtp"]) {
+    try {
+      await pool.query(`ALTER TABLE settings ADD COLUMN ${col} TEXT`);
+    } catch (e) {
+      if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+        console.log(`Error adding column ${col}:`, e.message);
+      }
+    }
+  }
   // Add QLD settings columns if they don't exist
   for (const col of ["root_directory_qld", "create_folders_qld", "smtp_user_qld", "smtp_pass_qld", "test_project_name_qld", "test_folder_qld"]) {
     try {
@@ -693,7 +703,7 @@ app.get("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects ORDER BY updated_at DESC, id DESC"
     );
     res.json(r.rows);
   } catch (e) {
@@ -714,7 +724,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active FROM projects WHERE id = $1",
       [id]
     );
     
@@ -1007,7 +1017,7 @@ app.put("/api/projects/:id", async (req, res) => {
       water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date,
       notes, project_info_notes, specs, classification,
       window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number,
-      drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, pic,
+      drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour,       roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic,
       number_of_robes, robe_widths, substatus, substatus_detail, on_hold, survey_status, soil_status } = req.body || {};
     // Convert empty strings to null, but preserve non-empty strings
     const processValue = (val) => {
@@ -1120,20 +1130,21 @@ app.put("/api/projects/:id", async (req, res) => {
         building_permit_status = COALESCE($72, building_permit_status),
         septic_permit = COALESCE($73, septic_permit),
         septic_notes = COALESCE($74, septic_notes),
-        pic = COALESCE($75, pic),
-        year = COALESCE($76, year),
-        project_info_notes = COALESCE($77, project_info_notes),
-        specs = COALESCE($78, specs),
-        classification = COALESCE($79, classification),
-        number_of_robes = COALESCE($80, number_of_robes),
-        robe_widths = COALESCE($81, robe_widths),
-        substatus = COALESCE($82, substatus),
-        substatus_detail = COALESCE($83, substatus_detail),
-        on_hold = CASE WHEN $84 = '__SKIP__' THEN on_hold WHEN $84 = '__NULL__' THEN NULL ELSE $84 END,
-        survey_status = COALESCE($85, survey_status),
-        soil_status = COALESCE($86, soil_status),
+        septic_email_sent_date = COALESCE($75, septic_email_sent_date),
+        pic = COALESCE($76, pic),
+        year = COALESCE($77, year),
+        project_info_notes = COALESCE($78, project_info_notes),
+        specs = COALESCE($79, specs),
+        classification = COALESCE($80, classification),
+        number_of_robes = COALESCE($81, number_of_robes),
+        robe_widths = COALESCE($82, robe_widths),
+        substatus = COALESCE($83, substatus),
+        substatus_detail = COALESCE($84, substatus_detail),
+        on_hold = CASE WHEN $85 = '__SKIP__' THEN on_hold WHEN $85 = '__NULL__' THEN NULL ELSE $85 END,
+        survey_status = COALESCE($86, survey_status),
+        soil_status = COALESCE($87, soil_status),
         updated_at = NOW()
-      WHERE id = $87
+      WHERE id = $88
       RETURNING *
       `,
       [
@@ -1212,6 +1223,7 @@ app.put("/api/projects/:id", async (req, res) => {
         processValue(building_permit_status),
         processValue(septic_permit),
         processValue(septic_notes),
+        processValue(septic_email_sent_date),
         processValue(pic),
         normalizedYear !== undefined ? (normalizedYear === null ? null : normalizedYear) : processValue(year),
         processValue(project_info_notes),
@@ -1574,7 +1586,7 @@ app.get("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, updated_at FROM settings WHERE id = 1"
+      "SELECT id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, updated_at FROM settings WHERE id = 1"
     );
     if (r.rows.length === 0) {
       return res.json({
@@ -1585,6 +1597,8 @@ app.get("/api/settings", async (req, res) => {
         smtp_pass: null,
         smtp_user_secondary: null,
         smtp_pass_secondary: null,
+        smtp_user_vic_smtp: null,
+        smtp_pass_vic_smtp: null,
         root_directory_qld: null,
         create_folders_qld: "true",
         smtp_user_qld: null,
@@ -1632,7 +1646,7 @@ app.get("/api/settings", async (req, res) => {
 app.put("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const { root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld } = req.body || {};
+    const { root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld } = req.body || {};
 
     const processValue = (val) => {
       if (val === undefined) return null;
@@ -1658,8 +1672,8 @@ app.put("/api/settings", async (req, res) => {
     };
 
     const r = await pool.query(
-      `INSERT INTO settings (id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, updated_at)
-       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW())
+      `INSERT INTO settings (id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, updated_at)
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW())
        ON CONFLICT (id)
        DO UPDATE SET
          root_directory = COALESCE($1, settings.root_directory),
@@ -1668,20 +1682,22 @@ app.put("/api/settings", async (req, res) => {
          smtp_pass = COALESCE($4, settings.smtp_pass),
          smtp_user_secondary = COALESCE($5, settings.smtp_user_secondary),
          smtp_pass_secondary = COALESCE($6, settings.smtp_pass_secondary),
-         root_directory_qld = COALESCE($7, settings.root_directory_qld),
-         create_folders_qld = COALESCE($8, settings.create_folders_qld),
-         smtp_user_qld = COALESCE($9, settings.smtp_user_qld),
-         smtp_pass_qld = COALESCE($10, settings.smtp_pass_qld),
-         test_project_name_qld = COALESCE($11, settings.test_project_name_qld),
-         test_folder_qld = COALESCE($12, settings.test_folder_qld),
-         global_password = COALESCE($13, settings.global_password),
-         admin_password = COALESCE($14, settings.admin_password),
-         colour_attachments_vic = COALESCE($15, settings.colour_attachments_vic),
-         colour_attachments_qld = COALESCE($16, settings.colour_attachments_qld),
-         send_drawings_vic = COALESCE($17, settings.send_drawings_vic),
-         send_drawings_qld = COALESCE($18, settings.send_drawings_qld),
+         smtp_user_vic_smtp = COALESCE($7, settings.smtp_user_vic_smtp),
+         smtp_pass_vic_smtp = COALESCE($8, settings.smtp_pass_vic_smtp),
+         root_directory_qld = COALESCE($9, settings.root_directory_qld),
+         create_folders_qld = COALESCE($10, settings.create_folders_qld),
+         smtp_user_qld = COALESCE($11, settings.smtp_user_qld),
+         smtp_pass_qld = COALESCE($12, settings.smtp_pass_qld),
+         test_project_name_qld = COALESCE($13, settings.test_project_name_qld),
+         test_folder_qld = COALESCE($14, settings.test_folder_qld),
+         global_password = COALESCE($15, settings.global_password),
+         admin_password = COALESCE($16, settings.admin_password),
+         colour_attachments_vic = COALESCE($17, settings.colour_attachments_vic),
+         colour_attachments_qld = COALESCE($18, settings.colour_attachments_qld),
+         send_drawings_vic = COALESCE($19, settings.send_drawings_vic),
+         send_drawings_qld = COALESCE($20, settings.send_drawings_qld),
          updated_at = NOW()
-       RETURNING id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, updated_at`,
+       RETURNING id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, updated_at`,
       [
         processValue(root_directory),
         processBoolean(create_folders),
@@ -1689,6 +1705,8 @@ app.put("/api/settings", async (req, res) => {
         processValue(smtp_pass),
         processValue(smtp_user_secondary),
         processValue(smtp_pass_secondary),
+        processValue(smtp_user_vic_smtp),
+        processValue(smtp_pass_vic_smtp),
         processValue(root_directory_qld),
         processBoolean(create_folders_qld),
         processValue(smtp_user_qld),
@@ -1727,6 +1745,30 @@ app.put("/api/settings", async (req, res) => {
 
     res.json(result);
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Per-project Drawing Manager notes (projects.drawing_manager_notes)
+app.put("/api/projects/:id/drawing-manager-notes", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: "invalid id" });
+  }
+  try {
+    const { notes } = req.body || {};
+    const v = notes === undefined || notes === null ? null : String(notes);
+    const r = await pool.query(
+      `UPDATE projects SET drawing_manager_notes = $1, updated_at = NOW() WHERE id = $2 RETURNING id, drawing_manager_notes, updated_at`,
+      [v, id]
+    );
+    if (r.rowCount === 0) {
+      return res.status(404).json({ error: "not found" });
+    }
+    res.json({ ok: true, ...r.rows[0] });
+  } catch (e) {
+    console.error("PUT /api/projects/:id/drawing-manager-notes:", e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -1886,7 +1928,7 @@ async function getSmtpCredentialsForFromAddress(fromAddress) {
 
   try {
     const settingsResult = await pool.query(
-      "SELECT smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary FROM settings WHERE id = 1"
+      "SELECT smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp FROM settings WHERE id = 1"
     );
 
     if (settingsResult.rows.length === 0) {
@@ -1899,6 +1941,7 @@ async function getSmtpCredentialsForFromAddress(fromAddress) {
     const settings = settingsResult.rows[0];
     const primaryEmail = settings.smtp_user?.trim().toLowerCase();
     const secondaryEmail = settings.smtp_user_secondary?.trim().toLowerCase();
+    const vicSmtpEmail = settings.smtp_user_vic_smtp?.trim().toLowerCase();
     const fromEmail = fromAddress?.trim().toLowerCase();
 
     // Match from_address to determine which SMTP to use
@@ -1908,6 +1951,15 @@ async function getSmtpCredentialsForFromAddress(fromAddress) {
         return {
           smtpUser: settings.smtp_user_secondary,
           smtpPass: settings.smtp_pass_secondary,
+        };
+      }
+    }
+
+    if (fromEmail && vicSmtpEmail && fromEmail === vicSmtpEmail) {
+      if (settings.smtp_user_vic_smtp && settings.smtp_pass_vic_smtp) {
+        return {
+          smtpUser: settings.smtp_user_vic_smtp,
+          smtpPass: settings.smtp_pass_vic_smtp,
         };
       }
     }
@@ -2130,7 +2182,7 @@ app.post("/api/emails/send-drawings", async (req, res) => {
   
   try {
     const r = await pool.query(
-      "SELECT smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_qld, smtp_pass_qld FROM settings WHERE id = 1"
+      "SELECT smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, smtp_user_qld, smtp_pass_qld FROM settings WHERE id = 1"
     );
     if (r.rows[0]) {
       const settings = r.rows[0];
@@ -2140,6 +2192,9 @@ app.post("/api/emails/send-drawings", async (req, res) => {
         if (settings.smtp_user_secondary && fromAddress.toLowerCase() === settings.smtp_user_secondary.toLowerCase()) {
           smtpUser = settings.smtp_user_secondary;
           smtpPass = settings.smtp_pass_secondary;
+        } else if (settings.smtp_user_vic_smtp && fromAddress.toLowerCase() === settings.smtp_user_vic_smtp.toLowerCase()) {
+          smtpUser = settings.smtp_user_vic_smtp;
+          smtpPass = settings.smtp_pass_vic_smtp;
         } else if (settings.smtp_user_qld && fromAddress.toLowerCase() === settings.smtp_user_qld.toLowerCase()) {
           smtpUser = settings.smtp_user_qld;
           smtpPass = settings.smtp_pass_qld;
@@ -4215,7 +4270,7 @@ app.post("/api/emails/send-windows-order", async (req, res) => {
   let smtpPass = null;
   try {
     const settingsResult = await pool.query(
-      "SELECT smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_qld, smtp_pass_qld FROM settings WHERE id = 1"
+      "SELECT smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, smtp_user_qld, smtp_pass_qld FROM settings WHERE id = 1"
     );
     
     if (settingsResult.rows.length > 0) {
@@ -4590,106 +4645,290 @@ app.get("/api/files/colours/:id", async (req, res) => {
   }
 });
 
+// Folder layout always uses a 4-digit YEAR segment: <root>/<YYYY>/<STATE>/...
+// projects.year stores a full date (YYYY-MM-DD) or legacy year; never use the full date as a path segment.
+function getProjectYearFolderSegment(yearValue) {
+  if (yearValue == null || yearValue === "") {
+    return String(new Date().getFullYear());
+  }
+  if (yearValue instanceof Date) {
+    const y = yearValue.getFullYear();
+    if (Number.isFinite(y)) return String(y);
+  }
+  const raw = String(yearValue).trim();
+  // ISO date / datetime: 2026-03-16 or 2026-03-16T12:00:00.000Z
+  const iso = raw.match(/^(\d{4})-\d{2}-\d{2}/);
+  if (iso) return iso[1];
+  // Already a 4-digit year only
+  if (/^\d{4}$/.test(raw)) return raw;
+  // Fallback: first 20xx / 19xx in the string
+  const anyYear = raw.match(/\b(19|20)\d{2}\b/);
+  if (anyYear) return anyYear[0];
+  return String(new Date().getFullYear());
+}
+
+const VARIATIONS_CONTRACT_ADMIN_FOLDER =
+  "3. CONTRACT ADMIN - Quotations, Contract, E-Contracts,Variations";
+
+async function resolveVariationsDirectory(projectPath) {
+  const exactVariations = path.join(
+    projectPath,
+    VARIATIONS_CONTRACT_ADMIN_FOLDER,
+    "Variations"
+  );
+  try {
+    await fs.access(exactVariations);
+    return {
+      variationsPath: exactVariations,
+      contractAdminFolder: VARIATIONS_CONTRACT_ADMIN_FOLDER,
+      method: "exact",
+    };
+  } catch {
+    // ignore
+  }
+
+  let dirEntries;
+  try {
+    dirEntries = await fs.readdir(projectPath, { withFileTypes: true });
+  } catch (e) {
+    return {
+      variationsPath: null,
+      contractAdminFolder: null,
+      method: null,
+      projectPathError: e.message,
+    };
+  }
+
+  for (const ent of dirEntries) {
+    if (!ent.isDirectory()) continue;
+    const name = ent.name;
+    const lower = name.toLowerCase();
+    if (
+      lower.startsWith("3.") &&
+      lower.includes("contract") &&
+      lower.includes("admin")
+    ) {
+      const candidate = path.join(projectPath, name, "Variations");
+      try {
+        await fs.access(candidate);
+        return {
+          variationsPath: candidate,
+          contractAdminFolder: name,
+          method: "scanned_contract_admin",
+        };
+      } catch {
+        // try next
+      }
+    }
+  }
+
+  return {
+    variationsPath: null,
+    contractAdminFolder: null,
+    method: null,
+  };
+}
+
+async function listAllFilesRecursive(rootDir, baseDir = rootDir) {
+  const out = [];
+  let entries;
+  try {
+    entries = await fs.readdir(rootDir, { withFileTypes: true });
+  } catch (e) {
+    return out;
+  }
+  for (const entry of entries) {
+    const full = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...(await listAllFilesRecursive(full, baseDir)));
+    } else if (entry.isFile()) {
+      const rel = path.relative(baseDir, full);
+      try {
+        const stats = await fs.stat(full);
+        out.push({
+          name: rel.split(path.sep).join("/"),
+          size: stats.size,
+          modified: stats.mtime,
+        });
+      } catch (e) {
+        console.error(`Error getting stats for ${full}:`, e);
+      }
+    }
+  }
+  return out;
+}
+
+/** Resolve Variations folder for a project (shared by list + open file). */
+async function getVariationsFolderForProjectId(projectId) {
+  if (!pool) {
+    return { ok: false, status: 500, message: "DATABASE_URL not set" };
+  }
+
+  const projectResult = await pool.query(
+    "SELECT suburb, street, state, year FROM projects WHERE id = $1",
+    [projectId]
+  );
+
+  if (projectResult.rows.length === 0) {
+    return { ok: false, status: 404, message: "Project not found" };
+  }
+
+  const project = projectResult.rows[0];
+  const { suburb, street, state, year } = project;
+
+  if (!suburb || !street || !state || !year) {
+    return {
+      ok: false,
+      status: 400,
+      message:
+        "Project missing required fields (suburb, street, state, year)",
+    };
+  }
+
+  const settingsResult = await pool.query(
+    "SELECT root_directory, root_directory_qld FROM settings WHERE id = 1"
+  );
+
+  if (settingsResult.rows.length === 0) {
+    return { ok: false, status: 500, message: "Settings not found" };
+  }
+
+  const stateUpper = (state || "").toString().toUpperCase();
+  const rootDir =
+    stateUpper === "QLD"
+      ? settingsResult.rows[0].root_directory_qld ||
+        settingsResult.rows[0].root_directory
+      : settingsResult.rows[0].root_directory;
+
+  if (!rootDir) {
+    return { ok: false, status: 500, message: "Root directory not configured" };
+  }
+
+  const projectYearFolder = getProjectYearFolderSegment(year);
+  const suburbUpper = suburb.toString().toUpperCase();
+  const projectFolderName = `${suburbUpper} - ${street}`
+    .toString()
+    .replace(/[<>:"/\\|?*]/g, "_");
+  const projectPath = path.join(rootDir, projectYearFolder, stateUpper, projectFolderName);
+
+  const resolved = await resolveVariationsDirectory(projectPath);
+  const variationsFolderPath = resolved.variationsPath;
+  const attemptedExactPath = path.join(
+    projectPath,
+    VARIATIONS_CONTRACT_ADMIN_FOLDER,
+    "Variations"
+  );
+
+  return {
+    ok: true,
+    variationsFolderPath,
+    projectPath,
+    projectYearFolder,
+    attemptedExactPath,
+    resolved,
+  };
+}
+
+// Open / download a single file from the project Variations folder (path traversal safe)
+app.get("/api/files/variations/:id/file", async (req, res) => {
+  try {
+    const relativePathRaw = req.query.relativePath;
+    if (!relativePathRaw || typeof relativePathRaw !== "string") {
+      return res.status(400).json({ error: "relativePath query required" });
+    }
+
+    const ctx = await getVariationsFolderForProjectId(req.params.id);
+    if (!ctx.ok) {
+      return res.status(ctx.status).json({ error: ctx.message });
+    }
+    if (!ctx.variationsFolderPath) {
+      return res.status(404).json({ error: "Variations folder not found" });
+    }
+
+    const base = path.resolve(ctx.variationsFolderPath);
+    const normalizedRel = relativePathRaw.replace(/\//g, path.sep);
+    const target = path.resolve(base, normalizedRel);
+    const rel = path.relative(base, target);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) {
+      return res.status(403).json({ error: "Invalid path" });
+    }
+
+    let st;
+    try {
+      st = await fs.stat(target);
+    } catch {
+      return res.status(404).json({ error: "File not found" });
+    }
+    if (!st.isFile()) {
+      return res.status(400).json({ error: "Not a file" });
+    }
+
+    const basename = path.basename(target);
+    const ext = path.extname(basename).toLowerCase();
+    let contentType = "application/octet-stream";
+    let disposition = "attachment";
+    if (ext === ".xlsx") {
+      contentType =
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      disposition = "inline";
+    } else if (ext === ".xls") {
+      contentType = "application/vnd.ms-excel";
+      disposition = "inline";
+    } else if (ext === ".pdf") {
+      contentType = "application/pdf";
+      disposition = "inline";
+    }
+
+    res.setHeader("Content-Type", contentType);
+    res.setHeader(
+      "Content-Disposition",
+      `${disposition}; filename="${basename.replace(/"/g, "'")}"`
+    );
+    const buf = await fs.readFile(target);
+    res.send(buf);
+  } catch (error) {
+    console.error("Error serving variations file:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // List files in Variations folder
 app.get("/api/files/variations/:id", async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    if (!pool) {
-      return res.status(500).json({ error: "DATABASE_URL not set" });
+    const ctx = await getVariationsFolderForProjectId(req.params.id);
+    if (!ctx.ok) {
+      return res.status(ctx.status).json({ error: ctx.message });
     }
 
-    // Get project details
-    const projectResult = await pool.query(
-      "SELECT suburb, street, state, year FROM projects WHERE id = $1",
-      [id]
-    );
+    const { variationsFolderPath, projectPath, projectYearFolder, attemptedExactPath, resolved } = ctx;
 
-    if (projectResult.rows.length === 0) {
-      return res.status(404).json({ error: "Project not found" });
-    }
-
-    const project = projectResult.rows[0];
-    const { suburb, street, state, year } = project;
-
-    if (!suburb || !street || !state || !year) {
-      return res.status(400).json({ error: "Project missing required fields (suburb, street, state, year)" });
-    }
-
-    // Get root directory from settings
-    const settingsResult = await pool.query(
-      "SELECT root_directory, root_directory_qld FROM settings WHERE id = 1"
-    );
-
-    if (settingsResult.rows.length === 0) {
-      return res.status(500).json({ error: "Settings not found" });
-    }
-
-    const rootDir = state === "QLD" 
-      ? (settingsResult.rows[0].root_directory_qld || settingsResult.rows[0].root_directory)
-      : settingsResult.rows[0].root_directory;
-
-    if (!rootDir) {
-      return res.status(500).json({ error: "Root directory not configured" });
-    }
-
-    // Build project folder path: root_directory/year/state/suburb - street
-    const suburbUpper = suburb.toUpperCase();
-    const projectFolderName = `${suburbUpper} - ${street}`.replace(/[<>:"/\\|?*]/g, '_');
-    const projectPath = path.join(rootDir, year.toString(), state, projectFolderName);
-
-    // Build Variations folder path
-    const variationsFolderPath = path.join(
-      projectPath,
-      "3. CONTRACT ADMIN - Quotations, Contract, E-Contracts,Variations",
-      "Variations"
-    );
-
-    // Check if Variations folder exists
-    let folderExists = false;
-    try {
-      await fs.access(variationsFolderPath);
-      folderExists = true;
-    } catch (e) {
-      // Folder doesn't exist, return empty list with path for debugging
-      console.log(`Variations folder does not exist: ${variationsFolderPath}`);
-      return res.json({ 
+    if (!variationsFolderPath) {
+      console.log(
+        `Variations folder not found under project path: ${projectPath}`
+      );
+      return res.json({
         files: [],
-        path: variationsFolderPath,
+        path: attemptedExactPath,
+        projectPath,
+        projectYearFolder,
+        contractAdminFolder: resolved.contractAdminFolder,
+        resolveMethod: resolved.method,
         exists: false,
-        error: `Folder does not exist: ${variationsFolderPath}`
+        error: `Variations folder not found. Project path: ${projectPath}`,
       });
     }
 
-    // Read directory contents
-    const entries = await fs.readdir(variationsFolderPath, { withFileTypes: true });
-
-    // Get all files (no filtering)
-    const files = [];
-    for (const entry of entries) {
-      if (entry.isFile()) {
-        const fileName = entry.name;
-        const filePath = path.join(variationsFolderPath, fileName);
-        try {
-          const stats = await fs.stat(filePath);
-          files.push({
-            name: fileName,
-            size: stats.size,
-            modified: stats.mtime,
-          });
-        } catch (e) {
-          console.error(`Error getting stats for ${fileName}:`, e);
-        }
-      }
-    }
-
-    // Sort by name
+    const files = await listAllFilesRecursive(variationsFolderPath);
     files.sort((a, b) => a.name.localeCompare(b.name));
 
-    res.json({ 
+    res.json({
       files,
       path: variationsFolderPath,
-      exists: true
+      projectPath,
+      projectYearFolder,
+      contractAdminFolder: resolved.contractAdminFolder,
+      resolveMethod: resolved.method,
+      exists: true,
     });
   } catch (error) {
     console.error("Error listing variations files:", error);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import logo from "../images/logo.png";
@@ -9,6 +9,16 @@ const LIGHT_MONUMENT = "#42464d";
 const WHITE = "#fff";
 const API_URL = "";
 
+/** Escape text for inclusion in HTML email fragments. */
+function escapeHtmlForEmailList(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 export default function DrawingManager() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17,18 +27,196 @@ export default function DrawingManager() {
   const [draftspersonUsers, setDraftspersonUsers] = useState([]);
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [selectedProjectForReminder, setSelectedProjectForReminder] = useState(null);
+  const [reminderEmailTo, setReminderEmailTo] = useState("");
+  const [reminderEmailFrom, setReminderEmailFrom] = useState("");
+  const [reminderEmailSubject, setReminderEmailSubject] = useState("");
+  const [reminderEmailBody, setReminderEmailBody] = useState("");
+  const [reminderSending, setReminderSending] = useState(false);
   const [sortColumn, setSortColumn] = useState(null);
   const [sortDirection, setSortDirection] = useState("asc");
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailTo, setEmailTo] = useState("ben@superiorgrannyflats.com.au");
   const [emailFrom, setEmailFrom] = useState("info@superiorgrannyflats.com.au");
   const [emailSubject, setEmailSubject] = useState("Drawing Manager Projects List");
-  const [emailHtmlBody, setEmailHtmlBody] = useState("");
+  /** Styled HTML body for the list email (matches preview; sent as htmlBody). */
+  const [emailListHtml, setEmailListHtml] = useState("");
+  const [notesModalProjectId, setNotesModalProjectId] = useState(null);
+  const [notesModalLabel, setNotesModalLabel] = useState("");
+  const [notesDraft, setNotesDraft] = useState("");
+  const [notesSaving, setNotesSaving] = useState(false);
+  /** Snapshot when the modal opened — Cancel restores this (nothing is saved until OK). */
+  const notesSnapshotRef = useRef("");
 
   useEffect(() => {
     fetchProjects();
     fetchDraftspersons();
   }, []);
+
+  function openNotesModalForProject(project) {
+    const suburb = project.suburb || "";
+    const street = project.street || "";
+    const label =
+      suburb && street ? `${suburb} - ${street}` : suburb || street || project.name || `Project #${project.id}`;
+    const saved = project.drawing_manager_notes != null ? String(project.drawing_manager_notes) : "";
+    setNotesModalProjectId(project.id);
+    setNotesModalLabel(label);
+    notesSnapshotRef.current = saved;
+    setNotesDraft(saved);
+  }
+
+  async function saveProjectDrawingManagerNotes(projectId, text) {
+    const res = await fetch(`${API_URL}/api/projects/${projectId}/drawing-manager-notes`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notes: text }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "Save failed");
+    }
+    setProjects((prev) =>
+      prev.map((p) => (p.id === projectId ? { ...p, drawing_manager_notes: text } : p))
+    );
+  }
+
+  async function handleNotesModalOk() {
+    if (notesModalProjectId == null) return;
+    try {
+      setNotesSaving(true);
+      await saveProjectDrawingManagerNotes(notesModalProjectId, notesDraft);
+      setNotesModalProjectId(null);
+      setNotesModalLabel("");
+    } catch (e) {
+      alert(e.message || "Could not save notes.");
+    } finally {
+      setNotesSaving(false);
+    }
+  }
+
+  function handleNotesModalCancel() {
+    setNotesDraft(notesSnapshotRef.current);
+    setNotesModalProjectId(null);
+    setNotesModalLabel("");
+  }
+
+  function getDraftspersonDetailsByProject(project) {
+    if (!project?.draftsperson) return { name: "", position: "" };
+    const user = draftspersonUsers.find(
+      (u) => u.id === parseInt(project.draftsperson, 10) || u.id === project.draftsperson
+    );
+    if (!user) return { name: "", position: "" };
+    const position =
+      user.positions && Array.isArray(user.positions) && user.positions.length > 0
+        ? user.positions[0].name || ""
+        : "";
+    return { name: user.name || "", position };
+  }
+
+  function applyTemplateTokens(templateText, tokenMap) {
+    const source = templateText || "";
+    return source.replace(/\{([^}]+)\}/g, (_m, tokenRaw) => {
+      const key = String(tokenRaw || "").trim();
+      if (!key) return "";
+      if (Object.prototype.hasOwnProperty.call(tokenMap, key)) {
+        return tokenMap[key] ?? "";
+      }
+      const lower = key.toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(tokenMap, lower)) {
+        return tokenMap[lower] ?? "";
+      }
+      return "";
+    });
+  }
+
+  function buildClientFirstNames(project) {
+    const entries = [
+      { active: project?.client1_active, name: project?.client1_name },
+      { active: project?.client2_active, name: project?.client2_name },
+      { active: project?.client3_active, name: project?.client3_name },
+    ];
+    const names = entries
+      .filter((e) => e.active === "true" && e.name && String(e.name).trim())
+      .map((e) => String(e.name).trim().split(/\s+/)[0])
+      .filter(Boolean);
+    if (names.length === 0) {
+      return (project?.client_name || "").trim();
+    }
+    if (names.length === 1) return names[0];
+    if (names.length === 2) return `${names[0]} & ${names[1]}`;
+    return `${names.slice(0, -1).join(", ")} & ${names[names.length - 1]}`;
+  }
+
+  async function openReminderEmailModal(project) {
+    const mainEmail = (getMainEmailContact(project) || "").trim();
+    try {
+      const templateResponse = await fetch(`${API_URL}/api/email-templates`);
+      if (!templateResponse.ok) {
+        throw new Error("Failed to fetch email templates");
+      }
+      const templates = await templateResponse.json();
+      const template = templates.find((t) => t.name === "DRAWINGS - Reminder");
+      if (!template) {
+        alert('Email template "DRAWINGS - Reminder" not found. Please create it in Settings → Email Templates.');
+        return;
+      }
+
+      const projectName =
+        project?.street && project?.suburb
+          ? `${project.street}, ${project.suburb}`.trim()
+          : project?.name || "";
+      const clientName = buildClientFirstNames(project);
+      const { name: draftspersonName, position: draftspersonPosition } = getDraftspersonDetailsByProject(project);
+      const contact1 = project?.client1_active === "true" && project?.client1_email ? project.client1_email : "";
+      const contact2 = project?.client2_active === "true" && project?.client2_email ? project.client2_email : "";
+      const contact3 = project?.client3_active === "true" && project?.client3_email ? project.client3_email : "";
+      const toFromTemplate = Array.isArray(template.to_addresses) ? template.to_addresses.join(", ") : "";
+
+      const tokenMap = {
+        ProjectName: projectName,
+        projectname: projectName,
+        ClientName: clientName,
+        clientname: clientName,
+        Draftsperson: draftspersonName,
+        draftsperson: draftspersonName,
+        Position: draftspersonPosition,
+        position: draftspersonPosition,
+        Contact1: contact1,
+        contact1: contact1,
+        Contact2: contact2,
+        contact2: contact2,
+        Contact3: contact3,
+        contact3: contact3,
+        MainEmail: mainEmail,
+        mainemail: mainEmail,
+        Street: project?.street || "",
+        street: project?.street || "",
+        Suburb: project?.suburb || "",
+        suburb: project?.suburb || "",
+        State: project?.state || "",
+        state: project?.state || "",
+      };
+
+      setSelectedProjectForReminder(project);
+      setReminderEmailTo(mainEmail || toFromTemplate || "");
+      setReminderEmailFrom((template.from_address || "").trim());
+      setReminderEmailSubject(applyTemplateTokens(template.subject || "", tokenMap));
+      setReminderEmailBody(applyTemplateTokens(template.body || "", tokenMap));
+      setShowReminderModal(true);
+    } catch (error) {
+      console.error("Error opening reminder email modal:", error);
+      alert(error.message || "Failed to prepare reminder email");
+    }
+  }
+
+  function closeReminderModal() {
+    setShowReminderModal(false);
+    setSelectedProjectForReminder(null);
+    setReminderEmailTo("");
+    setReminderEmailFrom("");
+    setReminderEmailSubject("");
+    setReminderEmailBody("");
+    setReminderSending(false);
+  }
 
   async function fetchDraftspersons() {
     try {
@@ -160,6 +348,176 @@ export default function DrawingManager() {
     } catch (e) {
       return false;
     }
+  }
+
+  /** Same filter + sort order as the on-screen grid (for Email List). */
+  function getDrawingManagerListProjectsForEmail() {
+    let filteredProjects =
+      stateFilter !== "All"
+        ? projects.filter((project) => {
+            const projectState = (project.state || "").toUpperCase();
+            return projectState === stateFilter.toUpperCase();
+          })
+        : projects;
+    if (sortColumn) {
+      return sortProjects(filteredProjects, sortColumn, sortDirection);
+    }
+    return [...filteredProjects].sort((a, b) => {
+      const conceptA = isConceptApproved(a);
+      const workingA = isWorkingDrawingsApproved(a);
+      const conceptB = isConceptApproved(b);
+      const workingB = isWorkingDrawingsApproved(b);
+      const priorityA = !conceptA && !workingA ? 0 : conceptA && !workingA ? 1 : 2;
+      const priorityB = !conceptB && !workingB ? 0 : conceptB && !workingB ? 1 : 2;
+      if (priorityA !== priorityB) return priorityA - priorityB;
+      const suburbA = (a.suburb || "").toLowerCase();
+      const suburbB = (b.suburb || "").toLowerCase();
+      if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
+      return (a.street || "").toLowerCase().localeCompare((b.street || "").toLowerCase());
+    });
+  }
+
+  function getHolderDisplayForEmailList(project) {
+    const holder = project.drawings_holder || "design team";
+    let displayText = "Design Team";
+    if (holder === "sales team") displayText = "Sales Team";
+    if (holder === "client") displayText = "Client";
+    let daysText = "";
+    if (project.drawings_holder_date) {
+      const holderDate = new Date(project.drawings_holder_date);
+      const today = new Date();
+      const diffTime = Math.abs(today - holderDate);
+      const daysNum = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      daysText = `${daysNum} day${daysNum !== 1 ? "s" : ""}`;
+    }
+    return { text: displayText, days: daysText };
+  }
+
+  /**
+   * HTML table matching the Drawing Manager grid: columns, greens/reds, deposit badge, etc.
+   * Many clients support tables + inline CSS; Outlook may simplify some styles.
+   */
+  function buildEmailListHtml(projectRows) {
+    const GREEN = "#33cc33";
+    const RED = "#cc3333";
+    const DEPOSIT_ORANGE = "#ff8800";
+    /** Matches common email width; preview uses same max width so layout matches sent mail. */
+    const EMAIL_W = 960;
+    const PROJECT_W = 288; // Keep project column at the same width as before (48% of old 600px table)
+    const OTHER_W = 96;
+    /** Uniform data row height (table cells, email-client safe — no flex). */
+    const ROW_H = 46;
+    const BORDER = "#d0d4d8";
+    const parts = [];
+    parts.push(
+      `<div style="width:${EMAIL_W}px;max-width:100%;margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.25;color:${MONUMENT};-webkit-text-size-adjust:100%;">`
+    );
+    parts.push(
+      `<div style="font-weight:700;font-size:15px;line-height:1.2;margin:0 0 6px 0;">Drawing Manager Projects List</div>`
+    );
+    parts.push(
+      `<div style="color:#666;font-size:11px;line-height:1.2;margin:0 0 10px 0;">Total: ${projectRows.length} projects</div>`
+    );
+    parts.push(
+      `<table role="presentation" cellpadding="0" cellspacing="0" width="${EMAIL_W}" style="width:100%;max-width:${EMAIL_W}px;border-collapse:collapse;table-layout:fixed;border:1px solid ${BORDER};background:${WHITE};">`
+    );
+
+    const th = (label, widthPx, align = "center") =>
+      `<td width="${widthPx}" style="width:${widthPx}px;min-width:${widthPx}px;max-width:${widthPx}px;border:1px solid ${BORDER};padding:5px 4px;background:${MONUMENT};color:${WHITE};font-weight:600;font-size:10px;line-height:1.2;text-align:${align};vertical-align:middle;mso-line-height-rule:exactly;white-space:nowrap;">${label}</td>`;
+
+    parts.push("<tr>");
+    parts.push(
+      `<td width="${PROJECT_W}" style="width:${PROJECT_W}px;min-width:${PROJECT_W}px;max-width:${PROJECT_W}px;border:1px solid ${BORDER};padding:5px 6px;background:${MONUMENT};color:${WHITE};font-weight:600;font-size:10px;line-height:1.2;text-align:left;vertical-align:middle;">Project</td>`
+    );
+    parts.push(th("Concept", OTHER_W));
+    parts.push(th("Working Drawings", OTHER_W));
+    parts.push(th("Draftsperson", OTHER_W));
+    parts.push(th("Drawings With", OTHER_W));
+    parts.push(th("Windows", OTHER_W));
+    parts.push(th("Energy", OTHER_W));
+    parts.push(th("Building Permit", OTHER_W));
+    parts.push("</tr>");
+
+    const tdBase = `border:1px solid ${BORDER};height:${ROW_H}px;padding:4px 5px;vertical-align:middle;font-size:11px;line-height:1.25;mso-line-height-rule:exactly;`;
+
+    projectRows.forEach((project) => {
+      const suburb = project.suburb || "";
+      const street = project.street || "";
+      const projectName =
+        suburb && street ? `${suburb} - ${street}` : suburb || street || "Unknown Project";
+      const conceptApproved = isConceptApproved(project);
+      const workingApproved = isWorkingDrawingsApproved(project);
+      const draftspersonName = getDraftspersonName(project.draftsperson) || "None";
+      const holder = getHolderDisplayForEmailList(project);
+      const needsDeposit = isPartialDeposit(project);
+      const windowsStatus =
+        project.window_status && String(project.window_status).trim()
+          ? String(project.window_status)
+          : "Not Ordered";
+      const energyStatus =
+        project.energy_report_status && String(project.energy_report_status).trim()
+          ? String(project.energy_report_status)
+          : "Not Submitted";
+      const buildingPermitStatus =
+        project.building_permit_status && String(project.building_permit_status).trim()
+          ? String(project.building_permit_status)
+          : "Not Submitted";
+
+      parts.push("<tr>");
+      parts.push(
+        `<td style="${tdBase}text-align:left;background:${WHITE};">` +
+          `<span style="word-break:break-word;">${escapeHtmlForEmailList(projectName)}</span>` +
+          (needsDeposit
+            ? `<br/><span style="display:inline-block;margin-top:2px;padding:2px 5px;background:${DEPOSIT_ORANGE};color:${WHITE};border-radius:2px;font-size:9px;font-weight:700;line-height:1.1;">NEEDS DEPOSIT</span>`
+            : "") +
+          `</td>`
+      );
+
+      const cBg = conceptApproved ? GREEN : RED;
+      parts.push(
+        `<td style="${tdBase}text-align:center;background:${cBg};color:${WHITE};font-weight:600;font-size:10px;">Concept</td>`
+      );
+
+      const wBg = workingApproved ? GREEN : RED;
+      parts.push(
+        `<td style="${tdBase}text-align:center;background:${wBg};color:${WHITE};font-weight:600;font-size:10px;line-height:1.15;">Working<br/>Drawings</td>`
+      );
+
+      parts.push(
+        `<td style="${tdBase}text-align:center;background:${WHITE};word-break:break-word;">${escapeHtmlForEmailList(
+          draftspersonName
+        )}</td>`
+      );
+
+      const holderDaysHtml = holder.days
+        ? ` <span style="color:#666;font-size:10px;">- ${escapeHtmlForEmailList(holder.days)}</span>`
+        : "";
+      parts.push(
+        `<td style="${tdBase}text-align:center;background:${WHITE};">${escapeHtmlForEmailList(
+          holder.text
+        )}${holderDaysHtml}</td>`
+      );
+
+      parts.push(
+        `<td style="${tdBase}text-align:center;background:${WHITE};font-size:9px;line-height:1.15;white-space:nowrap;">${escapeHtmlForEmailList(
+          windowsStatus
+        )}</td>`
+      );
+      parts.push(
+        `<td style="${tdBase}text-align:center;background:${WHITE};font-size:9px;line-height:1.15;white-space:nowrap;">${escapeHtmlForEmailList(
+          energyStatus
+        )}</td>`
+      );
+      parts.push(
+        `<td style="${tdBase}text-align:center;background:${WHITE};font-size:9px;line-height:1.15;white-space:nowrap;">${escapeHtmlForEmailList(
+          buildingPermitStatus
+        )}</td>`
+      );
+      parts.push("</tr>");
+    });
+
+    parts.push("</table></div>");
+    return parts.join("");
   }
 
   // Toggle concept approval
@@ -930,197 +1288,7 @@ export default function DrawingManager() {
                 </h2>
                 <button
                   onClick={() => {
-                    // Get the filtered projects (respecting state filter and sorting)
-                    let filteredProjectsForEmail = stateFilter !== "All" 
-                      ? projects.filter(project => {
-                          const projectState = (project.state || "").toUpperCase();
-                          return projectState === stateFilter.toUpperCase();
-                        })
-                      : projects;
-                    
-                    // Apply sorting if a column is selected
-                    if (sortColumn) {
-                      filteredProjectsForEmail = sortProjects(filteredProjectsForEmail, sortColumn, sortDirection);
-                    }
-                    
-                    // Color constants
-                    const COLOR_RED = "#cc3333";
-                    const COLOR_GREEN = "#33cc33";
-                    
-                    // Helper function to create project row HTML
-                    const createProjectRow = (project) => {
-                      const suburb = project.suburb || "";
-                      const street = project.street || "";
-                      // Format project name
-                      let projectNameDisplay = "";
-                      if (suburb && street) {
-                        projectNameDisplay = `${suburb}<br>${street}`;
-                      } else if (suburb) {
-                        projectNameDisplay = suburb;
-                      } else if (street) {
-                        projectNameDisplay = street;
-                      } else {
-                        projectNameDisplay = project.name || "Unknown Project";
-                      }
-                      
-                      // Get approval statuses
-                      const conceptApproved = isConceptApproved(project);
-                      const workingApproved = isWorkingDrawingsApproved(project);
-                      
-                      // Get status colors
-                      const conceptColor = conceptApproved ? COLOR_GREEN : COLOR_RED;
-                      const workingColor = workingApproved ? COLOR_GREEN : COLOR_RED;
-                      
-                      // Check if deposit is paid (not partial)
-                      const needsDeposit = isPartialDeposit(project);
-                      const depositColor = needsDeposit ? COLOR_RED : COLOR_GREEN;
-                      
-                      // Get site visit status
-                      const siteVisitRaw = project.site_visit_status || "";
-                      const siteVisitStatus = (siteVisitRaw === "Complete" || siteVisitRaw === "") ? (siteVisitRaw || "NOT DONE") : siteVisitRaw;
-                      const siteVisitColor = siteVisitStatus === "Complete" ? COLOR_GREEN : COLOR_RED;
-                      
-                      // Get contract status
-                      const contractRaw = project.contract_status || "";
-                      const contractStatus = contractRaw || "Not Sent";
-                      const contractColor = contractStatus === "Sent" ? COLOR_GREEN : COLOR_RED;
-                      
-                      // Get building permit status
-                      const buildingPermitStatus = project.building_permit_status || "-";
-                      const buildingPermitColor = buildingPermitStatus === "Complete" ? COLOR_GREEN : COLOR_RED;
-                      
-                      // Helper function to create colored rectangle
-                      const createStatusRect = (label, color) => {
-                        return `<td style="padding: 2px; width: 80px;">
-                          <div style="width: 100%; height: 24px; border-radius: 4px; background: ${color}; border: 1px solid white; box-sizing: border-box; text-align: center; color: white; font-size: 10px; font-weight: 500; line-height: 24px; vertical-align: middle;">
-                            ${label}
-                          </div>
-                        </td>`;
-                      };
-                      
-                      return `<tr style="background: white;">
-  <td style="padding: 8px 12px; vertical-align: middle; font-weight: 500; color: #323233; font-size: 14px; width: 200px; border-radius: 8px 0 0 8px;">${projectNameDisplay}</td>
-  ${createStatusRect("CONCEPT", conceptColor)}
-  ${createStatusRect("WD", workingColor)}
-  ${createStatusRect("DEPOSIT", depositColor)}
-  ${createStatusRect("SITE VISIT", siteVisitColor)}
-  ${createStatusRect("CONTRACT", contractColor)}
-  ${createStatusRect("BUILDING PERMIT", buildingPermitColor)}
-</tr>`;
-                    };
-                    
-                    // Group projects by drawings_holder
-                    const groupedProjects = {
-                      client: [],
-                      "sales team": [],
-                      "design team": {}
-                    };
-                    
-                    filteredProjectsForEmail.forEach((project) => {
-                      const drawingsHolder = (project.drawings_holder || "design team").toLowerCase();
-                      
-                      if (drawingsHolder === "client") {
-                        groupedProjects.client.push(project);
-                      } else if (drawingsHolder === "sales team") {
-                        groupedProjects["sales team"].push(project);
-                      } else {
-                        // Design team - sub-group by draftsperson
-                        const draftspersonId = project.draftsperson || "unassigned";
-                        if (!groupedProjects["design team"][draftspersonId]) {
-                          groupedProjects["design team"][draftspersonId] = [];
-                        }
-                        groupedProjects["design team"][draftspersonId].push(project);
-                      }
-                    });
-                    
-                    // Build HTML sections for each group
-                    let htmlSections = [];
-                    
-                    // 1. With Client
-                    if (groupedProjects.client.length > 0) {
-                      const clientRows = groupedProjects.client.map(createProjectRow).join("");
-                      htmlSections.push(`
-                        <div style="margin-bottom: 30px;">
-                          <h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: bold; color: #323233; background: #f0f0f0; padding: 8px 12px; border-radius: 4px;">With Client (${groupedProjects.client.length})</h3>
-                          <table style="width: 100%; border-collapse: separate; border-spacing: 0 8px;">
-                            <tbody>${clientRows}</tbody>
-                          </table>
-                        </div>
-                      `);
-                    }
-                    
-                    // 2. With Sales Team
-                    if (groupedProjects["sales team"].length > 0) {
-                      const salesRows = groupedProjects["sales team"].map(createProjectRow).join("");
-                      htmlSections.push(`
-                        <div style="margin-bottom: 30px;">
-                          <h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: bold; color: #323233; background: #f0f0f0; padding: 8px 12px; border-radius: 4px;">With Sales Team (${groupedProjects["sales team"].length})</h3>
-                          <table style="width: 100%; border-collapse: separate; border-spacing: 0 8px;">
-                            <tbody>${salesRows}</tbody>
-                          </table>
-                        </div>
-                      `);
-                    }
-                    
-                    // 3. With Design Team (sub-grouped by draftsperson)
-                    const designTeamGroups = Object.keys(groupedProjects["design team"]);
-                    if (designTeamGroups.length > 0) {
-                      let designTeamSections = [];
-                      
-                      // Sort draftspersons by name (unassigned first, then alphabetically)
-                      const sortedDraftspersonIds = designTeamGroups.sort((a, b) => {
-                        if (a === "unassigned") return -1;
-                        if (b === "unassigned") return 1;
-                        const nameA = getDraftspersonName(a) || "";
-                        const nameB = getDraftspersonName(b) || "";
-                        return nameA.localeCompare(nameB);
-                      });
-                      
-                      sortedDraftspersonIds.forEach((draftspersonId) => {
-                        const projects = groupedProjects["design team"][draftspersonId];
-                        const draftspersonName = draftspersonId === "unassigned" 
-                          ? "Unassigned" 
-                          : (getDraftspersonName(draftspersonId) || "Unknown");
-                        const projectRows = projects.map(createProjectRow).join("");
-                        
-                        designTeamSections.push(`
-                          <div style="margin-bottom: 20px;">
-                            <h4 style="margin: 0 0 8px 0; font-size: 14px; font-weight: bold; color: #323233; padding: 6px 10px; background: #e8e8e8; border-radius: 4px;">${draftspersonName} (${projects.length})</h4>
-                            <table style="width: 100%; border-collapse: separate; border-spacing: 0 8px;">
-                              <tbody>${projectRows}</tbody>
-                            </table>
-                          </div>
-                        `);
-                      });
-                      
-                      htmlSections.push(`
-                        <div style="margin-bottom: 30px;">
-                          <h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: bold; color: #323233; background: #f0f0f0; padding: 8px 12px; border-radius: 4px;">With Design Team</h3>
-                          ${designTeamSections.join("")}
-                        </div>
-                      `);
-                    }
-                    
-                    const htmlBody = `<div style="font-family: Arial, sans-serif; padding: 20px;">
-  <h2 style="margin: 0 0 20px 0; font-size: 20px; font-weight: bold; color: #323233;">Drawing Manager Projects List</h2>
-  <table style="width: 100%; border-collapse: separate; border-spacing: 0 8px; margin-bottom: 20px;">
-    <thead>
-      <tr>
-        <th style="padding: 8px 12px; text-align: left; background: #323233; color: white; font-weight: 600; font-size: 12px; border-radius: 8px 0 0 0;">Project</th>
-        <th style="padding: 2px; text-align: center; background: #323233; color: white; font-weight: 600; font-size: 10px;">CONCEPT</th>
-        <th style="padding: 2px; text-align: center; background: #323233; color: white; font-weight: 600; font-size: 10px;">WD</th>
-        <th style="padding: 2px; text-align: center; background: #323233; color: white; font-weight: 600; font-size: 10px;">DEPOSIT</th>
-        <th style="padding: 2px; text-align: center; background: #323233; color: white; font-weight: 600; font-size: 10px;">SITE VISIT</th>
-        <th style="padding: 2px; text-align: center; background: #323233; color: white; font-weight: 600; font-size: 10px;">CONTRACT</th>
-        <th style="padding: 2px; text-align: center; background: #323233; color: white; font-weight: 600; font-size: 10px; border-radius: 0 8px 0 0;">BUILDING PERMIT</th>
-      </tr>
-    </thead>
-  </table>
-  ${htmlSections.join("")}
-  <p style="margin: 20px 0 0 0; font-weight: bold; color: #323233;">Total: ${filteredProjectsForEmail.length} projects</p>
-</div>`;
-                    
-                    setEmailHtmlBody(htmlBody);
+                    setEmailListHtml(buildEmailListHtml(getDrawingManagerListProjectsForEmail()));
                     setShowEmailModal(true);
                   }}
                   style={{
@@ -1225,7 +1393,7 @@ export default function DrawingManager() {
                 }
                 
                 return (
-                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1.5fr 1fr 0.8fr", gap: "12px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1.5fr 1fr 0.65fr 0.8fr", gap: "12px" }}>
                     {/* Header Row */}
                     <div
                       onClick={() => handleSort("project")}
@@ -1370,7 +1538,23 @@ export default function DrawingManager() {
                         zIndex: 10,
                       }}
                     >
-                      Reminder
+                      Notes
+                    </div>
+                    <div
+                      style={{
+                        padding: "8px 12px",
+                        background: MONUMENT,
+                        color: WHITE,
+                        borderRadius: "8px",
+                        fontWeight: 600,
+                        fontSize: "0.85rem",
+                        textAlign: "center",
+                        position: "sticky",
+                        top: "0",
+                        zIndex: 10,
+                      }}
+                    >
+                      Email
                     </div>
                     
                     {/* Project Rows */}
@@ -1551,7 +1735,47 @@ export default function DrawingManager() {
                             )}
                           </div>
                           
-                          {/* Column 6: Email Contact */}
+                          {/* Column 6: Notes (per project) */}
+                          <div
+                            key={`${project.id}-dm-notes`}
+                            style={{
+                              padding: "8px 12px",
+                              background: WHITE,
+                              borderRadius: "8px",
+                              fontSize: "0.85rem",
+                              fontWeight: 500,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              boxShadow: "0 2px 4px rgba(0,0,0,0.06)",
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => openNotesModalForProject(project)}
+                              style={{
+                                padding: "6px 12px",
+                                fontSize: "0.78rem",
+                                fontWeight: 600,
+                                color: MONUMENT,
+                                background: "#f0f0f0",
+                                border: `1px solid ${SECTION_GREY}`,
+                                borderRadius: "6px",
+                                cursor: "pointer",
+                                lineHeight: 1.2,
+                                width: "100%",
+                                maxWidth: "100px",
+                              }}
+                              title="Notes for this job"
+                            >
+                              {project.drawing_manager_notes &&
+                              String(project.drawing_manager_notes).trim()
+                                ? "Notes ✓"
+                                : "Notes"}
+                            </button>
+                          </div>
+                          
+                          {/* Column 7: Reminder Email */}
                           <div
                             key={`${project.id}-email`}
                             style={{
@@ -1562,57 +1786,34 @@ export default function DrawingManager() {
                               fontWeight: 500,
                               display: "flex",
                               alignItems: "center",
-                              justifyContent: "space-between",
-                              gap: "8px",
+                              justifyContent: "center",
                             }}
                           >
-                            <span
+                            <button
+                              type="button"
+                              onClick={() => openReminderEmailModal(project)}
                               style={{
-                                flex: 1,
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                                color: MONUMENT,
+                                width: "100%",
+                                maxWidth: "96px",
+                                padding: "6px 10px",
+                                background: "#4D93D9",
+                                color: WHITE,
+                                border: "none",
+                                borderRadius: "6px",
+                                fontSize: "0.8rem",
+                                fontWeight: 600,
+                                cursor: "pointer",
+                                transition: "background 0.2s",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = "#3d7bc9";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = "#4D93D9";
                               }}
                             >
-                              {(() => {
-                                const mainEmail = getMainEmailContact(project);
-                                return mainEmail || "No email";
-                              })()}
-                            </span>
-                            {(() => {
-                              const mainEmail = getMainEmailContact(project);
-                              if (!mainEmail) return null;
-                              return (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleCopyEmail(mainEmail);
-                                  }}
-                                  style={{
-                                    padding: "4px 8px",
-                                    background: "#4D93D9",
-                                    color: WHITE,
-                                    border: "none",
-                                    borderRadius: "4px",
-                                    fontSize: "0.75rem",
-                                    fontWeight: 500,
-                                    cursor: "pointer",
-                                    transition: "background 0.2s",
-                                    flexShrink: 0,
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.background = "#3d7bc9";
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.background = "#4D93D9";
-                                  }}
-                                  title="Copy email to clipboard"
-                                >
-                                  Copy
-                                </button>
-                              );
-                            })()}
+                              Email
+                            </button>
                           </div>
                         </>
                       );
@@ -1642,7 +1843,7 @@ export default function DrawingManager() {
             setEmailTo("ben@superiorgrannyflats.com.au");
             setEmailFrom("info@superiorgrannyflats.com.au");
             setEmailSubject("Drawing Manager Projects List");
-            setEmailHtmlBody("");
+            setEmailListHtml("");
           }}
         >
           <div
@@ -1729,19 +1930,30 @@ export default function DrawingManager() {
             
             <div style={{ marginBottom: "20px" }}>
               <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
-                Preview
+                Preview (960px wide — same grid as the sent email)
               </label>
               <div
                 style={{
                   border: `1px solid ${SECTION_GREY}`,
                   borderRadius: "8px",
-                  padding: "16px",
-                  background: WHITE,
-                  maxHeight: "400px",
+                  padding: "10px",
+                  background: "#f5f5f5",
+                  maxHeight: "420px",
                   overflow: "auto",
+                  lineHeight: 1.25,
+                  fontSize: "12px",
                 }}
-                dangerouslySetInnerHTML={{ __html: emailHtmlBody }}
-              />
+              >
+                <div
+                  style={{
+                    width: "960px",
+                    maxWidth: "100%",
+                    margin: "0 auto",
+                    boxSizing: "border-box",
+                  }}
+                  dangerouslySetInnerHTML={{ __html: emailListHtml }}
+                />
+              </div>
             </div>
             
             <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
@@ -1751,7 +1963,7 @@ export default function DrawingManager() {
                   setEmailTo("ben@superiorgrannyflats.com.au");
                   setEmailFrom("info@superiorgrannyflats.com.au");
                   setEmailSubject("Drawing Manager Projects List");
-                  setEmailHtmlBody("");
+                  setEmailListHtml("");
                 }}
                 style={{
                   padding: "10px 20px",
@@ -1786,7 +1998,7 @@ export default function DrawingManager() {
                         to: toAddresses,
                         from: emailFrom,
                         subject: emailSubject,
-                        htmlBody: emailHtmlBody,
+                        htmlBody: emailListHtml,
                       }),
                     });
                     const data = await res.json().catch(() => ({}));
@@ -1798,7 +2010,7 @@ export default function DrawingManager() {
                     setEmailTo("ben@superiorgrannyflats.com.au");
                     setEmailFrom("info@superiorgrannyflats.com.au");
                     setEmailSubject("Drawing Manager Projects List");
-                    setEmailHtmlBody("");
+                    setEmailListHtml("");
                   } catch (err) {
                     console.error("Send email error:", err);
                     alert(err.message || "Failed to send email.");
@@ -1822,6 +2034,107 @@ export default function DrawingManager() {
         </div>
       )}
 
+      {/* Per-job Drawing Manager notes (saved only when you click OK) */}
+      {notesModalProjectId != null && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1001,
+          }}
+          onClick={handleNotesModalCancel}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              maxWidth: "560px",
+              width: "92%",
+              maxHeight: "85vh",
+              display: "flex",
+              flexDirection: "column",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "12px" }}>
+              <h2 style={{ margin: 0, fontSize: "1.15rem", color: MONUMENT, lineHeight: 1.3 }}>
+                Notes — {notesModalLabel}
+              </h2>
+              {notesSaving && (
+                <span style={{ fontSize: "0.8rem", color: SECTION_GREY, flexShrink: 0 }}>Saving…</span>
+              )}
+            </div>
+            <p style={{ margin: "0 0 12px", fontSize: "0.85rem", color: "#666" }}>
+              Click OK to save and close. Cancel closes without saving your edits (restores notes from when you opened this window).
+            </p>
+            <textarea
+              value={notesDraft}
+              onChange={(e) => setNotesDraft(e.target.value)}
+              disabled={notesSaving}
+              placeholder="Notes for this job…"
+              style={{
+                width: "100%",
+                flex: 1,
+                minHeight: "220px",
+                padding: "12px",
+                borderRadius: "8px",
+                border: `1px solid ${SECTION_GREY}`,
+                fontSize: "0.95rem",
+                color: MONUMENT,
+                fontFamily: "inherit",
+                lineHeight: 1.5,
+                resize: "vertical",
+                boxSizing: "border-box",
+              }}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "16px" }}>
+              <button
+                type="button"
+                onClick={handleNotesModalCancel}
+                disabled={notesSaving}
+                style={{
+                  padding: "10px 20px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  color: MONUMENT,
+                  background: "transparent",
+                  border: `1px solid ${SECTION_GREY}`,
+                  borderRadius: "8px",
+                  cursor: notesSaving ? "not-allowed" : "pointer",
+                  opacity: notesSaving ? 0.6 : 1,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleNotesModalOk}
+                disabled={notesSaving}
+                style={{
+                  padding: "10px 20px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  color: WHITE,
+                  background: MONUMENT,
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: notesSaving ? "not-allowed" : "pointer",
+                  opacity: notesSaving ? 0.85 : 1,
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Reminder Modal */}
       {showReminderModal && (
         <div
@@ -1834,53 +2147,231 @@ export default function DrawingManager() {
             justifyContent: "center",
             zIndex: 1000,
           }}
-          onClick={() => {
-            setShowReminderModal(false);
-            setSelectedProjectForReminder(null);
-          }}
         >
           <div
             style={{
               background: WHITE,
               borderRadius: "12px",
               padding: "24px",
-              maxWidth: "500px",
+              maxWidth: "760px",
               width: "90%",
+              maxHeight: "90vh",
+              overflowY: "auto",
               boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <h3 style={{ marginTop: 0, marginBottom: "16px", color: MONUMENT }}>
-              Reminder Email
+              Drawings Reminder Email
+              {selectedProjectForReminder
+                ? ` — ${(selectedProjectForReminder.suburb && selectedProjectForReminder.street)
+                    ? `${selectedProjectForReminder.suburb} - ${selectedProjectForReminder.street}`
+                    : selectedProjectForReminder.name || `Project #${selectedProjectForReminder.id}`}`
+                : ""}
             </h3>
-            <p style={{ color: "#666", marginBottom: "24px" }}>
-              Placeholder for reminder email functionality
-            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "18px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  To (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={reminderEmailTo}
+                  onChange={(e) => setReminderEmailTo(e.target.value)}
+                  disabled={reminderSending}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  From
+                </label>
+                <input
+                  type="text"
+                  value={reminderEmailFrom}
+                  onChange={(e) => setReminderEmailFrom(e.target.value)}
+                  disabled={reminderSending}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  Subject
+                </label>
+                <input
+                  type="text"
+                  value={reminderEmailSubject}
+                  onChange={(e) => setReminderEmailSubject(e.target.value)}
+                  disabled={reminderSending}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  Body
+                </label>
+                <textarea
+                  value={reminderEmailBody}
+                  onChange={(e) => setReminderEmailBody(e.target.value)}
+                  disabled={reminderSending}
+                  style={{
+                    width: "100%",
+                    minHeight: "240px",
+                    padding: "12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "0.95rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                    lineHeight: 1.5,
+                    resize: "vertical",
+                    fontFamily: "inherit",
+                  }}
+                />
+              </div>
+            </div>
+
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
               <button
-                onClick={() => {
-                  setShowReminderModal(false);
-                  setSelectedProjectForReminder(null);
-                }}
+                onClick={closeReminderModal}
+                disabled={reminderSending}
                 style={{
                   padding: "10px 20px",
-                  background: "#ccc",
-                  color: MONUMENT,
-                  border: "none",
-                  borderRadius: "6px",
-                  fontSize: "0.9rem",
+                  fontSize: "1rem",
                   fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "background 0.2s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "#bbb";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "#ccc";
+                  color: MONUMENT,
+                  background: "transparent",
+                  border: `1px solid ${SECTION_GREY}`,
+                  borderRadius: "8px",
+                  cursor: reminderSending ? "not-allowed" : "pointer",
+                  opacity: reminderSending ? 0.7 : 1,
                 }}
               >
                 Cancel
+              </button>
+              <button
+                disabled={reminderSending}
+                onClick={async () => {
+                  if (!selectedProjectForReminder?.id) {
+                    alert("Project is missing.");
+                    return;
+                  }
+                  const toAddresses = reminderEmailTo
+                    .split(",")
+                    .map((a) => a.trim())
+                    .filter((a) => a.length > 0);
+                  if (toAddresses.length === 0) {
+                    alert("Please enter at least one email address.");
+                    return;
+                  }
+                  if (!reminderEmailFrom || !reminderEmailFrom.trim()) {
+                    alert("From address is required.");
+                    return;
+                  }
+
+                  try {
+                    setReminderSending(true);
+                    const res = await fetch(`${API_URL}/api/emails/send-drawings`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        projectId: selectedProjectForReminder.id,
+                        toEmails: toAddresses,
+                        from: reminderEmailFrom.trim(),
+                        subject: reminderEmailSubject || "",
+                        customBody: reminderEmailBody || "",
+                        attachDrawings: true,
+                      }),
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                      throw new Error(data.error || "Failed to send reminder email");
+                    }
+
+                    // Reset "days with holder" counter after sending reminder:
+                    // keep same holder, but set holder date to today.
+                    const todayStr = new Date().toISOString().split("T")[0];
+                    try {
+                      const holderProjectName =
+                        selectedProjectForReminder?.name ||
+                        `${selectedProjectForReminder?.street || ""}, ${selectedProjectForReminder?.suburb || ""}`.trim() ||
+                        "";
+                      const holderRes = await fetch(`${API_URL}/api/projects/${selectedProjectForReminder.id}`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          name: holderProjectName,
+                          status: selectedProjectForReminder?.status || null,
+                          drawings_holder: selectedProjectForReminder?.drawings_holder || "design team",
+                          drawings_holder_date: todayStr,
+                        }),
+                      });
+                      if (holderRes.ok) {
+                        setProjects((prev) =>
+                          prev.map((p) =>
+                            p.id === selectedProjectForReminder.id
+                              ? { ...p, drawings_holder_date: todayStr }
+                              : p
+                          )
+                        );
+                      } else {
+                        console.warn("Reminder email sent, but failed to reset holder days counter.");
+                      }
+                    } catch (holderErr) {
+                      console.warn("Reminder email sent, but error resetting holder days:", holderErr);
+                    }
+
+                    alert(data.message || "Reminder email sent successfully!");
+                    closeReminderModal();
+                  } catch (err) {
+                    console.error("Error sending reminder email:", err);
+                    alert(err.message || "Failed to send reminder email.");
+                  } finally {
+                    setReminderSending(false);
+                  }
+                }}
+                style={{
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: 500,
+                  color: WHITE,
+                  background: MONUMENT,
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: reminderSending ? "not-allowed" : "pointer",
+                  opacity: reminderSending ? 0.85 : 1,
+                }}
+              >
+                Send Email
               </button>
             </div>
           </div>

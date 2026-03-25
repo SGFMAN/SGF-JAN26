@@ -8,20 +8,17 @@
         body {
             margin: 0;
             padding: 0;
-            overflow: hidden;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
             background: #fff;
             font-family: Arial, sans-serif;
-            position: relative;
         }
         .triangle-container {
             position: relative;
             width: 300px;
             height: 300px;
-            z-index: 2;
         }
         .triangle {
             width: 0;
@@ -40,44 +37,7 @@
             font-size: 24px;
             font-weight: bold;
             text-align: center;
-            z-index: 3;
-        }
-        .falling-item {
-            position: absolute;
-            top: -100px;
-            animation: fall linear infinite;
             z-index: 1;
-        }
-        .coin, .note {
-            width: 50px;
-            height: 50px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: 20px;
-            font-weight: bold;
-        }
-        .coin {
-            background-color: gold;
-            border-radius: 50%;
-            animation-duration: 5s;
-        }
-        .note {
-            background-color: green;
-            width: 100px;
-            height: 50px;
-            color: white;
-            animation-duration: 7s;
-        }
-        @keyframes fall {
-            0% {
-                transform: translateY(0);
-                left: calc(100% * var(--x));
-            }
-            100% {
-                transform: translateY(100vh);
-                left: calc(100% * var(--x));
-            }
         }
     </style>
 </head>
@@ -86,21 +46,5 @@
         <div class="triangle"></div>
         <div class="text">Playground</div>
     </div>
-    <script>
-        function createFallingItem(type) {
-            const item = document.createElement('div');
-            item.classList.add('falling-item', type);
-            item.style.setProperty('--x', Math.random());
-            item.textContent = type === 'coin' ? '$' : '$100';
-            document.body.appendChild(item);
-            item.addEventListener('animationend', () => {
-                item.remove();
-            });
-        }
-        setInterval(() => {
-            createFallingItem('coin');
-            createFallingItem('note');
-        }, 1000);
-    </script>
 </body>
 </html>

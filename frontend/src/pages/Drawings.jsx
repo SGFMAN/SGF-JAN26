@@ -7,6 +7,17 @@ const API_URL = "";
 
 const DRAWINGS_STATUS_OPTIONS = ["Not Assigned", "Concept Stage", "Working Drawing Stage", "Drawings Complete"];
 
+const DESIGN_MEETING_EMAIL_TO = "ben@superiorgrannyflats.com.au";
+const DESIGN_MEETING_PURPLE = "#6f42c1";
+const DESIGN_MEETING_PURPLE_HOVER = "#5a32a3";
+
+function escapeHtmlForEmail(text) {
+  if (!text) return "";
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 export default function Drawings({ project, onUpdate }) {
   const [drawingsStatus, setDrawingsStatus] = useState(project?.drawings_status || "Not Assigned");
   const [draftsperson, setDraftsperson] = useState(project?.draftsperson ? String(project.draftsperson) : "");
@@ -40,7 +51,14 @@ export default function Drawings({ project, onUpdate }) {
   const [emailDrawingsToClientFrom, setEmailDrawingsToClientFrom] = useState("");
   const [emailDrawingsToClientSubject, setEmailDrawingsToClientSubject] = useState("");
   const [emailDrawingsToClientBody, setEmailDrawingsToClientBody] = useState("");
-  const [emailPreviewType, setEmailPreviewType] = useState(null); // "drafting" or "sales"
+  /** "client" = Send to Client (updates holder / sent date); "sendTo" = Send Drawings to.. template only */
+  const [emailDrawingsFlowKind, setEmailDrawingsFlowKind] = useState("client");
+  /** VIC SMTP from-address choices for Send Drawings to.. (Primary / Secondary / VIC - SMTP) */
+  const [vicSmtpFromOptions, setVicSmtpFromOptions] = useState([]);
+  const [emailPreviewType, setEmailPreviewType] = useState(null); // "drafting" | "sales" | "design_meeting"
+  const [showDesignMeetingModal, setShowDesignMeetingModal] = useState(false);
+  const [designMeetingItems, setDesignMeetingItems] = useState([]);
+  const [designMeetingNewItem, setDesignMeetingNewItem] = useState("");
   
   const valuesRef = useRef({ drawingsStatus, draftsperson });
   
@@ -1221,127 +1239,224 @@ export default function Drawings({ project, onUpdate }) {
     setNotesText("");
   }
 
-  async function handleEmailDrawingsToClient() {
-    if (!project || !project.id) {
-      alert("Error: Project ID is missing");
-      return;
-    }
-
-    // Determine which template to use based on drawings_status
-    let templateName = "";
-    if (drawingsStatus === "Concept Stage") {
-      templateName = "DRAWINGS - Client - CONCEPT";
-    } else if (drawingsStatus === "Working Drawing Stage") {
-      templateName = "DRAWINGS - Client - WD";
-    } else {
-      alert("Please set the drawings status to 'Concept Stage' or 'Working Drawing Stage' before sending to client.");
-      return;
-    }
-
-    // Fetch email template
+  /**
+   * Load a drawings email template and apply project / draftsperson / client tokens.
+   * Used for Send to Client and Send Drawings to.. (logo is added server-side on send).
+   */
+  async function buildDrawingsTemplateEmail(templateName) {
     try {
       const templateResponse = await fetch(`${API_URL}/api/email-templates`);
       if (!templateResponse.ok) {
         throw new Error("Failed to fetch email templates");
       }
       const templates = await templateResponse.json();
-      const template = templates.find(t => t.name === templateName);
-      
+      const template = templates.find((t) => t.name === templateName);
+
       if (!template) {
-        alert(`Email template "${templateName}" not found. Please create it in Settings → Email Templates.`);
-        return;
+        return {
+          ok: false,
+          error: `Email template "${templateName}" not found. Please create it in Settings → Email Templates.`,
+        };
       }
 
-      // Get project name
-      const projectName = project?.street && project?.suburb 
-        ? `${project.street}, ${project.suburb}`.trim() 
-        : project?.name || "";
+      const projectName =
+        project?.street && project?.suburb
+          ? `${project.street}, ${project.suburb}`.trim()
+          : project?.name || "";
 
-      // Get draftsperson details
-      const { name: draftspersonName, position: draftspersonPosition } = await getDraftspersonDetails(project.draftsperson);
+      const { name: draftspersonName, position: draftspersonPosition } = await getDraftspersonDetails(
+        project.draftsperson
+      );
 
-      // Get active client first names (only those with checkboxes ticked)
       const activeClientFirstNames = [];
-      if (project?.client1_active === 'true' && project?.client1_name && project.client1_name.trim()) {
+      if (project?.client1_active === "true" && project?.client1_name && project.client1_name.trim()) {
         const firstName = project.client1_name.trim().split(/\s+/)[0];
         if (firstName) activeClientFirstNames.push(firstName);
       }
-      if (project?.client2_active === 'true' && project?.client2_name && project.client2_name.trim()) {
+      if (project?.client2_active === "true" && project?.client2_name && project.client2_name.trim()) {
         const firstName = project.client2_name.trim().split(/\s+/)[0];
         if (firstName) activeClientFirstNames.push(firstName);
       }
-      if (project?.client3_active === 'true' && project?.client3_name && project.client3_name.trim()) {
+      if (project?.client3_active === "true" && project?.client3_name && project.client3_name.trim()) {
         const firstName = project.client3_name.trim().split(/\s+/)[0];
         if (firstName) activeClientFirstNames.push(firstName);
       }
 
-      // Format client names: "John", "John & Jane", or "John, Jane & Bob"
       let clientName = "";
       if (activeClientFirstNames.length === 1) {
         clientName = activeClientFirstNames[0];
       } else if (activeClientFirstNames.length === 2) {
         clientName = `${activeClientFirstNames[0]} & ${activeClientFirstNames[1]}`;
       } else if (activeClientFirstNames.length >= 3) {
-        clientName = `${activeClientFirstNames.slice(0, -1).join(", ")} & ${activeClientFirstNames[activeClientFirstNames.length - 1]}`;
+        clientName = `${activeClientFirstNames.slice(0, -1).join(", ")} & ${
+          activeClientFirstNames[activeClientFirstNames.length - 1]
+        }`;
       }
 
-      // Get active client emails (only send to active contacts)
       const activeClientEmails = [];
       if (project?.email && project.email.trim()) {
         activeClientEmails.push(project.email);
       }
-      if (project?.client1_active === 'true' && project?.client1_email && project.client1_email.trim()) {
+      if (project?.client1_active === "true" && project?.client1_email && project.client1_email.trim()) {
         activeClientEmails.push(project.client1_email);
       }
-      if (project?.client2_active === 'true' && project?.client2_email && project.client2_email.trim()) {
+      if (project?.client2_active === "true" && project?.client2_email && project.client2_email.trim()) {
         activeClientEmails.push(project.client2_email);
       }
-      if (project?.client3_active === 'true' && project?.client3_email && project.client3_email.trim()) {
+      if (project?.client3_active === "true" && project?.client3_email && project.client3_email.trim()) {
         activeClientEmails.push(project.client3_email);
       }
 
-      if (activeClientEmails.length === 0) {
-        alert("No active client email addresses found. Please add and activate client emails in the project.");
-        return;
-      }
-
-      // Replace tokens in body
       let body = template.body || "";
       body = body.replace(/{ProjectName}/g, projectName);
       body = body.replace(/{ClientName}/g, clientName);
       body = body.replace(/{Draftsperson}/g, draftspersonName);
       body = body.replace(/{Position}/g, draftspersonPosition);
-      // Replace Contact tokens - only include if active
-      body = body.replace(/{Contact1}/g, (project?.client1_active === 'true' && project?.client1_email) ? project.client1_email : "");
-      body = body.replace(/{Contact2}/g, (project?.client2_active === 'true' && project?.client2_email) ? project.client2_email : "");
-      body = body.replace(/{Contact3}/g, (project?.client3_active === 'true' && project?.client3_email) ? project.client3_email : "");
-      
-      // Add "CONCEPT" marker to body for CONCEPT emails so backend can detect it
+      body = body.replace(
+        /{Contact1}/g,
+        project?.client1_active === "true" && project?.client1_email ? project.client1_email : ""
+      );
+      body = body.replace(
+        /{Contact2}/g,
+        project?.client2_active === "true" && project?.client2_email ? project.client2_email : ""
+      );
+      body = body.replace(
+        /{Contact3}/g,
+        project?.client3_active === "true" && project?.client3_email ? project.client3_email : ""
+      );
+
       if (templateName === "DRAWINGS - Client - CONCEPT") {
         body += "<!-- CONCEPT -->";
       }
 
-      // Replace tokens in subject
       let subject = template.subject || "";
       subject = subject.replace(/{ProjectName}/g, projectName);
       subject = subject.replace(/{ClientName}/g, clientName);
       subject = subject.replace(/{Draftsperson}/g, draftspersonName);
       subject = subject.replace(/{Position}/g, draftspersonPosition);
-      // Replace Contact tokens in subject - only include if active
-      subject = subject.replace(/{Contact1}/g, (project?.client1_active === 'true' && project?.client1_email) ? project.client1_email : "");
-      subject = subject.replace(/{Contact2}/g, (project?.client2_active === 'true' && project?.client2_email) ? project.client2_email : "");
-      subject = subject.replace(/{Contact3}/g, (project?.client3_active === 'true' && project?.client3_email) ? project.client3_email : "");
+      subject = subject.replace(
+        /{Contact1}/g,
+        project?.client1_active === "true" && project?.client1_email ? project.client1_email : ""
+      );
+      subject = subject.replace(
+        /{Contact2}/g,
+        project?.client2_active === "true" && project?.client2_email ? project.client2_email : ""
+      );
+      subject = subject.replace(
+        /{Contact3}/g,
+        project?.client3_active === "true" && project?.client3_email ? project.client3_email : ""
+      );
 
-      // Open preview modal - only send to active client emails
-      setEmailDrawingsToClientTo(activeClientEmails.join(", "));
-      setEmailDrawingsToClientFrom(template.from_address || "");
-      setEmailDrawingsToClientSubject(subject);
-      setEmailDrawingsToClientBody(body);
-      setShowEmailDrawingsToClientModal(true);
+      return {
+        ok: true,
+        template,
+        subject,
+        body,
+        activeClientEmails,
+      };
     } catch (error) {
       console.error("Error preparing email:", error);
-      alert(`Failed to prepare email: ${error.message}`);
+      return { ok: false, error: error.message || "Failed to prepare email" };
     }
+  }
+
+  async function loadVicSmtpFromOptions() {
+    try {
+      const res = await fetch(`${API_URL}/api/settings`);
+      if (!res.ok) return [];
+      const s = await res.json();
+      const opts = [];
+      if (s.smtp_user?.trim()) {
+        opts.push({ value: s.smtp_user.trim(), label: "VIC - SMTP Primary" });
+      }
+      if (s.smtp_user_secondary?.trim()) {
+        opts.push({ value: s.smtp_user_secondary.trim(), label: "VIC - SMTP Secondary" });
+      }
+      if (s.smtp_user_vic_smtp?.trim()) {
+        opts.push({ value: s.smtp_user_vic_smtp.trim(), label: "VIC - SMTP" });
+      }
+      return opts;
+    } catch (e) {
+      console.error("Error loading VIC SMTP settings:", e);
+      return [];
+    }
+  }
+
+  async function handleSendDrawingsMailto() {
+    if (!project?.id) {
+      alert("Error: Project ID is missing");
+      return;
+    }
+    if (!project.drawings_pdf_location) {
+      alert("No drawings PDF has been set for this project yet.");
+      return;
+    }
+
+    const built = await buildDrawingsTemplateEmail("DRAWINGS - Send to");
+    if (!built.ok) {
+      alert(built.error);
+      return;
+    }
+
+    const opts = await loadVicSmtpFromOptions();
+    if (opts.length === 0) {
+      alert(
+        "No VIC SMTP addresses are configured. Add them under Settings → Email Settings (VIC - SMTP Primary, Secondary, and VIC - SMTP)."
+      );
+      return;
+    }
+
+    const tmplFrom = (built.template.from_address || "").trim();
+    const match = opts.find((o) => o.value.toLowerCase() === tmplFrom.toLowerCase());
+    const fromVal = match ? match.value : opts[0].value;
+
+    setVicSmtpFromOptions(opts);
+    setEmailDrawingsFlowKind("sendTo");
+    setEmailDrawingsToClientTo("");
+    setEmailDrawingsToClientFrom(fromVal);
+    setEmailDrawingsToClientSubject(built.subject);
+    setEmailDrawingsToClientBody(built.body);
+    setShowEmailDrawingsToClientModal(true);
+  }
+
+  async function handleEmailDrawingsToClient() {
+    if (!project || !project.id) {
+      alert("Error: Project ID is missing");
+      return;
+    }
+
+    let templateName = "";
+    if (drawingsStatus === "Drawings Complete") {
+      templateName = "DRAWINGS - Client - General";
+    } else if (drawingsStatus === "Concept Stage") {
+      templateName = "DRAWINGS - Client - CONCEPT";
+    } else if (drawingsStatus === "Working Drawing Stage") {
+      templateName = "DRAWINGS - Client - WD";
+    } else {
+      alert(
+        "Please set the drawings status to Concept Stage, Working Drawing Stage, or Drawings Complete before sending to client."
+      );
+      return;
+    }
+
+    const built = await buildDrawingsTemplateEmail(templateName);
+    if (!built.ok) {
+      alert(built.error);
+      return;
+    }
+
+    if (built.activeClientEmails.length === 0) {
+      alert("No active client email addresses found. Please add and activate client emails in the project.");
+      return;
+    }
+
+    setVicSmtpFromOptions([]);
+    setEmailDrawingsFlowKind("client");
+    setEmailDrawingsToClientTo(built.activeClientEmails.join(", "));
+    setEmailDrawingsToClientFrom(built.template.from_address || "");
+    setEmailDrawingsToClientSubject(built.subject);
+    setEmailDrawingsToClientBody(built.body);
+    setShowEmailDrawingsToClientModal(true);
   }
 
   async function handleSendEmailDrawingsToClient() {
@@ -1381,15 +1496,16 @@ export default function Drawings({ project, onUpdate }) {
         throw new Error(errorData.error || "Failed to send drawings email");
       }
 
-      const result = await response.json();
+      await response.json().catch(() => ({}));
       alert("Drawings email sent successfully!");
-      
-      // Client now has the drawings (saveDrawingsHolder will update the date)
-      await saveDrawingsHolder("client");
-      // Record sent-to-client date for the current revision (so we can show green "Sent to Client - <date>" in the table)
-      await saveSentToClientDateForCurrentRevision();
-      
-      // Close modal after sending
+
+      if (emailDrawingsFlowKind === "client") {
+        await saveDrawingsHolder("client");
+        await saveSentToClientDateForCurrentRevision();
+      }
+
+      setVicSmtpFromOptions([]);
+      setEmailDrawingsFlowKind("client");
       setShowEmailDrawingsToClientModal(false);
     } catch (error) {
       console.error("Error sending drawings email:", error);
@@ -1605,7 +1721,121 @@ export default function Drawings({ project, onUpdate }) {
     }
   }
 
+  function addDesignMeetingItem() {
+    const trimmed = (designMeetingNewItem || "").trim();
+    if (!trimmed) return;
+    setDesignMeetingItems((prev) => [...prev, trimmed]);
+    setDesignMeetingNewItem("");
+  }
+
+  function removeDesignMeetingItem(index) {
+    setDesignMeetingItems((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function closeEmailPreviewModal() {
+    setShowEmailPreviewModal(false);
+    setEmailPreviewType(null);
+    setDesignMeetingItems([]);
+  }
+
+  function handleDesignMeetingListCancel() {
+    setShowDesignMeetingModal(false);
+    setDesignMeetingItems([]);
+    setDesignMeetingNewItem("");
+  }
+
+  async function handleDesignMeetingListSend() {
+    if (!project?.id) {
+      alert("Error: Project ID is missing");
+      return;
+    }
+    if (designMeetingItems.length === 0) {
+      alert("Add at least one item to the list.");
+      return;
+    }
+
+    const projectName =
+      project?.street && project?.suburb
+        ? `${project.street}, ${project.suburb}`.trim()
+        : project?.name || "Project";
+
+    const listHtml = `<p><strong>Design meeting items</strong></p><ul style="list-style:none;padding-left:0;margin:12px 0 0;">${designMeetingItems
+      .map(
+        (item) =>
+          `<li style="margin-bottom:12px;"><label style="cursor:pointer;display:flex;align-items:flex-start;gap:10px;font-family:Arial,sans-serif;font-size:15px;line-height:1.45;"><input type="checkbox" style="margin-top:4px;width:18px;height:18px;flex-shrink:0;accent-color:#6f42c1;" /><span style="flex:1;">${escapeHtmlForEmail(item)}</span></label></li>`
+      )
+      .join("")}</ul>`;
+
+    let fromAddr = "";
+    try {
+      const sRes = await fetch(`${API_URL}/api/settings`);
+      if (sRes.ok) {
+        const s = await sRes.json();
+        fromAddr = (s.smtp_user || "").trim();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    if (!fromAddr) {
+      try {
+        const tRes = await fetch(`${API_URL}/api/email-templates`);
+        if (tRes.ok) {
+          const templates = await tRes.json();
+          fromAddr = (templates[0]?.from_address || "").trim();
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    setEmailPreviewTo(DESIGN_MEETING_EMAIL_TO);
+    setEmailPreviewFrom(fromAddr);
+    setEmailPreviewSubject(`Design meeting — ${projectName}`);
+    setEmailPreviewBody(listHtml);
+    setEmailPreviewType("design_meeting");
+    setShowDesignMeetingModal(false);
+    setDesignMeetingNewItem("");
+    setShowEmailPreviewModal(true);
+  }
+
   async function handleSendFromPreview() {
+    if (emailPreviewType === "design_meeting") {
+      const toAddresses = emailPreviewTo
+        .split(",")
+        .map((a) => a.trim())
+        .filter((a) => a.length > 0);
+      if (toAddresses.length === 0) {
+        alert("Please enter at least one email address");
+        return;
+      }
+      if (!emailPreviewFrom || !emailPreviewFrom.trim()) {
+        alert("From address is required");
+        return;
+      }
+      try {
+        const response = await fetch(`${API_URL}/api/emails/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: toAddresses,
+            from: emailPreviewFrom.trim(),
+            subject: emailPreviewSubject || "Design meeting",
+            htmlBody: emailPreviewBody || "",
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to send email");
+        }
+        alert(data.message || "Email sent successfully!");
+        closeEmailPreviewModal();
+      } catch (error) {
+        console.error("Error sending design meeting email:", error);
+        alert(`Failed to send email: ${error.message}`);
+      }
+      return;
+    }
+
     if (!project || !project.id) {
       alert("Error: Project ID is missing");
       return;
@@ -1654,12 +1884,11 @@ export default function Drawings({ project, onUpdate }) {
       // Drafting notes don't change the holder (design team keeps them)
       
       // Close modals after sending
-      setShowEmailPreviewModal(false);
+      closeEmailPreviewModal();
       setShowNotesModal(false);
       setNotesForRevision(null);
       setNotesText("");
       setMarkupFile(null);
-      setEmailPreviewType(null);
     } catch (error) {
       console.error("Error sending drawings email:", error);
       alert(`Failed to send drawings email: ${error.message}`);
@@ -2409,6 +2638,58 @@ export default function Drawings({ project, onUpdate }) {
                             View<br />Drawings
                           </button>
                         )}
+                        {project?.drawings_pdf_location && (
+                          <button
+                            type="button"
+                            onClick={handleSendDrawingsMailto}
+                            style={{
+                              background: "#20c997",
+                              color: WHITE,
+                              border: "1px solid #20c997",
+                              borderRadius: "6px",
+                              padding: "6px 8px",
+                              fontSize: "0.75rem",
+                              fontWeight: 500,
+                              cursor: "pointer",
+                              transition: "background 0.18s, color 0.15s",
+                              lineHeight: "1.2",
+                              width: "118px",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "#1aa179";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "#20c997";
+                            }}
+                          >
+                            Send Drawings to..
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setShowDesignMeetingModal(true)}
+                          style={{
+                            background: DESIGN_MEETING_PURPLE,
+                            color: WHITE,
+                            border: `1px solid ${DESIGN_MEETING_PURPLE}`,
+                            borderRadius: "6px",
+                            padding: "6px 8px",
+                            fontSize: "0.8rem",
+                            fontWeight: 500,
+                            cursor: "pointer",
+                            transition: "background 0.18s, color 0.15s",
+                            lineHeight: "1.2",
+                            width: "100px",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = DESIGN_MEETING_PURPLE_HOVER;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = DESIGN_MEETING_PURPLE;
+                          }}
+                        >
+                          Design<br />Meeting
+                        </button>
                         <button
                           onClick={handleEmailDrawingsToClient}
                           style={{
@@ -3250,6 +3531,140 @@ export default function Drawings({ project, onUpdate }) {
         </div>
       )}
 
+      {/* Design Meeting — build list, then preview email */}
+      {showDesignMeetingModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={handleDesignMeetingListCancel}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              width: "90%",
+              maxWidth: "480px",
+              maxHeight: "85vh",
+              overflowY: "auto",
+              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ margin: "0 0 16px", fontSize: "1.35rem", color: MONUMENT }}>Design meeting</h2>
+            <p style={{ margin: "0 0 12px", fontSize: "0.9rem", color: "#666" }}>
+              Add items one at a time. When you send, Ben will receive the list by email.
+            </p>
+            <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+              <input
+                type="text"
+                value={designMeetingNewItem}
+                onChange={(e) => setDesignMeetingNewItem(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addDesignMeetingItem();
+                  }
+                }}
+                placeholder="Type an item and Add (or press Enter)"
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: `1px solid ${SECTION_GREY}`,
+                  fontSize: "1rem",
+                  boxSizing: "border-box",
+                }}
+              />
+              <button
+                type="button"
+                onClick={addDesignMeetingItem}
+                style={{
+                  padding: "10px 16px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  color: WHITE,
+                  background: DESIGN_MEETING_PURPLE,
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Add
+              </button>
+            </div>
+            {designMeetingItems.length > 0 ? (
+              <ul style={{ margin: "0 0 16px", paddingLeft: "20px", color: MONUMENT, fontSize: "0.95rem" }}>
+                {designMeetingItems.map((item, idx) => (
+                  <li key={`${idx}-${item.slice(0, 24)}`} style={{ marginBottom: "6px" }}>
+                    <span style={{ marginRight: "8px" }}>{item}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeDesignMeetingItem(idx)}
+                      style={{
+                        fontSize: "0.75rem",
+                        padding: "2px 8px",
+                        cursor: "pointer",
+                        border: `1px solid ${SECTION_GREY}`,
+                        borderRadius: "4px",
+                        background: WHITE,
+                        color: MONUMENT,
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p style={{ fontSize: "0.85rem", color: "#999", marginBottom: "16px" }}>No items yet.</p>
+            )}
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={handleDesignMeetingListCancel}
+                style={{
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: 500,
+                  color: MONUMENT,
+                  background: "transparent",
+                  border: `1px solid ${SECTION_GREY}`,
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDesignMeetingListSend}
+                style={{
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: 500,
+                  color: WHITE,
+                  background: DESIGN_MEETING_PURPLE,
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                }}
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Email Preview Modal */}
       {showEmailPreviewModal && (
         <div
@@ -3279,7 +3694,7 @@ export default function Drawings({ project, onUpdate }) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
               <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Preview & Send Email</h2>
               <button
-                onClick={() => setShowEmailPreviewModal(false)}
+                onClick={closeEmailPreviewModal}
                 style={{
                   background: "transparent",
                   border: "none",
@@ -3393,7 +3808,7 @@ export default function Drawings({ project, onUpdate }) {
 
               <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
                 <button
-                  onClick={() => setShowEmailPreviewModal(false)}
+                  onClick={closeEmailPreviewModal}
                   style={{
                     padding: "10px 20px",
                     fontSize: "1rem",
@@ -3461,9 +3876,15 @@ export default function Drawings({ project, onUpdate }) {
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Send to Client</h2>
+              <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>
+                {emailDrawingsFlowKind === "sendTo" ? "Send Drawings to.." : "Send to Client"}
+              </h2>
               <button
-                onClick={() => setShowEmailDrawingsToClientModal(false)}
+                onClick={() => {
+                  setVicSmtpFromOptions([]);
+                  setEmailDrawingsFlowKind("client");
+                  setShowEmailDrawingsToClientModal(false);
+                }}
                 style={{
                   background: "transparent",
                   border: "none",
@@ -3508,21 +3929,45 @@ export default function Drawings({ project, onUpdate }) {
                 <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
                   From
                 </label>
-                <input
-                  type="text"
-                  value={emailDrawingsToClientFrom}
-                  onChange={(e) => setEmailDrawingsToClientFrom(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: `1px solid ${SECTION_GREY}`,
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    background: WHITE,
-                    boxSizing: "border-box",
-                  }}
-                />
+                {emailDrawingsFlowKind === "sendTo" && vicSmtpFromOptions.length > 0 ? (
+                  <select
+                    value={emailDrawingsToClientFrom}
+                    onChange={(e) => setEmailDrawingsToClientFrom(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: `1px solid ${SECTION_GREY}`,
+                      fontSize: "1rem",
+                      color: MONUMENT,
+                      background: WHITE,
+                      boxSizing: "border-box",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {vicSmtpFromOptions.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.value}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={emailDrawingsToClientFrom}
+                    onChange={(e) => setEmailDrawingsToClientFrom(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: `1px solid ${SECTION_GREY}`,
+                      fontSize: "1rem",
+                      color: MONUMENT,
+                      background: WHITE,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                )}
               </div>
 
               <div>
@@ -3577,7 +4022,11 @@ export default function Drawings({ project, onUpdate }) {
 
               <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
                 <button
-                  onClick={() => setShowEmailDrawingsToClientModal(false)}
+                  onClick={() => {
+                    setVicSmtpFromOptions([]);
+                    setEmailDrawingsFlowKind("client");
+                    setShowEmailDrawingsToClientModal(false);
+                  }}
                   style={{
                     padding: "10px 20px",
                     fontSize: "1rem",

@@ -7,9 +7,9 @@ import Drawings from "./Drawings";
 import Colours from "./Colours";
 import Windows from "./Windows";
 import SiteVisit from "./SiteVisit";
-import SurveySoil from "./SurveySoil";
 import Contract from "./Contract";
-import Planning from "./Planning";
+import PlanningOld from "./Planning";
+import Planning from "./PlanningNew";
 import Admin from "./Admin";
 import Robes from "./Robes";
 import { isUserAdmin } from "../utils/auth";
@@ -33,8 +33,8 @@ const MENU_OPTIONS = [
     { label: "Colours", key: "colours" },
     { label: "Windows", key: "windows" },
   { label: "Site Visit", key: "site-visit" },
-  { label: "Survey & Soil", key: "survey-soil" },
   { label: "Contract", key: "contract" },
+  { label: "Planning - OLD", key: "planning-old", hidden: true },
   { label: "Planning", key: "planning" },
   { label: "Admin", key: "admin" },
 ];
@@ -314,6 +314,29 @@ export default function ProjectPage() {
                     Next →
                   </button>
                 )}
+
+                {isAdmin && (
+                  <button
+                    onClick={() => setShowDeleteModal(true)}
+                    style={{
+                      padding: "8px 16px",
+                      fontSize: "1rem",
+                      fontWeight: 500,
+                      color: WHITE,
+                      background: "#dc3545",
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                      transition: "background 0.2s",
+                      minWidth: "100px",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#b02a37")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "#dc3545")}
+                    type="button"
+                  >
+                    Delete Project
+                  </button>
+                )}
               </>
             );
           })()}
@@ -420,7 +443,7 @@ export default function ProjectPage() {
           {(project && project.status === "Construction Phase" && showProjectMenu
             ? CONSTRUCTION_MENU_OPTIONS
             : MENU_OPTIONS
-          ).map((item) => {
+          ).filter((item) => !item.hidden).map((item) => {
             return (
               <button
                 key={item.key}
@@ -453,31 +476,6 @@ export default function ProjectPage() {
             );
           })}
           <div style={{ flex: 1 }} />
-          {isAdmin && (
-            <button
-              onClick={() => setShowDeleteModal(true)}
-              style={{
-                background: "#dc3545",
-                color: WHITE,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                display: "block",
-                width: "100%",
-              }}
-              type="button"
-            >
-              Delete Project
-            </button>
-          )}
           <Link
             to="/projects"
             style={{
@@ -536,8 +534,8 @@ export default function ProjectPage() {
               {activeView === "colours" && <Colours project={project} onUpdate={updateProject} />}
               {activeView === "windows" && <Windows project={project} onUpdate={updateProject} />}
               {activeView === "site-visit" && <SiteVisit project={project} onUpdate={updateProject} />}
-              {activeView === "survey-soil" && <SurveySoil project={project} onUpdate={updateProject} />}
               {activeView === "contract" && <Contract project={project} onUpdate={updateProject} />}
+              {activeView === "planning-old" && <PlanningOld project={project} onUpdate={updateProject} />}
               {activeView === "planning" && <Planning project={project} onUpdate={updateProject} />}
               {activeView === "admin" && <Admin project={project} onUpdate={updateProject} />}
             </>

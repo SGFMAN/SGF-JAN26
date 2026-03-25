@@ -32,28 +32,6 @@ export default function Planning({ project, onUpdate }) {
   const [emailBody, setEmailBody] = useState("");
   const emailBodyRef = useRef(null);
 
-  const valuesRef = useRef({
-    planningStatus,
-    energyReportStatus,
-    footingCertificationStatus,
-    buildingPermitStatus,
-    septicPermit,
-    septicNotes,
-    pic,
-  });
-  
-  useEffect(() => {
-    valuesRef.current = {
-      planningStatus,
-      energyReportStatus,
-      footingCertificationStatus,
-      buildingPermitStatus,
-      septicPermit,
-      septicNotes,
-      pic,
-    };
-  }, [planningStatus, energyReportStatus, footingCertificationStatus, buildingPermitStatus, septicPermit, septicNotes, pic]);
-
   useEffect(() => {
     if (project) {
       setPlanningStatus(project.planning_status || "Not Selected");
@@ -93,50 +71,8 @@ export default function Planning({ project, onUpdate }) {
 
   async function saveField(fieldName, value) {
     if (!project?.id) return;
-    const currentValues = valuesRef.current;
-    const projectName = project?.street && project?.suburb 
-      ? `${project.street}, ${project.suburb}`.trim() 
-      : project?.name || "";
     try {
-      // Build update data with the current values, but use the new value for the field being changed
-      const updateData = {
-        name: projectName,
-        status: project?.status || null,
-        stream: project?.stream || null,
-        suburb: project?.suburb || null,
-        street: project?.street || null,
-        state: project?.state || null,
-        deposit: project?.deposit || null,
-        project_cost: project?.project_cost || null,
-        planning_status: fieldName === "planning_status" ? (value === "" ? null : value) : currentValues.planningStatus,
-        energy_report_status: fieldName === "energy_report_status" ? (value === "" ? null : value) : currentValues.energyReportStatus,
-        footing_certification_status: fieldName === "footing_certification_status" ? (value === "" ? null : value) : currentValues.footingCertificationStatus,
-        building_permit_status: fieldName === "building_permit_status" ? (value === "" ? null : value) : currentValues.buildingPermitStatus,
-        septic_permit: fieldName === "septic_permit" ? (value === "" ? null : value) : currentValues.septicPermit,
-        septic_notes: fieldName === "septic_notes" ? (value === "" ? null : value) : currentValues.septicNotes,
-        pic: fieldName === "pic" ? (value === "" ? null : value) : currentValues.pic,
-      };
-
-      // Add all other fields to maintain them
-      const otherFields = [
-        'client_name', 'email', 'phone', 'salesperson', 'proposal_pdf_location',
-        'client1_name', 'client1_email', 'client1_phone', 'client1_active',
-        'client2_name', 'client2_email', 'client2_phone', 'client2_active',
-        'client3_name', 'client3_email', 'client3_phone', 'client3_active',
-        'site_visit_status', 'site_visit_date', 'site_visit_time',
-        'contract_status', 'contract_sent_date', 'contract_complete_date',
-        'supporting_documents_status', 'supporting_documents_sent_date', 'supporting_documents_complete_date',
-        'water_declaration_status', 'water_declaration_sent_date', 'water_declaration_complete_date',
-        'notes',
-        'window_status', 'window_colour', 'window_reveal', 'window_reveal_other', 
-        'window_glazing', 'window_bal_rating', 'window_date_required', 'window_ordered_date', 
-        'window_order_pdf_location', 'window_order_number',
-        'drawings_status', 'colours_status'
-      ];
-
-      for (const field of otherFields) {
-        updateData[field] = project?.[field] || null;
-      }
+      const updateData = { [fieldName]: value === "" ? null : value };
 
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "PUT",
@@ -208,7 +144,9 @@ export default function Planning({ project, onUpdate }) {
   async function saveSepticFields(partial) {
     if (!project?.id) return;
     try {
-      const response = await fetch(`${API_URL}/api/projects/${project.id}/septic`, {
+      // Use main project PUT (same as other Planning fields). Partial body is OK: COALESCE keeps
+      // unchanged columns. Avoids /septic sub-route 404s on servers that haven't picked up that route.
+      const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(partial),

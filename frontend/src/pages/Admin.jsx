@@ -36,6 +36,11 @@ export default function Admin({ project, onUpdate }) {
   const [variationsFiles, setVariationsFiles] = useState([]);
   const [loadingVariations, setLoadingVariations] = useState(false);
   const [variationsPath, setVariationsPath] = useState("");
+  const [variationsProjectPath, setVariationsProjectPath] = useState("");
+  const [variationsResolveMethod, setVariationsResolveMethod] = useState("");
+  const [variationsYearFolder, setVariationsYearFolder] = useState("");
+  const [variationsExists, setVariationsExists] = useState(true);
+  const [variationsError, setVariationsError] = useState("");
   const [showDepositBalanceEmailModal, setShowDepositBalanceEmailModal] = useState(false);
   const [depositEmailTo, setDepositEmailTo] = useState("");
   const [depositEmailFrom, setDepositEmailFrom] = useState("");
@@ -362,19 +367,40 @@ export default function Admin({ project, onUpdate }) {
         const data = await response.json();
         setVariationsFiles(data.files || []);
         setVariationsPath(data.path || "");
+        setVariationsProjectPath(data.projectPath || "");
+        setVariationsResolveMethod(data.resolveMethod || "");
+        setVariationsYearFolder(data.projectYearFolder || "");
+        setVariationsExists(data.exists !== false);
+        setVariationsError(data.error || "");
       } else {
         console.error("Failed to fetch variations files");
         setVariationsFiles([]);
         setVariationsPath("");
+        setVariationsProjectPath("");
+        setVariationsResolveMethod("");
+        setVariationsYearFolder("");
+        setVariationsExists(false);
+        setVariationsError("");
       }
     } catch (error) {
       console.error("Error fetching variations files:", error);
       setVariationsFiles([]);
       setVariationsPath("");
+      setVariationsProjectPath("");
+      setVariationsResolveMethod("");
+      setVariationsYearFolder("");
+      setVariationsExists(false);
+      setVariationsError("");
     } finally {
       setLoadingVariations(false);
     }
   };
+
+  function openVariationsFile(fileName) {
+    if (!project?.id || !fileName) return;
+    const url = `${API_URL}/api/files/variations/${project.id}/file?relativePath=${encodeURIComponent(fileName)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
 
   return (
     <div>
@@ -601,37 +627,93 @@ export default function Admin({ project, onUpdate }) {
               <h3 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: "8px", color: MONUMENT }}>
                 Variations
               </h3>
-              {variationsPath && (
-                <div style={{ 
-                  color: "#666", 
-                  fontSize: "0.75rem", 
-                  fontFamily: "monospace",
-                  wordBreak: "break-all",
-                  marginBottom: "8px"
-                }}>
-                  {variationsPath}
+              <div style={{ marginBottom: "8px" }}>
+                <div style={{ color: "#666", fontSize: "0.72rem", marginBottom: "4px" }}>
+                  Variations folder (files listed from here):
                 </div>
-              )}
+                {variationsPath ? (
+                  <div
+                    style={{
+                      color: "#333",
+                      fontSize: "0.75rem",
+                      fontFamily: "monospace",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {variationsPath}
+                  </div>
+                ) : (
+                  <div style={{ color: "#999", fontSize: "0.75rem" }}>—</div>
+                )}
+                {variationsYearFolder ? (
+                  <div style={{ color: "#666", fontSize: "0.72rem", marginTop: "6px" }}>
+                    Year folder (4 digits): <strong style={{ color: "#333" }}>{variationsYearFolder}</strong>
+                  </div>
+                ) : null}
+                {variationsProjectPath ? (
+                  <>
+                    <div style={{ color: "#666", fontSize: "0.72rem", marginTop: "8px", marginBottom: "4px" }}>
+                      Project folder:
+                    </div>
+                    <div
+                      style={{
+                        color: "#333",
+                        fontSize: "0.75rem",
+                        fontFamily: "monospace",
+                        wordBreak: "break-all",
+                      }}
+                    >
+                      {variationsProjectPath}
+                    </div>
+                  </>
+                ) : null}
+                {variationsResolveMethod ? (
+                  <div style={{ color: "#666", fontSize: "0.72rem", marginTop: "6px" }}>
+                    Resolved: {variationsResolveMethod}
+                  </div>
+                ) : null}
+                {!variationsExists && variationsError ? (
+                  <div style={{ color: "#c62828", fontSize: "0.75rem", marginTop: "8px" }}>
+                    {variationsError}
+                  </div>
+                ) : null}
+              </div>
             </div>
             {loadingVariations ? (
               <div style={{ color: "#32323399", fontSize: "0.9rem" }}>Loading files...</div>
             ) : variationsFiles.length === 0 ? (
-              <div style={{ color: "#32323399", fontSize: "0.9rem" }}>No files found</div>
+              <div style={{ color: "#32323399", fontSize: "0.9rem" }}>
+                {variationsExists ? "No files found in this folder" : "Folder not found or not accessible"}
+              </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 {variationsFiles.map((file, index) => (
-                  <div
-                    key={index}
+                  <button
+                    key={`${file.name}-${index}`}
+                    type="button"
+                    onClick={() => openVariationsFile(file.name)}
                     style={{
-                      padding: "8px 12px",
+                      padding: "10px 12px",
                       background: WHITE,
                       borderRadius: "6px",
                       fontSize: "0.9rem",
                       color: MONUMENT,
+                      border: `1px solid ${SECTION_GREY}`,
+                      textAlign: "left",
+                      cursor: "pointer",
+                      transition: "background 0.15s, box-shadow 0.15s",
+                      width: "100%",
+                      boxSizing: "border-box",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "#f0f0f0";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = WHITE;
                     }}
                   >
                     {file.name}
-                  </div>
+                  </button>
                 ))}
               </div>
             )}

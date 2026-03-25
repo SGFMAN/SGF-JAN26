@@ -5,12 +5,42 @@ const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 const API_URL = "";
 
+/** Compressed VIC SMTP cards so Primary, Secondary, and VIC - SMTP fit in column 1 */
+const VIC_SMTP_CARD = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "6px",
+  backgroundColor: "#4D93D9",
+  padding: "8px 10px",
+  borderRadius: "6px",
+};
+const VIC_SMTP_H3 = { fontSize: "0.85rem", marginTop: 0, marginBottom: "4px", color: MONUMENT, fontWeight: 600 };
+const VIC_SMTP_LAB = {
+  display: "block",
+  fontSize: "0.75rem",
+  color: "#32323399",
+  marginBottom: "4px",
+  fontWeight: 500,
+};
+const VIC_SMTP_IN = {
+  width: "100%",
+  padding: "6px 8px",
+  borderRadius: "6px",
+  border: "none",
+  fontSize: "0.875rem",
+  color: MONUMENT,
+  background: WHITE,
+  boxSizing: "border-box",
+};
+
 export default function EmailSettings() {
   // VIC SMTP Settings
   const [smtpUser, setSmtpUser] = useState("");
   const [smtpPass, setSmtpPass] = useState("");
   const [smtpUserSecondary, setSmtpUserSecondary] = useState("");
   const [smtpPassSecondary, setSmtpPassSecondary] = useState("");
+  const [smtpUserVicSmtp, setSmtpUserVicSmtp] = useState("");
+  const [smtpPassVicSmtp, setSmtpPassVicSmtp] = useState("");
   
   // QLD SMTP Settings
   const [smtpUserQld, setSmtpUserQld] = useState("");
@@ -21,11 +51,44 @@ export default function EmailSettings() {
   const [sendDrawingsQld, setSendDrawingsQld] = useState([]);
   
   const [loading, setLoading] = useState(true);
-  const valuesRef = useRef({ smtpUser, smtpPass, smtpUserSecondary, smtpPassSecondary, smtpUserQld, smtpPassQld, sendDrawingsVic, sendDrawingsQld });
+  const valuesRef = useRef({
+    smtpUser,
+    smtpPass,
+    smtpUserSecondary,
+    smtpPassSecondary,
+    smtpUserVicSmtp,
+    smtpPassVicSmtp,
+    smtpUserQld,
+    smtpPassQld,
+    sendDrawingsVic,
+    sendDrawingsQld,
+  });
 
   useEffect(() => {
-    valuesRef.current = { smtpUser, smtpPass, smtpUserSecondary, smtpPassSecondary, smtpUserQld, smtpPassQld, sendDrawingsVic, sendDrawingsQld };
-  }, [smtpUser, smtpPass, smtpUserSecondary, smtpPassSecondary, smtpUserQld, smtpPassQld, sendDrawingsVic, sendDrawingsQld]);
+    valuesRef.current = {
+      smtpUser,
+      smtpPass,
+      smtpUserSecondary,
+      smtpPassSecondary,
+      smtpUserVicSmtp,
+      smtpPassVicSmtp,
+      smtpUserQld,
+      smtpPassQld,
+      sendDrawingsVic,
+      sendDrawingsQld,
+    };
+  }, [
+    smtpUser,
+    smtpPass,
+    smtpUserSecondary,
+    smtpPassSecondary,
+    smtpUserVicSmtp,
+    smtpPassVicSmtp,
+    smtpUserQld,
+    smtpPassQld,
+    sendDrawingsVic,
+    sendDrawingsQld,
+  ]);
 
   useEffect(() => {
     fetchSettings();
@@ -43,6 +106,8 @@ export default function EmailSettings() {
       setSmtpPass(data.smtp_pass || "");
       setSmtpUserSecondary(data.smtp_user_secondary || "");
       setSmtpPassSecondary(data.smtp_pass_secondary || "");
+      setSmtpUserVicSmtp(data.smtp_user_vic_smtp || "");
+      setSmtpPassVicSmtp(data.smtp_pass_vic_smtp || "");
       setSmtpUserQld(data.smtp_user_qld || "");
       setSmtpPassQld(data.smtp_pass_qld || "");
       const vicDrawings = Array.isArray(data.send_drawings_vic) ? data.send_drawings_vic : [];
@@ -59,6 +124,8 @@ export default function EmailSettings() {
       setSmtpPass("");
       setSmtpUserSecondary("");
       setSmtpPassSecondary("");
+      setSmtpUserVicSmtp("");
+      setSmtpPassVicSmtp("");
       setSmtpUserQld("");
       setSmtpPassQld("");
       setSendDrawingsVic([]);
@@ -75,6 +142,8 @@ export default function EmailSettings() {
         smtp_pass: valuesRef.current.smtpPass || null,
         smtp_user_secondary: (valuesRef.current.smtpUserSecondary || "").trim() || null,
         smtp_pass_secondary: valuesRef.current.smtpPassSecondary || null,
+        smtp_user_vic_smtp: (valuesRef.current.smtpUserVicSmtp || "").trim() || null,
+        smtp_pass_vic_smtp: valuesRef.current.smtpPassVicSmtp || null,
         smtp_user_qld: (valuesRef.current.smtpUserQld || "").trim() || null,
         smtp_pass_qld: valuesRef.current.smtpPassQld || null,
         send_drawings_vic: Array.isArray(valuesRef.current.sendDrawingsVic) ? valuesRef.current.sendDrawingsVic : [],
@@ -140,6 +209,26 @@ export default function EmailSettings() {
     await saveSmtpSettings();
   }
 
+  function handleSmtpUserVicSmtpChange(e) {
+    const v = e.target.value;
+    setSmtpUserVicSmtp(v);
+    valuesRef.current.smtpUserVicSmtp = v;
+  }
+
+  async function handleSmtpUserVicSmtpBlur() {
+    await saveSmtpSettings();
+  }
+
+  function handleSmtpPassVicSmtpChange(e) {
+    const v = e.target.value;
+    setSmtpPassVicSmtp(v);
+    valuesRef.current.smtpPassVicSmtp = v;
+  }
+
+  async function handleSmtpPassVicSmtpBlur() {
+    await saveSmtpSettings();
+  }
+
   function handleSmtpUserQldChange(e) {
     const v = e.target.value;
     setSmtpUserQld(v);
@@ -183,6 +272,7 @@ export default function EmailSettings() {
     const users = [];
     if (smtpUser && smtpUser.trim()) users.push(smtpUser.trim());
     if (smtpUserSecondary && smtpUserSecondary.trim()) users.push(smtpUserSecondary.trim());
+    if (smtpUserVicSmtp && smtpUserVicSmtp.trim()) users.push(smtpUserVicSmtp.trim());
     if (smtpUserQld && smtpUserQld.trim()) users.push(smtpUserQld.trim());
     return users;
   }
@@ -202,138 +292,82 @@ export default function EmailSettings() {
       </h2>
       
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "24px", width: "100%" }}>
-        {/* Column 1: VIC Primary and Secondary */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-          {/* VIC SMTP Primary */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px", backgroundColor: "#4D93D9", padding: "16px", borderRadius: "8px" }}>
-            <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
-              VIC - SMTP Primary
-            </h3>
+        {/* Column 1: VIC Primary, Secondary, VIC - SMTP (compressed) */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={VIC_SMTP_CARD}>
+            <h3 style={VIC_SMTP_H3}>VIC - SMTP Primary</h3>
             <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: "#32323399",
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                SMTP User
-              </label>
+              <label style={VIC_SMTP_LAB}>SMTP User</label>
               <input
                 type="text"
                 value={smtpUser}
                 onChange={handleSmtpUserChange}
                 onBlur={handleSmtpUserBlur}
                 placeholder="e.g. info@superiorgrannyflats.com.au"
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
+                style={VIC_SMTP_IN}
               />
             </div>
             <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: "#32323399",
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                SMTP Pass
-              </label>
+              <label style={VIC_SMTP_LAB}>SMTP Pass</label>
               <input
                 type="password"
                 value={smtpPass}
                 onChange={handleSmtpPassChange}
                 onBlur={handleSmtpPassBlur}
                 placeholder="App password"
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
+                style={VIC_SMTP_IN}
               />
             </div>
           </div>
 
-          {/* VIC SMTP Secondary */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px", backgroundColor: "#4D93D9", padding: "16px", borderRadius: "8px" }}>
-            <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
-              VIC - SMTP Secondary
-            </h3>
+          <div style={VIC_SMTP_CARD}>
+            <h3 style={VIC_SMTP_H3}>VIC - SMTP Secondary</h3>
             <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: "#32323399",
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                SMTP User
-              </label>
+              <label style={VIC_SMTP_LAB}>SMTP User</label>
               <input
                 type="text"
                 value={smtpUserSecondary}
                 onChange={handleSmtpUserSecondaryChange}
                 onBlur={handleSmtpUserSecondaryBlur}
                 placeholder="e.g. info@superiorgrannyflats.com.au"
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
+                style={VIC_SMTP_IN}
               />
             </div>
             <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: "#32323399",
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                SMTP Pass
-              </label>
+              <label style={VIC_SMTP_LAB}>SMTP Pass</label>
               <input
                 type="password"
                 value={smtpPassSecondary}
                 onChange={handleSmtpPassSecondaryChange}
                 onBlur={handleSmtpPassSecondaryBlur}
                 placeholder="App password"
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
+                style={VIC_SMTP_IN}
+              />
+            </div>
+          </div>
+
+          <div style={VIC_SMTP_CARD}>
+            <h3 style={VIC_SMTP_H3}>VIC - SMTP</h3>
+            <div>
+              <label style={VIC_SMTP_LAB}>SMTP User</label>
+              <input
+                type="text"
+                value={smtpUserVicSmtp}
+                onChange={handleSmtpUserVicSmtpChange}
+                onBlur={handleSmtpUserVicSmtpBlur}
+                placeholder="e.g. info@superiorgrannyflats.com.au"
+                style={VIC_SMTP_IN}
+              />
+            </div>
+            <div>
+              <label style={VIC_SMTP_LAB}>SMTP Pass</label>
+              <input
+                type="password"
+                value={smtpPassVicSmtp}
+                onChange={handleSmtpPassVicSmtpChange}
+                onBlur={handleSmtpPassVicSmtpBlur}
+                placeholder="App password"
+                style={VIC_SMTP_IN}
               />
             </div>
           </div>
