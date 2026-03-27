@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useEmailSendOverlay } from "../components/EmailSendOverlay";
+import { getNewJobInternalTemplateName } from "../utils/newJobInternalTemplate";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -46,6 +48,7 @@ const CLASSIFICATION_MAP = {
 };
 
 export default function NewProject4({ isOpen, onClose, formData, onFormDataChange, onBack, onCreate, onNext, createdProjectForEmail }) {
+  const { runWithEmailOverlay } = useEmailSendOverlay();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -411,15 +414,15 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
       }
       const templates = await templatesResponse.json();
       console.log("Fetched templates:", templates);
-      
-      // Find "NEW JOB - Internal" template (case-insensitive search)
-      const template = templates.find(t => 
-        t.name && t.name.toLowerCase().trim() === "new job - internal".toLowerCase()
+
+      const templateName = getNewJobInternalTemplateName(project);
+      const template = templates.find(
+        (t) => t.name && t.name.toLowerCase().trim() === templateName.toLowerCase()
       );
-      
+
       if (!template) {
-        console.warn("Template 'NEW JOB - Internal' not found. Available templates:", templates.map(t => t.name));
-        alert("Template 'NEW JOB - Internal' not found. Please create it in Settings → Email Settings.");
+        console.warn(`Template "${templateName}" not found. Available templates:`, templates.map((t) => t.name));
+        alert(`Template "${templateName}" not found. Please create it in Settings → Email Settings.`);
         // Don't close modal, just return
         return;
       }
@@ -486,21 +489,23 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
     }
 
     try {
-      const res = await fetch(`${API_URL}/api/emails/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: toAddresses,
-          from: emailFrom,
-          subject: emailSubject,
-          htmlBody: emailBody,
-        }),
+      await runWithEmailOverlay(async () => {
+        const res = await fetch(`${API_URL}/api/emails/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: toAddresses,
+            from: emailFrom,
+            subject: emailSubject,
+            htmlBody: emailBody,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || `Send failed (${res.status})`);
+        }
+        alert(data.message || "Email sent successfully!");
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || `Send failed (${res.status})`);
-      }
-      alert(data.message || "Email sent successfully!");
       setShowEmailModal(false);
       // Clear createdProjectForEmail if it was set
       if (createdProjectForEmail) {

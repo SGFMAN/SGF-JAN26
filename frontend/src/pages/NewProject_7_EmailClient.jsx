@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -6,6 +7,7 @@ const WHITE = "#fff";
 const API_URL = "";
 
 export default function NewProject_7_EmailClient({ isOpen, onClose, createdProjectForEmail }) {
+  const { runWithEmailOverlay } = useEmailSendOverlay();
   const [emailTo, setEmailTo] = useState("");
   const [emailFrom, setEmailFrom] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
@@ -198,24 +200,26 @@ export default function NewProject_7_EmailClient({ isOpen, onClose, createdProje
     }
 
     try {
-      const requestBody = {
-        to: toAddresses,
-        from: emailFrom,
-        subject: emailSubject,
-        htmlBody: emailBody,
-      };
-      if (createdProjectForEmail && createdProjectForEmail.id) {
-        requestBody.projectId = createdProjectForEmail.id;
-      }
+      await runWithEmailOverlay(async () => {
+        const requestBody = {
+          to: toAddresses,
+          from: emailFrom,
+          subject: emailSubject,
+          htmlBody: emailBody,
+        };
+        if (createdProjectForEmail && createdProjectForEmail.id) {
+          requestBody.projectId = createdProjectForEmail.id;
+        }
 
-      const res = await fetch(`${API_URL}/api/emails/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
+        const res = await fetch(`${API_URL}/api/emails/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Send failed (${res.status})`);
+        alert(data.message || "Email sent successfully!");
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Send failed (${res.status})`);
-      alert(data.message || "Email sent successfully!");
       onClose();
     } catch (err) {
       console.error("Send email error:", err);

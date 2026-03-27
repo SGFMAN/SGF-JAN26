@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -19,6 +20,7 @@ function escapeHtmlForEmail(text) {
 }
 
 export default function Drawings({ project, onUpdate }) {
+  const { runWithEmailOverlay } = useEmailSendOverlay();
   const [drawingsStatus, setDrawingsStatus] = useState(project?.drawings_status || "Not Assigned");
   const [draftsperson, setDraftsperson] = useState(project?.draftsperson ? String(project.draftsperson) : "");
   const [drawingsHolder, setDrawingsHolder] = useState(project?.drawings_holder || "design team");
@@ -1476,28 +1478,30 @@ export default function Drawings({ project, onUpdate }) {
     }
 
     try {
-      const response = await fetch(`${API_URL}/api/emails/send-drawings`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          projectId: project.id,
-          toEmails: toAddresses,
-          customBody: emailDrawingsToClientBody,
-          from: emailDrawingsToClientFrom,
-          subject: emailDrawingsToClientSubject,
-          attachDrawings: true,
-        }),
+      await runWithEmailOverlay(async () => {
+        const response = await fetch(`${API_URL}/api/emails/send-drawings`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            projectId: project.id,
+            toEmails: toAddresses,
+            customBody: emailDrawingsToClientBody,
+            from: emailDrawingsToClientFrom,
+            subject: emailDrawingsToClientSubject,
+            attachDrawings: true,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: response.statusText }));
+          throw new Error(errorData.error || "Failed to send drawings email");
+        }
+
+        await response.json().catch(() => ({}));
+        alert("Drawings email sent successfully!");
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: response.statusText }));
-        throw new Error(errorData.error || "Failed to send drawings email");
-      }
-
-      await response.json().catch(() => ({}));
-      alert("Drawings email sent successfully!");
 
       if (emailDrawingsFlowKind === "client") {
         await saveDrawingsHolder("client");
@@ -1813,21 +1817,23 @@ export default function Drawings({ project, onUpdate }) {
         return;
       }
       try {
-        const response = await fetch(`${API_URL}/api/emails/send`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            to: toAddresses,
-            from: emailPreviewFrom.trim(),
-            subject: emailPreviewSubject || "Design meeting",
-            htmlBody: emailPreviewBody || "",
-          }),
+        await runWithEmailOverlay(async () => {
+          const response = await fetch(`${API_URL}/api/emails/send`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              to: toAddresses,
+              from: emailPreviewFrom.trim(),
+              subject: emailPreviewSubject || "Design meeting",
+              htmlBody: emailPreviewBody || "",
+            }),
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(data.error || "Failed to send email");
+          }
+          alert(data.message || "Email sent successfully!");
         });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(data.error || "Failed to send email");
-        }
-        alert(data.message || "Email sent successfully!");
         closeEmailPreviewModal();
       } catch (error) {
         console.error("Error sending design meeting email:", error);
@@ -1853,36 +1859,38 @@ export default function Drawings({ project, onUpdate }) {
 
     // Don't attach drawings - just send the email
     try {
-      const response = await fetch(`${API_URL}/api/emails/send-drawings`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          projectId: project.id,
-          toEmails: toAddresses,
-          customBody: emailPreviewBody,
-          from: emailPreviewFrom,
-          subject: emailPreviewSubject,
-          attachDrawings: false,
-        }),
+      await runWithEmailOverlay(async () => {
+        const response = await fetch(`${API_URL}/api/emails/send-drawings`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            projectId: project.id,
+            toEmails: toAddresses,
+            customBody: emailPreviewBody,
+            from: emailPreviewFrom,
+            subject: emailPreviewSubject,
+            attachDrawings: false,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: response.statusText }));
+          throw new Error(errorData.error || "Failed to send drawings email");
+        }
+
+        await response.json();
+        alert("Drawings email sent successfully!");
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: response.statusText }));
-        throw new Error(errorData.error || "Failed to send drawings email");
-      }
-
-      const result = await response.json();
-      alert("Drawings email sent successfully!");
-      
       // Update drawings holder based on email type
       if (emailPreviewType === "sales") {
         // Sales notes sent - design team now has the drawings
         await saveDrawingsHolder("design team");
       }
       // Drafting notes don't change the holder (design team keeps them)
-      
+
       // Close modals after sending
       closeEmailPreviewModal();
       setShowNotesModal(false);
@@ -2246,53 +2254,68 @@ export default function Drawings({ project, onUpdate }) {
     }
 
     try {
-      const response = await fetch(`${API_URL}/api/emails/send-drawings`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          projectId: project.id,
-        }),
+      await runWithEmailOverlay(async () => {
+        const response = await fetch(`${API_URL}/api/emails/send-drawings`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            projectId: project.id,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: response.statusText }));
+          throw new Error(errorData.error || "Failed to send drawings email");
+        }
+
+        await response.json();
+        alert("Drawings email sent successfully!");
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: response.statusText }));
-        throw new Error(errorData.error || "Failed to send drawings email");
-      }
-
-      const result = await response.json();
-      alert("Drawings email sent successfully!");
     } catch (error) {
       console.error("Error sending drawings email:", error);
       alert(`Failed to send drawings email: ${error.message}`);
     }
   }
 
-  function handleEmailClient() {
-    // Get all active client emails
-    const activeEmails = [];
-    
-    // Primary client email (always included if exists)
+  function getDrawingsClientRecipients() {
+    const stream = String(project?.stream || "").trim().toLowerCase();
+    if (stream === "dual dwelling") {
+      return {
+        emails: ["info@dualdwellinginvestments.com.au"],
+        labels: ["Dual Dwelling"],
+      };
+    }
+
+    const emails = [];
+    const labels = [];
+
     if (project?.email && project.email.trim()) {
-      activeEmails.push(project.email);
+      emails.push(project.email);
+      labels.push(project?.client_name || "Primary Client");
     }
-    
-    // Client1 if active
-    if (project?.client1_active === 'true' && project?.client1_email && project.client1_email.trim()) {
-      activeEmails.push(project.client1_email);
+
+    if (project?.client1_active === "true" && project?.client1_email && project.client1_email.trim()) {
+      emails.push(project.client1_email);
+      labels.push(project?.client1_name || "Contact 1");
     }
-    
-    // Client2 if active
-    if (project?.client2_active === 'true' && project?.client2_email && project.client2_email.trim()) {
-      activeEmails.push(project.client2_email);
+
+    if (project?.client2_active === "true" && project?.client2_email && project.client2_email.trim()) {
+      emails.push(project.client2_email);
+      labels.push(project?.client2_name || "Contact 2");
     }
-    
-    // Client3 if active
-    if (project?.client3_active === 'true' && project?.client3_email && project.client3_email.trim()) {
-      activeEmails.push(project.client3_email);
+
+    if (project?.client3_active === "true" && project?.client3_email && project.client3_email.trim()) {
+      emails.push(project.client3_email);
+      labels.push(project?.client3_name || "Contact 3");
     }
-    
+
+    return { emails, labels };
+  }
+
+  function handleEmailClient() {
+    const { emails: activeEmails } = getDrawingsClientRecipients();
     if (activeEmails.length === 0) {
       alert("No active client email addresses found for this project.");
       return;
@@ -2316,29 +2339,7 @@ export default function Drawings({ project, onUpdate }) {
       return;
     }
 
-    // Get all active client emails
-    const activeEmails = [];
-    
-    // Primary client email (always included if exists)
-    if (project?.email && project.email.trim()) {
-      activeEmails.push(project.email);
-    }
-    
-    // Client1 if active
-    if (project?.client1_active === 'true' && project?.client1_email && project.client1_email.trim()) {
-      activeEmails.push(project.client1_email);
-    }
-    
-    // Client2 if active
-    if (project?.client2_active === 'true' && project?.client2_email && project.client2_email.trim()) {
-      activeEmails.push(project.client2_email);
-    }
-    
-    // Client3 if active
-    if (project?.client3_active === 'true' && project?.client3_email && project.client3_email.trim()) {
-      activeEmails.push(project.client3_email);
-    }
-    
+    const { emails: activeEmails } = getDrawingsClientRecipients();
     if (activeEmails.length === 0) {
       alert("No active client email addresses found for this project.");
       return;
@@ -2350,27 +2351,29 @@ export default function Drawings({ project, onUpdate }) {
     }
 
     try {
-      const response = await fetch(`${API_URL}/api/emails/send-drawings`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          projectId: project.id,
-          toEmails: activeEmails, // Send array of emails
-          notes: emailClientNotes,
-          attachDrawings: attachDrawings,
-        }),
+      await runWithEmailOverlay(async () => {
+        const response = await fetch(`${API_URL}/api/emails/send-drawings`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            projectId: project.id,
+            toEmails: activeEmails, // Send array of emails
+            notes: emailClientNotes,
+            attachDrawings: attachDrawings,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: response.statusText }));
+          throw new Error(errorData.error || "Failed to send email");
+        }
+
+        await response.json();
+        const emailList = activeEmails.join(", ");
+        alert(`Email sent successfully to ${emailList}!`);
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: response.statusText }));
-        throw new Error(errorData.error || "Failed to send email");
-      }
-
-      const result = await response.json();
-      const emailList = activeEmails.join(", ");
-      alert(`Email sent successfully to ${emailList}!`);
       handleCloseEmailClientModal();
     } catch (error) {
       console.error("Error sending email:", error);
@@ -3091,7 +3094,6 @@ export default function Drawings({ project, onUpdate }) {
             justifyContent: "center",
             zIndex: 1000,
           }}
-          onClick={handleCloseEmailClientModal}
         >
           <div
             style={{
@@ -3104,40 +3106,12 @@ export default function Drawings({ project, onUpdate }) {
               overflow: "auto",
               boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
             }}
-            onClick={(e) => e.stopPropagation()}
           >
             <h3 style={{ marginTop: 0, marginBottom: "16px", color: MONUMENT }}>
               Email Client
             </h3>
             {(() => {
-              // Get all active client emails for display
-              const activeEmails = [];
-              const activeNames = [];
-              
-              // Primary client
-              if (project?.email && project.email.trim()) {
-                activeEmails.push(project.email);
-                activeNames.push(project?.client_name || "Primary Client");
-              }
-              
-              // Client1 if active
-              if (project?.client1_active === 'true' && project?.client1_email && project.client1_email.trim()) {
-                activeEmails.push(project.client1_email);
-                activeNames.push(project?.client1_name || "Contact 1");
-              }
-              
-              // Client2 if active
-              if (project?.client2_active === 'true' && project?.client2_email && project.client2_email.trim()) {
-                activeEmails.push(project.client2_email);
-                activeNames.push(project?.client2_name || "Contact 2");
-              }
-              
-              // Client3 if active
-              if (project?.client3_active === 'true' && project?.client3_email && project.client3_email.trim()) {
-                activeEmails.push(project.client3_email);
-                activeNames.push(project?.client3_name || "Contact 3");
-              }
-              
+              const { emails: activeEmails, labels: activeNames } = getDrawingsClientRecipients();
               return (
                 <div style={{ marginBottom: "16px", padding: "12px", background: "#f5f5f5", borderRadius: "8px" }}>
                   <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "8px", fontWeight: "500" }}>

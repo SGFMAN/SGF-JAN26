@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -26,6 +27,7 @@ function getLongestText(arr, include = "") {
 const DEPOSIT_OPTIONS = ["Full 5%", "$5k only", "Other"];
 
 export default function Admin({ project, onUpdate }) {
+  const { runWithEmailOverlay } = useEmailSendOverlay();
   const [stream, setStream] = useState(project?.stream || "");
   const [customDeposit, setCustomDeposit] = useState("");
   const [projectCost, setProjectCost] = useState("");
@@ -336,20 +338,22 @@ export default function Admin({ project, onUpdate }) {
       return;
     }
     try {
-      const res = await fetch(`${API_URL}/api/emails/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: toAddresses,
-          from: depositEmailFrom,
-          subject: depositEmailSubject,
-          htmlBody: depositEmailBody,
-          projectId: project?.id || undefined,
-        }),
+      await runWithEmailOverlay(async () => {
+        const res = await fetch(`${API_URL}/api/emails/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: toAddresses,
+            from: depositEmailFrom,
+            subject: depositEmailSubject,
+            htmlBody: depositEmailBody,
+            projectId: project?.id || undefined,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Send failed");
+        alert(data.message || "Email sent successfully!");
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Send failed");
-      alert(data.message || "Email sent successfully!");
       setShowDepositBalanceEmailModal(false);
     } catch (err) {
       console.error("Send deposit balance email error:", err);

@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -32,6 +33,7 @@ const BAL_RATING_OPTIONS = [
 const DATE_REQUIRED_OPTIONS = ["Normal", "Urgent"];
 
 export default function Windows({ project, onUpdate }) {
+  const { runWithEmailOverlay } = useEmailSendOverlay();
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [showReceivedModal, setShowReceivedModal] = useState(false);
   const [windowColour, setWindowColour] = useState(project?.window_colour || "");
@@ -48,10 +50,6 @@ export default function Windows({ project, onUpdate }) {
   const fileInputRef = useRef(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailBody, setEmailBody] = useState("");
-  const [isSending, setIsSending] = useState(false);
-  const [sendProgress, setSendProgress] = useState(0);
-  const [sendAbortController, setSendAbortController] = useState(null);
-  const progressIntervalRef = useRef(null);
 
   // Get window status or default to "Not Ordered"
   const windowStatus = project?.window_status || "Not Ordered";
@@ -232,111 +230,52 @@ Date Required: ${dateRequiredText}`;
       return;
     }
 
-    setIsSending(true);
-    setSendProgress(0);
-    
-    // Create abort controller and store in both state and local variable
-    const abortController = new AbortController();
-    setSendAbortController(abortController);
-
-    // Start progress simulation
-    progressIntervalRef.current = setInterval(() => {
-      setSendProgress((prev) => {
-        if (prev >= 90) return 90; // Cap at 90% until response
-        return prev + Math.random() * 10; // Increment by 0-10%
-      });
-    }, 200); // Update every 200ms
-
     try {
-      const response = await fetch(`${API_URL}/api/emails/send-windows-order`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          projectId: project.id,
-          customBody: emailBody,
-          windowColour: windowColour,
-          windowReveal: reveal === "Other" ? revealOther : reveal,
-          windowGlazing: glazing,
-          windowBalRating: balRating,
-          windowDateRequired: dateRequired === "Normal" 
-            ? new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' })
-            : dateRequired,
-        }),
-        signal: abortController.signal,
-      });
+      await runWithEmailOverlay(async () => {
+        const response = await fetch(`${API_URL}/api/emails/send-windows-order`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            projectId: project.id,
+            customBody: emailBody,
+            windowColour: windowColour,
+            windowReveal: reveal === "Other" ? revealOther : reveal,
+            windowGlazing: glazing,
+            windowBalRating: balRating,
+            windowDateRequired: dateRequired === "Normal"
+              ? new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toLocaleDateString("en-AU", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                })
+              : dateRequired,
+          }),
+        });
 
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({ error: response.statusText }));
+          const errorMessage = data.error || `Failed to send email: ${response.statusText}`;
+          throw new Error(errorMessage);
+        }
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({ error: response.statusText }));
-        const errorMessage = data.error || `Failed to send email: ${response.statusText}`;
-        alert(`Error sending email: ${errorMessage}`);
-        console.error("Error details:", data);
-        setIsSending(false);
-        setSendProgress(0);
-        setSendAbortController(null);
-        return;
-      }
-
-      // Small delay to show 100% before closing
-      setTimeout(() => {
+        await response.json().catch(() => ({}));
         alert("Window order email sent successfully!");
-        setIsSending(false);
-        setSendProgress(0);
-        setSendAbortController(null);
-        setShowEmailModal(false);
-        
-        // Update window status to "Ordered" and set ordered date
-        if (onUpdate) {
-          onUpdate();
-        }
-      }, 500);
+      });
+      setShowEmailModal(false);
+      if (onUpdate) {
+        onUpdate();
+      }
     } catch (error) {
-      if (error.name === "AbortError") {
-        console.log("Email send cancelled");
-        setIsSending(false);
-        setSendProgress(0);
-        setSendAbortController(null);
-        if (progressIntervalRef.current) {
-          clearInterval(progressIntervalRef.current);
-          progressIntervalRef.current = null;
-        }
-        return;
-      }
-
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
       console.error("Error sending email:", error);
       alert(`Error sending email: ${error.message}`);
-      setIsSending(false);
-      setSendProgress(0);
-      setSendAbortController(null);
     }
   }
 
   function handleCloseEmailModal() {
-    if (isSending) {
-      if (sendAbortController) {
-        sendAbortController.abort();
-      }
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
-      setIsSending(false);
-      setSendProgress(0);
-      setSendAbortController(null);
-    } else {
-      setShowEmailModal(false);
-      setEmailBody("");
-    }
+    setShowEmailModal(false);
+    setEmailBody("");
   }
 
   function handleOpenOrderModal() {
@@ -1300,14 +1239,13 @@ Date Required: ${dateRequiredText}`;
             left: 0,
             right: 0,
             bottom: 0,
-            background: isSending ? "rgba(0, 0, 0, 0.7)" : "rgba(0, 0, 0, 0.5)",
+            background: "rgba(0, 0, 0, 0.5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             zIndex: 2000,
             pointerEvents: "auto",
           }}
-          onClick={isSending ? undefined : handleCloseEmailModal}
         >
           <div
             style={{
@@ -1320,13 +1258,10 @@ Date Required: ${dateRequiredText}`;
               height: "90vh",
               overflowY: "auto",
               boxShadow: "0 4px 20px rgba(0, 0, 0, 0.2)",
-              pointerEvents: isSending ? "none" : "auto",
-              opacity: isSending ? 0.6 : 1,
               position: "relative",
               display: "flex",
               flexDirection: "column",
             }}
-            onClick={(e) => e.stopPropagation()}
           >
             <h3
               style={{
@@ -1364,108 +1299,44 @@ Date Required: ${dateRequiredText}`;
               />
             </div>
 
-            {/* Progress Bar Overlay - Only shown when sending */}
-            {isSending && (
-              <div
+            <div
+              style={{
+                display: "flex",
+                gap: "12px",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                onClick={handleCloseEmailModal}
                 style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  background: "rgba(255, 255, 255, 0.9)",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderRadius: "12px",
-                  zIndex: 10,
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: "500",
+                  color: MONUMENT,
+                  background: WHITE,
+                  border: `1px solid ${MONUMENT}`,
+                  borderRadius: "8px",
+                  cursor: "pointer",
                 }}
               >
-                <div style={{ marginBottom: "20px", fontSize: "1.1rem", color: MONUMENT, fontWeight: 500 }}>
-                  Sending email...
-                </div>
-                <div
-                  style={{
-                    width: "80%",
-                    height: "30px",
-                    background: SECTION_GREY,
-                    borderRadius: "15px",
-                    overflow: "hidden",
-                    marginBottom: "10px",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${sendProgress}%`,
-                      height: "100%",
-                      background: MONUMENT,
-                      transition: "width 0.3s ease",
-                    }}
-                  />
-                </div>
-                <div style={{ fontSize: "0.9rem", color: MONUMENT, marginBottom: "20px" }}>
-                  {Math.round(sendProgress)}%
-                </div>
-                <button
-                  onClick={handleCloseEmailModal}
-                  style={{
-                    padding: "10px 20px",
-                    fontSize: "1rem",
-                    fontWeight: "500",
-                    color: WHITE,
-                    background: "#d32f2f",
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-
-            {/* Modal Buttons */}
-            {!isSending && (
-              <div
+                Cancel
+              </button>
+              <button
+                onClick={handleSendEmail}
                 style={{
-                  display: "flex",
-                  gap: "12px",
-                  justifyContent: "flex-end",
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: "500",
+                  color: WHITE,
+                  background: MONUMENT,
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: "pointer",
                 }}
               >
-                <button
-                  onClick={handleCloseEmailModal}
-                  style={{
-                    padding: "10px 20px",
-                    fontSize: "1rem",
-                    fontWeight: "500",
-                    color: MONUMENT,
-                    background: WHITE,
-                    border: `1px solid ${MONUMENT}`,
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSendEmail}
-                  style={{
-                    padding: "10px 20px",
-                    fontSize: "1rem",
-                    fontWeight: "500",
-                    color: WHITE,
-                    background: MONUMENT,
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Send Email
-                </button>
-              </div>
-            )}
+                Send Email
+              </button>
+            </div>
           </div>
         </div>
       )}

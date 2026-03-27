@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { PROCESS_RULES, getRequirementStatus, getUnmetRequirements, getMetRequirements } from "../utils/ProcessRules";
 import craig1 from "../images/craig1.jpg";
 import craig2 from "../images/craig2.jpg";
@@ -11,6 +12,7 @@ const WHITE = "#fff";
 const API_URL = "";
 
 export default function Overview({ project }) {
+  const { runWithEmailOverlay } = useEmailSendOverlay();
   const navigate = useNavigate();
   const { id } = useParams();
   const [emailTemplates, setEmailTemplates] = useState([]);
@@ -393,21 +395,23 @@ export default function Overview({ project }) {
     }
 
     try {
-      const res = await fetch(`${API_URL}/api/emails/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: toAddresses,
-          from: previewFrom,
-          subject: previewSubject,
-          htmlBody: previewBody,
-        }),
+      await runWithEmailOverlay(async () => {
+        const res = await fetch(`${API_URL}/api/emails/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: toAddresses,
+            from: previewFrom,
+            subject: previewSubject,
+            htmlBody: previewBody,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || `Send failed (${res.status})`);
+        }
+        alert(data.message || "Email sent successfully!");
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || `Send failed (${res.status})`);
-      }
-      alert(data.message || "Email sent successfully!");
       setPreviewModalOpen(false);
     } catch (err) {
       console.error("Send email error:", err);
@@ -1754,11 +1758,6 @@ export default function Overview({ project }) {
             justifyContent: "center",
             zIndex: 1000,
           }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setPreviewModalOpen(false);
-            }
-          }}
         >
           <div
             style={{
@@ -1771,7 +1770,6 @@ export default function Overview({ project }) {
               overflowY: "auto",
               boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
             }}
-            onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
               <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Preview & Send Email</h2>

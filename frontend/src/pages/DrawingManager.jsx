@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import logo from "../images/logo.png";
 
@@ -20,6 +21,7 @@ function escapeHtmlForEmailList(s) {
 }
 
 export default function DrawingManager() {
+  const { runWithEmailOverlay } = useEmailSendOverlay();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -1838,13 +1840,6 @@ export default function DrawingManager() {
             justifyContent: "center",
             zIndex: 1000,
           }}
-          onClick={() => {
-            setShowEmailModal(false);
-            setEmailTo("ben@superiorgrannyflats.com.au");
-            setEmailFrom("info@superiorgrannyflats.com.au");
-            setEmailSubject("Drawing Manager Projects List");
-            setEmailListHtml("");
-          }}
         >
           <div
             style={{
@@ -1857,7 +1852,6 @@ export default function DrawingManager() {
               overflowY: "auto",
               boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
             }}
-            onClick={(e) => e.stopPropagation()}
           >
             <h2 style={{ marginTop: 0, marginBottom: "20px", color: MONUMENT }}>
               Email Projects List
@@ -1991,21 +1985,23 @@ export default function DrawingManager() {
                   }
 
                   try {
-                    const res = await fetch(`${API_URL}/api/emails/send`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        to: toAddresses,
-                        from: emailFrom,
-                        subject: emailSubject,
-                        htmlBody: emailListHtml,
-                      }),
+                    await runWithEmailOverlay(async () => {
+                      const res = await fetch(`${API_URL}/api/emails/send`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          to: toAddresses,
+                          from: emailFrom,
+                          subject: emailSubject,
+                          htmlBody: emailListHtml,
+                        }),
+                      });
+                      const data = await res.json().catch(() => ({}));
+                      if (!res.ok) {
+                        throw new Error(data.error || `Send failed (${res.status})`);
+                      }
+                      alert(data.message || "Email sent successfully!");
                     });
-                    const data = await res.json().catch(() => ({}));
-                    if (!res.ok) {
-                      throw new Error(data.error || `Send failed (${res.status})`);
-                    }
-                    alert(data.message || "Email sent successfully!");
                     setShowEmailModal(false);
                     setEmailTo("ben@superiorgrannyflats.com.au");
                     setEmailFrom("info@superiorgrannyflats.com.au");
@@ -2300,57 +2296,59 @@ export default function DrawingManager() {
 
                   try {
                     setReminderSending(true);
-                    const res = await fetch(`${API_URL}/api/emails/send-drawings`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        projectId: selectedProjectForReminder.id,
-                        toEmails: toAddresses,
-                        from: reminderEmailFrom.trim(),
-                        subject: reminderEmailSubject || "",
-                        customBody: reminderEmailBody || "",
-                        attachDrawings: true,
-                      }),
-                    });
-                    const data = await res.json().catch(() => ({}));
-                    if (!res.ok) {
-                      throw new Error(data.error || "Failed to send reminder email");
-                    }
-
-                    // Reset "days with holder" counter after sending reminder:
-                    // keep same holder, but set holder date to today.
-                    const todayStr = new Date().toISOString().split("T")[0];
-                    try {
-                      const holderProjectName =
-                        selectedProjectForReminder?.name ||
-                        `${selectedProjectForReminder?.street || ""}, ${selectedProjectForReminder?.suburb || ""}`.trim() ||
-                        "";
-                      const holderRes = await fetch(`${API_URL}/api/projects/${selectedProjectForReminder.id}`, {
-                        method: "PUT",
+                    await runWithEmailOverlay(async () => {
+                      const res = await fetch(`${API_URL}/api/emails/send-drawings`, {
+                        method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
-                          name: holderProjectName,
-                          status: selectedProjectForReminder?.status || null,
-                          drawings_holder: selectedProjectForReminder?.drawings_holder || "design team",
-                          drawings_holder_date: todayStr,
+                          projectId: selectedProjectForReminder.id,
+                          toEmails: toAddresses,
+                          from: reminderEmailFrom.trim(),
+                          subject: reminderEmailSubject || "",
+                          customBody: reminderEmailBody || "",
+                          attachDrawings: true,
                         }),
                       });
-                      if (holderRes.ok) {
-                        setProjects((prev) =>
-                          prev.map((p) =>
-                            p.id === selectedProjectForReminder.id
-                              ? { ...p, drawings_holder_date: todayStr }
-                              : p
-                          )
-                        );
-                      } else {
-                        console.warn("Reminder email sent, but failed to reset holder days counter.");
+                      const data = await res.json().catch(() => ({}));
+                      if (!res.ok) {
+                        throw new Error(data.error || "Failed to send reminder email");
                       }
-                    } catch (holderErr) {
-                      console.warn("Reminder email sent, but error resetting holder days:", holderErr);
-                    }
 
-                    alert(data.message || "Reminder email sent successfully!");
+                      // Reset "days with holder" counter after sending reminder:
+                      // keep same holder, but set holder date to today.
+                      const todayStr = new Date().toISOString().split("T")[0];
+                      try {
+                        const holderProjectName =
+                          selectedProjectForReminder?.name ||
+                          `${selectedProjectForReminder?.street || ""}, ${selectedProjectForReminder?.suburb || ""}`.trim() ||
+                          "";
+                        const holderRes = await fetch(`${API_URL}/api/projects/${selectedProjectForReminder.id}`, {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            name: holderProjectName,
+                            status: selectedProjectForReminder?.status || null,
+                            drawings_holder: selectedProjectForReminder?.drawings_holder || "design team",
+                            drawings_holder_date: todayStr,
+                          }),
+                        });
+                        if (holderRes.ok) {
+                          setProjects((prev) =>
+                            prev.map((p) =>
+                              p.id === selectedProjectForReminder.id
+                                ? { ...p, drawings_holder_date: todayStr }
+                                : p
+                            )
+                          );
+                        } else {
+                          console.warn("Reminder email sent, but failed to reset holder days counter.");
+                        }
+                      } catch (holderErr) {
+                        console.warn("Reminder email sent, but error resetting holder days:", holderErr);
+                      }
+
+                      alert(data.message || "Reminder email sent successfully!");
+                    });
                     closeReminderModal();
                   } catch (err) {
                     console.error("Error sending reminder email:", err);

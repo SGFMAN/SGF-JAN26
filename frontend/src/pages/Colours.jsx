@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import ThreeDVis from "./ThreeDVis";
+import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -10,6 +11,7 @@ const COLOURS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
 const COLOUR_OPTIONS = ["Select", "Monument", "Paperbark", "Wallaby"];
 
 export default function Colours({ project, onUpdate }) {
+  const { runWithEmailOverlay } = useEmailSendOverlay();
   const [show3DVis, setShow3DVis] = useState(false);
   const [coloursStatus, setColoursStatus] = useState(project?.colours_status || "Not Sent");
   const [notes, setNotes] = useState(project?.colours_notes || "");
@@ -25,10 +27,6 @@ export default function Colours({ project, onUpdate }) {
   const [showSendModal, setShowSendModal] = useState(false);
   const [attachAffordable, setAttachAffordable] = useState(false);
   const [attachSuperior, setAttachSuperior] = useState(false);
-  const [isSending, setIsSending] = useState(false);
-  const [sendAbortController, setSendAbortController] = useState(null);
-  const [sendProgress, setSendProgress] = useState(0);
-  const progressIntervalRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
@@ -588,27 +586,29 @@ export default function Colours({ project, onUpdate }) {
     }
 
     try {
-      const response = await fetch(`${API_URL}/api/emails/send-colours-portal`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          projectId: project.id,
-          toEmails: toAddresses,
-          from: portalEmailFrom,
-          subject: portalEmailSubject,
-          htmlBody: portalEmailBody,
-        }),
+      await runWithEmailOverlay(async () => {
+        const response = await fetch(`${API_URL}/api/emails/send-colours-portal`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            projectId: project.id,
+            toEmails: toAddresses,
+            from: portalEmailFrom,
+            subject: portalEmailSubject,
+            htmlBody: portalEmailBody,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: response.statusText }));
+          throw new Error(errorData.error || "Failed to send email");
+        }
+
+        await response.json();
+        alert("Portal email sent successfully!");
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: response.statusText }));
-        throw new Error(errorData.error || "Failed to send email");
-      }
-
-      const result = await response.json();
-      alert("Portal email sent successfully!");
       setShowPortalEmailModal(false);
     } catch (error) {
       console.error("Error sending portal email:", error);
@@ -657,134 +657,6 @@ export default function Colours({ project, onUpdate }) {
     }
   }
 
-  async function handleSendReminderToClient() {
-    if (!project?.id) {
-      alert("Error: No project selected");
-      return;
-    }
-
-    const activeClients = getActiveClients();
-    if (activeClients.length === 0) {
-      alert("No active clients selected. Please select at least one client in Client Info.");
-      return;
-    }
-
-    if (!attachAffordable && !attachSuperior) {
-      alert("Please select at least one attachment (Affordable or Superior).");
-      return;
-    }
-
-    // Get active client emails
-    const toEmails = activeClients
-      .map(client => client.email)
-      .filter(email => email && email.trim());
-
-    if (toEmails.length === 0) {
-      alert("No valid email addresses found for active clients.");
-      return;
-    }
-
-    // Create abort controller for cancellation
-    const abortController = new AbortController();
-    setSendAbortController(abortController);
-    setIsSending(true);
-    setSendProgress(0);
-
-    // Simulate progress (since we can't get actual upload progress from fetch)
-    progressIntervalRef.current = setInterval(() => {
-      setSendProgress((prev) => {
-        if (prev >= 90) return 90; // Cap at 90% until response
-        return prev + Math.random() * 10; // Increment by 0-10%
-      });
-    }, 200); // Update every 200ms
-
-    try {
-      const response = await fetch(`${API_URL}/api/emails/send-colours-reminder`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          projectId: project.id,
-          attachAffordable: attachAffordable,
-          attachSuperior: attachSuperior,
-          toEmails: toEmails,
-        }),
-        signal: abortController.signal,
-      });
-
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
-      setSendProgress(100);
-
-      let data;
-      try {
-        data = await response.json();
-      } catch (jsonError) {
-        const errorText = await response.text().catch(() => response.statusText);
-        if (progressIntervalRef.current) {
-          clearInterval(progressIntervalRef.current);
-          progressIntervalRef.current = null;
-        }
-        alert(`Error sending email: ${errorText || response.statusText}`);
-        console.error("Error response:", errorText);
-        setIsSending(false);
-        setSendProgress(0);
-        setSendAbortController(null);
-        return;
-      }
-
-      if (!response.ok) {
-        const errorMessage = data.error || data.message || response.statusText;
-        if (progressIntervalRef.current) {
-          clearInterval(progressIntervalRef.current);
-          progressIntervalRef.current = null;
-        }
-        alert(`Error sending email: ${errorMessage}`);
-        console.error("Error details:", data);
-        setIsSending(false);
-        setSendProgress(0);
-        setSendAbortController(null);
-        return;
-      }
-
-      // Small delay to show 100% before closing
-      setTimeout(() => {
-        alert("Colours reminder email sent successfully!");
-        setIsSending(false);
-        setSendProgress(0);
-        setSendAbortController(null);
-        handleCloseSendReminderModal();
-        
-        // Refresh project data to get updated colours_reminder_sent_date
-        setTimeout(() => {
-          if (onUpdate) {
-            onUpdate();
-          }
-        }, 500);
-      }, 300);
-    } catch (error) {
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
-      if (error.name === 'AbortError') {
-        console.log("Email send cancelled by user");
-        setIsSending(false);
-        setSendProgress(0);
-        setSendAbortController(null);
-        return;
-      }
-      console.error("Error sending colours reminder email:", error);
-      alert(`Failed to send email: ${error.message}`);
-      setIsSending(false);
-      setSendProgress(0);
-      setSendAbortController(null);
-    }
-  }
-
   async function handleSendToClient() {
     if (!project?.id) {
       alert("Error: No project selected");
@@ -808,87 +680,46 @@ export default function Colours({ project, onUpdate }) {
       return;
     }
 
-    // Create abort controller for cancellation
-    const abortController = new AbortController();
-    setSendAbortController(abortController);
-    setIsSending(true);
-    setSendProgress(0);
-
-    // Simulate progress (since we can't get actual upload progress from fetch)
-    progressIntervalRef.current = setInterval(() => {
-      setSendProgress((prev) => {
-        if (prev >= 90) return 90; // Cap at 90% until response
-        return prev + Math.random() * 10; // Increment by 0-10%
-      });
-    }, 200); // Update every 200ms
-
     try {
-      // Use the appropriate endpoint based on template type
-      let endpoint = "";
-      if (emailTemplateType === "Send") {
-        endpoint = `${API_URL}/api/emails/send-colours`;
-      } else if (emailTemplateType === "Remind") {
-        endpoint = `${API_URL}/api/emails/send-colours-reminder`;
-      } else if (emailTemplateType === "WindowsRoof") {
-        endpoint = `${API_URL}/api/emails/send-colours-windows-roof`;
-      }
-      
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          projectId: project.id,
-          attachAffordable: attachAffordable,
-          attachSuperior: attachSuperior,
-          toEmails: toEmails,
-          customBody: emailBody || null,
-          from: emailFrom,
-          subject: emailSubject || null,
-        }),
-        signal: abortController.signal,
-      });
-
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
-      setSendProgress(100);
-
-      let data;
-      try {
-        data = await response.json();
-      } catch (jsonError) {
-        const errorText = await response.text().catch(() => response.statusText);
-        if (progressIntervalRef.current) {
-          clearInterval(progressIntervalRef.current);
-          progressIntervalRef.current = null;
+      await runWithEmailOverlay(async () => {
+        let endpoint = "";
+        if (emailTemplateType === "Send") {
+          endpoint = `${API_URL}/api/emails/send-colours`;
+        } else if (emailTemplateType === "Remind") {
+          endpoint = `${API_URL}/api/emails/send-colours-reminder`;
+        } else if (emailTemplateType === "WindowsRoof") {
+          endpoint = `${API_URL}/api/emails/send-colours-windows-roof`;
         }
-        alert(`Error sending email: ${errorText || response.statusText}`);
-        console.error("Error response:", errorText);
-        setIsSending(false);
-        setSendProgress(0);
-        setSendAbortController(null);
-        return;
-      }
 
-      if (!response.ok) {
-        const errorMessage = data.error || data.message || response.statusText;
-        if (progressIntervalRef.current) {
-          clearInterval(progressIntervalRef.current);
-          progressIntervalRef.current = null;
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            projectId: project.id,
+            attachAffordable: attachAffordable,
+            attachSuperior: attachSuperior,
+            toEmails: toEmails,
+            customBody: emailBody || null,
+            from: emailFrom,
+            subject: emailSubject || null,
+          }),
+        });
+
+        let data;
+        try {
+          data = await response.json();
+        } catch (jsonError) {
+          const errorText = await response.text().catch(() => response.statusText);
+          throw new Error(errorText || response.statusText);
         }
-        alert(`Error sending email: ${errorMessage}`);
-        console.error("Error details:", data);
-        setIsSending(false);
-        setSendProgress(0);
-        setSendAbortController(null);
-        return;
-      }
 
-      // Small delay to show 100% before closing
-      setTimeout(() => {
+        if (!response.ok) {
+          const errorMessage = data.error || data.message || response.statusText;
+          throw new Error(errorMessage);
+        }
+
         let message = "";
         if (emailTemplateType === "Send") {
           message = "Colours email sent successfully!";
@@ -898,54 +729,21 @@ export default function Colours({ project, onUpdate }) {
           message = "Windows & Roof email sent successfully!";
         }
         alert(message);
-        setIsSending(false);
-        setSendProgress(0);
-        setSendAbortController(null);
-        handleCloseSendModal();
-        
-        // Update the colours status to "Sent" only for Send type
-        if (emailTemplateType === "Send" && coloursStatus === "Not Sent") {
-          saveField("colours_status", "Sent");
+      });
+
+      if (emailTemplateType === "Send" && coloursStatus === "Not Sent") {
+        saveField("colours_status", "Sent");
+      }
+
+      handleCloseSendModal();
+      setTimeout(() => {
+        if (onUpdate) {
+          onUpdate();
         }
-        
-        // Refresh project data to get updated colours_sent_date or colours_reminder_sent_date
-        // Use a longer delay to ensure backend has finished updating
-        setTimeout(() => {
-          if (onUpdate) {
-            onUpdate();
-          }
-        }, 1000);
-      }, 300);
+      }, 1000);
     } catch (error) {
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
-      if (error.name === 'AbortError') {
-        console.log("Email send cancelled by user");
-        setIsSending(false);
-        setSendProgress(0);
-        setSendAbortController(null);
-        return;
-      }
       console.error("Error sending colours email:", error);
       alert(`Failed to send email: ${error.message}`);
-      setIsSending(false);
-      setSendProgress(0);
-      setSendAbortController(null);
-    }
-  }
-
-  function handleCancelSend() {
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
-      progressIntervalRef.current = null;
-    }
-    if (sendAbortController) {
-      sendAbortController.abort();
-      setSendAbortController(null);
-      setIsSending(false);
-      setSendProgress(0);
     }
   }
 
@@ -1472,18 +1270,12 @@ export default function Colours({ project, onUpdate }) {
             left: 0,
             right: 0,
             bottom: 0,
-            background: isSending ? "rgba(0, 0, 0, 0.7)" : "rgba(0, 0, 0, 0.5)",
+            background: "rgba(0, 0, 0, 0.5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             zIndex: 1000,
             pointerEvents: "auto",
-          }}
-          onClick={(e) => {
-            // Prevent closing when clicking on the modal background
-            if (e.target === e.currentTarget && !isSending) {
-              e.stopPropagation();
-            }
           }}
         >
           <div
@@ -1497,7 +1289,6 @@ export default function Colours({ project, onUpdate }) {
               overflowY: "auto",
               boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
             }}
-            onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
               <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Preview & Send Email</h2>
@@ -1694,61 +1485,6 @@ export default function Colours({ project, onUpdate }) {
                 />
               </div>
 
-            {/* Progress Bar Overlay - Only shown when sending */}
-            {isSending && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  background: "rgba(255, 255, 255, 0.9)",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderRadius: "12px",
-                  zIndex: 10,
-                  pointerEvents: "none",
-                }}
-              >
-                <div style={{ width: "80%", maxWidth: "400px" }}>
-                  <div
-                    style={{
-                      fontSize: "1rem",
-                      color: MONUMENT,
-                      marginBottom: "16px",
-                      textAlign: "center",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Sending email... {Math.round(sendProgress)}%
-                  </div>
-                  <div
-                    style={{
-                      width: "100%",
-                      height: "24px",
-                      background: SECTION_GREY,
-                      borderRadius: "12px",
-                      overflow: "hidden",
-                      marginBottom: "24px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: `${sendProgress}%`,
-                        height: "100%",
-                        background: MONUMENT,
-                        transition: "width 0.2s ease-out",
-                        borderRadius: "12px",
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
               <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
                 <button
                   onClick={handleCloseSendModal}
@@ -1767,7 +1503,6 @@ export default function Colours({ project, onUpdate }) {
                 </button>
                 <button
                   onClick={handleSendToClient}
-                  disabled={isSending}
                   style={{
                     padding: "10px 20px",
                     fontSize: "1rem",
@@ -1776,294 +1511,12 @@ export default function Colours({ project, onUpdate }) {
                     background: MONUMENT,
                     border: "none",
                     borderRadius: "8px",
-                    cursor: isSending ? "not-allowed" : "pointer",
-                    opacity: isSending ? 0.6 : 1,
+                    cursor: "pointer",
                   }}
                 >
                   Send Email
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Removed Send Reminder Modal - now combined with Send Colours Modal */}
-      {false && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: isSending ? "rgba(0, 0, 0, 0.7)" : "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-            pointerEvents: "auto",
-          }}
-          onClick={isSending ? undefined : handleCloseSendReminderModal}
-        >
-          <div
-            style={{
-              background: WHITE,
-              borderRadius: "12px",
-              padding: "32px",
-              maxWidth: "600px",
-              width: "90%",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              boxShadow: "0 4px 20px rgba(0, 0, 0, 0.2)",
-              pointerEvents: isSending ? "none" : "auto",
-              opacity: isSending ? 0.6 : 1,
-              position: "relative",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3
-              style={{
-                fontSize: "1.5rem",
-                marginTop: 0,
-                marginBottom: "24px",
-                color: MONUMENT,
-              }}
-            >
-              Send Reminder
-            </h3>
-
-            {/* Recipients and Attachments Side by Side */}
-            <div style={{ display: "flex", gap: "16px", marginBottom: "16px" }}>
-              {/* Recipients Section */}
-              <div style={{ flex: 1, marginBottom: 0 }}>
-                <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "8px", fontWeight: 500 }}>
-                  Recipients
-                </div>
-                {getActiveClients().length > 0 ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                    {getActiveClients().map((client, index) => (
-                      <div
-                        key={index}
-                        style={{
-                          padding: "6px 10px",
-                          borderRadius: "6px",
-                          background: SECTION_GREY,
-                          fontSize: "0.85rem",
-                          color: MONUMENT,
-                        }}
-                      >
-                        <div style={{ fontWeight: 500, marginBottom: "2px", fontSize: "0.85rem" }}>
-                          {client.name || "No name"}
-                        </div>
-                        <div style={{ color: "#32323399", fontSize: "0.8rem" }}>
-                          {client.email || "No email"}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ color: "#32323399", fontSize: "0.85rem", fontStyle: "italic" }}>
-                    No active clients selected in Client Info
-                  </div>
-                )}
-              </div>
-
-              {/* Attachments Section */}
-              <div style={{ flex: 1, marginBottom: 0 }}>
-                <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "8px", fontWeight: 500 }}>
-                  Attachments
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      cursor: "pointer",
-                      fontSize: "1rem",
-                      color: MONUMENT,
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={attachAffordable}
-                      onChange={(e) => setAttachAffordable(e.target.checked)}
-                      style={{
-                        width: "18px",
-                        height: "18px",
-                        cursor: "pointer",
-                      }}
-                    />
-                    Attach Affordable
-                  </label>
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      cursor: "pointer",
-                      fontSize: "1rem",
-                      color: MONUMENT,
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={attachSuperior}
-                      onChange={(e) => setAttachSuperior(e.target.checked)}
-                      style={{
-                        width: "18px",
-                        height: "18px",
-                        cursor: "pointer",
-                      }}
-                    />
-                    Attach Superior
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            {/* Email Body Section */}
-            <div style={{ marginBottom: "24px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "12px", fontWeight: 500 }}>
-                Email Body
-              </div>
-              <textarea
-                value={reminderEmailBody}
-                onChange={(e) => setReminderEmailBody(e.target.value)}
-                style={{
-                  width: "100%",
-                  minHeight: "200px",
-                  padding: "12px",
-                  borderRadius: "8px",
-                  border: `1px solid ${SECTION_GREY}`,
-                  fontSize: "0.95rem",
-                  fontFamily: "inherit",
-                  color: MONUMENT,
-                  resize: "vertical",
-                  boxSizing: "border-box",
-                }}
-                placeholder="Email body will be loaded from template..."
-              />
-            </div>
-
-            {/* Progress Bar Overlay - Only shown when sending */}
-            {isSending && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  background: "rgba(255, 255, 255, 0.9)",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderRadius: "12px",
-                  zIndex: 10,
-                  pointerEvents: "none",
-                }}
-              >
-                <div style={{ width: "80%", maxWidth: "400px" }}>
-                  <div
-                    style={{
-                      fontSize: "1rem",
-                      color: MONUMENT,
-                      marginBottom: "16px",
-                      textAlign: "center",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Sending email... {Math.round(sendProgress)}%
-                  </div>
-                  <div
-                    style={{
-                      width: "100%",
-                      height: "24px",
-                      background: SECTION_GREY,
-                      borderRadius: "12px",
-                      overflow: "hidden",
-                      marginBottom: "24px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: `${sendProgress}%`,
-                        height: "100%",
-                        background: MONUMENT,
-                        transition: "width 0.2s ease-out",
-                        borderRadius: "12px",
-                      }}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCancelSend}
-                    style={{
-                      background: MONUMENT,
-                      color: WHITE,
-                      border: "none",
-                      borderRadius: "8px",
-                      padding: "10px 20px",
-                      fontSize: "1rem",
-                      fontWeight: 500,
-                      cursor: "pointer",
-                      width: "100%",
-                      pointerEvents: "auto",
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Buttons */}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "32px" }}>
-              <button
-                type="button"
-                onClick={handleCloseSendReminderModal}
-                disabled={isSending}
-                style={{
-                  background: SECTION_GREY,
-                  color: MONUMENT,
-                  border: "none",
-                  borderRadius: "8px",
-                  padding: "10px 20px",
-                  fontSize: "1rem",
-                  fontWeight: 500,
-                  cursor: isSending ? "not-allowed" : "pointer",
-                  transition: "background 0.2s",
-                  opacity: isSending ? 0.6 : 1,
-                }}
-                onMouseEnter={(e) => !isSending && (e.currentTarget.style.background = "#8a8a8c")}
-                onMouseLeave={(e) => !isSending && (e.currentTarget.style.background = SECTION_GREY)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSendReminderToClient}
-                disabled={isSending}
-                style={{
-                  background: MONUMENT,
-                  color: WHITE,
-                  border: "none",
-                  borderRadius: "8px",
-                  padding: "10px 20px",
-                  fontSize: "1rem",
-                  fontWeight: 500,
-                  cursor: isSending ? "not-allowed" : "pointer",
-                  transition: "background 0.2s",
-                  opacity: isSending ? 0.6 : 1,
-                }}
-                onMouseEnter={(e) => !isSending && (e.currentTarget.style.background = "#1a1a1b")}
-                onMouseLeave={(e) => !isSending && (e.currentTarget.style.background = MONUMENT)}
-              >
-                Send to Client
-              </button>
             </div>
           </div>
         </div>
@@ -2081,11 +1534,6 @@ export default function Colours({ project, onUpdate }) {
             justifyContent: "center",
             zIndex: 1001,
           }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowPortalEmailModal(false);
-            }
-          }}
         >
           <div
             style={{
@@ -2098,7 +1546,6 @@ export default function Colours({ project, onUpdate }) {
               overflowY: "auto",
               boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
             }}
-            onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
               <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Preview & Send Email</h2>

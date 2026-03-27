@@ -27,6 +27,7 @@ import EmailGenerator from "./pages/EmailGenerator";
 import Inbox from "./pages/Inbox";
 import FAQ from "./pages/FAQ";
 import AppModeBanner from "./components/AppModeBanner";
+import { EmailSendOverlayProvider } from "./components/EmailSendOverlay";
 import PortalProjects from "./pages/PortalProjects";
 import PortalProjectDetail from "./pages/PortalProjectDetail";
 
@@ -38,6 +39,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <EmailSendOverlayProvider>
       {!isCloudflarePublicHost && <AppModeBanner />}
       <Routes>
         {isCloudflarePublicHost ? (
@@ -85,6 +87,7 @@ export default function App() {
           </>
         )}
       </Routes>
+      </EmailSendOverlayProvider>
     </BrowserRouter>
   );
 }

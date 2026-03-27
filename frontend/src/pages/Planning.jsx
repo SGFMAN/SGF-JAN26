@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -11,6 +12,7 @@ const SEPTIC_PERMIT_OPTIONS = ["Not Required", "Required", "Permit Complete"];
 const PIC_OPTIONS = ["Yes", "No"];
 
 export default function Planning({ project, onUpdate }) {
+  const { runWithEmailOverlay } = useEmailSendOverlay();
   const [planningStatus, setPlanningStatus] = useState(project?.planning_status || "Not Selected");
   const [energyReportStatus, setEnergyReportStatus] = useState(project?.energy_report_status || "Not Submitted");
   const [footingCertificationStatus, setFootingCertificationStatus] = useState(project?.footing_certification_status || "Not Submitted");
@@ -289,25 +291,27 @@ export default function Planning({ project, onUpdate }) {
 
     setIsSendingEmail(true);
     try {
-      const response = await fetch(`${API_URL}/api/emails/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: toAddresses,
-          from: emailFrom,
-          subject: emailSubject,
-          htmlBody: emailBody,
-        }),
+      await runWithEmailOverlay(async () => {
+        const response = await fetch(`${API_URL}/api/emails/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: toAddresses,
+            from: emailFrom,
+            subject: emailSubject,
+            htmlBody: emailBody,
+          }),
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || `Send failed (${response.status})`);
+        }
+
+        const sentDate = new Date().toISOString().split("T")[0];
+        await saveSepticFields({ septic_email_sent_date: sentDate });
+        alert("Email sent successfully.");
       });
-
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data.error || `Send failed (${response.status})`);
-      }
-
-      const sentDate = new Date().toISOString().split("T")[0];
-      await saveSepticFields({ septic_email_sent_date: sentDate });
-      alert("Email sent successfully.");
       setShowSepticEmailModal(false);
     } catch (error) {
       console.error("Error sending septic email:", error);
