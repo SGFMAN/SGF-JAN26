@@ -26,6 +26,14 @@ function getLongestText(arr, include = "") {
   );
 }
 
+function isQldState(value) {
+  const s = (value || "").trim().toUpperCase();
+  if (s === "QLD") return true;
+  if (s.includes("QLD")) return true;
+  if (s.includes("QUEENSLAND")) return true;
+  return false;
+}
+
 export default function ProjectInfo({ project, onUpdate }) {
   const [status, setStatus] = useState(project?.status || "");
   const [street, setStreet] = useState(project?.street || "");
@@ -35,15 +43,17 @@ export default function ProjectInfo({ project, onUpdate }) {
   const [classification, setClassification] = useState(project?.classification || "");
   const [projectInfoNotes, setProjectInfoNotes] = useState(project?.project_info_notes || "");
   const [onHold, setOnHold] = useState(project?.on_hold === 'true' || project?.on_hold === true);
+  const [qpNumber, setQpNumber] = useState(project?.qp_number || "");
   
   // Use ref to track latest values for saving
-  const valuesRef = useRef({ status, street, suburb, state, specs, classification, projectInfoNotes, onHold });
+  const valuesRef = useRef({ status, street, suburb, state, specs, classification, projectInfoNotes, onHold, qpNumber });
   const saveTimeoutRef = useRef(null);
+  const qpSaveTimeoutRef = useRef(null);
   
   // Update ref whenever state changes
   useEffect(() => {
-    valuesRef.current = { status, street, suburb, state, specs, classification, projectInfoNotes, onHold };
-  }, [status, street, suburb, state, specs, classification, projectInfoNotes, onHold]);
+    valuesRef.current = { status, street, suburb, state, specs, classification, projectInfoNotes, onHold, qpNumber };
+  }, [status, street, suburb, state, specs, classification, projectInfoNotes, onHold, qpNumber]);
   
   // For autosizing selects (now fixed at 300px)
   const statusSelectRef = useRef(null);
@@ -58,6 +68,7 @@ export default function ProjectInfo({ project, onUpdate }) {
     setClassification(project?.classification || "");
     setProjectInfoNotes(project?.project_info_notes || "");
     setOnHold(project?.on_hold === 'true' || project?.on_hold === true);
+    setQpNumber(project?.qp_number || "");
   }, [project]);
 
   async function saveAllFields() {
@@ -83,6 +94,9 @@ export default function ProjectInfo({ project, onUpdate }) {
           on_hold: currentValues.onHold || null,
           project_cost: project?.project_cost || null,
           deposit: project?.deposit || null,
+          ...(isQldState(currentValues.state)
+            ? { qp_number: (currentValues.qpNumber || "").trim() || null }
+            : {}),
         }),
       });
       if (!response.ok) {
@@ -185,6 +199,44 @@ export default function ProjectInfo({ project, onUpdate }) {
     valuesRef.current.state = newValue;
   }
 
+  function handleQpNumberChange(e) {
+    const newValue = e.target.value;
+    setQpNumber(newValue);
+    valuesRef.current.qpNumber = newValue;
+
+    if (!isQldState(valuesRef.current.state)) return;
+
+    if (qpSaveTimeoutRef.current) {
+      clearTimeout(qpSaveTimeoutRef.current);
+    }
+    qpSaveTimeoutRef.current = setTimeout(async () => {
+      if (!project?.id) return;
+      const currentValues = valuesRef.current;
+      if (!isQldState(currentValues.state)) return;
+      try {
+        const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            qp_number: (currentValues.qpNumber || "").trim() || null,
+          }),
+        });
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => response.statusText);
+          console.error("Error saving QP number:", response.status, errorText);
+          return;
+        }
+        if (onUpdate) {
+          onUpdate();
+        }
+      } catch (error) {
+        console.error("Error saving QP number:", error);
+      }
+    }, 1000);
+  }
+
   async function handleSpecsChange(e) {
     const newValue = e.target.value;
     setSpecs(newValue);
@@ -239,6 +291,10 @@ export default function ProjectInfo({ project, onUpdate }) {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = null;
+    }
+    if (qpSaveTimeoutRef.current) {
+      clearTimeout(qpSaveTimeoutRef.current);
+      qpSaveTimeoutRef.current = null;
     }
     // Save all fields - ref should have latest values from change handlers
     console.log("Blur triggered, saving all fields");
@@ -375,6 +431,33 @@ export default function ProjectInfo({ project, onUpdate }) {
                 }}
               />
             </div>
+            {isQldState(state) && (
+              <div style={{ marginBottom: "16px" }}>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                  QP Number
+                </div>
+                <input
+                  type="text"
+                  name="qp_number"
+                  data-field="qp_number"
+                  value={qpNumber}
+                  onChange={handleQpNumberChange}
+                  onBlur={handleBlur}
+                  placeholder="Queensland project number"
+                  style={{
+                    width: "100%",
+                    maxWidth: "300px",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+            )}
             <div style={{ marginTop: "24px" }}>
               <input
                 ref={fileInputRef}

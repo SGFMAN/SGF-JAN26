@@ -1447,14 +1447,17 @@ export default function Drawings({ project, onUpdate }) {
       return;
     }
 
-    if (built.activeClientEmails.length === 0) {
+    const dualDwelling = isDualDwellingStream();
+    if (!dualDwelling && built.activeClientEmails.length === 0) {
       alert("No active client email addresses found. Please add and activate client emails in the project.");
       return;
     }
 
     setVicSmtpFromOptions([]);
     setEmailDrawingsFlowKind("client");
-    setEmailDrawingsToClientTo(built.activeClientEmails.join(", "));
+    setEmailDrawingsToClientTo(
+      dualDwelling ? "info@dualdwellinginvestments.com.au" : built.activeClientEmails.join(", ")
+    );
     setEmailDrawingsToClientFrom(built.template.from_address || "");
     setEmailDrawingsToClientSubject(built.subject);
     setEmailDrawingsToClientBody(built.body);
@@ -1467,7 +1470,10 @@ export default function Drawings({ project, onUpdate }) {
       return;
     }
 
-    const toAddresses = emailDrawingsToClientTo.split(",").map(a => a.trim()).filter(a => a.length > 0);
+    let toAddresses = emailDrawingsToClientTo.split(",").map(a => a.trim()).filter(a => a.length > 0);
+    if (emailDrawingsFlowKind === "client" && isDualDwellingStream()) {
+      toAddresses = ["info@dualdwellinginvestments.com.au"];
+    }
     if (toAddresses.length === 0) {
       alert("Please enter at least one email address");
       return;
@@ -2279,9 +2285,12 @@ export default function Drawings({ project, onUpdate }) {
     }
   }
 
+  function isDualDwellingStream() {
+    return String(project?.stream || "").trim().toLowerCase() === "dual dwelling";
+  }
+
   function getDrawingsClientRecipients() {
-    const stream = String(project?.stream || "").trim().toLowerCase();
-    if (stream === "dual dwelling") {
+    if (isDualDwellingStream()) {
       return {
         emails: ["info@dualdwellinginvestments.com.au"],
         labels: ["Dual Dwelling"],
