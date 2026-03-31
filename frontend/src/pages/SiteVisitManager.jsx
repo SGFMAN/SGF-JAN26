@@ -434,8 +434,32 @@ export default function SiteVisitManager() {
           >
             Status Manager
           </Link>
+          {isAdmin && (
+            <Link
+              to="/managers/drawing-manager"
+              style={{
+                background: "transparent",
+                color: "#404049",
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              Drawing Manager
+            </Link>
+          )}
           <Link
-            to="/managers/drawing-manager"
+            to="/managers/qp-manager"
             style={{
               background: "transparent",
               color: "#404049",
@@ -454,7 +478,7 @@ export default function SiteVisitManager() {
               display: "block",
             }}
           >
-            Drawing Manager
+            QP Manager
           </Link>
           <div style={{ flex: 1 }} />
           <Link

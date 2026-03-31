@@ -545,33 +545,29 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
       // Use createFolders from formData (set by confirmation modal)
       const createFolders = formData.createFolders === true || formData.createFolders === "true" || formData.createFolders === 1 || formData.createFolders === "1";
 
-      // Only create folders if the setting is enabled AND proposal file exists
-      if (createFolders && formData.proposalFile) {
+      if (createFolders) {
         if (!rootDirectory) {
           alert("Error: Root directory is not set. Please configure it in File Settings.");
           setIsSubmitting(false);
           return;
         }
 
-        // Get current year (same as backend uses)
         const currentYear = new Date().getFullYear().toString();
-        
-        // Construct folder path: root_directory\YEAR\STATE\SUBURB - STREET
-        // NOTE: Do NOT include classification abbreviation in folder name
         const suburb = (formData.suburb || "").toUpperCase();
         const street = formData.street || "";
-        const state = (formData.state || "").toUpperCase();
-        
-        if (!state) {
+        const stateUpper = (formData.state || "").toUpperCase();
+
+        if (!stateUpper) {
           alert("Error: State is required to create project folder. Please enter the state.");
           setIsSubmitting(false);
           return;
         }
-        
-        // Construct folder path without classification abbreviation
-        folderPath = `${rootDirectory}\\${currentYear}\\${state}\\${suburb} - ${street}`;
-        
-        // Create folder via backend API (also copies template structure)
+
+        folderPath = (formData.folderPath || "").trim();
+        if (!folderPath) {
+          folderPath = `${rootDirectory}\\${currentYear}\\${stateUpper}\\${suburb} - ${street}`;
+        }
+
         console.log("Creating folder at path:", folderPath);
         const folderResponse = await fetch(`${API_URL}/api/folders/create`, {
           method: "POST",
@@ -580,9 +576,9 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
           },
           body: JSON.stringify({
             path: folderPath,
-            rootDirectory: rootDirectory, // Use the appropriate root directory (VIC or QLD)
+            rootDirectory: rootDirectory,
             year: currentYear,
-            state: state,
+            state: stateUpper,
           }),
         });
 
@@ -597,10 +593,24 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
         }
       }
 
-      // Then create the project
       const newProject = await onCreate(formData);
+
+      if (createFolders && newProject && newProject.id && folderPath && !formData.proposalFile) {
+        try {
+          const reg = await fetch(`${API_URL}/api/projects/${newProject.id}/register-proposal-from-folder`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectPath: folderPath }),
+          });
+          if (!reg.ok) {
+            const errText = await reg.text().catch(() => "");
+            console.warn("Could not link template proposal (upload a PDF if needed):", errText);
+          }
+        } catch (regErr) {
+          console.warn("register-proposal-from-folder:", regErr);
+        }
+      }
       
-      // Upload proposal if createFolders is enabled, proposal file exists, and folderPath exists
       if (createFolders && formData.proposalFile && newProject && newProject.id && folderPath) {
         try {
           const uploadFormData = new FormData();

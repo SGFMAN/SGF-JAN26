@@ -16,7 +16,8 @@ import Managers from "./pages/Managers";
 import ContractManager from "./pages/ContractManager";
 import ColourManager from "./pages/ColourManager";
 import StatusManager from "./pages/StatusManager";
-import DrawingManager from "./pages/DrawingManager";
+import AdminDrawingManagerRoute from "./components/AdminDrawingManagerRoute";
+import QpManager from "./pages/QpManager";
 import Sales from "./pages/Sales";
 import SalesTotals from "./pages/SalesTotals";
 import SalesAnalytics from "./pages/SalesAnalytics";
@@ -56,6 +57,8 @@ export default function App() {
           <>
             <Route path="/" element={<SplashPage />} />
             <Route path="/projects" element={<HomePage />} />
+            {/* Old standalone URL; Variations lives under Project → menu */}
+            <Route path="/variations" element={<Navigate to="/projects" replace />} />
             <Route path="/project/:id" element={<ProjectPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/apply-fields" element={<ApplyFields />} />
@@ -72,7 +75,8 @@ export default function App() {
             <Route path="/managers/contract-manager" element={<ContractManager />} />
             <Route path="/managers/colour-manager" element={<ColourManager />} />
             <Route path="/managers/status-manager" element={<StatusManager />} />
-            <Route path="/managers/drawing-manager" element={<DrawingManager />} />
+            <Route path="/managers/drawing-manager" element={<AdminDrawingManagerRoute />} />
+            <Route path="/managers/qp-manager" element={<QpManager />} />
             <Route path="/sales" element={<Sales />} />
             <Route path="/sales-totals" element={<SalesTotals />} />
             <Route path="/sales-analytics" element={<SalesAnalytics />} />

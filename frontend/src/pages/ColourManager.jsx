@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
+import { isUserAdmin } from "../utils/auth";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -15,9 +16,11 @@ export default function ColourManager() {
   const [error, setError] = useState(null);
   const [sortOrder, setSortOrder] = useState("asc"); // "asc" or "desc"
   const [stateFilter, setStateFilter] = useState(getStateFilter());
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     fetchProjects();
+    (async () => setIsAdmin(await isUserAdmin()))();
   }, []);
 
   // Parse date from year field
@@ -445,8 +448,32 @@ const data = await response.json();
           >
             Status Manager
           </Link>
+          {isAdmin && (
+            <Link
+              to="/managers/drawing-manager"
+              style={{
+                background: "transparent",
+                color: "#404049",
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              Drawing Manager
+            </Link>
+          )}
           <Link
-            to="/managers/drawing-manager"
+            to="/managers/qp-manager"
             style={{
               background: "transparent",
               color: "#404049",
@@ -465,7 +492,7 @@ const data = await response.json();
               display: "block",
             }}
           >
-            Drawing Manager
+            QP Manager
           </Link>
           <div style={{ flex: 1 }} />
           <Link

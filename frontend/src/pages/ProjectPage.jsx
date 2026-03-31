@@ -12,6 +12,7 @@ import PlanningOld from "./Planning";
 import Planning from "./PlanningNew";
 import Admin from "./Admin";
 import Robes from "./Robes";
+import Variations from "./Variations";
 import { isUserAdmin } from "../utils/auth";
 import logo from "../images/logo.png";
 
@@ -36,6 +37,7 @@ const MENU_OPTIONS = [
   { label: "Contract", key: "contract" },
   { label: "Planning - OLD", key: "planning-old", hidden: true },
   { label: "Planning", key: "planning" },
+  { label: "Variations", key: "variations" },
   { label: "Admin", key: "admin" },
 ];
 
@@ -45,6 +47,7 @@ const CONSTRUCTION_MENU_OPTIONS = [
   { label: "Project Info", key: "project-info" },
   { label: "Client Info", key: "client-info" },
   { label: "Robes", key: "robes" },
+  { label: "Variations", key: "variations" },
 ];
 
 export default function ProjectPage() {
@@ -80,7 +83,8 @@ export default function ProjectPage() {
   useEffect(() => {
     const urlParams = new URLSearchParams(location.search);
     const viewParam = urlParams.get('view');
-    if (viewParam && MENU_OPTIONS.some(opt => opt.key === viewParam)) {
+    const allKeys = [...MENU_OPTIONS, ...CONSTRUCTION_MENU_OPTIONS];
+    if (viewParam && allKeys.some((opt) => opt.key === viewParam)) {
       setActiveView(viewParam);
     } else if (!viewParam) {
       // If no view parameter, default to overview
@@ -538,6 +542,7 @@ export default function ProjectPage() {
               {activeView === "planning-old" && <PlanningOld project={project} onUpdate={updateProject} />}
               {activeView === "planning" && <Planning project={project} onUpdate={updateProject} />}
               {activeView === "admin" && <Admin project={project} onUpdate={updateProject} />}
+              {activeView === "variations" && <Variations project={project} />}
             </>
           )}
         </div>

@@ -6,9 +6,11 @@ const cors = require("cors");
 const { Pool } = require("pg");
 const path = require("path");
 const fs = require("fs").promises;
+const XLSX = require("xlsx");
 const multer = require("multer");
 const nodemailer = require("nodemailer");
 const OpenAI = require("openai");
+const PDFDocument = require("pdfkit");
 const app = express();
 app.use(cors({ origin: true }));
 
@@ -372,6 +374,86 @@ app.get("/health", (req, res) => {
   res.json({ ok: true, db: !!pool });
 });
 
+// --- Pricing catalog (Excel: column E = product, column N = price) ---
+const PRICING_COL_PRODUCT = 4; // E
+const PRICING_COL_PRICE = 13; // N
+let pricingCatalogCache = null;
+let pricingCatalogMtime = null;
+
+function getPricingCatalogPath() {
+  return process.env.PRICING_CATALOG_XLSX || path.join(__dirname, "..", "attachments", "PricingCatalog.xlsx");
+}
+
+async function loadPricingCatalogRows() {
+  const catPath = getPricingCatalogPath();
+  let st;
+  try {
+    st = await fs.stat(catPath);
+  } catch {
+    return { error: `Pricing catalog not found: ${catPath}`, rows: null };
+  }
+  if (pricingCatalogCache != null && pricingCatalogMtime === st.mtimeMs) {
+    return { rows: pricingCatalogCache };
+  }
+  const buf = await fs.readFile(catPath);
+  const wb = XLSX.read(buf, { type: "buffer" });
+  const sheetName = wb.SheetNames[0];
+  const ws = wb.Sheets[sheetName];
+  const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+  const rows = [];
+  for (let i = 0; i < data.length; i++) {
+    const row = data[i];
+    const product =
+      row[PRICING_COL_PRODUCT] != null ? String(row[PRICING_COL_PRODUCT]).trim() : "";
+    const price = row[PRICING_COL_PRICE] != null ? String(row[PRICING_COL_PRICE]).trim() : "";
+    if (!product && !price) continue;
+    rows.push({ rowIndex: i + 1, product, price });
+  }
+  pricingCatalogCache = rows;
+  pricingCatalogMtime = st.mtimeMs;
+  return { rows };
+}
+
+app.get("/api/pricing-catalog/search", async (req, res) => {
+  try {
+    const q = (req.query.q || "").toString().trim().toLowerCase();
+    const { rows, error } = await loadPricingCatalogRows();
+    if (error) {
+      return res.status(404).json({
+        error,
+        matches: [],
+        path: getPricingCatalogPath(),
+      });
+    }
+    if (!q) {
+      return res.json({ matches: [], totalRows: rows.length, path: getPricingCatalogPath() });
+    }
+    const matches = rows.filter((r) => r.product.toLowerCase().includes(q));
+    res.json({
+      matches: matches.slice(0, 500),
+      totalRows: rows.length,
+      count: matches.length,
+      path: getPricingCatalogPath(),
+    });
+  } catch (e) {
+    console.error("GET /api/pricing-catalog/search:", e);
+    res.status(500).json({ error: e.message || "Search failed", matches: [] });
+  }
+});
+
+app.get("/api/pricing-catalog/meta", async (req, res) => {
+  try {
+    const { rows, error } = await loadPricingCatalogRows();
+    const p = getPricingCatalogPath();
+    if (error) {
+      return res.json({ ok: false, error, path: p, rowCount: 0 });
+    }
+    res.json({ ok: true, path: p, rowCount: rows.length });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // Ensure schema
 async function ensureSchema() {
   if (!pool) return;
@@ -621,6 +703,22 @@ async function ensureSchema() {
       if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
         console.log(`Error adding column ${col}:`, e.message);
       }
+    }
+  }
+  // Embedded email logo (full path to image file; shown inline at end of HTML emails)
+  try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN email_logo_path TEXT`);
+  } catch (e) {
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column email_logo_path:`, e.message);
+    }
+  }
+  // Letterhead image for variation PDFs (emails still use email_logo_path only)
+  try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN letterhead_path TEXT`);
+  } catch (e) {
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column letterhead_path:`, e.message);
     }
   }
   // VIC - SMTP (third account) columns
@@ -1588,7 +1686,7 @@ app.get("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, updated_at FROM settings WHERE id = 1"
+      "SELECT id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, updated_at FROM settings WHERE id = 1"
     );
     if (r.rows.length === 0) {
       return res.json({
@@ -1613,6 +1711,8 @@ app.get("/api/settings", async (req, res) => {
         colour_attachments_qld: null,
         send_drawings_vic: [],
         send_drawings_qld: [],
+        email_logo_path: null,
+        letterhead_path: null,
         updated_at: null,
       });
     }
@@ -1648,7 +1748,7 @@ app.get("/api/settings", async (req, res) => {
 app.put("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const { root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld } = req.body || {};
+    const { root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path } = req.body || {};
 
     const processValue = (val) => {
       if (val === undefined) return null;
@@ -1674,8 +1774,8 @@ app.put("/api/settings", async (req, res) => {
     };
 
     const r = await pool.query(
-      `INSERT INTO settings (id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, updated_at)
-       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW())
+      `INSERT INTO settings (id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, updated_at)
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NOW())
        ON CONFLICT (id)
        DO UPDATE SET
          root_directory = COALESCE($1, settings.root_directory),
@@ -1698,8 +1798,10 @@ app.put("/api/settings", async (req, res) => {
          colour_attachments_qld = COALESCE($18, settings.colour_attachments_qld),
          send_drawings_vic = COALESCE($19, settings.send_drawings_vic),
          send_drawings_qld = COALESCE($20, settings.send_drawings_qld),
+         email_logo_path = COALESCE($21, settings.email_logo_path),
+         letterhead_path = COALESCE($22, settings.letterhead_path),
          updated_at = NOW()
-       RETURNING id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, updated_at`,
+       RETURNING id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, updated_at`,
       [
         processValue(root_directory),
         processBoolean(create_folders),
@@ -1721,6 +1823,8 @@ app.put("/api/settings", async (req, res) => {
         processValue(colour_attachments_qld),
         processArray(send_drawings_vic),
         processArray(send_drawings_qld),
+        processValue(email_logo_path),
+        processValue(letterhead_path),
       ]
     );
 
@@ -1988,42 +2092,63 @@ async function getSmtpCredentialsForFromAddress(fromAddress) {
   }
 }
 
-// Helper function to add SGF logo to email HTML and attachments
+function contentTypeForImageFile(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".png") return "image/png";
+  if (ext === ".gif") return "image/gif";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".svg") return "image/svg+xml";
+  return "image/jpeg";
+}
+
+// Helper: embed logo at end of HTML via CID inline part (visible in body, not a separate attachment)
 async function addLogoToEmail(htmlBody, attachments = []) {
-  const logoPath = "Z:\\1.SGF PROJECT MANAGEMENT\\SGF RESOURCES\\LOGOS\\SGF.jpg";
-  
+  if (!pool) {
+    return { htmlBody, attachments };
+  }
+
+  let logoPath = null;
   try {
-    // Check if logo file exists
+    const r = await pool.query("SELECT email_logo_path FROM settings WHERE id = 1");
+    if (r.rows.length && r.rows[0].email_logo_path) {
+      logoPath = String(r.rows[0].email_logo_path).trim();
+    }
+  } catch (e) {
+    console.error("Error loading email logo path:", e.message);
+    return { htmlBody, attachments };
+  }
+
+  if (!logoPath) {
+    return { htmlBody, attachments };
+  }
+
+  try {
     await fs.access(logoPath);
-    
-    // Read logo file
     const logoBuffer = await fs.readFile(logoPath);
-    
-    // Add logo as CID attachment
+    const filename = path.basename(logoPath) || "logo";
+    const contentType = contentTypeForImageFile(logoPath);
+
     attachments.push({
-      filename: "SGF.jpg",
+      filename,
       content: logoBuffer,
-      cid: "sgf-logo", // Content-ID for embedding
-      contentType: "image/jpeg",
+      cid: "sgf-logo",
+      contentType,
+      contentDisposition: "inline",
     });
-    
-    // Add logo image to HTML body (at the end)
-    const logoHtml = `<br><br><div style="text-align: left; margin-top: 20px;"><img src="cid:sgf-logo" alt="SGF Logo" style="max-width: 200px; height: auto;" /></div>`;
-    
-    // Insert logo before closing body/html tags, or append if no tags
+
+    const logoHtml = `<br><br><div style="text-align: left; margin-top: 20px;"><img src="cid:sgf-logo" alt="" style="max-width: 200px; height: auto; display: block;" /></div>`;
+
     if (htmlBody.includes("</body>")) {
       htmlBody = htmlBody.replace("</body>", `${logoHtml}</body>`);
     } else if (htmlBody.includes("</html>")) {
       htmlBody = htmlBody.replace("</html>", `${logoHtml}</html>`);
     } else {
-      // No HTML structure, just append
       htmlBody = htmlBody + logoHtml;
     }
-    
+
     return { htmlBody, attachments };
   } catch (e) {
     console.error("Error adding logo to email:", e.message);
-    // If logo can't be found, continue without it
     return { htmlBody, attachments };
   }
 }
@@ -3236,6 +3361,39 @@ async function copyDirectory(src, dest) {
   }
 }
 
+/**
+ * If project folder has no Proposal.PDF yet, copy from state template area (next to 1-Folder Structure).
+ * Runs for every new job folder (VIC, QLD, etc.) when those paths exist.
+ */
+async function copyTemplateProposalIfMissing(projectFolderPath, rootDirectory, year, state) {
+  if (!rootDirectory || !year || !state) return;
+  const destProposal = path.join(projectFolderPath, "Proposal.PDF");
+  try {
+    await fs.access(destProposal);
+    return;
+  } catch {
+    /* no proposal yet */
+  }
+  const base = path.join(rootDirectory, String(year), String(state).toUpperCase());
+  const candidates = [
+    path.join(base, "2-Proposal Template", "Proposal.PDF"),
+    path.join(base, "2-BLANK Proposal", "Proposal.PDF"),
+    path.join(base, "BLANK Proposal", "Proposal.PDF"),
+    path.join(base, "Proposal.PDF"),
+  ];
+  for (const src of candidates) {
+    try {
+      await fs.access(src);
+      await fs.copyFile(src, destProposal);
+      console.log(`Copied template proposal: ${src} -> ${destProposal}`);
+      return;
+    } catch {
+      /* try next */
+    }
+  }
+  console.log(`No standalone template Proposal.PDF found under ${base} (may already exist inside 1-Folder Structure).`);
+}
+
 // Create folder and copy template
 app.post("/api/folders/create", async (req, res) => {
   try {
@@ -3350,12 +3508,55 @@ app.post("/api/folders/create", async (req, res) => {
         console.log(`Template folder not found at ${templatePath}, skipping copy.`);
       }
     }
+
+    if (rootDirectory && year && state) {
+      try {
+        await copyTemplateProposalIfMissing(folderPathNormalized, rootDirectory, year, state);
+      } catch (proposalErr) {
+        console.warn("copyTemplateProposalIfMissing:", proposalErr.message);
+      }
+    }
     
     res.json({ success: true, path: folderPathNormalized });
   } catch (e) {
     console.error("Error creating folder:", e);
     console.error("Error stack:", e.stack);
     res.status(500).json({ error: e.message || "Failed to create folder" });
+  }
+});
+
+// Link existing Proposal.PDF on disk to project (e.g. copied from template when creating folders)
+app.post("/api/projects/:id/register-proposal-from-folder", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: "invalid id" });
+    }
+    const { projectPath } = req.body || {};
+    if (!projectPath || typeof projectPath !== "string") {
+      return res.status(400).json({ error: "projectPath required" });
+    }
+    let normalized = path.normalize(projectPath.trim());
+    if (/^[A-Z]:[^\\]/i.test(normalized)) {
+      normalized = normalized.replace(/^([A-Za-z]:)([^\\])/, "$1\\$2");
+    }
+    const proposalPath = path.join(normalized, "Proposal.PDF");
+    await fs.access(proposalPath);
+    const r = await pool.query(
+      "UPDATE projects SET proposal_pdf_location = $1, updated_at = NOW() WHERE id = $2 RETURNING id",
+      [proposalPath, id]
+    );
+    if (r.rowCount === 0) {
+      return res.status(404).json({ error: "project not found" });
+    }
+    res.json({ success: true, path: proposalPath });
+  } catch (e) {
+    if (e.code === "ENOENT") {
+      return res.status(404).json({ error: "Proposal.PDF not found in project folder" });
+    }
+    console.error("register-proposal-from-folder:", e);
+    res.status(500).json({ error: e.message || "Failed to register proposal" });
   }
 });
 
@@ -4830,6 +5031,350 @@ async function getVariationsFolderForProjectId(projectId) {
     resolved,
   };
 }
+
+function parseVariationPriceToNumber(price) {
+  if (price == null || price === "") return NaN;
+  const s = String(price).trim();
+  if (s === "—" || s === "-") return NaN;
+  const cleaned = s.replace(/[$,\s]/g, "");
+  if (cleaned === "") return NaN;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+/** Normalize Windows paths so fs can open them (e.g. Z:folder → Z:\folder). */
+function normalizeWindowsFilePath(p) {
+  if (p == null || typeof p !== "string") return "";
+  let s = p.trim();
+  if (!s) return "";
+  s = path.normalize(s);
+  if (/^[A-Za-z]:[^\\/]/.test(s)) {
+    s = s.replace(/^([A-Za-z]:)([^\\/])/, "$1\\$2");
+  }
+  return s;
+}
+
+/**
+ * Variation PDF header image: uses letterhead_path only when set (no email-logo fallback then).
+ * If letterhead is blank, uses email_logo_path. Paths are normalized for Windows.
+ */
+async function loadVariationPdfHeaderBuffer(pool) {
+  const logoRes = await pool.query(
+    "SELECT letterhead_path, email_logo_path FROM settings WHERE id = 1"
+  );
+  const row = logoRes.rows[0] || {};
+  const letterheadRaw = row.letterhead_path;
+  const emailLogoRaw = row.email_logo_path;
+  const letterheadPath =
+    letterheadRaw != null && String(letterheadRaw).trim() !== ""
+      ? String(letterheadRaw).trim()
+      : "";
+  const emailLogoPath =
+    emailLogoRaw != null && String(emailLogoRaw).trim() !== ""
+      ? String(emailLogoRaw).trim()
+      : "";
+
+  const readFileNormalized = async (rawPath) => {
+    const normalized = normalizeWindowsFilePath(rawPath);
+    if (!normalized) return null;
+    await fs.access(normalized);
+    const buf = await fs.readFile(normalized);
+    return buf && buf.length > 0 ? buf : null;
+  };
+
+  if (letterheadPath) {
+    try {
+      const buf = await readFileNormalized(letterheadPath);
+      if (buf) {
+        console.log(
+          "Variation PDF: header image = letterhead_path",
+          normalizeWindowsFilePath(letterheadPath)
+        );
+        return buf;
+      }
+    } catch (e) {
+      console.error(
+        "Variation PDF: letterhead_path set but unreadable:",
+        normalizeWindowsFilePath(letterheadPath),
+        e.message
+      );
+    }
+    return null;
+  }
+
+  if (emailLogoPath) {
+    try {
+      const buf = await readFileNormalized(emailLogoPath);
+      if (buf) {
+        console.log(
+          "Variation PDF: header image = email_logo_path (no letterhead configured)",
+          normalizeWindowsFilePath(emailLogoPath)
+        );
+        return buf;
+      }
+    } catch (e) {
+      console.warn("Variation PDF: email_logo_path unreadable:", e.message);
+    }
+  }
+  return null;
+}
+
+const VARIATION_INTRO_TEXT =
+  "We request the following variations be applied to our new home/granny flat over and above the standard specifications / inclusions. We acknowledge payment will be due for these variations from 'Next' stage of construction as invoiced by Superior Granny Flats";
+
+const VARIATION_NOTE_TEXT =
+  'Note: This variation request becomes an "Authority for Variation to Contract" once signed by Owners and by authorised Superior Granny Flats representative. Not valid unless signed by both parties. It is the responsibility of the Owner/s to check all variations prior to signing. Superior Granny Flats holds no responsibility for omitted items or superseded inclusions.';
+
+function buildVariationListPdfBuffer({
+  logoBuffer,
+  projectName,
+  clientName,
+  clientEmail,
+  clientPhone,
+  dateStr,
+  consultantName,
+  rows,
+  grandTotal,
+}) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 48, size: "A4" });
+    const chunks = [];
+    doc.on("data", (c) => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const left = doc.page.margins.left;
+    const right = doc.page.margins.right;
+    const contentW = doc.page.width - left - right;
+    const pageH = doc.page.height;
+    const bottomM = doc.page.margins.bottom;
+
+    let y = doc.page.margins.top;
+
+    const val = (v) => (v != null && String(v).trim() !== "" ? String(v) : "—");
+
+    if (logoBuffer && Buffer.isBuffer(logoBuffer) && logoBuffer.length > 0) {
+      try {
+        doc.y = y;
+        doc.image(logoBuffer, left, y, { fit: [contentW, 280] });
+        y = doc.y + 32;
+      } catch (imgErr) {
+        console.warn("Variation PDF: letterhead skipped:", imgErr.message);
+      }
+    }
+
+    doc.font("Helvetica").fontSize(16).fillColor("#323233");
+    doc.text("Variation", left, y, { width: contentW, align: "center" });
+    y += doc.heightOfString("Variation", { width: contentW }) + 14;
+
+    const infoPad = 10;
+    const infoBoxTop = y;
+    doc.font("Helvetica").fontSize(10).fillColor("#323233");
+    const infoLines = [
+      `Project Name: ${val(projectName)}`,
+      `Client Name: ${val(clientName)}`,
+      `Client Email: ${val(clientEmail)}`,
+      `Client Phone: ${val(clientPhone)}`,
+      `Date: ${val(dateStr)}`,
+      `Consultant: ${val(consultantName)}`,
+    ];
+    let infoY = infoBoxTop + infoPad;
+    infoLines.forEach((line) => {
+      doc.text(line, left + infoPad, infoY, { width: contentW - 2 * infoPad });
+      infoY += doc.heightOfString(line, { width: contentW - 2 * infoPad }) + 4;
+    });
+    const infoBoxBottom = infoY + infoPad;
+    doc.rect(left, infoBoxTop, contentW, infoBoxBottom - infoBoxTop).stroke("#cccccc");
+    y = infoBoxBottom + 16;
+
+    doc.font("Helvetica").fontSize(10).fillColor("#323233");
+    const introH = doc.heightOfString(VARIATION_INTRO_TEXT, {
+      width: contentW,
+      lineGap: 2,
+    });
+    doc.text(VARIATION_INTRO_TEXT, left, y, { width: contentW, lineGap: 2 });
+    y += introH + 18;
+
+    doc.font("Helvetica-Oblique").fontSize(8).fillColor("#323233");
+    const notePad = 8;
+    const noteInnerW = contentW - 2 * notePad;
+    const noteTextH = doc.heightOfString(VARIATION_NOTE_TEXT, {
+      width: noteInnerW,
+      lineGap: 1,
+    });
+    const noteBoxH = noteTextH + 2 * notePad;
+    const gapPriceToNote = 14;
+    const noteTop = pageH - bottomM - noteBoxH;
+    const priceBoxBottom = noteTop - gapPriceToNote;
+
+    const priceBoxTop = y;
+    let priceBoxH = priceBoxBottom - priceBoxTop;
+    if (priceBoxH < 72) {
+      priceBoxH = 72;
+    }
+    if (priceBoxTop + priceBoxH > priceBoxBottom) {
+      priceBoxH = Math.max(48, priceBoxBottom - priceBoxTop);
+    }
+
+    const pricePad = 10;
+    const totalGapAbove = 12;
+    doc.font("Helvetica").fontSize(12).fillColor("#1b5e20");
+    const totalStr = `Grand Total (inc GST):  ${grandTotal}`;
+    const totalH = doc.heightOfString(totalStr, {
+      width: contentW - 2 * pricePad,
+      align: "right",
+    });
+    const totalY = priceBoxTop + priceBoxH - pricePad - totalH;
+    const listMaxBottom = totalY - totalGapAbove;
+
+    doc.rect(left, priceBoxTop, contentW, priceBoxH).stroke("#cccccc");
+
+    const innerLeft = left + pricePad;
+    const innerW = contentW - 2 * pricePad;
+    const colQty = 42;
+    const colUnit = 108;
+    const colTot = 108;
+    const colProduct = Math.max(120, innerW - colQty - colUnit - colTot);
+    const xP = innerLeft;
+    const xQ = xP + colProduct;
+    const xU = xQ + colQty;
+    const xT = xU + colUnit;
+
+    let listY = priceBoxTop + pricePad;
+    const headerH = 12;
+    doc.font("Helvetica-Bold").fontSize(9).fillColor("#323233");
+    doc.text("Product name", xP, listY, { width: colProduct });
+    doc.text("QTY", xQ, listY, { width: colQty, align: "center" });
+    doc.text("Price (per unit)", xU, listY, { width: colUnit, align: "right" });
+    doc.text("Total", xT, listY, { width: colTot, align: "right" });
+    listY += headerH + 2;
+    doc.moveTo(innerLeft, listY).lineTo(innerLeft + innerW, listY).stroke("#cccccc");
+    listY += 8;
+
+    doc.font("Helvetica").fontSize(9).fillColor("#323233");
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const prod = r.product != null ? String(r.product) : "—";
+      const hProd = doc.heightOfString(prod, { width: colProduct, lineGap: 1 });
+      const rowH = Math.max(hProd, 14) + 5;
+      if (listY + rowH > listMaxBottom) {
+        break;
+      }
+      const rowTop = listY;
+      doc.text(prod, xP, rowTop, { width: colProduct, lineGap: 1 });
+      doc.text(String(r.qty), xQ, rowTop, { width: colQty, align: "center" });
+      doc.text(r.unitStr, xU, rowTop, { width: colUnit, align: "right" });
+      doc.text(r.lineStr, xT, rowTop, { width: colTot, align: "right" });
+      listY += rowH;
+    }
+
+    doc.font("Helvetica-Bold").fontSize(12).fillColor("#1b5e20");
+    doc.text(totalStr, left + pricePad, totalY, {
+      width: contentW - 2 * pricePad,
+      align: "right",
+    });
+
+    doc.rect(left, noteTop, contentW, noteBoxH).stroke("#cccccc");
+    doc.font("Helvetica-Oblique").fontSize(8).fillColor("#323233");
+    doc.text(VARIATION_NOTE_TEXT, left + notePad, noteTop + notePad, {
+      width: noteInnerW,
+      lineGap: 1,
+    });
+
+    doc.end();
+  });
+}
+
+// Create variation list PDF in project folder (saved as "variaiton TEST.pdf")
+app.post("/api/projects/:id/variations/create-pdf", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const projectId = Number(req.params.id);
+  if (!Number.isFinite(projectId)) {
+    return res.status(400).json({ error: "invalid project id" });
+  }
+  const { items, consultantName } = req.body || {};
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: "Add at least one line item" });
+  }
+  const consultantTrimmed =
+    consultantName != null && String(consultantName).trim() !== ""
+      ? String(consultantName).trim()
+      : "";
+  if (!consultantTrimmed) {
+    return res.status(400).json({ error: "Consultant is required" });
+  }
+
+  try {
+    const ctx = await getVariationsFolderForProjectId(projectId);
+    if (!ctx.ok) {
+      return res.status(ctx.status).json({ error: ctx.message });
+    }
+    const { projectPath } = ctx;
+    const projectResult = await pool.query(
+      "SELECT name, client1_name, client1_email, client1_phone FROM projects WHERE id = $1",
+      [projectId]
+    );
+    const pr = projectResult.rows[0] || {};
+    const projectName = pr.name != null && String(pr.name).trim() !== "" ? String(pr.name) : `Project ${projectId}`;
+
+    let logoBuffer = null;
+    try {
+      logoBuffer = await loadVariationPdfHeaderBuffer(pool);
+    } catch (logoErr) {
+      console.warn("Variation PDF: header image load failed:", logoErr.message);
+    }
+
+    const rows = [];
+    let grandTotal = 0;
+    for (const raw of items) {
+      const product = raw?.product != null ? String(raw.product) : "—";
+      const qtyRaw = raw?.quantity;
+      const q = Number.parseInt(String(qtyRaw), 10);
+      const qty = Number.isFinite(q) && q >= 1 ? q : 1;
+      const unit = parseVariationPriceToNumber(raw?.price);
+      const line = Number.isFinite(unit) ? unit * qty : 0;
+      grandTotal += line;
+      const unitStr = Number.isFinite(unit)
+        ? `$${unit.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : "—";
+      const lineStr = Number.isFinite(unit)
+        ? `$${line.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : "—";
+      rows.push({ product, qty, unitStr, lineStr });
+    }
+
+    const dateStr = new Date().toLocaleDateString("en-AU", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+
+    const pdfBuffer = await buildVariationListPdfBuffer({
+      logoBuffer,
+      projectName,
+      clientName: pr.client1_name,
+      clientEmail: pr.client1_email,
+      clientPhone: pr.client1_phone,
+      dateStr,
+      consultantName: consultantTrimmed,
+      rows,
+      grandTotal: `$${grandTotal.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    });
+
+    const outName = "variaiton TEST.pdf";
+    const outPath = path.join(projectPath, outName);
+    await fs.writeFile(outPath, pdfBuffer);
+
+    res.json({
+      success: true,
+      path: outPath,
+      filename: outName,
+    });
+  } catch (e) {
+    console.error("create-pdf variations:", e);
+    res.status(500).json({ error: e.message || "Failed to create PDF" });
+  }
+});
 
 // Open / download a single file from the project Variations folder (path traversal safe)
 app.get("/api/files/variations/:id/file", async (req, res) => {

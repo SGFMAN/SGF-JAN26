@@ -10,9 +10,48 @@ export default function NewProject_5_PDFUpload({ isOpen, onClose, formData, onFo
   const [selectedFile, setSelectedFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef(null);
-  const API_URL = "";
 
   if (!isOpen) return null;
+
+  async function createProjectRecord() {
+    if (onCreate) {
+      const newProject = await onCreate(formData);
+      if (!newProject || !newProject.id) throw new Error("Failed to create project");
+      return newProject;
+    }
+    const projectResponse = await fetch(`${API_URL}/api/projects`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: `${formData.street}, ${formData.suburb}`.trim() || "New Project",
+        suburb: formData.suburb || null,
+        street: formData.street || null,
+        state: formData.state || null,
+        stream: formData.stream || null,
+        deposit: formData.deposit || null,
+        project_cost: formData.projectCost || null,
+        salesperson: formData.salesperson || null,
+        specs: formData.specs || null,
+        classification: formData.classification || null,
+        client_name: formData.clientName || null,
+        email: formData.email || null,
+        phone: formData.phone || null,
+        client1_name: formData.clientName || null,
+        client1_email: formData.email || null,
+        client1_phone: formData.phone || null,
+        year: new Date().toISOString().split("T")[0],
+      }),
+    });
+
+    if (!projectResponse.ok) {
+      const errorData = await projectResponse.json().catch(() => ({ error: "Failed to create project" }));
+      throw new Error(errorData.error || "Failed to create project");
+    }
+
+    return projectResponse.json();
+  }
 
   function handleDragEnter(e) {
     e.preventDefault();
@@ -78,40 +117,7 @@ export default function NewProject_5_PDFUpload({ isOpen, onClose, formData, onFo
     setIsUploading(true);
     
     try {
-      let newProject;
-      if (onCreate) {
-        // Hotlist "Sold" flow: upgrade hotlist item to project via API, then upload PDF
-        newProject = await onCreate(formData);
-        if (!newProject || !newProject.id) throw new Error("Failed to create project");
-      } else {
-        // Normal new project: create via POST /api/projects
-        const projectResponse = await fetch(`${API_URL}/api/projects`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name: `${formData.street}, ${formData.suburb}`.trim() || "New Project",
-            suburb: formData.suburb || null,
-            street: formData.street || null,
-            state: formData.state || null,
-            stream: formData.stream || null,
-            deposit: formData.deposit || null,
-            project_cost: formData.projectCost || null,
-            salesperson: formData.salesperson || null,
-            client_name: formData.clientName || null,
-            email: formData.email || null,
-            phone: formData.phone || null,
-          }),
-        });
-
-        if (!projectResponse.ok) {
-          const errorData = await projectResponse.json().catch(() => ({ error: "Failed to create project" }));
-          throw new Error(errorData.error || "Failed to create project");
-        }
-
-        newProject = await projectResponse.json();
-      }
+      const newProject = await createProjectRecord();
 
       // Now upload the PDF to the project folder
       const uploadFormData = new FormData();
@@ -149,16 +155,60 @@ export default function NewProject_5_PDFUpload({ isOpen, onClose, formData, onFo
     }
   }
 
+  async function handleTemplateOnlyContinue() {
+    if (!formData.folderPath) {
+      alert("Missing project folder path.");
+      return;
+    }
+    setIsUploading(true);
+    try {
+      const newProject = await createProjectRecord();
+      const reg = await fetch(`${API_URL}/api/projects/${newProject.id}/register-proposal-from-folder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectPath: formData.folderPath }),
+      });
+      if (!reg.ok) {
+        const data = await reg.json().catch(() => ({}));
+        throw new Error(
+          data.error ||
+            "No Proposal.PDF found in the new project folder. Upload a PDF or add a template proposal beside 1-Folder Structure in File Settings."
+        );
+      }
+      onFormDataChange({
+        ...formData,
+        createdProject: newProject,
+      });
+      if (onNext) {
+        await onNext(newProject);
+      }
+    } catch (error) {
+      console.error("Template proposal continue:", error);
+      alert(error.message || "Failed to use template proposal.");
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  const canUseTemplateProposal =
+    formData.createFolders === true ||
+    formData.createFolders === "true" ||
+    formData.createFolders === 1 ||
+    formData.createFolders === "1";
+
   async function handleNext() {
-    // If file was already uploaded and project created, just proceed
     if (formData.createdProject && onNext) {
       await onNext(formData.createdProject);
       return;
     }
 
-    // If file is selected but not uploaded yet, upload it now
     if (selectedFile && !isUploading) {
       await handleFileUpload(selectedFile);
+      return;
+    }
+
+    if (!selectedFile && canUseTemplateProposal && formData.folderPath && !isUploading) {
+      await handleTemplateOnlyContinue();
     }
   }
 
@@ -203,6 +253,17 @@ export default function NewProject_5_PDFUpload({ isOpen, onClose, formData, onFo
         >
           Upload Proposal
         </h2>
+        <p
+          style={{
+            margin: "0 0 16px 0",
+            fontSize: "0.9rem",
+            color: "#555",
+            lineHeight: 1.45,
+          }}
+        >
+          If you already copied the job folder template, you can continue with the template <strong>Proposal.PDF</strong>{" "}
+          using <strong>Next</strong> without choosing a file. Or upload your own PDF to replace it.
+        </p>
 
         {/* Dropzone */}
         <div
@@ -358,7 +419,12 @@ export default function NewProject_5_PDFUpload({ isOpen, onClose, formData, onFo
           <button
             type="button"
             onClick={handleNext}
-            disabled={!selectedFile || isUploading}
+            disabled={
+              isUploading ||
+              (!formData.createdProject &&
+                !selectedFile &&
+                !(canUseTemplateProposal && formData.folderPath))
+            }
             style={{
               background: MONUMENT,
               color: WHITE,
@@ -367,12 +433,32 @@ export default function NewProject_5_PDFUpload({ isOpen, onClose, formData, onFo
               padding: "10px 20px",
               fontSize: "1rem",
               fontWeight: 500,
-              cursor: (selectedFile && !isUploading) ? "pointer" : "not-allowed",
+              cursor:
+                !isUploading &&
+                (formData.createdProject ||
+                  selectedFile ||
+                  (canUseTemplateProposal && formData.folderPath))
+                  ? "pointer"
+                  : "not-allowed",
               transition: "background 0.17s",
-              opacity: (selectedFile && !isUploading) ? 1 : 0.6,
+              opacity:
+                !isUploading &&
+                (formData.createdProject ||
+                  selectedFile ||
+                  (canUseTemplateProposal && formData.folderPath))
+                  ? 1
+                  : 0.6,
             }}
           >
-            {isUploading ? "Uploading..." : (formData.createdProject ? "Next" : "Next")}
+            {isUploading
+              ? "Working..."
+              : formData.createdProject
+                ? "Next"
+                : selectedFile
+                  ? "Next"
+                  : canUseTemplateProposal && formData.folderPath
+                    ? "Next (template proposal)"
+                    : "Next"}
           </button>
         </div>
       </div>

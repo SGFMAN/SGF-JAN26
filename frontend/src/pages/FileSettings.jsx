@@ -9,18 +9,47 @@ export default function FileSettings() {
   const [rootDirectory, setRootDirectory] = useState("");
   const [createFolders, setCreateFolders] = useState(true);
   const [colourAttachmentsVic, setColourAttachmentsVic] = useState("");
-  
+
   // QLD Settings
   const [rootDirectoryQld, setRootDirectoryQld] = useState("");
   const [createFoldersQld, setCreateFoldersQld] = useState(true);
   const [colourAttachmentsQld, setColourAttachmentsQld] = useState("");
-  
+  const [emailLogoPath, setEmailLogoPath] = useState("");
+  const [letterheadPath, setLetterheadPath] = useState("");
+
   const [loading, setLoading] = useState(true);
-  const valuesRef = useRef({ rootDirectory, createFolders, rootDirectoryQld, createFoldersQld, colourAttachmentsVic, colourAttachmentsQld });
+  const valuesRef = useRef({
+    rootDirectory,
+    createFolders,
+    rootDirectoryQld,
+    createFoldersQld,
+    colourAttachmentsVic,
+    colourAttachmentsQld,
+    emailLogoPath,
+    letterheadPath,
+  });
 
   useEffect(() => {
-    valuesRef.current = { rootDirectory, createFolders, rootDirectoryQld, createFoldersQld, colourAttachmentsVic, colourAttachmentsQld };
-  }, [rootDirectory, createFolders, rootDirectoryQld, createFoldersQld, colourAttachmentsVic, colourAttachmentsQld]);
+    valuesRef.current = {
+      rootDirectory,
+      createFolders,
+      rootDirectoryQld,
+      createFoldersQld,
+      colourAttachmentsVic,
+      colourAttachmentsQld,
+      emailLogoPath,
+      letterheadPath,
+    };
+  }, [
+    rootDirectory,
+    createFolders,
+    rootDirectoryQld,
+    createFoldersQld,
+    colourAttachmentsVic,
+    colourAttachmentsQld,
+    emailLogoPath,
+    letterheadPath,
+  ]);
 
   useEffect(() => {
     fetchSettings();
@@ -40,6 +69,8 @@ export default function FileSettings() {
       setCreateFoldersQld(data.create_folders_qld === "true" || data.create_folders_qld === true);
       setColourAttachmentsVic(data.colour_attachments_vic || "");
       setColourAttachmentsQld(data.colour_attachments_qld || "");
+      setEmailLogoPath(data.email_logo_path || "");
+      setLetterheadPath(data.letterhead_path || "");
     } catch (error) {
       console.error("Error fetching settings:", error);
       setRootDirectory("");
@@ -48,23 +79,30 @@ export default function FileSettings() {
       setCreateFoldersQld(true);
       setColourAttachmentsVic("");
       setColourAttachmentsQld("");
+      setEmailLogoPath("");
+      setLetterheadPath("");
     } finally {
       setLoading(false);
     }
   }
 
+  function settingsPayload() {
+    return {
+      root_directory: valuesRef.current.rootDirectory || null,
+      create_folders: valuesRef.current.createFolders === true || valuesRef.current.createFolders === "true",
+      root_directory_qld: valuesRef.current.rootDirectoryQld || null,
+      create_folders_qld:
+        valuesRef.current.createFoldersQld === true || valuesRef.current.createFoldersQld === "true",
+      colour_attachments_vic: (valuesRef.current.colourAttachmentsVic || "").trim() || null,
+      colour_attachments_qld: (valuesRef.current.colourAttachmentsQld || "").trim() || null,
+      email_logo_path: (valuesRef.current.emailLogoPath || "").trim() || null,
+      letterhead_path: (valuesRef.current.letterheadPath || "").trim() || null,
+    };
+  }
+
   async function saveSettings() {
     try {
-      const payload = {
-        root_directory: valuesRef.current.rootDirectory || null,
-        create_folders: valuesRef.current.createFolders === true || valuesRef.current.createFolders === "true",
-        root_directory_qld: valuesRef.current.rootDirectoryQld || null,
-        create_folders_qld: valuesRef.current.createFoldersQld === true || valuesRef.current.createFoldersQld === "true",
-        colour_attachments_vic: (valuesRef.current.colourAttachmentsVic || "").trim() || null,
-        colour_attachments_qld: (valuesRef.current.colourAttachmentsQld || "").trim() || null,
-      };
-      console.log("Saving settings with payload:", payload);
-      console.log("colour_attachments_vic value:", valuesRef.current.colourAttachmentsVic, "trimmed:", (valuesRef.current.colourAttachmentsVic || "").trim());
+      const payload = settingsPayload();
       const response = await fetch(`${API_URL}/api/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -74,11 +112,6 @@ export default function FileSettings() {
         const errorData = await response.json().catch(() => ({ error: response.statusText }));
         console.error("Failed to save settings:", errorData.error || response.statusText);
         alert(`Failed to save settings: ${errorData.error || response.statusText}`);
-      } else {
-        const savedData = await response.json().catch(() => null);
-        console.log("Successfully saved settings:", savedData);
-        console.log("Saved colour_attachments_vic:", savedData?.colour_attachments_vic);
-        console.log("Saved colour_attachments_qld:", savedData?.colour_attachments_qld);
       }
     } catch (error) {
       console.error("Error saving settings:", error);
@@ -86,20 +119,17 @@ export default function FileSettings() {
     }
   }
 
-
   function handleRootDirectoryChange(e) {
     const newValue = e.target.value;
     setRootDirectory(newValue);
     valuesRef.current.rootDirectory = newValue;
   }
 
-  // QLD handlers
   function handleRootDirectoryQldChange(e) {
     const newValue = e.target.value;
     setRootDirectoryQld(newValue);
     valuesRef.current.rootDirectoryQld = newValue;
   }
-
 
   function handleColourAttachmentsVicChange(e) {
     const newValue = e.target.value;
@@ -111,6 +141,26 @@ export default function FileSettings() {
     const newValue = e.target.value;
     setColourAttachmentsQld(newValue);
     valuesRef.current.colourAttachmentsQld = newValue;
+  }
+
+  function handleEmailLogoPathChange(e) {
+    const newValue = e.target.value;
+    setEmailLogoPath(newValue);
+    valuesRef.current.emailLogoPath = newValue;
+  }
+
+  function handleLetterheadPathChange(e) {
+    const newValue = e.target.value;
+    setLetterheadPath(newValue);
+    valuesRef.current.letterheadPath = newValue;
+  }
+
+  async function handleEmailLogoPathBlur() {
+    await saveSettings();
+  }
+
+  async function handleLetterheadPathBlur() {
+    await saveSettings();
   }
 
   async function handleColourAttachmentsVicBlur() {
@@ -129,14 +179,7 @@ export default function FileSettings() {
       const response = await fetch(`${API_URL}/api/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          root_directory: valuesRef.current.rootDirectory || null,
-          create_folders: valuesRef.current.createFolders,
-          root_directory_qld: valuesRef.current.rootDirectoryQld || null,
-          create_folders_qld: newValue,
-          colour_attachments_vic: (valuesRef.current.colourAttachmentsVic || "").trim() || null,
-          colour_attachments_qld: (valuesRef.current.colourAttachmentsQld || "").trim() || null,
-        }),
+        body: JSON.stringify({ ...settingsPayload(), create_folders_qld: newValue }),
       });
 
       if (!response.ok) {
@@ -156,7 +199,6 @@ export default function FileSettings() {
     await saveSettings();
   }
 
-
   async function handleCreateFoldersChange(e) {
     const newValue = e.target.checked;
     setCreateFolders(newValue);
@@ -165,29 +207,17 @@ export default function FileSettings() {
       const response = await fetch(`${API_URL}/api/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          root_directory: valuesRef.current.rootDirectory || null,
-          create_folders: newValue,
-          root_directory_qld: valuesRef.current.rootDirectoryQld || null,
-          create_folders_qld: valuesRef.current.createFoldersQld === true || valuesRef.current.createFoldersQld === "true",
-          colour_attachments_vic: (valuesRef.current.colourAttachmentsVic || "").trim() || null,
-          colour_attachments_qld: (valuesRef.current.colourAttachmentsQld || "").trim() || null,
-        }),
+        body: JSON.stringify({ ...settingsPayload(), create_folders: newValue }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: response.statusText }));
         console.error("Failed to save checkbox setting:", errorData.error || response.statusText);
-        // Revert on error
         setCreateFolders(!newValue);
         valuesRef.current.createFolders = !newValue;
-      } else {
-        const savedData = await response.json().catch(() => null);
-        console.log("Successfully saved checkbox setting:", savedData);
       }
     } catch (error) {
       console.error("Error saving checkbox setting:", error);
-      // Revert on error
       setCreateFolders(!newValue);
       valuesRef.current.createFolders = !newValue;
     }
@@ -197,7 +227,6 @@ export default function FileSettings() {
     await saveSettings();
   }
 
-
   if (loading) {
     return (
       <div style={{ color: MONUMENT }}>
@@ -206,18 +235,38 @@ export default function FileSettings() {
     );
   }
 
+  const vicCard = {
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
+    backgroundColor: "#4D93D9",
+    padding: "16px",
+    borderRadius: "8px",
+    width: "100%",
+    boxSizing: "border-box",
+  };
+
+  const inputStyle = {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: "8px",
+    border: "none",
+    fontSize: "1rem",
+    color: MONUMENT,
+    background: WHITE,
+    boxSizing: "border-box",
+  };
+
   return (
     <div style={{ width: "100%", height: "100%", padding: "24px 32px", display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
-      {/* 2 Column Layout */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "24px", width: "100%" }}>
-        {/* Column 1: VIC Settings */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "24px", width: "100%", alignItems: "start" }}>
+        {/* Column 1: VIC — each block is half the overall page width */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px", minWidth: 0 }}>
           <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: 0, color: MONUMENT }}>
             VIC Settings
           </h2>
-          
-          {/* VIC File Settings */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px", backgroundColor: "#4D93D9", padding: "16px", borderRadius: "8px" }}>
+
+          <div style={vicCard}>
             <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
               File Settings
             </h3>
@@ -240,23 +289,33 @@ export default function FileSettings() {
                 onChange={handleRootDirectoryChange}
                 onBlur={handleBlur}
                 placeholder="C:\Projects"
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
+                style={inputStyle}
                 autoComplete="off"
               />
             </div>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                fontSize: "0.95rem",
+                color: MONUMENT,
+                cursor: "pointer",
+                fontWeight: 500,
+                marginTop: "4px",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={createFolders}
+                onChange={handleCreateFoldersChange}
+                style={{ width: "18px", height: "18px", cursor: "pointer" }}
+              />
+              Create folders
+            </label>
           </div>
-          
-          {/* VIC Colour Attachments */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px", backgroundColor: "#4D93D9", padding: "16px", borderRadius: "8px" }}>
+
+          <div style={vicCard}>
             <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
               Colour Attachments
             </h3>
@@ -279,29 +338,83 @@ export default function FileSettings() {
                 onChange={handleColourAttachmentsVicChange}
                 onBlur={handleColourAttachmentsVicBlur}
                 placeholder="e.g. Z:\1.SGF PROJECT MANAGEMENT\COLOURS\VIC"
+                style={inputStyle}
+                autoComplete="off"
+              />
+            </div>
+          </div>
+
+          <div style={vicCard}>
+            <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
+              Logo Attachment
+            </h3>
+            <p style={{ fontSize: "0.85rem", color: "#323233cc", margin: 0, lineHeight: 1.45 }}>
+              Full path to the image embedded at the end of outgoing HTML emails only (inline in the message). Leave blank for no email logo.
+            </p>
+            <div>
+              <label
                 style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
+                  display: "block",
+                  fontSize: "0.9rem",
+                  color: "#32323399",
+                  marginBottom: "6px",
+                  fontWeight: 500,
                 }}
+              >
+                Image file path
+              </label>
+              <input
+                type="text"
+                name="emailLogoPath"
+                value={emailLogoPath}
+                onChange={handleEmailLogoPathChange}
+                onBlur={handleEmailLogoPathBlur}
+                placeholder="e.g. Z:\...\LOGOS\SGF.jpg"
+                style={inputStyle}
+                autoComplete="off"
+              />
+            </div>
+          </div>
+
+          <div style={vicCard}>
+            <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
+              Letter Head
+            </h3>
+            <p style={{ fontSize: "0.85rem", color: "#323233cc", margin: 0, lineHeight: 1.45 }}>
+              Full path to the image used at the top of Variation PDFs. Emails keep using Logo Attachment above. If blank, the variation PDF falls back to the email logo path, then no image.
+            </p>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  color: "#32323399",
+                  marginBottom: "6px",
+                  fontWeight: 500,
+                }}
+              >
+                Letterhead image path
+              </label>
+              <input
+                type="text"
+                name="letterheadPath"
+                value={letterheadPath}
+                onChange={handleLetterheadPathChange}
+                onBlur={handleLetterheadPathBlur}
+                placeholder="e.g. Z:\...\Letterhead.png"
+                style={inputStyle}
                 autoComplete="off"
               />
             </div>
           </div>
         </div>
 
-        {/* Column 2: QLD Settings */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+        {/* Column 2: QLD */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px", minWidth: 0 }}>
           <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: 0, color: MONUMENT }}>
             QLD Settings
           </h2>
-          
-          {/* QLD File Settings */}
+
           <div style={{ display: "flex", flexDirection: "column", gap: "16px", backgroundColor: "#D54358", padding: "16px", borderRadius: "8px" }}>
             <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
               File Settings
@@ -325,22 +438,32 @@ export default function FileSettings() {
                 onChange={handleRootDirectoryQldChange}
                 onBlur={handleBlurQld}
                 placeholder="C:\Projects"
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
+                style={inputStyle}
                 autoComplete="off"
               />
             </div>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                fontSize: "0.95rem",
+                color: MONUMENT,
+                cursor: "pointer",
+                fontWeight: 500,
+                marginTop: "4px",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={createFoldersQld}
+                onChange={handleCreateFoldersQldChange}
+                style={{ width: "18px", height: "18px", cursor: "pointer" }}
+              />
+              Create folders
+            </label>
           </div>
-          
-          {/* QLD Colour Attachments */}
+
           <div style={{ display: "flex", flexDirection: "column", gap: "16px", backgroundColor: "#D54358", padding: "16px", borderRadius: "8px" }}>
             <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
               Colour Attachments
@@ -364,22 +487,12 @@ export default function FileSettings() {
                 onChange={handleColourAttachmentsQldChange}
                 onBlur={handleColourAttachmentsQldBlur}
                 placeholder="e.g. Z:\1.SGF PROJECT MANAGEMENT\COLOURS\QLD"
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
+                style={inputStyle}
                 autoComplete="off"
               />
             </div>
           </div>
         </div>
-
       </div>
     </div>
   );

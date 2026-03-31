@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
+import { isUserAdmin } from "../utils/auth";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -54,10 +55,12 @@ export default function StatusManager() {
   const [editingItem, setEditingItem] = useState(null); // Item being edited: { value: "...", isBase: true/false }
   const [newItemInput, setNewItemInput] = useState("");
   const [showAllStatuses, setShowAllStatuses] = useState(true); // Toggle between all statuses and earliest incomplete
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     fetchProjects();
     fetchSubstatuses();
+    (async () => setIsAdmin(await isUserAdmin()))();
   }, []);
 
   // Fetch substatuses and details from backend
@@ -912,8 +915,32 @@ export default function StatusManager() {
           >
             Status Manager
           </Link>
+          {isAdmin && (
+            <Link
+              to="/managers/drawing-manager"
+              style={{
+                background: "transparent",
+                color: "#404049",
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              Drawing Manager
+            </Link>
+          )}
           <Link
-            to="/managers/drawing-manager"
+            to="/managers/qp-manager"
             style={{
               background: "transparent",
               color: "#404049",
@@ -932,7 +959,7 @@ export default function StatusManager() {
               display: "block",
             }}
           >
-            Drawing Manager
+            QP Manager
           </Link>
           <div style={{ flex: 1 }} />
           <Link
