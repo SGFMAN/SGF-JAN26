@@ -11,6 +11,7 @@ const multer = require("multer");
 const nodemailer = require("nodemailer");
 const OpenAI = require("openai");
 const PDFDocument = require("pdfkit");
+const crypto = require("crypto");
 const app = express();
 app.use(cors({ origin: true }));
 
@@ -654,6 +655,25 @@ async function ensureSchema() {
     `);
   } catch (e) {
     console.log(`Index might already exist:`, e.message);
+  }
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS variation_approval_tokens (
+      token TEXT PRIMARY KEY,
+      project_id INTEGER NOT NULL,
+      items_json JSONB NOT NULL,
+      consultant_name TEXT NOT NULL,
+      notify_email TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ
+    );
+  `);
+  try {
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_variation_approval_project ON variation_approval_tokens(project_id);
+    `);
+  } catch (e) {
+    console.log("variation_approval_tokens index:", e.message);
   }
   // Add create_folders column if it doesn't exist (for existing tables)
   try {
@@ -5042,6 +5062,153 @@ function parseVariationPriceToNumber(price) {
   return Number.isFinite(n) ? n : NaN;
 }
 
+function buildVariationRowsFromItems(items) {
+  const rows = [];
+  let grandTotal = 0;
+  if (!Array.isArray(items)) {
+    return {
+      rows,
+      grandTotal,
+      grandTotalStr: "$0.00",
+    };
+  }
+  for (const raw of items) {
+    const product = raw?.product != null ? String(raw.product) : "—";
+    const qtyRaw = raw?.quantity;
+    const q = Number.parseInt(String(qtyRaw), 10);
+    const qty = Number.isFinite(q) && q >= 1 ? q : 1;
+    const unit = parseVariationPriceToNumber(raw?.price);
+    const line = Number.isFinite(unit) ? unit * qty : 0;
+    grandTotal += line;
+    const unitStr = Number.isFinite(unit)
+      ? `$${unit.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : "—";
+    const lineStr = Number.isFinite(unit)
+      ? `$${line.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : "—";
+    rows.push({ product, qty, unitStr, lineStr });
+  }
+  const grandTotalStr = `$${grandTotal.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return { rows, grandTotal, grandTotalStr };
+}
+
+function escapeHtmlPlain(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Same as other emails: only true / "true" means the contact is included. */
+function isClientContactActive(v) {
+  return v === true || v === "true";
+}
+
+/** Emails for contacts 1–3 where the Client Info checkbox is on and an email is set. */
+function collectActiveClientEmails(pr) {
+  const out = [];
+  const add = (email) => {
+    const e = email != null && String(email).trim() !== "" ? String(email).trim() : "";
+    if (e && !out.includes(e)) out.push(e);
+  };
+  if (isClientContactActive(pr?.client1_active)) add(pr?.client1_email);
+  if (isClientContactActive(pr?.client2_active)) add(pr?.client2_email);
+  if (isClientContactActive(pr?.client3_active)) add(pr?.client3_email);
+  return out;
+}
+
+function normalizeEmailRecipients(to) {
+  if (Array.isArray(to)) {
+    return to.map((e) => String(e).trim()).filter(Boolean);
+  }
+  if (typeof to === "string" && to.includes(",")) {
+    return to
+      .split(",")
+      .map((e) => e.trim())
+      .filter(Boolean);
+  }
+  if (typeof to === "string" && to.trim()) {
+    return [to.trim()];
+  }
+  return [];
+}
+
+async function sendVariationApprovedPdfEmail({ to, from, subject, pdfBuffer, filename }) {
+  const recipients = normalizeEmailRecipients(to);
+  if (recipients.length === 0) {
+    throw new Error("No recipient addresses.");
+  }
+  const smtpCreds = await getSmtpCredentialsForFromAddress(from);
+  const smtpUser = smtpCreds.smtpUser;
+  const smtpPass = smtpCreds.smtpPass;
+  if (!smtpUser || !smtpPass) {
+    throw new Error("SMTP not configured for the From address.");
+  }
+  const host = process.env.SMTP_HOST || "smtp.office365.com";
+  const port = parseInt(process.env.SMTP_PORT || "587", 10);
+  const secure = process.env.SMTP_SECURE === "true";
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: { user: smtpUser, pass: smtpPass },
+  });
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;"><p>Your variation request has been <strong>approved</strong>. The stamped PDF is attached.</p></body></html>`;
+  await transporter.sendMail({
+    from,
+    to: recipients,
+    subject,
+    html,
+    attachments: [
+      {
+        filename: filename || "Variation APPROVED.pdf",
+        content: pdfBuffer,
+        contentType: "application/pdf",
+      },
+    ],
+  });
+}
+
+/** Send the draft variation PDF to active client contacts when "Create variation" runs. */
+async function sendVariationDraftPdfEmail({ to, from, subject, pdfBuffer, filename, projectName }) {
+  const recipients = normalizeEmailRecipients(to);
+  if (recipients.length === 0) return;
+  const smtpCreds = await getSmtpCredentialsForFromAddress(from);
+  const smtpUser = smtpCreds.smtpUser;
+  const smtpPass = smtpCreds.smtpPass;
+  if (!smtpUser || !smtpPass) {
+    throw new Error("SMTP not configured for the From address.");
+  }
+  const host = process.env.SMTP_HOST || "smtp.office365.com";
+  const port = parseInt(process.env.SMTP_PORT || "587", 10);
+  const secure = process.env.SMTP_SECURE === "true";
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: { user: smtpUser, pass: smtpPass },
+  });
+  const safeName = escapeHtmlPlain(projectName || "your project");
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;"><p>Please find attached the variation request for <strong>${safeName}</strong>.</p><p>Open the PDF and use the green <strong>Approve</strong> bar when you are ready to confirm. You will receive the approved copy by email.</p></body></html>`;
+  await transporter.sendMail({
+    from,
+    to: recipients,
+    subject,
+    html,
+    attachments: [
+      {
+        filename: filename || "Variation TEST.pdf",
+        content: pdfBuffer,
+        contentType: "application/pdf",
+      },
+    ],
+  });
+}
+
+const VARIATION_PDF_FILENAME_TEST = "Variation TEST.pdf";
+const VARIATION_PDF_FILENAME_APPROVED = "Variation APPROVED.pdf";
+
 /** Normalize Windows paths so fs can open them (e.g. Z:folder → Z:\folder). */
 function normalizeWindowsFilePath(p) {
   if (p == null || typeof p !== "string") return "";
@@ -5125,6 +5292,28 @@ const VARIATION_INTRO_TEXT =
 const VARIATION_NOTE_TEXT =
   'Note: This variation request becomes an "Authority for Variation to Contract" once signed by Owners and by authorised Superior Granny Flats representative. Not valid unless signed by both parties. It is the responsibility of the Owner/s to check all variations prior to signing. Superior Granny Flats holds no responsibility for omitted items or superseded inclusions.';
 
+function getPublicBaseUrl(req) {
+  const env = process.env.PUBLIC_APP_URL;
+  if (env && String(env).trim()) {
+    return String(env).trim().replace(/\/$/, "");
+  }
+  const proto = req.get("x-forwarded-proto") || req.protocol || "http";
+  const host = req.get("host") || "localhost";
+  return `${proto}://${host}`;
+}
+
+/** Large diagonal green stamp on top of the page (call after all content). */
+function drawVariationApprovedWatermark(doc) {
+  const w = doc.page.width;
+  const h = doc.page.height;
+  doc.save();
+  doc.fillColor("#2e7d32").opacity(0.16);
+  doc.font("Helvetica-Bold").fontSize(58);
+  doc.rotate(-30, { origin: [w / 2, h / 2] });
+  doc.text("APPROVED", w / 2 - 200, h / 2 - 24, { width: 400, align: "center" });
+  doc.restore();
+}
+
 function buildVariationListPdfBuffer({
   logoBuffer,
   projectName,
@@ -5135,6 +5324,8 @@ function buildVariationListPdfBuffer({
   consultantName,
   rows,
   grandTotal,
+  approvalUrl = null,
+  approvedStamp = false,
 }) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 48, size: "A4" });
@@ -5165,7 +5356,12 @@ function buildVariationListPdfBuffer({
 
     doc.font("Helvetica").fontSize(16).fillColor("#323233");
     doc.text("Variation", left, y, { width: contentW, align: "center" });
-    y += doc.heightOfString("Variation", { width: contentW }) + 14;
+    y += doc.heightOfString("Variation", { width: contentW }) + (approvedStamp ? 6 : 14);
+    if (approvedStamp) {
+      doc.font("Helvetica-Bold").fontSize(12).fillColor("#1b5e20");
+      doc.text("APPROVED", left, y, { width: contentW, align: "center" });
+      y += doc.heightOfString("APPROVED", { width: contentW }) + 10;
+    }
 
     const infoPad = 10;
     const infoBoxTop = y;
@@ -5204,8 +5400,10 @@ function buildVariationListPdfBuffer({
     });
     const noteBoxH = noteTextH + 2 * notePad;
     const gapPriceToNote = 14;
+    const gapApproveToNote = approvalUrl ? 8 : 0;
+    const approveStripH = approvalUrl ? 38 : 0;
     const noteTop = pageH - bottomM - noteBoxH;
-    const priceBoxBottom = noteTop - gapPriceToNote;
+    const priceBoxBottom = noteTop - gapApproveToNote - approveStripH - gapPriceToNote;
 
     const priceBoxTop = y;
     let priceBoxH = priceBoxBottom - priceBoxTop;
@@ -5274,6 +5472,21 @@ function buildVariationListPdfBuffer({
       align: "right",
     });
 
+    if (approvalUrl) {
+      const approveTop = priceBoxBottom + gapPriceToNote;
+      doc.save();
+      doc.fillColor("#e8f5e9").rect(left, approveTop, contentW, approveStripH).fill();
+      doc.fillColor("#1b5e20").font("Helvetica-Bold").fontSize(10);
+      doc.text(
+        "Approve — click here to confirm this variation",
+        left + 6,
+        approveTop + 11,
+        { width: contentW - 12, align: "center" }
+      );
+      doc.link(left, approveTop, contentW, approveStripH, approvalUrl);
+      doc.restore();
+    }
+
     doc.rect(left, noteTop, contentW, noteBoxH).stroke("#cccccc");
     doc.font("Helvetica-Oblique").fontSize(8).fillColor("#323233");
     doc.text(VARIATION_NOTE_TEXT, left + notePad, noteTop + notePad, {
@@ -5281,11 +5494,15 @@ function buildVariationListPdfBuffer({
       lineGap: 1,
     });
 
+    if (approvedStamp) {
+      drawVariationApprovedWatermark(doc);
+    }
+
     doc.end();
   });
 }
 
-// Create variation list PDF in project folder (saved as "variaiton TEST.pdf")
+// Create variation list PDF in project folder as "Variation TEST.pdf", email active Client Info contacts, optional approve link
 app.post("/api/projects/:id/variations/create-pdf", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   const projectId = Number(req.params.id);
@@ -5311,11 +5528,16 @@ app.post("/api/projects/:id/variations/create-pdf", async (req, res) => {
     }
     const { projectPath } = ctx;
     const projectResult = await pool.query(
-      "SELECT name, client1_name, client1_email, client1_phone FROM projects WHERE id = $1",
+      `SELECT name, client1_name, client1_email, client1_phone,
+       client1_active, client2_email, client2_active, client3_email, client3_active
+       FROM projects WHERE id = $1`,
       [projectId]
     );
     const pr = projectResult.rows[0] || {};
     const projectName = pr.name != null && String(pr.name).trim() !== "" ? String(pr.name) : `Project ${projectId}`;
+
+    const activeClientEmails = collectActiveClientEmails(pr);
+    const notifyTrim = activeClientEmails.join(", ");
 
     let logoBuffer = null;
     try {
@@ -5324,23 +5546,19 @@ app.post("/api/projects/:id/variations/create-pdf", async (req, res) => {
       console.warn("Variation PDF: header image load failed:", logoErr.message);
     }
 
-    const rows = [];
-    let grandTotal = 0;
-    for (const raw of items) {
-      const product = raw?.product != null ? String(raw.product) : "—";
-      const qtyRaw = raw?.quantity;
-      const q = Number.parseInt(String(qtyRaw), 10);
-      const qty = Number.isFinite(q) && q >= 1 ? q : 1;
-      const unit = parseVariationPriceToNumber(raw?.price);
-      const line = Number.isFinite(unit) ? unit * qty : 0;
-      grandTotal += line;
-      const unitStr = Number.isFinite(unit)
-        ? `$${unit.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-        : "—";
-      const lineStr = Number.isFinite(unit)
-        ? `$${line.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-        : "—";
-      rows.push({ product, qty, unitStr, lineStr });
+    const { rows, grandTotalStr } = buildVariationRowsFromItems(items);
+
+    let approvalUrl = null;
+    if (notifyTrim) {
+      const token = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      await pool.query(
+        `INSERT INTO variation_approval_tokens (token, project_id, items_json, consultant_name, notify_email, expires_at)
+         VALUES ($1, $2, $3::jsonb, $4, $5, $6)`,
+        [token, projectId, JSON.stringify(items), consultantTrimmed, notifyTrim, expiresAt]
+      );
+      const base = getPublicBaseUrl(req);
+      approvalUrl = `${base}/api/projects/variations/approve?token=${encodeURIComponent(token)}`;
     }
 
     const dateStr = new Date().toLocaleDateString("en-AU", {
@@ -5358,21 +5576,184 @@ app.post("/api/projects/:id/variations/create-pdf", async (req, res) => {
       dateStr,
       consultantName: consultantTrimmed,
       rows,
-      grandTotal: `$${grandTotal.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      grandTotal: grandTotalStr,
+      approvalUrl,
     });
 
-    const outName = "variaiton TEST.pdf";
+    const outName = VARIATION_PDF_FILENAME_TEST;
     const outPath = path.join(projectPath, outName);
     await fs.writeFile(outPath, pdfBuffer);
+
+    let emailSent = false;
+    let emailError = null;
+    if (activeClientEmails.length > 0) {
+      try {
+        const settingsFrom = await pool.query(`SELECT smtp_user FROM settings WHERE id = 1`);
+        const fromAddr =
+          (settingsFrom.rows[0]?.smtp_user && String(settingsFrom.rows[0].smtp_user).trim()) ||
+          process.env.SMTP_USER ||
+          "info@superiorgrannyflats.com.au";
+        await sendVariationDraftPdfEmail({
+          to: activeClientEmails,
+          from: fromAddr,
+          subject: `Variation request — ${projectName}`,
+          pdfBuffer,
+          filename: outName,
+          projectName,
+        });
+        emailSent = true;
+      } catch (mailErr) {
+        console.error("Variation draft email:", mailErr);
+        emailError = mailErr.message || "Email failed";
+      }
+    }
 
     res.json({
       success: true,
       path: outPath,
       filename: outName,
+      approvalLinkIncluded: !!approvalUrl,
+      emailedTo: activeClientEmails,
+      emailSent,
+      emailError,
     });
   } catch (e) {
     console.error("create-pdf variations:", e);
     res.status(500).json({ error: e.message || "Failed to create PDF" });
+  }
+});
+
+// Public: open from PDF link — stamps APPROVED, saves file, emails PDF to notify address
+app.get("/api/projects/variations/approve", async (req, res) => {
+  if (!pool) return res.status(500).send("Server misconfigured");
+  const token = req.query.token;
+  if (!token || typeof token !== "string") {
+    res.set("Content-Type", "text/html; charset=utf-8");
+    return res.status(400).send("<!DOCTYPE html><html><body><p>Missing token.</p></body></html>");
+  }
+
+  try {
+    const tokRes = await pool.query(
+      `SELECT token, project_id, items_json, consultant_name, notify_email, expires_at, used_at
+       FROM variation_approval_tokens WHERE token = $1`,
+      [token]
+    );
+    if (tokRes.rows.length === 0) {
+      res.set("Content-Type", "text/html; charset=utf-8");
+      return res.status(404).send(
+        "<!DOCTYPE html><html><body><p>Invalid or unknown approval link.</p></body></html>"
+      );
+    }
+    const row = tokRes.rows[0];
+    if (row.used_at) {
+      res.set("Content-Type", "text/html; charset=utf-8");
+      return res.status(410).send(
+        "<!DOCTYPE html><html><body><p>This variation was already approved.</p></body></html>"
+      );
+    }
+    if (new Date(row.expires_at) < new Date()) {
+      res.set("Content-Type", "text/html; charset=utf-8");
+      return res.status(410).send(
+        "<!DOCTYPE html><html><body><p>This approval link has expired.</p></body></html>"
+      );
+    }
+
+    const projectId = row.project_id;
+    const ctx = await getVariationsFolderForProjectId(projectId);
+    if (!ctx.ok) {
+      res.set("Content-Type", "text/html; charset=utf-8");
+      return res.status(500).send(`<p>${escapeHtmlPlain(ctx.message)}</p>`);
+    }
+    const { projectPath } = ctx;
+
+    const projectResult = await pool.query(
+      "SELECT name, client1_name, client1_email, client1_phone FROM projects WHERE id = $1",
+      [projectId]
+    );
+    const pr = projectResult.rows[0] || {};
+    const projectName = pr.name != null && String(pr.name).trim() !== "" ? String(pr.name) : `Project ${projectId}`;
+
+    let logoBuffer = null;
+    try {
+      logoBuffer = await loadVariationPdfHeaderBuffer(pool);
+    } catch (logoErr) {
+      console.warn("Variation approve PDF: header load failed:", logoErr.message);
+    }
+
+    let items = row.items_json;
+    if (typeof items === "string") {
+      try {
+        items = JSON.parse(items);
+      } catch {
+        items = [];
+      }
+    }
+    if (!Array.isArray(items)) items = [];
+
+    const { rows, grandTotalStr } = buildVariationRowsFromItems(items);
+    const consultantName = row.consultant_name || "";
+    const notifyEmail = (row.notify_email && String(row.notify_email).trim()) || "";
+
+    const approvedDateStr = new Date().toLocaleDateString("en-AU", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    const pdfBuffer = await buildVariationListPdfBuffer({
+      logoBuffer,
+      projectName,
+      clientName: pr.client1_name,
+      clientEmail: pr.client1_email,
+      clientPhone: pr.client1_phone,
+      dateStr: approvedDateStr,
+      consultantName,
+      rows,
+      grandTotal: grandTotalStr,
+      approvalUrl: null,
+      approvedStamp: true,
+    });
+
+    const outName = VARIATION_PDF_FILENAME_APPROVED;
+    const outPath = path.join(projectPath, outName);
+    await fs.writeFile(outPath, pdfBuffer);
+
+    const approvalRecipients = normalizeEmailRecipients(notifyEmail);
+    if (approvalRecipients.length > 0) {
+      const settingsFrom = await pool.query(`SELECT smtp_user FROM settings WHERE id = 1`);
+      const fromAddr =
+        (settingsFrom.rows[0]?.smtp_user && String(settingsFrom.rows[0].smtp_user).trim()) ||
+        process.env.SMTP_USER ||
+        "info@superiorgrannyflats.com.au";
+      await sendVariationApprovedPdfEmail({
+        to: approvalRecipients,
+        from: fromAddr,
+        subject: `Variation approved — ${projectName}`,
+        pdfBuffer,
+        filename: outName,
+      });
+    }
+
+    await pool.query(
+      `UPDATE variation_approval_tokens SET used_at = NOW() WHERE token = $1 AND used_at IS NULL`,
+      [token]
+    );
+
+    res.set("Content-Type", "text/html; charset=utf-8");
+    res.send(
+      `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Approved</title></head><body style="font-family:system-ui,Segoe UI,sans-serif;padding:28px;max-width:520px;margin:0 auto;line-height:1.5;color:#323233;"><h1 style="color:#1b5e20;font-size:1.35rem;">Approved</h1><p>The variation PDF has been stamped <strong>APPROVED</strong> and saved in the project folder as <strong>${escapeHtmlPlain(
+        VARIATION_PDF_FILENAME_APPROVED
+      )}</strong>.</p>${
+        approvalRecipients.length > 0
+          ? `<p>A copy has been emailed to: <strong>${approvalRecipients.map((e) => escapeHtmlPlain(e)).join(", ")}</strong>.</p>`
+          : "<p>No email was sent (no recipient addresses on file).</p>"
+      }<p style="font-size:0.9rem;color:#666;">You can close this window.</p></body></html>`
+    );
+  } catch (e) {
+    console.error("variation approve GET:", e);
+    res.set("Content-Type", "text/html; charset=utf-8");
+    res.status(500).send(
+      `<!DOCTYPE html><html><body><p>Could not complete approval: ${escapeHtmlPlain(e.message)}</p></body></html>`
+    );
   }
 });
 

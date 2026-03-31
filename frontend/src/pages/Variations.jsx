@@ -101,7 +101,6 @@ export default function Variations({ project }) {
   const [usersForModal, setUsersForModal] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [loadingUsersModal, setLoadingUsersModal] = useState(false);
-
   useEffect(() => {
     let cancelled = false;
     const q = query.trim();
@@ -193,7 +192,21 @@ export default function Variations({ project }) {
         if (!r.ok) {
           throw new Error(data.error || `Failed (${r.status})`);
         }
-        alert(`PDF saved in project folder:\n${data.path || data.filename || "variaiton TEST.pdf"}`);
+        const pathLine = data.path || data.filename || "Variation TEST.pdf";
+        let msg = `Saved as "${data.filename || "Variation TEST.pdf"}" in the project folder:\n${pathLine}`;
+        if (data.emailSent && Array.isArray(data.emailedTo) && data.emailedTo.length > 0) {
+          msg += `\n\nEmailed to: ${data.emailedTo.join(", ")}`;
+        } else if (data.emailError) {
+          msg += `\n\nEmail could not be sent: ${data.emailError}`;
+        } else {
+          msg +=
+            "\n\nNo client email was sent — turn on at least one Client Info contact with an email (and checkbox) to email the PDF.";
+        }
+        if (data.approvalLinkIncluded) {
+          msg +=
+            "\n\nThe PDF includes a green Approve bar. When a client opens the link and approves, \"Variation APPROVED.pdf\" is saved and emailed to the same contacts.";
+        }
+        alert(msg);
       } catch (e) {
         alert(e.message || "Failed to create PDF");
       } finally {
@@ -648,6 +661,11 @@ export default function Variations({ project }) {
             </h3>
             <p style={{ fontSize: "0.85rem", color: "#32323399", marginTop: 0, marginBottom: "12px" }}>
               Choose who will appear on the variation PDF as Consultant.
+            </p>
+            <p style={{ fontSize: "0.8rem", color: "#32323399", marginTop: 0, marginBottom: "12px", lineHeight: 1.45 }}>
+              The PDF is saved to the project folder and emailed to clients whose Contact is checked in Client Info (with an
+              email). They can approve from the PDF; the approved file is saved as{" "}
+              <strong style={{ color: MONUMENT }}>Variation APPROVED.pdf</strong>.
             </p>
             <div
               style={{
