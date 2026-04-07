@@ -6,8 +6,6 @@ const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 const API_URL = "";
 
-const DRAWINGS_STATUS_OPTIONS = ["Not Assigned", "Concept Stage", "Working Drawing Stage", "Drawings Complete"];
-
 const DESIGN_MEETING_EMAIL_TO = "ben@superiorgrannyflats.com.au";
 const DESIGN_MEETING_PURPLE = "#6f42c1";
 const DESIGN_MEETING_PURPLE_HOVER = "#5a32a3";
@@ -31,6 +29,7 @@ export default function Drawings({ project, onUpdate }) {
   const [showNotesModal, setShowNotesModal] = useState(false);
   const [notesForRevision, setNotesForRevision] = useState(null); // { index, revision, name, isNewDrawing, isCurrentRevision }
   const [notesText, setNotesText] = useState("");
+  const [isSendingDraftingEmail, setIsSendingDraftingEmail] = useState(false);
   const [showSalesNotesModal, setShowSalesNotesModal] = useState(false);
   const [salesNotesForRevision, setSalesNotesForRevision] = useState(null); // { index, revision, name, isCurrentRevision }
   const [salesNotesText, setSalesNotesText] = useState("");
@@ -61,6 +60,9 @@ export default function Drawings({ project, onUpdate }) {
   const [showDesignMeetingModal, setShowDesignMeetingModal] = useState(false);
   const [designMeetingItems, setDesignMeetingItems] = useState([]);
   const [designMeetingNewItem, setDesignMeetingNewItem] = useState("");
+  const [showDraftspersonRequiredModal, setShowDraftspersonRequiredModal] = useState(false);
+  const [pendingPdfFile, setPendingPdfFile] = useState(null);
+  const [draftspersonModalChoice, setDraftspersonModalChoice] = useState("");
   
   const valuesRef = useRef({ drawingsStatus, draftsperson });
   
@@ -243,13 +245,6 @@ export default function Drawings({ project, onUpdate }) {
         onUpdate();
       }
     }
-  }
-
-  async function handleDrawingsStatusChange(e) {
-    const newStatus = e.target.value;
-    setDrawingsStatus(newStatus);
-    valuesRef.current.drawingsStatus = newStatus;
-    await saveField("drawings_status", newStatus);
   }
 
   async function handleDraftspersonChange(e) {
@@ -787,7 +782,8 @@ export default function Drawings({ project, onUpdate }) {
           window_ordered_date: project?.window_ordered_date || null,
           window_order_pdf_location: project?.window_order_pdf_location || null,
           window_order_number: project?.window_order_number || null,
-          drawings_status: project?.drawings_status || null,
+          drawings_status: valuesRef.current.drawingsStatus || null,
+          draftsperson: valuesRef.current.draftsperson ? valuesRef.current.draftsperson : null,
           drawings_pdf_location: filePath,
           drawings_history: JSON.stringify(drawingsHistory),
           drawings_viewed_date: project?.drawings_viewed_date || null, // Preserve existing viewed date
@@ -836,6 +832,60 @@ export default function Drawings({ project, onUpdate }) {
     }
   }
 
+  function hasDraftspersonAssigned() {
+    const id = draftsperson != null ? String(draftsperson).trim() : "";
+    return id.length > 0;
+  }
+
+  async function beginDrawingPdfUpload(file) {
+    if (!file) return;
+    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+      alert("Please select a PDF file");
+      return;
+    }
+    setSelectedFile(file);
+    if (!hasDraftspersonAssigned()) {
+      setPendingPdfFile(file);
+      setDraftspersonModalChoice("");
+      setShowDraftspersonRequiredModal(true);
+      return;
+    }
+    await saveDrawingsPath(file);
+  }
+
+  async function handleConfirmDraftspersonForUpload() {
+    const id = draftspersonModalChoice != null ? String(draftspersonModalChoice).trim() : "";
+    if (!id) {
+      alert("Please select a draftsperson before uploading drawings.");
+      return;
+    }
+    setDraftsperson(id);
+    valuesRef.current.draftsperson = id;
+    if (drawingsStatus === "Not Assigned") {
+      setDrawingsStatus("Concept Stage");
+      valuesRef.current.drawingsStatus = "Concept Stage";
+      await saveField("drawings_status", "Concept Stage");
+    }
+    await saveField("draftsperson", id);
+    const file = pendingPdfFile;
+    setShowDraftspersonRequiredModal(false);
+    setPendingPdfFile(null);
+    setDraftspersonModalChoice("");
+    if (file) {
+      await saveDrawingsPath(file);
+    }
+  }
+
+  function handleCancelDraftspersonRequiredModal() {
+    setShowDraftspersonRequiredModal(false);
+    setPendingPdfFile(null);
+    setDraftspersonModalChoice("");
+    setSelectedFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
   async function handleDrop(e) {
     e.preventDefault();
     e.stopPropagation();
@@ -843,26 +893,14 @@ export default function Drawings({ project, onUpdate }) {
 
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
-      const file = files[0];
-      if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-        setSelectedFile(file);
-        await saveDrawingsPath(file);
-      } else {
-        alert("Please select a PDF file");
-      }
+      await beginDrawingPdfUpload(files[0]);
     }
   }
 
   async function handleFileSelect(e) {
     const files = e.target.files;
     if (files && files.length > 0) {
-      const file = files[0];
-      if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-        setSelectedFile(file);
-        await saveDrawingsPath(file);
-      } else {
-        alert("Please select a PDF file");
-      }
+      await beginDrawingPdfUpload(files[0]);
     }
   }
 
@@ -1531,6 +1569,133 @@ export default function Drawings({ project, onUpdate }) {
 
     // Don't attach drawings - just send the email
 
+    // For newly added drawings: send immediately (no preview)
+    if (notesForRevision?.isNewDrawing) {
+      if (isSendingDraftingEmail) return;
+
+      setIsSendingDraftingEmail(true);
+      try {
+        await runWithEmailOverlay(async () => {
+          // If this is a new drawing or current revision, save notes first
+          if (notesForRevision && (notesForRevision.isNewDrawing || notesForRevision.isCurrentRevision)) {
+            await saveNotesForRevision(notesForRevision.index, notesText);
+
+            // If there's a markup file, save it
+            if (markupFile && notesForRevision.isNewDrawing) {
+              await saveMarkupPath(markupFile, notesForRevision.index);
+            }
+          }
+
+          // Fetch email template
+          const templateResponse = await fetch(`${API_URL}/api/email-templates`);
+          if (!templateResponse.ok) {
+            throw new Error("Failed to fetch email templates");
+          }
+          const templates = await templateResponse.json();
+          const template = templates.find((t) => t.name === "DRAWINGS - Design to Sales");
+          if (!template) {
+            throw new Error(
+              'Email template "DRAWINGS - Design to Sales" not found. Please create it in Settings → Email Templates.'
+            );
+          }
+
+          // Get project name
+          const projectName =
+            project?.street && project?.suburb ? `${project.street}, ${project.suburb}`.trim() : project?.name || "";
+
+          // Get draftsperson details
+          const { name: draftspersonName, position: draftspersonPosition } = await getDraftspersonDetails(
+            project.draftsperson
+          );
+
+          // Build email body - insert notes after {ProjectName}
+          let body = template.body || "";
+          if (notesText && notesText.trim()) {
+            const notesHtml = notesText.trim().replace(/\n/g, "<br>");
+            const heading = "<b>Drafting Notes</b><br>";
+            const notesWithHeading = heading + notesHtml;
+
+            const projectNameTokenIndex = body.indexOf("{ProjectName}");
+            if (projectNameTokenIndex !== -1) {
+              const insertIndex = projectNameTokenIndex + "{ProjectName}".length;
+              body = body.slice(0, insertIndex) + "<br><br>" + notesWithHeading + body.slice(insertIndex);
+            } else {
+              const projectNameIndex = body.indexOf(projectName);
+              if (projectNameIndex !== -1) {
+                const insertIndex = projectNameIndex + projectName.length;
+                body = body.slice(0, insertIndex) + "<br><br>" + notesWithHeading + body.slice(insertIndex);
+              } else {
+                body = notesWithHeading + "<br><br>" + body;
+              }
+            }
+          }
+
+          body = body.replace(/{ProjectName}/g, projectName);
+          body = body.replace(/{Draftsperson}/g, draftspersonName);
+          body = body.replace(/{Position}/g, draftspersonPosition);
+
+          let subject = template.subject || "";
+          subject = subject.replace(/{ProjectName}/g, projectName);
+          subject = subject.replace(/{Draftsperson}/g, draftspersonName);
+          subject = subject.replace(/{Position}/g, draftspersonPosition);
+
+          // Get to addresses from template
+          let toAddresses = [];
+          if (template.to_addresses) {
+            if (Array.isArray(template.to_addresses)) {
+              toAddresses = template.to_addresses;
+            } else {
+              try {
+                toAddresses = JSON.parse(template.to_addresses);
+              } catch (e) {
+                toAddresses = template.to_addresses
+                  .split(",")
+                  .map((a) => a.trim())
+                  .filter((a) => a.length > 0);
+              }
+            }
+          }
+
+          const toEmails = toAddresses.map((a) => String(a).trim()).filter((a) => a.length > 0);
+          if (toEmails.length === 0) {
+            throw new Error("No recipient addresses configured for this template.");
+          }
+          if (!template.from_address || !String(template.from_address).trim()) {
+            throw new Error("Template has no From address. Please set it in Settings → Email Templates.");
+          }
+
+          const response = await fetch(`${API_URL}/api/emails/send-drawings`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              projectId: project.id,
+              toEmails,
+              customBody: body,
+              from: template.from_address,
+              subject,
+              attachDrawings: false,
+            }),
+          });
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: response.statusText }));
+            throw new Error(errorData.error || "Failed to send drawings email");
+          }
+          await response.json().catch(() => ({}));
+        });
+
+        alert("Email sent successfully!");
+
+        // Close notes modal after sending
+        handleCloseNotesModal();
+      } catch (error) {
+        console.error("Error sending drawings email:", error);
+        alert(`Failed to send email: ${error.message}`);
+      } finally {
+        setIsSendingDraftingEmail(false);
+      }
+      return;
+    }
+
     // If this is a new drawing or current revision, save notes first
     if (notesForRevision && (notesForRevision.isNewDrawing || notesForRevision.isCurrentRevision)) {
       await saveNotesForRevision(notesForRevision.index, notesText);
@@ -1894,6 +2059,9 @@ export default function Drawings({ project, onUpdate }) {
       if (emailPreviewType === "sales") {
         // Sales notes sent - design team now has the drawings
         await saveDrawingsHolder("design team");
+        setShowSalesNotesModal(false);
+        setSalesNotesForRevision(null);
+        setSalesNotesText("");
       }
       // Drafting notes don't change the holder (design team keeps them)
 
@@ -1915,6 +2083,7 @@ export default function Drawings({ project, onUpdate }) {
     setNotesText("");
     setMarkupFile(null);
     setIsDraggingMarkup(false);
+    setIsSendingDraftingEmail(false);
   }
 
   async function handleSendSalesNotes() {
@@ -2007,7 +2176,6 @@ export default function Drawings({ project, onUpdate }) {
         }
       }
 
-      // Open preview modal
       setEmailPreviewTo(toAddresses.join(", "));
       setEmailPreviewFrom(template.from_address || "");
       setEmailPreviewSubject(subject);
@@ -2762,31 +2930,7 @@ export default function Drawings({ project, onUpdate }) {
           {/* Column 4 - Status, Buttons, and Drop Zone */}
           <div style={{ flex: "0.5", minWidth: "200px", display: "flex", flexDirection: "column", minHeight: "600px" }}>
             <div style={{ display: "flex", flexDirection: "column", flex: "0 0 auto" }}>
-              {/* Status dropdown - aligned with top of drawings rectangle */}
               <div style={{ marginBottom: "24px", marginTop: "-18px" }}>
-                <select
-                  name="drawingsStatus"
-                  value={drawingsStatus}
-                  onChange={handleDrawingsStatusChange}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: "none",
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    background: WHITE,
-                    boxSizing: "border-box",
-                  }}
-                >
-                  {DRAWINGS_STATUS_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div style={{ marginBottom: "24px" }}>
                 <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
                   Draftsperson
                 </div>
@@ -2813,6 +2957,26 @@ export default function Drawings({ project, onUpdate }) {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div style={{ marginBottom: "24px" }}>
+                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                  Status
+                </div>
+                <div
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                    fontWeight: 500,
+                  }}
+                >
+                  {drawingsStatus || "—"}
+                </div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "12px", alignItems: "flex-start", width: "100%", marginBottom: "24px" }}>
                 {(() => {
@@ -2975,117 +3139,6 @@ export default function Drawings({ project, onUpdate }) {
               >
                 Clear Drawing Data
               </button>
-              {/* Test button to set date to 9/3/26 */}
-              <button
-                onClick={async () => {
-                  if (!project?.id) {
-                    alert("Error: Project ID is missing");
-                    return;
-                  }
-                  try {
-                    const testDate = "2026-03-09"; // 9/3/26 in YYYY-MM-DD format
-                    const projectName = project?.street && project?.suburb 
-                      ? `${project.street}, ${project.suburb}`.trim() 
-                      : project?.name || "";
-
-                    const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
-                      method: "PUT",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({
-                        name: projectName,
-                        status: project?.status || null,
-                        stream: project?.stream || null,
-                        suburb: project?.suburb || null,
-                        street: project?.street || null,
-                        state: project?.state || null,
-                        deposit: project?.deposit || null,
-                        project_cost: project?.project_cost || null,
-                        client_name: project?.client_name || null,
-                        email: project?.email || null,
-                        phone: project?.phone || null,
-                        client1_name: project?.client1_name || null,
-                        client1_email: project?.client1_email || null,
-                        client1_phone: project?.client1_phone || null,
-                        client1_active: project?.client1_active || null,
-                        client2_name: project?.client2_name || null,
-                        client2_email: project?.client2_email || null,
-                        client2_phone: project?.client2_phone || null,
-                        client2_active: project?.client2_active || null,
-                        client3_name: project?.client3_name || null,
-                        client3_email: project?.client3_email || null,
-                        client3_phone: project?.client3_phone || null,
-                        client3_active: project?.client3_active || null,
-                        site_visit_status: project?.site_visit_status || null,
-                        site_visit_date: project?.site_visit_date || null,
-                        site_visit_time: project?.site_visit_time || null,
-                        contract_status: project?.contract_status || null,
-                        contract_sent_date: project?.contract_sent_date || null,
-                        contract_complete_date: project?.contract_complete_date || null,
-                        supporting_documents_status: project?.supporting_documents_status || null,
-                        supporting_documents_sent_date: project?.supporting_documents_sent_date || null,
-                        supporting_documents_complete_date: project?.supporting_documents_complete_date || null,
-                        water_declaration_status: project?.water_declaration_status || null,
-                        water_declaration_sent_date: project?.water_declaration_sent_date || null,
-                        water_declaration_complete_date: project?.water_declaration_complete_date || null,
-                        notes: project?.notes || null,
-                        window_status: project?.window_status || null,
-                        window_colour: project?.window_colour || null,
-                        window_reveal: project?.window_reveal || null,
-                        window_reveal_other: project?.window_reveal_other || null,
-                        window_glazing: project?.window_glazing || null,
-                        window_bal_rating: project?.window_bal_rating || null,
-                        window_date_required: project?.window_date_required || null,
-                        window_ordered_date: project?.window_ordered_date || null,
-                        window_order_pdf_location: project?.window_order_pdf_location || null,
-                        window_order_number: project?.window_order_number || null,
-                        drawings_status: project?.drawings_status || null,
-                        drawings_pdf_location: project?.drawings_pdf_location || null,
-                        drawings_history: project?.drawings_history || null,
-                        drawings_viewed_date: project?.drawings_viewed_date || null,
-                        drawings_holder_date: testDate,
-                        draftsperson: project?.draftsperson || null,
-                        drawings_holder: project?.drawings_holder || null,
-                        colours_status: project?.colours_status || null,
-                        planning_status: project?.planning_status || null,
-                        energy_report_status: project?.energy_report_status || null,
-                        footing_certification_status: project?.footing_certification_status || null,
-                        building_permit_status: project?.building_permit_status || null,
-                      }),
-                    });
-
-                    if (!response.ok) {
-                      throw new Error("Failed to update date");
-                    }
-
-                    alert("Date set to 9/3/26");
-                    if (onUpdate) {
-                      onUpdate();
-                    }
-                  } catch (error) {
-                    console.error("Error setting test date:", error);
-                    alert(`Error: ${error.message}`);
-                  }
-                }}
-                style={{
-                  background: "#9b59b6",
-                  color: WHITE,
-                  border: `1px solid #9b59b6`,
-                  borderRadius: "10px",
-                  padding: "8px 8px",
-                  fontSize: "0.95rem",
-                  fontWeight: 500,
-                  textAlign: "center",
-                  letterSpacing: "0.5px",
-                  cursor: "pointer",
-                  transition: "background 0.18s, color 0.15s",
-                  display: "block",
-                  width: "100%",
-                }}
-              >
-                Test: Set Date to 9/3/26
-              </button>
             </div>
           </div>
         </div>
@@ -3220,6 +3273,98 @@ export default function Drawings({ project, onUpdate }) {
         </div>
       )}
 
+      {/* Require draftsperson before uploading drawings (before notes / email modals) */}
+      {showDraftspersonRequiredModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1020,
+          }}
+          onClick={handleCancelDraftspersonRequiredModal}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              maxWidth: "480px",
+              width: "90%",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: "12px", color: MONUMENT }}>
+              Select a draftsperson
+            </h3>
+            <p style={{ margin: "0 0 16px", fontSize: "0.95rem", color: "#555", lineHeight: 1.45 }}>
+              A draftsperson must be assigned before drawings can be added. Choose one to continue.
+            </p>
+            <select
+              value={draftspersonModalChoice}
+              onChange={(e) => setDraftspersonModalChoice(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: "8px",
+                border: `1px solid ${SECTION_GREY}`,
+                fontSize: "1rem",
+                color: MONUMENT,
+                background: WHITE,
+                boxSizing: "border-box",
+                cursor: "pointer",
+                marginBottom: "20px",
+              }}
+            >
+              <option value="">Select draftsperson...</option>
+              {draftspersonUsers.map((user) => (
+                <option key={user.id} value={String(user.id)}>
+                  {user.name}
+                </option>
+              ))}
+            </select>
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={handleCancelDraftspersonRequiredModal}
+                style={{
+                  background: SECTION_GREY,
+                  color: WHITE,
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "10px 20px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmDraftspersonForUpload()}
+                style={{
+                  background: "#4D93D9",
+                  color: WHITE,
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "10px 20px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Notes Modal */}
       {showNotesModal && notesForRevision && (
         <div
@@ -3333,24 +3478,26 @@ export default function Drawings({ project, onUpdate }) {
                 <>
                   <button
                     onClick={handleSendDrawingsWithNotes}
+                    disabled={notesForRevision.isNewDrawing && isSendingDraftingEmail}
                     style={{
-                      background: "#4D93D9",
+                      background: (notesForRevision.isNewDrawing && isSendingDraftingEmail) ? "#b9d5f0" : "#4D93D9",
                       color: WHITE,
                       border: "none",
                       borderRadius: "8px",
                       padding: "10px 20px",
                       fontSize: "0.9rem",
                       fontWeight: 500,
-                      cursor: "pointer",
+                      cursor: (notesForRevision.isNewDrawing && isSendingDraftingEmail) ? "not-allowed" : "pointer",
                       transition: "background 0.2s",
                     }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = "#3d7bc9")}
                     onMouseLeave={(e) => (e.currentTarget.style.background = "#4D93D9")}
                   >
-                    {notesForRevision.isNewDrawing ? "Save Notes" : "Update Notes"}
+                    {notesForRevision.isNewDrawing ? "Save and Send Drawings" : "Update Notes"}
                   </button>
                   <button
                     onClick={handleCloseNotesModal}
+                    disabled={notesForRevision.isNewDrawing && isSendingDraftingEmail}
                     style={{
                       background: SECTION_GREY,
                       color: WHITE,
@@ -3359,7 +3506,7 @@ export default function Drawings({ project, onUpdate }) {
                       padding: "10px 20px",
                       fontSize: "0.9rem",
                       fontWeight: 500,
-                      cursor: "pointer",
+                      cursor: (notesForRevision.isNewDrawing && isSendingDraftingEmail) ? "not-allowed" : "pointer",
                       transition: "background 0.2s",
                     }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = "#8a8a8c")}

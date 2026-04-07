@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
+import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -7,6 +8,38 @@ const SECTION_GREY = "#a1a1a3";
 const LIGHT_MONUMENT = "#42464d"; // More blue and slightly lighter version of monument
 const WHITE = "#fff";
 const API_URL = "";
+
+const YEAR_FILTER_OPTIONS = ["2024", "2025", "2026"];
+const YEAR_FILTER_STORAGE_KEY = "sgf_applyfields_year_filter";
+
+function getYearFilter() {
+  try {
+    const saved = localStorage.getItem(YEAR_FILTER_STORAGE_KEY);
+    if (saved === "All" || YEAR_FILTER_OPTIONS.includes(saved)) return saved;
+  } catch (e) {
+    console.error("Error reading year filter from localStorage:", e);
+  }
+  return "All";
+}
+
+function saveYearFilter(filter) {
+  try {
+    if (filter === "All" || YEAR_FILTER_OPTIONS.includes(filter)) {
+      localStorage.setItem(YEAR_FILTER_STORAGE_KEY, filter);
+    }
+  } catch (e) {
+    console.error("Error saving year filter to localStorage:", e);
+  }
+}
+
+/** Calendar year from project.year (YYYY-MM-DD or YYYY). */
+function projectCalendarYear(project) {
+  if (project.year == null || project.year === "") return null;
+  const y = project.year.toString().trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(y)) return parseInt(y.slice(0, 4), 10);
+  if (/^\d{4}$/.test(y)) return parseInt(y, 10);
+  return null;
+}
 
 // Field definitions with their possible values and default values
 const FIELD_DEFINITIONS = {
@@ -90,6 +123,11 @@ const FIELD_DEFINITIONS = {
     values: ["Small Second Dwelling", "Dependant Persons Unit", "Detached Extension", "Dwelling", "Home Office / Studio", "Dwelling & DPU", "Dwelling & SSD", "SSD & DPU"],
     defaultValue: "",
   },
+  state: {
+    label: "State",
+    values: ["VIC", "QLD"],
+    defaultValue: "",
+  },
 };
 
 export default function ApplyFields() {
@@ -102,17 +140,17 @@ export default function ApplyFields() {
   const [newValue, setNewValue] = useState("");
   const [isApplying, setIsApplying] = useState(false);
   const [selectedProjectIds, setSelectedProjectIds] = useState(new Set());
+  const [stateFilter, setStateFilter] = useState(getStateFilter());
+  const [yearFilter, setYearFilter] = useState(() => getYearFilter());
 
   useEffect(() => {
     fetchProjects();
   }, []);
 
   useEffect(() => {
-    // Reset value dropdowns when field changes
+    // Reset value dropdowns when field changes; keep tagged project IDs so filters can change without losing selection
     setSelectedValue("");
     setNewValue("");
-    // Clear selection when field changes
-    setSelectedProjectIds(new Set());
   }, [selectedField]);
 
   async function fetchProjects() {
@@ -186,6 +224,18 @@ export default function ApplyFields() {
   function getFilteredProjects() {
     // Exclude Cancelled and Hotlist projects
     let filtered = projects.filter((project) => project.status !== "Cancelled" && project.status !== "Hotlist");
+
+    if (stateFilter !== "All") {
+      filtered = filtered.filter((project) => {
+        const projectState = (project.state || "").toUpperCase();
+        return projectState === stateFilter.toUpperCase();
+      });
+    }
+
+    if (yearFilter !== "All") {
+      const y = parseInt(yearFilter, 10);
+      filtered = filtered.filter((project) => projectCalendarYear(project) === y);
+    }
 
     // First filter by field/value if specified
     if (selectedField && selectedValue) {
@@ -438,6 +488,179 @@ export default function ApplyFields() {
           >
             Apply Fields
           </h1>
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            top: "20px",
+            right: "20px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "10px",
+            alignItems: "flex-end",
+          }}
+        >
+          <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <button
+            type="button"
+            onClick={() => {
+              const newFilter = "VIC";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
+            style={{
+              background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
+              color: stateFilter === "VIC" ? WHITE : MONUMENT,
+              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : MONUMENT}`,
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "VIC") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "VIC") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
+          >
+            VIC Only
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const newFilter = "QLD";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
+            style={{
+              background: stateFilter === "QLD" ? "#D54358" : WHITE,
+              color: stateFilter === "QLD" ? WHITE : MONUMENT,
+              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : MONUMENT}`,
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "QLD") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "QLD") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
+          >
+            QLD Only
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const newFilter = "All";
+              setStateFilter(newFilter);
+              saveStateFilter(newFilter);
+            }}
+            style={{
+              background: stateFilter === "All" ? MONUMENT : WHITE,
+              color: stateFilter === "All" ? WHITE : MONUMENT,
+              border: `2px solid ${MONUMENT}`,
+              borderRadius: "8px",
+              padding: "10px 20px",
+              fontSize: "1rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (stateFilter !== "All") {
+                e.currentTarget.style.background = "#f0f0f0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (stateFilter !== "All") {
+                e.currentTarget.style.background = WHITE;
+              }
+            }}
+          >
+            All Projects
+          </button>
+          </div>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {YEAR_FILTER_OPTIONS.map((year) => (
+              <button
+                key={year}
+                type="button"
+                onClick={() => {
+                  setYearFilter(year);
+                  saveYearFilter(year);
+                }}
+                style={{
+                  background: yearFilter === year ? MONUMENT : WHITE,
+                  color: yearFilter === year ? WHITE : MONUMENT,
+                  border: `2px solid ${MONUMENT}`,
+                  borderRadius: "8px",
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  transition: "background 0.2s, color 0.2s",
+                  minWidth: "72px",
+                }}
+                onMouseEnter={(e) => {
+                  if (yearFilter !== year) {
+                    e.currentTarget.style.background = "#f0f0f0";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (yearFilter !== year) {
+                    e.currentTarget.style.background = WHITE;
+                  }
+                }}
+              >
+                {year}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                setYearFilter("All");
+                saveYearFilter("All");
+              }}
+              style={{
+                background: yearFilter === "All" ? MONUMENT : WHITE,
+                color: yearFilter === "All" ? WHITE : MONUMENT,
+                border: `2px solid ${MONUMENT}`,
+                borderRadius: "8px",
+                padding: "10px 20px",
+                fontSize: "1rem",
+                fontWeight: 500,
+                cursor: "pointer",
+                transition: "background 0.2s, color 0.2s",
+              }}
+              onMouseEnter={(e) => {
+                if (yearFilter !== "All") {
+                  e.currentTarget.style.background = "#f0f0f0";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (yearFilter !== "All") {
+                  e.currentTarget.style.background = WHITE;
+                }
+              }}
+            >
+              All Years
+            </button>
+          </div>
         </div>
       </div>
 
@@ -719,6 +942,8 @@ export default function ApplyFields() {
                   if (selectedField && selectedValue) {
                     return `(${filtered.length} found)`;
                   } else if (searchQuery.trim()) {
+                    return `(${filtered.length} found)`;
+                  } else if (stateFilter !== "All" || yearFilter !== "All") {
                     return `(${filtered.length} found)`;
                   }
                   return `(${projects.length} total)`;
