@@ -1003,7 +1003,7 @@ export default function HomePage() {
                 Email Generator
               </Link>
               <Link
-                to="/faq"
+                to="/benbox"
                 style={{
                   background: "transparent",
                   color: "#404049",
@@ -1022,7 +1022,7 @@ export default function HomePage() {
                   display: "block",
                 }}
               >
-                FAQ
+                BenBox
               </Link>
             </div>
           )}

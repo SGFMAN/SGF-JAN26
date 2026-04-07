@@ -31,11 +31,22 @@ export default function SiteVisit({ project, onUpdate }) {
   const [isBooking, setIsBooking] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
+  const [showUploadPhotosModal, setShowUploadPhotosModal] = useState(false);
   const [siteVisitNotes, setSiteVisitNotes] = useState(project?.site_visit_notes || "");
   
   const valuesRef = useRef({ siteVisitNotes });
   const isInitialMount = useRef(true);
   const lastSavedNotes = useRef(project?.site_visit_notes || "");
+  const siteVisitPhotoInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!showUploadPhotosModal) return undefined;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [showUploadPhotosModal]);
 
   // Get site visit status or default to "Not Complete"
   const siteVisitStatus = project?.site_visit_status || "Not Complete";
@@ -322,6 +333,34 @@ export default function SiteVisit({ project, onUpdate }) {
     }
   }
 
+  async function handlePhotoUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file || !project?.id) return;
+
+    const formData = new FormData();
+    formData.append("photo", file);
+    formData.append("projectId", String(project.id));
+
+    try {
+      const res = await fetch(`${API_URL}/api/sitevisit/upload-photo`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || res.statusText || "Upload failed");
+      }
+      console.log("Upload success:", data);
+    } catch (err) {
+      console.error("Upload failed:", err);
+      alert(err.message || "Upload failed");
+    } finally {
+      if (siteVisitPhotoInputRef.current) {
+        siteVisitPhotoInputRef.current.value = "";
+      }
+    }
+  }
+
   return (
     <>
       <div>
@@ -584,11 +623,111 @@ export default function SiteVisit({ project, onUpdate }) {
               </div>
             </div>
 
-            {/* Column 4 - Empty */}
-            <div></div>
+            {/* Column 4 - Upload Photos */}
+            <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
+              <button
+                type="button"
+                onClick={() => setShowUploadPhotosModal(true)}
+                style={{
+                  background: MONUMENT,
+                  color: WHITE,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  transition: "background 0.17s",
+                  width: "100%",
+                  boxSizing: "border-box",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#252526";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = MONUMENT;
+                }}
+              >
+                Upload Photos
+              </button>
+            </div>
           </div>
         )}
       </div>
+
+      {/* Upload Photos (placeholder) */}
+      {showUploadPhotosModal && (
+        <div
+          role="presentation"
+          aria-hidden={false}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2000,
+            pointerEvents: "auto",
+            touchAction: "none",
+          }}
+          onClick={() => setShowUploadPhotosModal(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sitevisit-upload-photos-title"
+            style={{
+              background: SECTION_GREY,
+              borderRadius: "18px",
+              padding: "32px",
+              width: "90%",
+              maxWidth: "450px",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+              pointerEvents: "auto",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              id="sitevisit-upload-photos-title"
+              style={{
+                fontSize: "1.5rem",
+                fontWeight: 600,
+                marginTop: 0,
+                marginBottom: "24px",
+                color: MONUMENT,
+              }}
+            >
+              Upload Photos
+            </h2>
+            <input
+              ref={siteVisitPhotoInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handlePhotoUpload}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "20px" }}>
+              <button
+                type="button"
+                onClick={() => setShowUploadPhotosModal(false)}
+                style={{
+                  background: "#e0e0e0",
+                  color: MONUMENT,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  transition: "background 0.17s",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Booking Modal */}
       {showBookingModal && (

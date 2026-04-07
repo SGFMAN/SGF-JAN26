@@ -26,7 +26,7 @@ import ColoursPortal from "./pages/ColoursPortal";
 import ThreeDVisPortal from "./pages/ThreeDVisPortal";
 import EmailGenerator from "./pages/EmailGenerator";
 import Inbox from "./pages/Inbox";
-import FAQ from "./pages/FAQ";
+import BenBox from "./pages/BenBox";
 import AppModeBanner from "./components/AppModeBanner";
 import { EmailSendOverlayProvider } from "./components/EmailSendOverlay";
 import PortalProjects from "./pages/PortalProjects";
@@ -82,7 +82,8 @@ export default function App() {
             <Route path="/sales-analytics" element={<SalesAnalytics />} />
             <Route path="/email-generator" element={<EmailGenerator />} />
             <Route path="/inbox" element={<Inbox />} />
-            <Route path="/faq" element={<FAQ />} />
+            <Route path="/benbox" element={<BenBox />} />
+            <Route path="/faq" element={<Navigate to="/benbox" replace />} />
             <Route path="/approve-concept/:projectId" element={<ApproveConcept />} />
             <Route path="/colours-portal/:projectId" element={<ColoursPortal />} />
             <Route path="/3d-vis-portal/:projectId" element={<ThreeDVisPortal />} />

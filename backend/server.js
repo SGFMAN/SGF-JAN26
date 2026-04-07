@@ -375,6 +375,105 @@ app.get("/health", (req, res) => {
   res.json({ ok: true, db: !!pool });
 });
 
+// --- BenBox: list contents under a fixed root (default Z:\1.SGF PROJECT MANAGEMENT) ---
+function getBenBoxRoot() {
+  const raw = process.env.BENBOX_ROOT || path.join("Z:", "1.SGF PROJECT MANAGEMENT");
+  return path.resolve(raw);
+}
+
+function resolveBenBoxDir(relPath) {
+  const root = getBenBoxRoot();
+  const parts = String(relPath || "")
+    .replace(/^[\\/]+/, "")
+    .split(/[/\\]+/)
+    .filter((p) => p && p !== "." && p !== "..");
+  let target = root;
+  for (const p of parts) {
+    target = path.join(target, p);
+  }
+  target = path.resolve(target);
+  const rel = path.relative(root, target);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    const err = new Error("Path outside BenBox root");
+    err.code = "EPATH";
+    throw err;
+  }
+  return target;
+}
+
+app.get("/api/benbox/list", async (req, res) => {
+  try {
+    const rel = (req.query.path || "").toString();
+    const dir = resolveBenBoxDir(rel);
+    const root = getBenBoxRoot();
+    let st;
+    try {
+      st = await fs.stat(dir);
+    } catch (e) {
+      if (e.code === "ENOENT") {
+        return res.status(404).json({ error: "Folder not found", path: dir });
+      }
+      throw e;
+    }
+    if (!st.isDirectory()) {
+      return res.status(400).json({ error: "Not a folder", path: dir });
+    }
+    const names = await fs.readdir(dir);
+    const entries = await Promise.all(
+      names.map(async (name) => {
+        const full = path.join(dir, name);
+        try {
+          const s = await fs.stat(full);
+          const isDirectory = s.isDirectory();
+          const ext = path.extname(name);
+          const extClean = ext.replace(/^\./, "").toLowerCase();
+          return {
+            name,
+            isDirectory,
+            size: isDirectory ? null : s.size,
+            modified: s.mtime.toISOString(),
+            extension: isDirectory ? null : extClean || null,
+          };
+        } catch {
+          return null;
+        }
+      })
+    );
+    const list = entries.filter(Boolean);
+    list.sort((a, b) => {
+      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+    const currentRel = path.relative(root, dir);
+    const normalizedRel = currentRel ? currentRel.split(path.sep).join("/") : "";
+    let parentRel = null;
+    if (normalizedRel) {
+      const parentDir = path.dirname(dir);
+      const pr = path.relative(root, parentDir);
+      parentRel = pr ? pr.split(path.sep).join("/") : "";
+    }
+    res.json({
+      root,
+      path: normalizedRel,
+      parentPath: parentRel,
+      entries: list.map((e) => ({
+        name: e.name,
+        isDirectory: e.isDirectory,
+        size: e.size,
+        modified: e.modified,
+        extension: e.extension,
+        typeLabel: e.isDirectory ? "File folder" : e.extension ? `${e.extension.toUpperCase()} file` : "File",
+      })),
+    });
+  } catch (e) {
+    if (e.code === "EPATH") {
+      return res.status(403).json({ error: e.message });
+    }
+    console.error("GET /api/benbox/list:", e);
+    res.status(500).json({ error: e.message || "Failed to list folder" });
+  }
+});
+
 // --- Pricing catalog (Excel: column E = product, column N = price) ---
 const PRICING_COL_PRODUCT = 4; // E
 const PRICING_COL_PRICE = 13; // N
@@ -4889,6 +4988,152 @@ function getProjectYearFolderSegment(yearValue) {
   if (anyYear) return anyYear[0];
   return String(new Date().getFullYear());
 }
+
+const fsSync = require("fs");
+const siteVisitUploadTempDir = path.join(__dirname, "temp-sitevisit-uploads");
+const siteVisitPhotoUpload = multer({
+  storage: multer.diskStorage({
+    destination(req, file, cb) {
+      try {
+        fsSync.mkdirSync(siteVisitUploadTempDir, { recursive: true });
+      } catch (e) {
+        return cb(e);
+      }
+      cb(null, siteVisitUploadTempDir);
+    },
+    filename(req, file, cb) {
+      const ext = path.extname(file.originalname || "") || "";
+      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 30 * 1024 * 1024 },
+});
+
+app.post("/api/sitevisit/upload-photo", siteVisitPhotoUpload.single("photo"), async (req, res) => {
+  if (!pool) {
+    return res.status(500).json({ error: "Database not configured" });
+  }
+  const cleanupTemp = async () => {
+    if (req.file?.path) {
+      try {
+        await fs.unlink(req.file.path);
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+    const projectId = req.body?.projectId;
+    if (!projectId) {
+      await cleanupTemp();
+      return res.status(400).json({ error: "Missing projectId" });
+    }
+    const mime = (req.file.mimetype || "").toLowerCase();
+    if (!mime.startsWith("image/")) {
+      await cleanupTemp();
+      return res.status(400).json({ error: "Only image files are allowed" });
+    }
+
+    const projectResult = await pool.query(
+      "SELECT suburb, street, state, year FROM projects WHERE id = $1",
+      [projectId]
+    );
+    if (projectResult.rows.length === 0) {
+      await cleanupTemp();
+      return res.status(404).json({ error: "Project not found" });
+    }
+    const proj = projectResult.rows[0];
+    const stateUpper = (proj.state || "").toString().toUpperCase();
+    if (!stateUpper) {
+      await cleanupTemp();
+      return res.status(400).json({ error: "Project state is required" });
+    }
+
+    const settingsResult = await pool.query(
+      "SELECT root_directory, root_directory_qld FROM settings WHERE id = 1"
+    );
+    const settingsRow = settingsResult.rows[0];
+    const rootDir =
+      stateUpper === "QLD"
+        ? settingsRow?.root_directory_qld || settingsRow?.root_directory
+        : settingsRow?.root_directory;
+    if (!rootDir) {
+      await cleanupTemp();
+      return res.status(500).json({ error: "Root directory not configured in settings" });
+    }
+
+    const projectYear = getProjectYearFolderSegment(proj.year);
+    const suburbUpper = (proj.suburb || "").toString().toUpperCase();
+    const street = (proj.street || "").toString();
+    const projectFolderName = `${suburbUpper} - ${street}`.replace(/[<>:"/\\|?*]/g, "_");
+
+    const photosDir = path.join(
+      rootDir,
+      projectYear,
+      stateUpper,
+      projectFolderName,
+      "5. PHOTOS",
+      "Pre-Construction -Site Photos"
+    );
+    const photosDirNorm = path.resolve(photosDir);
+    let stDir;
+    try {
+      stDir = await fs.stat(photosDirNorm);
+    } catch {
+      await cleanupTemp();
+      return res.status(400).json({ error: "Target photo folder does not exist" });
+    }
+    if (!stDir.isDirectory()) {
+      await cleanupTemp();
+      return res.status(400).json({ error: "Target photo folder does not exist" });
+    }
+
+    const safeName = path.basename(req.file.originalname || "photo");
+    if (!safeName || safeName === "." || safeName === "..") {
+      await cleanupTemp();
+      return res.status(400).json({ error: "Invalid file name" });
+    }
+    const finalPath = path.join(photosDirNorm, safeName);
+    try {
+      await fs.access(finalPath);
+      await cleanupTemp();
+      return res.status(409).json({ error: "A file with that name already exists" });
+    } catch {
+      /* target name is free */
+    }
+
+    try {
+      await fs.rename(req.file.path, finalPath);
+    } catch (e) {
+      if (e.code === "EXDEV") {
+        try {
+          await fs.copyFile(req.file.path, finalPath);
+          await fs.unlink(req.file.path);
+        } catch (e2) {
+          await cleanupTemp();
+          console.error("sitevisit upload-photo copy:", e2);
+          return res.status(500).json({ error: "Upload failed" });
+        }
+      } else {
+        await cleanupTemp();
+        if (e.code === "EEXIST") {
+          return res.status(409).json({ error: "A file with that name already exists" });
+        }
+        console.error("sitevisit upload-photo rename:", e);
+        return res.status(500).json({ error: "Upload failed" });
+      }
+    }
+
+    res.json({ success: true, path: finalPath });
+  } catch (err) {
+    await cleanupTemp();
+    console.error("POST /api/sitevisit/upload-photo:", err);
+    res.status(500).json({ error: "Upload failed" });
+  }
+});
 
 const VARIATIONS_CONTRACT_ADMIN_FOLDER =
   "3. CONTRACT ADMIN - Quotations, Contract, E-Contracts,Variations";
