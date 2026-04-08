@@ -63,7 +63,9 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
   const [showDraftspersonRequiredModal, setShowDraftspersonRequiredModal] = useState(false);
   const [pendingPdfFile, setPendingPdfFile] = useState(null);
   const [draftspersonModalChoice, setDraftspersonModalChoice] = useState("");
-  
+  /** When a new PDF is uploaded, user must pick concept vs working before Save and Send ("", "concept", "working"). */
+  const [newDrawingUploadKind, setNewDrawingUploadKind] = useState("");
+
   const valuesRef = useRef({ drawingsStatus, draftsperson });
   
   useEffect(() => {
@@ -825,6 +827,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
       });
       setNotesText("");
       setMarkupFile(null);
+      setNewDrawingUploadKind("");
       setShowNotesModal(true);
     } catch (error) {
       console.error("Error saving drawings path:", error);
@@ -995,7 +998,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
           window_ordered_date: project?.window_ordered_date || null,
           window_order_pdf_location: project?.window_order_pdf_location || null,
           window_order_number: project?.window_order_number || null,
-          drawings_status: project?.drawings_status || null,
+          drawings_status: valuesRef.current.drawingsStatus || project?.drawings_status || null,
           drawings_pdf_location: project?.drawings_pdf_location || null,
           drawings_history: JSON.stringify(drawingsHistory),
           drawings_viewed_date: project?.drawings_viewed_date || null,
@@ -1133,6 +1136,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
     });
     setNotesText(currentNotes);
     setMarkupFile(null);
+    setNewDrawingUploadKind("");
     setShowNotesModal(true);
   }
 
@@ -1277,6 +1281,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
     setShowNotesModal(false);
     setNotesForRevision(null);
     setNotesText("");
+    setNewDrawingUploadKind("");
   }
 
   /**
@@ -1573,8 +1578,20 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
     if (notesForRevision?.isNewDrawing) {
       if (isSendingDraftingEmail) return;
 
+      if (!newDrawingUploadKind) {
+        alert("Please select whether these drawings are concept drawings or working drawings.");
+        return;
+      }
+
+      const nextDrawingsStatus =
+        newDrawingUploadKind === "concept" ? "Concept Stage" : "Working Drawing Stage";
+
       setIsSendingDraftingEmail(true);
       try {
+        setDrawingsStatus(nextDrawingsStatus);
+        valuesRef.current.drawingsStatus = nextDrawingsStatus;
+        await saveField("drawings_status", nextDrawingsStatus);
+
         await runWithEmailOverlay(async () => {
           // If this is a new drawing or current revision, save notes first
           if (notesForRevision && (notesForRevision.isNewDrawing || notesForRevision.isCurrentRevision)) {
@@ -2071,6 +2088,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
       setNotesForRevision(null);
       setNotesText("");
       setMarkupFile(null);
+      setNewDrawingUploadKind("");
     } catch (error) {
       console.error("Error sending drawings email:", error);
       alert(`Failed to send drawings email: ${error.message}`);
@@ -2082,6 +2100,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
     setNotesForRevision(null);
     setNotesText("");
     setMarkupFile(null);
+    setNewDrawingUploadKind("");
     setIsDraggingMarkup(false);
     setIsSendingDraftingEmail(false);
   }
@@ -2382,7 +2401,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
           window_ordered_date: project?.window_ordered_date || null,
           window_order_pdf_location: project?.window_order_pdf_location || null,
           window_order_number: project?.window_order_number || null,
-          drawings_status: project?.drawings_status || null,
+          drawings_status: valuesRef.current.drawingsStatus || project?.drawings_status || null,
           drawings_pdf_location: project?.drawings_pdf_location || null,
           drawings_history: JSON.stringify(drawingsHistory),
           drawings_viewed_date: project?.drawings_viewed_date || null,
@@ -3395,6 +3414,61 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
               Drafting Notes for {notesForRevision.name}
               {notesForRevision.revision !== null ? ` - Rev ${notesForRevision.revision}` : " (Initial)"}
             </h3>
+            {notesForRevision.isNewDrawing && (
+              <div style={{ marginBottom: "16px" }}>
+                <div
+                  style={{
+                    fontSize: "0.9rem",
+                    color: MONUMENT,
+                    marginBottom: "8px",
+                    fontWeight: 600,
+                  }}
+                >
+                  These drawings are
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      cursor: "pointer",
+                      fontSize: "0.9rem",
+                      color: MONUMENT,
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="newDrawingUploadKind"
+                      checked={newDrawingUploadKind === "concept"}
+                      onChange={() => setNewDrawingUploadKind("concept")}
+                    />
+                    Concept drawings
+                  </label>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      cursor: "pointer",
+                      fontSize: "0.9rem",
+                      color: MONUMENT,
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="newDrawingUploadKind"
+                      checked={newDrawingUploadKind === "working"}
+                      onChange={() => setNewDrawingUploadKind("working")}
+                    />
+                    Working drawings
+                  </label>
+                </div>
+                <div style={{ fontSize: "0.8rem", color: "#32323399", marginTop: "8px" }}>
+                  Required — status is set to Concept Stage or Working Drawing Stage for this upload.
+                </div>
+              </div>
+            )}
             <textarea
               value={notesText}
               onChange={(e) => setNotesText(e.target.value)}
@@ -3478,20 +3552,48 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
                 <>
                   <button
                     onClick={handleSendDrawingsWithNotes}
-                    disabled={notesForRevision.isNewDrawing && isSendingDraftingEmail}
+                    disabled={
+                      notesForRevision.isNewDrawing &&
+                      (!newDrawingUploadKind || isSendingDraftingEmail)
+                    }
                     style={{
-                      background: (notesForRevision.isNewDrawing && isSendingDraftingEmail) ? "#b9d5f0" : "#4D93D9",
+                      background:
+                        notesForRevision.isNewDrawing &&
+                        (!newDrawingUploadKind || isSendingDraftingEmail)
+                          ? "#b9d5f0"
+                          : "#4D93D9",
                       color: WHITE,
                       border: "none",
                       borderRadius: "8px",
                       padding: "10px 20px",
                       fontSize: "0.9rem",
                       fontWeight: 500,
-                      cursor: (notesForRevision.isNewDrawing && isSendingDraftingEmail) ? "not-allowed" : "pointer",
+                      cursor:
+                        notesForRevision.isNewDrawing &&
+                        (!newDrawingUploadKind || isSendingDraftingEmail)
+                          ? "not-allowed"
+                          : "pointer",
                       transition: "background 0.2s",
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "#3d7bc9")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "#4D93D9")}
+                    onMouseEnter={(e) => {
+                      if (
+                        notesForRevision.isNewDrawing &&
+                        (!newDrawingUploadKind || isSendingDraftingEmail)
+                      ) {
+                        return;
+                      }
+                      e.currentTarget.style.background = "#3d7bc9";
+                    }}
+                    onMouseLeave={(e) => {
+                      if (
+                        notesForRevision.isNewDrawing &&
+                        (!newDrawingUploadKind || isSendingDraftingEmail)
+                      ) {
+                        e.currentTarget.style.background = "#b9d5f0";
+                        return;
+                      }
+                      e.currentTarget.style.background = "#4D93D9";
+                    }}
                   >
                     {notesForRevision.isNewDrawing ? "Save and Send Drawings" : "Update Notes"}
                   </button>
@@ -3506,11 +3608,17 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
                       padding: "10px 20px",
                       fontSize: "0.9rem",
                       fontWeight: 500,
-                      cursor: (notesForRevision.isNewDrawing && isSendingDraftingEmail) ? "not-allowed" : "pointer",
+                      cursor: notesForRevision.isNewDrawing && isSendingDraftingEmail ? "not-allowed" : "pointer",
                       transition: "background 0.2s",
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "#8a8a8c")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = SECTION_GREY)}
+                    onMouseEnter={(e) => {
+                      if (notesForRevision.isNewDrawing && isSendingDraftingEmail) return;
+                      e.currentTarget.style.background = "#8a8a8c";
+                    }}
+                    onMouseLeave={(e) => {
+                      if (notesForRevision.isNewDrawing && isSendingDraftingEmail) return;
+                      e.currentTarget.style.background = SECTION_GREY;
+                    }}
                   >
                     Cancel
                   </button>
