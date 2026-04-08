@@ -9,6 +9,66 @@ function siteVisitPhotoSrc(projectId, fileName) {
   return `${API_URL}/api/sitevisit/photo-file?projectId=${encodeURIComponent(String(projectId))}&name=${encodeURIComponent(fileName)}`;
 }
 
+/**
+ * One file per request (reliable on mobile). Upload progress via xhr.upload.
+ */
+function uploadSiteVisitPhotoXHR(projectId, file, onProgress, xhrHolder) {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    if (xhrHolder) xhrHolder.current = xhr;
+    const formData = new FormData();
+    formData.append("projectId", String(projectId));
+    formData.append("photos", file);
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    });
+    xhr.open("POST", `${API_URL}/api/sitevisit/upload-photo`);
+    xhr.onload = () => {
+      if (xhrHolder) xhrHolder.current = null;
+      let data = {};
+      try {
+        data = JSON.parse(xhr.responseText || "{}");
+      } catch {
+        /* ignore */
+      }
+      const failed = data.failed || [];
+      const uploaded = data.uploaded || [];
+      if (xhr.status >= 200 && xhr.status < 300) {
+        if (failed.length) {
+          resolve({
+            ok: false,
+            error: failed[0].error || "Upload failed",
+          });
+        } else if (uploaded.length) {
+          resolve({ ok: true });
+        } else {
+          resolve({ ok: false, error: data.error || "Upload failed" });
+        }
+      } else {
+        const hint =
+          xhr.status === 413
+            ? "File too large (max 30MB per photo)."
+            : null;
+        resolve({
+          ok: false,
+          error: data.error || hint || xhr.statusText || "Upload failed",
+        });
+      }
+    };
+    xhr.onerror = () => {
+      if (xhrHolder) xhrHolder.current = null;
+      resolve({ ok: false, error: "Network error" });
+    };
+    xhr.onabort = () => {
+      if (xhrHolder) xhrHolder.current = null;
+      resolve({ ok: false, error: "Cancelled", cancelled: true });
+    };
+    xhr.send(formData);
+  });
+}
+
 const TIME_SLOTS = [
   "7am - 9am",
   "8am - 10am",
@@ -46,6 +106,11 @@ export default function SiteVisit({ project, onUpdate }) {
   const isInitialMount = useRef(true);
   const lastSavedNotes = useRef(project?.site_visit_notes || "");
   const siteVisitPhotoInputRef = useRef(null);
+  const siteVisitUploadXhrRef = useRef(null);
+
+  /** Sequential upload UI: per-file status + progress */
+  const [uploadSession, setUploadSession] = useState(null);
+  /** { items: Array<{ name: string, status: 'queued'|'uploading'|'done'|'error', progress: number, error?: string }> } */
 
   useEffect(() => {
     const anyOverlayOpen = showUploadPhotosModal || photoViewerIndex !== null;
@@ -406,59 +471,100 @@ export default function SiteVisit({ project, onUpdate }) {
     }
   }
 
+  function closeUploadPhotosModal() {
+    siteVisitUploadXhrRef.current?.abort();
+    setUploadSession(null);
+    setShowUploadPhotosModal(false);
+    if (siteVisitPhotoInputRef.current) {
+      siteVisitPhotoInputRef.current.value = "";
+    }
+  }
+
   async function handlePhotoUpload(e) {
     const files = Array.from(e.target.files || []);
     if (!files.length || !project?.id) return;
 
-    const formData = new FormData();
-    // projectId first — some mobile browsers (Safari/iOS) parse multipart fields more reliably.
-    formData.append("projectId", String(project.id));
-    for (const file of files) {
-      formData.append("photos", file);
+    const MAX_BATCH = 40;
+    if (files.length > MAX_BATCH) {
+      alert(`Maximum ${MAX_BATCH} photos per batch.`);
+      e.target.value = "";
+      return;
+    }
+    e.target.value = "";
+
+    const items = files.map((f) => ({
+      name: f.name || "Photo",
+      status: "queued",
+      progress: 0,
+    }));
+    setUploadSession({ items });
+
+    const projectId = project.id;
+    let anySuccess = false;
+    let aborted = false;
+
+    for (let i = 0; i < files.length; i++) {
+      setUploadSession((prev) => {
+        if (!prev) return prev;
+        const next = [...prev.items];
+        next[i] = { ...next[i], status: "uploading", progress: 0 };
+        return { items: next };
+      });
+
+      const result = await uploadSiteVisitPhotoXHR(
+        projectId,
+        files[i],
+        (pct) => {
+          setUploadSession((prev) => {
+            if (!prev) return prev;
+            const next = [...prev.items];
+            if (next[i]?.status !== "uploading") return prev;
+            next[i] = { ...next[i], progress: pct };
+            return { items: next };
+          });
+        },
+        siteVisitUploadXhrRef
+      );
+
+      if (result.ok) {
+        anySuccess = true;
+        setUploadSession((prev) => {
+          if (!prev) return prev;
+          const next = [...prev.items];
+          next[i] = { ...next[i], status: "done", progress: 100 };
+          return { items: next };
+        });
+      } else if (result.cancelled || result.error === "Cancelled") {
+        aborted = true;
+        setUploadSession((prev) => {
+          if (!prev) return prev;
+          const next = prev.items.map((row, j) => {
+            if (j < i) return row;
+            if (j === i) return { ...row, status: "error", error: "Cancelled" };
+            if (row.status === "queued" || row.status === "uploading") {
+              return { ...row, status: "error", error: "Cancelled" };
+            }
+            return row;
+          });
+          return { items: next };
+        });
+        break;
+      } else {
+        setUploadSession((prev) => {
+          if (!prev) return prev;
+          const next = [...prev.items];
+          next[i] = {
+            ...next[i],
+            status: "error",
+            error: result.error || "Upload failed",
+          };
+          return { items: next };
+        });
+      }
     }
 
-    try {
-      const res = await fetch(`${API_URL}/api/sitevisit/upload-photo`, {
-        method: "POST",
-        body: formData,
-      });
-      const data = await res.json().catch(() => ({}));
-      const failed = data.failed || [];
-      const uploaded = data.uploaded || [];
-      if (!res.ok) {
-        if (failed.length) {
-          alert(failed.map((f) => `${f.name}: ${f.error}`).join("\n"));
-        } else {
-          const hint =
-            res.status === 413
-              ? "File too large for the server (try a smaller photo or one at a time)."
-              : res.status === 502 || res.status === 503
-                ? "Server unavailable; try again in a moment."
-                : null;
-          throw new Error(
-            data.error || hint || res.statusText || "Upload failed"
-          );
-        }
-        return;
-      }
-      if (failed.length) {
-        const detail = failed.map((f) => `${f.name}: ${f.error}`).join("\n");
-        alert(
-          uploaded.length
-            ? `Uploaded ${uploaded.length} file(s). Some failed:\n\n${detail}`
-            : detail
-        );
-      }
-      if (res.ok) {
-        refreshSiteVisitPhotos();
-      }
-    } catch (err) {
-      console.error("Upload failed:", err);
-      alert(err.message || "Upload failed");
-    } finally {
-      if (siteVisitPhotoInputRef.current) {
-        siteVisitPhotoInputRef.current.value = "";
-      }
+    if (anySuccess) {
+      refreshSiteVisitPhotos();
     }
   }
 
@@ -736,7 +842,10 @@ export default function SiteVisit({ project, onUpdate }) {
             >
               <button
                 type="button"
-                onClick={() => setShowUploadPhotosModal(true)}
+                onClick={() => {
+                  setUploadSession(null);
+                  setShowUploadPhotosModal(true);
+                }}
                 style={{
                   background: MONUMENT,
                   color: WHITE,
@@ -886,7 +995,7 @@ export default function SiteVisit({ project, onUpdate }) {
             pointerEvents: "auto",
             touchAction: "none",
           }}
-          onClick={() => setShowUploadPhotosModal(false)}
+          onClick={closeUploadPhotosModal}
         >
           <div
             role="dialog"
@@ -897,7 +1006,9 @@ export default function SiteVisit({ project, onUpdate }) {
               borderRadius: "18px",
               padding: "32px",
               width: "90%",
-              maxWidth: "450px",
+              maxWidth: "480px",
+              maxHeight: "90vh",
+              overflowY: "auto",
               boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
               pointerEvents: "auto",
             }}
@@ -920,12 +1031,107 @@ export default function SiteVisit({ project, onUpdate }) {
               type="file"
               accept="image/*"
               multiple
+              disabled={
+                !!uploadSession &&
+                uploadSession.items.some(
+                  (row) => row.status === "queued" || row.status === "uploading"
+                )
+              }
               onChange={handlePhotoUpload}
             />
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "20px" }}>
+            {uploadSession && uploadSession.items.length > 0 && (
+              <div
+                role="status"
+                aria-live="polite"
+                style={{
+                  marginTop: "20px",
+                  paddingTop: "16px",
+                  borderTop: `1px solid ${SECTION_GREY}`,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "0.9rem",
+                    color: "#32323399",
+                    marginBottom: "12px",
+                    fontWeight: 600,
+                  }}
+                >
+                  Upload queue
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                  {uploadSession.items.map((row, idx) => (
+                    <div key={`${row.name}-${idx}`}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                          gap: "10px",
+                          fontSize: "0.875rem",
+                          color: MONUMENT,
+                        }}
+                      >
+                        <span
+                          style={{
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            minWidth: 0,
+                            flex: 1,
+                          }}
+                          title={row.name}
+                        >
+                          {row.name}
+                        </span>
+                        <span
+                          style={{
+                            flexShrink: 0,
+                            color:
+                              row.status === "error"
+                                ? "#c62828"
+                                : row.status === "done"
+                                  ? "#2e7d32"
+                                  : "#32323399",
+                            fontWeight: 500,
+                          }}
+                        >
+                          {row.status === "queued" && "Waiting…"}
+                          {row.status === "uploading" && `Uploading ${row.progress}%`}
+                          {row.status === "done" && "Done"}
+                          {row.status === "error" && (row.error || "Failed")}
+                        </span>
+                      </div>
+                      {row.status === "uploading" && (
+                        <div
+                          style={{
+                            height: "8px",
+                            background: "rgba(255,255,255,0.6)",
+                            borderRadius: "4px",
+                            marginTop: "8px",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${row.progress}%`,
+                              height: "100%",
+                              background: MONUMENT,
+                              borderRadius: "4px",
+                              transition: "width 0.12s ease-out",
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "24px" }}>
               <button
                 type="button"
-                onClick={() => setShowUploadPhotosModal(false)}
+                onClick={closeUploadPhotosModal}
                 style={{
                   background: "#e0e0e0",
                   color: MONUMENT,
@@ -938,7 +1144,7 @@ export default function SiteVisit({ project, onUpdate }) {
                   transition: "background 0.17s",
                 }}
               >
-                Cancel
+                Close
               </button>
             </div>
           </div>
