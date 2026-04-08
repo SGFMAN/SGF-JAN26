@@ -411,10 +411,11 @@ export default function SiteVisit({ project, onUpdate }) {
     if (!files.length || !project?.id) return;
 
     const formData = new FormData();
+    // projectId first — some mobile browsers (Safari/iOS) parse multipart fields more reliably.
+    formData.append("projectId", String(project.id));
     for (const file of files) {
       formData.append("photos", file);
     }
-    formData.append("projectId", String(project.id));
 
     try {
       const res = await fetch(`${API_URL}/api/sitevisit/upload-photo`, {
@@ -428,7 +429,15 @@ export default function SiteVisit({ project, onUpdate }) {
         if (failed.length) {
           alert(failed.map((f) => `${f.name}: ${f.error}`).join("\n"));
         } else {
-          throw new Error(data.error || res.statusText || "Upload failed");
+          const hint =
+            res.status === 413
+              ? "File too large for the server (try a smaller photo or one at a time)."
+              : res.status === 502 || res.status === 503
+                ? "Server unavailable; try again in a moment."
+                : null;
+          throw new Error(
+            data.error || hint || res.statusText || "Upload failed"
+          );
         }
         return;
       }

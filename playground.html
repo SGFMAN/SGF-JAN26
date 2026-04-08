@@ -3,48 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Playground</title>
+    <title>Projects with Contract Signed</title>
     <style>
         body {
             margin: 0;
             padding: 0;
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: flex-start;
             min-height: 100vh;
-            background: #fff;
+            background: #f0f0f0;
             font-family: Arial, sans-serif;
         }
-        .triangle-container {
-            position: relative;
+        .project-container {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
             width: 300px;
-            height: 300px;
         }
-        .triangle {
-            width: 0;
-            height: 0;
-            border-left: 150px solid transparent;
-            border-right: 150px solid transparent;
-            border-bottom: 260px solid red;
-            position: relative;
-        }
-        .text {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: white;
+        .project-container h1 {
+            margin: 0 0 20px;
             font-size: 24px;
-            font-weight: bold;
             text-align: center;
-            z-index: 1;
+        }
+        .project-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .project-list li {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        .project-list li:last-child {
+            border-bottom: none;
         }
     </style>
 </head>
 <body>
-    <div class="triangle-container">
-        <div class="triangle"></div>
-        <div class="text">Playground</div>
+    <div class="project-container">
+        <h1>Projects with Contract Signed</h1>
+        <ul class="project-list">
+            <li>Project A</li>
+            <li>Project B</li>
+            <li>Project C</li>
+            <li>Project D</li>
+        </ul>
     </div>
 </body>
 </html>

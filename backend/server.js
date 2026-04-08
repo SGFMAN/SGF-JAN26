@@ -5031,6 +5031,26 @@ function resolveSiteVisitPhotoFilePath(photosDirNorm, name) {
   return full;
 }
 
+/** Safari/iOS often sends HEIC (or octet-stream) without a reliable image/* mimetype. */
+function isSiteVisitUploadImageFile(file) {
+  const mime = (file.mimetype || "").toLowerCase();
+  if (mime.startsWith("image/")) return true;
+  const ext = path.extname(file.originalname || "").toLowerCase();
+  const allowedExt = new Set([
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".webp",
+    ".bmp",
+    ".heic",
+    ".heif",
+    ".tif",
+    ".tiff",
+  ]);
+  return allowedExt.has(ext);
+}
+
 async function resolveSiteVisitPreConstructionPhotosDir(projectId) {
   if (!pool) {
     return { ok: false, status: 500, error: "Database not configured" };
@@ -5115,12 +5135,37 @@ const siteVisitPhotoUpload = multer({
       cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${ext}`);
     },
   }),
-  limits: { fileSize: 30 * 1024 * 1024 },
+  limits: { fileSize: 30 * 1024 * 1024, files: 40 },
 });
+
+function siteVisitPhotoUploadMiddleware(req, res, next) {
+  siteVisitPhotoUpload.array("photos", 40)(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({ error: "File too large (max 30MB per photo)" });
+      }
+      if (err.code === "LIMIT_FILE_COUNT") {
+        return res.status(400).json({ error: "Too many files (max 40 per upload)" });
+      }
+      if (err.code === "LIMIT_PART_COUNT") {
+        return res.status(400).json({
+          error: "Upload has too many parts; try fewer photos at once",
+        });
+      }
+      if (err.code === "LIMIT_UNEXPECTED_FILE") {
+        return res.status(400).json({ error: "Unexpected upload field" });
+      }
+      return res.status(400).json({ error: err.message || "Upload error" });
+    }
+    console.error("sitevisit upload multipart:", err);
+    return res.status(500).json({ error: "Upload failed" });
+  });
+}
 
 app.post(
   "/api/sitevisit/upload-photo",
-  siteVisitPhotoUpload.array("photos", 40),
+  siteVisitPhotoUploadMiddleware,
   async (req, res) => {
     if (!pool) {
       return res.status(500).json({ error: "Database not configured" });
@@ -5161,8 +5206,7 @@ app.post(
 
       for (const file of files) {
         const displayName = file.originalname || "photo";
-        const mime = (file.mimetype || "").toLowerCase();
-        if (!mime.startsWith("image/")) {
+        if (!isSiteVisitUploadImageFile(file)) {
           await unlinkTemp(file.path);
           failed.push({ name: displayName, error: "Only image files are allowed" });
           continue;
