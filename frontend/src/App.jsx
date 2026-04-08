@@ -30,7 +30,6 @@ import BenBox from "./pages/BenBox";
 import AppModeBanner from "./components/AppModeBanner";
 import { EmailSendOverlayProvider } from "./components/EmailSendOverlay";
 import PortalProjects from "./pages/PortalProjects";
-import PortalProjectDetail from "./pages/PortalProjectDetail";
 
 export default function App() {
   const isCloudflarePublicHost =
@@ -47,7 +46,7 @@ export default function App() {
           <>
             {/* Public portal-only mode when accessed via Cloudflare tunnel */}
             <Route path="/portal" element={<PortalProjects />} />
-            <Route path="/portal/projects/:id" element={<PortalProjectDetail />} />
+            <Route path="/portal/projects/:id" element={<ProjectPage />} />
             <Route path="/approve-concept/:projectId" element={<ApproveConcept />} />
             <Route path="/colours-portal/:projectId" element={<ColoursPortal />} />
             <Route path="/3d-vis-portal/:projectId" element={<ThreeDVisPortal />} />
@@ -88,7 +87,7 @@ export default function App() {
             <Route path="/colours-portal/:projectId" element={<ColoursPortal />} />
             <Route path="/3d-vis-portal/:projectId" element={<ThreeDVisPortal />} />
             <Route path="/portal" element={<PortalProjects />} />
-            <Route path="/portal/projects/:id" element={<PortalProjectDetail />} />
+            <Route path="/portal/projects/:id" element={<ProjectPage />} />
           </>
         )}
       </Routes>

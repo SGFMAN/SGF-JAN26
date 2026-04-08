@@ -17,7 +17,7 @@ function escapeHtmlForEmail(text) {
   return div.innerHTML;
 }
 
-export default function Drawings({ project, onUpdate }) {
+export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const [drawingsStatus, setDrawingsStatus] = useState(project?.drawings_status || "Not Assigned");
   const [draftsperson, setDraftsperson] = useState(project?.draftsperson ? String(project.draftsperson) : "");
@@ -4243,7 +4243,12 @@ export default function Drawings({ project, onUpdate }) {
 
             <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
               <iframe
-                src={`${API_URL}/api/files/drawings/${project.id}?t=${new Date().getTime()}`}
+                src={(() => {
+                  const base =
+                    drawingsPdfSrcOverride || `${API_URL}/api/files/drawings/${project.id}`;
+                  const sep = base.includes("?") ? "&" : "?";
+                  return `${base}${sep}t=${new Date().getTime()}`;
+                })()}
                 style={{
                   width: "100%",
                   flex: 1,

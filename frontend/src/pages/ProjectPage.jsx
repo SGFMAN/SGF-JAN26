@@ -54,6 +54,8 @@ export default function ProjectPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  /** Client portal project URL: same full UI as internal /project/:id, but read-only and portal API */
+  const isPortalProjectPath = /^\/portal\/projects\/[^/]+$/.test(location.pathname);
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -72,7 +74,7 @@ export default function ProjectPage() {
     }
     checkAdminStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, location.pathname]);
 
   async function checkAdminStatus() {
     const admin = await isUserAdmin();
@@ -85,12 +87,16 @@ export default function ProjectPage() {
     const viewParam = urlParams.get('view');
     const allKeys = [...MENU_OPTIONS, ...CONSTRUCTION_MENU_OPTIONS];
     if (viewParam && allKeys.some((opt) => opt.key === viewParam)) {
-      setActiveView(viewParam);
+      if (isPortalProjectPath && viewParam === "admin") {
+        setActiveView("overview");
+      } else {
+        setActiveView(viewParam);
+      }
     } else if (!viewParam) {
       // If no view parameter, default to overview
       setActiveView("overview");
     }
-  }, [id, location.search]);
+  }, [id, location.search, isPortalProjectPath]);
 
   // Set default menu view for Construction Phase projects
   useEffect(() => {
@@ -102,6 +108,10 @@ export default function ProjectPage() {
   }, [project]);
 
   async function fetchAllProjects() {
+    if (isPortalProjectPath) {
+      setAllProjects([]);
+      return;
+    }
     try {
       const response = await fetch(`${API_URL}/api/projects`);
       if (!response.ok) {
@@ -143,7 +153,9 @@ export default function ProjectPage() {
         setLoading(true);
       }
       setError(null);
-      const url = `${API_URL}/api/projects/${id}`;
+      const url = isPortalProjectPath
+        ? `${API_URL}/api/portal/projects/${id}/full`
+        : `${API_URL}/api/projects/${id}`;
       console.log("Fetching project from:", url);
       const response = await fetch(url);
       console.log("Response status:", response.status);
@@ -186,6 +198,46 @@ export default function ProjectPage() {
       }, 300);
     }
   }
+
+  useEffect(() => {
+    if (!isPortalProjectPath) return undefined;
+    const origFetch = window.fetch.bind(window);
+    window.fetch = (input, init = {}) => {
+      const method = (init.method || "GET").toUpperCase();
+      let urlStr = "";
+      if (typeof input === "string") {
+        urlStr = input;
+      } else if (input && typeof input.url === "string") {
+        urlStr = input.url;
+      }
+      let pathAndSearch = urlStr;
+      if (urlStr.startsWith("http://") || urlStr.startsWith("https://")) {
+        try {
+          const u = new URL(urlStr);
+          pathAndSearch = u.pathname + u.search;
+        } catch {
+          /* keep */
+        }
+      }
+      const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+      if (
+        isMutation &&
+        pathAndSearch.startsWith("/api/") &&
+        !pathAndSearch.startsWith("/api/portal/")
+      ) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: "Read-only in client portal" }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      return origFetch(input, init);
+    };
+    return () => {
+      window.fetch = origFetch;
+    };
+  }, [isPortalProjectPath]);
 
   async function handleDeleteProject() {
     if (!id) return;
@@ -234,7 +286,7 @@ export default function ProjectPage() {
           boxSizing: "border-box",
         }}
       >
-        <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
+        <Link to={isPortalProjectPath ? "/portal" : "/projects"} style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
           <img
             src={logo}
             alt="SGF Logo"
@@ -259,7 +311,8 @@ export default function ProjectPage() {
                   <button
                     onClick={() => {
                       if (previousProject) {
-                        navigate(`/project/${previousProject.id}?view=${activeView}`, { replace: true });
+                        const base = isPortalProjectPath ? "/portal/projects" : "/project";
+                        navigate(`${base}/${previousProject.id}?view=${activeView}`, { replace: true });
                       }
                     }}
                     style={{
@@ -297,7 +350,8 @@ export default function ProjectPage() {
                   <button
                     onClick={() => {
                       if (nextProject) {
-                        navigate(`/project/${nextProject.id}?view=${activeView}`, { replace: true });
+                        const base = isPortalProjectPath ? "/portal/projects" : "/project";
+                        navigate(`${base}/${nextProject.id}?view=${activeView}`, { replace: true });
                       }
                     }}
                     style={{
@@ -447,7 +501,9 @@ export default function ProjectPage() {
           {(project && project.status === "Construction Phase" && showProjectMenu
             ? CONSTRUCTION_MENU_OPTIONS
             : MENU_OPTIONS
-          ).filter((item) => !item.hidden).map((item) => {
+          )
+            .filter((item) => !item.hidden && !(isPortalProjectPath && item.key === "admin"))
+            .map((item) => {
             return (
               <button
                 key={item.key}
@@ -481,7 +537,7 @@ export default function ProjectPage() {
           })}
           <div style={{ flex: 1 }} />
           <Link
-            to="/projects"
+            to={isPortalProjectPath ? "/portal" : "/projects"}
             style={{
               background: WHITE,
               color: MONUMENT,
@@ -531,16 +587,36 @@ export default function ProjectPage() {
           {!loading && !error && project && (
             <>
               {activeView === "overview" && <Overview project={project} />}
-              {activeView === "project-info" && <ProjectInfo project={project} onUpdate={updateProject} />}
-              {activeView === "client-info" && <ClientInfo project={project} onUpdate={updateProject} />}
-              {activeView === "robes" && <Robes project={project} onUpdate={updateProject} />}
-              {activeView === "drawings" && <Drawings project={project} onUpdate={updateProject} />}
-              {activeView === "colours" && <Colours project={project} onUpdate={updateProject} />}
-              {activeView === "windows" && <Windows project={project} onUpdate={updateProject} />}
-              {activeView === "site-visit" && <SiteVisit project={project} onUpdate={updateProject} />}
-              {activeView === "contract" && <Contract project={project} onUpdate={updateProject} />}
-              {activeView === "planning-old" && <PlanningOld project={project} onUpdate={updateProject} />}
-              {activeView === "planning" && <Planning project={project} onUpdate={updateProject} />}
+              {activeView === "project-info" && (
+                <ProjectInfo project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
+              )}
+              {activeView === "client-info" && (
+                <ClientInfo project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
+              )}
+              {activeView === "robes" && <Robes project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />}
+              {activeView === "drawings" && (
+                <Drawings
+                  project={project}
+                  onUpdate={isPortalProjectPath ? () => {} : updateProject}
+                  drawingsPdfSrcOverride={
+                    isPortalProjectPath ? `${API_URL}/api/portal/projects/${id}/drawing` : undefined
+                  }
+                />
+              )}
+              {activeView === "colours" && <Colours project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />}
+              {activeView === "windows" && <Windows project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />}
+              {activeView === "site-visit" && (
+                <SiteVisit project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
+              )}
+              {activeView === "contract" && (
+                <Contract project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
+              )}
+              {activeView === "planning-old" && (
+                <PlanningOld project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
+              )}
+              {activeView === "planning" && (
+                <Planning project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
+              )}
               {activeView === "admin" && <Admin project={project} onUpdate={updateProject} />}
               {activeView === "variations" && <Variations project={project} />}
             </>
