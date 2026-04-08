@@ -220,11 +220,10 @@ export default function ProjectPage() {
         }
       }
       const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
-      if (
-        isMutation &&
-        pathAndSearch.startsWith("/api/") &&
-        !pathAndSearch.startsWith("/api/portal/")
-      ) {
+      const allowedPortalMutation =
+        pathAndSearch.startsWith("/api/portal/") ||
+        pathAndSearch.startsWith("/api/sitevisit/");
+      if (isMutation && pathAndSearch.startsWith("/api/") && !allowedPortalMutation) {
         return Promise.resolve(
           new Response(JSON.stringify({ error: "Read-only in client portal" }), {
             status: 403,
