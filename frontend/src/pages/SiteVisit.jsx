@@ -1,9 +1,13 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 const API_URL = "";
+
+function siteVisitPhotoSrc(projectId, fileName) {
+  return `${API_URL}/api/sitevisit/photo-file?projectId=${encodeURIComponent(String(projectId))}&name=${encodeURIComponent(fileName)}`;
+}
 
 const TIME_SLOTS = [
   "7am - 9am",
@@ -32,6 +36,10 @@ export default function SiteVisit({ project, onUpdate }) {
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
   const [showUploadPhotosModal, setShowUploadPhotosModal] = useState(false);
+  const [siteVisitPhotoFiles, setSiteVisitPhotoFiles] = useState([]);
+  const [siteVisitPhotosLoading, setSiteVisitPhotosLoading] = useState(false);
+  /** null = closed; otherwise index into `siteVisitPhotoFiles` */
+  const [photoViewerIndex, setPhotoViewerIndex] = useState(null);
   const [siteVisitNotes, setSiteVisitNotes] = useState(project?.site_visit_notes || "");
   
   const valuesRef = useRef({ siteVisitNotes });
@@ -40,13 +48,78 @@ export default function SiteVisit({ project, onUpdate }) {
   const siteVisitPhotoInputRef = useRef(null);
 
   useEffect(() => {
-    if (!showUploadPhotosModal) return undefined;
+    const anyOverlayOpen = showUploadPhotosModal || photoViewerIndex !== null;
+    if (!anyOverlayOpen) return undefined;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prevOverflow;
     };
-  }, [showUploadPhotosModal]);
+  }, [showUploadPhotosModal, photoViewerIndex]);
+
+  useEffect(() => {
+    if (photoViewerIndex === null) return undefined;
+    function onKeyDown(e) {
+      if (e.key === "Escape") {
+        setPhotoViewerIndex(null);
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setPhotoViewerIndex((i) => {
+          if (i === null || siteVisitPhotoFiles.length === 0) return null;
+          return (i - 1 + siteVisitPhotoFiles.length) % siteVisitPhotoFiles.length;
+        });
+      }
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setPhotoViewerIndex((i) => {
+          if (i === null || siteVisitPhotoFiles.length === 0) return null;
+          return (i + 1) % siteVisitPhotoFiles.length;
+        });
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [photoViewerIndex, siteVisitPhotoFiles.length]);
+
+  const refreshSiteVisitPhotos = useCallback(async () => {
+    if (!project?.id) {
+      setSiteVisitPhotoFiles([]);
+      return;
+    }
+    setSiteVisitPhotosLoading(true);
+    try {
+      const res = await fetch(
+        `${API_URL}/api/sitevisit/photos?projectId=${encodeURIComponent(project.id)}`
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to load photos");
+      }
+      setSiteVisitPhotoFiles(Array.isArray(data.files) ? data.files : []);
+    } catch (e) {
+      console.error("Site visit photos list:", e);
+      setSiteVisitPhotoFiles([]);
+    } finally {
+      setSiteVisitPhotosLoading(false);
+    }
+  }, [project?.id]);
+
+  useEffect(() => {
+    refreshSiteVisitPhotos();
+  }, [refreshSiteVisitPhotos]);
+
+  useEffect(() => {
+    if (photoViewerIndex === null) return;
+    if (siteVisitPhotoFiles.length === 0) {
+      setPhotoViewerIndex(null);
+      return;
+    }
+    if (photoViewerIndex >= siteVisitPhotoFiles.length) {
+      setPhotoViewerIndex(siteVisitPhotoFiles.length - 1);
+    }
+  }, [photoViewerIndex, siteVisitPhotoFiles.length]);
 
   // Get site visit status or default to "Not Complete"
   const siteVisitStatus = project?.site_visit_status || "Not Complete";
@@ -334,11 +407,13 @@ export default function SiteVisit({ project, onUpdate }) {
   }
 
   async function handlePhotoUpload(e) {
-    const file = e.target.files?.[0];
-    if (!file || !project?.id) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length || !project?.id) return;
 
     const formData = new FormData();
-    formData.append("photo", file);
+    for (const file of files) {
+      formData.append("photos", file);
+    }
     formData.append("projectId", String(project.id));
 
     try {
@@ -347,10 +422,27 @@ export default function SiteVisit({ project, onUpdate }) {
         body: formData,
       });
       const data = await res.json().catch(() => ({}));
+      const failed = data.failed || [];
+      const uploaded = data.uploaded || [];
       if (!res.ok) {
-        throw new Error(data.error || res.statusText || "Upload failed");
+        if (failed.length) {
+          alert(failed.map((f) => `${f.name}: ${f.error}`).join("\n"));
+        } else {
+          throw new Error(data.error || res.statusText || "Upload failed");
+        }
+        return;
       }
-      console.log("Upload success:", data);
+      if (failed.length) {
+        const detail = failed.map((f) => `${f.name}: ${f.error}`).join("\n");
+        alert(
+          uploaded.length
+            ? `Uploaded ${uploaded.length} file(s). Some failed:\n\n${detail}`
+            : detail
+        );
+      }
+      if (res.ok) {
+        refreshSiteVisitPhotos();
+      }
     } catch (err) {
       console.error("Upload failed:", err);
       alert(err.message || "Upload failed");
@@ -623,8 +715,16 @@ export default function SiteVisit({ project, onUpdate }) {
               </div>
             </div>
 
-            {/* Column 4 - Upload Photos */}
-            <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
+            {/* Column 4 - Upload Photos + folder thumbnails */}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "flex-start",
+                minWidth: 0,
+                minHeight: 0,
+              }}
+            >
               <button
                 type="button"
                 onClick={() => setShowUploadPhotosModal(true)}
@@ -650,6 +750,112 @@ export default function SiteVisit({ project, onUpdate }) {
               >
                 Upload Photos
               </button>
+              <div
+                style={{
+                  marginTop: "16px",
+                  flex: 1,
+                  minHeight: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "0.9rem",
+                    color: "#32323399",
+                    marginBottom: "8px",
+                    fontWeight: 500,
+                  }}
+                >
+                  Pre-construction photos
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                    gridAutoRows: "auto",
+                    gap: "10px",
+                    alignItems: "start",
+                    overflowY: "auto",
+                    overflowX: "hidden",
+                    maxHeight: "min(600px, 68vh)",
+                    paddingRight: "4px",
+                    alignContent: "start",
+                  }}
+                >
+                  {siteVisitPhotosLoading ? (
+                    <span
+                      style={{
+                        gridColumn: "1 / -1",
+                        color: "#32323399",
+                        fontSize: "0.875rem",
+                      }}
+                    >
+                      Loading…
+                    </span>
+                  ) : siteVisitPhotoFiles.length === 0 ? (
+                    <span
+                      style={{
+                        gridColumn: "1 / -1",
+                        color: "#32323399",
+                        fontSize: "0.875rem",
+                      }}
+                    >
+                      No images in folder
+                    </span>
+                  ) : (
+                    siteVisitPhotoFiles.map((f, index) => (
+                      <div
+                        key={f.name}
+                        style={{
+                          width: "100%",
+                          minWidth: 0,
+                          position: "relative",
+                          height: 0,
+                          paddingBottom: "100%",
+                          boxSizing: "border-box",
+                          lineHeight: 0,
+                        }}
+                      >
+                        <button
+                          type="button"
+                          title={f.name}
+                          onClick={() => setPhotoViewerIndex(index)}
+                          style={{
+                            position: "absolute",
+                            left: 0,
+                            top: 0,
+                            width: "100%",
+                            height: "100%",
+                            padding: 0,
+                            margin: 0,
+                            border: `2px solid ${WHITE}`,
+                            borderRadius: "8px",
+                            overflow: "hidden",
+                            background: WHITE,
+                            cursor: "pointer",
+                            boxSizing: "border-box",
+                            display: "block",
+                          }}
+                        >
+                          <img
+                            src={siteVisitPhotoSrc(project.id, f.name)}
+                            alt=""
+                            loading="lazy"
+                            draggable={false}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "cover",
+                              display: "block",
+                            }}
+                          />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -704,6 +910,7 @@ export default function SiteVisit({ project, onUpdate }) {
               ref={siteVisitPhotoInputRef}
               type="file"
               accept="image/*"
+              multiple
               onChange={handlePhotoUpload}
             />
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "20px" }}>
@@ -728,6 +935,171 @@ export default function SiteVisit({ project, onUpdate }) {
           </div>
         </div>
       )}
+
+      {photoViewerIndex !== null &&
+        project?.id &&
+        siteVisitPhotoFiles.length > 0 &&
+        siteVisitPhotoFiles[photoViewerIndex] && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Photo viewer"
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0, 0, 0, 0.88)",
+              zIndex: 2100,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              pointerEvents: "auto",
+              touchAction: "none",
+            }}
+            onClick={() => setPhotoViewerIndex(null)}
+          >
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={(e) => {
+                e.stopPropagation();
+                setPhotoViewerIndex(null);
+              }}
+              style={{
+                position: "absolute",
+                top: "16px",
+                right: "16px",
+                zIndex: 10,
+                width: "44px",
+                height: "44px",
+                border: "none",
+                borderRadius: "10px",
+                background: "rgba(255,255,255,0.18)",
+                color: WHITE,
+                fontSize: "1.75rem",
+                lineHeight: 1,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 0,
+              }}
+            >
+              ×
+            </button>
+            {siteVisitPhotoFiles.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Previous photo"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPhotoViewerIndex((i) =>
+                      i === null
+                        ? null
+                        : (i - 1 + siteVisitPhotoFiles.length) %
+                          siteVisitPhotoFiles.length
+                    );
+                  }}
+                  style={{
+                    position: "absolute",
+                    left: "max(12px, env(safe-area-inset-left))",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    zIndex: 10,
+                    width: "48px",
+                    height: "48px",
+                    border: "none",
+                    borderRadius: "50%",
+                    background: "rgba(255,255,255,0.18)",
+                    color: WHITE,
+                    fontSize: "1.75rem",
+                    lineHeight: 1,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 0,
+                  }}
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  aria-label="Next photo"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPhotoViewerIndex((i) =>
+                      i === null ? null : (i + 1) % siteVisitPhotoFiles.length
+                    );
+                  }}
+                  style={{
+                    position: "absolute",
+                    right: "max(12px, env(safe-area-inset-right))",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    zIndex: 10,
+                    width: "48px",
+                    height: "48px",
+                    border: "none",
+                    borderRadius: "50%",
+                    background: "rgba(255,255,255,0.18)",
+                    color: WHITE,
+                    fontSize: "1.75rem",
+                    lineHeight: 1,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 0,
+                  }}
+                >
+                  ›
+                </button>
+              </>
+            )}
+            <div
+              role="presentation"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                maxWidth: "min(92vw, 1200px)",
+                maxHeight: "88vh",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "56px 56px 24px",
+                boxSizing: "border-box",
+              }}
+            >
+              <img
+                src={siteVisitPhotoSrc(
+                  project.id,
+                  siteVisitPhotoFiles[photoViewerIndex].name
+                )}
+                alt={siteVisitPhotoFiles[photoViewerIndex].name}
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: "min(78vh, 900px)",
+                  width: "auto",
+                  height: "auto",
+                  objectFit: "contain",
+                }}
+              />
+              <div
+                style={{
+                  marginTop: "14px",
+                  color: "rgba(255,255,255,0.88)",
+                  fontSize: "0.875rem",
+                  textAlign: "center",
+                  wordBreak: "break-word",
+                  maxWidth: "100%",
+                }}
+              >
+                {siteVisitPhotoFiles[photoViewerIndex].name}
+              </div>
+            </div>
+          </div>
+        )}
 
       {/* Booking Modal */}
       {showBookingModal && (

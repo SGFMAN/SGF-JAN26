@@ -4989,6 +4989,115 @@ function getProjectYearFolderSegment(yearValue) {
   return String(new Date().getFullYear());
 }
 
+const SITE_VISIT_IMAGE_EXT = new Set([
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".heic",
+  ".tif",
+  ".tiff",
+]);
+
+function isSiteVisitListableImage(filename) {
+  return SITE_VISIT_IMAGE_EXT.has(path.extname(filename).toLowerCase());
+}
+
+function guessSiteVisitImageContentType(filename) {
+  const ext = path.extname(filename).toLowerCase();
+  const map = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+    ".heic": "image/heic",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
+  };
+  return map[ext] || "application/octet-stream";
+}
+
+function resolveSiteVisitPhotoFilePath(photosDirNorm, name) {
+  const base = path.basename(name);
+  if (!base || base === "." || base === "..") return null;
+  const full = path.resolve(photosDirNorm, base);
+  const dirNorm = path.resolve(photosDirNorm);
+  const rel = path.relative(dirNorm, full);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return null;
+  return full;
+}
+
+async function resolveSiteVisitPreConstructionPhotosDir(projectId) {
+  if (!pool) {
+    return { ok: false, status: 500, error: "Database not configured" };
+  }
+  if (!projectId) {
+    return { ok: false, status: 400, error: "Missing projectId" };
+  }
+  const projectResult = await pool.query(
+    "SELECT suburb, street, state, year FROM projects WHERE id = $1",
+    [projectId]
+  );
+  if (projectResult.rows.length === 0) {
+    return { ok: false, status: 404, error: "Project not found" };
+  }
+  const proj = projectResult.rows[0];
+  const stateUpper = (proj.state || "").toString().toUpperCase();
+  if (!stateUpper) {
+    return { ok: false, status: 400, error: "Project state is required" };
+  }
+
+  const settingsResult = await pool.query(
+    "SELECT root_directory, root_directory_qld FROM settings WHERE id = 1"
+  );
+  const settingsRow = settingsResult.rows[0];
+  const rootDir =
+    stateUpper === "QLD"
+      ? settingsRow?.root_directory_qld || settingsRow?.root_directory
+      : settingsRow?.root_directory;
+  if (!rootDir) {
+    return { ok: false, status: 500, error: "Root directory not configured in settings" };
+  }
+
+  const projectYear = getProjectYearFolderSegment(proj.year);
+  const suburbUpper = (proj.suburb || "").toString().toUpperCase();
+  const street = (proj.street || "").toString();
+  const projectFolderName = `${suburbUpper} - ${street}`.replace(/[<>:"/\\|?*]/g, "_");
+
+  const photosDir = path.join(
+    rootDir,
+    projectYear,
+    stateUpper,
+    projectFolderName,
+    "5. PHOTOS",
+    "Pre-Construction -Site Photos"
+  );
+  const photosDirNorm = path.resolve(photosDir);
+  try {
+    const st = await fs.stat(photosDirNorm);
+    if (!st.isDirectory()) {
+      return {
+        ok: false,
+        status: 400,
+        error: "Target photo folder does not exist",
+        photosDirNorm,
+      };
+    }
+  } catch {
+    return {
+      ok: false,
+      status: 400,
+      error: "Target photo folder does not exist",
+      photosDirNorm,
+    };
+  }
+  return { ok: true, photosDirNorm };
+}
+
 const fsSync = require("fs");
 const siteVisitUploadTempDir = path.join(__dirname, "temp-sitevisit-uploads");
 const siteVisitPhotoUpload = multer({
@@ -5009,129 +5118,190 @@ const siteVisitPhotoUpload = multer({
   limits: { fileSize: 30 * 1024 * 1024 },
 });
 
-app.post("/api/sitevisit/upload-photo", siteVisitPhotoUpload.single("photo"), async (req, res) => {
-  if (!pool) {
-    return res.status(500).json({ error: "Database not configured" });
-  }
-  const cleanupTemp = async () => {
-    if (req.file?.path) {
+app.post(
+  "/api/sitevisit/upload-photo",
+  siteVisitPhotoUpload.array("photos", 40),
+  async (req, res) => {
+    if (!pool) {
+      return res.status(500).json({ error: "Database not configured" });
+    }
+    const unlinkTemp = async (p) => {
+      if (!p) return;
       try {
-        await fs.unlink(req.file.path);
+        await fs.unlink(p);
       } catch {
         /* ignore */
       }
+    };
+    const cleanupAllTemps = async () => {
+      for (const f of req.files || []) {
+        await unlinkTemp(f?.path);
+      }
+    };
+    try {
+      const files = req.files || [];
+      if (files.length === 0) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+      const projectId = req.body?.projectId;
+      if (!projectId) {
+        await cleanupAllTemps();
+        return res.status(400).json({ error: "Missing projectId" });
+      }
+
+      const resolvedDir = await resolveSiteVisitPreConstructionPhotosDir(projectId);
+      if (!resolvedDir.ok) {
+        await cleanupAllTemps();
+        return res.status(resolvedDir.status).json({ error: resolvedDir.error });
+      }
+      const { photosDirNorm } = resolvedDir;
+
+      const uploaded = [];
+      const failed = [];
+
+      for (const file of files) {
+        const displayName = file.originalname || "photo";
+        const mime = (file.mimetype || "").toLowerCase();
+        if (!mime.startsWith("image/")) {
+          await unlinkTemp(file.path);
+          failed.push({ name: displayName, error: "Only image files are allowed" });
+          continue;
+        }
+
+        const safeName = path.basename(file.originalname || "photo");
+        if (!safeName || safeName === "." || safeName === "..") {
+          await unlinkTemp(file.path);
+          failed.push({ name: displayName, error: "Invalid file name" });
+          continue;
+        }
+        const finalPath = path.join(photosDirNorm, safeName);
+        try {
+          await fs.access(finalPath);
+          await unlinkTemp(file.path);
+          failed.push({ name: displayName, error: "A file with that name already exists" });
+          continue;
+        } catch {
+          /* target name is free */
+        }
+
+        try {
+          await fs.rename(file.path, finalPath);
+        } catch (e) {
+          if (e.code === "EXDEV") {
+            try {
+              await fs.copyFile(file.path, finalPath);
+              await fs.unlink(file.path);
+            } catch (e2) {
+              await unlinkTemp(file.path);
+              console.error("sitevisit upload-photo copy:", e2);
+              failed.push({ name: displayName, error: "Upload failed" });
+              continue;
+            }
+          } else {
+            await unlinkTemp(file.path);
+            if (e.code === "EEXIST") {
+              failed.push({ name: displayName, error: "A file with that name already exists" });
+            } else {
+              console.error("sitevisit upload-photo rename:", e);
+              failed.push({ name: displayName, error: "Upload failed" });
+            }
+            continue;
+          }
+        }
+
+        uploaded.push({ name: safeName, path: finalPath });
+      }
+
+      const ok = uploaded.length > 0;
+      if (!ok && failed.length > 0) {
+        const firstErr = failed[0]?.error || "Upload failed";
+        return res.status(400).json({
+          error: failed.length === 1 ? firstErr : "All uploads failed",
+          uploaded,
+          failed,
+        });
+      }
+
+      res.json({ success: true, uploaded, failed });
+    } catch (err) {
+      await cleanupAllTemps();
+      console.error("POST /api/sitevisit/upload-photo:", err);
+      res.status(500).json({ error: "Upload failed" });
     }
-  };
+  }
+);
+
+app.get("/api/sitevisit/photos", async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
-    const projectId = req.body?.projectId;
+    const projectId = req.query.projectId;
     if (!projectId) {
-      await cleanupTemp();
       return res.status(400).json({ error: "Missing projectId" });
     }
-    const mime = (req.file.mimetype || "").toLowerCase();
-    if (!mime.startsWith("image/")) {
-      await cleanupTemp();
-      return res.status(400).json({ error: "Only image files are allowed" });
+    const resolved = await resolveSiteVisitPreConstructionPhotosDir(projectId);
+    if (!resolved.ok) {
+      if (resolved.error === "Target photo folder does not exist") {
+        return res.json({ files: [] });
+      }
+      return res.status(resolved.status).json({ error: resolved.error });
     }
-
-    const projectResult = await pool.query(
-      "SELECT suburb, street, state, year FROM projects WHERE id = $1",
-      [projectId]
+    const entries = await fs.readdir(resolved.photosDirNorm, { withFileTypes: true });
+    const files = [];
+    for (const ent of entries) {
+      if (!ent.isFile()) continue;
+      if (!isSiteVisitListableImage(ent.name)) continue;
+      files.push({ name: ent.name });
+    }
+    files.sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
     );
-    if (projectResult.rows.length === 0) {
-      await cleanupTemp();
-      return res.status(404).json({ error: "Project not found" });
-    }
-    const proj = projectResult.rows[0];
-    const stateUpper = (proj.state || "").toString().toUpperCase();
-    if (!stateUpper) {
-      await cleanupTemp();
-      return res.status(400).json({ error: "Project state is required" });
-    }
+    res.json({ files });
+  } catch (err) {
+    console.error("GET /api/sitevisit/photos:", err);
+    res.status(500).json({ error: "Failed to list photos" });
+  }
+});
 
-    const settingsResult = await pool.query(
-      "SELECT root_directory, root_directory_qld FROM settings WHERE id = 1"
-    );
-    const settingsRow = settingsResult.rows[0];
-    const rootDir =
-      stateUpper === "QLD"
-        ? settingsRow?.root_directory_qld || settingsRow?.root_directory
-        : settingsRow?.root_directory;
-    if (!rootDir) {
-      await cleanupTemp();
-      return res.status(500).json({ error: "Root directory not configured in settings" });
+app.get("/api/sitevisit/photo-file", async (req, res) => {
+  try {
+    const projectId = req.query.projectId;
+    const name = req.query.name;
+    if (!projectId) {
+      return res.status(400).json({ error: "Missing projectId" });
     }
-
-    const projectYear = getProjectYearFolderSegment(proj.year);
-    const suburbUpper = (proj.suburb || "").toString().toUpperCase();
-    const street = (proj.street || "").toString();
-    const projectFolderName = `${suburbUpper} - ${street}`.replace(/[<>:"/\\|?*]/g, "_");
-
-    const photosDir = path.join(
-      rootDir,
-      projectYear,
-      stateUpper,
-      projectFolderName,
-      "5. PHOTOS",
-      "Pre-Construction -Site Photos"
-    );
-    const photosDirNorm = path.resolve(photosDir);
-    let stDir;
-    try {
-      stDir = await fs.stat(photosDirNorm);
-    } catch {
-      await cleanupTemp();
-      return res.status(400).json({ error: "Target photo folder does not exist" });
+    if (name === undefined || name === null || String(name).trim() === "") {
+      return res.status(400).json({ error: "Missing name" });
     }
-    if (!stDir.isDirectory()) {
-      await cleanupTemp();
-      return res.status(400).json({ error: "Target photo folder does not exist" });
+    const resolved = await resolveSiteVisitPreConstructionPhotosDir(projectId);
+    if (!resolved.ok) {
+      if (resolved.error === "Target photo folder does not exist") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      return res.status(resolved.status).json({ error: resolved.error });
     }
-
-    const safeName = path.basename(req.file.originalname || "photo");
-    if (!safeName || safeName === "." || safeName === "..") {
-      await cleanupTemp();
+    const filePath = resolveSiteVisitPhotoFilePath(resolved.photosDirNorm, name);
+    if (!filePath) {
       return res.status(400).json({ error: "Invalid file name" });
     }
-    const finalPath = path.join(photosDirNorm, safeName);
+    let st;
     try {
-      await fs.access(finalPath);
-      await cleanupTemp();
-      return res.status(409).json({ error: "A file with that name already exists" });
+      st = await fs.stat(filePath);
     } catch {
-      /* target name is free */
+      return res.status(404).json({ error: "Not found" });
     }
-
-    try {
-      await fs.rename(req.file.path, finalPath);
-    } catch (e) {
-      if (e.code === "EXDEV") {
-        try {
-          await fs.copyFile(req.file.path, finalPath);
-          await fs.unlink(req.file.path);
-        } catch (e2) {
-          await cleanupTemp();
-          console.error("sitevisit upload-photo copy:", e2);
-          return res.status(500).json({ error: "Upload failed" });
-        }
-      } else {
-        await cleanupTemp();
-        if (e.code === "EEXIST") {
-          return res.status(409).json({ error: "A file with that name already exists" });
-        }
-        console.error("sitevisit upload-photo rename:", e);
-        return res.status(500).json({ error: "Upload failed" });
-      }
+    if (!st.isFile()) {
+      return res.status(404).json({ error: "Not found" });
     }
-
-    res.json({ success: true, path: finalPath });
+    if (!isSiteVisitListableImage(filePath)) {
+      return res.status(404).json({ error: "Not found" });
+    }
+    res.setHeader("Content-Type", guessSiteVisitImageContentType(filePath));
+    res.setHeader("Cache-Control", "private, max-age=120");
+    fsSync.createReadStream(filePath).pipe(res);
   } catch (err) {
-    await cleanupTemp();
-    console.error("POST /api/sitevisit/upload-photo:", err);
-    res.status(500).json({ error: "Upload failed" });
+    console.error("GET /api/sitevisit/photo-file:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to read file" });
+    }
   }
 });
 
