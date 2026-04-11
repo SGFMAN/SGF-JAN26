@@ -103,8 +103,6 @@ export default function SiteVisit({ project, onUpdate }) {
   const [siteVisitNotes, setSiteVisitNotes] = useState(project?.site_visit_notes || "");
   
   const valuesRef = useRef({ siteVisitNotes });
-  const isInitialMount = useRef(true);
-  const lastSavedNotes = useRef(project?.site_visit_notes || "");
   const siteVisitPhotoInputRef = useRef(null);
   const siteVisitUploadXhrRef = useRef(null);
 
@@ -196,25 +194,9 @@ export default function SiteVisit({ project, onUpdate }) {
     valuesRef.current = { siteVisitNotes };
   }, [siteVisitNotes]);
 
-  // Initialize notes from project data only on mount or when project changes externally
   useEffect(() => {
-    if (isInitialMount.current) {
-      // On initial mount, set notes from project
-      if (project?.site_visit_notes !== undefined) {
-        setSiteVisitNotes(project.site_visit_notes || "");
-        lastSavedNotes.current = project.site_visit_notes || "";
-      }
-      isInitialMount.current = false;
-    } else {
-      // After mount, only update if the project notes changed externally
-      // (not from our own save operation)
-      const currentProjectNotes = project?.site_visit_notes || "";
-      if (currentProjectNotes !== lastSavedNotes.current && currentProjectNotes !== siteVisitNotes) {
-        setSiteVisitNotes(currentProjectNotes);
-        lastSavedNotes.current = currentProjectNotes;
-      }
-    }
-  }, [project?.site_visit_notes]);
+    setSiteVisitNotes(project?.site_visit_notes || "");
+  }, [project?.id]);
 
   async function handleStatusChange(newStatus) {
     if (!project?.id) {
@@ -436,9 +418,8 @@ export default function SiteVisit({ project, onUpdate }) {
     valuesRef.current.siteVisitNotes = newNotes;
   }
 
-  async function handleNotesBlur() {
+  async function saveAllFields() {
     if (!project?.id) return;
-    
     try {
       const notesToSave = valuesRef.current.siteVisitNotes;
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
@@ -449,25 +430,20 @@ export default function SiteVisit({ project, onUpdate }) {
         body: JSON.stringify({
           name: project.name || "",
           status: project.status || "",
-          site_visit_notes: notesToSave,
+          site_visit_notes: notesToSave ?? null,
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: response.statusText }));
-        throw new Error(errorData.error || "Failed to save notes");
+        throw new Error(errorData.error || "Failed to save site visit notes");
       }
 
-      // Update last saved notes to prevent overwriting
-      lastSavedNotes.current = notesToSave;
-
-      // Refresh project data
       if (onUpdate) {
         onUpdate();
       }
     } catch (error) {
-      console.error("Error saving notes:", error);
-      alert(error.message || "Failed to save notes");
+      console.error("Error saving site visit notes:", error);
     }
   }
 
@@ -771,7 +747,7 @@ export default function SiteVisit({ project, onUpdate }) {
                 <textarea
                   value={siteVisitNotes}
                   onChange={handleNotesChange}
-                  onBlur={handleNotesBlur}
+                  onBlur={() => void saveAllFields()}
                   placeholder="Add notes about the site visit..."
                   style={{
                     width: "100%",

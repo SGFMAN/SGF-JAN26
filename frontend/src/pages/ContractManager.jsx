@@ -2,6 +2,11 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import { isUserAdmin } from "../utils/auth";
+import {
+  isDesignPhaseStatus,
+  isHotlistStatus,
+  isCancelledStatus,
+} from "../utils/projectStatus";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -63,19 +68,9 @@ export default function ContractManager() {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
       const data = await response.json();
-      // Show all projects that are "in design" (Design Phase, In Design, or null/empty). Exclude only Hotlist and Cancelled.
-      const statusNorm = (s) => (s != null && typeof s === "string" ? s.trim() : "") || "";
-      const isExcluded = (s) => {
-        const n = statusNorm(s);
-        return n === "Hotlist" || n === "Cancelled";
-      };
-      const isInDesign = (s) => {
-        const n = statusNorm(s);
-        return n === "" || n === "Design Phase" || n === "In Design";
-      };
       const designPhaseProjects = data.filter((project) => {
-        if (isExcluded(project.status)) return false;
-        return isInDesign(project.status);
+        if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
+        return isDesignPhaseStatus(project.status);
       });
       // Sort by date
       const sortedProjects = sortProjectsByDate(designPhaseProjects, sortOrder);

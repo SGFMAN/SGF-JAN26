@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 
 const MONUMENT = "#323233";
@@ -32,6 +32,8 @@ const BAL_RATING_OPTIONS = [
 
 const DATE_REQUIRED_OPTIONS = ["Normal", "Urgent"];
 
+const RED_DANGER = "#c62828";
+
 export default function Windows({ project, onUpdate }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const [showOrderModal, setShowOrderModal] = useState(false);
@@ -48,13 +50,97 @@ export default function Windows({ project, onUpdate }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [orderNumber, setOrderNumber] = useState("");
   const fileInputRef = useRef(null);
+  /** Pick PDF to register path when missing or file not on disk (like Project Info proposal). */
+  const windowOrderLocateFileRef = useRef(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailBody, setEmailBody] = useState("");
+  const [showWindowOrderModal, setShowWindowOrderModal] = useState(false);
+  /** Bust iframe cache after locate/upload refresh. */
+  const [windowOrderIframeNonce, setWindowOrderIframeNonce] = useState(0);
 
   // Get window status or default to "Not Ordered"
   const windowStatus = project?.window_status || "Not Ordered";
   
   const WINDOW_STATUS_OPTIONS = ["Not Ordered", "Ordered", "Complete"];
+
+  useEffect(() => {
+    if (!showWindowOrderModal) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [showWindowOrderModal]);
+
+  function closeWindowOrderModal() {
+    setShowWindowOrderModal(false);
+  }
+
+  function openWindowOrderModal() {
+    setShowWindowOrderModal(true);
+    setWindowOrderIframeNonce((n) => n + 1);
+  }
+
+  async function handleResetWindowData() {
+    if (!project?.id) return;
+    if (
+      !confirm(
+        "Reset all window data for this project? This clears status, colours, order details, order number, dates, and the window order PDF path."
+      )
+    ) {
+      return;
+    }
+    try {
+      const response = await fetch(`${API_URL}/api/projects/${project.id}/reset-window-data`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || response.statusText);
+      }
+      setWindowColour("");
+      setReveal("95mm");
+      setRevealOther("");
+      setGlazing("Double");
+      setBalRating("None");
+      setDateRequired("Normal");
+      setOrderNumber("");
+      setShowWindowOrderModal(false);
+      setWindowOrderIframeNonce((n) => n + 1);
+      if (onUpdate) onUpdate();
+    } catch (e) {
+      console.error(e);
+      alert(e.message || "Failed to reset window data");
+    }
+  }
+
+  async function handleWindowOrderLocateFileChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !project?.id) return;
+    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+      alert("Please select a PDF file.");
+      return;
+    }
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("projectId", project.id.toString());
+    try {
+      const response = await fetch(`${API_URL}/api/files/locate-window-order`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to save window order location");
+      }
+      if (onUpdate) onUpdate();
+      setWindowOrderIframeNonce((n) => n + 1);
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "Failed to save window order location");
+    }
+  }
 
   async function handleOrderWindows() {
     // Validate required fields
@@ -373,31 +459,10 @@ Date Required: ${dateRequiredText}`;
 
     setIsReceiving(true);
     try {
-      // First, get the project folder path from settings
-      const settingsResponse = await fetch(`${API_URL}/api/settings`);
-      if (!settingsResponse.ok) {
-        throw new Error("Failed to fetch settings");
-      }
-      const settings = await settingsResponse.json();
-      const rootDirectory = settings.root_directory || "";
-      
-      if (!rootDirectory) {
-        alert("Error: Root directory is not set. Please configure it in File Settings.");
-        setIsReceiving(false);
-        return;
-      }
-
-      // Get project year (from project or current year)
-      const projectYear = project.year || new Date().getFullYear().toString();
-      const suburb = (project.suburb || "").toUpperCase();
-      const street = project.street || "";
-      const projectPath = `${rootDirectory}\\${projectYear}\\${suburb} - ${street}`;
-
-      // Upload the file to the server
+      // Server builds full path (4-digit year + 8. COLOURS & WINDOWS + actual filename), same idea as drawings PDF.
       const uploadFormData = new FormData();
       uploadFormData.append("file", selectedFile);
       uploadFormData.append("projectId", project.id.toString());
-      uploadFormData.append("projectPath", projectPath);
       uploadFormData.append("orderNumber", orderNumber.trim());
 
       const uploadResponse = await fetch(`${API_URL}/api/files/upload-window-order`, {
@@ -410,7 +475,7 @@ Date Required: ${dateRequiredText}`;
         throw new Error(errorData.error || "Failed to upload window order PDF");
       }
 
-      const uploadResult = await uploadResponse.json();
+      await uploadResponse.json().catch(() => ({}));
 
       // Update window status to "Complete"
       try {
@@ -570,6 +635,25 @@ Date Required: ${dateRequiredText}`;
                 {windowStatus === "Ordered" ? "Reorder Windows" : "Order Windows"}
               </button>
             )}
+
+            <button
+              type="button"
+              onClick={() => void handleResetWindowData()}
+              style={{
+                padding: "10px 20px",
+                fontSize: "1rem",
+                fontWeight: "500",
+                color: WHITE,
+                background: RED_DANGER,
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer",
+                marginBottom: "24px",
+                display: "block",
+              }}
+            >
+              Reset Window Data
+            </button>
           </div>
 
           {/* Column 2 - Order Details */}
@@ -711,11 +795,12 @@ Date Required: ${dateRequiredText}`;
             )}
           </div>
 
-          {/* Column 3 - Windows Received */}
+          {/* Column 3 - Windows Received / View Order */}
           <div style={{ flex: "1", minWidth: "200px" }}>
-            {windowStatus === "Ordered" && (
-              <div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "12px" }}>
+              {windowStatus === "Ordered" && (
                 <button
+                  type="button"
                   onClick={handleOpenReceivedModal}
                   style={{
                     padding: "10px 20px",
@@ -726,41 +811,38 @@ Date Required: ${dateRequiredText}`;
                     border: "none",
                     borderRadius: "8px",
                     cursor: "pointer",
-                    marginBottom: "24px",
                   }}
                 >
                   Windows Received
                 </button>
+              )}
 
-                {project.window_order_pdf_location && (
-                  <button
-                    onClick={() => {
-                      if (project?.window_order_pdf_location) {
-                        const pdfUrl = `${API_URL}/api/files/window-order/${project.id}`;
-                        window.open(pdfUrl, "_blank");
-                      } else {
-                        alert("No window order PDF has been uploaded for this project yet.");
-                      }
-                    }}
-                    disabled={!project.window_order_pdf_location}
-                    style={{
-                      padding: "10px 20px",
-                      fontSize: "1rem",
-                      fontWeight: "500",
-                      color: WHITE,
-                      background: project.window_order_pdf_location ? MONUMENT : "#ccc",
-                      border: "none",
-                      borderRadius: "8px",
-                      cursor: project.window_order_pdf_location ? "pointer" : "not-allowed",
-                      opacity: project.window_order_pdf_location ? 1 : 0.6,
-                      marginBottom: "24px",
-                    }}
-                  >
-                    Show Order
-                  </button>
-                )}
-              </div>
-            )}
+              <input
+                ref={windowOrderLocateFileRef}
+                type="file"
+                accept=".pdf,application/pdf"
+                style={{ display: "none" }}
+                onChange={(e) => void handleWindowOrderLocateFileChange(e)}
+              />
+              {windowStatus !== "Ordered" && (
+                <button
+                  type="button"
+                  onClick={openWindowOrderModal}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: "500",
+                    color: WHITE,
+                    background: MONUMENT,
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                  }}
+                >
+                  {project?.window_order_pdf_location ? "View Order" : "Locate Order"}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Column 4 - Empty for now */}
@@ -1224,6 +1306,142 @@ Date Required: ${dateRequiredText}`;
                 }}
               >
                 {isReceiving ? "Uploading..." : "Upload"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showWindowOrderModal && project?.id && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1100,
+            padding: "16px",
+          }}
+          onClick={closeWindowOrderModal}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              width: "min(960px, 100%)",
+              maxHeight: "92vh",
+              display: "flex",
+              flexDirection: "column",
+              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="window-order-modal-title"
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "16px",
+                flexShrink: 0,
+                gap: "12px",
+              }}
+            >
+              <h2 id="window-order-modal-title" style={{ margin: 0, fontSize: "1.35rem", color: MONUMENT }}>
+                Window order PDF
+              </h2>
+              <button
+                type="button"
+                onClick={closeWindowOrderModal}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "1.5rem",
+                  cursor: "pointer",
+                  color: MONUMENT,
+                  padding: "0",
+                  width: "32px",
+                  height: "32px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            {project?.window_order_pdf_location?.trim() ? (
+              <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", marginBottom: "16px" }}>
+                <iframe
+                  key={windowOrderIframeNonce}
+                  src={`${API_URL}/api/files/window-order/${project.id}?t=${windowOrderIframeNonce}`}
+                  style={{
+                    width: "100%",
+                    flex: 1,
+                    border: "none",
+                    borderRadius: "8px",
+                    minHeight: "420px",
+                    background: "#eee",
+                  }}
+                  title="Window order PDF"
+                />
+              </div>
+            ) : (
+              <p style={{ margin: "0 0 20px", color: MONUMENT, fontSize: "0.95rem", lineHeight: 1.5 }}>
+                No window order PDF is registered yet. Use Choose PDF… to set the file path.
+              </p>
+            )}
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "10px",
+                justifyContent: "flex-end",
+                flexShrink: 0,
+                paddingTop: "4px",
+                borderTop: `1px solid ${SECTION_GREY}`,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => windowOrderLocateFileRef.current?.click()}
+                style={{
+                  padding: "10px 16px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  color: MONUMENT,
+                  background: WHITE,
+                  border: `1px solid ${MONUMENT}`,
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                }}
+              >
+                Choose PDF…
+              </button>
+              <button
+                type="button"
+                onClick={closeWindowOrderModal}
+                style={{
+                  padding: "10px 16px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  color: WHITE,
+                  background: MONUMENT,
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                }}
+              >
+                Close
               </button>
             </div>
           </div>

@@ -22,7 +22,7 @@ const GREEN_STREAMS = [
   "Pumped On Property",
   "Henderson",
   "Create Cash Flow",
-  "Maple Group",
+  "Fresh Start Advisory",
 ];
 
 const MONTHS = [

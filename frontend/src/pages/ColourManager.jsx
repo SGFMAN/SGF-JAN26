@@ -1,4 +1,9 @@
 import React, { useState, useEffect } from "react";
+import {
+  isDesignPhaseStatus,
+  isHotlistStatus,
+  isCancelledStatus,
+} from "../utils/projectStatus";
 import { Link } from "react-router-dom";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import { isUserAdmin } from "../utils/auth";
@@ -63,20 +68,9 @@ export default function ColourManager() {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
 const data = await response.json();
-      // Show all projects that are "in design" (Design Phase, In Design, or null/empty). Exclude Hotlist, Cancelled, on_hold.
-      const statusNorm = (s) => (s != null && typeof s === "string" ? s.trim() : "") || "";
-      const isExcluded = (s) => {
-        const n = statusNorm(s);
-        return n === "Hotlist" || n === "Cancelled";
-      };
-      const isInDesign = (s) => {
-        const n = statusNorm(s);
-        return n === "" || n === "Design Phase" || n === "In Design";
-      };
       const designPhaseProjects = data.filter((project) => {
-        if (isExcluded(project.status)) return false;
-        if (project.on_hold === true || project.on_hold === "true") return false;
-        return isInDesign(project.status);
+        if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
+        return isDesignPhaseStatus(project.status);
       });
       // Sort by date
       const sortedProjects = sortProjectsByDate(designPhaseProjects, sortOrder);

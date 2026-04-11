@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
+import { isOnHoldFlag, isHotlistStatus } from "../utils/projectStatus";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -52,9 +53,9 @@ export default function OnHold() {
 
   // Filter projects based on search query and state filter
   function getFilteredProjects() {
-    // Only show projects that are on hold, exclude Hotlist
-    let filtered = projects.filter((project) => 
-      (project.on_hold === 'true' || project.on_hold === true) && project.status !== "Hotlist"
+    // On Hold page: projects with the on_hold flag (not a status). Exclude Hotlist workflow only.
+    let filtered = projects.filter(
+      (project) => isOnHoldFlag(project) && !isHotlistStatus(project.status)
     );
 
     // Filter by state if specified
@@ -304,7 +305,7 @@ export default function OnHold() {
             </Link>
           </div>
           
-          {/* All Projects, In Design, In Construction, Finished Projects, Cancelled, On Hold - Light Green */}
+          {/* All Projects, Design Phase, Construction Phase, Finished Projects, Cancelled, On Hold - Light Green */}
           <div style={{ background: "#CEEAB0", borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: "2px solid #000" }}>
             <Link
               to="/all-projects"
@@ -348,10 +349,10 @@ export default function OnHold() {
                 display: "block",
               }}
             >
-              In Design
+              Design Phase
             </Link>
             <Link
-              to="/in-construction"
+              to="/construction-phase"
               style={{
                 background: "transparent",
                 color: "#404049",
@@ -370,7 +371,7 @@ export default function OnHold() {
                 display: "block",
               }}
             >
-              In Construction
+              Construction Phase
             </Link>
             <Link
               to="/finished-projects"
@@ -559,7 +560,9 @@ export default function OnHold() {
         >
           <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "16px" }}>
             On Hold {(() => {
-              const totalCount = projects.filter((project) => project.on_hold === 'true' || project.on_hold === true).length;
+              const totalCount = projects.filter(
+                (project) => isOnHoldFlag(project) && !isHotlistStatus(project.status)
+              ).length;
               if (searchQuery.trim()) {
                 return `(${filteredProjects.length} found)`;
               } else if (stateFilter !== "All") {
@@ -680,7 +683,7 @@ export default function OnHold() {
                   "Henderson": { acronym: "HEN", color: "#92D050" }, // Green
                   "Creat Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green
                   "Create Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green (handle both variations)
-                  "Maple Group": { acronym: "MAP", color: "#92D050" }, // Green
+                  "Fresh Start Advisory": { acronym: "FSA", color: "#92D050" }, // Green
                 };
                 const streamInfo = project.stream ? streamMap[project.stream] : null;
 

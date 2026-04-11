@@ -1,4 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
+import {
+  isDesignPhaseStatus,
+  isHotlistStatus,
+  isCancelledStatus,
+} from "../utils/projectStatus";
 import { Link } from "react-router-dom";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
@@ -280,15 +285,12 @@ export default function DrawingManager() {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
       const data = await response.json();
-      // Filter for In Design projects (Design Phase or "In Design"), excluding Home Office/Studio and on_hold
-      const isInDesignStatus = (s) => s === "Design Phase" || s === "In Design";
+      // Design pipeline by status; on_hold is separate (sash only). Exclude Home Office/Studio.
       const designPhaseProjects = data.filter((project) => {
-        if (project.status === "Hotlist" || project.status === "Cancelled") return false;
-        if (!isInDesignStatus(project.status)) return false;
+        if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
+        if (!isDesignPhaseStatus(project.status)) return false;
         if (project.classification === "Home Office / Studio") return false;
-        const onHoldValue = project.on_hold;
-        const isOnHold = onHoldValue === true || onHoldValue === 'true' || onHoldValue === 1 || onHoldValue === '1';
-        return !isOnHold;
+        return true;
       });
       // Sort by concept/working drawings status first, then alphabetically by suburb, then street
       const sortedProjects = designPhaseProjects.sort((a, b) => {

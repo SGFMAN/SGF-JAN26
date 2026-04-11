@@ -429,7 +429,7 @@ export default function ProjectPage() {
             alignItems: "stretch",
             gap: "18px",
             color: MONUMENT,
-            overflowY: "auto",
+            overflow: "hidden",
           }}
         >
           {/* Toggle Switch - Only show for Construction Phase projects */}

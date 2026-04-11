@@ -16,7 +16,7 @@ const STREAMS = [
   "Pumped On Property",
   "Henderson",
   "Create Cash Flow",
-  "Maple Group",
+  "Fresh Start Advisory",
 ];
 
 // Green streams (for total calculation)
@@ -26,7 +26,7 @@ const GREEN_STREAMS = [
   "Pumped On Property",
   "Henderson",
   "Create Cash Flow",
-  "Maple Group",
+  "Fresh Start Advisory",
 ];
 
 // Stream color mapping (same as Sales page)
@@ -38,7 +38,7 @@ const STREAM_COLORS = {
   "Pumped On Property": { darker: "#92D050", lighter: "#CEEAB0" },
   "Henderson": { darker: "#92D050", lighter: "#CEEAB0" },
   "Create Cash Flow": { darker: "#92D050", lighter: "#CEEAB0" },
-  "Maple Group": { darker: "#92D050", lighter: "#CEEAB0" },
+  "Fresh Start Advisory": { darker: "#92D050", lighter: "#CEEAB0" },
   "Home Office / Studio": { darker: "#FF8C42", lighter: "#FFD4B3" },
 };
 
@@ -479,8 +479,8 @@ export default function SalesTotals() {
         return { line1: "HENDERSON", line2: " " };
       case "Create Cash Flow":
         return { line1: "CREATE CASH", line2: "FLOW" };
-      case "Maple Group":
-        return { line1: "MAPLE", line2: "GROUP" };
+      case "Fresh Start Advisory":
+        return { line1: "FRESH START", line2: "ADVISORY" };
       default:
         // Fallback: split by space or use first part
         const parts = streamUpper.split(" ");

@@ -42,9 +42,7 @@ export default function Colours({ project, onUpdate }) {
   const [portalEmailSubject, setPortalEmailSubject] = useState("");
   const [portalEmailBody, setPortalEmailBody] = useState("");
   const portalEmailBodyRef = useRef(null);
-  const isInitialMount = useRef(true);
-  const lastProjectId = useRef(null);
-  
+
   const valuesRef = useRef({ coloursStatus, notes, roofColour, claddingColour, baseboardsColour, roofStyle, fasciaGutterColour, balustradeColour, frontDoorColour, windowFramesColour, windowSurroundsColour });
   
   useEffect(() => {
@@ -52,42 +50,30 @@ export default function Colours({ project, onUpdate }) {
   }, [coloursStatus, notes, roofColour, claddingColour, baseboardsColour, roofStyle, fasciaGutterColour, balustradeColour, frontDoorColour, windowFramesColour, windowSurroundsColour]);
 
   useEffect(() => {
-    if (project) {
-      // Only update on initial mount or when project ID changes (new project loaded)
-      const projectIdChanged = lastProjectId.current !== project.id;
-      
-      if (isInitialMount.current || projectIdChanged) {
-        setColoursStatus(project.colours_status || "Not Sent");
-        setNotes(project.colours_notes || "");
-        setRoofColour(project.roof_colour || "Select");
-        setCladdingColour(project.cladding_colour || "Select");
-        setBaseboardsColour(project.baseboards_colour || "Select");
-        setRoofStyle(project.roof_style || "Select");
-        setFasciaGutterColour(project.fascia_gutter_colour || "Select");
-        setBalustradeColour(project.balustrade_colour || "Select");
-        setFrontDoorColour(project.front_door_colour || "Select");
-        setWindowFramesColour(project.window_frames_colour || "Select");
-        setWindowSurroundsColour(project.window_surrounds_colour || "Select");
-        
-        lastProjectId.current = project.id;
-        isInitialMount.current = false;
-      }
-      
-      // Set default checkboxes based on specs
-      const specs = project.specs || "";
-      if (specs.toLowerCase().includes("affordable")) {
-        setAttachAffordable(true);
-        setAttachSuperior(false);
-      } else if (specs.toLowerCase().includes("superior")) {
-        setAttachAffordable(false);
-        setAttachSuperior(true);
-      } else {
-        // Default to both unchecked if specs don't match
-        setAttachAffordable(false);
-        setAttachSuperior(false);
-      }
+    if (!project) return;
+    setColoursStatus(project.colours_status || "Not Sent");
+    setNotes(project.colours_notes || "");
+    setRoofColour(project.roof_colour || "Select");
+    setCladdingColour(project.cladding_colour || "Select");
+    setBaseboardsColour(project.baseboards_colour || "Select");
+    setRoofStyle(project.roof_style || "Select");
+    setFasciaGutterColour(project.fascia_gutter_colour || "Select");
+    setBalustradeColour(project.balustrade_colour || "Select");
+    setFrontDoorColour(project.front_door_colour || "Select");
+    setWindowFramesColour(project.window_frames_colour || "Select");
+    setWindowSurroundsColour(project.window_surrounds_colour || "Select");
+    const specs = project.specs || "";
+    if (specs.toLowerCase().includes("affordable")) {
+      setAttachAffordable(true);
+      setAttachSuperior(false);
+    } else if (specs.toLowerCase().includes("superior")) {
+      setAttachAffordable(false);
+      setAttachSuperior(true);
+    } else {
+      setAttachAffordable(false);
+      setAttachSuperior(false);
     }
-  }, [project]);
+  }, [project?.id]);
 
   // Update contentEditable when emailBody changes and modal is open
   useEffect(() => {
@@ -202,6 +188,10 @@ export default function Colours({ project, onUpdate }) {
     }
   }
 
+  async function saveAllFields() {
+    await saveField("colours_notes", valuesRef.current.notes);
+  }
+
   async function handleColoursStatusChange(e) {
     const newStatus = e.target.value;
     setColoursStatus(newStatus);
@@ -213,10 +203,6 @@ export default function Colours({ project, onUpdate }) {
     const newNotes = e.target.value;
     setNotes(newNotes);
     valuesRef.current.notes = newNotes;
-  }
-
-  async function handleNotesBlur() {
-    await saveField("colours_notes", valuesRef.current.notes);
   }
 
   async function saveColoursFromProjectPage(nextRoof, nextCladding, nextBaseboards) {
@@ -1240,7 +1226,7 @@ export default function Colours({ project, onUpdate }) {
               name="colours_notes"
               value={notes}
               onChange={handleNotesChange}
-              onBlur={handleNotesBlur}
+              onBlur={() => void saveAllFields()}
               placeholder="Enter notes..."
               style={{
                 width: "100%",

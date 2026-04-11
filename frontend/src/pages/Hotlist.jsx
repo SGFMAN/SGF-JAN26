@@ -693,7 +693,7 @@ export default function Hotlist() {
             </Link>
           </div>
           
-          {/* All Projects, In Design, In Construction, Finished Projects, Cancelled, On Hold - Light Green */}
+          {/* All Projects, Design Phase, Construction Phase, Finished Projects, Cancelled, On Hold - Light Green */}
           <div style={{ background: "#CEEAB0", borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: "2px solid #000" }}>
             <Link
               to="/all-projects"
@@ -737,10 +737,10 @@ export default function Hotlist() {
                 display: "block",
               }}
             >
-              In Design
+              Design Phase
             </Link>
             <Link
-              to="/in-construction"
+              to="/construction-phase"
               style={{
                 background: "transparent",
                 color: "#404049",
@@ -759,7 +759,7 @@ export default function Hotlist() {
                 display: "block",
               }}
             >
-              In Construction
+              Construction Phase
             </Link>
             <Link
               to="/finished-projects"

@@ -819,10 +819,10 @@ export default function SiteVisitPlanner() {
               display: "block",
             }}
           >
-            In Design
+            Design Phase
           </Link>
           <Link
-            to="/in-construction"
+            to="/construction-phase"
             style={{
               background: "transparent",
               color: "#404049",
@@ -840,7 +840,7 @@ export default function SiteVisitPlanner() {
               display: "block",
             }}
           >
-            In Construction
+            Construction Phase
           </Link>
           <Link
             to="/finished-projects"

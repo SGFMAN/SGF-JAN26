@@ -20,7 +20,7 @@ const STREAM_SORT_ORDER = [
   "Henderson",
   "Creat Cash Flow",
   "Create Cash Flow",
-  "Maple Group",
+  "Fresh Start Advisory",
 ];
 
 const CLASSIFICATION_MAP = {
@@ -45,7 +45,7 @@ const STREAM_MAP = {
   "Henderson": { acronym: "HEN", color: "#92D050" },
   "Creat Cash Flow": { acronym: "CCF", color: "#92D050" },
   "Create Cash Flow": { acronym: "CCF", color: "#92D050" },
-  "Maple Group": { acronym: "MAP", color: "#92D050" },
+  "Fresh Start Advisory": { acronym: "FSA", color: "#92D050" },
 };
 
 function normalizeState(projectState) {
@@ -210,7 +210,7 @@ export default function PortalProjects() {
             letterSpacing: "1px",
           }}
         >
-          In Design
+          Design Phase
         </h1>
 
         <div
@@ -353,7 +353,7 @@ export default function PortalProjects() {
                 display: "block",
               }}
             >
-              In Design
+              Design Phase
             </Link>
           </div>
 
@@ -384,7 +384,7 @@ export default function PortalProjects() {
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
             <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: 0 }}>
-              In Design <span style={{ color: SECTION_GREY, fontWeight: 600 }}>({countText})</span>
+              Design Phase <span style={{ color: SECTION_GREY, fontWeight: 600 }}>({countText})</span>
             </h2>
 
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>

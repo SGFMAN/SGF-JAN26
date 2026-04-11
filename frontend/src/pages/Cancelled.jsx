@@ -302,7 +302,7 @@ export default function Cancelled() {
             </Link>
           </div>
           
-          {/* All Projects, In Design, In Construction, Finished Projects, Cancelled, On Hold - Light Green */}
+          {/* All Projects, Design Phase, Construction Phase, Finished Projects, Cancelled, On Hold - Light Green */}
           <div style={{ background: "#CEEAB0", borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: "2px solid #000" }}>
             <Link
               to="/all-projects"
@@ -346,10 +346,10 @@ export default function Cancelled() {
                 display: "block",
               }}
             >
-              In Design
+              Design Phase
             </Link>
             <Link
-              to="/in-construction"
+              to="/construction-phase"
               style={{
                 background: "transparent",
                 color: "#404049",
@@ -368,7 +368,7 @@ export default function Cancelled() {
                 display: "block",
               }}
             >
-              In Construction
+              Construction Phase
             </Link>
             <Link
               to="/finished-projects"
@@ -677,7 +677,7 @@ export default function Cancelled() {
                   "Henderson": { acronym: "HEN", color: "#92D050" }, // Green
                   "Creat Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green
                   "Create Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green (handle both variations)
-                  "Maple Group": { acronym: "MAP", color: "#92D050" }, // Green
+                  "Fresh Start Advisory": { acronym: "FSA", color: "#92D050" }, // Green
                 };
                 const streamInfo = project.stream ? streamMap[project.stream] : null;
 

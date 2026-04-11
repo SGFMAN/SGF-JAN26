@@ -62,7 +62,8 @@ export default function App() {
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/apply-fields" element={<ApplyFields />} />
             <Route path="/finished-projects" element={<FinishedProjects />} />
-            <Route path="/in-construction" element={<InConstruction />} />
+            <Route path="/construction-phase" element={<InConstruction />} />
+            <Route path="/in-construction" element={<Navigate to="/construction-phase" replace />} />
             <Route path="/site-visit-manager" element={<SiteVisitManager />} />
             <Route path="/site-visit-planner" element={<SiteVisitPlanner />} />
             <Route path="/hotlist" element={<Hotlist />} />

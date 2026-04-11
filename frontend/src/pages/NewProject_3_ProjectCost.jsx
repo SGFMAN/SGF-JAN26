@@ -13,7 +13,7 @@ const STREAM_OPTIONS = [
   "Pumped on Property",
   "Henderson",
   "Creat Cash Flow",
-  "Maple Group",
+  "Fresh Start Advisory",
 ];
 
 const DEPOSIT_OPTIONS = ["Full 5%", "$5k only", "Other"];

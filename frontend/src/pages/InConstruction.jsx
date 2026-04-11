@@ -1,4 +1,9 @@
 import React, { useState, useEffect } from "react";
+import {
+  isConstructionPhaseStatus,
+  isHotlistStatus,
+  isCancelledStatus,
+} from "../utils/projectStatus";
 import { Link, useLocation } from "react-router-dom";
 import NewProject from "./NewProject_1_Address";
 import NewProject2 from "./NewProject_2_ClientDetails";
@@ -51,21 +56,21 @@ export default function InConstruction() {
     let isMounted = true;
     
     const handleFocus = () => {
-      if (isMounted && location.pathname === "/in-construction") {
+      if (isMounted && location.pathname === "/construction-phase") {
         console.log("Window focused, refetching projects...");
         fetchProjects();
       }
     };
     
     const handleVisibilityChange = () => {
-      if (isMounted && !document.hidden && location.pathname === "/in-construction") {
+      if (isMounted && !document.hidden && location.pathname === "/construction-phase") {
         console.log("Page visible, refetching projects...");
         fetchProjects();
       }
     };
     
     // Refetch when navigating to this page
-    if (location.pathname === "/in-construction") {
+    if (location.pathname === "/construction-phase") {
       fetchProjects();
     }
     
@@ -132,7 +137,7 @@ export default function InConstruction() {
       "Henderson": { acronym: "HEN", color: "#92D050" }, // Green
       "Creat Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green
       "Create Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green (handle both variations)
-      "Maple Group": { acronym: "MAP", color: "#92D050" }, // Green
+      "Fresh Start Advisory": { acronym: "FSA", color: "#92D050" }, // Green
     };
     return stream ? streamMap[stream] : null;
   }
@@ -183,7 +188,7 @@ export default function InConstruction() {
               letterSpacing: "1px",
             }}
           >
-            In Construction
+            Construction Phase
           </h1>
         </div>
         <div
@@ -368,7 +373,7 @@ export default function InConstruction() {
             </Link>
           </div>
           
-          {/* All Projects, In Design, In Construction, Finished Projects, Cancelled, On Hold - Light Green */}
+          {/* All Projects, Design Phase, Construction Phase, Finished Projects, Cancelled, On Hold - Light Green */}
           <div style={{ background: "#CEEAB0", borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: "2px solid #000" }}>
             <Link
               to="/all-projects"
@@ -412,10 +417,10 @@ export default function InConstruction() {
                 display: "block",
               }}
             >
-              In Design
+              Design Phase
             </Link>
             <Link
-              to="/in-construction"
+              to="/construction-phase"
               style={{
                 background: "#92D050",
                 color: WHITE,
@@ -434,7 +439,7 @@ export default function InConstruction() {
                 display: "block",
               }}
             >
-              In Construction
+              Construction Phase
             </Link>
             <Link
               to="/finished-projects"
@@ -620,20 +625,10 @@ export default function InConstruction() {
           }}
         >
           <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "16px" }}>
-            In Construction {(() => {
+            Construction Phase {(() => {
               const constructionProjects = projects.filter((project) => {
-                // Exclude Hotlist and Cancelled status
-                if (project.status === "Hotlist" || project.status === "Cancelled") {
-                  return false;
-                }
-                if (project.status !== "Construction Phase") {
-                  return false;
-                }
-                // Exclude if on_hold is explicitly true (boolean or string)
-                // Handle all possible values: true, 'true', false, 'false', null, undefined, 1, '1', 0, '0'
-                const onHoldValue = project.on_hold;
-                const isOnHold = onHoldValue === true || onHoldValue === 'true' || onHoldValue === 1 || onHoldValue === '1';
-                return !isOnHold;
+                if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
+                return isConstructionPhaseStatus(project.status);
               });
               return constructionProjects.length > 0 ? `(${constructionProjects.length} total)` : "";
             })()}
@@ -676,21 +671,9 @@ export default function InConstruction() {
           {loading && <p style={{ color: "#32323399" }}>Loading projects...</p>}
           {error && <p style={{ color: "#cc3333" }}>Error: {error}</p>}
           {!loading && !error && projects.length > 0 && (() => {
-            // Filter to only show projects with "Construction Phase" status, excluding those that are on hold
-            // Note: We don't handle legacy "On Hold" status here since Construction Phase is different
             let constructionProjects = projects.filter((project) => {
-              // Exclude Hotlist and Cancelled status
-              if (project.status === "Hotlist" || project.status === "Cancelled") {
-                return false;
-              }
-              if (project.status !== "Construction Phase") {
-                return false;
-              }
-              // Exclude if on_hold is explicitly true (boolean or string)
-              // Handle all possible values: true, 'true', false, 'false', null, undefined, 1, '1', 0, '0'
-              const onHoldValue = project.on_hold;
-              const isOnHold = onHoldValue === true || onHoldValue === 'true' || onHoldValue === 1 || onHoldValue === '1';
-              return !isOnHold;
+              if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
+              return isConstructionPhaseStatus(project.status);
             });
             
             // Filter by state if specified

@@ -9,6 +9,12 @@ import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
 import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
+import {
+  PROJECT_STATUS_OPTIONS,
+  isDesignPhaseStatus,
+  isHotlistStatus,
+  isCancelledStatus,
+} from "../utils/projectStatus";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -89,7 +95,7 @@ const FIELD_DEFINITIONS = {
   },
   status: {
     label: "Project Status",
-    values: ["Design Phase", "Construction Phase", "Cancelled", "Complete"],
+    values: PROJECT_STATUS_OPTIONS,
     defaultValue: "Design Phase",
   },
   year: {
@@ -125,7 +131,7 @@ const STREAM_SORT_ORDER = [
   "Henderson",
   "Creat Cash Flow",
   "Create Cash Flow",
-  "Maple Group",
+  "Fresh Start Advisory",
 ];
 
 export default function HomePage() {
@@ -224,12 +230,6 @@ export default function HomePage() {
       }
       const data = await response.json();
       console.log("Projects from API:", data);
-      // Log on_hold values for all projects to debug
-      data.forEach(project => {
-        if (project.id === 42 || project.status === "Design Phase") {
-          console.log(`[FETCH] Project ${project.id} (${project.suburb} - ${project.street}): status=${project.status}, on_hold=${project.on_hold} (type: ${typeof project.on_hold})`);
-        }
-      });
       setProjects(data || []);
     } catch (err) {
       setError(err.message);
@@ -399,9 +399,8 @@ export default function HomePage() {
     // Get unique values from projects (using effective values)
     const projectValues = new Set();
     projects.forEach(project => {
-      // Only include design phase projects (including those that are on hold)
-      // Also accept legacy older status value "In Design"
-      if (project.status === "Design Phase" || project.status === "In Design") {
+      // Design pipeline by status only (on_hold is separate)
+      if (isDesignPhaseStatus(project.status)) {
         const effectiveValue = getEffectiveValue(project, selectedField);
         if (effectiveValue) {
           projectValues.add(effectiveValue);
@@ -422,43 +421,11 @@ export default function HomePage() {
 
   // Filter projects based on status, field/value, search query, and state filter
   function getFilteredProjects() {
-    // Only show "Design Phase" projects, excluding those that are on hold
-    // Also handle legacy "On Hold" status (treat it as "Design Phase")
-    // When on_hold is unchecked, backend stores it as NULL
-    // When on_hold is checked, backend stores it as true (boolean) or 'true' (string)
+    // Design Phase list by status only; on_hold is the sash + On Hold page only.
     let filtered = projects.filter((project) => {
-      // Exclude Hotlist and Cancelled status
-      if (project.status === "Hotlist" || project.status === "Cancelled") {
-        return false;
-      }
-      // Accept "Design Phase" (and legacy older values) or "On Hold"
-      if (project.status !== "Design Phase" && project.status !== "On Hold" && project.status !== "In Design") {
-        return false;
-      }
-      
-      // Get the on_hold value
-      const onHoldValue = project.on_hold;
-      
-      // Only exclude if on_hold is explicitly true
-      // Accept: true (boolean), 'true' (string), 1 (number), '1' (string)
-      // Include everything else: false, 'false', null, undefined, 0, '0', etc.
-      const isOnHold = onHoldValue === true || 
-                       onHoldValue === 'true' || 
-                       onHoldValue === 1 || 
-                       onHoldValue === '1';
-      
-      // Debug: Always log project 42, and log others if they have unexpected on_hold values
-      if (project.id === 42) {
-        console.log(`[FILTER] Project ${project.id} (${project.suburb} - ${project.street}): status=${project.status}, on_hold=${onHoldValue} (type: ${typeof onHoldValue}), isOnHold=${isOnHold}, will ${isOnHold ? 'EXCLUDE' : 'INCLUDE'}`);
-      } else if (onHoldValue !== null && onHoldValue !== undefined && onHoldValue !== false && onHoldValue !== true && onHoldValue !== 'true' && onHoldValue !== 'false') {
-        console.log(`[FILTER] Project ${project.id} (${project.suburb} - ${project.street}): on_hold =`, onHoldValue, `(type: ${typeof onHoldValue}), isOnHold =`, isOnHold, `→ will ${isOnHold ? 'EXCLUDE' : 'INCLUDE'}`);
-      }
-      
-      const shouldInclude = !isOnHold;
-      if (project.id === 42) {
-        console.log(`[FILTER] Project 42 final decision: ${shouldInclude ? 'INCLUDED' : 'EXCLUDED'}`);
-      }
-      return shouldInclude;
+      if (isHotlistStatus(project.status)) return false;
+      if (isCancelledStatus(project.status)) return false;
+      return isDesignPhaseStatus(project.status);
     });
 
     // Filter by state if specified
@@ -576,7 +543,7 @@ export default function HomePage() {
               letterSpacing: "1px",
             }}
           >
-            In Design
+            Design Phase
           </h1>
         </div>
         <div
@@ -761,7 +728,7 @@ export default function HomePage() {
             </Link>
           </div>
           
-          {/* All Projects, In Design, In Construction, Finished Projects, Cancelled, On Hold - Light Green */}
+          {/* All Projects, Design Phase, Construction Phase, Finished Projects, Cancelled, On Hold - Light Green */}
           <div style={{ background: "#CEEAB0", borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: "2px solid #000" }}>
             <Link
               to="/all-projects"
@@ -805,10 +772,10 @@ export default function HomePage() {
                 display: "block",
               }}
             >
-              In Design
+              Design Phase
             </Link>
             <Link
-              to="/in-construction"
+              to="/construction-phase"
               style={{
                 background: "transparent",
                 color: "#404049",
@@ -827,7 +794,7 @@ export default function HomePage() {
                 display: "block",
               }}
             >
-              In Construction
+              Construction Phase
             </Link>
             <Link
               to="/finished-projects"
@@ -1095,21 +1062,10 @@ export default function HomePage() {
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
             <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: 0 }}>
-              In Design {(() => {
+              Design Phase {(() => {
                 const currentProjects = projects.filter((project) => {
-                  // Exclude Hotlist and Cancelled status
-                  if (project.status === "Hotlist" || project.status === "Cancelled") {
-                    return false;
-                  }
-                  // Accept "Design Phase", legacy "In Design", or legacy "On Hold"
-                  if (project.status !== "Design Phase" && project.status !== "On Hold" && project.status !== "In Design") {
-                    return false;
-                  }
-                  // Exclude if on_hold is explicitly true (boolean or string)
-                  // Handle all possible values: true, 'true', false, 'false', null, undefined, 1, '1', 0, '0'
-                  const onHoldValue = project.on_hold;
-                  const isOnHold = onHoldValue === true || onHoldValue === 'true' || onHoldValue === 1 || onHoldValue === '1';
-                  return !isOnHold;
+                  if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
+                  return isDesignPhaseStatus(project.status);
                 });
                 const totalCount = currentProjects.length;
                 
@@ -1190,8 +1146,8 @@ export default function HomePage() {
                     })
                     .join("\n");
 
-                  const emailBody = `In Design Projects List:\n\n${projectList}\n\nTotal: ${filteredProjects.length} projects`;
-                  const mailtoLink = `mailto:?subject=In Design Projects List&body=${encodeURIComponent(emailBody)}`;
+                  const emailBody = `Design Phase Projects List:\n\n${projectList}\n\nTotal: ${filteredProjects.length} projects`;
+                  const mailtoLink = `mailto:?subject=Design Phase Projects List&body=${encodeURIComponent(emailBody)}`;
                   window.location.href = mailtoLink;
                 }}
                 style={{
@@ -1413,7 +1369,7 @@ export default function HomePage() {
                     "Henderson": { acronym: "HEN", color: "#92D050" }, // Green
                     "Creat Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green
                     "Create Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green (handle both variations)
-                    "Maple Group": { acronym: "MAP", color: "#92D050" }, // Green
+                    "Fresh Start Advisory": { acronym: "FSA", color: "#92D050" }, // Green
                   };
                   const streamInfo = project.stream ? streamMap[project.stream] : null;
 

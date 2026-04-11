@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
+import { PROJECT_STATUS_OPTIONS as STATUS_OPTIONS } from "../utils/projectStatus";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 const API_URL = "";
-
-const STATUS_OPTIONS = ["Design Phase", "Construction Phase", "Cancelled", "Complete"];
 const SPECS_OPTIONS = ["Affordable", "Superior"];
 const CLASSIFICATION_OPTIONS = [
   "Small Second Dwelling",
@@ -47,9 +46,7 @@ export default function ProjectInfo({ project, onUpdate }) {
   
   // Use ref to track latest values for saving
   const valuesRef = useRef({ status, street, suburb, state, specs, classification, projectInfoNotes, onHold, qpNumber });
-  const saveTimeoutRef = useRef(null);
-  const qpSaveTimeoutRef = useRef(null);
-  
+
   // Update ref whenever state changes
   useEffect(() => {
     valuesRef.current = { status, street, suburb, state, specs, classification, projectInfoNotes, onHold, qpNumber };
@@ -67,9 +64,9 @@ export default function ProjectInfo({ project, onUpdate }) {
     setSpecs(project?.specs || "");
     setClassification(project?.classification || "");
     setProjectInfoNotes(project?.project_info_notes || "");
-    setOnHold(project?.on_hold === 'true' || project?.on_hold === true);
+    setOnHold(project?.on_hold === "true" || project?.on_hold === true);
     setQpNumber(project?.qp_number || "");
-  }, [project]);
+  }, [project?.id]);
 
   async function saveAllFields() {
     if (!project?.id) return;
@@ -203,38 +200,6 @@ export default function ProjectInfo({ project, onUpdate }) {
     const newValue = e.target.value;
     setQpNumber(newValue);
     valuesRef.current.qpNumber = newValue;
-
-    if (!isQldState(valuesRef.current.state)) return;
-
-    if (qpSaveTimeoutRef.current) {
-      clearTimeout(qpSaveTimeoutRef.current);
-    }
-    qpSaveTimeoutRef.current = setTimeout(async () => {
-      if (!project?.id) return;
-      const currentValues = valuesRef.current;
-      if (!isQldState(currentValues.state)) return;
-      try {
-        const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            qp_number: (currentValues.qpNumber || "").trim() || null,
-          }),
-        });
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => response.statusText);
-          console.error("Error saving QP number:", response.status, errorText);
-          return;
-        }
-        if (onUpdate) {
-          onUpdate();
-        }
-      } catch (error) {
-        console.error("Error saving QP number:", error);
-      }
-    }, 1000);
   }
 
   async function handleSpecsChange(e) {
@@ -257,48 +222,6 @@ export default function ProjectInfo({ project, onUpdate }) {
     const newValue = e.target.value;
     setProjectInfoNotes(newValue);
     valuesRef.current.projectInfoNotes = newValue;
-    
-    // Clear existing timeout
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-    
-    // Auto-save after 1 second of no typing
-    saveTimeoutRef.current = setTimeout(async () => {
-      if (!project?.id) return;
-      const currentValues = valuesRef.current;
-      try {
-        await fetch(`${API_URL}/api/projects/${project.id}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            project_info_notes: currentValues.projectInfoNotes || null,
-          }),
-        });
-        if (onUpdate) {
-          onUpdate();
-        }
-      } catch (error) {
-        console.error("Error saving project info notes:", error);
-      }
-    }, 1000);
-  }
-
-  async function handleBlur() {
-    // Clear any pending timeout
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = null;
-    }
-    if (qpSaveTimeoutRef.current) {
-      clearTimeout(qpSaveTimeoutRef.current);
-      qpSaveTimeoutRef.current = null;
-    }
-    // Save all fields - ref should have latest values from change handlers
-    console.log("Blur triggered, saving all fields");
-    await saveAllFields();
   }
 
   return (
@@ -320,7 +243,6 @@ export default function ProjectInfo({ project, onUpdate }) {
                 data-field="status"
                 value={status}
                 onChange={handleStatusChange}
-                onBlur={handleBlur}
                 style={{
                   width: "100%",
                   maxWidth: "300px",
@@ -369,7 +291,6 @@ export default function ProjectInfo({ project, onUpdate }) {
                 data-field="street"
                 value={street}
                 onChange={handleStreetChange}
-                onBlur={handleBlur}
                 style={{
                   width: "100%",
                   maxWidth: "300px",
@@ -393,7 +314,6 @@ export default function ProjectInfo({ project, onUpdate }) {
                 data-field="suburb"
                 value={suburb}
                 onChange={handleSuburbChange}
-                onBlur={handleBlur}
                 style={{
                   width: "100%",
                   maxWidth: "300px",
@@ -417,7 +337,6 @@ export default function ProjectInfo({ project, onUpdate }) {
                 data-field="state"
                 value={state}
                 onChange={handleStateChange}
-                onBlur={handleBlur}
                 style={{
                   width: "100%",
                   maxWidth: "300px",
@@ -442,7 +361,6 @@ export default function ProjectInfo({ project, onUpdate }) {
                   data-field="qp_number"
                   value={qpNumber}
                   onChange={handleQpNumberChange}
-                  onBlur={handleBlur}
                   placeholder="Queensland project number"
                   style={{
                     width: "100%",
@@ -558,7 +476,6 @@ export default function ProjectInfo({ project, onUpdate }) {
                 name="specs"
                 value={specs}
                 onChange={handleSpecsChange}
-                onBlur={handleBlur}
                 style={{
                   width: "100%",
                   maxWidth: "300px",
@@ -589,7 +506,6 @@ export default function ProjectInfo({ project, onUpdate }) {
                 name="classification"
                 value={classification}
                 onChange={handleClassificationChange}
-                onBlur={handleBlur}
                 style={{
                   width: "100%",
                   maxWidth: "300px",
@@ -651,7 +567,7 @@ export default function ProjectInfo({ project, onUpdate }) {
               name="project_info_notes"
               value={projectInfoNotes}
               onChange={handleProjectInfoNotesChange}
-              onBlur={handleBlur}
+              onBlur={() => void saveAllFields()}
               placeholder="Add project notes..."
               style={{
                 width: "100%",

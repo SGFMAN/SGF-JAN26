@@ -601,7 +601,7 @@ export default function SiteVisitManager() {
                       "Henderson": { acronym: "HEN", color: "#92D050" }, // Green
                       "Creat Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green
                       "Create Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green
-                      "Maple Group": { acronym: "MAP", color: "#92D050" }, // Green
+                      "Fresh Start Advisory": { acronym: "FSA", color: "#92D050" }, // Green
                     };
                     const streamInfo = project.stream ? streamMap[project.stream] : null;
                     

@@ -14,7 +14,7 @@ const STREAM_OPTIONS = [
   "Pumped on Property",
   "Henderson",
   "Creat Cash Flow",
-  "Maple Group",
+  "Fresh Start Advisory",
 ];
 
 function getLongestText(arr, include = "") {
@@ -35,14 +35,6 @@ export default function Admin({ project, onUpdate }) {
   const [salesperson, setSalesperson] = useState(project?.salesperson || "");
   const [salesTeamUsers, setSalesTeamUsers] = useState([]);
   const [loadingSalesUsers, setLoadingSalesUsers] = useState(false);
-  const [variationsFiles, setVariationsFiles] = useState([]);
-  const [loadingVariations, setLoadingVariations] = useState(false);
-  const [variationsPath, setVariationsPath] = useState("");
-  const [variationsProjectPath, setVariationsProjectPath] = useState("");
-  const [variationsResolveMethod, setVariationsResolveMethod] = useState("");
-  const [variationsYearFolder, setVariationsYearFolder] = useState("");
-  const [variationsExists, setVariationsExists] = useState(true);
-  const [variationsError, setVariationsError] = useState("");
   const [showDepositBalanceEmailModal, setShowDepositBalanceEmailModal] = useState(false);
   const [depositEmailTo, setDepositEmailTo] = useState("");
   const [depositEmailFrom, setDepositEmailFrom] = useState("");
@@ -50,6 +42,7 @@ export default function Admin({ project, onUpdate }) {
   const [depositEmailBody, setDepositEmailBody] = useState("");
   const [depositEmailPreparing, setDepositEmailPreparing] = useState(false);
   const depositEmailBodyRef = useRef(null);
+  const saveFieldRef = useRef(() => Promise.resolve());
   
   useEffect(() => {
     // Initialize deposit amount - format with commas
@@ -69,11 +62,6 @@ export default function Admin({ project, onUpdate }) {
       setProjectCost(numericValue > 0 ? `$${numericValue.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : "");
     } else {
       setProjectCost("");
-    }
-
-    // Fetch variations files
-    if (project?.id) {
-      fetchVariationsFiles();
     }
 
     // Initialize project date
@@ -195,6 +183,18 @@ export default function Admin({ project, onUpdate }) {
     }
   }
 
+  useEffect(() => {
+    saveFieldRef.current = saveField;
+  });
+
+  useEffect(() => {
+    return () => {
+      const save = saveFieldRef.current;
+      void save("deposit", valuesRef.current.deposit);
+      void save("project_cost", valuesRef.current.projectCost);
+    };
+  }, []);
+
   async function handleStreamChange(e) {
     const newStream = e.target.value;
     setStream(newStream);
@@ -226,10 +226,6 @@ export default function Admin({ project, onUpdate }) {
     valuesRef.current.deposit = formattedValue;
   }
 
-  async function handleCustomDepositBlur() {
-    await saveField("deposit", valuesRef.current.deposit);
-  }
-
   function handleProjectCostChange(e) {
     // Format project cost: remove all non-numeric characters, add $ prefix and commas
     const numericValue = e.target.value.replace(/[^0-9]/g, "");
@@ -237,10 +233,6 @@ export default function Admin({ project, onUpdate }) {
     const formattedValue = numeric > 0 ? `$${numeric.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : "";
     setProjectCost(formattedValue);
     valuesRef.current.projectCost = formattedValue;
-  }
-
-  async function handleProjectCostBlur() {
-    await saveField("project_cost", valuesRef.current.projectCost);
   }
 
   // Calculate full 5% deposit from project cost
@@ -361,51 +353,6 @@ export default function Admin({ project, onUpdate }) {
     }
   }
 
-  const fetchVariationsFiles = async () => {
-    if (!project?.id) return;
-
-    setLoadingVariations(true);
-    try {
-      const response = await fetch(`${API_URL}/api/files/variations/${project.id}`);
-      if (response.ok) {
-        const data = await response.json();
-        setVariationsFiles(data.files || []);
-        setVariationsPath(data.path || "");
-        setVariationsProjectPath(data.projectPath || "");
-        setVariationsResolveMethod(data.resolveMethod || "");
-        setVariationsYearFolder(data.projectYearFolder || "");
-        setVariationsExists(data.exists !== false);
-        setVariationsError(data.error || "");
-      } else {
-        console.error("Failed to fetch variations files");
-        setVariationsFiles([]);
-        setVariationsPath("");
-        setVariationsProjectPath("");
-        setVariationsResolveMethod("");
-        setVariationsYearFolder("");
-        setVariationsExists(false);
-        setVariationsError("");
-      }
-    } catch (error) {
-      console.error("Error fetching variations files:", error);
-      setVariationsFiles([]);
-      setVariationsPath("");
-      setVariationsProjectPath("");
-      setVariationsResolveMethod("");
-      setVariationsYearFolder("");
-      setVariationsExists(false);
-      setVariationsError("");
-    } finally {
-      setLoadingVariations(false);
-    }
-  };
-
-  function openVariationsFile(fileName) {
-    if (!project?.id || !fileName) return;
-    const url = `${API_URL}/api/files/variations/${project.id}/file?relativePath=${encodeURIComponent(fileName)}`;
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
-
   return (
     <div>
       <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT }}>
@@ -446,9 +393,9 @@ export default function Admin({ project, onUpdate }) {
               </select>
             </div>
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", display: "flex", gap: "12px" }}>
-                <div style={{ flex: "1" }}>Start Date</div>
-                <div style={{ flex: "1" }}>Project Days</div>
+              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", display: "flex", gap: "12px", alignItems: "baseline" }}>
+                <div style={{ flex: "1", minWidth: 0 }}>Start Date</div>
+                <div style={{ flex: "0 0 auto", width: "5.5rem", textAlign: "center" }}>Project Days</div>
               </div>
               <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
                 <input
@@ -457,6 +404,7 @@ export default function Admin({ project, onUpdate }) {
                   onChange={handleProjectDateChange}
                   style={{
                     flex: "1",
+                    minWidth: 0,
                     padding: "10px 12px",
                     borderRadius: "8px",
                     border: "none",
@@ -481,8 +429,10 @@ export default function Admin({ project, onUpdate }) {
                   })()}
                   readOnly
                   style={{
-                    flex: "1",
-                    padding: "10px 12px",
+                    flex: "0 0 auto",
+                    width: "5.5rem",
+                    minWidth: "5.5rem",
+                    padding: "10px 8px",
                     borderRadius: "8px",
                     border: "none",
                     fontSize: "1rem",
@@ -490,6 +440,7 @@ export default function Admin({ project, onUpdate }) {
                     background: WHITE,
                     boxSizing: "border-box",
                     cursor: "default",
+                    textAlign: "center",
                   }}
                 />
               </div>
@@ -541,7 +492,6 @@ export default function Admin({ project, onUpdate }) {
                 name="projectCost"
                 value={projectCost}
                 onChange={handleProjectCostChange}
-                onBlur={handleProjectCostBlur}
                 placeholder="$0"
                 style={{
                   width: "100%",
@@ -588,7 +538,6 @@ export default function Admin({ project, onUpdate }) {
                     name="customDeposit"
                     value={customDeposit}
                     onChange={handleCustomDepositChange}
-                    onBlur={handleCustomDepositBlur}
                     placeholder="$0"
                     style={{
                       flex: "1",
@@ -625,107 +574,11 @@ export default function Admin({ project, onUpdate }) {
             )}
           </div>
 
-          {/* Column 3 - Variations */}
-          <div style={{ flex: "1", minWidth: "200px" }}>
-            <div style={{ marginBottom: "16px" }}>
-              <h3 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: "8px", color: MONUMENT }}>
-                Variations
-              </h3>
-              <div style={{ marginBottom: "8px" }}>
-                <div style={{ color: "#666", fontSize: "0.72rem", marginBottom: "4px" }}>
-                  Variations folder (files listed from here):
-                </div>
-                {variationsPath ? (
-                  <div
-                    style={{
-                      color: "#333",
-                      fontSize: "0.75rem",
-                      fontFamily: "monospace",
-                      wordBreak: "break-all",
-                    }}
-                  >
-                    {variationsPath}
-                  </div>
-                ) : (
-                  <div style={{ color: "#999", fontSize: "0.75rem" }}>—</div>
-                )}
-                {variationsYearFolder ? (
-                  <div style={{ color: "#666", fontSize: "0.72rem", marginTop: "6px" }}>
-                    Year folder (4 digits): <strong style={{ color: "#333" }}>{variationsYearFolder}</strong>
-                  </div>
-                ) : null}
-                {variationsProjectPath ? (
-                  <>
-                    <div style={{ color: "#666", fontSize: "0.72rem", marginTop: "8px", marginBottom: "4px" }}>
-                      Project folder:
-                    </div>
-                    <div
-                      style={{
-                        color: "#333",
-                        fontSize: "0.75rem",
-                        fontFamily: "monospace",
-                        wordBreak: "break-all",
-                      }}
-                    >
-                      {variationsProjectPath}
-                    </div>
-                  </>
-                ) : null}
-                {variationsResolveMethod ? (
-                  <div style={{ color: "#666", fontSize: "0.72rem", marginTop: "6px" }}>
-                    Resolved: {variationsResolveMethod}
-                  </div>
-                ) : null}
-                {!variationsExists && variationsError ? (
-                  <div style={{ color: "#c62828", fontSize: "0.75rem", marginTop: "8px" }}>
-                    {variationsError}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-            {loadingVariations ? (
-              <div style={{ color: "#32323399", fontSize: "0.9rem" }}>Loading files...</div>
-            ) : variationsFiles.length === 0 ? (
-              <div style={{ color: "#32323399", fontSize: "0.9rem" }}>
-                {variationsExists ? "No files found in this folder" : "Folder not found or not accessible"}
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                {variationsFiles.map((file, index) => (
-                  <button
-                    key={`${file.name}-${index}`}
-                    type="button"
-                    onClick={() => openVariationsFile(file.name)}
-                    style={{
-                      padding: "10px 12px",
-                      background: WHITE,
-                      borderRadius: "6px",
-                      fontSize: "0.9rem",
-                      color: MONUMENT,
-                      border: `1px solid ${SECTION_GREY}`,
-                      textAlign: "left",
-                      cursor: "pointer",
-                      transition: "background 0.15s, box-shadow 0.15s",
-                      width: "100%",
-                      boxSizing: "border-box",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "#f0f0f0";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = WHITE;
-                    }}
-                  >
-                    {file.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* Column 3 - reserved (variations moved to Variations tab) */}
+          <div style={{ flex: "1", minWidth: "200px" }} />
 
-          {/* Column 4 - Empty for now */}
-          <div style={{ flex: "1", minWidth: "200px" }}>
-          </div>
+          {/* Column 4 - reserved */}
+          <div style={{ flex: "1", minWidth: "200px" }} />
         </div>
       )}
 

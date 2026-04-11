@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isDesignPhaseStatus, isHotlistStatus, isCancelledStatus } from "../utils/projectStatus";
 import { Link } from "react-router-dom";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import { isUserAdmin } from "../utils/auth";
@@ -99,11 +100,10 @@ export default function StatusManager() {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
       const data = await response.json();
-      // Filter for In Design projects (Design Phase or "In Design"), exclude Hotlist and Cancelled
-      const isInDesignStatus = (s) => s === "Design Phase" || s === "In Design";
+      // Design Phase projects only (by status).
       const designPhaseProjects = data.filter((project) => {
-        if (project.status === "Hotlist" || project.status === "Cancelled") return false;
-        return isInDesignStatus(project.status);
+        if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
+        return isDesignPhaseStatus(project.status);
       });
       // Sort alphabetically by suburb
       designPhaseProjects.sort((a, b) => {

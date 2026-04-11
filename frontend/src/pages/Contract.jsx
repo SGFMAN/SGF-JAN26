@@ -18,20 +18,19 @@ export default function Contract({ project, onUpdate }) {
   const [notes, setNotes] = useState(project?.notes || "");
   
   const valuesRef = useRef({ contractStatus, supportingDocumentsStatus, waterAuthority, waterDeclarationStatus, notes });
-  
+
   useEffect(() => {
     valuesRef.current = { contractStatus, supportingDocumentsStatus, waterAuthority, waterDeclarationStatus, notes };
   }, [contractStatus, supportingDocumentsStatus, waterAuthority, waterDeclarationStatus, notes]);
 
   useEffect(() => {
-    if (project) {
-      setContractStatus(project.contract_status || "Not Sent");
-      setSupportingDocumentsStatus(project.supporting_documents_status || "Not Sent");
-      setWaterAuthority(project.water_authority || "Not Required");
-      setWaterDeclarationStatus(project.water_declaration_status || "Not Sent");
-      setNotes(project.notes || "");
-    }
-  }, [project]);
+    if (!project) return;
+    setContractStatus(project.contract_status || "Not Sent");
+    setSupportingDocumentsStatus(project.supporting_documents_status || "Not Sent");
+    setWaterAuthority(project.water_authority || "Not Required");
+    setWaterDeclarationStatus(project.water_declaration_status || "Not Sent");
+    setNotes(project.notes || "");
+  }, [project?.id]);
 
   // Format date and time for display
   function formatDateTime(dateTimeStr) {
@@ -137,6 +136,10 @@ export default function Contract({ project, onUpdate }) {
     }
   }
 
+  async function saveAllFields() {
+    await saveField("notes", valuesRef.current.notes);
+  }
+
   async function handleContractStatusChange(e) {
     const newStatus = e.target.value;
     setContractStatus(newStatus);
@@ -176,10 +179,6 @@ export default function Contract({ project, onUpdate }) {
     const newNotes = e.target.value;
     setNotes(newNotes);
     valuesRef.current.notes = newNotes;
-  }
-
-  async function handleNotesBlur() {
-    await saveField("notes", valuesRef.current.notes);
   }
 
   return (
@@ -467,7 +466,7 @@ export default function Contract({ project, onUpdate }) {
               name="notes"
               value={notes}
               onChange={handleNotesChange}
-              onBlur={handleNotesBlur}
+              onBlur={() => void saveAllFields()}
               placeholder="Enter notes..."
               style={{
                 width: "100%",

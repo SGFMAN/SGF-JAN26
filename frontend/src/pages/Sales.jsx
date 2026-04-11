@@ -21,7 +21,7 @@ const STREAMS = [
   "Pumped On Property",
   "Henderson",
   "Create Cash Flow",
-  "Maple Group",
+  "Fresh Start Advisory",
 ];
 
 export default function Sales() {
@@ -254,7 +254,7 @@ export default function Sales() {
   }, [projects]);
 
   // Filter projects by selected year and selected month
-  // Shows ALL projects regardless of status (Complete, In Construction, Cancelled, etc.)
+  // Shows ALL projects regardless of status (Complete, Construction Phase, Cancelled, etc.)
   // The year field stores dates in YYYY-MM-DD format
   const monthFilteredProjects = React.useMemo(() => {
     return projects.filter((project) => {
@@ -394,7 +394,7 @@ export default function Sales() {
   const column1Stream = "SGF - VIC";
   const column2Stream = "SGF - QLD";
   const column3Streams = ["Dual Dwelling", "ATA", "Pumped On Property"];
-  const column4Streams = ["Henderson", "Create Cash Flow", "Maple Group"];
+  const column4Streams = ["Henderson", "Create Cash Flow", "Fresh Start Advisory"];
 
   return (
     <div
@@ -1118,7 +1118,7 @@ export default function Sales() {
                 })}
               </div>
 
-              {/* Column 4: Henderson, Create Cash Flow, Maple Group */}
+              {/* Column 4: Henderson, Create Cash Flow, Fresh Start Advisory */}
               <div
                 style={{
                   display: "flex",

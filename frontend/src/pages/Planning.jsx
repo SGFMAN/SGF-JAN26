@@ -33,26 +33,22 @@ export default function Planning({ project, onUpdate }) {
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const emailBodyRef = useRef(null);
-
   useEffect(() => {
-    if (project) {
-      setPlanningStatus(project.planning_status || "Not Selected");
-      setEnergyReportStatus(project.energy_report_status || "Not Submitted");
-      setFootingCertificationStatus(project.footing_certification_status || "Not Submitted");
-      setBuildingPermitStatus(project.building_permit_status || "Not Submitted");
-      // Keep local septic values if backend payload is stale/missing these fields
-      setSepticPermit((prev) => {
-        const incoming = project.septic_permit;
-        if (incoming === undefined || incoming === null || incoming === "" || incoming === "Not Selected") {
-          return prev || "Not Required";
-        }
-        return incoming;
-      });
-      setSepticNotes((prev) => project.septic_notes ?? prev);
-      setSepticEmailSentDate(project.septic_email_sent_date || "");
-      setPic(project.pic === "Yes" ? "Yes" : "No");
+    if (!project) return;
+    setPlanningStatus(project.planning_status || "Not Selected");
+    setEnergyReportStatus(project.energy_report_status || "Not Submitted");
+    setFootingCertificationStatus(project.footing_certification_status || "Not Submitted");
+    setBuildingPermitStatus(project.building_permit_status || "Not Submitted");
+    const incoming = project.septic_permit;
+    if (incoming === undefined || incoming === null || incoming === "" || incoming === "Not Selected") {
+      setSepticPermit("Not Required");
+    } else {
+      setSepticPermit(incoming);
     }
-  }, [project]);
+    setSepticNotes(project.septic_notes || "");
+    setSepticEmailSentDate(project.septic_email_sent_date || "");
+    setPic(project.pic === "Yes" ? "Yes" : "No");
+  }, [project?.id]);
 
   useEffect(() => {
     if (showSepticEmailModal && emailBodyRef.current && emailBody) {
@@ -137,10 +133,6 @@ export default function Planning({ project, onUpdate }) {
 
   function handleSepticNotesChange(e) {
     setSepticNotes(e.target.value);
-  }
-
-  function handleSepticNotesBlur() {
-    saveSepticFields({ septic_notes: septicNotes || "" });
   }
 
   async function saveSepticFields(partial) {
@@ -564,7 +556,11 @@ export default function Planning({ project, onUpdate }) {
               <textarea
                 value={septicNotes}
                 onChange={handleSepticNotesChange}
-                onBlur={handleSepticNotesBlur}
+                onBlur={() =>
+                  void saveSepticFields({
+                    septic_notes: septicNotes.trim() === "" ? null : septicNotes,
+                  })
+                }
                 rows={5}
                 placeholder="Add septic notes..."
                 style={{
