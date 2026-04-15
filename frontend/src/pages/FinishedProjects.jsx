@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Fragment, useMemo } from "react";
 import { Link } from "react-router-dom";
 import NewProject from "./NewProject_1_Address";
 import NewProject2 from "./NewProject_2_ClientDetails";
@@ -17,6 +17,30 @@ const WHITE = "#fff";
 
 const API_URL = "";
 
+const CLASSIFICATION_SORT_ORDER = [
+  "Small Second Dwelling",
+  "Dependant Persons Unit",
+  "Detached Extension",
+  "Dwelling",
+  "Home Office / Studio",
+  "Dwelling & DPU",
+  "Dwelling & SSD",
+  "SSD & DPU",
+  "Dual Occ",
+];
+const STREAM_SORT_ORDER = [
+  "SGF - VIC",
+  "SGF - QLD",
+  "Dual Dwelling",
+  "ATA",
+  "Pumped on Property",
+  "Pumped On Property",
+  "Henderson",
+  "Creat Cash Flow",
+  "Create Cash Flow",
+  "Fresh Start Advisory",
+];
+
 export default function FinishedProjects() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -24,6 +48,7 @@ export default function FinishedProjects() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [stateFilter, setStateFilter] = useState(getStateFilter());
+  const [sortMode, setSortMode] = useState("suburb");
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [newProjectStep, setNewProjectStep] = useState(1);
   const [newProjectFormData, setNewProjectFormData] = useState({
@@ -69,6 +94,72 @@ export default function FinishedProjects() {
       setLoading(false);
     }
   }
+
+  const finishedFilteredProjects = useMemo(() => {
+    let list = projects.filter(
+      (project) =>
+        (project.status === "Complete" || project.status === "Cancelled") && project.status !== "Hotlist"
+    );
+    if (stateFilter !== "All") {
+      list = list.filter((project) => {
+        const projectState = (project.state || "").toUpperCase();
+        return projectState === stateFilter.toUpperCase();
+      });
+    }
+    let filtered = searchQuery.trim()
+      ? list.filter((project) => {
+          const query = searchQuery.toLowerCase();
+          const suburb = (project.suburb || "").toLowerCase();
+          const street = (project.street || "").toLowerCase();
+          const name = (project.name || "").toLowerCase();
+          return suburb.includes(query) || street.includes(query) || name.includes(query);
+        })
+      : list;
+    filtered = filtered.slice();
+    filtered.sort((a, b) => {
+      const suburbA = (a.suburb || "").toLowerCase();
+      const suburbB = (b.suburb || "").toLowerCase();
+      const streetA = (a.street || "").toLowerCase();
+      const streetB = (b.street || "").toLowerCase();
+
+      if (sortMode === "class") {
+        const classA = a.classification || "";
+        const classB = b.classification || "";
+        const idxA = CLASSIFICATION_SORT_ORDER.indexOf(classA);
+        const idxB = CLASSIFICATION_SORT_ORDER.indexOf(classB);
+        const safeIdxA = idxA === -1 ? Number.MAX_SAFE_INTEGER : idxA;
+        const safeIdxB = idxB === -1 ? Number.MAX_SAFE_INTEGER : idxB;
+        if (safeIdxA !== safeIdxB) return safeIdxA - safeIdxB;
+        if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
+        return streetA.localeCompare(streetB);
+      }
+
+      if (sortMode === "stream") {
+        const streamA = a.stream || "";
+        const streamB = b.stream || "";
+        const idxA = STREAM_SORT_ORDER.indexOf(streamA);
+        const idxB = STREAM_SORT_ORDER.indexOf(streamB);
+        const safeIdxA = idxA === -1 ? Number.MAX_SAFE_INTEGER : idxA;
+        const safeIdxB = idxB === -1 ? Number.MAX_SAFE_INTEGER : idxB;
+        if (safeIdxA !== safeIdxB) return safeIdxA - safeIdxB;
+        if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
+        return streetA.localeCompare(streetB);
+      }
+
+      if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
+      return streetA.localeCompare(streetB);
+    });
+    return filtered;
+  }, [projects, stateFilter, searchQuery, sortMode]);
+
+  const hasFinishedProjects = useMemo(
+    () =>
+      projects.some(
+        (p) =>
+          (p.status === "Complete" || p.status === "Cancelled") && p.status !== "Hotlist"
+      ),
+    [projects]
+  );
 
   return (
     <div
@@ -552,10 +643,82 @@ export default function FinishedProjects() {
             flexDirection: "column",
           }}
         >
-          <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "16px" }}>
-            Finished Projects
-          </h2>
-          
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
+            <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: 0 }}>
+              Finished Projects {(() => {
+                const currentProjects = projects.filter(
+                  (p) =>
+                    (p.status === "Complete" || p.status === "Cancelled") && p.status !== "Hotlist"
+                );
+                const totalCount = currentProjects.length;
+                if (searchQuery.trim()) {
+                  return finishedFilteredProjects.length > 0
+                    ? `(${finishedFilteredProjects.length} found)`
+                    : "";
+                }
+                if (stateFilter !== "All") {
+                  return finishedFilteredProjects.length > 0
+                    ? `(${finishedFilteredProjects.length} total)`
+                    : "";
+                }
+                return totalCount > 0 ? `(${totalCount} total)` : "";
+              })()}
+            </h2>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => setSortMode("suburb")}
+                style={{
+                  background: sortMode === "suburb" ? MONUMENT : WHITE,
+                  color: sortMode === "suburb" ? WHITE : MONUMENT,
+                  border: `2px solid ${MONUMENT}`,
+                  borderRadius: "8px",
+                  padding: "10px 14px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  transition: "background 0.2s, color 0.2s",
+                }}
+              >
+                Sort by Suburb
+              </button>
+              <button
+                type="button"
+                onClick={() => setSortMode("class")}
+                style={{
+                  background: sortMode === "class" ? MONUMENT : WHITE,
+                  color: sortMode === "class" ? WHITE : MONUMENT,
+                  border: `2px solid ${MONUMENT}`,
+                  borderRadius: "8px",
+                  padding: "10px 14px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  transition: "background 0.2s, color 0.2s",
+                }}
+              >
+                Sort By Class
+              </button>
+              <button
+                type="button"
+                onClick={() => setSortMode("stream")}
+                style={{
+                  background: sortMode === "stream" ? MONUMENT : WHITE,
+                  color: sortMode === "stream" ? WHITE : MONUMENT,
+                  border: `2px solid ${MONUMENT}`,
+                  borderRadius: "8px",
+                  padding: "10px 14px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  transition: "background 0.2s, color 0.2s",
+                }}
+              >
+                Sort By Stream
+              </button>
+            </div>
+          </div>
+
           {/* Search Bar */}
           <div style={{ marginBottom: "20px", marginTop: 0 }}>
             <label
@@ -603,40 +766,8 @@ export default function FinishedProjects() {
             }
             return null;
           })()}
-          {!loading && !error && projects.length > 0 && (() => {
-            // Filter to only show projects with "Complete" or "Cancelled" status (exclude Hotlist)
-            let finishedProjects = projects.filter((project) => (project.status === "Complete" || project.status === "Cancelled") && project.status !== "Hotlist");
-            
-            // Filter by state if specified
-            if (stateFilter !== "All") {
-              finishedProjects = finishedProjects.filter(project => {
-                const projectState = (project.state || "").toUpperCase();
-                return projectState === stateFilter.toUpperCase();
-              });
-            }
-            
-            // Filter projects based on search query
-            let filteredProjects = searchQuery.trim()
-              ? finishedProjects.filter((project) => {
-                  const query = searchQuery.toLowerCase();
-                  const suburb = (project.suburb || "").toLowerCase();
-                  const street = (project.street || "").toLowerCase();
-                  const name = (project.name || "").toLowerCase();
-                  return suburb.includes(query) || street.includes(query) || name.includes(query);
-                })
-              : finishedProjects;
-
-            // Sort alphabetically by suburb, then by street
-            filteredProjects.sort((a, b) => {
-              const suburbA = (a.suburb || "").toLowerCase();
-              const suburbB = (b.suburb || "").toLowerCase();
-              if (suburbA !== suburbB) {
-                return suburbA.localeCompare(suburbB);
-              }
-              const streetA = (a.street || "").toLowerCase();
-              const streetB = (b.street || "").toLowerCase();
-              return streetA.localeCompare(streetB);
-            });
+          {!loading && !error && hasFinishedProjects && (() => {
+            const filteredProjects = finishedFilteredProjects;
 
             if (filteredProjects.length === 0) {
               return <p style={{ color: "#32323399" }}>No projects match your search.</p>;
@@ -652,7 +783,7 @@ export default function FinishedProjects() {
                   alignItems: "flex-start",
                 }}
               >
-                {filteredProjects.map((project) => {
+                {filteredProjects.map((project, index) => {
                   // Classification mapping - all grey
                   const classificationMap = {
                     "Small Second Dwelling": { acronym: "SSD", color: "#a1a1a3" }, // Grey
@@ -682,9 +813,59 @@ export default function FinishedProjects() {
                   };
                   const streamInfo = project.stream ? streamMap[project.stream] : null;
 
+                  const suburbName = (project.suburb || "").trim();
+                  const prevSuburbName = index > 0 ? (filteredProjects[index - 1]?.suburb || "").trim() : "";
+                  const classificationName = (project.classification || "").trim();
+                  const prevClassificationName =
+                    index > 0 ? (filteredProjects[index - 1]?.classification || "").trim() : "";
+                  const streamName = (project.stream || "").trim();
+                  const prevStreamName = index > 0 ? (filteredProjects[index - 1]?.stream || "").trim() : "";
+
+                  const groupKey =
+                    sortMode === "suburb"
+                      ? suburbName
+                        ? suburbName[0].toUpperCase()
+                        : ""
+                      : sortMode === "class"
+                      ? classificationName
+                      : sortMode === "stream"
+                      ? streamName
+                      : "";
+
+                  const prevGroupKey =
+                    sortMode === "suburb"
+                      ? prevSuburbName
+                        ? prevSuburbName[0].toUpperCase()
+                        : ""
+                      : sortMode === "class"
+                      ? prevClassificationName
+                      : sortMode === "stream"
+                      ? prevStreamName
+                      : "";
+
+                  const showGroupHeader = groupKey && groupKey !== prevGroupKey;
+                  const groupLabel = groupKey;
+
                   return (
+                    <Fragment key={project.id}>
+                      {showGroupHeader && (
+                        <div style={{ flexBasis: "100%", width: "100%", marginTop: index === 0 ? 0 : "18px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                            <div
+                              style={{
+                                fontSize: "1.3rem",
+                                fontWeight: 800,
+                                color: MONUMENT,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {groupLabel}
+                            </div>
+                            <div style={{ height: "2px", background: MONUMENT, flex: 1, opacity: 0.4 }} />
+                          </div>
+                        </div>
+                      )}
                     <Link
-                      key={project.id}
                       to={`/project/${project.id}`}
                       style={{
                         textDecoration: "none",
@@ -804,6 +985,7 @@ export default function FinishedProjects() {
                       )}
                     </div>
                   </Link>
+                    </Fragment>
                   );
                 })}
               </div>

@@ -373,6 +373,54 @@ const pool = process.env.DATABASE_URL
     })
   : null;
 
+/** Settings table: smtp_user_1..smtp_pass_16 (for SQL SELECT / RETURNING fragments). */
+const SETTINGS_SMTP_1_16_COLUMNS = Array.from({ length: 16 }, (_, j) => {
+  const n = j + 1;
+  return `smtp_user_${n}, smtp_pass_${n}`;
+}).join(", ");
+
+/** Match template From → slot (same order as former secondary → vic → QLD → 5–16 → primary). */
+const SMTP_FROM_ADDRESS_MATCH_ORDER = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 1];
+
+/** Default outbound account for non–From-matched sends: slot 1 (legacy “primary”). QLD-specific routes use slot 4 (legacy QLD). */
+const SMTP_SLOT_DEFAULT = 1;
+const SMTP_SLOT_QLD = 4;
+
+/** One-time copy from legacy smtp_user / secondary / vic / qld columns into smtp_user_1–4 when numbered slots are empty. */
+async function migrateLegacySmtpIntoNumberedSlots() {
+  if (!pool) return;
+  try {
+    const r = await pool.query("SELECT * FROM settings WHERE id = 1");
+    if (!r.rows.length) return;
+    const row = r.rows[0];
+    const mappings = [
+      ["smtp_user_1", "smtp_pass_1", "smtp_user", "smtp_pass"],
+      ["smtp_user_2", "smtp_pass_2", "smtp_user_secondary", "smtp_pass_secondary"],
+      ["smtp_user_3", "smtp_pass_3", "smtp_user_vic_smtp", "smtp_pass_vic_smtp"],
+      ["smtp_user_4", "smtp_pass_4", "smtp_user_qld", "smtp_pass_qld"],
+    ];
+    const setParts = [];
+    const vals = [];
+    let idx = 1;
+    for (const [newUserCol, newPassCol, oldUserCol, oldPassCol] of mappings) {
+      const newU = row[newUserCol];
+      const oldU = row[oldUserCol];
+      const newHas = newU != null && String(newU).trim() !== "";
+      const oldHas = oldU != null && String(oldU).trim() !== "";
+      if (!newHas && oldHas) {
+        setParts.push(`${newUserCol} = $${idx++}`, `${newPassCol} = $${idx++}`);
+        vals.push(oldU, row[oldPassCol] != null ? row[oldPassCol] : null);
+      }
+    }
+    if (setParts.length) {
+      await pool.query(`UPDATE settings SET ${setParts.join(", ")} WHERE id = 1`, vals);
+      console.log("SMTP: migrated legacy columns into smtp_user_1–4 where numbered slots were empty.");
+    }
+  } catch (e) {
+    console.error("migrateLegacySmtpIntoNumberedSlots:", e.message);
+  }
+}
+
 // Health check
 app.get("/health", (req, res) => {
   res.json({ ok: true, db: !!pool });
@@ -735,7 +783,7 @@ async function ensureSchema() {
     'window_status', 'window_colour', 'window_reveal', 'window_reveal_other', 'window_glazing', 'window_bal_rating', 'window_date_required', 'window_ordered_date', 'window_order_pdf_location', 'window_order_number',
     'drawings_status', 'drawings_pdf_location', 'drawings_history', 'drawings_viewed_date', 'drawings_sent_to_client_date', 'drawings_holder_date', 'draftsperson', 'drawings_holder', 'drawing_manager_notes', 'colours_status', 'colours_notes', 'colours_pdf_location', 'colours_sent_date', 'colours_reminder_sent_date', 'roof_colour', 'cladding_colour', 'baseboards_colour', 'roof_style', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status', 'septic_permit', 'septic_notes', 'septic_email_sent_date', 'pic',
     'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail', 'on_hold', 'survey_status', 'soil_status', 'agreement_sent', 'qp_number',
-    'planning_jf_planning_property_report_path', 'planning_jf_title_covenant_subdivision_path', 'planning_jf_title_path', 'planning_jf_covenant_path', 'planning_jf_plan_of_subdivision_path', 'planning_jf_ebyda_stormwater_path', 'planning_jf_byda_sewer_main_path', 'planning_jf_internal_sewer_plan_path', 'planning_jf_sewer_main_size_depth_offset_path', 'planning_jf_legal_point_discharge_path', 'planning_jf_property_info_report_path',
+    'planning_jf_planning_property_report_path', 'planning_jf_title_covenant_subdivision_path', 'planning_jf_title_path', 'planning_jf_covenant_path', 'planning_jf_section_173_agreement_path', 'planning_jf_plan_of_subdivision_path', 'planning_jf_ebyda_stormwater_path', 'planning_jf_byda_sewer_main_path', 'planning_jf_internal_sewer_plan_path', 'planning_jf_sewer_main_size_depth_offset_path', 'planning_jf_legal_point_discharge_path', 'planning_jf_property_info_report_path',
     'planning_jf_job_file_pdf_path'];
   for (const column of columnsToAdd) {
     try {
@@ -760,6 +808,7 @@ async function ensureSchema() {
     "planning_jf_planning_property_report",
     "planning_jf_title",
     "planning_jf_covenant",
+    "planning_jf_section_173_agreement",
     "planning_jf_plan_of_subdivision",
     "planning_jf_ebyda_stormwater",
     "planning_jf_byda_sewer_main",
@@ -935,6 +984,18 @@ async function ensureSchema() {
       }
     }
   }
+  // Numbered SMTP credential slots 1–16 (SMTP Settings grid)
+  for (let i = 1; i <= 16; i++) {
+    for (const col of [`smtp_user_${i}`, `smtp_pass_${i}`]) {
+      try {
+        await pool.query(`ALTER TABLE settings ADD COLUMN ${col} TEXT`);
+      } catch (e) {
+        if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+          console.log(`Error adding column ${col}:`, e.message);
+        }
+      }
+    }
+  }
   // Embedded email logo (full path to image file; shown inline at end of HTML emails)
   try {
     await pool.query(`ALTER TABLE settings ADD COLUMN email_logo_path TEXT`);
@@ -1024,6 +1085,7 @@ async function ensureSchema() {
       console.log(`Settings row might already exist:`, e2.message);
     }
   }
+  await migrateLegacySmtpIntoNumberedSlots();
 }
 
 // List projects
@@ -1031,7 +1093,7 @@ app.get("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects ORDER BY updated_at DESC, id DESC"
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects ORDER BY updated_at DESC, id DESC"
     );
     res.json(r.rows);
   } catch (e) {
@@ -1052,7 +1114,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects WHERE id = $1",
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects WHERE id = $1",
       [id]
     );
     
@@ -1171,8 +1233,8 @@ app.post("/api/projects/bulk", async (req, res) => {
 
       // Insert project (matching the regular POST endpoint structure)
       const result = await pool.query(
-        `INSERT INTO projects (name, status, suburb, street, state, stream, year, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, specs, classification, project_log, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done') 
+        `INSERT INTO projects (name, status, suburb, street, state, stream, year, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, specs, classification, project_log, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done') 
          RETURNING id, name`,
         [
           name.trim(),
@@ -1245,8 +1307,8 @@ app.post("/api/projects", async (req, res) => {
     const holderDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
     
     const r = await pool.query(
-      `INSERT INTO projects (name, status, suburb, street, state, stream, year, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, specs, classification, project_log, drawings_holder, drawings_holder_date, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done') RETURNING *`,
+      `INSERT INTO projects (name, status, suburb, street, state, stream, year, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, specs, classification, project_log, drawings_holder, drawings_holder_date, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done') RETURNING *`,
       [
         name.trim(),
         (status || "Design Phase").trim(),
@@ -1347,16 +1409,16 @@ app.put("/api/projects/:id", async (req, res) => {
       window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number,
       drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour,       roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic,
       number_of_robes, robe_widths, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number,
-      planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report,
+      planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report,
       planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at,
-      planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at,
+      planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at,
       planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at,
       planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at,
       planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at,
       planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at,
       planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at,
       planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at,
-      planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path,
+      planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path,
       planning_jf_job_file_pdf_path } = req.body || {};
     // Convert empty strings to null, but preserve non-empty strings
     const processValue = (val) => {
@@ -1527,46 +1589,50 @@ app.put("/api/projects/:id", async (req, res) => {
         planning_jf_planning_property_report = COALESCE($89, planning_jf_planning_property_report),
         planning_jf_title = COALESCE($90, planning_jf_title),
         planning_jf_covenant = COALESCE($91, planning_jf_covenant),
-        planning_jf_plan_of_subdivision = COALESCE($92, planning_jf_plan_of_subdivision),
-        planning_jf_ebyda_stormwater = COALESCE($93, planning_jf_ebyda_stormwater),
-        planning_jf_byda_sewer_main = COALESCE($94, planning_jf_byda_sewer_main),
-        planning_jf_internal_sewer_plan = COALESCE($95, planning_jf_internal_sewer_plan),
-        planning_jf_sewer_main_size_depth_offset = COALESCE($96, planning_jf_sewer_main_size_depth_offset),
-        planning_jf_legal_point_discharge = COALESCE($97, planning_jf_legal_point_discharge),
-        planning_jf_property_info_report = COALESCE($98, planning_jf_property_info_report),
-        planning_jf_planning_property_report_requested_at = CASE $99 WHEN '__SKIP__' THEN planning_jf_planning_property_report_requested_at ELSE $99 END,
-        planning_jf_planning_property_report_received_at = CASE $100 WHEN '__SKIP__' THEN planning_jf_planning_property_report_received_at ELSE $100 END,
-        planning_jf_title_requested_at = CASE $101 WHEN '__SKIP__' THEN planning_jf_title_requested_at ELSE $101 END,
-        planning_jf_title_received_at = CASE $102 WHEN '__SKIP__' THEN planning_jf_title_received_at ELSE $102 END,
-        planning_jf_covenant_requested_at = CASE $103 WHEN '__SKIP__' THEN planning_jf_covenant_requested_at ELSE $103 END,
-        planning_jf_covenant_received_at = CASE $104 WHEN '__SKIP__' THEN planning_jf_covenant_received_at ELSE $104 END,
-        planning_jf_plan_of_subdivision_requested_at = CASE $105 WHEN '__SKIP__' THEN planning_jf_plan_of_subdivision_requested_at ELSE $105 END,
-        planning_jf_plan_of_subdivision_received_at = CASE $106 WHEN '__SKIP__' THEN planning_jf_plan_of_subdivision_received_at ELSE $106 END,
-        planning_jf_ebyda_stormwater_requested_at = CASE $107 WHEN '__SKIP__' THEN planning_jf_ebyda_stormwater_requested_at ELSE $107 END,
-        planning_jf_ebyda_stormwater_received_at = CASE $108 WHEN '__SKIP__' THEN planning_jf_ebyda_stormwater_received_at ELSE $108 END,
-        planning_jf_byda_sewer_main_requested_at = CASE $109 WHEN '__SKIP__' THEN planning_jf_byda_sewer_main_requested_at ELSE $109 END,
-        planning_jf_byda_sewer_main_received_at = CASE $110 WHEN '__SKIP__' THEN planning_jf_byda_sewer_main_received_at ELSE $110 END,
-        planning_jf_internal_sewer_plan_requested_at = CASE $111 WHEN '__SKIP__' THEN planning_jf_internal_sewer_plan_requested_at ELSE $111 END,
-        planning_jf_internal_sewer_plan_received_at = CASE $112 WHEN '__SKIP__' THEN planning_jf_internal_sewer_plan_received_at ELSE $112 END,
-        planning_jf_sewer_main_size_depth_offset_requested_at = CASE $113 WHEN '__SKIP__' THEN planning_jf_sewer_main_size_depth_offset_requested_at ELSE $113 END,
-        planning_jf_sewer_main_size_depth_offset_received_at = CASE $114 WHEN '__SKIP__' THEN planning_jf_sewer_main_size_depth_offset_received_at ELSE $114 END,
-        planning_jf_legal_point_discharge_requested_at = CASE $115 WHEN '__SKIP__' THEN planning_jf_legal_point_discharge_requested_at ELSE $115 END,
-        planning_jf_legal_point_discharge_received_at = CASE $116 WHEN '__SKIP__' THEN planning_jf_legal_point_discharge_received_at ELSE $116 END,
-        planning_jf_property_info_report_requested_at = CASE $117 WHEN '__SKIP__' THEN planning_jf_property_info_report_requested_at ELSE $117 END,
-        planning_jf_property_info_report_received_at = CASE $118 WHEN '__SKIP__' THEN planning_jf_property_info_report_received_at ELSE $118 END,
-        planning_jf_planning_property_report_path = CASE WHEN $119::text = '__SKIP__' THEN planning_jf_planning_property_report_path ELSE $119 END,
-        planning_jf_title_path = CASE WHEN $120::text = '__SKIP__' THEN planning_jf_title_path ELSE $120 END,
-        planning_jf_covenant_path = CASE WHEN $121::text = '__SKIP__' THEN planning_jf_covenant_path ELSE $121 END,
-        planning_jf_plan_of_subdivision_path = CASE WHEN $122::text = '__SKIP__' THEN planning_jf_plan_of_subdivision_path ELSE $122 END,
-        planning_jf_ebyda_stormwater_path = CASE WHEN $123::text = '__SKIP__' THEN planning_jf_ebyda_stormwater_path ELSE $123 END,
-        planning_jf_byda_sewer_main_path = CASE WHEN $124::text = '__SKIP__' THEN planning_jf_byda_sewer_main_path ELSE $124 END,
-        planning_jf_internal_sewer_plan_path = CASE WHEN $125::text = '__SKIP__' THEN planning_jf_internal_sewer_plan_path ELSE $125 END,
-        planning_jf_sewer_main_size_depth_offset_path = CASE WHEN $126::text = '__SKIP__' THEN planning_jf_sewer_main_size_depth_offset_path ELSE $126 END,
-        planning_jf_legal_point_discharge_path = CASE WHEN $127::text = '__SKIP__' THEN planning_jf_legal_point_discharge_path ELSE $127 END,
-        planning_jf_property_info_report_path = CASE WHEN $128::text = '__SKIP__' THEN planning_jf_property_info_report_path ELSE $128 END,
-        planning_jf_job_file_pdf_path = CASE WHEN $129::text = '__SKIP__' THEN planning_jf_job_file_pdf_path ELSE $129 END,
+        planning_jf_section_173_agreement = COALESCE($92, planning_jf_section_173_agreement),
+        planning_jf_plan_of_subdivision = COALESCE($93, planning_jf_plan_of_subdivision),
+        planning_jf_ebyda_stormwater = COALESCE($94, planning_jf_ebyda_stormwater),
+        planning_jf_byda_sewer_main = COALESCE($95, planning_jf_byda_sewer_main),
+        planning_jf_internal_sewer_plan = COALESCE($96, planning_jf_internal_sewer_plan),
+        planning_jf_sewer_main_size_depth_offset = COALESCE($97, planning_jf_sewer_main_size_depth_offset),
+        planning_jf_legal_point_discharge = COALESCE($98, planning_jf_legal_point_discharge),
+        planning_jf_property_info_report = COALESCE($99, planning_jf_property_info_report),
+        planning_jf_planning_property_report_requested_at = CASE $100 WHEN '__SKIP__' THEN planning_jf_planning_property_report_requested_at ELSE $100 END,
+        planning_jf_planning_property_report_received_at = CASE $101 WHEN '__SKIP__' THEN planning_jf_planning_property_report_received_at ELSE $101 END,
+        planning_jf_title_requested_at = CASE $102 WHEN '__SKIP__' THEN planning_jf_title_requested_at ELSE $102 END,
+        planning_jf_title_received_at = CASE $103 WHEN '__SKIP__' THEN planning_jf_title_received_at ELSE $103 END,
+        planning_jf_covenant_requested_at = CASE $104 WHEN '__SKIP__' THEN planning_jf_covenant_requested_at ELSE $104 END,
+        planning_jf_covenant_received_at = CASE $105 WHEN '__SKIP__' THEN planning_jf_covenant_received_at ELSE $105 END,
+        planning_jf_section_173_agreement_requested_at = CASE $106 WHEN '__SKIP__' THEN planning_jf_section_173_agreement_requested_at ELSE $106 END,
+        planning_jf_section_173_agreement_received_at = CASE $107 WHEN '__SKIP__' THEN planning_jf_section_173_agreement_received_at ELSE $107 END,
+        planning_jf_plan_of_subdivision_requested_at = CASE $108 WHEN '__SKIP__' THEN planning_jf_plan_of_subdivision_requested_at ELSE $108 END,
+        planning_jf_plan_of_subdivision_received_at = CASE $109 WHEN '__SKIP__' THEN planning_jf_plan_of_subdivision_received_at ELSE $109 END,
+        planning_jf_ebyda_stormwater_requested_at = CASE $110 WHEN '__SKIP__' THEN planning_jf_ebyda_stormwater_requested_at ELSE $110 END,
+        planning_jf_ebyda_stormwater_received_at = CASE $111 WHEN '__SKIP__' THEN planning_jf_ebyda_stormwater_received_at ELSE $111 END,
+        planning_jf_byda_sewer_main_requested_at = CASE $112 WHEN '__SKIP__' THEN planning_jf_byda_sewer_main_requested_at ELSE $112 END,
+        planning_jf_byda_sewer_main_received_at = CASE $113 WHEN '__SKIP__' THEN planning_jf_byda_sewer_main_received_at ELSE $113 END,
+        planning_jf_internal_sewer_plan_requested_at = CASE $114 WHEN '__SKIP__' THEN planning_jf_internal_sewer_plan_requested_at ELSE $114 END,
+        planning_jf_internal_sewer_plan_received_at = CASE $115 WHEN '__SKIP__' THEN planning_jf_internal_sewer_plan_received_at ELSE $115 END,
+        planning_jf_sewer_main_size_depth_offset_requested_at = CASE $116 WHEN '__SKIP__' THEN planning_jf_sewer_main_size_depth_offset_requested_at ELSE $116 END,
+        planning_jf_sewer_main_size_depth_offset_received_at = CASE $117 WHEN '__SKIP__' THEN planning_jf_sewer_main_size_depth_offset_received_at ELSE $117 END,
+        planning_jf_legal_point_discharge_requested_at = CASE $118 WHEN '__SKIP__' THEN planning_jf_legal_point_discharge_requested_at ELSE $118 END,
+        planning_jf_legal_point_discharge_received_at = CASE $119 WHEN '__SKIP__' THEN planning_jf_legal_point_discharge_received_at ELSE $119 END,
+        planning_jf_property_info_report_requested_at = CASE $120 WHEN '__SKIP__' THEN planning_jf_property_info_report_requested_at ELSE $120 END,
+        planning_jf_property_info_report_received_at = CASE $121 WHEN '__SKIP__' THEN planning_jf_property_info_report_received_at ELSE $121 END,
+        planning_jf_planning_property_report_path = CASE WHEN $122::text = '__SKIP__' THEN planning_jf_planning_property_report_path ELSE $122 END,
+        planning_jf_title_path = CASE WHEN $123::text = '__SKIP__' THEN planning_jf_title_path ELSE $123 END,
+        planning_jf_covenant_path = CASE WHEN $124::text = '__SKIP__' THEN planning_jf_covenant_path ELSE $124 END,
+        planning_jf_section_173_agreement_path = CASE WHEN $125::text = '__SKIP__' THEN planning_jf_section_173_agreement_path ELSE $125 END,
+        planning_jf_plan_of_subdivision_path = CASE WHEN $126::text = '__SKIP__' THEN planning_jf_plan_of_subdivision_path ELSE $126 END,
+        planning_jf_ebyda_stormwater_path = CASE WHEN $127::text = '__SKIP__' THEN planning_jf_ebyda_stormwater_path ELSE $127 END,
+        planning_jf_byda_sewer_main_path = CASE WHEN $128::text = '__SKIP__' THEN planning_jf_byda_sewer_main_path ELSE $128 END,
+        planning_jf_internal_sewer_plan_path = CASE WHEN $129::text = '__SKIP__' THEN planning_jf_internal_sewer_plan_path ELSE $129 END,
+        planning_jf_sewer_main_size_depth_offset_path = CASE WHEN $130::text = '__SKIP__' THEN planning_jf_sewer_main_size_depth_offset_path ELSE $130 END,
+        planning_jf_legal_point_discharge_path = CASE WHEN $131::text = '__SKIP__' THEN planning_jf_legal_point_discharge_path ELSE $131 END,
+        planning_jf_property_info_report_path = CASE WHEN $132::text = '__SKIP__' THEN planning_jf_property_info_report_path ELSE $132 END,
+        planning_jf_job_file_pdf_path = CASE WHEN $133::text = '__SKIP__' THEN planning_jf_job_file_pdf_path ELSE $133 END,
         updated_at = NOW()
-      WHERE id = $130
+      WHERE id = $134
       RETURNING *
       `,
       [
@@ -1662,6 +1728,7 @@ app.put("/api/projects/:id", async (req, res) => {
         processPlanningJfDoc(planning_jf_planning_property_report),
         processPlanningJfDoc(planning_jf_title),
         processPlanningJfDoc(planning_jf_covenant),
+        processPlanningJfDoc(planning_jf_section_173_agreement),
         processPlanningJfDoc(planning_jf_plan_of_subdivision),
         processPlanningJfDoc(planning_jf_ebyda_stormwater),
         processPlanningJfDoc(planning_jf_byda_sewer_main),
@@ -1675,6 +1742,8 @@ app.put("/api/projects/:id", async (req, res) => {
         processJfDocDate(planning_jf_title_received_at),
         processJfDocDate(planning_jf_covenant_requested_at),
         processJfDocDate(planning_jf_covenant_received_at),
+        processJfDocDate(planning_jf_section_173_agreement_requested_at),
+        processJfDocDate(planning_jf_section_173_agreement_received_at),
         processJfDocDate(planning_jf_plan_of_subdivision_requested_at),
         processJfDocDate(planning_jf_plan_of_subdivision_received_at),
         processJfDocDate(planning_jf_ebyda_stormwater_requested_at),
@@ -1692,6 +1761,7 @@ app.put("/api/projects/:id", async (req, res) => {
         effectiveJfDocPath(planning_jf_planning_property_report, planning_jf_planning_property_report_path),
         effectiveJfDocPath(planning_jf_title, planning_jf_title_path),
         effectiveJfDocPath(planning_jf_covenant, planning_jf_covenant_path),
+        effectiveJfDocPath(planning_jf_section_173_agreement, planning_jf_section_173_agreement_path),
         effectiveJfDocPath(planning_jf_plan_of_subdivision, planning_jf_plan_of_subdivision_path),
         effectiveJfDocPath(planning_jf_ebyda_stormwater, planning_jf_ebyda_stormwater_path),
         effectiveJfDocPath(planning_jf_byda_sewer_main, planning_jf_byda_sewer_main_path),
@@ -2085,23 +2155,15 @@ app.get("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, updated_at FROM settings WHERE id = 1"
+      `SELECT id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at FROM settings WHERE id = 1`
     );
     if (r.rows.length === 0) {
-      return res.json({
+      const empty = {
         id: 1,
         root_directory: null,
         create_folders: "true",
-        smtp_user: null,
-        smtp_pass: null,
-        smtp_user_secondary: null,
-        smtp_pass_secondary: null,
-        smtp_user_vic_smtp: null,
-        smtp_pass_vic_smtp: null,
         root_directory_qld: null,
         create_folders_qld: "true",
-        smtp_user_qld: null,
-        smtp_pass_qld: null,
         test_project_name_qld: null,
         test_folder_qld: null,
         global_password: null,
@@ -2113,7 +2175,12 @@ app.get("/api/settings", async (req, res) => {
         email_logo_path: null,
         letterhead_path: null,
         updated_at: null,
-      });
+      };
+      for (let i = 1; i <= 16; i++) {
+        empty[`smtp_user_${i}`] = null;
+        empty[`smtp_pass_${i}`] = null;
+      }
+      return res.json(empty);
     }
     // Parse JSON arrays in response
     const result = r.rows[0];
@@ -2147,7 +2214,23 @@ app.get("/api/settings", async (req, res) => {
 app.put("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const { root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path } = req.body || {};
+    const {
+      root_directory,
+      create_folders,
+      root_directory_qld,
+      create_folders_qld,
+      test_project_name_qld,
+      test_folder_qld,
+      global_password,
+      admin_password,
+      colour_attachments_vic,
+      colour_attachments_qld,
+      send_drawings_vic,
+      send_drawings_qld,
+      email_logo_path,
+      letterhead_path,
+    } = req.body || {};
+    const body = req.body || {};
 
     const processValue = (val) => {
       if (val === undefined) return null;
@@ -2172,48 +2255,51 @@ app.put("/api/settings", async (req, res) => {
       return null;
     };
 
+    const smtpInsertCols = [];
+    const smtpValuePlaceholders = [];
+    const smtpCoalesceParts = [];
+    const smtpParams = [];
+    for (let i = 1; i <= 16; i++) {
+      smtpInsertCols.push(`smtp_user_${i}`, `smtp_pass_${i}`);
+      const uPn = 14 + (i - 1) * 2 + 1;
+      const pPn = 14 + (i - 1) * 2 + 2;
+      smtpValuePlaceholders.push(`$${uPn}`, `$${pPn}`);
+      smtpCoalesceParts.push(
+        `smtp_user_${i} = COALESCE($${uPn}, settings.smtp_user_${i})`,
+        `smtp_pass_${i} = COALESCE($${pPn}, settings.smtp_pass_${i})`
+      );
+      smtpParams.push(processValue(body[`smtp_user_${i}`]), processValue(body[`smtp_pass_${i}`]));
+    }
+
     const r = await pool.query(
-      `INSERT INTO settings (id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, updated_at)
-       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NOW())
+      `INSERT INTO settings (id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, ${smtpInsertCols.join(
+        ", "
+      )}, updated_at)
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, ${smtpValuePlaceholders.join(", ")}, NOW())
        ON CONFLICT (id)
        DO UPDATE SET
          root_directory = COALESCE($1, settings.root_directory),
          create_folders = COALESCE($2, settings.create_folders),
-         smtp_user = COALESCE($3, settings.smtp_user),
-         smtp_pass = COALESCE($4, settings.smtp_pass),
-         smtp_user_secondary = COALESCE($5, settings.smtp_user_secondary),
-         smtp_pass_secondary = COALESCE($6, settings.smtp_pass_secondary),
-         smtp_user_vic_smtp = COALESCE($7, settings.smtp_user_vic_smtp),
-         smtp_pass_vic_smtp = COALESCE($8, settings.smtp_pass_vic_smtp),
-         root_directory_qld = COALESCE($9, settings.root_directory_qld),
-         create_folders_qld = COALESCE($10, settings.create_folders_qld),
-         smtp_user_qld = COALESCE($11, settings.smtp_user_qld),
-         smtp_pass_qld = COALESCE($12, settings.smtp_pass_qld),
-         test_project_name_qld = COALESCE($13, settings.test_project_name_qld),
-         test_folder_qld = COALESCE($14, settings.test_folder_qld),
-         global_password = COALESCE($15, settings.global_password),
-         admin_password = COALESCE($16, settings.admin_password),
-         colour_attachments_vic = COALESCE($17, settings.colour_attachments_vic),
-         colour_attachments_qld = COALESCE($18, settings.colour_attachments_qld),
-         send_drawings_vic = COALESCE($19, settings.send_drawings_vic),
-         send_drawings_qld = COALESCE($20, settings.send_drawings_qld),
-         email_logo_path = COALESCE($21, settings.email_logo_path),
-         letterhead_path = COALESCE($22, settings.letterhead_path),
+         root_directory_qld = COALESCE($3, settings.root_directory_qld),
+         create_folders_qld = COALESCE($4, settings.create_folders_qld),
+         test_project_name_qld = COALESCE($5, settings.test_project_name_qld),
+         test_folder_qld = COALESCE($6, settings.test_folder_qld),
+         global_password = COALESCE($7, settings.global_password),
+         admin_password = COALESCE($8, settings.admin_password),
+         colour_attachments_vic = COALESCE($9, settings.colour_attachments_vic),
+         colour_attachments_qld = COALESCE($10, settings.colour_attachments_qld),
+         send_drawings_vic = COALESCE($11, settings.send_drawings_vic),
+         send_drawings_qld = COALESCE($12, settings.send_drawings_qld),
+         email_logo_path = COALESCE($13, settings.email_logo_path),
+         letterhead_path = COALESCE($14, settings.letterhead_path),
+         ${smtpCoalesceParts.join(",\n         ")},
          updated_at = NOW()
-       RETURNING id, root_directory, create_folders, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, root_directory_qld, create_folders_qld, smtp_user_qld, smtp_pass_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, updated_at`,
+       RETURNING id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at`,
       [
         processValue(root_directory),
         processBoolean(create_folders),
-        processValue(smtp_user),
-        processValue(smtp_pass),
-        processValue(smtp_user_secondary),
-        processValue(smtp_pass_secondary),
-        processValue(smtp_user_vic_smtp),
-        processValue(smtp_pass_vic_smtp),
         processValue(root_directory_qld),
         processBoolean(create_folders_qld),
-        processValue(smtp_user_qld),
-        processValue(smtp_pass_qld),
         processValue(test_project_name_qld),
         processValue(test_folder_qld),
         processValue(global_password),
@@ -2224,6 +2310,7 @@ app.put("/api/settings", async (req, res) => {
         processArray(send_drawings_qld),
         processValue(email_logo_path),
         processValue(letterhead_path),
+        ...smtpParams,
       ]
     );
 
@@ -2251,6 +2338,46 @@ app.put("/api/settings", async (req, res) => {
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// Send test email using SMTP credentials from SMTP Settings (validates user + password for a slot)
+const SMTP_TEST_TO = "ben@superiorgrannyflats.com.au";
+app.post("/api/emails/smtp-test", async (req, res) => {
+  try {
+    const { smtpUser, smtpPass } = req.body || {};
+    const fromAddr = String(smtpUser || "").trim();
+    const pass = smtpPass != null ? String(smtpPass) : "";
+
+    if (!fromAddr) {
+      return res.status(400).json({ error: "SMTP User (from address) is required" });
+    }
+    if (!pass) {
+      return res.status(400).json({ error: "SMTP password is required" });
+    }
+
+    const host = process.env.SMTP_HOST || "smtp.office365.com";
+    const port = parseInt(process.env.SMTP_PORT || "587", 10);
+    const secure = process.env.SMTP_SECURE === "true";
+
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user: fromAddr, pass },
+    });
+
+    await transporter.sendMail({
+      from: fromAddr,
+      to: SMTP_TEST_TO,
+      subject: "[SGF] SMTP test",
+      text: `This is a test message from SGF SMTP Settings.\nFrom: ${fromAddr}\nIf you received this, SMTP user and password work for this slot.`,
+    });
+
+    res.json({ ok: true, to: SMTP_TEST_TO });
+  } catch (e) {
+    console.error("POST /api/emails/smtp-test:", e);
+    res.status(500).json({ error: e.message || "Failed to send test email" });
   }
 });
 
@@ -2433,7 +2560,7 @@ async function getSmtpCredentialsForFromAddress(fromAddress) {
 
   try {
     const settingsResult = await pool.query(
-      "SELECT smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp FROM settings WHERE id = 1"
+      `SELECT ${SETTINGS_SMTP_1_16_COLUMNS} FROM settings WHERE id = 1`
     );
 
     if (settingsResult.rows.length === 0) {
@@ -2444,40 +2571,28 @@ async function getSmtpCredentialsForFromAddress(fromAddress) {
     }
 
     const settings = settingsResult.rows[0];
-    const primaryEmail = settings.smtp_user?.trim().toLowerCase();
-    const secondaryEmail = settings.smtp_user_secondary?.trim().toLowerCase();
-    const vicSmtpEmail = settings.smtp_user_vic_smtp?.trim().toLowerCase();
     const fromEmail = fromAddress?.trim().toLowerCase();
 
-    // Match from_address to determine which SMTP to use
-    if (fromEmail && secondaryEmail && fromEmail === secondaryEmail) {
-      // Use secondary SMTP if from_address matches secondary email
-      if (settings.smtp_user_secondary && settings.smtp_pass_secondary) {
-        return {
-          smtpUser: settings.smtp_user_secondary,
-          smtpPass: settings.smtp_pass_secondary,
-        };
+    if (fromEmail) {
+      for (const i of SMTP_FROM_ADDRESS_MATCH_ORDER) {
+        const u = settings[`smtp_user_${i}`];
+        const p = settings[`smtp_pass_${i}`];
+        if (!u || !p) continue;
+        if (String(u).trim().toLowerCase() === fromEmail) {
+          return { smtpUser: u, smtpPass: p };
+        }
       }
     }
 
-    if (fromEmail && vicSmtpEmail && fromEmail === vicSmtpEmail) {
-      if (settings.smtp_user_vic_smtp && settings.smtp_pass_vic_smtp) {
-        return {
-          smtpUser: settings.smtp_user_vic_smtp,
-          smtpPass: settings.smtp_pass_vic_smtp,
-        };
-      }
-    }
-
-    // Default to primary SMTP (or match if from_address matches primary)
-    if (settings.smtp_user && settings.smtp_pass) {
+    const u1 = settings[`smtp_user_${SMTP_SLOT_DEFAULT}`];
+    const p1 = settings[`smtp_pass_${SMTP_SLOT_DEFAULT}`];
+    if (u1 && p1) {
       return {
-        smtpUser: settings.smtp_user,
-        smtpPass: settings.smtp_pass,
+        smtpUser: u1,
+        smtpPass: p1,
       };
     }
 
-    // Fallback to environment variables
     return {
       smtpUser: process.env.SMTP_USER,
       smtpPass: process.env.SMTP_PASS,
@@ -2700,58 +2815,15 @@ app.post("/api/emails/send-drawings", async (req, res) => {
     return res.status(500).json({ error: "Failed to fetch project details" });
   }
 
-  // Get SMTP credentials based on the "from" address
-  // Fetch all SMTP settings to match the correct one
-  let smtpUser = null;
-  let smtpPass = null;
   let fromAddress = from || null;
-  
-  try {
-    const r = await pool.query(
-      "SELECT smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, smtp_user_qld, smtp_pass_qld FROM settings WHERE id = 1"
-    );
-    if (r.rows[0]) {
-      const settings = r.rows[0];
-      
-      // If from address is provided, match it to the correct SMTP account
-      if (fromAddress) {
-        if (settings.smtp_user_secondary && fromAddress.toLowerCase() === settings.smtp_user_secondary.toLowerCase()) {
-          smtpUser = settings.smtp_user_secondary;
-          smtpPass = settings.smtp_pass_secondary;
-        } else if (settings.smtp_user_vic_smtp && fromAddress.toLowerCase() === settings.smtp_user_vic_smtp.toLowerCase()) {
-          smtpUser = settings.smtp_user_vic_smtp;
-          smtpPass = settings.smtp_pass_vic_smtp;
-        } else if (settings.smtp_user_qld && fromAddress.toLowerCase() === settings.smtp_user_qld.toLowerCase()) {
-          smtpUser = settings.smtp_user_qld;
-          smtpPass = settings.smtp_pass_qld;
-        } else if (settings.smtp_user && fromAddress.toLowerCase() === settings.smtp_user.toLowerCase()) {
-          smtpUser = settings.smtp_user;
-          smtpPass = settings.smtp_pass;
-        } else {
-          // Default to primary SMTP if no match
-          smtpUser = settings.smtp_user;
-          smtpPass = settings.smtp_pass;
-        }
-      } else {
-        // No from address provided, use primary SMTP
-        smtpUser = settings.smtp_user;
-        smtpPass = settings.smtp_pass;
-      }
-    }
-  } catch (e) {
-    console.error("Error reading SMTP from settings:", e);
-  }
-  
-  // Fallback to environment variables if settings not found
-  if (!smtpUser || !smtpPass) {
-    smtpUser = process.env.SMTP_USER;
-    smtpPass = process.env.SMTP_PASS;
-  }
+  const creds = await getSmtpCredentialsForFromAddress(fromAddress || undefined);
+  let smtpUser = creds.smtpUser;
+  let smtpPass = creds.smtpPass;
   
   if (!smtpUser || !smtpPass) {
     return res.status(503).json({
       error:
-        "SMTP not configured. Set SMTP User and SMTP Pass in Settings → Email Settings, or use backend .env.",
+        "SMTP not configured. Set SMTP User and SMTP Pass in Settings → SMTP Settings, or use backend .env.",
     });
   }
   
@@ -2944,7 +3016,7 @@ app.post("/api/emails/send-colours", async (req, res) => {
   let smtpPass = null;
   try {
     const settingsResult = await pool.query(
-      "SELECT colour_attachments_vic, colour_attachments_qld, smtp_user, smtp_pass FROM settings WHERE id = 1"
+      "SELECT colour_attachments_vic, colour_attachments_qld, smtp_user_1, smtp_pass_1 FROM settings WHERE id = 1"
     );
     
     if (settingsResult.rows.length > 0) {
@@ -2956,8 +3028,8 @@ app.post("/api/emails/send-colours", async (req, res) => {
         colourAttachmentsPath = settings.colour_attachments_qld;
       }
       
-      smtpUser = settings.smtp_user;
-      smtpPass = settings.smtp_pass;
+      smtpUser = settings.smtp_user_1;
+      smtpPass = settings.smtp_pass_1;
     }
   } catch (e) {
     console.error("Error reading settings:", e);
@@ -2979,7 +3051,7 @@ app.post("/api/emails/send-colours", async (req, res) => {
     );
     
     if (templateResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Email template "COLOURS - Send" not found. Please create it in Settings → Email Settings.' });
+      return res.status(404).json({ error: 'Email template "COLOURS - Send" not found. Please create it in Settings → Email Templates.' });
     }
     
     try {
@@ -3082,11 +3154,11 @@ app.post("/api/emails/send-colours", async (req, res) => {
   if (project.state === "QLD") {
     try {
       const qldSettingsResult = await pool.query(
-        "SELECT smtp_user_qld, smtp_pass_qld FROM settings WHERE id = 1"
+        `SELECT smtp_user_${SMTP_SLOT_QLD} AS u, smtp_pass_${SMTP_SLOT_QLD} AS p FROM settings WHERE id = 1`
       );
-      if (qldSettingsResult.rows[0]?.smtp_user_qld && qldSettingsResult.rows[0]?.smtp_pass_qld) {
-        smtpUser = qldSettingsResult.rows[0].smtp_user_qld;
-        smtpPass = qldSettingsResult.rows[0].smtp_pass_qld;
+      if (qldSettingsResult.rows[0]?.u && qldSettingsResult.rows[0]?.p) {
+        smtpUser = qldSettingsResult.rows[0].u;
+        smtpPass = qldSettingsResult.rows[0].p;
       }
     } catch (e) {
       console.error("Error reading QLD SMTP from settings:", e);
@@ -3355,7 +3427,7 @@ app.post("/api/emails/send-colours-reminder", async (req, res) => {
   let smtpPass = null;
   try {
     const settingsResult = await pool.query(
-      "SELECT colour_attachments_vic, colour_attachments_qld, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary FROM settings WHERE id = 1"
+      "SELECT colour_attachments_vic, colour_attachments_qld, smtp_user_1, smtp_pass_1 FROM settings WHERE id = 1"
     );
     
     if (settingsResult.rows.length > 0) {
@@ -3367,8 +3439,8 @@ app.post("/api/emails/send-colours-reminder", async (req, res) => {
         colourAttachmentsPath = settings.colour_attachments_qld;
       }
       
-      smtpUser = settings.smtp_user;
-      smtpPass = settings.smtp_pass;
+      smtpUser = settings.smtp_user_1;
+      smtpPass = settings.smtp_pass_1;
     }
   } catch (e) {
     console.error("Error reading settings:", e);
@@ -3390,7 +3462,7 @@ app.post("/api/emails/send-colours-reminder", async (req, res) => {
     );
     
     if (templateResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Email template "COLOURS - Remind" not found. Please create it in Settings → Email Settings.' });
+      return res.status(404).json({ error: 'Email template "COLOURS - Remind" not found. Please create it in Settings → Email Templates.' });
     }
     
     try {
@@ -3491,14 +3563,14 @@ app.post("/api/emails/send-colours-reminder", async (req, res) => {
   // Get SMTP credentials based on template's from_address
   // For QLD projects, use QLD SMTP; for VIC projects, use from_address to determine primary/secondary
   if (project.state === "QLD") {
-    // QLD projects use QLD SMTP
+    // QLD projects use SMTP slot 4 (legacy smtp_user_qld)
     try {
       const settingsResult = await pool.query(
-        "SELECT smtp_user_qld, smtp_pass_qld FROM settings WHERE id = 1"
+        `SELECT smtp_user_${SMTP_SLOT_QLD} AS u, smtp_pass_${SMTP_SLOT_QLD} AS p FROM settings WHERE id = 1`
       );
-      if (settingsResult.rows.length > 0 && settingsResult.rows[0].smtp_user_qld && settingsResult.rows[0].smtp_pass_qld) {
-        smtpUser = settingsResult.rows[0].smtp_user_qld;
-        smtpPass = settingsResult.rows[0].smtp_pass_qld;
+      if (settingsResult.rows.length > 0 && settingsResult.rows[0].u && settingsResult.rows[0].p) {
+        smtpUser = settingsResult.rows[0].u;
+        smtpPass = settingsResult.rows[0].p;
       }
     } catch (e) {
       console.error("Error reading QLD SMTP from settings:", e);
@@ -4387,7 +4459,7 @@ app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
   let smtpPass = null;
   try {
     const settingsResult = await pool.query(
-      "SELECT colour_attachments_vic, colour_attachments_qld, smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary FROM settings WHERE id = 1"
+      "SELECT colour_attachments_vic, colour_attachments_qld, smtp_user_1, smtp_pass_1 FROM settings WHERE id = 1"
     );
     
     if (settingsResult.rows.length > 0) {
@@ -4399,8 +4471,8 @@ app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
         colourAttachmentsPath = settings.colour_attachments_qld;
       }
       
-      smtpUser = settings.smtp_user;
-      smtpPass = settings.smtp_pass;
+      smtpUser = settings.smtp_user_1;
+      smtpPass = settings.smtp_pass_1;
     }
   } catch (e) {
     console.error("Error reading settings:", e);
@@ -4422,7 +4494,7 @@ app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
     );
     
     if (templateResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Email template "COLORS - Windows&Roof" not found. Please create it in Settings → Email Settings.' });
+      return res.status(404).json({ error: 'Email template "COLORS - Windows&Roof" not found. Please create it in Settings → Email Templates.' });
     }
     
     try {
@@ -4523,14 +4595,14 @@ app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
   // Get SMTP credentials based on template's from_address
   // For QLD projects, use QLD SMTP; for VIC projects, use from_address to determine primary/secondary
   if (project.state === "QLD") {
-    // QLD projects use QLD SMTP
+    // QLD projects use SMTP slot 4 (legacy smtp_user_qld)
     try {
       const settingsResult = await pool.query(
-        "SELECT smtp_user_qld, smtp_pass_qld FROM settings WHERE id = 1"
+        `SELECT smtp_user_${SMTP_SLOT_QLD} AS u, smtp_pass_${SMTP_SLOT_QLD} AS p FROM settings WHERE id = 1`
       );
-      if (settingsResult.rows.length > 0 && settingsResult.rows[0].smtp_user_qld && settingsResult.rows[0].smtp_pass_qld) {
-        smtpUser = settingsResult.rows[0].smtp_user_qld;
-        smtpPass = settingsResult.rows[0].smtp_pass_qld;
+      if (settingsResult.rows.length > 0 && settingsResult.rows[0].u && settingsResult.rows[0].p) {
+        smtpUser = settingsResult.rows[0].u;
+        smtpPass = settingsResult.rows[0].p;
       }
     } catch (e) {
       console.error("Error reading QLD SMTP from settings:", e);
@@ -4989,22 +5061,22 @@ app.post("/api/emails/send-windows-order", async (req, res) => {
     return res.status(500).json({ error: "Failed to fetch project details" });
   }
 
-  // Get SMTP settings
+  // Get SMTP settings (QLD → slot 4, else default slot 1)
   let smtpUser = null;
   let smtpPass = null;
   try {
     const settingsResult = await pool.query(
-      "SELECT smtp_user, smtp_pass, smtp_user_secondary, smtp_pass_secondary, smtp_user_vic_smtp, smtp_pass_vic_smtp, smtp_user_qld, smtp_pass_qld FROM settings WHERE id = 1"
+      `SELECT smtp_user_${SMTP_SLOT_QLD} AS u_qld, smtp_pass_${SMTP_SLOT_QLD} AS p_qld, smtp_user_${SMTP_SLOT_DEFAULT} AS u_def, smtp_pass_${SMTP_SLOT_DEFAULT} AS p_def FROM settings WHERE id = 1`
     );
     
     if (settingsResult.rows.length > 0) {
       const settings = settingsResult.rows[0];
       if (project.state === "QLD") {
-        smtpUser = settings.smtp_user_qld;
-        smtpPass = settings.smtp_pass_qld;
+        smtpUser = settings.u_qld;
+        smtpPass = settings.p_qld;
       } else {
-        smtpUser = settings.smtp_user;
-        smtpPass = settings.smtp_pass;
+        smtpUser = settings.u_def;
+        smtpPass = settings.p_def;
       }
     }
   } catch (e) {
@@ -5032,7 +5104,7 @@ app.post("/api/emails/send-windows-order", async (req, res) => {
     );
     
     if (templateResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Email template "WINDOWS - Order" not found. Please create it in Settings → Email Settings.' });
+      return res.status(404).json({ error: 'Email template "WINDOWS - Order" not found. Please create it in Settings → Email Templates.' });
     }
     
     try {
@@ -5111,7 +5183,7 @@ Date Required: ${windowDateRequired || "N/A"}`;
   }
   
   if (recipientEmails.length === 0) {
-    return res.status(400).json({ error: "No recipient email addresses configured in the template. Please set recipients in Settings → Email Settings." });
+    return res.status(400).json({ error: "No recipient email addresses configured in the template. Please set recipients in Settings → Email Templates." });
   }
   
   const recipientEmail = recipientEmails.join(", ");
@@ -5330,13 +5402,14 @@ const PLANNING_JF_FILE_SLOT_COLUMNS = {
   a: "planning_jf_planning_property_report_path",
   b: "planning_jf_title_path",
   c: "planning_jf_covenant_path",
-  d: "planning_jf_plan_of_subdivision_path",
-  e: "planning_jf_ebyda_stormwater_path",
-  f: "planning_jf_byda_sewer_main_path",
-  g: "planning_jf_internal_sewer_plan_path",
-  h: "planning_jf_sewer_main_size_depth_offset_path",
-  i: "planning_jf_legal_point_discharge_path",
-  j: "planning_jf_property_info_report_path",
+  d: "planning_jf_section_173_agreement_path",
+  e: "planning_jf_plan_of_subdivision_path",
+  f: "planning_jf_ebyda_stormwater_path",
+  g: "planning_jf_byda_sewer_main_path",
+  h: "planning_jf_internal_sewer_plan_path",
+  i: "planning_jf_sewer_main_size_depth_offset_path",
+  j: "planning_jf_legal_point_discharge_path",
+  k: "planning_jf_property_info_report_path",
 };
 
 /** Same slots → status column (only "Received" rows may contribute files to merge). */
@@ -5344,13 +5417,14 @@ const PLANNING_JF_FILE_SLOT_STATUS_COLUMNS = {
   a: "planning_jf_planning_property_report",
   b: "planning_jf_title",
   c: "planning_jf_covenant",
-  d: "planning_jf_plan_of_subdivision",
-  e: "planning_jf_ebyda_stormwater",
-  f: "planning_jf_byda_sewer_main",
-  g: "planning_jf_internal_sewer_plan",
-  h: "planning_jf_sewer_main_size_depth_offset",
-  i: "planning_jf_legal_point_discharge",
-  j: "planning_jf_property_info_report",
+  d: "planning_jf_section_173_agreement",
+  e: "planning_jf_plan_of_subdivision",
+  f: "planning_jf_ebyda_stormwater",
+  g: "planning_jf_byda_sewer_main",
+  h: "planning_jf_internal_sewer_plan",
+  i: "planning_jf_sewer_main_size_depth_offset",
+  j: "planning_jf_legal_point_discharge",
+  k: "planning_jf_property_info_report",
 };
 
 /** Saved file base name (extension taken from upload). */
@@ -5358,13 +5432,14 @@ const PLANNING_JF_UPLOAD_FILE_BASE_BY_SLOT = {
   a: "Planning Property Report",
   b: "Title",
   c: "Covenant",
-  d: "Plan of Subdivision",
-  e: "eBYDA Stormwater",
-  f: "BYDA Sewer Main",
-  g: "Internal Sewer Plan",
-  h: "Sewer Main Size Depth and Offset",
-  i: "Legal Point of Discharge",
-  j: "Property Information Report",
+  d: "Section 173 Agreement",
+  e: "Plan of Subdivision",
+  f: "BYDA – Stormwater",
+  g: "BYDA Sewer Main",
+  h: "Internal Sewer Plan",
+  i: "Sewer Main Size Depth and Offset",
+  j: "Legal Point of Discharge",
+  k: "Property Information Report",
 };
 
 const PLANNING_JF_PROPERTY_INFO_SUBFOLDER = "7. PROPERTY INFORMATION";
@@ -5414,7 +5489,7 @@ function contentTypeForPlanningJfFile(filePath) {
   return "application/octet-stream";
 }
 
-const PLANNING_JF_MERGE_SLOT_ORDER = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"];
+const PLANNING_JF_MERGE_SLOT_ORDER = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"];
 
 // Copy dropped file into `7. PROPERTY INFORMATION` with a standard name; update the slot path column.
 app.post("/api/projects/:id/planning-jf-upload", upload.single("file"), async (req, res) => {
@@ -5430,7 +5505,7 @@ app.post("/api/projects/:id/planning-jf-upload", upload.single("file"), async (r
     const pathCol = PLANNING_JF_FILE_SLOT_COLUMNS[slot];
     const fileBase = PLANNING_JF_UPLOAD_FILE_BASE_BY_SLOT[slot];
     if (!pathCol || !fileBase || !req.file?.buffer) {
-      return res.status(400).json({ error: "Valid slot (a-j) and file are required" });
+      return res.status(400).json({ error: "Valid slot (a-k) and file are required" });
     }
     const origName = req.file.originalname || "upload";
     let ext = path.extname(origName).toLowerCase();
@@ -5671,7 +5746,7 @@ app.get("/api/files/planning-jf/:id/:slot", async (req, res) => {
   }
 });
 
-// Combine planning job-file section uploads (a–j) into one PDF in `7. PROPERTY INFORMATION`
+// Combine planning job-file section uploads (a–k) into one PDF in `7. PROPERTY INFORMATION`
 app.post("/api/projects/:id/planning-job-file-merge", async (req, res) => {
   try {
     const projectId = Number(req.params.id);
@@ -6856,9 +6931,9 @@ app.post("/api/projects/:id/variations/create-pdf", async (req, res) => {
     let emailError = null;
     if (activeClientEmails.length > 0) {
       try {
-        const settingsFrom = await pool.query(`SELECT smtp_user FROM settings WHERE id = 1`);
+        const settingsFrom = await pool.query(`SELECT smtp_user_1 FROM settings WHERE id = 1`);
         const fromAddr =
-          (settingsFrom.rows[0]?.smtp_user && String(settingsFrom.rows[0].smtp_user).trim()) ||
+          (settingsFrom.rows[0]?.smtp_user_1 && String(settingsFrom.rows[0].smtp_user_1).trim()) ||
           process.env.SMTP_USER ||
           "info@superiorgrannyflats.com.au";
         await sendVariationDraftPdfEmail({
@@ -6987,9 +7062,9 @@ app.get("/api/projects/variations/approve", async (req, res) => {
 
     const approvalRecipients = normalizeEmailRecipients(notifyEmail);
     if (approvalRecipients.length > 0) {
-      const settingsFrom = await pool.query(`SELECT smtp_user FROM settings WHERE id = 1`);
+      const settingsFrom = await pool.query(`SELECT smtp_user_1 FROM settings WHERE id = 1`);
       const fromAddr =
-        (settingsFrom.rows[0]?.smtp_user && String(settingsFrom.rows[0].smtp_user).trim()) ||
+        (settingsFrom.rows[0]?.smtp_user_1 && String(settingsFrom.rows[0].smtp_user_1).trim()) ||
         process.env.SMTP_USER ||
         "info@superiorgrannyflats.com.au";
       await sendVariationApprovedPdfEmail({
@@ -7565,8 +7640,8 @@ app.post("/api/hotlist", async (req, res) => {
 
     // Use same fields as normal projects - populate client1_name, client1_email, client1_phone
     const r = await pool.query(
-      `INSERT INTO projects (name, status, suburb, street, state, client_name, email, phone, year, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, project_log, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done') RETURNING id, name, status, suburb, street, state, client_name, email, phone, updated_at`,
+      `INSERT INTO projects (name, status, suburb, street, state, client_name, email, phone, year, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, project_log, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done') RETURNING id, name, status, suburb, street, state, client_name, email, phone, updated_at`,
       [
         projectName,
         "Hotlist", // Status is "Hotlist"

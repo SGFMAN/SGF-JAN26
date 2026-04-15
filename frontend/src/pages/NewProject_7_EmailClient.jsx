@@ -152,13 +152,13 @@ export default function NewProject_7_EmailClient({ isOpen, onClose, createdProje
       );
 
       if (!template) {
-        alert(`Template "${templateName}" not found. Please create it in Settings → Email Settings.`);
+        alert(`Template "${templateName}" not found. Please create it in Settings → Email Templates.`);
         setIsPreparing(false);
         return;
       }
 
       if (!template.from_address || !template.from_address.trim()) {
-        alert("Template has no From address. Edit the template in Settings → Email Settings.");
+        alert("Template has no From address. Edit the template in Settings → Email Templates.");
         setIsPreparing(false);
         return;
       }

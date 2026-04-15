@@ -14,6 +14,8 @@ const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
 const LIGHT_MONUMENT = "#42464d";
 const WHITE = "#fff";
+const PURPLE = "#7c3aed";
+const PURPLE_HOVER = "#6d28d9";
 
 const API_URL = "";
 
@@ -27,6 +29,7 @@ export default function Hotlist() {
   const [isEditItemOpen, setIsEditItemOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [isSoldFlowOpen, setIsSoldFlowOpen] = useState(false);
+  const [soldPlaceholderOpen, setSoldPlaceholderOpen] = useState(false);
   const [soldItemId, setSoldItemId] = useState(null);
   const [currentModal, setCurrentModal] = useState(1); // 1–2 = New/Edit address+client, 3–6 = Sold flow (ProjectCost→Folders→PDF→Email)
   const [createdProjectId, setCreatedProjectId] = useState(null);
@@ -51,6 +54,15 @@ export default function Hotlist() {
     checkAdminStatus();
     fetchHotlist();
   }, []);
+
+  useEffect(() => {
+    if (!soldPlaceholderOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [soldPlaceholderOpen]);
 
   // Re-check admin status when navigating back to this page
   useEffect(() => {
@@ -336,7 +348,11 @@ export default function Hotlist() {
     window.location.href = mailtoLink;
   }
 
-  async function handleSoldClick(item) {
+  function handleSoldClick() {
+    setSoldPlaceholderOpen(true);
+  }
+
+  function handleMakeJobFileClick(item) {
     setSoldItemId(item.id);
     setFormData({
       street: item.street || "",
@@ -1058,7 +1074,7 @@ export default function Hotlist() {
                               </button>
                             )}
                             <button
-                              onClick={() => handleSoldClick(item)}
+                              onClick={handleSoldClick}
                               style={{
                                 background: "#33cc33",
                                 color: WHITE,
@@ -1074,6 +1090,24 @@ export default function Hotlist() {
                               onMouseLeave={(e) => (e.currentTarget.style.background = "#33cc33")}
                             >
                               Sold
+                            </button>
+                            <button
+                              onClick={() => handleMakeJobFileClick(item)}
+                              style={{
+                                background: PURPLE,
+                                color: WHITE,
+                                border: `1px solid ${PURPLE}`,
+                                borderRadius: "8px",
+                                padding: "8px 16px",
+                                fontSize: "0.9rem",
+                                fontWeight: 500,
+                                cursor: "pointer",
+                                transition: "background 0.2s",
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = PURPLE_HOVER)}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = PURPLE)}
+                            >
+                              Make Job File
                             </button>
                             <button
                               onClick={() => handleEmailClick(item)}
@@ -1268,7 +1302,7 @@ export default function Hotlist() {
                               </button>
                             )}
                             <button
-                              onClick={() => handleSoldClick(item)}
+                              onClick={handleSoldClick}
                               style={{
                                 background: "#33cc33",
                                 color: WHITE,
@@ -1284,6 +1318,24 @@ export default function Hotlist() {
                               onMouseLeave={(e) => (e.currentTarget.style.background = "#33cc33")}
                             >
                               Sold
+                            </button>
+                            <button
+                              onClick={() => handleMakeJobFileClick(item)}
+                              style={{
+                                background: PURPLE,
+                                color: WHITE,
+                                border: `1px solid ${PURPLE}`,
+                                borderRadius: "8px",
+                                padding: "8px 16px",
+                                fontSize: "0.9rem",
+                                fontWeight: 500,
+                                cursor: "pointer",
+                                transition: "background 0.2s",
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = PURPLE_HOVER)}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = PURPLE)}
+                            >
+                              Make Job File
                             </button>
                             <button
                               onClick={() => handleEmailClick(item)}
@@ -1461,6 +1513,81 @@ export default function Hotlist() {
             />
           )}
         </>
+      )}
+
+      {soldPlaceholderOpen && (
+        <div
+          role="presentation"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 99999,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "24px",
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sold-placeholder-title"
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "28px 32px",
+              maxWidth: "420px",
+              width: "100%",
+              boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              id="sold-placeholder-title"
+              style={{ margin: "0 0 12px 0", fontSize: "1.35rem", color: MONUMENT, fontWeight: 600 }}
+            >
+              Sold
+            </h2>
+            <p style={{ margin: "0 0 24px 0", fontSize: "1rem", color: LIGHT_MONUMENT, lineHeight: 1.5 }}>
+              Placeholder — new Sold action coming soon.
+            </p>
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setSoldPlaceholderOpen(false)}
+                style={{
+                  background: SECTION_GREY,
+                  color: MONUMENT,
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "10px 20px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => setSoldPlaceholderOpen(false)}
+                style={{
+                  background: "#33cc33",
+                  color: WHITE,
+                  border: "1px solid #33cc33",
+                  borderRadius: "8px",
+                  padding: "10px 20px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       </div>
     </>

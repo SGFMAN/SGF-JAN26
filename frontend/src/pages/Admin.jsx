@@ -283,7 +283,7 @@ export default function Admin({ project, onUpdate }) {
         (t) => t.name && t.name.trim().toLowerCase() === "deposit balance paid"
       );
       if (!template) {
-        alert('Template "Deposit Balance Paid" not found. Create it in Settings → Email Settings.');
+        alert('Template "Deposit Balance Paid" not found. Create it in Settings → Email Templates.');
         setShowDepositBalanceEmailModal(false);
         setDepositEmailPreparing(false);
         return;

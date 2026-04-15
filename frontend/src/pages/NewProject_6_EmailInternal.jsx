@@ -153,7 +153,7 @@ export default function NewProject_6_EmailInternal({ isOpen, onClose, createdPro
 
       if (!template) {
         console.warn(`Template "${templateName}" not found. Available templates:`, templates.map((t) => t.name));
-        alert(`Template "${templateName}" not found. Please create it in Settings → Email Settings.`);
+        alert(`Template "${templateName}" not found. Please create it in Settings → Email Templates.`);
         setIsPreparing(false);
         return;
       }
@@ -161,7 +161,7 @@ export default function NewProject_6_EmailInternal({ isOpen, onClose, createdPro
       console.log("Found template:", template);
 
       if (!template.from_address || !template.from_address.trim()) {
-        alert("Template has no From address. Edit the template in Settings → Email Settings.");
+        alert("Template has no From address. Edit the template in Settings → Email Templates.");
         setIsPreparing(false);
         return;
       }

@@ -1411,18 +1411,15 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
       if (!res.ok) return [];
       const s = await res.json();
       const opts = [];
-      if (s.smtp_user?.trim()) {
-        opts.push({ value: s.smtp_user.trim(), label: "VIC - SMTP Primary" });
-      }
-      if (s.smtp_user_secondary?.trim()) {
-        opts.push({ value: s.smtp_user_secondary.trim(), label: "VIC - SMTP Secondary" });
-      }
-      if (s.smtp_user_vic_smtp?.trim()) {
-        opts.push({ value: s.smtp_user_vic_smtp.trim(), label: "VIC - SMTP" });
+      for (let i = 1; i <= 16; i++) {
+        const u = s[`smtp_user_${i}`];
+        if (u && String(u).trim()) {
+          opts.push({ value: String(u).trim(), label: `SMTP ${i}` });
+        }
       }
       return opts;
     } catch (e) {
-      console.error("Error loading VIC SMTP settings:", e);
+      console.error("Error loading SMTP settings:", e);
       return [];
     }
   }
@@ -1446,7 +1443,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
     const opts = await loadVicSmtpFromOptions();
     if (opts.length === 0) {
       alert(
-        "No VIC SMTP addresses are configured. Add them under Settings → Email Settings (VIC - SMTP Primary, Secondary, and VIC - SMTP)."
+        "No SMTP addresses are configured. Add at least one under Settings → SMTP Settings (SMTP User in any slot)."
       );
       return;
     }
@@ -1963,7 +1960,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
       const sRes = await fetch(`${API_URL}/api/settings`);
       if (sRes.ok) {
         const s = await sRes.json();
-        fromAddr = (s.smtp_user || "").trim();
+        fromAddr = (s.smtp_user_1 || "").trim();
       }
     } catch (e) {
       console.error(e);

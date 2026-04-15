@@ -18,8 +18,8 @@ const JOB_FILE_DOC_STATUS_OPTIONS_WITH_NA = ["Not Done", "Requested", "Received"
 const PLANNING_JF_FILE_SUBFOLDER = "7. PROPERTY INFORMATION";
 
 /**
- * DB columns per row; g & h include N/A in dropdown.
- * pathKey = full path on disk after server upload. viewSlot = segment for /api/files/planning-jf/:id/:slot (a–j).
+ * DB columns per row; h & i include N/A in dropdown.
+ * pathKey = full path on disk after server upload. viewSlot = segment for /api/files/planning-jf/:id/:slot (a–k).
  */
 const JOB_FILE_DOCUMENT_ROWS = [
   {
@@ -47,9 +47,17 @@ const JOB_FILE_DOCUMENT_ROWS = [
     allowNA: false,
   },
   {
+    key: "planning_jf_section_173_agreement",
+    pathKey: "planning_jf_section_173_agreement_path",
+    viewSlot: "d",
+    uploadHeading: "Section 173 Agreement Upload",
+    label: "Section 173 Agreement",
+    allowNA: false,
+  },
+  {
     key: "planning_jf_plan_of_subdivision",
     pathKey: "planning_jf_plan_of_subdivision_path",
-    viewSlot: "d",
+    viewSlot: "e",
     uploadHeading: "Plan of Subdivision Upload",
     label: "Plan of Subdivision",
     allowNA: false,
@@ -57,15 +65,15 @@ const JOB_FILE_DOCUMENT_ROWS = [
   {
     key: "planning_jf_ebyda_stormwater",
     pathKey: "planning_jf_ebyda_stormwater_path",
-    viewSlot: "e",
-    uploadHeading: "eBYDA – Stormwater Upload",
-    label: "eBYDA – Stormwater",
+    viewSlot: "f",
+    uploadHeading: "BYDA – Stormwater Upload",
+    label: "BYDA – Stormwater",
     allowNA: false,
   },
   {
     key: "planning_jf_byda_sewer_main",
     pathKey: "planning_jf_byda_sewer_main_path",
-    viewSlot: "f",
+    viewSlot: "g",
     uploadHeading: "BYDA – Sewer Main Upload",
     label: "BYDA – Sewer Main",
     allowNA: false,
@@ -73,7 +81,7 @@ const JOB_FILE_DOCUMENT_ROWS = [
   {
     key: "planning_jf_internal_sewer_plan",
     pathKey: "planning_jf_internal_sewer_plan_path",
-    viewSlot: "g",
+    viewSlot: "h",
     uploadHeading: "Internal Sewer Plan Upload",
     label: "Internal sewer plan",
     allowNA: true,
@@ -81,7 +89,7 @@ const JOB_FILE_DOCUMENT_ROWS = [
   {
     key: "planning_jf_sewer_main_size_depth_offset",
     pathKey: "planning_jf_sewer_main_size_depth_offset_path",
-    viewSlot: "h",
+    viewSlot: "i",
     uploadHeading: "Sewer Main Size Depth and Offset Upload",
     label: "Sewer main size depth and offset",
     allowNA: true,
@@ -89,7 +97,7 @@ const JOB_FILE_DOCUMENT_ROWS = [
   {
     key: "planning_jf_legal_point_discharge",
     pathKey: "planning_jf_legal_point_discharge_path",
-    viewSlot: "i",
+    viewSlot: "j",
     uploadHeading: "Legal Point of Discharge Upload",
     label: "Legal point of discharge",
     allowNA: false,
@@ -97,7 +105,7 @@ const JOB_FILE_DOCUMENT_ROWS = [
   {
     key: "planning_jf_property_info_report",
     pathKey: "planning_jf_property_info_report_path",
-    viewSlot: "j",
+    viewSlot: "k",
     uploadHeading: "Property Information Report Upload",
     label: "Property Information Report",
     allowNA: false,
@@ -272,20 +280,23 @@ function getSurveySoilTileState(statusValue) {
   return { color: TILE_RED, label: "Not Booked" };
 }
 
-function getDepositStatusLabel(depositValue, projectCostValue) {
+function getDepositStatus(depositValue, projectCostValue) {
   const depositNumeric = parseInt((depositValue || "").toString().replace(/[^0-9]/g, ""), 10) || 0;
   const projectCostNumeric = parseInt((projectCostValue || "").toString().replace(/[^0-9]/g, ""), 10) || 0;
   const fullDepositAmount = Math.round(projectCostNumeric * 0.05);
-  return depositNumeric > 0 && fullDepositAmount > 0 && depositNumeric === fullDepositAmount
-    ? "Full Deposit Paid"
-    : "Partial Deposit Paid";
+  const isFull =
+    depositNumeric > 0 && fullDepositAmount > 0 && depositNumeric === fullDepositAmount;
+  return {
+    label: isFull ? "Full Deposit Paid" : "Partial Deposit Paid",
+    color: isFull ? TILE_GREEN : TILE_RED,
+  };
 }
 
 export default function PlanningNew({ project, onUpdate }) {
   const drawingStates = getDrawingTileStates(project?.drawings_status);
   const surveyTileState = getSurveySoilTileState(project?.survey_status);
   const soilTileState = getSurveySoilTileState(project?.soil_status);
-  const depositStatusLabel = getDepositStatusLabel(project?.deposit, project?.project_cost);
+  const depositStatus = getDepositStatus(project?.deposit, project?.project_cost);
   /** Which planning subsection is shown in the main panel (matches PLANNING_CATEGORIES labels). */
   const [planningSection, setPlanningSection] = useState(PLANNING_CATEGORIES[0]);
   const [surveyStatusDraft, setSurveyStatusDraft] = useState(project?.survey_status || "Not Booked");
@@ -304,7 +315,7 @@ export default function PlanningNew({ project, onUpdate }) {
   /** Shown dates right after a save until project refetch matches (avoids stale DB values). */
   const [jfBumpRequestedAt, setJfBumpRequestedAt] = useState({});
   const [jfBumpReceivedAt, setJfBumpReceivedAt] = useState({});
-  /** a–j: open file viewer modal (same pattern as Drawings). */
+  /** a–k: open file viewer modal (same pattern as Drawings). */
   const [jfViewerSlot, setJfViewerSlot] = useState(null);
   /** Merged JOB FILE.PDF viewer (Job File Complete tab). */
   const [jfCombinedViewerOpen, setJfCombinedViewerOpen] = useState(false);
@@ -917,12 +928,13 @@ export default function PlanningNew({ project, onUpdate }) {
                         borderRadius: "8px",
                         border: `1px solid ${SECTION_GREY}`,
                         fontSize: "0.95rem",
-                        color: MONUMENT,
+                        fontWeight: 600,
+                        color: depositStatus.color,
                         background: "#f8f8f8",
                         boxSizing: "border-box",
                       }}
                     >
-                      {depositStatusLabel}
+                      {depositStatus.label}
                     </div>
                   </div>
                   <select
@@ -985,6 +997,33 @@ export default function PlanningNew({ project, onUpdate }) {
               {planningSection === "Soil Test" && (
                 <div>
                   <h3 style={{ margin: "0 0 14px 0", color: MONUMENT, fontSize: "1.1rem" }}>Soil Test</h3>
+                  <div style={{ marginBottom: "12px", maxWidth: "420px" }}>
+                    <div
+                      style={{
+                        fontSize: "0.88rem",
+                        fontWeight: 600,
+                        color: MONUMENT,
+                        marginBottom: "6px",
+                      }}
+                    >
+                      Deposit Status
+                    </div>
+                    <div
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: `1px solid ${SECTION_GREY}`,
+                        fontSize: "0.95rem",
+                        fontWeight: 600,
+                        color: depositStatus.color,
+                        background: "#f8f8f8",
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      {depositStatus.label}
+                    </div>
+                  </div>
                   <select
                     value={soilStatusDraft}
                     onChange={(e) => setSoilStatusDraft(e.target.value)}
@@ -1048,14 +1087,9 @@ export default function PlanningNew({ project, onUpdate }) {
                   aria-labelledby="jfdocs-title"
                   style={{ position: "relative" }}
                 >
-            <h3 id="jfdocs-title" style={{ margin: "0 0 6px 0", color: MONUMENT }}>
+            <h3 id="jfdocs-title" style={{ margin: "0 0 14px 0", color: MONUMENT }}>
               Job file documents
             </h3>
-            <p style={{ margin: "0 0 18px 0", fontSize: "0.88rem", color: SECTION_GREY }}>
-              Choosing <strong>Received</strong> opens an upload layer where you drop or pick a PDF or image; the app
-              saves a copy under <strong>{PLANNING_JF_FILE_SUBFOLDER}</strong> with a standard file name for that
-              document. Other statuses save when you change the dropdown.
-            </p>
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               <div
                 style={{
@@ -1234,15 +1268,9 @@ export default function PlanningNew({ project, onUpdate }) {
 
               {planningSection === "Job File Complete" && (
                 <div role="region" aria-labelledby="jfcomplete-title">
-                  <h3 id="jfcomplete-title" style={{ margin: "0 0 8px 0", color: MONUMENT }}>
+                  <h3 id="jfcomplete-title" style={{ margin: "0 0 16px 0", color: MONUMENT }}>
                     Job file complete
                   </h3>
-                  <p style={{ margin: "0 0 16px 0", fontSize: "0.88rem", color: SECTION_GREY, lineHeight: 1.5, maxWidth: "640px" }}>
-                    This status follows the eight documents on <strong>Job File Documents</strong>. It becomes{" "}
-                    <strong>In progress</strong> when any document is no longer &quot;Not done&quot;. After you use{" "}
-                    <strong>Create Job File</strong> and <strong>JOB FILE.PDF</strong> exists in the{" "}
-                    <strong>7. PROPERTY INFORMATION</strong> folder, the status is <strong>Completed</strong>.
-                  </p>
                   <div
                     style={{
                       display: "inline-flex",

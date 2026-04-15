@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Playground</title>
+    <title>Brick Calculation</title>
     <style>
         body {
             margin: 0;
@@ -14,37 +14,27 @@
             min-height: 100vh;
             background: #fff;
             font-family: Arial, sans-serif;
+            flex-direction: column;
         }
-        .triangle-container {
-            position: relative;
-            width: 300px;
-            height: 300px;
-        }
-        .triangle {
-            width: 0;
-            height: 0;
-            border-left: 150px solid transparent;
-            border-right: 150px solid transparent;
-            border-bottom: 260px solid red;
-            position: relative;
-        }
-        .text {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: white;
-            font-size: 24px;
-            font-weight: bold;
+        .content {
             text-align: center;
-            z-index: 1;
+        }
+        .content h1 {
+            font-size: 36px;
+            color: #333;
+        }
+        .content p {
+            font-size: 18px;
+            color: #666;
         }
     </style>
 </head>
 <body>
-    <div class="triangle-container">
-        <div class="triangle"></div>
-        <div class="text">Playground</div>
+    <div class="content">
+        <h1>Brick Calculation</h1>
+        <p>How many bricks in a 60m<sup>2</sup> unit?</p>
+        <p>Assuming standard brick size of 0.2m x 0.1m:</p>
+        <p>Total bricks = 60m<sup>2</sup> / (0.2m x 0.1m) = 3000 bricks</p>
     </div>
 </body>
 </html>

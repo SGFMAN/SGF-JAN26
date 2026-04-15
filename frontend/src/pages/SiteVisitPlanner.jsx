@@ -1838,7 +1838,7 @@ export default function SiteVisitPlanner() {
                         const template = templates.find(t => t.name === "SITE VISIT BOOKING");
                         
                         if (!template) {
-                          alert("Email template 'SITE VISIT BOOKING' not found. Please create it in Settings → Email Settings.");
+                          alert("Email template 'SITE VISIT BOOKING' not found. Please create it in Settings → Email Templates.");
                           return;
                         }
 

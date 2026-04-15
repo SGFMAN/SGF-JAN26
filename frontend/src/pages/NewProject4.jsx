@@ -422,7 +422,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
 
       if (!template) {
         console.warn(`Template "${templateName}" not found. Available templates:`, templates.map((t) => t.name));
-        alert(`Template "${templateName}" not found. Please create it in Settings → Email Settings.`);
+        alert(`Template "${templateName}" not found. Please create it in Settings → Email Templates.`);
         // Don't close modal, just return
         return;
       }
@@ -430,7 +430,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
       console.log("Found template:", template);
 
       if (!template.from_address || !template.from_address.trim()) {
-        alert("Template has no From address. Edit the template in Settings → Email Settings.");
+        alert("Template has no From address. Edit the template in Settings → Email Templates.");
         // Don't close modal, just return
         return;
       }

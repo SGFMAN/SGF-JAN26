@@ -232,12 +232,12 @@ export default function Planning({ project, onUpdate }) {
       );
 
       if (!template) {
-        alert('Template "SEPTIC - Organise Inspection" not found. Please create it in Settings → Email Settings.');
+        alert('Template "SEPTIC - Organise Inspection" not found. Please create it in Settings → Email Templates.');
         return;
       }
 
       if (!template.from_address || !template.from_address.trim()) {
-        alert("Template has no From address. Edit the template in Settings → Email Settings.");
+        alert("Template has no From address. Edit the template in Settings → Email Templates.");
         return;
       }
 

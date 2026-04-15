@@ -17,7 +17,7 @@ const WHITE = "#fff";
 const menuOptions = [
   { key: "file", label: "File Settings" },
   { key: "emailTemplates", label: "Email Templates" },
-  { key: "emailSettings", label: "Email Settings" },
+  { key: "emailSettings", label: "SMTP Settings" },
   { key: "users", label: "Users" },
   { key: "account", label: "Account Settings" },
   { key: "colourSettings", label: "Colour Settings" },

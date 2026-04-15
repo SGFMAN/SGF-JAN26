@@ -351,7 +351,7 @@ export default function Overview({ project }) {
     }
 
     if (!template.from_address || !template.from_address.trim()) {
-      alert("Template has no From address. Edit the template in Settings → Email Settings.");
+      alert("Template has no From address. Edit the template in Settings → Email Templates.");
       return;
     }
 
