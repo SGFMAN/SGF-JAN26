@@ -5,7 +5,17 @@ const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 const API_URL = "";
 
-export default function NewProject_5_PDFUpload({ isOpen, onClose, formData, onFormDataChange, onBack, onNext, onCreate }) {
+export default function NewProject_5_PDFUpload({
+  isOpen,
+  onClose,
+  formData,
+  onFormDataChange,
+  onBack,
+  onNext,
+  onCreate,
+  introExtra,
+  transparentBackdrop = false,
+}) {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -172,7 +182,7 @@ export default function NewProject_5_PDFUpload({ isOpen, onClose, formData, onFo
         const data = await reg.json().catch(() => ({}));
         throw new Error(
           data.error ||
-            "No Proposal.PDF found in the new project folder. Upload a PDF or add a template proposal beside 1-Folder Structure in File Settings."
+            "No Proposal.PDF found in the project folder (for Renovation: inside 12. RENOVATION). Upload a PDF or add the file on disk, then try again."
         );
       }
       onFormDataChange({
@@ -183,8 +193,8 @@ export default function NewProject_5_PDFUpload({ isOpen, onClose, formData, onFo
         await onNext(newProject);
       }
     } catch (error) {
-      console.error("Template proposal continue:", error);
-      alert(error.message || "Failed to use template proposal.");
+      console.error("Proposal-from-folder continue:", error);
+      alert(error.message || "Could not link Proposal.PDF from the project folder.");
     } finally {
       setIsUploading(false);
     }
@@ -223,7 +233,7 @@ export default function NewProject_5_PDFUpload({ isOpen, onClose, formData, onFo
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0, 0, 0, 0.5)",
+        background: transparentBackdrop ? "transparent" : "rgba(0, 0, 0, 0.5)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -264,6 +274,18 @@ export default function NewProject_5_PDFUpload({ isOpen, onClose, formData, onFo
           If you already copied the job folder template, you can continue with the template <strong>Proposal.PDF</strong>{" "}
           using <strong>Next</strong> without choosing a file. Or upload your own PDF to replace it.
         </p>
+        {introExtra ? (
+          <p
+            style={{
+              margin: "0 0 16px 0",
+              fontSize: "0.9rem",
+              color: "#444",
+              lineHeight: 1.45,
+            }}
+          >
+            {introExtra}
+          </p>
+        ) : null}
 
         {/* Dropzone */}
         <div
@@ -457,7 +479,7 @@ export default function NewProject_5_PDFUpload({ isOpen, onClose, formData, onFo
                 : selectedFile
                   ? "Next"
                   : canUseTemplateProposal && formData.folderPath
-                    ? "Next (template proposal)"
+                    ? "Next (Proposal.PDF on disk)"
                     : "Next"}
           </button>
         </div>

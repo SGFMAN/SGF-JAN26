@@ -8,6 +8,7 @@ const API_URL = "";
 export default function EmailTemplate() {
   const [templates, setTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+  const [smtpFromOptions, setSmtpFromOptions] = useState([]);
   const [templateName, setTemplateName] = useState("");
   const [toAddresses, setToAddresses] = useState("");
   const [fromAddress, setFromAddress] = useState("");
@@ -17,6 +18,7 @@ export default function EmailTemplate() {
 
   useEffect(() => {
     fetchTemplates();
+    fetchSmtpFromOptions();
   }, []);
 
   useEffect(() => {
@@ -53,6 +55,27 @@ export default function EmailTemplate() {
       setTemplates([]);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchSmtpFromOptions() {
+    try {
+      const response = await fetch(`${API_URL}/api/settings`);
+      if (!response.ok) throw new Error("Failed to fetch settings");
+      const settings = await response.json();
+      const options = [];
+      for (let i = 1; i <= 16; i++) {
+        const raw = settings?.[`smtp_user_${i}`];
+        const email = (raw || "").trim();
+        if (!email) continue;
+        if (!options.some((e) => e.toLowerCase() === email.toLowerCase())) {
+          options.push(email);
+        }
+      }
+      setSmtpFromOptions(options);
+    } catch (error) {
+      console.error("Error fetching SMTP from addresses:", error);
+      setSmtpFromOptions([]);
     }
   }
 
@@ -382,8 +405,11 @@ export default function EmailTemplate() {
               }}
             >
               <option value="">Select from address</option>
-              <option value="info@superiorgrannyflats.com.au">info@superiorgrannyflats.com.au</option>
-              <option value="design@superiorgrannyflats.com.au">design@superiorgrannyflats.com.au</option>
+              {smtpFromOptions.map((smtpEmail) => (
+                <option key={smtpEmail} value={smtpEmail}>
+                  {smtpEmail}
+                </option>
+              ))}
             </select>
           </div>
 

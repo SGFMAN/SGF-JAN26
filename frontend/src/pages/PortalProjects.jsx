@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import logo from "../images/logo.png";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
+import { CLASSIFICATION_BADGE_MAP as CLASSIFICATION_MAP } from "../utils/classifications";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -23,22 +24,10 @@ const STREAM_SORT_ORDER = [
   "Fresh Start Advisory",
 ];
 
-const CLASSIFICATION_MAP = {
-  "Small Second Dwelling": { acronym: "SSD", color: "#a1a1a3" },
-  "Dependant Persons Unit": { acronym: "DPU", color: "#a1a1a3" },
-  "Detached Extension": { acronym: "DEX", color: "#a1a1a3" },
-  "Dwelling": { acronym: "DWE", color: "#a1a1a3" },
-  "Home Office / Studio": { acronym: "OFFICE", color: "#a1a1a3" },
-  "Dwelling & DPU": { acronym: "D&DPU", color: "#a1a1a3" },
-  "Dwelling & SSD": { acronym: "D&SSD", color: "#a1a1a3" },
-  "SSD & DPU": { acronym: "SSD&DPU", color: "#a1a1a3" },
-  "Dual Occ": { acronym: "DOC", color: "#a1a1a3" },
-};
-
 const STREAM_MAP = {
   "SGF - VIC": { acronym: "VIC", color: "#4D93D9" },
   "SGF - QLD": { acronym: "QLD", color: "#D54358" },
-  "Dual Dwelling": { acronym: "DD", color: "#92D050" },
+  "Dual Dwelling": { acronym: "DDI", color: "#92D050" },
   "ATA": { acronym: "ATA", color: "#92D050" },
   "Pumped on Property": { acronym: "POP", color: "#92D050" },
   "Pumped On Property": { acronym: "POP", color: "#92D050" },

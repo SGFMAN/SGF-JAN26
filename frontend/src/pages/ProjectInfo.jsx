@@ -1,22 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import { PROJECT_STATUS_OPTIONS as STATUS_OPTIONS } from "../utils/projectStatus";
+import { CLASSIFICATION_OPTIONS } from "../utils/classifications";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 const API_URL = "";
 const SPECS_OPTIONS = ["Affordable", "Superior"];
-const CLASSIFICATION_OPTIONS = [
-  "Small Second Dwelling",
-  "Dependant Persons Unit",
-  "Detached Extension",
-  "Dwelling",
-  "Home Office / Studio",
-  "Dwelling & DPU",
-  "Dwelling & SSD",
-  "SSD & DPU",
-  "Dual Occ"
-];
 
 function getLongestText(arr, include = "") {
   return arr.concat(include ? [include] : []).reduce(
@@ -33,7 +23,7 @@ function isQldState(value) {
   return false;
 }
 
-export default function ProjectInfo({ project, onUpdate }) {
+export default function ProjectInfo({ project, onUpdate, onRequestRenovationDuplicate, onRequestLinkRenovationDuplicate }) {
   const [status, setStatus] = useState(project?.status || "");
   const [street, setStreet] = useState(project?.street || "");
   const [suburb, setSuburb] = useState(project?.suburb || "");
@@ -43,7 +33,7 @@ export default function ProjectInfo({ project, onUpdate }) {
   const [projectInfoNotes, setProjectInfoNotes] = useState(project?.project_info_notes || "");
   const [onHold, setOnHold] = useState(project?.on_hold === 'true' || project?.on_hold === true);
   const [qpNumber, setQpNumber] = useState(project?.qp_number || "");
-  
+
   // Use ref to track latest values for saving
   const valuesRef = useRef({ status, street, suburb, state, specs, classification, projectInfoNotes, onHold, qpNumber });
 
@@ -225,6 +215,7 @@ export default function ProjectInfo({ project, onUpdate }) {
   }
 
   return (
+    <>
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, flexShrink: 0 }}>
         Project Info
@@ -426,26 +417,19 @@ export default function ProjectInfo({ project, onUpdate }) {
                 type="button"
                 onClick={async () => {
                   if (project?.proposal_pdf_location) {
-                    // Check if PDF exists before opening
                     try {
                       const pdfUrl = `${API_URL}/api/files/proposal/${project.id}`;
                       const response = await fetch(pdfUrl);
-                      
                       if (!response.ok) {
-                        // File doesn't exist, allow user to locate it
-                        console.log("Proposal PDF not found, allowing user to locate");
                         fileInputRef.current?.click();
                       } else {
-                        // File exists, open it in a new window
                         window.open(pdfUrl, "_blank");
                       }
                     } catch (error) {
-                      // Error fetching file, allow user to locate it
                       console.error("Error checking proposal PDF:", error);
                       fileInputRef.current?.click();
                     }
                   } else {
-                    // Trigger file input to locate proposal
                     fileInputRef.current?.click();
                   }
                 }}
@@ -528,6 +512,72 @@ export default function ProjectInfo({ project, onUpdate }) {
                 ))}
               </select>
             </div>
+            {(project?.classification || "").trim() === "Renovation" &&
+              typeof onRequestRenovationDuplicate === "function" &&
+              !(
+                Array.isArray(project?.duplicate_linked_project_ids) &&
+                project.duplicate_linked_project_ids.length > 0
+              ) &&
+              (project?.duplicate_source_project_id == null ||
+                String(project.duplicate_source_project_id).trim() === "") && (
+              <div style={{ marginTop: "12px" }}>
+                <button
+                  type="button"
+                  onClick={() => onRequestRenovationDuplicate()}
+                  style={{
+                    width: "100%",
+                    maxWidth: "300px",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${MONUMENT}`,
+                    fontSize: "0.95rem",
+                    fontWeight: 600,
+                    color: WHITE,
+                    background: MONUMENT,
+                    cursor: "pointer",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  Duplicate & Link SSD
+                </button>
+                <div style={{ fontSize: "0.75rem", color: "#32323399", marginTop: "6px", maxWidth: "300px", lineHeight: 1.35 }}>
+                  New job number and sales entry; re-use the same Windows job folder (no new folder).
+                </div>
+              </div>
+            )}
+            {(project?.classification || "").trim() !== "Renovation" &&
+              typeof onRequestLinkRenovationDuplicate === "function" &&
+              !(
+                Array.isArray(project?.duplicate_linked_project_ids) &&
+                project.duplicate_linked_project_ids.length > 0
+              ) &&
+              (project?.duplicate_source_project_id == null ||
+                String(project.duplicate_source_project_id).trim() === "") && (
+              <div style={{ marginTop: "12px" }}>
+                <button
+                  type="button"
+                  onClick={() => onRequestLinkRenovationDuplicate()}
+                  style={{
+                    width: "100%",
+                    maxWidth: "300px",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${MONUMENT}`,
+                    fontSize: "0.95rem",
+                    fontWeight: 600,
+                    color: WHITE,
+                    background: MONUMENT,
+                    cursor: "pointer",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  Duplicate & Link Renovation
+                </button>
+                <div style={{ fontSize: "0.75rem", color: "#32323399", marginTop: "6px", maxWidth: "300px", lineHeight: 1.35 }}>
+                  New renovation job linked to this folder; renovation proposal PDF goes in 12. RENOVATION only.
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Column 3 - Project Log */}
@@ -592,5 +642,6 @@ export default function ProjectInfo({ project, onUpdate }) {
         </div>
       )}
     </div>
+    </>
   );
 }

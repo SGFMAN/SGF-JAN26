@@ -371,6 +371,9 @@ export default function Sales() {
       >
         <span style={{ textAlign: "left", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {suburb} - {street}
+          {(project?.classification || "").trim() === "Renovation" ? (
+            <span style={{ fontWeight: 700 }}> [RENOVATION]</span>
+          ) : null}
         </span>
         {projectCost && <span style={{ flexShrink: 0, textAlign: "right" }}>{projectCost}</span>}
       </div>

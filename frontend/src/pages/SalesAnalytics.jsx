@@ -1111,14 +1111,15 @@ export default function SalesAnalytics() {
                                 zIndex: 2,
                               }}
                             >
-                              {/* VIC bar (blue) - bottom */}
-                              {vicBarHeight > 0 && (
+                              {/* DOM order is top → bottom of stack; flex-end anchors stack to baseline, so first = top (green), last = bottom (blue). */}
+                              {/* Green streams (green) — top of bar */}
+                              {greenStreamBarHeight > 0 && (
                                 <div
                                   style={{
                                     width: "100%",
-                                    height: `${vicBarHeight}px`,
-                                    backgroundColor: "#4D93D9",
-                                    borderRadius: vicBarHeight === totalBarHeight ? "4px 4px 0 0" : "0",
+                                    height: `${greenStreamBarHeight}px`,
+                                    backgroundColor: "#92D050",
+                                    borderRadius: "4px 4px 0 0",
                                     display: "flex",
                                     flexDirection: "column",
                                     justifyContent: "flex-start",
@@ -1128,15 +1129,15 @@ export default function SalesAnalytics() {
                                   }}
                                 >
                                   <div style={{ fontSize: "0.7rem", fontWeight: 700, color: WHITE, marginBottom: "2px" }}>
-                                    {month.vicSalesCount}
+                                    {month.greenStreamSalesCount}
                                   </div>
                                   <div style={{ fontSize: "0.65rem", color: WHITE }}>
-                                    {formatCurrency(month.vicTotalValue)}
+                                    {formatCurrency(month.greenStreamTotalValue)}
                                   </div>
                                 </div>
                               )}
-                              
-                              {/* QLD bar (red) - middle */}
+
+                              {/* QLD (red) — middle */}
                               {qldBarHeight > 0 && (
                                 <div
                                   style={{
@@ -1160,15 +1161,15 @@ export default function SalesAnalytics() {
                                   </div>
                                 </div>
                               )}
-                              
-                              {/* Green Streams bar (green) - on top */}
-                              {greenStreamBarHeight > 0 && (
+
+                              {/* VIC (blue) — bottom on baseline */}
+                              {vicBarHeight > 0 && (
                                 <div
                                   style={{
                                     width: "100%",
-                                    height: `${greenStreamBarHeight}px`,
-                                    backgroundColor: "#92D050",
-                                    borderRadius: "4px 4px 0 0",
+                                    height: `${vicBarHeight}px`,
+                                    backgroundColor: "#4D93D9",
+                                    borderRadius: vicBarHeight === totalBarHeight ? "4px 4px 0 0" : "0",
                                     display: "flex",
                                     flexDirection: "column",
                                     justifyContent: "flex-start",
@@ -1178,10 +1179,10 @@ export default function SalesAnalytics() {
                                   }}
                                 >
                                   <div style={{ fontSize: "0.7rem", fontWeight: 700, color: WHITE, marginBottom: "2px" }}>
-                                    {month.greenStreamSalesCount}
+                                    {month.vicSalesCount}
                                   </div>
                                   <div style={{ fontSize: "0.65rem", color: WHITE }}>
-                                    {formatCurrency(month.greenStreamTotalValue)}
+                                    {formatCurrency(month.vicTotalValue)}
                                   </div>
                                 </div>
                               )}

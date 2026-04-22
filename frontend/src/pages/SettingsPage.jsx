@@ -6,6 +6,7 @@ import EmailTemplate from "./EmailTemplate";
 import EmailSettings from "./EmailSettings";
 import AccountSettings from "./AccountSettings";
 import ColourSettings from "./ColourSettings";
+import StreamSettings from "./StreamSettings";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -21,6 +22,7 @@ const menuOptions = [
   { key: "users", label: "Users" },
   { key: "account", label: "Account Settings" },
   { key: "colourSettings", label: "Colour Settings" },
+  { key: "streamSettings", label: "Stream Settings" },
 ];
 
 export default function SettingsPage() {
@@ -40,6 +42,8 @@ export default function SettingsPage() {
         return <AccountSettings />;
       case "colourSettings":
         return <ColourSettings />;
+      case "streamSettings":
+        return <StreamSettings />;
       default:
         return (
           <div>

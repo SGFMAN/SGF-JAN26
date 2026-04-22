@@ -6,7 +6,12 @@ const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 const API_URL = "";
 
-export default function NewProject_7_EmailClient({ isOpen, onClose, createdProjectForEmail }) {
+export default function NewProject_7_EmailClient({
+  isOpen,
+  onClose,
+  createdProjectForEmail,
+  transparentBackdrop = false,
+}) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const [emailTo, setEmailTo] = useState("");
   const [emailFrom, setEmailFrom] = useState("");
@@ -234,7 +239,7 @@ export default function NewProject_7_EmailClient({ isOpen, onClose, createdProje
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0, 0, 0, 0.5)",
+        background: transparentBackdrop ? "transparent" : "rgba(0, 0, 0, 0.5)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",

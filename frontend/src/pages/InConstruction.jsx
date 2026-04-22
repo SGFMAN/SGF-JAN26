@@ -11,6 +11,7 @@ import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
 import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter, setStateFilter } from "../utils/stateFilter";
+import { CLASSIFICATION_OPTIONS as CLASSIFICATION_SORT_ORDER, CLASSIFICATION_BADGE_MAP } from "../utils/classifications";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -22,17 +23,6 @@ const WHITE = "#fff";
 
 const API_URL = "";
 
-const CLASSIFICATION_SORT_ORDER = [
-  "Small Second Dwelling",
-  "Dependant Persons Unit",
-  "Detached Extension",
-  "Dwelling",
-  "Home Office / Studio",
-  "Dwelling & DPU",
-  "Dwelling & SSD",
-  "SSD & DPU",
-  "Dual Occ",
-];
 const STREAM_SORT_ORDER = [
   "SGF - VIC",
   "SGF - QLD",
@@ -202,18 +192,7 @@ export default function InConstruction() {
 
   // Classification mapping for acronyms
   const getClassificationInfo = (classification) => {
-    const classificationMap = {
-      "Small Second Dwelling": { acronym: "SSD", color: "#a1a1a3" }, // Grey
-      "Dependant Persons Unit": { acronym: "DPU", color: "#a1a1a3" }, // Grey
-      "Detached Extension": { acronym: "DEX", color: "#a1a1a3" }, // Grey
-      "Dwelling": { acronym: "DWE", color: "#a1a1a3" }, // Grey
-      "Home Office / Studio": { acronym: "OFFICE", color: "#a1a1a3" }, // Grey
-      "Dwelling & DPU": { acronym: "D&DPU", color: "#a1a1a3" }, // Grey
-      "Dwelling & SSD": { acronym: "D&SSD", color: "#a1a1a3" }, // Grey
-      "SSD & DPU": { acronym: "SSD&DPU", color: "#a1a1a3" }, // Grey
-      "Dual Occ": { acronym: "DOC", color: "#a1a1a3" }, // Grey
-    };
-    return classification ? classificationMap[classification] : null;
+    return classification ? CLASSIFICATION_BADGE_MAP[classification] : null;
   }
 
   // Stream mapping for acronyms - colored by stream type
@@ -221,7 +200,7 @@ export default function InConstruction() {
     const streamMap = {
       "SGF - VIC": { acronym: "VIC", color: "#4D93D9" }, // Blue
       "SGF - QLD": { acronym: "QLD", color: "#D54358" }, // Red
-      "Dual Dwelling": { acronym: "DD", color: "#92D050" }, // Green
+      "Dual Dwelling": { acronym: "DDI", color: "#92D050" }, // Green
       "ATA": { acronym: "ATA", color: "#92D050" }, // Green
       "Pumped on Property": { acronym: "POP", color: "#92D050" }, // Green
       "Pumped On Property": { acronym: "POP", color: "#92D050" }, // Green (handle both variations)

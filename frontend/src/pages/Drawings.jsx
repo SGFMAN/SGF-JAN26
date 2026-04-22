@@ -1,5 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
+import {
+  getProjectClientEmailsForDrawings,
+  getStreamExtraDrawingEmails,
+  isStreamSendDrawingsToClientsEnabled,
+  mergeUniqueEmails,
+  stripProjectClientEmailsWhenDisabled,
+} from "../utils/streamDrawingsSettings";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -65,6 +72,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
   const [draftspersonModalChoice, setDraftspersonModalChoice] = useState("");
   /** When a new PDF is uploaded, user must pick concept vs working before Save and Send ("", "concept", "working"). */
   const [newDrawingUploadKind, setNewDrawingUploadKind] = useState("");
+  const [streamSettingsJson, setStreamSettingsJson] = useState({});
 
   const valuesRef = useRef({ drawingsStatus, draftsperson });
   
@@ -85,6 +93,42 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
     // Fetch in background - don't block rendering
     fetchDraftspersons().catch(console.error);
   }, []);
+
+  async function fetchStreamSettingsForDrawings() {
+    try {
+      const res = await fetch(`${API_URL}/api/settings`);
+      if (!res.ok) return;
+      const data = await res.json();
+      let raw = data.stream_settings_json;
+      if (typeof raw === "string") {
+        try {
+          raw = JSON.parse(raw);
+        } catch {
+          raw = {};
+        }
+      }
+      setStreamSettingsJson(raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {});
+    } catch (e) {
+      console.error("Error loading stream settings:", e);
+    }
+  }
+
+  useEffect(() => {
+    void fetchStreamSettingsForDrawings();
+  }, [project?.id]);
+
+  useEffect(() => {
+    function onFocus() {
+      void fetchStreamSettingsForDrawings();
+    }
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+
+  const sendDrawingsToClientsEnabled = isStreamSendDrawingsToClientsEnabled(
+    project?.stream,
+    streamSettingsJson
+  );
 
   // Update contentEditable when emailPreviewBody changes and modal is open
   useEffect(() => {
@@ -1487,17 +1531,14 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
       return;
     }
 
-    const dualDwelling = isDualDwellingStream();
-    if (!dualDwelling && built.activeClientEmails.length === 0) {
-      alert("No active client email addresses found. Please add and activate client emails in the project.");
-      return;
-    }
+    const clientTo =
+      sendDrawingsToClientsEnabled && built.activeClientEmails.length > 0 ? built.activeClientEmails : [];
+    const extraTo = getStreamExtraDrawingEmails(project.stream, streamSettingsJson);
+    const allTo = mergeUniqueEmails(clientTo, extraTo);
 
     setVicSmtpFromOptions([]);
     setEmailDrawingsFlowKind("client");
-    setEmailDrawingsToClientTo(
-      dualDwelling ? "info@dualdwellinginvestments.com.au" : built.activeClientEmails.join(", ")
-    );
+    setEmailDrawingsToClientTo(allTo.join(", "));
     setEmailDrawingsToClientFrom(built.template.from_address || "");
     setEmailDrawingsToClientSubject(built.subject);
     setEmailDrawingsToClientBody(built.body);
@@ -1510,9 +1551,9 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
       return;
     }
 
-    let toAddresses = emailDrawingsToClientTo.split(",").map(a => a.trim()).filter(a => a.length > 0);
-    if (emailDrawingsFlowKind === "client" && isDualDwellingStream()) {
-      toAddresses = ["info@dualdwellinginvestments.com.au"];
+    let toAddresses = emailDrawingsToClientTo.split(",").map((a) => a.trim()).filter((a) => a.length > 0);
+    if (emailDrawingsFlowKind === "client") {
+      toAddresses = stripProjectClientEmailsWhenDisabled(toAddresses, project, sendDrawingsToClientsEnabled);
     }
     if (toAddresses.length === 0) {
       alert("Please enter at least one email address");
@@ -2469,18 +2510,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
     }
   }
 
-  function isDualDwellingStream() {
-    return String(project?.stream || "").trim().toLowerCase() === "dual dwelling";
-  }
-
   function getDrawingsClientRecipients() {
-    if (isDualDwellingStream()) {
-      return {
-        emails: ["info@dualdwellinginvestments.com.au"],
-        labels: ["Dual Dwelling"],
-      };
-    }
-
     const emails = [];
     const labels = [];
 
@@ -2508,9 +2538,13 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
   }
 
   function handleEmailClient() {
-    const { emails: activeEmails } = getDrawingsClientRecipients();
-    if (activeEmails.length === 0) {
-      alert("No active client email addresses found for this project.");
+    const { emails: clientEmails } = getDrawingsClientRecipients();
+    const extraEmails = getStreamExtraDrawingEmails(project?.stream, streamSettingsJson);
+    const hasClients = sendDrawingsToClientsEnabled && clientEmails.length > 0;
+    if (!hasClients && extraEmails.length === 0) {
+      alert(
+        "No recipients for this send. Add stream extra emails in Settings → Stream Settings, enable Send to Clients, and/or add active client emails on the project."
+      );
       return;
     }
 
@@ -2532,9 +2566,14 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
       return;
     }
 
-    const { emails: activeEmails } = getDrawingsClientRecipients();
+    const { emails: clientEmails } = getDrawingsClientRecipients();
+    const extraEmails = getStreamExtraDrawingEmails(project.stream, streamSettingsJson);
+    const clientTo = sendDrawingsToClientsEnabled ? clientEmails : [];
+    const activeEmails = mergeUniqueEmails(clientTo, extraEmails);
     if (activeEmails.length === 0) {
-      alert("No active client email addresses found for this project.");
+      alert(
+        "No recipients for this send. Add stream extra emails in Settings → Stream Settings, enable Send to Clients, and/or add active client emails on the project."
+      );
       return;
     }
 
@@ -2887,11 +2926,12 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
                           Design<br />Meeting
                         </button>
                         <button
+                          type="button"
                           onClick={handleEmailDrawingsToClient}
                           style={{
                             background: "#4D93D9",
                             color: WHITE,
-                            border: `1px solid #4D93D9`,
+                            border: "1px solid #4D93D9",
                             borderRadius: "6px",
                             padding: "6px 8px",
                             fontSize: "0.8rem",
@@ -2901,8 +2941,12 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
                             lineHeight: "1.2",
                             width: "100px",
                           }}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = "#3d7bc9")}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = "#4D93D9")}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = "#3d7bc9";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = "#4D93D9";
+                          }}
                         >
                           Send to<br />Client
                         </button>
@@ -3189,15 +3233,27 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
               Email Client
             </h3>
             {(() => {
-              const { emails: activeEmails, labels: activeNames } = getDrawingsClientRecipients();
+              const { emails: clientEmails, labels: clientNames } = getDrawingsClientRecipients();
+              const extraEmails = getStreamExtraDrawingEmails(project?.stream, streamSettingsJson);
               return (
                 <div style={{ marginBottom: "16px", padding: "12px", background: "#f5f5f5", borderRadius: "8px" }}>
                   <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "8px", fontWeight: "500" }}>
                     Sending to:
                   </div>
-                  {activeEmails.map((email, index) => (
-                    <div key={index} style={{ fontSize: "0.85rem", color: MONUMENT, marginBottom: "4px" }}>
-                      {activeNames[index]}: {email}
+                  {sendDrawingsToClientsEnabled &&
+                    clientEmails.map((email, index) => (
+                      <div key={`c-${index}`} style={{ fontSize: "0.85rem", color: MONUMENT, marginBottom: "4px" }}>
+                        {clientNames[index]}: {email}
+                      </div>
+                    ))}
+                  {!sendDrawingsToClientsEnabled && clientEmails.length > 0 && (
+                    <div style={{ fontSize: "0.82rem", color: "#32323399", marginBottom: "8px" }}>
+                      Project client contacts are skipped (Send to Clients is off for this stream in Stream Settings).
+                    </div>
+                  )}
+                  {extraEmails.map((email, index) => (
+                    <div key={`e-${index}`} style={{ fontSize: "0.85rem", color: MONUMENT, marginBottom: "4px" }}>
+                      Stream extra {index + 1}: {email}
                     </div>
                   ))}
                 </div>

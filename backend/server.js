@@ -379,6 +379,21 @@ const SETTINGS_SMTP_1_16_COLUMNS = Array.from({ length: 16 }, (_, j) => {
   return `smtp_user_${n}, smtp_pass_${n}`;
 }).join(", ");
 
+/** settings.stream_settings_json may be TEXT (string) or JSON/JSONB (object) depending on driver/column type. */
+function parseStreamSettingsJsonColumn(raw) {
+  if (raw == null || raw === "") return {};
+  if (typeof raw === "object" && !Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    try {
+      const o = JSON.parse(raw);
+      return o && typeof o === "object" && !Array.isArray(o) ? o : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 /** Match template From → slot (same order as former secondary → vic → QLD → 5–16 → primary). */
 const SMTP_FROM_ADDRESS_MATCH_ORDER = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 1];
 
@@ -803,6 +818,21 @@ async function ensureSchema() {
       console.log(`Column ${column} might already exist:`, e.message);
     }
   }
+  try {
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'projects' AND column_name = 'duplicate_source_project_id'
+        ) THEN
+          ALTER TABLE projects ADD COLUMN duplicate_source_project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+    `);
+  } catch (e) {
+    console.log("Column duplicate_source_project_id:", e.message);
+  }
   // Planning "Job file documents" statuses: never NULL — default and backfill "Not Done", NOT NULL.
   const PLANNING_JF_DOC_COLUMNS = [
     "planning_jf_planning_property_report",
@@ -1012,6 +1042,14 @@ async function ensureSchema() {
       console.log(`Error adding column letterhead_path:`, e.message);
     }
   }
+  // Per-stream settings (Stream Settings page), JSON object keyed by stream name
+  try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN stream_settings_json TEXT`);
+  } catch (e) {
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column stream_settings_json:`, e.message);
+    }
+  }
   // VIC - SMTP (third account) columns
   for (const col of ["smtp_user_vic_smtp", "smtp_pass_vic_smtp"]) {
     try {
@@ -1093,7 +1131,7 @@ app.get("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects ORDER BY updated_at DESC, id DESC"
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, duplicate_source_project_id, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects ORDER BY updated_at DESC, id DESC"
     );
     res.json(r.rows);
   } catch (e) {
@@ -1114,7 +1152,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects WHERE id = $1",
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, duplicate_source_project_id, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects WHERE id = $1",
       [id]
     );
     
@@ -1123,8 +1161,15 @@ app.get("/api/projects/:id", async (req, res) => {
     if (r.rows.length === 0) {
       return res.status(404).json({ error: "not found" });
     }
-    
-    res.json(r.rows[0]);
+
+    const row = r.rows[0];
+    const copiesR = await pool.query(
+      `SELECT id FROM projects WHERE duplicate_source_project_id = $1 ORDER BY id ASC`,
+      [id]
+    );
+    row.duplicate_linked_project_ids = copiesR.rows.map((x) => x.id);
+
+    res.json(row);
   } catch (e) {
     console.error("Error in GET /api/projects/:id:", e);
     res.status(500).json({ error: e.message });
@@ -1292,8 +1337,44 @@ app.post("/api/projects/bulk", async (req, res) => {
 app.post("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const { name, status, suburb, street, state, stream, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, specs, classification, year } = req.body || {};
+    const { name, status, suburb, street, state, stream, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, specs, classification, year, duplicate_source_project_id, duplicateSourceProjectId } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
+
+    let duplicateSourceProjectIdVal = null;
+    const dupRaw = duplicate_source_project_id ?? duplicateSourceProjectId;
+    if (dupRaw != null && dupRaw !== "") {
+      const n = Number(dupRaw);
+      if (Number.isInteger(n) && n > 0) {
+        const chk = await pool.query("SELECT id FROM projects WHERE id = $1", [n]);
+        if (chk.rows.length > 0) duplicateSourceProjectIdVal = n;
+      }
+    }
+
+    if (duplicateSourceProjectIdVal != null) {
+      const existingCopy = await pool.query(
+        `SELECT id FROM projects WHERE duplicate_source_project_id = $1 LIMIT 1`,
+        [duplicateSourceProjectIdVal]
+      );
+      if (existingCopy.rows.length > 0) {
+        return res.status(400).json({
+          error: "This project already has a linked copy. Only one copy is allowed.",
+        });
+      }
+      const srcRow = await pool.query(
+        `SELECT duplicate_source_project_id FROM projects WHERE id = $1`,
+        [duplicateSourceProjectIdVal]
+      );
+      if (
+        srcRow.rows.length > 0 &&
+        srcRow.rows[0].duplicate_source_project_id != null &&
+        String(srcRow.rows[0].duplicate_source_project_id).trim() !== ""
+      ) {
+        return res.status(400).json({
+          error:
+            "Cannot duplicate from a job that is already a copy. Use the original renovation project.",
+        });
+      }
+    }
 
     // Start date: always use today when creating a new project (sales table uses this for "this month")
     const projectDate = new Date().toISOString().split('T')[0];
@@ -1307,8 +1388,8 @@ app.post("/api/projects", async (req, res) => {
     const holderDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
     
     const r = await pool.query(
-      `INSERT INTO projects (name, status, suburb, street, state, stream, year, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, specs, classification, project_log, drawings_holder, drawings_holder_date, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done') RETURNING *`,
+      `INSERT INTO projects (name, status, suburb, street, state, stream, year, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, specs, classification, project_log, drawings_holder, drawings_holder_date, duplicate_source_project_id, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done') RETURNING *`,
       [
         name.trim(),
         (status || "Design Phase").trim(),
@@ -1343,6 +1424,7 @@ app.post("/api/projects", async (req, res) => {
         initialLogEntry,  // project_log - initial entry
         'design team',  // drawings_holder - default to "design team"
         holderDate,  // drawings_holder_date - set to today
+        duplicateSourceProjectIdVal,
       ]
     );
 
@@ -2155,7 +2237,7 @@ app.get("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      `SELECT id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at FROM settings WHERE id = 1`
+      `SELECT id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, stream_settings_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at FROM settings WHERE id = 1`
     );
     if (r.rows.length === 0) {
       const empty = {
@@ -2174,6 +2256,7 @@ app.get("/api/settings", async (req, res) => {
         send_drawings_qld: [],
         email_logo_path: null,
         letterhead_path: null,
+        stream_settings_json: {},
         updated_at: null,
       };
       for (let i = 1; i <= 16; i++) {
@@ -2202,6 +2285,7 @@ app.get("/api/settings", async (req, res) => {
     } else {
       result.send_drawings_qld = [];
     }
+    result.stream_settings_json = parseStreamSettingsJsonColumn(result.stream_settings_json);
     res.json(result);
   } catch (e) {
     console.error("Error fetching settings:", e);
@@ -2229,6 +2313,7 @@ app.put("/api/settings", async (req, res) => {
       send_drawings_qld,
       email_logo_path,
       letterhead_path,
+      stream_settings_json,
     } = req.body || {};
     const body = req.body || {};
 
@@ -2255,6 +2340,18 @@ app.put("/api/settings", async (req, res) => {
       return null;
     };
 
+    const processStreamSettingsJson = (val) => {
+      if (val === undefined || val === null) return null;
+      if (typeof val === "object") {
+        return JSON.stringify(val);
+      }
+      if (typeof val === "string") {
+        const t = val.trim();
+        return t === "" ? null : t;
+      }
+      return null;
+    };
+
     const smtpInsertCols = [];
     const smtpValuePlaceholders = [];
     const smtpCoalesceParts = [];
@@ -2271,11 +2368,14 @@ app.put("/api/settings", async (req, res) => {
       smtpParams.push(processValue(body[`smtp_user_${i}`]), processValue(body[`smtp_pass_${i}`]));
     }
 
+    const streamSettingsParam = processStreamSettingsJson(stream_settings_json);
+    const streamSettingsParamIndex = 14 + smtpParams.length + 1;
+
     const r = await pool.query(
       `INSERT INTO settings (id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, ${smtpInsertCols.join(
         ", "
-      )}, updated_at)
-       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, ${smtpValuePlaceholders.join(", ")}, NOW())
+      )}, stream_settings_json, updated_at)
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, ${smtpValuePlaceholders.join(", ")}, $${streamSettingsParamIndex}, NOW())
        ON CONFLICT (id)
        DO UPDATE SET
          root_directory = COALESCE($1, settings.root_directory),
@@ -2293,8 +2393,9 @@ app.put("/api/settings", async (req, res) => {
          email_logo_path = COALESCE($13, settings.email_logo_path),
          letterhead_path = COALESCE($14, settings.letterhead_path),
          ${smtpCoalesceParts.join(",\n         ")},
+         stream_settings_json = COALESCE($${streamSettingsParamIndex}, settings.stream_settings_json),
          updated_at = NOW()
-       RETURNING id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at`,
+       RETURNING id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, stream_settings_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at`,
       [
         processValue(root_directory),
         processBoolean(create_folders),
@@ -2311,6 +2412,7 @@ app.put("/api/settings", async (req, res) => {
         processValue(email_logo_path),
         processValue(letterhead_path),
         ...smtpParams,
+        streamSettingsParam,
       ]
     );
 
@@ -2334,6 +2436,7 @@ app.put("/api/settings", async (req, res) => {
     } else {
       result.send_drawings_qld = [];
     }
+    result.stream_settings_json = parseStreamSettingsJsonColumn(result.stream_settings_json);
 
     res.json(result);
   } catch (e) {
@@ -2669,7 +2772,7 @@ async function addLogoToEmail(htmlBody, attachments = []) {
 
 // Send HTML email via SMTP
 app.post("/api/emails/send", async (req, res) => {
-  const { to, from, subject, htmlBody, projectId } = req.body || {};
+  const { to, from, subject, htmlBody, projectId, attachments: rawAttachments } = req.body || {};
 
   if (!to || (Array.isArray(to) && to.length === 0)) {
     return res.status(400).json({ error: "To address is required" });
@@ -2747,6 +2850,26 @@ app.post("/api/emails/send", async (req, res) => {
       } catch (dbError) {
         console.error("Error fetching proposal PDF location:", dbError);
         // Continue without proposal PDF attachment
+      }
+    }
+
+    // Optional client-provided attachments (base64), e.g. Hotlist Sold PDF
+    if (Array.isArray(rawAttachments)) {
+      for (const item of rawAttachments) {
+        const filename = String(item?.filename || "").trim();
+        const contentBase64 = String(item?.contentBase64 || "").trim();
+        if (!filename || !contentBase64) continue;
+        try {
+          const contentBuffer = Buffer.from(contentBase64, "base64");
+          if (!contentBuffer || contentBuffer.length === 0) continue;
+          attachments.push({
+            filename,
+            content: contentBuffer,
+            contentType: String(item?.contentType || "application/octet-stream"),
+          });
+        } catch {
+          // Skip malformed attachment entries
+        }
       }
     }
 
@@ -3832,37 +3955,16 @@ async function copyDirectory(src, dest) {
   }
 }
 
-/**
- * If project folder has no Proposal.PDF yet, copy from state template area (next to 1-Folder Structure).
- * Runs for every new job folder (VIC, QLD, etc.) when those paths exist.
- */
-async function copyTemplateProposalIfMissing(projectFolderPath, rootDirectory, year, state) {
-  if (!rootDirectory || !year || !state) return;
-  const destProposal = path.join(projectFolderPath, "Proposal.PDF");
-  try {
-    await fs.access(destProposal);
-    return;
-  } catch {
-    /* no proposal yet */
+/** Matches frontend `CLASSIFICATION_OPTIONS` value for renovation-only jobs. */
+const CLASSIFICATION_RENOVATION = "Renovation";
+const RENOVATION_PROPOSAL_SUBFOLDER = "12. RENOVATION";
+
+function normalizeWindowsProjectPath(projectPath) {
+  let normalized = path.normalize(String(projectPath || "").trim());
+  if (/^[A-Za-z]:[^\\]/i.test(normalized)) {
+    normalized = normalized.replace(/^([A-Za-z]:)([^\\])/, "$1\\$2");
   }
-  const base = path.join(rootDirectory, String(year), String(state).toUpperCase());
-  const candidates = [
-    path.join(base, "2-Proposal Template", "Proposal.PDF"),
-    path.join(base, "2-BLANK Proposal", "Proposal.PDF"),
-    path.join(base, "BLANK Proposal", "Proposal.PDF"),
-    path.join(base, "Proposal.PDF"),
-  ];
-  for (const src of candidates) {
-    try {
-      await fs.access(src);
-      await fs.copyFile(src, destProposal);
-      console.log(`Copied template proposal: ${src} -> ${destProposal}`);
-      return;
-    } catch {
-      /* try next */
-    }
-  }
-  console.log(`No standalone template Proposal.PDF found under ${base} (may already exist inside 1-Folder Structure).`);
+  return normalized;
 }
 
 // Create folder and copy template
@@ -3980,14 +4082,6 @@ app.post("/api/folders/create", async (req, res) => {
       }
     }
 
-    if (rootDirectory && year && state) {
-      try {
-        await copyTemplateProposalIfMissing(folderPathNormalized, rootDirectory, year, state);
-      } catch (proposalErr) {
-        console.warn("copyTemplateProposalIfMissing:", proposalErr.message);
-      }
-    }
-    
     res.json({ success: true, path: folderPathNormalized });
   } catch (e) {
     console.error("Error creating folder:", e);
@@ -3996,7 +4090,7 @@ app.post("/api/folders/create", async (req, res) => {
   }
 });
 
-// Link existing Proposal.PDF on disk to project (e.g. copied from template when creating folders)
+// Link existing Proposal.PDF on disk to project (must already exist — no template copy)
 app.post("/api/projects/:id/register-proposal-from-folder", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
@@ -4008,11 +4102,15 @@ app.post("/api/projects/:id/register-proposal-from-folder", async (req, res) => 
     if (!projectPath || typeof projectPath !== "string") {
       return res.status(400).json({ error: "projectPath required" });
     }
-    let normalized = path.normalize(projectPath.trim());
-    if (/^[A-Z]:[^\\]/i.test(normalized)) {
-      normalized = normalized.replace(/^([A-Za-z]:)([^\\])/, "$1\\$2");
+    const normalized = normalizeWindowsProjectPath(projectPath);
+    const clsRow = await pool.query("SELECT classification FROM projects WHERE id = $1", [id]);
+    if (clsRow.rows.length === 0) {
+      return res.status(404).json({ error: "project not found" });
     }
-    const proposalPath = path.join(normalized, "Proposal.PDF");
+    const isRenovation = (clsRow.rows[0]?.classification || "").trim() === CLASSIFICATION_RENOVATION;
+    const proposalPath = isRenovation
+      ? path.join(normalized, RENOVATION_PROPOSAL_SUBFOLDER, "Proposal.PDF")
+      : path.join(normalized, "Proposal.PDF");
     await fs.access(proposalPath);
     const r = await pool.query(
       "UPDATE projects SET proposal_pdf_location = $1, updated_at = NOW() WHERE id = $2 RETURNING id",
@@ -4024,7 +4122,10 @@ app.post("/api/projects/:id/register-proposal-from-folder", async (req, res) => 
     res.json({ success: true, path: proposalPath });
   } catch (e) {
     if (e.code === "ENOENT") {
-      return res.status(404).json({ error: "Proposal.PDF not found in project folder" });
+      return res.status(404).json({
+        error:
+          "Proposal.PDF was not found on disk. For a normal project it must be in the project folder root; for Renovation it must be in the 12. RENOVATION subfolder (as Proposal.PDF). Add the file there or upload a PDF on the proposal step.",
+      });
     }
     console.error("register-proposal-from-folder:", e);
     res.status(500).json({ error: e.message || "Failed to register proposal" });
@@ -4051,6 +4152,7 @@ app.post("/api/files/locate-proposal", upload.single("file"), async (req, res) =
 
     // Get project details to build path
     let projectPath = null;
+    let locateProposalClassification = "";
     if (pool) {
       const projectResult = await pool.query(
         "SELECT name, suburb, street, state, year, classification FROM projects WHERE id = $1",
@@ -4059,6 +4161,7 @@ app.post("/api/files/locate-proposal", upload.single("file"), async (req, res) =
       
       if (projectResult.rows.length > 0) {
         const project = projectResult.rows[0];
+        locateProposalClassification = (project.classification || "").trim();
         // Get root directory from settings
         const settingsResult = await pool.query("SELECT root_directory FROM settings WHERE id = 1");
         const rootDir = settingsResult.rows[0]?.root_directory;
@@ -4110,8 +4213,9 @@ app.post("/api/files/locate-proposal", upload.single("file"), async (req, res) =
     // If we have a project path, construct the expected file location
     // (Don't create folders or copy files - just store the path to where the file should be)
     if (projectPath) {
-      // Construct the full file path where the proposal should be located
-      const filePath = path.join(projectPath, fileName);
+      const isRenovation = locateProposalClassification === CLASSIFICATION_RENOVATION;
+      const baseDir = isRenovation ? path.join(projectPath, RENOVATION_PROPOSAL_SUBFOLDER) : projectPath;
+      const filePath = path.join(baseDir, fileName);
       fileLocation = filePath;
       console.log(`Proposal PDF location set to: ${filePath} (no files or folders created)`);
     }
@@ -4168,26 +4272,40 @@ app.post("/api/files/upload-proposal", upload.single("file"), async (req, res) =
       return res.status(400).json({ error: "Project path is required" });
     }
 
+    const normalizedProjectPath = normalizeWindowsProjectPath(projectPath);
+
     // Only accept PDF files
     if (req.file.mimetype !== "application/pdf" && !req.file.originalname.toLowerCase().endsWith(".pdf")) {
       return res.status(400).json({ error: "Only PDF files are allowed" });
     }
 
-    // DO NOT create folders - folders should ONLY be created when a new project is first created
-    // Save the file directly to the project root directory as "Proposal.PDF"
-    const fileName = "Proposal.PDF";
-    const filePath = path.join(projectPath, fileName);
+    if (!pool) {
+      return res.status(500).json({ error: "DATABASE_URL not set" });
+    }
 
-    // Write file from buffer (this will fail if folder doesn't exist, which is correct behavior)
+    const fileName = "Proposal.PDF";
+    const idNum = Number(projectId);
+    if (!Number.isFinite(idNum)) {
+      return res.status(400).json({ error: "Invalid project ID" });
+    }
+
+    const clsRow = await pool.query("SELECT classification FROM projects WHERE id = $1", [idNum]);
+    if (clsRow.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+    const isRenovation = (clsRow.rows[0]?.classification || "").trim() === CLASSIFICATION_RENOVATION;
+
+    let filePath = path.join(normalizedProjectPath, fileName);
+    if (isRenovation) {
+      const renoDir = path.join(normalizedProjectPath, RENOVATION_PROPOSAL_SUBFOLDER);
+      await fs.mkdir(renoDir, { recursive: true });
+      filePath = path.join(renoDir, fileName);
+    }
+
+    // Write file from buffer (project root, or 12. RENOVATION for Renovation — folder must already exist)
     await fs.writeFile(filePath, req.file.buffer);
 
-    // Update project record with proposal PDF location
-    if (pool) {
-      await pool.query(
-        "UPDATE projects SET proposal_pdf_location = $1 WHERE id = $2",
-        [filePath, projectId]
-      );
-    }
+    await pool.query("UPDATE projects SET proposal_pdf_location = $1 WHERE id = $2", [filePath, idNum]);
 
     console.log(`Proposal PDF uploaded successfully: ${filePath}`);
     res.json({ 
@@ -7269,39 +7387,36 @@ app.get("/api/files/markup/:id/:revisionIndex", async (req, res) => {
   }
 });
 
-// Serve proposal PDF
+// Serve proposal PDF from `proposal_pdf_location` (set at upload / locate / register-from-folder).
 app.get("/api/files/proposal/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     if (!pool) {
       return res.status(500).json({ error: "DATABASE_URL not set" });
     }
 
-    // Get project and proposal PDF location
     const projectResult = await pool.query(
       "SELECT proposal_pdf_location FROM projects WHERE id = $1",
       [id]
     );
-
     if (projectResult.rows.length === 0) {
       return res.status(404).json({ error: "Project not found" });
     }
 
-    const proposalPath = projectResult.rows[0].proposal_pdf_location;
-
-    if (!proposalPath) {
-      return res.status(404).json({ error: "Proposal PDF not found for this project" });
+    const rawPath = projectResult.rows[0].proposal_pdf_location;
+    if (!rawPath || !String(rawPath).trim()) {
+      return res.status(404).json({ error: "Proposal PDF path not set" });
     }
 
-    // Check if file exists
+    const proposalPath = normalizeWindowsProjectPath(rawPath);
+
     try {
       await fs.access(proposalPath);
     } catch (e) {
       return res.status(404).json({ error: "Proposal PDF file does not exist" });
     }
 
-    // Read and send the file
     const fileBuffer = await fs.readFile(proposalPath);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="Proposal.pdf"`);

@@ -15,6 +15,7 @@ import {
   isHotlistStatus,
   isCancelledStatus,
 } from "../utils/projectStatus";
+import { CLASSIFICATION_OPTIONS, CLASSIFICATION_BADGE_MAP } from "../utils/classifications";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -105,17 +106,7 @@ const FIELD_DEFINITIONS = {
   },
   classification: {
     label: "Classification",
-    values: [
-      "Small Second Dwelling",
-      "Dependant Persons Unit",
-      "Detached Extension",
-      "Dwelling",
-      "Home Office / Studio",
-      "Dwelling & DPU",
-      "Dwelling & SSD",
-      "SSD & DPU",
-      "Dual Occ"
-    ],
+    values: CLASSIFICATION_OPTIONS,
     defaultValue: "",
   },
 };
@@ -133,6 +124,274 @@ const STREAM_SORT_ORDER = [
   "Create Cash Flow",
   "Fresh Start Advisory",
 ];
+
+const DESIGN_PHASE_STREAM_MAP = {
+  "SGF - VIC": { acronym: "VIC", color: "#4D93D9" },
+  "SGF - QLD": { acronym: "QLD", color: "#D54358" },
+  "Dual Dwelling": { acronym: "DDI", color: "#92D050" },
+  ATA: { acronym: "ATA", color: "#92D050" },
+  "Pumped on Property": { acronym: "POP", color: "#92D050" },
+  "Pumped On Property": { acronym: "POP", color: "#92D050" },
+  Henderson: { acronym: "HEN", color: "#92D050" },
+  "Creat Cash Flow": { acronym: "CCF", color: "#92D050" },
+  "Create Cash Flow": { acronym: "CCF", color: "#92D050" },
+  "Fresh Start Advisory": { acronym: "FSA", color: "#92D050" },
+};
+
+/** Pair renovation source + single copy for Design Phase grid (chain layout). */
+function buildDuplicateChainGroups(items) {
+  const byId = new Map(items.map((p) => [p.id, p]));
+  const used = new Set();
+  const groups = [];
+  for (const p of items) {
+    if (used.has(p.id)) continue;
+    const raw = p.duplicate_source_project_id;
+    if (raw != null && String(raw).trim() !== "") {
+      const srcId = Number(raw);
+      const src = Number.isFinite(srcId) ? byId.get(srcId) : null;
+      if (src && !used.has(src.id)) {
+        groups.push({ type: "pair", a: src, b: p });
+        used.add(src.id);
+        used.add(p.id);
+        continue;
+      }
+    }
+    const copy = items.find(
+      (c) => !used.has(c.id) && Number(c.duplicate_source_project_id) === p.id
+    );
+    if (copy) {
+      groups.push({ type: "pair", a: p, b: copy });
+      used.add(p.id);
+      used.add(copy.id);
+      continue;
+    }
+    groups.push({ type: "single", project: p });
+    used.add(p.id);
+  }
+  return groups;
+}
+
+const CHAIN_OUTLINE_GREY = "#7a7a7e";
+const CHAIN_GOLD_LIGHT = "#E8C547";
+const CHAIN_GOLD_DEEP = "#D4AF37";
+
+/** Five interlocking links along a shallow sag (parabola), gold fill with grey outline. */
+function SaggingDuplicateChainIcon() {
+  const w = 76;
+  const h = 26;
+  const cx = w / 2;
+  const half = 30;
+  const yEdge = 6.5;
+  const sag = 12;
+  const n = 5;
+  const links = [];
+  for (let i = 0; i < n; i++) {
+    const t = n === 1 ? 0.5 : i / (n - 1);
+    const x = 11 + t * (w - 22);
+    const y = yEdge + sag * (1 - Math.pow((x - cx) / half, 2));
+    const dy = (-2 * sag * (x - cx)) / (half * half);
+    const angle = (Math.atan(dy) * 180) / Math.PI;
+    const gold = i % 2 === 0 ? CHAIN_GOLD_LIGHT : CHAIN_GOLD_DEEP;
+    links.push(
+      <g key={i} transform={`translate(${x} ${y}) rotate(${angle})`}>
+        <rect
+          x="-6"
+          y="-3"
+          width="12"
+          height="6"
+          rx="3"
+          fill="none"
+          stroke={CHAIN_OUTLINE_GREY}
+          strokeWidth="2.45"
+          strokeLinejoin="round"
+        />
+        <rect
+          x="-6"
+          y="-3"
+          width="12"
+          height="6"
+          rx="3"
+          fill="none"
+          stroke={gold}
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        />
+      </g>
+    );
+  }
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
+      {links}
+    </svg>
+  );
+}
+
+function renderDesignPhaseProjectCard(project) {
+  const classificationInfo = project.classification
+    ? CLASSIFICATION_BADGE_MAP[project.classification]
+    : null;
+  const streamInfo = project.stream ? DESIGN_PHASE_STREAM_MAP[project.stream] : null;
+  const onHold = project.on_hold === "true" || project.on_hold === true;
+  const cancelled = project.status === "Cancelled";
+
+  return (
+    <Link
+      to={`/project/${project.id}`}
+      style={{
+        textDecoration: "none",
+        display: "block",
+      }}
+    >
+      <div
+        style={{
+          background: MONUMENT,
+          borderRadius: "8px",
+          width: "200px",
+          height: "100px",
+          color: SECTION_GREY,
+          cursor: "pointer",
+          transition: "opacity 0.2s",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          alignItems: "center",
+          position: "relative",
+          overflow: "hidden",
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+        onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+      >
+        {onHold && (
+          <div
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%) rotate(-45deg)",
+              width: "280px",
+              height: "40px",
+              background: "#0066cc",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 10,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+            }}
+          >
+            <span
+              style={{
+                color: WHITE,
+                fontWeight: 700,
+                fontSize: "1.1rem",
+                letterSpacing: "2px",
+                textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+              }}
+            >
+              ON HOLD
+            </span>
+          </div>
+        )}
+        {cancelled && (
+          <div
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%) rotate(-45deg)",
+              width: "280px",
+              height: "40px",
+              background: "#cc0000",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 10,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+            }}
+          >
+            <span
+              style={{
+                color: WHITE,
+                fontWeight: 700,
+                fontSize: "1.1rem",
+                letterSpacing: "2px",
+                textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+              }}
+            >
+              CANCELLED
+            </span>
+          </div>
+        )}
+        {streamInfo && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: "8px",
+              left: "8px",
+              fontSize: "0.85rem",
+              fontWeight: 700,
+              color: streamInfo.color,
+              zIndex: onHold || cancelled ? 11 : 5,
+              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+            }}
+          >
+            {streamInfo.acronym}
+          </div>
+        )}
+        {classificationInfo && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: "8px",
+              right: "8px",
+              fontSize: "0.85rem",
+              fontWeight: 700,
+              color: classificationInfo.color,
+              zIndex: onHold || cancelled ? 11 : 5,
+              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+            }}
+          >
+            {classificationInfo.acronym}
+          </div>
+        )}
+        <div
+          style={{
+            fontWeight: 600,
+            fontSize: "1.1rem",
+            textAlign: "center",
+            marginBottom: "4px",
+            width: "100%",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            flex: 1,
+            flexDirection: "column",
+            gap: "4px",
+            position: "relative",
+            zIndex: onHold ? 1 : "auto",
+          }}
+        >
+          <div style={{ fontWeight: 600, fontSize: "1.1rem", color: WHITE }}>
+            {(project.suburb || "Unknown Suburb").toUpperCase()}
+          </div>
+          <div style={{ fontSize: "0.95rem", color: WHITE, fontWeight: 400 }}>
+            {project.street || "No address"}
+          </div>
+        </div>
+        <div
+          style={{
+            fontSize: "0.9rem",
+            color: "#323233cc",
+            textAlign: "center",
+            position: "relative",
+            zIndex: onHold ? 1 : "auto",
+          }}
+        >
+          Status: {project.status}
+        </div>
+      </div>
+    </Link>
+  );
+}
 
 export default function HomePage() {
   const location = useLocation();
@@ -1332,6 +1591,7 @@ export default function HomePage() {
             </p>
           )}
           {!loading && !error && filteredProjects.length > 0 && (() => {
+            const displayGroups = buildDuplicateChainGroups(filteredProjects);
 
             return (
               <div
@@ -1343,68 +1603,57 @@ export default function HomePage() {
                   alignItems: "flex-start",
                 }}
               >
-                {filteredProjects.map((project, index) => {
-                  // Classification mapping - all grey
-                  const classificationMap = {
-                    "Small Second Dwelling": { acronym: "SSD", color: "#a1a1a3" }, // Grey
-                    "Dependant Persons Unit": { acronym: "DPU", color: "#a1a1a3" }, // Grey
-                    "Detached Extension": { acronym: "DEX", color: "#a1a1a3" }, // Grey
-                    "Dwelling": { acronym: "DWE", color: "#a1a1a3" }, // Grey
-                    "Home Office / Studio": { acronym: "OFFICE", color: "#a1a1a3" }, // Grey
-                    "Dwelling & DPU": { acronym: "D&DPU", color: "#a1a1a3" }, // Grey
-                    "Dwelling & SSD": { acronym: "D&SSD", color: "#a1a1a3" }, // Grey
-                    "SSD & DPU": { acronym: "SSD&DPU", color: "#a1a1a3" }, // Grey
-                    "Dual Occ": { acronym: "DOC", color: "#a1a1a3" }, // Grey
-                  };
-                  const classificationInfo = project.classification ? classificationMap[project.classification] : null;
+                {displayGroups.map((group, gi) => {
+                  const primary = group.type === "pair" ? group.a : group.project;
+                  const prevPrimary =
+                    gi > 0
+                      ? displayGroups[gi - 1].type === "pair"
+                        ? displayGroups[gi - 1].a
+                        : displayGroups[gi - 1].project
+                      : null;
 
-                  // Stream mapping - colored by stream type
-                  const streamMap = {
-                    "SGF - VIC": { acronym: "VIC", color: "#4D93D9" }, // Blue
-                    "SGF - QLD": { acronym: "QLD", color: "#D54358" }, // Red
-                    "Dual Dwelling": { acronym: "DD", color: "#92D050" }, // Green
-                    "ATA": { acronym: "ATA", color: "#92D050" }, // Green
-                    "Pumped on Property": { acronym: "POP", color: "#92D050" }, // Green
-                    "Pumped On Property": { acronym: "POP", color: "#92D050" }, // Green (handle both variations)
-                    "Henderson": { acronym: "HEN", color: "#92D050" }, // Green
-                    "Creat Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green
-                    "Create Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green (handle both variations)
-                    "Fresh Start Advisory": { acronym: "FSA", color: "#92D050" }, // Green
-                  };
-                  const streamInfo = project.stream ? streamMap[project.stream] : null;
+                  const suburbName = (primary.suburb || "").trim();
+                  const prevSuburbName = (prevPrimary?.suburb || "").trim();
 
-                  const suburbName = (project.suburb || "").trim();
-                  const prevSuburbName = index > 0 ? (filteredProjects[index - 1]?.suburb || "").trim() : "";
+                  const classificationName = (primary.classification || "").trim();
+                  const prevClassificationName = (prevPrimary?.classification || "").trim();
 
-                  const classificationName = (project.classification || "").trim();
-                  const prevClassificationName = index > 0 ? (filteredProjects[index - 1]?.classification || "").trim() : "";
-
-                  const streamName = (project.stream || "").trim();
-                  const prevStreamName = index > 0 ? (filteredProjects[index - 1]?.stream || "").trim() : "";
+                  const streamName = (primary.stream || "").trim();
+                  const prevStreamName = (prevPrimary?.stream || "").trim();
 
                   const groupKey =
                     sortMode === "suburb"
-                      ? (suburbName ? suburbName[0].toUpperCase() : "")
+                      ? suburbName
+                        ? suburbName[0].toUpperCase()
+                        : ""
                       : sortMode === "class"
-                      ? classificationName
-                      : sortMode === "stream"
-                      ? streamName
-                      : "";
+                        ? classificationName
+                        : sortMode === "stream"
+                          ? streamName
+                          : "";
 
                   const prevGroupKey =
                     sortMode === "suburb"
-                      ? (prevSuburbName ? prevSuburbName[0].toUpperCase() : "")
+                      ? prevSuburbName
+                        ? prevSuburbName[0].toUpperCase()
+                        : ""
                       : sortMode === "class"
-                      ? prevClassificationName
-                      : sortMode === "stream"
-                      ? prevStreamName
-                      : "";
+                        ? prevClassificationName
+                        : sortMode === "stream"
+                          ? prevStreamName
+                          : "";
 
                   const showGroupHeader = groupKey && groupKey !== prevGroupKey;
                   const groupLabel = groupKey;
 
                   return (
-                    <React.Fragment key={project.id}>
+                    <React.Fragment
+                      key={
+                        group.type === "pair"
+                          ? "pair-" + group.a.id + "-" + group.b.id
+                          : "single-" + group.project.id
+                      }
+                    >
                       {showGroupHeader && (
                         <div style={{ flexBasis: "100%", width: "100%", marginTop: "18px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -1413,166 +1662,42 @@ export default function HomePage() {
                           </div>
                         </div>
                       )}
-                      <Link
-                        key={project.id}
-                        to={`/project/${project.id}`}
-                        style={{
-                          textDecoration: "none",
-                          display: "block",
-                        }}
-                      >
+                      {group.type === "single" ? (
+                        renderDesignPhaseProjectCard(group.project)
+                      ) : (
                         <div
+                          title="Renovation copy linked to original"
                           style={{
-                            background: MONUMENT,
-                            borderRadius: "8px",
-                            width: "200px",
-                            height: "100px",
-                            color: SECTION_GREY,
-                            cursor: "pointer",
-                            transition: "opacity 0.2s",
-                            display: "flex",
-                            flexDirection: "column",
-                            justifyContent: "center",
-                            alignItems: "center",
                             position: "relative",
-                            overflow: "hidden",
+                            display: "flex",
+                            flexDirection: "row",
+                            alignItems: "center",
+                            flexWrap: "nowrap",
+                            gap: "20px",
+                            width: "420px",
+                            flexShrink: 0,
                           }}
-                          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
-                          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
                         >
-                        {/* On Hold Diagonal Band */}
-                        {(project.on_hold === 'true' || project.on_hold === true) && (
+                          {renderDesignPhaseProjectCard(group.a)}
+                          {renderDesignPhaseProjectCard(group.b)}
                           <div
+                            aria-hidden
                             style={{
                               position: "absolute",
-                              top: "50%",
                               left: "50%",
-                              transform: "translate(-50%, -50%) rotate(-45deg)",
-                              width: "280px",
-                              height: "40px",
-                              background: "#0066cc",
+                              top: "50%",
+                              transform: "translate(-50%, -50%)",
+                              zIndex: 15,
+                              pointerEvents: "none",
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
-                              zIndex: 10,
-                              boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
                             }}
                           >
-                            <span
-                              style={{
-                                color: WHITE,
-                                fontWeight: 700,
-                                fontSize: "1.1rem",
-                                letterSpacing: "2px",
-                                textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                              }}
-                            >
-                              ON HOLD
-                            </span>
-                          </div>
-                        )}
-                        {/* Cancelled Diagonal Band */}
-                        {project.status === "Cancelled" && (
-                          <div
-                            style={{
-                              position: "absolute",
-                              top: "50%",
-                              left: "50%",
-                              transform: "translate(-50%, -50%) rotate(-45deg)",
-                              width: "280px",
-                              height: "40px",
-                              background: "#cc0000",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              zIndex: 10,
-                              boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-                            }}
-                          >
-                            <span
-                              style={{
-                                color: WHITE,
-                                fontWeight: 700,
-                                fontSize: "1.1rem",
-                                letterSpacing: "2px",
-                                textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                              }}
-                            >
-                              CANCELLED
-                            </span>
-                          </div>
-                        )}
-                        {/* Stream Acronym - Left Bottom */}
-                        {streamInfo && (
-                          <div
-                            style={{
-                              position: "absolute",
-                              bottom: "8px",
-                              left: "8px",
-                              fontSize: "0.85rem",
-                              fontWeight: 700,
-                              color: streamInfo.color,
-                              zIndex: ((project.on_hold === 'true' || project.on_hold === true) || project.status === "Cancelled") ? 11 : 5,
-                              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                            }}
-                          >
-                            {streamInfo.acronym}
-                          </div>
-                        )}
-                        {/* Classification Acronym - Right Bottom */}
-                        {classificationInfo && (
-                          <div
-                            style={{
-                              position: "absolute",
-                              bottom: "8px",
-                              right: "8px",
-                              fontSize: "0.85rem",
-                              fontWeight: 700,
-                              color: classificationInfo.color,
-                              zIndex: ((project.on_hold === 'true' || project.on_hold === true) || project.status === "Cancelled") ? 11 : 5,
-                              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                            }}
-                          >
-                            {classificationInfo.acronym}
-                          </div>
-                        )}
-                        <div
-                          style={{
-                            fontWeight: 600,
-                            fontSize: "1.1rem",
-                            textAlign: "center",
-                            marginBottom: "4px",
-                            width: "100%",
-                            display: "flex",
-                            justifyContent: "center",
-                            alignItems: "center",
-                            flex: 1,
-                            flexDirection: "column",
-                            gap: "4px",
-                            position: "relative",
-                            zIndex: (project.on_hold === 'true' || project.on_hold === true) ? 1 : "auto",
-                          }}
-                        >
-                          <div style={{ fontWeight: 600, fontSize: "1.1rem", color: WHITE }}>
-                            {(project.suburb || "Unknown Suburb").toUpperCase()}
-                          </div>
-                          <div style={{ fontSize: "0.95rem", color: WHITE, fontWeight: 400 }}>
-                            {project.street || "No address"}
+                            <SaggingDuplicateChainIcon />
                           </div>
                         </div>
-                        <div 
-                          style={{ 
-                            fontSize: "0.9rem", 
-                            color: "#323233cc", 
-                            textAlign: "center",
-                            position: "relative",
-                            zIndex: (project.on_hold === 'true' || project.on_hold === true) ? 1 : "auto",
-                          }}
-                        >
-                          Status: {project.status}
-                        </div>
-                      </div>
-                      </Link>
+                      )}
                     </React.Fragment>
                   );
                 })}

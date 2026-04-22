@@ -7,6 +7,7 @@ import NewProject_4_FoldersOption from "./NewProject_4_FoldersOption";
 import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
 import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
 import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
+import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { isUserAdmin } from "../utils/auth";
 import logo from "../images/logo.png";
 
@@ -20,6 +21,7 @@ const PURPLE_HOVER = "#6d28d9";
 const API_URL = "";
 
 export default function Hotlist() {
+  const { runWithEmailOverlay } = useEmailSendOverlay();
   const location = useLocation();
   const [hotlistItems, setHotlistItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -29,8 +31,17 @@ export default function Hotlist() {
   const [isEditItemOpen, setIsEditItemOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [isSoldFlowOpen, setIsSoldFlowOpen] = useState(false);
-  const [soldPlaceholderOpen, setSoldPlaceholderOpen] = useState(false);
   const [soldItemId, setSoldItemId] = useState(null);
+  const [soldPreviewOpen, setSoldPreviewOpen] = useState(false);
+  const [soldPreviewPreparing, setSoldPreviewPreparing] = useState(false);
+  const [soldPreviewItem, setSoldPreviewItem] = useState(null);
+  const [soldAttachmentModalOpen, setSoldAttachmentModalOpen] = useState(false);
+  const [soldAttachmentDragging, setSoldAttachmentDragging] = useState(false);
+  const [soldAttachmentFile, setSoldAttachmentFile] = useState(null);
+  const [soldEmailTo, setSoldEmailTo] = useState("");
+  const [soldEmailFrom, setSoldEmailFrom] = useState("");
+  const [soldEmailSubject, setSoldEmailSubject] = useState("");
+  const [soldEmailBody, setSoldEmailBody] = useState("");
   const [currentModal, setCurrentModal] = useState(1); // 1–2 = New/Edit address+client, 3–6 = Sold flow (ProjectCost→Folders→PDF→Email)
   const [createdProjectId, setCreatedProjectId] = useState(null);
   const [createdProjectForEmail, setCreatedProjectForEmail] = useState(null);
@@ -54,15 +65,6 @@ export default function Hotlist() {
     checkAdminStatus();
     fetchHotlist();
   }, []);
-
-  useEffect(() => {
-    if (!soldPlaceholderOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [soldPlaceholderOpen]);
 
   // Re-check admin status when navigating back to this page
   useEffect(() => {
@@ -348,8 +350,162 @@ export default function Hotlist() {
     window.location.href = mailtoLink;
   }
 
-  function handleSoldClick() {
-    setSoldPlaceholderOpen(true);
+  function replaceSoldTokens(text, item) {
+    if (!text) return "";
+    const address = `${item?.street || ""}, ${item?.suburb || ""}`.trim();
+    const map = {
+      "{ProjectName}": address,
+      "{Address}": address,
+      "{Street}": item?.street || "",
+      "{Suburb}": item?.suburb || "",
+      "{State}": item?.state || "",
+      "{ClientName}": item?.client_name || "",
+      "{Contact1}": item?.email || "",
+      "{Email}": item?.email || "",
+      "{Phone}": item?.phone || "",
+    };
+    let out = String(text);
+    Object.entries(map).forEach(([k, v]) => {
+      out = out.split(k).join(v || "");
+    });
+    return out;
+  }
+
+  function handleSoldClick(item) {
+    setSoldPreviewItem(item);
+    setSoldAttachmentFile(null);
+    setSoldAttachmentDragging(false);
+    setSoldAttachmentModalOpen(true);
+  }
+
+  function handleSoldAttachmentSelect(file) {
+    if (!file) return;
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) {
+      alert("Please select a PDF file.");
+      return;
+    }
+    setSoldAttachmentFile(file);
+  }
+
+  function handleSoldAttachmentDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setSoldAttachmentDragging(false);
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      handleSoldAttachmentSelect(files[0]);
+    }
+  }
+
+  async function openSoldEmailPreview(item) {
+    if (!item) return;
+    setSoldPreviewItem(item);
+    setSoldPreviewOpen(true);
+    setSoldPreviewPreparing(true);
+    try {
+      const templatesResponse = await fetch(`${API_URL}/api/email-templates`);
+      if (!templatesResponse.ok) throw new Error("Failed to fetch email templates");
+      const templates = await templatesResponse.json();
+      const template = templates.find(
+        (t) => t.name && t.name.toLowerCase().trim() === "hotlist sold"
+      );
+      if (!template) {
+        alert('Template "Hotlist Sold" not found. Please create it in Settings -> Email Templates.');
+        setSoldPreviewOpen(false);
+        return;
+      }
+
+      const toList = (template.to_addresses || [])
+        .map((addr) => replaceSoldTokens(addr, item))
+        .filter((addr) => (addr || "").trim() !== "");
+      const fallbackTo = (item?.email || "").trim();
+      const resolvedTo = toList.length > 0 ? toList.join(", ") : fallbackTo;
+      if (!resolvedTo) {
+        alert("No recipient email found on template or hotlist item.");
+        setSoldPreviewOpen(false);
+        return;
+      }
+
+      setSoldEmailTo(resolvedTo);
+      setSoldEmailFrom((template.from_address || "").trim());
+      setSoldEmailSubject(replaceSoldTokens(template.subject || "", item));
+      setSoldEmailBody(replaceSoldTokens(template.body || "", item));
+    } catch (err) {
+      console.error("Error preparing sold email:", err);
+      alert(`Failed to prepare sold email: ${err.message || "Unknown error"}`);
+      setSoldPreviewOpen(false);
+    } finally {
+      setSoldPreviewPreparing(false);
+    }
+  }
+
+  async function handleSoldAttachmentNext() {
+    if (!soldAttachmentFile) {
+      alert("Please drag in a PDF first.");
+      return;
+    }
+    const item = soldPreviewItem;
+    setSoldAttachmentModalOpen(false);
+    await openSoldEmailPreview(item);
+  }
+
+  async function handleSendSoldEmail() {
+    const toAddresses = soldEmailTo
+      .split(",")
+      .map((a) => a.trim())
+      .filter((a) => a.length > 0);
+    if (toAddresses.length === 0) {
+      alert("Please enter at least one email address.");
+      return;
+    }
+    if (!soldEmailFrom.trim()) {
+      alert("From address is required.");
+      return;
+    }
+    try {
+      await runWithEmailOverlay(async () => {
+        let attachmentPayload = null;
+        if (soldAttachmentFile) {
+          const fileBase64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const result = String(reader.result || "");
+              const b64 = result.includes(",") ? result.split(",")[1] : result;
+              resolve(b64);
+            };
+            reader.onerror = () => reject(new Error("Could not read attachment file."));
+            reader.readAsDataURL(soldAttachmentFile);
+          });
+          attachmentPayload = {
+            filename: soldAttachmentFile.name || "SoldAttachment.pdf",
+            contentType: soldAttachmentFile.type || "application/pdf",
+            contentBase64: fileBase64,
+          };
+        }
+
+        const res = await fetch(`${API_URL}/api/emails/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: toAddresses,
+            from: soldEmailFrom.trim(),
+            subject: soldEmailSubject || "",
+            htmlBody: soldEmailBody || "",
+            attachments: attachmentPayload ? [attachmentPayload] : [],
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Send failed (${res.status})`);
+      });
+      setSoldPreviewOpen(false);
+      setSoldPreviewItem(null);
+      setSoldAttachmentFile(null);
+      alert("Hotlist sold email sent.");
+    } catch (err) {
+      console.error("Error sending sold email:", err);
+      alert(err.message || "Failed to send sold email.");
+    }
   }
 
   function handleMakeJobFileClick(item) {
@@ -1074,7 +1230,7 @@ export default function Hotlist() {
                               </button>
                             )}
                             <button
-                              onClick={handleSoldClick}
+                              onClick={() => handleSoldClick(item)}
                               style={{
                                 background: "#33cc33",
                                 color: WHITE,
@@ -1302,7 +1458,7 @@ export default function Hotlist() {
                               </button>
                             )}
                             <button
-                              onClick={handleSoldClick}
+                              onClick={() => handleSoldClick(item)}
                               style={{
                                 background: "#33cc33",
                                 color: WHITE,
@@ -1515,47 +1671,162 @@ export default function Hotlist() {
         </>
       )}
 
-      {soldPlaceholderOpen && (
+      {soldPreviewOpen && (
         <div
-          role="presentation"
+          role="dialog"
+          aria-modal="true"
           style={{
             position: "fixed",
             inset: 0,
             zIndex: 99999,
-            background: "rgba(0,0,0,0.55)",
+            background: "transparent",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             padding: "24px",
+            pointerEvents: "auto",
           }}
         >
           <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="sold-placeholder-title"
             style={{
               background: WHITE,
               borderRadius: "12px",
-              padding: "28px 32px",
-              maxWidth: "420px",
+              padding: "24px",
+              maxWidth: "800px",
+              width: "100%",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Preview & Send Email</h2>
+              <button
+                onClick={() => {
+                  setSoldPreviewOpen(false);
+                  setSoldPreviewItem(null);
+                }}
+                style={{ background: "transparent", border: "none", fontSize: "1.5rem", cursor: "pointer", color: MONUMENT }}
+              >
+                ×
+              </button>
+            </div>
+
+            {soldPreviewPreparing ? (
+              <div style={{ textAlign: "center", padding: "40px", color: MONUMENT }}>Preparing email...</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                <div style={{ fontSize: "0.9rem", color: "#666" }}>
+                  Template: <strong>Hotlist Sold</strong>
+                  {soldPreviewItem ? ` | ${soldPreviewItem.street || ""}, ${soldPreviewItem.suburb || ""}` : ""}
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>To</label>
+                  <input value={soldEmailTo} onChange={(e) => setSoldEmailTo(e.target.value)} style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: `1px solid ${SECTION_GREY}`, fontSize: "1rem", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>From</label>
+                  <input value={soldEmailFrom} onChange={(e) => setSoldEmailFrom(e.target.value)} style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: `1px solid ${SECTION_GREY}`, fontSize: "1rem", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>Subject</label>
+                  <input value={soldEmailSubject} onChange={(e) => setSoldEmailSubject(e.target.value)} style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: `1px solid ${SECTION_GREY}`, fontSize: "1rem", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>Email Preview</label>
+                  <div contentEditable suppressContentEditableWarning onInput={(e) => setSoldEmailBody(e.currentTarget.innerHTML)} dangerouslySetInnerHTML={{ __html: soldEmailBody || "" }} style={{ width: "100%", minHeight: "220px", maxHeight: "42vh", overflowY: "auto", padding: "12px", borderRadius: "8px", border: `1px solid ${SECTION_GREY}`, background: WHITE, fontSize: "1rem", color: MONUMENT, boxSizing: "border-box" }} />
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "4px" }}>
+                  <button type="button" onClick={() => { setSoldPreviewOpen(false); setSoldPreviewItem(null); }} style={{ background: SECTION_GREY, color: MONUMENT, border: "none", borderRadius: "8px", padding: "10px 20px", fontSize: "0.95rem", fontWeight: 500, cursor: "pointer" }}>Cancel</button>
+                  <button type="button" onClick={handleSendSoldEmail} style={{ background: MONUMENT, color: WHITE, border: "none", borderRadius: "8px", padding: "10px 20px", fontSize: "0.95rem", fontWeight: 500, cursor: "pointer" }}>Send</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {soldAttachmentModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 99998,
+            background: "transparent",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "24px",
+            pointerEvents: "auto",
+          }}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              maxWidth: "560px",
               width: "100%",
               boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h2
-              id="sold-placeholder-title"
-              style={{ margin: "0 0 12px 0", fontSize: "1.35rem", color: MONUMENT, fontWeight: 600 }}
-            >
-              Sold
+            <h2 style={{ margin: "0 0 10px 0", fontSize: "1.35rem", color: MONUMENT, fontWeight: 600 }}>
+              Sold Email Attachment
             </h2>
-            <p style={{ margin: "0 0 24px 0", fontSize: "1rem", color: LIGHT_MONUMENT, lineHeight: 1.5 }}>
-              Placeholder — new Sold action coming soon.
+            <p style={{ margin: "0 0 14px 0", fontSize: "0.95rem", color: LIGHT_MONUMENT }}>
+              Drag in the PDF to attach to the Sold email.
             </p>
-            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+            <div
+              onDragEnter={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setSoldAttachmentDragging(true);
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setSoldAttachmentDragging(false);
+              }}
+              onDrop={handleSoldAttachmentDrop}
+              onClick={() => document.getElementById("hotlist-sold-pdf-input")?.click()}
+              style={{
+                border: `2px dashed ${soldAttachmentDragging ? MONUMENT : "#ccc"}`,
+                borderRadius: "12px",
+                padding: "34px 16px",
+                textAlign: "center",
+                cursor: "pointer",
+                background: soldAttachmentDragging ? "rgba(50,50,51,0.05)" : WHITE,
+                marginBottom: "14px",
+              }}
+            >
+              <div style={{ fontSize: "2rem", marginBottom: "8px" }}>📄</div>
+              <div style={{ color: MONUMENT, fontWeight: 600 }}>
+                {soldAttachmentFile ? soldAttachmentFile.name : "Drop PDF here or click to browse"}
+              </div>
+              <div style={{ color: "#666", fontSize: "0.9rem", marginTop: "6px" }}>PDF only</div>
+              <input
+                id="hotlist-sold-pdf-input"
+                type="file"
+                accept=".pdf,application/pdf"
+                style={{ display: "none" }}
+                onChange={(e) => handleSoldAttachmentSelect(e.target.files?.[0])}
+              />
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
               <button
                 type="button"
-                onClick={() => setSoldPlaceholderOpen(false)}
+                onClick={() => {
+                  setSoldAttachmentModalOpen(false);
+                  setSoldPreviewItem(null);
+                  setSoldAttachmentFile(null);
+                }}
                 style={{
                   background: SECTION_GREY,
                   color: MONUMENT,
@@ -1571,11 +1842,11 @@ export default function Hotlist() {
               </button>
               <button
                 type="button"
-                onClick={() => setSoldPlaceholderOpen(false)}
+                onClick={handleSoldAttachmentNext}
                 style={{
-                  background: "#33cc33",
+                  background: MONUMENT,
                   color: WHITE,
-                  border: "1px solid #33cc33",
+                  border: "none",
                   borderRadius: "8px",
                   padding: "10px 20px",
                   fontSize: "0.95rem",
@@ -1583,7 +1854,7 @@ export default function Hotlist() {
                   cursor: "pointer",
                 }}
               >
-                OK
+                Next
               </button>
             </div>
           </div>

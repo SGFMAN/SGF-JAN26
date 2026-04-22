@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { getNewJobInternalTemplateName } from "../utils/newJobInternalTemplate";
+import { CLASSIFICATION_OPTIONS, CLASSIFICATION_ABBREV_MAP as CLASSIFICATION_MAP } from "../utils/classifications";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -21,31 +22,6 @@ const STREAM_OPTIONS = [
 const DEPOSIT_OPTIONS = ["Full 5%", "$5k only", "Other"];
 
 const SPECS_OPTIONS = ["Affordable", "Superior"];
-
-const CLASSIFICATION_OPTIONS = [
-  "Small Second Dwelling",
-  "Dependant Persons Unit",
-  "Detached Extension",
-  "Dwelling",
-  "Home Office / Studio",
-  "Dwelling & DPU",
-  "Dwelling & SSD",
-  "SSD & DPU",
-  "Dual Occ"
-];
-
-// Classification mapping for abbreviations (same as HomePage.jsx)
-const CLASSIFICATION_MAP = {
-  "Small Second Dwelling": "SSD",
-  "Dependant Persons Unit": "DPU",
-  "Detached Extension": "DEX",
-  "Dwelling": "DWE",
-  "Home Office / Studio": "OFFICE",
-  "Dwelling & DPU": "D&DPU",
-  "Dwelling & SSD": "D&SSD",
-  "SSD & DPU": "SSD&DPU",
-  "Dual Occ": "DOC",
-};
 
 export default function NewProject4({ isOpen, onClose, formData, onFormDataChange, onBack, onCreate, onNext, createdProjectForEmail }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
@@ -603,11 +579,17 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
             body: JSON.stringify({ projectPath: folderPath }),
           });
           if (!reg.ok) {
-            const errText = await reg.text().catch(() => "");
-            console.warn("Could not link template proposal (upload a PDF if needed):", errText);
+            let msg = "Proposal.PDF was not found in the project folder.";
+            try {
+              const errJson = await reg.json();
+              if (errJson?.error) msg = errJson.error;
+            } catch {
+              /* ignore */
+            }
+            alert(msg);
           }
         } catch (regErr) {
-          console.warn("register-proposal-from-folder:", regErr);
+          alert(regErr.message || "Could not link Proposal.PDF from the project folder.");
         }
       }
       

@@ -2,6 +2,10 @@ import React, { useState, useEffect, useRef } from "react";
 import { useParams, Link, useNavigate, useLocation } from "react-router-dom";
 import Overview from "./Overview";
 import ProjectInfo from "./ProjectInfo";
+import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
+import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
+import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
+import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
 import ClientInfo from "./ClientInfo";
 import Drawings from "./Drawings";
 import Colours from "./Colours";
@@ -14,6 +18,7 @@ import Admin from "./Admin";
 import Robes from "./Robes";
 import Variations from "./Variations";
 import { isUserAdmin } from "../utils/auth";
+import { computeProjectFolderPathFromRecord } from "../utils/projectFolderPath";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -24,6 +29,56 @@ const LIGHT_MONUMENT = "#42464d"; // More blue and slightly lighter version of m
 const WHITE = "#fff";
 
 const API_URL = "";
+
+const RENOVATION_DUP_FORM_EMPTY = {
+  suburb: "",
+  street: "",
+  state: "",
+  stream: "",
+  deposit: "",
+  customDeposit: "",
+  projectCost: "",
+  salesperson: "",
+  specs: "",
+  classification: "Renovation",
+  clientName: "",
+  email: "",
+  phone: "",
+  createFolders: true,
+  folderPath: "",
+  createdProject: null,
+  renovationDuplicateSourceId: null,
+  duplicateSourceProjectYear: null,
+};
+
+function buildRenovationDupForm(project, folderPath) {
+  return {
+    ...RENOVATION_DUP_FORM_EMPTY,
+    suburb: project.suburb || "",
+    street: project.street || "",
+    state: project.state || "",
+    stream: project.stream || "",
+    salesperson: project.salesperson || "",
+    specs: project.specs || "",
+    deposit: project.deposit || "",
+    projectCost: project.project_cost || "",
+    classification: "Renovation",
+    clientName: project.client1_name || project.client_name || "",
+    email: project.client1_email || project.email || "",
+    phone: project.client1_phone || project.phone || "",
+    folderPath: folderPath || "",
+    renovationDuplicateSourceId: project.id,
+    duplicateSourceProjectYear: project.year ?? null,
+  };
+}
+
+/** Linked renovation copy from a non-Renovation job: same shared folder; no “use root template” on proposal step. */
+function buildLinkRenovationFromSourceForm(project, folderPath) {
+  return {
+    ...buildRenovationDupForm(project, folderPath),
+    createFolders: false,
+  };
+}
 
 // Menu options for this page plus back to main
 const MENU_OPTIONS = [
@@ -66,6 +121,14 @@ export default function ProjectPage() {
   const [showProjectMenu, setShowProjectMenu] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const updateTimeoutRef = useRef(null);
+  const [renovationDupOpen, setRenovationDupOpen] = useState(false);
+  const [renovationDupStep, setRenovationDupStep] = useState(3);
+  const [renovationDupFormData, setRenovationDupFormData] = useState(() => ({ ...RENOVATION_DUP_FORM_EMPTY }));
+  const [renovationDupCreatedForEmail, setRenovationDupCreatedForEmail] = useState(null);
+  const [linkRenoDupOpen, setLinkRenoDupOpen] = useState(false);
+  const [linkRenoDupStep, setLinkRenoDupStep] = useState("cost");
+  const [linkRenoDupFormData, setLinkRenoDupFormData] = useState(() => ({ ...RENOVATION_DUP_FORM_EMPTY }));
+  const [linkRenoDupCreatedForEmail, setLinkRenoDupCreatedForEmail] = useState(null);
 
   useEffect(() => {
     if (id) {
@@ -257,6 +320,125 @@ export default function ProjectPage() {
       setIsDeleting(false);
       setShowDeleteModal(false);
     }
+  }
+
+  function resetRenovationDupWizard() {
+    setRenovationDupOpen(false);
+    setRenovationDupStep(3);
+    setRenovationDupFormData(() => ({ ...RENOVATION_DUP_FORM_EMPTY }));
+    setRenovationDupCreatedForEmail(null);
+  }
+
+  function resetLinkRenoDupWizard() {
+    setLinkRenoDupOpen(false);
+    setLinkRenoDupStep("cost");
+    setLinkRenoDupFormData(() => ({ ...RENOVATION_DUP_FORM_EMPTY }));
+    setLinkRenoDupCreatedForEmail(null);
+  }
+
+  async function beginRenovationDuplicateWizard() {
+    if (!project || isPortalProjectPath) return;
+    if ((project.classification || "").trim() !== "Renovation") return;
+    if (
+      Array.isArray(project.duplicate_linked_project_ids) &&
+      project.duplicate_linked_project_ids.length > 0
+    ) {
+      alert("This project already has a linked copy. Only one copy is allowed.");
+      return;
+    }
+    if (
+      project.duplicate_source_project_id != null &&
+      String(project.duplicate_source_project_id).trim() !== ""
+    ) {
+      alert("This job is already a copy. Open the original renovation project if you need to change the pair.");
+      return;
+    }
+    const folderPath = await computeProjectFolderPathFromRecord(project);
+    if (!folderPath) {
+      alert(
+        "Could not resolve the job folder path from this project. Check address, state, year, and File Settings (root directory)."
+      );
+      return;
+    }
+    setRenovationDupFormData(buildRenovationDupForm(project, folderPath));
+    setRenovationDupCreatedForEmail(null);
+    setRenovationDupStep(3);
+    setRenovationDupOpen(true);
+  }
+
+  async function beginLinkRenovationDuplicateWizard() {
+    if (!project || isPortalProjectPath) return;
+    if ((project.classification || "").trim() === "Renovation") return;
+    if (
+      Array.isArray(project.duplicate_linked_project_ids) &&
+      project.duplicate_linked_project_ids.length > 0
+    ) {
+      alert("This project already has a linked copy. Only one copy is allowed.");
+      return;
+    }
+    if (
+      project.duplicate_source_project_id != null &&
+      String(project.duplicate_source_project_id).trim() !== ""
+    ) {
+      alert("This job is already a copy. Open the original project if you need to change the pair.");
+      return;
+    }
+    const folderPath = await computeProjectFolderPathFromRecord(project);
+    if (!folderPath) {
+      alert(
+        "Could not resolve the job folder path from this project. Check address, state, year, and File Settings (root directory)."
+      );
+      return;
+    }
+    setLinkRenoDupFormData(buildLinkRenovationFromSourceForm(project, folderPath));
+    setLinkRenoDupCreatedForEmail(null);
+    setLinkRenoDupStep("cost");
+    setLinkRenoDupOpen(true);
+  }
+
+  async function handleRenovationDupCreate(formData) {
+    const projectName = `${formData.street}, ${formData.suburb}`.trim() || "New Project";
+    const response = await fetch(`${API_URL}/api/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: projectName,
+        status: "Design Phase",
+        suburb: formData.suburb || null,
+        street: formData.street || null,
+        state: formData.state || null,
+        stream: formData.stream || null,
+        deposit: formData.deposit || null,
+        project_cost: formData.projectCost || null,
+        salesperson: formData.salesperson || null,
+        specs: formData.specs || null,
+        classification: formData.classification || null,
+        client_name: formData.clientName || null,
+        email: formData.email || null,
+        phone: formData.phone || null,
+        client1_name: formData.clientName || null,
+        client1_email: formData.email || null,
+        client1_phone: formData.phone || null,
+        year:
+          formData.duplicateSourceProjectYear != null &&
+          String(formData.duplicateSourceProjectYear).trim() !== ""
+            ? String(formData.duplicateSourceProjectYear).trim()
+            : new Date().toISOString().split("T")[0],
+        duplicate_source_project_id:
+          formData.renovationDuplicateSourceId != null &&
+          Number.isFinite(Number(formData.renovationDuplicateSourceId))
+            ? Number(formData.renovationDuplicateSourceId)
+            : null,
+      }),
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(errorData.error || "Failed to create project");
+    }
+    const newProject = await response.json();
+    await fetchProject(true);
+    await fetchAllProjects();
+    return newProject;
   }
 
   return (
@@ -587,7 +769,12 @@ export default function ProjectPage() {
             <>
               {activeView === "overview" && <Overview project={project} />}
               {activeView === "project-info" && (
-                <ProjectInfo project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
+                <ProjectInfo
+                  project={project}
+                  onUpdate={isPortalProjectPath ? () => {} : updateProject}
+                  onRequestRenovationDuplicate={isPortalProjectPath ? undefined : beginRenovationDuplicateWizard}
+                  onRequestLinkRenovationDuplicate={isPortalProjectPath ? undefined : beginLinkRenovationDuplicateWizard}
+                />
               )}
               {activeView === "client-info" && (
                 <ClientInfo project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
@@ -622,6 +809,207 @@ export default function ProjectPage() {
           )}
         </div>
       </div>
+      <NewProject_3_ProjectCost
+        isOpen={renovationDupOpen && renovationDupStep === 3}
+        onClose={resetRenovationDupWizard}
+        formData={renovationDupFormData}
+        onFormDataChange={setRenovationDupFormData}
+        onBack={resetRenovationDupWizard}
+        onNext={() => setRenovationDupStep(5)}
+        onCreate={handleRenovationDupCreate}
+        transparentBackdrop
+      />
+      <NewProject_5_PDFUpload
+        isOpen={renovationDupOpen && renovationDupStep === 5}
+        onClose={resetRenovationDupWizard}
+        formData={renovationDupFormData}
+        onFormDataChange={setRenovationDupFormData}
+        onBack={() => {
+          setRenovationDupFormData((prev) => ({ ...prev, createdProject: null }));
+          setRenovationDupStep(3);
+        }}
+        onNext={async (created) => {
+          const p = created || renovationDupFormData.createdProject;
+          if (p) {
+            setRenovationDupCreatedForEmail(p);
+            setRenovationDupStep(6);
+          }
+        }}
+        onCreate={handleRenovationDupCreate}
+        introExtra="This new job uses the same Windows folder as the renovation you started from. Uploading replaces Proposal.PDF on disk (renovation: inside 12. RENOVATION). Or use Next to keep the existing Proposal.PDF on disk."
+        transparentBackdrop
+      />
+      <NewProject_6_EmailInternal
+        isOpen={renovationDupOpen && renovationDupStep === 6}
+        onClose={resetRenovationDupWizard}
+        createdProjectForEmail={renovationDupCreatedForEmail}
+        onSendSuccess={() => setRenovationDupStep(7)}
+        transparentBackdrop
+      />
+      <NewProject_7_EmailClient
+        isOpen={renovationDupOpen && renovationDupStep === 7}
+        onClose={() => {
+          const newId = renovationDupCreatedForEmail?.id;
+          resetRenovationDupWizard();
+          if (newId) {
+            navigate(`/project/${newId}?view=project-info`);
+          }
+        }}
+        createdProjectForEmail={renovationDupCreatedForEmail}
+        transparentBackdrop
+      />
+      {linkRenoDupOpen && linkRenoDupStep === "cost" && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "transparent",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2000,
+            pointerEvents: "auto",
+          }}
+        >
+          <div
+            style={{
+              background: SECTION_GREY,
+              borderRadius: "18px",
+              padding: "32px",
+              width: "90%",
+              maxWidth: "440px",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              style={{
+                fontSize: "1.35rem",
+                fontWeight: 600,
+                marginTop: 0,
+                marginBottom: "8px",
+                color: MONUMENT,
+              }}
+            >
+              Duplicate & Link Renovation
+            </h2>
+            <p style={{ margin: "0 0 20px 0", fontSize: "0.9rem", color: "#555", lineHeight: 1.45 }}>
+              New renovation job number with the same Windows folder. Enter the renovation contract price (you can
+              change deposit later on the new job if needed).
+            </p>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.9rem",
+                color: "#32323399",
+                marginBottom: "6px",
+                fontWeight: 500,
+              }}
+            >
+              Project cost
+            </label>
+            <input
+              type="text"
+              value={linkRenoDupFormData.projectCost || ""}
+              onChange={(e) =>
+                setLinkRenoDupFormData((prev) => ({ ...prev, projectCost: e.target.value }))
+              }
+              placeholder="e.g. $450,000"
+              style={{
+                width: "100%",
+                padding: "12px 14px",
+                borderRadius: "8px",
+                border: "none",
+                fontSize: "1rem",
+                color: MONUMENT,
+                background: WHITE,
+                boxSizing: "border-box",
+                marginBottom: "24px",
+              }}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+              <button
+                type="button"
+                onClick={resetLinkRenoDupWizard}
+                style={{
+                  background: "#e0e0e0",
+                  color: MONUMENT,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const raw = (linkRenoDupFormData.projectCost || "").trim();
+                  if (!raw) {
+                    alert("Please enter the project cost.");
+                    return;
+                  }
+                  setLinkRenoDupStep("pdf");
+                }}
+                style={{
+                  background: MONUMENT,
+                  color: WHITE,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <NewProject_5_PDFUpload
+        isOpen={linkRenoDupOpen && linkRenoDupStep === "pdf"}
+        onClose={resetLinkRenoDupWizard}
+        formData={linkRenoDupFormData}
+        onFormDataChange={setLinkRenoDupFormData}
+        onBack={() => {
+          setLinkRenoDupFormData((prev) => ({ ...prev, createdProject: null }));
+          setLinkRenoDupStep("cost");
+        }}
+        onNext={async (created) => {
+          const p = created || linkRenoDupFormData.createdProject;
+          if (p) {
+            setLinkRenoDupCreatedForEmail(p);
+            setLinkRenoDupStep("emailint");
+          }
+        }}
+        onCreate={handleRenovationDupCreate}
+        introExtra='The new job is Renovation: your PDF is saved as Proposal.PDF inside the existing "12. RENOVATION" folder only, so the original job’s Proposal.PDF in the folder root is not replaced. Upload a renovation proposal, or cancel.'
+        transparentBackdrop
+      />
+      <NewProject_6_EmailInternal
+        isOpen={linkRenoDupOpen && linkRenoDupStep === "emailint"}
+        onClose={resetLinkRenoDupWizard}
+        createdProjectForEmail={linkRenoDupCreatedForEmail}
+        onSendSuccess={() => setLinkRenoDupStep("emailclient")}
+        transparentBackdrop
+      />
+      <NewProject_7_EmailClient
+        isOpen={linkRenoDupOpen && linkRenoDupStep === "emailclient"}
+        onClose={() => {
+          const newId = linkRenoDupCreatedForEmail?.id;
+          resetLinkRenoDupWizard();
+          if (newId) {
+            navigate(`/project/${newId}?view=project-info`);
+          }
+        }}
+        createdProjectForEmail={linkRenoDupCreatedForEmail}
+        transparentBackdrop
+      />
       {/* Delete Confirmation Modal */}
       {showDeleteModal && (
         <div

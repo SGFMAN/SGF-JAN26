@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
+import { CLASSIFICATION_OPTIONS } from "../utils/classifications";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -120,7 +121,7 @@ const FIELD_DEFINITIONS = {
   },
   classification: {
     label: "Classification",
-    values: ["Small Second Dwelling", "Dependant Persons Unit", "Detached Extension", "Dwelling", "Home Office / Studio", "Dwelling & DPU", "Dwelling & SSD", "SSD & DPU"],
+    values: CLASSIFICATION_OPTIONS,
     defaultValue: "",
   },
   state: {

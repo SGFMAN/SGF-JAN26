@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { CLASSIFICATION_OPTIONS, CLASSIFICATION_ABBREV_MAP as CLASSIFICATION_MAP } from "../utils/classifications";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -20,32 +21,16 @@ const DEPOSIT_OPTIONS = ["Full 5%", "$5k only", "Other"];
 
 const SPECS_OPTIONS = ["Affordable", "Superior"];
 
-const CLASSIFICATION_OPTIONS = [
-  "Small Second Dwelling",
-  "Dependant Persons Unit",
-  "Detached Extension",
-  "Dwelling",
-  "Home Office / Studio",
-  "Dwelling & DPU",
-  "Dwelling & SSD",
-  "SSD & DPU",
-  "Dual Occ"
-];
-
-// Classification mapping for abbreviations (same as HomePage.jsx)
-const CLASSIFICATION_MAP = {
-  "Small Second Dwelling": "SSD",
-  "Dependant Persons Unit": "DPU",
-  "Detached Extension": "DEX",
-  "Dwelling": "DWE",
-  "Home Office / Studio": "OFFICE",
-  "Dwelling & DPU": "D&DPU",
-  "Dwelling & SSD": "D&SSD",
-  "SSD & DPU": "SSD&DPU",
-  "Dual Occ": "DOC",
-};
-
-export default function NewProject_3_ProjectCost({ isOpen, onClose, formData, onFormDataChange, onBack, onCreate, onNext }) {
+export default function NewProject_3_ProjectCost({
+  isOpen,
+  onClose,
+  formData,
+  onFormDataChange,
+  onBack,
+  onCreate,
+  onNext,
+  transparentBackdrop = false,
+}) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [tempDepositAmount, setTempDepositAmount] = useState("");
@@ -360,7 +345,7 @@ export default function NewProject_3_ProjectCost({ isOpen, onClose, formData, on
       // Then create the project
       const newProject = await onCreate(formData);
 
-      // Link template Proposal.PDF on disk if folders were created but no custom file was supplied
+      // Link Proposal.PDF on disk if it already exists (no automatic template copy)
       if (createFolders && newProject && newProject.id && folderPath && !formData.proposalFile) {
         try {
           const reg = await fetch(`${API_URL}/api/projects/${newProject.id}/register-proposal-from-folder`, {
@@ -369,11 +354,17 @@ export default function NewProject_3_ProjectCost({ isOpen, onClose, formData, on
             body: JSON.stringify({ projectPath: folderPath }),
           });
           if (!reg.ok) {
-            const errText = await reg.text().catch(() => "");
-            console.warn("Could not link template proposal (upload a PDF if needed):", errText);
+            let msg = "Proposal.PDF was not found in the project folder.";
+            try {
+              const errJson = await reg.json();
+              if (errJson?.error) msg = errJson.error;
+            } catch {
+              /* ignore */
+            }
+            alert(msg);
           }
         } catch (regErr) {
-          console.warn("register-proposal-from-folder:", regErr);
+          alert(regErr.message || "Could not link Proposal.PDF from the project folder.");
         }
       }
       
@@ -436,7 +427,7 @@ export default function NewProject_3_ProjectCost({ isOpen, onClose, formData, on
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0, 0, 0, 0.5)",
+            background: transparentBackdrop ? "transparent" : "rgba(0, 0, 0, 0.5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -798,7 +789,7 @@ export default function NewProject_3_ProjectCost({ isOpen, onClose, formData, on
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0, 0, 0, 0.5)",
+            background: transparentBackdrop ? "transparent" : "rgba(0, 0, 0, 0.5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
