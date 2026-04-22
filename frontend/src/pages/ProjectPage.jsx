@@ -30,6 +30,26 @@ const WHITE = "#fff";
 
 const API_URL = "";
 
+/**
+ * Portal mode blocks most mutations; allow the same drawings email endpoint as the
+ * main app, but only when the body targets the project currently open in the portal.
+ */
+function isPortalAllowedSendDrawingsPost(pathAndSearch, method, init, portalProjectId) {
+  if (method !== "POST") return false;
+  const path = pathAndSearch.split("?")[0];
+  if (path !== "/api/emails/send-drawings") return false;
+  const pid = Number(portalProjectId);
+  if (!Number.isFinite(pid)) return false;
+  try {
+    const raw = init.body;
+    if (typeof raw !== "string") return false;
+    const body = JSON.parse(raw);
+    return Number(body.projectId) === pid;
+  } catch {
+    return false;
+  }
+}
+
 const RENOVATION_DUP_FORM_EMPTY = {
   suburb: "",
   street: "",
@@ -285,7 +305,8 @@ export default function ProjectPage() {
       const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
       const allowedPortalMutation =
         pathAndSearch.startsWith("/api/portal/") ||
-        pathAndSearch.startsWith("/api/sitevisit/");
+        pathAndSearch.startsWith("/api/sitevisit/") ||
+        isPortalAllowedSendDrawingsPost(pathAndSearch, method, init, id);
       if (isMutation && pathAndSearch.startsWith("/api/") && !allowedPortalMutation) {
         return Promise.resolve(
           new Response(JSON.stringify({ error: "Read-only in client portal" }), {
@@ -299,7 +320,7 @@ export default function ProjectPage() {
     return () => {
       window.fetch = origFetch;
     };
-  }, [isPortalProjectPath]);
+  }, [isPortalProjectPath, id]);
 
   async function handleDeleteProject() {
     if (!id) return;

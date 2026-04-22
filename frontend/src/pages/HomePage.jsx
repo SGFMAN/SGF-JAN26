@@ -15,7 +15,8 @@ import {
   isHotlistStatus,
   isCancelledStatus,
 } from "../utils/projectStatus";
-import { CLASSIFICATION_OPTIONS, CLASSIFICATION_BADGE_MAP } from "../utils/classifications";
+import { CLASSIFICATION_OPTIONS } from "../utils/classifications";
+import ProjectRectangleCard from "../components/ProjectRectangleCard";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -125,19 +126,6 @@ const STREAM_SORT_ORDER = [
   "Fresh Start Advisory",
 ];
 
-const DESIGN_PHASE_STREAM_MAP = {
-  "SGF - VIC": { acronym: "VIC", color: "#4D93D9" },
-  "SGF - QLD": { acronym: "QLD", color: "#D54358" },
-  "Dual Dwelling": { acronym: "DDI", color: "#92D050" },
-  ATA: { acronym: "ATA", color: "#92D050" },
-  "Pumped on Property": { acronym: "POP", color: "#92D050" },
-  "Pumped On Property": { acronym: "POP", color: "#92D050" },
-  Henderson: { acronym: "HEN", color: "#92D050" },
-  "Creat Cash Flow": { acronym: "CCF", color: "#92D050" },
-  "Create Cash Flow": { acronym: "CCF", color: "#92D050" },
-  "Fresh Start Advisory": { acronym: "FSA", color: "#92D050" },
-};
-
 /** Pair renovation source + single copy for Design Phase grid (chain layout). */
 function buildDuplicateChainGroups(items) {
   const byId = new Map(items.map((p) => [p.id, p]));
@@ -223,173 +211,6 @@ function SaggingDuplicateChainIcon() {
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
       {links}
     </svg>
-  );
-}
-
-function renderDesignPhaseProjectCard(project) {
-  const classificationInfo = project.classification
-    ? CLASSIFICATION_BADGE_MAP[project.classification]
-    : null;
-  const streamInfo = project.stream ? DESIGN_PHASE_STREAM_MAP[project.stream] : null;
-  const onHold = project.on_hold === "true" || project.on_hold === true;
-  const cancelled = project.status === "Cancelled";
-
-  return (
-    <Link
-      to={`/project/${project.id}`}
-      style={{
-        textDecoration: "none",
-        display: "block",
-      }}
-    >
-      <div
-        style={{
-          background: MONUMENT,
-          borderRadius: "8px",
-          width: "200px",
-          height: "100px",
-          color: SECTION_GREY,
-          cursor: "pointer",
-          transition: "opacity 0.2s",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          alignItems: "center",
-          position: "relative",
-          overflow: "hidden",
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
-        onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-      >
-        {onHold && (
-          <div
-            style={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%) rotate(-45deg)",
-              width: "280px",
-              height: "40px",
-              background: "#0066cc",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 10,
-              boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-            }}
-          >
-            <span
-              style={{
-                color: WHITE,
-                fontWeight: 700,
-                fontSize: "1.1rem",
-                letterSpacing: "2px",
-                textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-              }}
-            >
-              ON HOLD
-            </span>
-          </div>
-        )}
-        {cancelled && (
-          <div
-            style={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%) rotate(-45deg)",
-              width: "280px",
-              height: "40px",
-              background: "#cc0000",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 10,
-              boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-            }}
-          >
-            <span
-              style={{
-                color: WHITE,
-                fontWeight: 700,
-                fontSize: "1.1rem",
-                letterSpacing: "2px",
-                textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-              }}
-            >
-              CANCELLED
-            </span>
-          </div>
-        )}
-        {streamInfo && (
-          <div
-            style={{
-              position: "absolute",
-              bottom: "8px",
-              left: "8px",
-              fontSize: "0.85rem",
-              fontWeight: 700,
-              color: streamInfo.color,
-              zIndex: onHold || cancelled ? 11 : 5,
-              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-            }}
-          >
-            {streamInfo.acronym}
-          </div>
-        )}
-        {classificationInfo && (
-          <div
-            style={{
-              position: "absolute",
-              bottom: "8px",
-              right: "8px",
-              fontSize: "0.85rem",
-              fontWeight: 700,
-              color: classificationInfo.color,
-              zIndex: onHold || cancelled ? 11 : 5,
-              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-            }}
-          >
-            {classificationInfo.acronym}
-          </div>
-        )}
-        <div
-          style={{
-            fontWeight: 600,
-            fontSize: "1.1rem",
-            textAlign: "center",
-            marginBottom: "4px",
-            width: "100%",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            flex: 1,
-            flexDirection: "column",
-            gap: "4px",
-            position: "relative",
-            zIndex: onHold ? 1 : "auto",
-          }}
-        >
-          <div style={{ fontWeight: 600, fontSize: "1.1rem", color: WHITE }}>
-            {(project.suburb || "Unknown Suburb").toUpperCase()}
-          </div>
-          <div style={{ fontSize: "0.95rem", color: WHITE, fontWeight: 400 }}>
-            {project.street || "No address"}
-          </div>
-        </div>
-        <div
-          style={{
-            fontSize: "0.9rem",
-            color: "#323233cc",
-            textAlign: "center",
-            position: "relative",
-            zIndex: onHold ? 1 : "auto",
-          }}
-        >
-          Status: {project.status}
-        </div>
-      </div>
-    </Link>
   );
 }
 
@@ -1663,7 +1484,7 @@ export default function HomePage() {
                         </div>
                       )}
                       {group.type === "single" ? (
-                        renderDesignPhaseProjectCard(group.project)
+                        <ProjectRectangleCard project={group.project} />
                       ) : (
                         <div
                           title="Renovation copy linked to original"
@@ -1678,8 +1499,8 @@ export default function HomePage() {
                             flexShrink: 0,
                           }}
                         >
-                          {renderDesignPhaseProjectCard(group.a)}
-                          {renderDesignPhaseProjectCard(group.b)}
+                          <ProjectRectangleCard project={group.a} />
+                          <ProjectRectangleCard project={group.b} />
                           <div
                             aria-hidden
                             style={{

@@ -1,0 +1,98 @@
+QLD + Design Phase projects: 90
+Project Claim count (draftsperson unassigned): 89
+Difference (assigned draftsperson): 1
+
+id	suburb	street	state	classification	draftsperson_raw	status_for_claim
+629	Avoca	38 Glenview Cr	QLD	Small Second Dwelling	Select draftsperson...	CLAIM_ELIGIBLE
+532	Basin Pocket	8 Mcgill Street	QLD	Small Second Dwelling	Select draftsperson...	CLAIM_ELIGIBLE
+513	BEAUDESERT	8 Cedar Drive	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+504	BETHANIA	6 Zircon Court	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+503	BIRKDALE	14 Thomas Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+420	BONOGIN	6 Glenmore Drive	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+604	Bracken Ridge	5 Buckra Street	QLD	Small Second Dwelling	Select draftsperson...	CLAIM_ELIGIBLE
+544	Browns Plains	8 Saratoga Street	QLD	Small Second Dwelling	Select draftsperson...	CLAIM_ELIGIBLE
+613	Buccan	8 - 14 Verronica Court	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+488	BUDERIM	1 Geehi Court	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+493	CABOOLTURE	220 King Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+497	CABOOLTURE	7 Linwood Court	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+461	CALLAMVALE	72 Sunflower Crescent	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+489	CALOUNDRA	8 Suller Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+537	Chapel Hill	3 Keil Place	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+542	Coopers Plains	11 Bosworth Street	QLD	Small Second Dwelling	Select draftsperson...	CLAIM_ELIGIBLE
+498	CRESTMEAD	15 Pinewood Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+508	CRESTMEAD	7 Wisdom Way	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+608	Daisy Hill	7 Begonia St	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+496	DECEPTION BAY	25 Kate Avenue	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+446	DURRAK	39 Randwick	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+611	Eagleby	22 Dion Drive	QLD	Small Second Dwelling	Select draftsperson...	CLAIM_ELIGIBLE
+529	EAGLEBY	33 Rinto	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+505	EAGLEBY	3 Bedford	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+393	EAGLEBY	6 Melwood Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+465	ELIMBAH	9–11 Greentree Road	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+481	FORESTDALE	13–17 Sheriff Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+432	GRACEVILLE	36 Park Road	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+492	GREENBANK	245–249 Ison Road	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+477	GREENSLOPES	30–32 Hunter Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+603	Heritage Park	5 Excelsa Place	QLD	Small Second Dwelling	Select draftsperson...	CLAIM_ELIGIBLE
+473	INALA	30 Krestel Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+430	INALA	4 Aldebaran Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+439	INALA	96 Biota Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+527	JIMBOOMBA	25-33 Alluring Ct	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+634	Jimboomba	300-312 Mundoolun Road	QLD	Small Second Dwelling	Select draftsperson...	CLAIM_ELIGIBLE
+467	JINDALEE	8 Moolingal Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+510	KALLANGUR	8 Beattie Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+591	Kingston	69 Anchusa Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+502	KOORALBYN	30–40 Yulgibar Close	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+512	LOGAN CENTRAL	13 Moore Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+526	LOGAN CENTRAL	4 Waitara St	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+519	LOGANLEA	10 Edward Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+610	Loganlea	24 Keyes Street	QLD	Small Second Dwelling	Select draftsperson...	CLAIM_ELIGIBLE
+501	MARGATE	11 Dover Road	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+524	MARSDEN	95 Second Av	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+511	MIDDLE PARK	7 Meadow	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+509	MOOROOKA	11 Fegen Drive	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+592	Morayfield	9-13 Bridges Road	QLD	Small Second Dwelling	Select draftsperson...	CLAIM_ELIGIBLE
+389	MOUNT WARREN PARK	7 Lane Court	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+385	MUNDOOLUN	61–65 Bredalbane Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+507	NERANG	21 Spring Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+506	NEW BEITH	67–71 Melrose Place	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+499	NINGI	6 Grice Crescent	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+411	NOOSAVILLE	1 Juron Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+528	OXLEY	1137 Oxley Rd	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+456	PARKINSON	8 Yengo Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+484	REDCLIFFE	9 Longland Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+623	Regents Park	20 Dryade St Regents	QLD	Small Second Dwelling	Select draftsperson...	CLAIM_ELIGIBLE
+625	Riverbend	202-206 Payne Rd	QLD	Small Second Dwelling	Select draftsperson...	CLAIM_ELIGIBLE
+478	RIVERHILLS	20 Zambesi Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+530	ROCKLEA	45 Marshall Road	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+485	SALISBURY	380 Orange Grove Road	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+594	Scarness	24 Wuruma St	QLD	Small Second Dwelling	James Nixon	NOT_ON_CLAIM_LIST
+525	SEVEN HILLS	125 D'arcy Rd	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+486	SILKSTONE	5 Louise Court	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+626	Slacks Creek	35 Janice St	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+631	Stafford	13 Theodore St	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+676	Stafford	15 Goorama St	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+490	STRATHPINE	28 Bateman Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+599	Strathpine	44 Fox St	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+520	STRATHPINE	59 Samsonvale	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+521	SUNNYBANK	25 Agnes St	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+494	SUNNYBANK	5 Lavinia Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+482	SUNNYBANK HILLS	23 Kelceda Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+614	Sunnybank Hills	2 Sollya Place	QLD	Small Second Dwelling	Select draftsperson...	CLAIM_ELIGIBLE
+398	SUNNYBANK HILLS	587 Compton	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+630	The Gap (brisbane City)	1043 Waterworks Rd	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+399	TINGALPA	13 Cox Close	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+522	TINGALPA	25 Cashel St	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+436	UNDERWOOD	34 Concourse	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+451	UNDERWOOD	9 Diana Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+618	Upper Brookfield	388 Haven Road	QLD	Small Second Dwelling	Select draftsperson...	CLAIM_ELIGIBLE
+464	URANGAN	106 Elizabeth Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+400	WAVELL HEIGHTS	23 Newman Road	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+491	WISHART	23 Sovereign Close	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+463	WONGLEPOND	81–95 Spponbill Road	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+523	WOODHILL	92-102 Monroe Drive	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+597	Woodridge	16-18 Parkdale St	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+425	WOOLLOONGABBA	49 Peterson Street	QLD		Select draftsperson...	CLAIM_ELIGIBLE
+
+--- Assigned only (these are on Design Phase QLD but NOT Project Claim) ---
+#594  Scarness / 24 Wuruma St  →  James Nixon

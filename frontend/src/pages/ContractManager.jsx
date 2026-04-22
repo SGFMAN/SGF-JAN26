@@ -540,6 +540,28 @@ export default function ContractManager() {
           >
             QP Manager
           </Link>
+          <Link
+            to="/managers/project-claim"
+            style={{
+              background: "transparent",
+              color: "#404049",
+              border: "none",
+              borderRadius: "10px",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              textAlign: "center",
+              textDecoration: "none",
+              letterSpacing: "0.5px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              marginBottom: "0px",
+              lineHeight: "1.4",
+              display: "block",
+            }}
+          >
+            Project Claim!
+          </Link>
           <div style={{ flex: 1 }} />
           <Link
             to="/projects"

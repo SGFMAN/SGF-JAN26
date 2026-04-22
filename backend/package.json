@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "export-project-excel": "node export_project_list_from_db.js"
+    "export-project-excel": "node export_project_list_from_db.js",
+    "migrate:draftsperson": "node migrate-draftsperson-to-names.js"
   },
   "keywords": [],
   "author": "",

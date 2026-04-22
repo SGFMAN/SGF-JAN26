@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { PROCESS_RULES, getRequirementStatus, getUnmetRequirements, getMetRequirements } from "../utils/ProcessRules";
+import { DRAFTSPERSON_UNASSIGNED } from "../utils/draftspersonSentinel";
 import craig1 from "../images/craig1.jpg";
 import craig2 from "../images/craig2.jpg";
 import craig3 from "../images/craig3.jpg";
@@ -235,19 +236,11 @@ export default function Overview({ project }) {
     }
   }
 
-  /** Fetch draftsperson name by ID from users API. */
-  async function getDraftspersonName(draftspersonId) {
-    if (!draftspersonId) return "";
-    try {
-      const response = await fetch(`${API_URL}/api/users`);
-      if (!response.ok) return "";
-      const users = await response.json();
-      const user = users.find((u) => u.id === parseInt(draftspersonId) || u.id === draftspersonId);
-      return user ? (user.name || "") : "";
-    } catch (error) {
-      console.error("Error fetching draftsperson name:", error);
-      return "";
-    }
+  /** Stored display name; omit sentinel from outgoing tokens. */
+  function getDraftspersonName(raw) {
+    const s = (raw ?? "").toString().trim();
+    if (!s || s.toLowerCase() === DRAFTSPERSON_UNASSIGNED.toLowerCase()) return "";
+    return s;
   }
 
   async function replaceTokens(text, project, opts = {}) {
@@ -331,7 +324,7 @@ export default function Overview({ project }) {
 
     // Draftsperson
     if (replaced.includes("{Draftsperson}")) {
-      const draftspersonName = await getDraftspersonName(project.draftsperson);
+      const draftspersonName = getDraftspersonName(project.draftsperson);
       replaced = replaced.replace(/{Draftsperson}/g, draftspersonName);
     }
 

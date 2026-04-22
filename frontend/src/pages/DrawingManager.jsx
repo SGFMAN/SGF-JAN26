@@ -7,6 +7,11 @@ import {
 import { Link } from "react-router-dom";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
+import {
+  DRAFTSPERSON_UNASSIGNED,
+  normalizeDraftspersonField,
+  isDraftspersonAssigned,
+} from "../utils/draftspersonSentinel";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -107,11 +112,13 @@ export default function DrawingManager() {
   }
 
   function getDraftspersonDetailsByProject(project) {
-    if (!project?.draftsperson) return { name: "", position: "" };
+    const stored = normalizeDraftspersonField(project?.draftsperson);
+    if (!isDraftspersonAssigned(stored)) return { name: "", position: "" };
+    const lower = stored.toLowerCase();
     const user = draftspersonUsers.find(
-      (u) => u.id === parseInt(project.draftsperson, 10) || u.id === project.draftsperson
+      (u) => (u.name || "").trim().toLowerCase() === lower
     );
-    if (!user) return { name: "", position: "" };
+    if (!user) return { name: stored, position: "" };
     const position =
       user.positions && Array.isArray(user.positions) && user.positions.length > 0
         ? user.positions[0].name || ""
@@ -249,11 +256,9 @@ export default function DrawingManager() {
     }
   }
 
-  // Get draftsperson name by ID
-  function getDraftspersonName(draftspersonId) {
-    if (!draftspersonId) return null;
-    const draftsperson = draftspersonUsers.find(u => u.id === parseInt(draftspersonId) || u.id === draftspersonId);
-    return draftsperson ? draftsperson.name : null;
+  function getDraftspersonName(raw) {
+    const { name } = getDraftspersonDetailsByProject({ draftsperson: raw });
+    return name || null;
   }
 
   // Check if deposit is partial (not fully paid)
@@ -761,12 +766,12 @@ export default function DrawingManager() {
     }
   }
 
-  // Handle draftsperson change
-  async function handleDraftspersonChange(project, newDraftspersonId) {
+  // Handle draftsperson change (stores display name or sentinel in `draftsperson`)
+  async function handleDraftspersonChange(project, selectedValue) {
     if (!project.id) return;
 
     const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "";
-    const newDraftsperson = newDraftspersonId === "" ? null : newDraftspersonId;
+    const newDraftsperson = normalizeDraftspersonField(selectedValue);
 
     // Optimistically update local state immediately
     setProjects(prevProjects =>
@@ -1254,6 +1259,28 @@ export default function DrawingManager() {
           >
             QP Manager
           </Link>
+          <Link
+            to="/managers/project-claim"
+            style={{
+              background: "transparent",
+              color: "#404049",
+              border: "none",
+              borderRadius: "10px",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              textAlign: "center",
+              textDecoration: "none",
+              letterSpacing: "0.5px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              marginBottom: "0px",
+              lineHeight: "1.4",
+              display: "block",
+            }}
+          >
+            Project Claim!
+          </Link>
           <div style={{ flex: 1 }} />
           <Link
             to="/projects"
@@ -1703,9 +1730,10 @@ export default function DrawingManager() {
                           {/* Column 4: Draftsperson */}
                           <select
                             key={`${project.id}-draftsperson`}
-                            value={project.draftsperson || ""}
+                            value={normalizeDraftspersonField(project.draftsperson)}
                             onChange={(e) => handleDraftspersonChange(project, e.target.value)}
                             onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
                             style={{
                               padding: "8px 12px",
                               background: WHITE,
@@ -1718,10 +1746,10 @@ export default function DrawingManager() {
                               boxSizing: "border-box",
                             }}
                           >
-                            <option value="">None</option>
-                            {draftspersonUsers.map((draftsperson) => (
-                              <option key={draftsperson.id} value={draftsperson.id}>
-                                {draftsperson.name}
+                            <option value={DRAFTSPERSON_UNASSIGNED}>None</option>
+                            {draftspersonUsers.map((dp) => (
+                              <option key={dp.id} value={dp.name || ""}>
+                                {dp.name}
                               </option>
                             ))}
                           </select>

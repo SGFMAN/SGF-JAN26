@@ -319,6 +319,9 @@ export default function QpManager() {
           <Link to="/managers/qp-manager" style={linkActive}>
             QP Manager
           </Link>
+          <Link to="/managers/project-claim" style={linkInactive}>
+            Project Claim!
+          </Link>
           <div style={{ flex: 1 }} />
           <Link to="/projects" style={linkInactive}>
             ← Back to Main

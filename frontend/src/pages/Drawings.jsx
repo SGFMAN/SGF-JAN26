@@ -7,6 +7,11 @@ import {
   mergeUniqueEmails,
   stripProjectClientEmailsWhenDisabled,
 } from "../utils/streamDrawingsSettings";
+import {
+  DRAFTSPERSON_UNASSIGNED,
+  normalizeDraftspersonField,
+  isDraftspersonAssigned,
+} from "../utils/draftspersonSentinel";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -27,7 +32,7 @@ function escapeHtmlForEmail(text) {
 export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const [drawingsStatus, setDrawingsStatus] = useState(project?.drawings_status || "Not Assigned");
-  const [draftsperson, setDraftsperson] = useState(project?.draftsperson ? String(project.draftsperson) : "");
+  const [draftsperson, setDraftsperson] = useState(normalizeDraftspersonField(project?.draftsperson));
   const [drawingsHolder, setDrawingsHolder] = useState(project?.drawings_holder || "design team");
   const [draftspersonUsers, setDraftspersonUsers] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -69,7 +74,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
   const [designMeetingNewItem, setDesignMeetingNewItem] = useState("");
   const [showDraftspersonRequiredModal, setShowDraftspersonRequiredModal] = useState(false);
   const [pendingPdfFile, setPendingPdfFile] = useState(null);
-  const [draftspersonModalChoice, setDraftspersonModalChoice] = useState("");
+  const [draftspersonModalChoice, setDraftspersonModalChoice] = useState(DRAFTSPERSON_UNASSIGNED);
   /** When a new PDF is uploaded, user must pick concept vs working before Save and Send ("", "concept", "working"). */
   const [newDrawingUploadKind, setNewDrawingUploadKind] = useState("");
   const [streamSettingsJson, setStreamSettingsJson] = useState({});
@@ -80,14 +85,14 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
     valuesRef.current = { drawingsStatus, draftsperson };
   }, [drawingsStatus, draftsperson]);
 
+  // Sync from server when these fields change — not [project] (new object refs would reset draftsperson mid-save).
   useEffect(() => {
     if (project) {
       setDrawingsStatus(project.drawings_status || "Not Assigned");
-      setDraftsperson(project.draftsperson ? String(project.draftsperson) : "");
-      // Initialize drawings_holder to "design team" if not set (for new projects)
+      setDraftsperson(normalizeDraftspersonField(project.draftsperson));
       setDrawingsHolder(project.drawings_holder || "design team");
     }
-  }, [project]);
+  }, [project?.id, project?.draftsperson, project?.drawings_status, project?.drawings_holder]);
 
   useEffect(() => {
     // Fetch in background - don't block rendering
@@ -174,15 +179,17 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
     }
   }
 
-  /** Fetch draftsperson details (name and position) by ID from users API. */
-  async function getDraftspersonDetails(draftspersonId) {
-    if (!draftspersonId) return { name: "", position: "" };
+  /** Resolve position from users list by stored display name (sentinel → empty tokens). */
+  async function getDraftspersonDetails(raw) {
+    const stored = normalizeDraftspersonField(raw);
+    if (!isDraftspersonAssigned(stored)) return { name: "", position: "" };
     try {
       const response = await fetch(`${API_URL}/api/users`);
-      if (!response.ok) return { name: "", position: "" };
+      if (!response.ok) return { name: stored, position: "" };
       const users = await response.json();
-      const user = users.find((u) => u.id === parseInt(draftspersonId) || u.id === draftspersonId);
-      if (!user) return { name: "", position: "" };
+      const lower = stored.toLowerCase();
+      const user = users.find((u) => (u.name || "").trim().toLowerCase() === lower);
+      if (!user) return { name: stored, position: "" };
       const position =
         user.positions && Array.isArray(user.positions) && user.positions.length > 0
           ? user.positions[0].name
@@ -193,7 +200,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
       };
     } catch (error) {
       console.error("Error fetching draftsperson details:", error);
-      return { name: "", position: "" };
+      return { name: stored, position: "" };
     }
   }
 
@@ -254,8 +261,11 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
         window_ordered_date: project?.window_ordered_date || null,
           window_order_pdf_location: project?.window_order_pdf_location || null,
           window_order_number: project?.window_order_number || null,
-          drawings_status: fieldName === "drawings_status" ? (value === "" ? null : value) : currentValues.drawingsStatus,
-          draftsperson: fieldName === "draftsperson" ? (value === "" ? null : value) : currentValues.draftsperson,
+          drawings_status: fieldName === "drawings_status" ? (value === "" ? null : String(value)) : currentValues.drawingsStatus,
+          draftsperson:
+            fieldName === "draftsperson"
+              ? normalizeDraftspersonField(value)
+              : normalizeDraftspersonField(currentValues.draftsperson),
           drawings_pdf_location: project?.drawings_pdf_location || null,
           drawings_history: project?.drawings_history || null,
           colours_status: project?.colours_status || null,
@@ -281,8 +291,11 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
           onUpdate();
         }
       } else {
-        // Success - local state already updated optimistically, no need to call onUpdate
         console.log("Field saved successfully");
+        // Refetch project so parent `project` matches DB (avoids useEffect / stale props undoing draftsperson).
+        if (onUpdate && (fieldName === "draftsperson" || fieldName === "drawings_status")) {
+          onUpdate(true);
+        }
       }
     } catch (error) {
       console.error("Error saving field:", error);
@@ -294,17 +307,17 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
   }
 
   async function handleDraftspersonChange(e) {
-    const newDraftsperson = e.target.value;
-    setDraftsperson(newDraftsperson);
-    valuesRef.current.draftsperson = newDraftsperson;
-    
+    const chosen = normalizeDraftspersonField(e.target.value);
+    setDraftsperson(chosen);
+    valuesRef.current.draftsperson = chosen;
+
     // If draftsperson is selected and status is "Not Assigned", update to "Concept Stage"
-    if (newDraftsperson && drawingsStatus === "Not Assigned") {
+    if (isDraftspersonAssigned(chosen) && drawingsStatus === "Not Assigned") {
       setDrawingsStatus("Concept Stage");
       valuesRef.current.drawingsStatus = "Concept Stage";
       await saveField("drawings_status", "Concept Stage");
     }
-    await saveField("draftsperson", newDraftsperson);
+    await saveField("draftsperson", chosen);
   }
 
   async function handleMarkConceptConfirmed() {
@@ -829,7 +842,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
           window_order_pdf_location: project?.window_order_pdf_location || null,
           window_order_number: project?.window_order_number || null,
           drawings_status: valuesRef.current.drawingsStatus || null,
-          draftsperson: valuesRef.current.draftsperson ? valuesRef.current.draftsperson : null,
+          draftsperson: normalizeDraftspersonField(valuesRef.current.draftsperson),
           drawings_pdf_location: filePath,
           drawings_history: JSON.stringify(drawingsHistory),
           drawings_viewed_date: project?.drawings_viewed_date || null, // Preserve existing viewed date
@@ -880,8 +893,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
   }
 
   function hasDraftspersonAssigned() {
-    const id = draftsperson != null ? String(draftsperson).trim() : "";
-    return id.length > 0;
+    return isDraftspersonAssigned(draftsperson);
   }
 
   async function beginDrawingPdfUpload(file) {
@@ -893,7 +905,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
     setSelectedFile(file);
     if (!hasDraftspersonAssigned()) {
       setPendingPdfFile(file);
-      setDraftspersonModalChoice("");
+      setDraftspersonModalChoice(DRAFTSPERSON_UNASSIGNED);
       setShowDraftspersonRequiredModal(true);
       return;
     }
@@ -901,23 +913,23 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
   }
 
   async function handleConfirmDraftspersonForUpload() {
-    const id = draftspersonModalChoice != null ? String(draftspersonModalChoice).trim() : "";
-    if (!id) {
+    const nameToSave = normalizeDraftspersonField(draftspersonModalChoice);
+    if (!isDraftspersonAssigned(nameToSave)) {
       alert("Please select a draftsperson before uploading drawings.");
       return;
     }
-    setDraftsperson(id);
-    valuesRef.current.draftsperson = id;
+    setDraftsperson(nameToSave);
+    valuesRef.current.draftsperson = nameToSave;
     if (drawingsStatus === "Not Assigned") {
       setDrawingsStatus("Concept Stage");
       valuesRef.current.drawingsStatus = "Concept Stage";
       await saveField("drawings_status", "Concept Stage");
     }
-    await saveField("draftsperson", id);
+    await saveField("draftsperson", nameToSave);
     const file = pendingPdfFile;
     setShowDraftspersonRequiredModal(false);
     setPendingPdfFile(null);
-    setDraftspersonModalChoice("");
+    setDraftspersonModalChoice(DRAFTSPERSON_UNASSIGNED);
     if (file) {
       await saveDrawingsPath(file);
     }
@@ -926,7 +938,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
   function handleCancelDraftspersonRequiredModal() {
     setShowDraftspersonRequiredModal(false);
     setPendingPdfFile(null);
-    setDraftspersonModalChoice("");
+    setDraftspersonModalChoice(DRAFTSPERSON_UNASSIGNED);
     setSelectedFile(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -1923,7 +1935,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
           drawings_history: project?.drawings_history || null,
           drawings_viewed_date: project?.drawings_viewed_date || null,
           drawings_holder_date: holderDate,
-          draftsperson: project?.draftsperson || null,
+          draftsperson: normalizeDraftspersonField(project?.draftsperson),
           drawings_holder: holder,
           colours_status: project?.colours_status || null,
           planning_status: project?.planning_status || null,
@@ -2996,7 +3008,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
                 </div>
                 <select
                   name="draftsperson"
-                  value={draftsperson || ""}
+                  value={draftsperson}
                   onChange={handleDraftspersonChange}
                   style={{
                     width: "100%",
@@ -3010,9 +3022,9 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
                     cursor: "pointer",
                   }}
                 >
-                  <option value="">Select draftsperson...</option>
+                  <option value={DRAFTSPERSON_UNASSIGNED}>{DRAFTSPERSON_UNASSIGNED}</option>
                   {draftspersonUsers.map((user) => (
-                    <option key={user.id} value={String(user.id)}>
+                    <option key={user.id} value={user.name || ""}>
                       {user.name}
                     </option>
                   ))}
@@ -3392,9 +3404,9 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
                 marginBottom: "20px",
               }}
             >
-              <option value="">Select draftsperson...</option>
+              <option value={DRAFTSPERSON_UNASSIGNED}>{DRAFTSPERSON_UNASSIGNED}</option>
               {draftspersonUsers.map((user) => (
-                <option key={user.id} value={String(user.id)}>
+                <option key={user.id} value={user.name || ""}>
                   {user.name}
                 </option>
               ))}

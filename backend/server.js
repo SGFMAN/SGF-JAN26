@@ -373,6 +373,16 @@ const pool = process.env.DATABASE_URL
     })
   : null;
 
+const { DRAFTSPERSON_UNASSIGNED } = require("./draftspersonConstants");
+
+/** For email tokens: empty when unassigned sentinel. */
+function draftspersonTokenDisplay(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
+  if (s.toLowerCase() === DRAFTSPERSON_UNASSIGNED.toLowerCase()) return "";
+  return s;
+}
+
 /** Settings table: smtp_user_1..smtp_pass_16 (for SQL SELECT / RETURNING fragments). */
 const SETTINGS_SMTP_1_16_COLUMNS = Array.from({ length: 16 }, (_, j) => {
   const n = j + 1;
@@ -1502,14 +1512,33 @@ app.put("/api/projects/:id", async (req, res) => {
       planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at,
       planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path,
       planning_jf_job_file_pdf_path } = req.body || {};
-    // Convert empty strings to null, but preserve non-empty strings
+    // Convert empty strings to null; stringify numbers for DB text columns.
     const processValue = (val) => {
       if (val === undefined) return null;
+      if (typeof val === "number") {
+        if (!Number.isFinite(val)) return null;
+        return String(val);
+      }
       if (typeof val === "string") {
         const trimmed = val.trim();
         return trimmed === "" ? null : trimmed;
       }
       return null;
+    };
+    /** `draftsperson` is never NULL in DB — empty/clear maps to sentinel. */
+    const processDraftsperson = (val) => {
+      if (val === undefined) return null;
+      if (val === null) return DRAFTSPERSON_UNASSIGNED;
+      if (typeof val === "number") {
+        if (!Number.isFinite(val)) return DRAFTSPERSON_UNASSIGNED;
+        const t = String(val).trim();
+        return t === "" ? DRAFTSPERSON_UNASSIGNED : t;
+      }
+      if (typeof val === "string") {
+        const t = val.trim();
+        return t === "" ? DRAFTSPERSON_UNASSIGNED : t;
+      }
+      return DRAFTSPERSON_UNASSIGNED;
     };
     /** Planning job-file doc columns are NOT NULL in DB; undefined = skip update; anything empty/invalid → "Not Done". */
     const processPlanningJfDoc = (val) => {
@@ -1776,7 +1805,7 @@ app.put("/api/projects/:id", async (req, res) => {
         processValue(drawings_viewed_date),
         processValue(drawings_sent_to_client_date),
         processValue(drawings_holder_date),
-        processValue(draftsperson),
+        processDraftsperson(draftsperson),
         processValue(drawings_holder),
         processValue(colours_status),
         processValue(colours_notes),
@@ -3361,18 +3390,7 @@ app.post("/api/emails/send-colours", async (req, res) => {
     // Format project name: "<Street>, <Suburb>"
     const projectName = `${street || ""}, ${suburb || ""}`.trim().replace(/^,\s*|,\s*$/g, "");
     
-    // Get draftsperson name
-    let draftspersonName = "";
-    if (project.draftsperson) {
-      try {
-        const draftspersonResult = await pool.query("SELECT name FROM users WHERE id = $1", [project.draftsperson]);
-        if (draftspersonResult.rows.length > 0) {
-          draftspersonName = draftspersonResult.rows[0].name || "";
-        }
-      } catch (e) {
-        console.error("Error fetching draftsperson name:", e);
-      }
-    }
+    const draftspersonName = draftspersonTokenDisplay(project.draftsperson);
     
     // Replace template variables in subject and body
     let subject = (template.subject || "").toString();
@@ -3773,18 +3791,7 @@ app.post("/api/emails/send-colours-reminder", async (req, res) => {
     // Format project name: "<Street>, <Suburb>"
     const projectName = `${street || ""}, ${suburb || ""}`.trim().replace(/^,\s*|,\s*$/g, "");
     
-    // Get draftsperson name
-    let draftspersonName = "";
-    if (project.draftsperson) {
-      try {
-        const draftspersonResult = await pool.query("SELECT name FROM users WHERE id = $1", [project.draftsperson]);
-        if (draftspersonResult.rows.length > 0) {
-          draftspersonName = draftspersonResult.rows[0].name || "";
-        }
-      } catch (e) {
-        console.error("Error fetching draftsperson name:", e);
-      }
-    }
+    const draftspersonName = draftspersonTokenDisplay(project.draftsperson);
     
     // Replace template variables in subject and body
     let subject = (template.subject || "").toString();
@@ -4800,18 +4807,7 @@ app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
     // Format project name: "<Street>, <Suburb>"
     const projectName = `${street || ""}, ${suburb || ""}`.trim().replace(/^,\s*|,\s*$/g, "");
     
-    // Get draftsperson name
-    let draftspersonName = "";
-    if (project.draftsperson) {
-      try {
-        const draftspersonResult = await pool.query("SELECT name FROM users WHERE id = $1", [project.draftsperson]);
-        if (draftspersonResult.rows.length > 0) {
-          draftspersonName = draftspersonResult.rows[0].name || "";
-        }
-      } catch (e) {
-        console.error("Error fetching draftsperson name:", e);
-      }
-    }
+    const draftspersonName = draftspersonTokenDisplay(project.draftsperson);
     
     // Replace template variables in subject and body
     let subject = (template.subject || "").toString();

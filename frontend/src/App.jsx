@@ -18,6 +18,7 @@ import ColourManager from "./pages/ColourManager";
 import StatusManager from "./pages/StatusManager";
 import AdminDrawingManagerRoute from "./components/AdminDrawingManagerRoute";
 import QpManager from "./pages/QpManager";
+import ProjectClaim from "./pages/ProjectClaim";
 import Sales from "./pages/Sales";
 import SalesTotals from "./pages/SalesTotals";
 import SalesAnalytics from "./pages/SalesAnalytics";
@@ -77,6 +78,7 @@ export default function App() {
             <Route path="/managers/status-manager" element={<StatusManager />} />
             <Route path="/managers/drawing-manager" element={<AdminDrawingManagerRoute />} />
             <Route path="/managers/qp-manager" element={<QpManager />} />
+            <Route path="/managers/project-claim" element={<ProjectClaim />} />
             <Route path="/sales" element={<Sales />} />
             <Route path="/sales-totals" element={<SalesTotals />} />
             <Route path="/sales-analytics" element={<SalesAnalytics />} />
