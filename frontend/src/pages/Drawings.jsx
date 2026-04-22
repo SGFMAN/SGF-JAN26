@@ -92,7 +92,13 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
       setDraftsperson(normalizeDraftspersonField(project.draftsperson));
       setDrawingsHolder(project.drawings_holder || "design team");
     }
-  }, [project?.id, project?.draftsperson, project?.drawings_status, project?.drawings_holder]);
+  }, [
+    project?.id,
+    project?.draftsperson,
+    project?.drawings_status,
+    project?.drawings_holder,
+    project?.updated_at,
+  ]);
 
   useEffect(() => {
     // Fetch in background - don't block rendering

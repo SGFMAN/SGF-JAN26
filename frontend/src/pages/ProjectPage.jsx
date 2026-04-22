@@ -263,6 +263,15 @@ export default function ProjectPage() {
     }
   }
 
+  // Reload project when opening Drawings so `draftsperson` and other fields match the DB
+  // (e.g. assigned via Project Claim while this page had an older in-memory `project`).
+  useEffect(() => {
+    if (!id) return;
+    if (activeView !== "drawings") return;
+    void fetchProject(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only when tab or id changes
+  }, [activeView, id]);
+
   // Debounced update function to prevent flash
   function updateProject(immediate = false) {
     if (immediate) {
