@@ -7,7 +7,9 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "export-project-excel": "node export_project_list_from_db.js",
-    "migrate:draftsperson": "node migrate-draftsperson-to-names.js"
+    "migrate:draftsperson": "node migrate-draftsperson-to-names.js",
+    "export:qld-addresses": "node export-qld-project-addresses.js",
+    "import:qld-contact1": "node import-qld-contact1-from-xlsx.js"
   },
   "keywords": [],
   "author": "",

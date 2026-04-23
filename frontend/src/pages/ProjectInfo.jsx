@@ -45,8 +45,14 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
   // For autosizing selects (now fixed at 300px)
   const statusSelectRef = useRef(null);
   const fileInputRef = useRef(null);
+  /** Debounced PUT for street / suburb / state / QP (same payload as notes blur save). */
+  const projectInfoSaveTimerRef = useRef(null);
 
   useEffect(() => {
+    if (projectInfoSaveTimerRef.current) {
+      clearTimeout(projectInfoSaveTimerRef.current);
+      projectInfoSaveTimerRef.current = null;
+    }
     setStatus(project?.status || "");
     setStreet(project?.street || "");
     setSuburb(project?.suburb || "");
@@ -57,6 +63,25 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
     setOnHold(project?.on_hold === "true" || project?.on_hold === true);
     setQpNumber(project?.qp_number || "");
   }, [project?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (projectInfoSaveTimerRef.current) {
+        clearTimeout(projectInfoSaveTimerRef.current);
+        projectInfoSaveTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  function scheduleProjectInfoAutosave() {
+    if (projectInfoSaveTimerRef.current) {
+      clearTimeout(projectInfoSaveTimerRef.current);
+    }
+    projectInfoSaveTimerRef.current = setTimeout(() => {
+      projectInfoSaveTimerRef.current = null;
+      void saveAllFields();
+    }, 550);
+  }
 
   async function saveAllFields() {
     if (!project?.id) return;
@@ -172,24 +197,28 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
     const newValue = e.target.value;
     setStreet(newValue);
     valuesRef.current.street = newValue;
+    scheduleProjectInfoAutosave();
   }
 
   function handleSuburbChange(e) {
     const newValue = e.target.value;
     setSuburb(newValue);
     valuesRef.current.suburb = newValue;
+    scheduleProjectInfoAutosave();
   }
 
   function handleStateChange(e) {
     const newValue = e.target.value;
     setState(newValue);
     valuesRef.current.state = newValue;
+    scheduleProjectInfoAutosave();
   }
 
   function handleQpNumberChange(e) {
     const newValue = e.target.value;
     setQpNumber(newValue);
     valuesRef.current.qpNumber = newValue;
+    scheduleProjectInfoAutosave();
   }
 
   async function handleSpecsChange(e) {

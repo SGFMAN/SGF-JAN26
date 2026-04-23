@@ -346,6 +346,8 @@ export default function Sales() {
 
   // Helper function to render a project cell
   function renderProjectCell(project, stream, currentCellColor, hoverColor, suburb, street, projectCost) {
+    const stateCode = (project?.state || "").toString().trim().toUpperCase();
+    const stateSuffix = stateCode ? ` [${stateCode}]` : "";
     return (
       <div
         key={project.id}
@@ -371,6 +373,7 @@ export default function Sales() {
       >
         <span style={{ textAlign: "left", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {suburb} - {street}
+          {stateSuffix}
           {(project?.classification || "").trim() === "Renovation" ? (
             <span style={{ fontWeight: 700 }}> [RENOVATION]</span>
           ) : null}

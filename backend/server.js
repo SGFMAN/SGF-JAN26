@@ -1060,6 +1060,25 @@ async function ensureSchema() {
       console.log(`Error adding column stream_settings_json:`, e.message);
     }
   }
+  // Drawing Settings page: notification emails (VIC / QLD / Investor Streams)
+  for (const col of [
+    "drawings_vic_design_to_salesperson_email",
+    "drawings_vic_salesperson_to_client_email",
+    "drawings_qld_design_to_salesperson_email",
+    "drawings_qld_salesperson_to_client_email",
+    "drawings_investor_streams_design_to_salesperson_email",
+    "drawings_investor_streams_salesperson_to_client_email",
+    "drawings_vic_design_to_salesperson_to_email",
+    "drawings_qld_design_to_salesperson_to_email",
+  ]) {
+    try {
+      await pool.query(`ALTER TABLE settings ADD COLUMN ${col} TEXT`);
+    } catch (e) {
+      if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+        console.log(`Error adding column ${col}:`, e.message);
+      }
+    }
+  }
   // VIC - SMTP (third account) columns
   for (const col of ["smtp_user_vic_smtp", "smtp_pass_vic_smtp"]) {
     try {
@@ -2266,7 +2285,7 @@ app.get("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      `SELECT id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, stream_settings_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at FROM settings WHERE id = 1`
+      `SELECT id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, stream_settings_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at FROM settings WHERE id = 1`
     );
     if (r.rows.length === 0) {
       const empty = {
@@ -2285,6 +2304,14 @@ app.get("/api/settings", async (req, res) => {
         send_drawings_qld: [],
         email_logo_path: null,
         letterhead_path: null,
+        drawings_vic_design_to_salesperson_email: null,
+        drawings_vic_salesperson_to_client_email: null,
+        drawings_qld_design_to_salesperson_email: null,
+        drawings_qld_salesperson_to_client_email: null,
+        drawings_investor_streams_design_to_salesperson_email: null,
+        drawings_investor_streams_salesperson_to_client_email: null,
+        drawings_vic_design_to_salesperson_to_email: null,
+        drawings_qld_design_to_salesperson_to_email: null,
         stream_settings_json: {},
         updated_at: null,
       };
@@ -2342,6 +2369,14 @@ app.put("/api/settings", async (req, res) => {
       send_drawings_qld,
       email_logo_path,
       letterhead_path,
+      drawings_vic_design_to_salesperson_email,
+      drawings_vic_salesperson_to_client_email,
+      drawings_qld_design_to_salesperson_email,
+      drawings_qld_salesperson_to_client_email,
+      drawings_investor_streams_design_to_salesperson_email,
+      drawings_investor_streams_salesperson_to_client_email,
+      drawings_vic_design_to_salesperson_to_email,
+      drawings_qld_design_to_salesperson_to_email,
       stream_settings_json,
     } = req.body || {};
     const body = req.body || {};
@@ -2387,8 +2422,8 @@ app.put("/api/settings", async (req, res) => {
     const smtpParams = [];
     for (let i = 1; i <= 16; i++) {
       smtpInsertCols.push(`smtp_user_${i}`, `smtp_pass_${i}`);
-      const uPn = 14 + (i - 1) * 2 + 1;
-      const pPn = 14 + (i - 1) * 2 + 2;
+      const uPn = 22 + (i - 1) * 2 + 1;
+      const pPn = 22 + (i - 1) * 2 + 2;
       smtpValuePlaceholders.push(`$${uPn}`, `$${pPn}`);
       smtpCoalesceParts.push(
         `smtp_user_${i} = COALESCE($${uPn}, settings.smtp_user_${i})`,
@@ -2398,13 +2433,13 @@ app.put("/api/settings", async (req, res) => {
     }
 
     const streamSettingsParam = processStreamSettingsJson(stream_settings_json);
-    const streamSettingsParamIndex = 14 + smtpParams.length + 1;
+    const streamSettingsParamIndex = 22 + smtpParams.length + 1;
 
     const r = await pool.query(
-      `INSERT INTO settings (id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, ${smtpInsertCols.join(
+      `INSERT INTO settings (id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, ${smtpInsertCols.join(
         ", "
       )}, stream_settings_json, updated_at)
-       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, ${smtpValuePlaceholders.join(", ")}, $${streamSettingsParamIndex}, NOW())
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, ${smtpValuePlaceholders.join(", ")}, $${streamSettingsParamIndex}, NOW())
        ON CONFLICT (id)
        DO UPDATE SET
          root_directory = COALESCE($1, settings.root_directory),
@@ -2421,10 +2456,18 @@ app.put("/api/settings", async (req, res) => {
          send_drawings_qld = COALESCE($12, settings.send_drawings_qld),
          email_logo_path = COALESCE($13, settings.email_logo_path),
          letterhead_path = COALESCE($14, settings.letterhead_path),
+         drawings_vic_design_to_salesperson_email = COALESCE($15, settings.drawings_vic_design_to_salesperson_email),
+         drawings_vic_salesperson_to_client_email = COALESCE($16, settings.drawings_vic_salesperson_to_client_email),
+         drawings_qld_design_to_salesperson_email = COALESCE($17, settings.drawings_qld_design_to_salesperson_email),
+         drawings_qld_salesperson_to_client_email = COALESCE($18, settings.drawings_qld_salesperson_to_client_email),
+         drawings_investor_streams_design_to_salesperson_email = COALESCE($19, settings.drawings_investor_streams_design_to_salesperson_email),
+         drawings_investor_streams_salesperson_to_client_email = COALESCE($20, settings.drawings_investor_streams_salesperson_to_client_email),
+         drawings_vic_design_to_salesperson_to_email = COALESCE($21, settings.drawings_vic_design_to_salesperson_to_email),
+         drawings_qld_design_to_salesperson_to_email = COALESCE($22, settings.drawings_qld_design_to_salesperson_to_email),
          ${smtpCoalesceParts.join(",\n         ")},
          stream_settings_json = COALESCE($${streamSettingsParamIndex}, settings.stream_settings_json),
          updated_at = NOW()
-       RETURNING id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, stream_settings_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at`,
+       RETURNING id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, stream_settings_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at`,
       [
         processValue(root_directory),
         processBoolean(create_folders),
@@ -2440,6 +2483,14 @@ app.put("/api/settings", async (req, res) => {
         processArray(send_drawings_qld),
         processValue(email_logo_path),
         processValue(letterhead_path),
+        processValue(drawings_vic_design_to_salesperson_email),
+        processValue(drawings_vic_salesperson_to_client_email),
+        processValue(drawings_qld_design_to_salesperson_email),
+        processValue(drawings_qld_salesperson_to_client_email),
+        processValue(drawings_investor_streams_design_to_salesperson_email),
+        processValue(drawings_investor_streams_salesperson_to_client_email),
+        processValue(drawings_vic_design_to_salesperson_to_email),
+        processValue(drawings_qld_design_to_salesperson_to_email),
         ...smtpParams,
         streamSettingsParam,
       ]
@@ -7698,7 +7749,7 @@ app.get("/api/hotlist", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, agreement_sent, updated_at FROM projects WHERE status = $1 ORDER BY updated_at DESC, id DESC",
+      "SELECT id, name, status, suburb, street, state, stream, client_name, email, phone, agreement_sent, updated_at FROM projects WHERE status = $1 ORDER BY updated_at DESC, id DESC",
       ["Hotlist"]
     );
     res.json(r.rows);
@@ -7718,7 +7769,7 @@ app.get("/api/hotlist/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, agreement_sent, updated_at FROM projects WHERE id = $1 AND status = $2",
+      "SELECT id, name, status, suburb, street, state, stream, client_name, email, phone, agreement_sent, updated_at FROM projects WHERE id = $1 AND status = $2",
       [id, "Hotlist"]
     );
     
@@ -7736,7 +7787,7 @@ app.get("/api/hotlist/:id", async (req, res) => {
 app.post("/api/hotlist", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const { street, suburb, state, client_name, email, phone } = req.body || {};
+    const { street, suburb, state, stream, client_name, email, phone } = req.body || {};
     
     // Derive name from street + suburb (same as normal projects)
     const projectName = `${street || ""}, ${suburb || ""}`.trim() || "New Hotlist Item";
@@ -7750,15 +7801,18 @@ app.post("/api/hotlist", async (req, res) => {
     const initialLogEntry = `${dateTimeStr} - Hotlist Item Created`;
 
     // Use same fields as normal projects - populate client1_name, client1_email, client1_phone
+    const streamVal = stream != null && String(stream).trim() ? String(stream).trim() : null;
+
     const r = await pool.query(
-      `INSERT INTO projects (name, status, suburb, street, state, client_name, email, phone, year, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, project_log, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done') RETURNING id, name, status, suburb, street, state, client_name, email, phone, updated_at`,
+      `INSERT INTO projects (name, status, suburb, street, state, stream, client_name, email, phone, year, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, project_log, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done') RETURNING id, name, status, suburb, street, state, stream, client_name, email, phone, updated_at`,
       [
         projectName,
         "Hotlist", // Status is "Hotlist"
         suburb ? suburb.trim() : null,
         street ? street.trim() : null,
         state ? state.trim() : null,
+        streamVal,
         client_name ? client_name.trim() : null,
         email ? email.trim() : null,
         phone ? phone.trim() : null,
@@ -7798,7 +7852,7 @@ app.put("/api/hotlist/:id", async (req, res) => {
   }
 
   try {
-    const { street, suburb, state, client_name, email, phone } = req.body || {};
+    const { street, suburb, state, stream, client_name, email, phone } = req.body || {};
     
     const processValue = (val) => {
       if (val === undefined) return null;
@@ -7813,16 +7867,19 @@ app.put("/api/hotlist/:id", async (req, res) => {
     const projectName = `${processValue(street) || ""}, ${processValue(suburb) || ""}`.trim() || "New Hotlist Item";
 
     // Keep client1 fields in sync with client_name, email, phone (same as normal projects)
+    const streamVal = processValue(stream);
+
     const r = await pool.query(
       `UPDATE projects 
-       SET name = $1, street = $2, suburb = $3, state = $4, client_name = $5, email = $6, phone = $7, 
-           client1_name = $5, client1_email = $6, client1_phone = $7, updated_at = NOW()
-       WHERE id = $8 AND status = $9 RETURNING id, name, status, suburb, street, state, client_name, email, phone, updated_at`,
+       SET name = $1, street = $2, suburb = $3, state = $4, stream = $5, client_name = $6, email = $7, phone = $8, 
+           client1_name = $6, client1_email = $7, client1_phone = $8, updated_at = NOW()
+       WHERE id = $9 AND status = $10 RETURNING id, name, status, suburb, street, state, stream, client_name, email, phone, updated_at`,
       [
         projectName,
         processValue(street),
         processValue(suburb),
         processValue(state),
+        streamVal,
         processValue(client_name),
         processValue(email),
         processValue(phone),
@@ -7856,7 +7913,7 @@ app.post("/api/hotlist/:id/agreement-sent", async (req, res) => {
       `UPDATE projects 
        SET agreement_sent = 'true', updated_at = NOW()
        WHERE id = $1 AND status = $2 
-       RETURNING id, name, status, suburb, street, state, client_name, email, phone, agreement_sent, updated_at`,
+       RETURNING id, name, status, suburb, street, state, stream, client_name, email, phone, agreement_sent, updated_at`,
       [id, "Hotlist"]
     );
 

@@ -12,6 +12,13 @@ import {
   normalizeDraftspersonField,
   isDraftspersonAssigned,
 } from "../utils/draftspersonSentinel";
+import {
+  resolveDesignToSalespersonFrom,
+  resolveDesignToSalespersonToEmails,
+  resolveSalespersonToClientFrom,
+  resolveSalespersonToClientToEmails,
+  parseEmailTemplateToAddressList,
+} from "../utils/drawingNotifyFrom";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -27,6 +34,14 @@ function escapeHtmlForEmail(text) {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
+}
+
+/** Matches template choice in handleEmailDrawingsToClient */
+function clientDrawingsTemplateNameFromStatus(ds) {
+  if (ds === "Drawings Complete") return "DRAWINGS - Client - General";
+  if (ds === "Concept Stage") return "DRAWINGS - Client - CONCEPT";
+  if (ds === "Working Drawing Stage") return "DRAWINGS - Client - WD";
+  return null;
 }
 
 export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) {
@@ -138,7 +153,8 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
 
   const sendDrawingsToClientsEnabled = isStreamSendDrawingsToClientsEnabled(
     project?.stream,
-    streamSettingsJson
+    streamSettingsJson,
+    project
   );
 
   // Update contentEditable when emailPreviewBody changes and modal is open
@@ -1549,15 +1565,34 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
       return;
     }
 
-    const clientTo =
-      sendDrawingsToClientsEnabled && built.activeClientEmails.length > 0 ? built.activeClientEmails : [];
-    const extraTo = getStreamExtraDrawingEmails(project.stream, streamSettingsJson);
+    const clientTo = sendDrawingsToClientsEnabled ? getProjectClientEmailsForDrawings(project) : [];
+    const extraTo = getStreamExtraDrawingEmails(project.stream, streamSettingsJson, project);
     const allTo = mergeUniqueEmails(clientTo, extraTo);
+
+    let settingsForFrom = {};
+    try {
+      const sr = await fetch(`${API_URL}/api/settings`);
+      if (sr.ok) settingsForFrom = await sr.json();
+    } catch (e) {
+      console.warn("Could not load settings for drawing From override:", e);
+    }
+    const clientFromResolved = resolveSalespersonToClientFrom(
+      settingsForFrom,
+      project,
+      built.template.from_address || ""
+    );
+    const templateToList = parseEmailTemplateToAddressList(built.template.to_addresses);
+    const clientToResolved = resolveSalespersonToClientToEmails(
+      settingsForFrom,
+      project,
+      templateToList,
+      allTo
+    );
 
     setVicSmtpFromOptions([]);
     setEmailDrawingsFlowKind("client");
-    setEmailDrawingsToClientTo(allTo.join(", "));
-    setEmailDrawingsToClientFrom(built.template.from_address || "");
+    setEmailDrawingsToClientTo(clientToResolved.join(", "));
+    setEmailDrawingsToClientFrom(clientFromResolved);
     setEmailDrawingsToClientSubject(built.subject);
     setEmailDrawingsToClientBody(built.body);
     setShowEmailDrawingsToClientModal(true);
@@ -1712,28 +1747,28 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
           subject = subject.replace(/{Draftsperson}/g, draftspersonName);
           subject = subject.replace(/{Position}/g, draftspersonPosition);
 
-          // Get to addresses from template
-          let toAddresses = [];
-          if (template.to_addresses) {
-            if (Array.isArray(template.to_addresses)) {
-              toAddresses = template.to_addresses;
-            } else {
-              try {
-                toAddresses = JSON.parse(template.to_addresses);
-              } catch (e) {
-                toAddresses = template.to_addresses
-                  .split(",")
-                  .map((a) => a.trim())
-                  .filter((a) => a.length > 0);
-              }
-            }
-          }
+          const templateToList = parseEmailTemplateToAddressList(template.to_addresses);
 
-          const toEmails = toAddresses.map((a) => String(a).trim()).filter((a) => a.length > 0);
-          if (toEmails.length === 0) {
+          const settingsRes = await fetch(`${API_URL}/api/settings`);
+          if (!settingsRes.ok) {
+            throw new Error("Failed to load settings for drawing email From address.");
+          }
+          const settingsData = await settingsRes.json();
+          const toEmailsResolved = resolveDesignToSalespersonToEmails(
+            settingsData,
+            project,
+            templateToList
+          );
+          if (toEmailsResolved.length === 0) {
             throw new Error("No recipient addresses configured for this template.");
           }
-          if (!template.from_address || !String(template.from_address).trim()) {
+
+          const designFromResolved = resolveDesignToSalespersonFrom(
+            settingsData,
+            project,
+            template.from_address || ""
+          );
+          if (!designFromResolved || !String(designFromResolved).trim()) {
             throw new Error("Template has no From address. Please set it in Settings → Email Templates.");
           }
 
@@ -1742,9 +1777,9 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               projectId: project.id,
-              toEmails,
+              toEmails: toEmailsResolved,
               customBody: body,
-              from: template.from_address,
+              from: designFromResolved,
               subject,
               attachDrawings: false,
             }),
@@ -1846,23 +1881,29 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
       subject = subject.replace(/{Draftsperson}/g, draftspersonName);
       subject = subject.replace(/{Position}/g, draftspersonPosition);
 
-      // Get to addresses from template
-      let toAddresses = [];
-      if (template.to_addresses) {
-        if (Array.isArray(template.to_addresses)) {
-          toAddresses = template.to_addresses;
-        } else {
-          try {
-            toAddresses = JSON.parse(template.to_addresses);
-          } catch (e) {
-            toAddresses = template.to_addresses.split(",").map(a => a.trim()).filter(a => a.length > 0);
-          }
-        }
+      const templateToList = parseEmailTemplateToAddressList(template.to_addresses);
+
+      let settingsForPreview = {};
+      try {
+        const settingsRes = await fetch(`${API_URL}/api/settings`);
+        if (settingsRes.ok) settingsForPreview = await settingsRes.json();
+      } catch (e) {
+        console.warn("Could not load settings for drawing From override:", e);
       }
+      const previewToResolved = resolveDesignToSalespersonToEmails(
+        settingsForPreview,
+        project,
+        templateToList
+      );
+      const previewFromResolved = resolveDesignToSalespersonFrom(
+        settingsForPreview,
+        project,
+        template.from_address || ""
+      );
 
       // Open preview modal
-      setEmailPreviewTo(toAddresses.join(", "));
-      setEmailPreviewFrom(template.from_address || "");
+      setEmailPreviewTo(previewToResolved.join(", "));
+      setEmailPreviewFrom(previewFromResolved);
       setEmailPreviewSubject(subject);
       setEmailPreviewBody(body);
       setEmailPreviewType("drafting"); // Mark as drafting notes email
@@ -2557,7 +2598,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
 
   function handleEmailClient() {
     const { emails: clientEmails } = getDrawingsClientRecipients();
-    const extraEmails = getStreamExtraDrawingEmails(project?.stream, streamSettingsJson);
+    const extraEmails = getStreamExtraDrawingEmails(project?.stream, streamSettingsJson, project);
     const hasClients = sendDrawingsToClientsEnabled && clientEmails.length > 0;
     if (!hasClients && extraEmails.length === 0) {
       alert(
@@ -2585,7 +2626,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
     }
 
     const { emails: clientEmails } = getDrawingsClientRecipients();
-    const extraEmails = getStreamExtraDrawingEmails(project.stream, streamSettingsJson);
+    const extraEmails = getStreamExtraDrawingEmails(project.stream, streamSettingsJson, project);
     const clientTo = sendDrawingsToClientsEnabled ? clientEmails : [];
     const activeEmails = mergeUniqueEmails(clientTo, extraEmails);
     if (activeEmails.length === 0) {
@@ -2600,6 +2641,43 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
       return;
     }
 
+    let sendFromOverride = "";
+    let toEmailsResolved = activeEmails;
+    try {
+      const templateName = clientDrawingsTemplateNameFromStatus(drawingsStatus);
+      const [settingsRes, templatesRes] = await Promise.all([
+        fetch(`${API_URL}/api/settings`),
+        templateName ? fetch(`${API_URL}/api/email-templates`) : Promise.resolve(null),
+      ]);
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      let templateFrom = "";
+      let templateToList = [];
+      if (templateName && templatesRes && templatesRes.ok) {
+        const templates = await templatesRes.json();
+        const tmpl = Array.isArray(templates)
+          ? templates.find((t) => t.name === templateName)
+          : null;
+        templateFrom = (tmpl?.from_address || "").trim();
+        templateToList = parseEmailTemplateToAddressList(tmpl?.to_addresses);
+      }
+      sendFromOverride = resolveSalespersonToClientFrom(settingsData, project, templateFrom);
+      toEmailsResolved = resolveSalespersonToClientToEmails(
+        settingsData,
+        project,
+        templateToList,
+        activeEmails
+      );
+    } catch (e) {
+      console.warn("Could not resolve From/To for client drawings email:", e);
+    }
+
+    if (!toEmailsResolved || toEmailsResolved.length === 0) {
+      alert(
+        "No recipient addresses for this send. Add stream extra emails in Settings → Stream Settings, enable Send to Clients, and/or add active client emails on the project."
+      );
+      return;
+    }
+
     try {
       await runWithEmailOverlay(async () => {
         const response = await fetch(`${API_URL}/api/emails/send-drawings`, {
@@ -2609,9 +2687,12 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
           },
           body: JSON.stringify({
             projectId: project.id,
-            toEmails: activeEmails, // Send array of emails
+            toEmails: toEmailsResolved,
             notes: emailClientNotes,
             attachDrawings: attachDrawings,
+            ...(sendFromOverride && String(sendFromOverride).trim()
+              ? { from: String(sendFromOverride).trim() }
+              : {}),
           }),
         });
 
@@ -3252,7 +3333,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
             </h3>
             {(() => {
               const { emails: clientEmails, labels: clientNames } = getDrawingsClientRecipients();
-              const extraEmails = getStreamExtraDrawingEmails(project?.stream, streamSettingsJson);
+              const extraEmails = getStreamExtraDrawingEmails(project?.stream, streamSettingsJson, project);
               return (
                 <div style={{ marginBottom: "16px", padding: "12px", background: "#f5f5f5", borderRadius: "8px" }}>
                   <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "8px", fontWeight: "500" }}>

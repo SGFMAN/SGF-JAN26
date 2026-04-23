@@ -20,6 +20,51 @@ const PURPLE_HOVER = "#6d28d9";
 
 const API_URL = "";
 
+/** Same values as `NewProject_3_ProjectCost` — stored on `projects.stream`. */
+const HOTLIST_PROJECT_STREAM_OPTIONS = [
+  "SGF - VIC",
+  "SGF - QLD",
+  "Dual Dwelling",
+  "ATA",
+  "Pumped on Property",
+  "Henderson",
+  "Creat Cash Flow",
+  "Fresh Start Advisory",
+];
+
+function normalizeHotlistProjectStream(s) {
+  const t = (s || "").trim();
+  if (!t) return "";
+  if (t === "Pumped on Property" || t === "Pumped On Property") return "Pumped On Property";
+  if (t === "Creat Cash Flow" || t === "Create Cash Flow") return "Create Cash Flow";
+  return t;
+}
+
+function isGreenStreamHotlistItem(item) {
+  const t = normalizeHotlistProjectStream(item?.stream).toLowerCase();
+  if (!t) return false;
+  const greens = new Set([
+    "dual dwelling",
+    "ata",
+    "pumped on property",
+    "henderson",
+    "create cash flow",
+    "creat cash flow",
+    "fresh start advisory",
+  ]);
+  return greens.has(t);
+}
+
+/** Buckets for list layout; unknown stream values go to `unassigned` so they stay visible. */
+function hotlistStreamGroup(item) {
+  const st = (item?.stream || "").trim();
+  if (!st) return "unassigned";
+  if (st === "SGF - VIC") return "sgf_vic";
+  if (st === "SGF - QLD") return "sgf_qld";
+  if (isGreenStreamHotlistItem(item)) return "green";
+  return "unassigned";
+}
+
 export default function Hotlist() {
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const location = useLocation();
@@ -42,7 +87,7 @@ export default function Hotlist() {
   const [soldEmailFrom, setSoldEmailFrom] = useState("");
   const [soldEmailSubject, setSoldEmailSubject] = useState("");
   const [soldEmailBody, setSoldEmailBody] = useState("");
-  const [currentModal, setCurrentModal] = useState(1); // 1–2 = New/Edit address+client, 3–6 = Sold flow (ProjectCost→Folders→PDF→Email)
+  const [currentModal, setCurrentModal] = useState(1); // New: 1–3 (address, client, stream). Edit: 1–2. Sold: 3–7 (ProjectCost→…)
   const [createdProjectId, setCreatedProjectId] = useState(null);
   const [createdProjectForEmail, setCreatedProjectForEmail] = useState(null);
   const [agreementSentItems, setAgreementSentItems] = useState(new Set());
@@ -151,7 +196,7 @@ export default function Hotlist() {
       phone: item.phone || "",
       projectCost: "",
       deposit: "",
-      stream: "",
+      stream: item.stream || "",
       salesperson: "",
       proposalFile: null,
       customDeposit: "",
@@ -169,17 +214,22 @@ export default function Hotlist() {
       setCurrentModal(2);
     } else if (currentModal === 2) {
       if (isNewItemOpen) {
-        // For new items, only need modals 1 and 2
-        handleCreateHotlistItem();
+        setCurrentModal(3);
       } else if (isEditItemOpen) {
-        // For editing, also only need modals 1 and 2
         handleUpdateHotlistItem();
       } else if (isSoldFlowOpen) {
-        // For sold flow, continue to modal 3
         setCurrentModal(3);
       }
     } else if (currentModal === 3) {
-      setCurrentModal(4);
+      if (isNewItemOpen) {
+        if (!formData.stream || !String(formData.stream).trim()) {
+          alert("Please select a stream for this hotlist entry.");
+          return;
+        }
+        void handleCreateHotlistItem();
+      } else {
+        setCurrentModal(4);
+      }
     } else if (currentModal === 4) {
       // This is handled by NewProject4's handleCreateProject
     }
@@ -242,6 +292,7 @@ export default function Hotlist() {
           street: formData.street || null,
           suburb: formData.suburb || null,
           state: formData.state || null,
+          stream: formData.stream ? String(formData.stream).trim() : null,
           client_name: formData.clientName || null,
           email: formData.email || null,
           phone: formData.phone || null,
@@ -274,6 +325,12 @@ export default function Hotlist() {
           street: formData.street || null,
           suburb: formData.suburb || null,
           state: formData.state || null,
+          stream: (() => {
+            const fromForm = formData.stream != null ? String(formData.stream).trim() : "";
+            if (fromForm) return fromForm;
+            const fromItem = editingItem?.stream != null ? String(editingItem.stream).trim() : "";
+            return fromItem || null;
+          })(),
           client_name: formData.clientName || null,
           email: formData.email || null,
           phone: formData.phone || null,
@@ -312,6 +369,33 @@ export default function Hotlist() {
     } catch (err) {
       console.error("Error deleting hotlist item:", err);
       alert("Error deleting hotlist item: " + err.message);
+    }
+  }
+
+  async function handleHotlistStreamChange(item, nextStream) {
+    const streamVal = nextStream != null && String(nextStream).trim() ? String(nextStream).trim() : null;
+    try {
+      const response = await fetch(`${API_URL}/api/hotlist/${item.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          street: item.street || null,
+          suburb: item.suburb || null,
+          state: item.state || null,
+          stream: streamVal,
+          client_name: item.client_name || null,
+          email: item.email || null,
+          phone: item.phone || null,
+        }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => response.statusText);
+        throw new Error(errorText);
+      }
+      await fetchHotlist();
+    } catch (err) {
+      console.error("Error updating hotlist stream:", err);
+      alert("Error updating stream: " + err.message);
     }
   }
 
@@ -588,39 +672,271 @@ export default function Hotlist() {
     }
   }
 
-  // Helper function to check if agreement is sent
   const isAgreementSent = (item) => {
-    return item.agreement_sent === 'true' || item.agreement_sent === true || agreementSentItems.has(item.id);
+    return item.agreement_sent === "true" || item.agreement_sent === true || agreementSentItems.has(item.id);
   };
 
-  // Filter and sort items by state, with Agreement Sent items at the top
-  const filterAndSortByState = (items, stateFilter) => {
-    return items
-      .filter(item => {
-        const itemState = (item.state || "").toUpperCase();
-        return itemState === stateFilter;
-      })
-      .sort((a, b) => {
-        // First, sort by Agreement Sent status (Agreement Sent items first)
-        const aSent = isAgreementSent(a);
-        const bSent = isAgreementSent(b);
-        if (aSent !== bSent) {
-          return aSent ? -1 : 1;
-        }
-        // Then sort alphabetically by suburb, then street
-        const suburbA = (a.suburb || "").toLowerCase();
-        const suburbB = (b.suburb || "").toLowerCase();
-        if (suburbA !== suburbB) {
-          return suburbA.localeCompare(suburbB);
-        }
-        const streetA = (a.street || "").toLowerCase();
-        const streetB = (b.street || "").toLowerCase();
-        return streetA.localeCompare(streetB);
-      });
-  };
+  function getAgreementRowBackground(item) {
+    if (!isAgreementSent(item)) return WHITE;
+    const st = (item.stream || "").trim();
+    if (st === "SGF - VIC") return "#4D93D9";
+    if (st === "SGF - QLD") return "#D54358";
+    if (isGreenStreamHotlistItem(item)) return "#92D050";
+    return "#6b7280";
+  }
 
-  const vicItems = filterAndSortByState(hotlistItems, "VIC");
-  const qldItems = filterAndSortByState(hotlistItems, "QLD");
+  function sortHotlistItems(items) {
+    return [...items].sort((a, b) => {
+      const aSent = isAgreementSent(a);
+      const bSent = isAgreementSent(b);
+      if (aSent !== bSent) return aSent ? -1 : 1;
+      const suburbA = (a.suburb || "").toLowerCase();
+      const suburbB = (b.suburb || "").toLowerCase();
+      if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
+      const streetA = (a.street || "").toLowerCase();
+      const streetB = (b.street || "").toLowerCase();
+      return streetA.localeCompare(streetB);
+    });
+  }
+
+  const unassignedItems = React.useMemo(
+    () => sortHotlistItems(hotlistItems.filter((item) => hotlistStreamGroup(item) === "unassigned")),
+    [hotlistItems, agreementSentItems]
+  );
+
+  const sgfVicItems = React.useMemo(
+    () => sortHotlistItems(hotlistItems.filter((item) => hotlistStreamGroup(item) === "sgf_vic")),
+    [hotlistItems, agreementSentItems]
+  );
+
+  const sgfQldItems = React.useMemo(
+    () => sortHotlistItems(hotlistItems.filter((item) => hotlistStreamGroup(item) === "sgf_qld")),
+    [hotlistItems, agreementSentItems]
+  );
+
+  const greenStreamItems = React.useMemo(
+    () => sortHotlistItems(hotlistItems.filter((item) => hotlistStreamGroup(item) === "green")),
+    [hotlistItems, agreementSentItems]
+  );
+
+  function renderHotlistRow(item, columnAccent) {
+    const displayName = `${item.street || ""}, ${item.suburb || ""}`.trim() || "Unnamed Address";
+    const itemIsAgreementSent = isAgreementSent(item);
+    const rowBg = getAgreementRowBackground(item);
+    const useLightText = itemIsAgreementSent;
+    const accent =
+      columnAccent === "qld"
+        ? { agreementBg: "#D54358", agreementHover: "#c4364b" }
+        : columnAccent === "green"
+          ? { agreementBg: "#92D050", agreementHover: "#7ab842" }
+          : columnAccent === "neutral"
+            ? { agreementBg: MONUMENT, agreementHover: "#1a1a1a" }
+            : { agreementBg: "#4D93D9", agreementHover: "#3d7bc9" };
+
+    const streamVal = item.stream || "";
+    const streamKnown = HOTLIST_PROJECT_STREAM_OPTIONS.includes(streamVal);
+
+    return (
+      <div
+        key={item.id}
+        style={{
+          background: rowBg,
+          borderRadius: "10px",
+          padding: "8px 16px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+          flexWrap: "wrap",
+          gap: "8px",
+        }}
+      >
+        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", minWidth: 0 }}>
+          <span
+            style={{
+              fontSize: "1rem",
+              fontWeight: 600,
+              color: useLightText ? WHITE : MONUMENT,
+            }}
+          >
+            {displayName}
+          </span>
+          {item.state ? (
+            <>
+              <span style={{ color: useLightText ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
+              <span style={{ fontSize: "0.9rem", color: useLightText ? "rgba(255,255,255,0.9)" : "#666" }}>
+                {item.state}
+              </span>
+            </>
+          ) : null}
+          {item.client_name ? (
+            <>
+              <span style={{ color: useLightText ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
+              <span style={{ fontSize: "0.9rem", color: useLightText ? "rgba(255,255,255,0.9)" : "#666" }}>
+                {item.client_name}
+              </span>
+            </>
+          ) : null}
+          {item.email ? (
+            <>
+              <span style={{ color: useLightText ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
+              <span style={{ fontSize: "0.9rem", color: useLightText ? "rgba(255,255,255,0.8)" : "#888" }}>
+                {item.email}
+              </span>
+            </>
+          ) : null}
+        </div>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+          <select
+            aria-label="Project stream"
+            value={streamVal || ""}
+            onChange={(e) => handleHotlistStreamChange(item, e.target.value)}
+            style={{
+              padding: "6px 8px",
+              borderRadius: "8px",
+              border: `1px solid ${MONUMENT}55`,
+              fontSize: "0.82rem",
+              color: MONUMENT,
+              backgroundColor: WHITE,
+              minWidth: "160px",
+              maxWidth: "220px",
+              cursor: "pointer",
+            }}
+          >
+            <option value="" style={{ color: MONUMENT, backgroundColor: WHITE }}>
+              — Stream —
+            </option>
+            {HOTLIST_PROJECT_STREAM_OPTIONS.map((opt) => (
+              <option key={opt} value={opt} style={{ color: MONUMENT, backgroundColor: WHITE }}>
+                {opt}
+              </option>
+            ))}
+            {!streamKnown && streamVal ? (
+              <option value={streamVal} style={{ color: MONUMENT, backgroundColor: WHITE }}>
+                {streamVal} (current)
+              </option>
+            ) : null}
+          </select>
+          {!itemIsAgreementSent ? (
+            <button
+              type="button"
+              onClick={() => handleAgreementSentClick(item)}
+              style={{
+                background: accent.agreementBg,
+                color: WHITE,
+                border: `1px solid ${accent.agreementBg}`,
+                borderRadius: "8px",
+                padding: "8px 16px",
+                fontSize: "0.9rem",
+                fontWeight: 500,
+                cursor: "pointer",
+                transition: "background 0.2s",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = accent.agreementHover)}
+              onMouseLeave={(e) => (e.currentTarget.style.background = accent.agreementBg)}
+            >
+              Agreement Sent
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => handleSoldClick(item)}
+            style={{
+              background: "#33cc33",
+              color: WHITE,
+              border: "1px solid #33cc33",
+              borderRadius: "8px",
+              padding: "8px 16px",
+              fontSize: "0.9rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#2bb32b")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#33cc33")}
+          >
+            Sold
+          </button>
+          <button
+            type="button"
+            onClick={() => handleMakeJobFileClick(item)}
+            style={{
+              background: PURPLE,
+              color: WHITE,
+              border: `1px solid ${PURPLE}`,
+              borderRadius: "8px",
+              padding: "8px 16px",
+              fontSize: "0.9rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = PURPLE_HOVER)}
+            onMouseLeave={(e) => (e.currentTarget.style.background = PURPLE)}
+          >
+            Make Job File
+          </button>
+          <button
+            type="button"
+            onClick={() => handleEmailClick(item)}
+            style={{
+              background: "#FFA500",
+              color: WHITE,
+              border: "1px solid #FFA500",
+              borderRadius: "8px",
+              padding: "8px 16px",
+              fontSize: "0.9rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#FF8C42")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#FFA500")}
+          >
+            Email
+          </button>
+          <button
+            type="button"
+            onClick={() => handleEditItemClick(item)}
+            style={{
+              background: MONUMENT,
+              color: WHITE,
+              border: "none",
+              borderRadius: "8px",
+              padding: "8px 16px",
+              fontSize: "0.9rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={() => handleDeleteItem(item.id)}
+            style={{
+              background: "#cc3333",
+              color: WHITE,
+              border: "none",
+              borderRadius: "8px",
+              padding: "8px 16px",
+              fontSize: "0.9rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#b71c1c")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#cc3333")}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -1095,466 +1411,47 @@ export default function Hotlist() {
             <div style={{ color: MONUMENT, fontSize: "1rem" }}>Loading...</div>
           ) : error ? (
             <div style={{ color: "#cc3333", fontSize: "1rem" }}>Error: {error}</div>
-          ) : (vicItems.length === 0 && qldItems.length === 0) ? (
+          ) : hotlistItems.length === 0 ? (
             <div style={{ color: MONUMENT, fontSize: "1rem" }}>No hotlist items yet. Click "+ New Address" to add one.</div>
           ) : (
-            <>
-              {/* VIC Section - Top Half */}
-              <div
-                style={{
-                  flex: 1,
-                  display: "flex",
-                  flexDirection: "column",
-                  minHeight: 0,
-                }}
-              >
-                <h2 style={{ color: MONUMENT, fontSize: "1.2rem", fontWeight: 600, marginBottom: "16px", marginTop: 0 }}>
-                  VIC
-                </h2>
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "12px",
-                    overflowY: "auto",
-                    flex: 1,
-                  }}
-                >
-                  {vicItems.length === 0 ? (
-                    <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No VIC items</div>
-                  ) : (
-                    vicItems.map((item) => {
-                      const displayName = `${item.street || ""}, ${item.suburb || ""}`.trim() || "Unnamed Address";
-                      const itemIsAgreementSent = isAgreementSent(item);
-                      return (
-                        <div
-                          key={item.id}
-                          style={{
-                            background: itemIsAgreementSent ? "#4D93D9" : WHITE,
-                            borderRadius: "10px",
-                            padding: "8px 16px",
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-                          }}
-                        >
-                          <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-                            <span
-                              style={{
-                                fontSize: "1rem",
-                                fontWeight: 600,
-                                color: itemIsAgreementSent ? WHITE : MONUMENT,
-                              }}
-                            >
-                              {displayName}
-                            </span>
-                            {item.state && (
-                              <>
-                                <span style={{ color: itemIsAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
-                                <span
-                                  style={{
-                                    fontSize: "0.9rem",
-                                    color: itemIsAgreementSent ? "rgba(255,255,255,0.9)" : "#666",
-                                  }}
-                                >
-                                  {item.state}
-                                </span>
-                              </>
-                            )}
-                            {item.client_name && (
-                              <>
-                                <span style={{ color: itemIsAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
-                                <span
-                                  style={{
-                                    fontSize: "0.9rem",
-                                    color: itemIsAgreementSent ? "rgba(255,255,255,0.9)" : "#666",
-                                  }}
-                                >
-                                  {item.client_name}
-                                </span>
-                              </>
-                            )}
-                            {item.email && (
-                              <>
-                                <span style={{ color: itemIsAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
-                                <span
-                                  style={{
-                                    fontSize: "0.9rem",
-                                    color: itemIsAgreementSent ? "rgba(255,255,255,0.8)" : "#888",
-                                  }}
-                                >
-                                  {item.email}
-                                </span>
-                              </>
-                            )}
-                            {item.phone && (
-                              <>
-                                <span style={{ color: itemIsAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
-                                <span
-                                  style={{
-                                    fontSize: "0.9rem",
-                                    color: itemIsAgreementSent ? "rgba(255,255,255,0.8)" : "#888",
-                                  }}
-                                >
-                                  {item.phone}
-                                </span>
-                              </>
-                            )}
-                          </div>
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: "8px",
-                              alignItems: "center",
-                            }}
-                          >
-                            {!itemIsAgreementSent && (
-                              <button
-                                onClick={() => handleAgreementSentClick(item)}
-                                style={{
-                                background: "#4D93D9",
-                                  color: WHITE,
-                                border: `1px solid #4D93D9`,
-                                  borderRadius: "8px",
-                                  padding: "8px 16px",
-                                  fontSize: "0.9rem",
-                                  fontWeight: 500,
-                                  cursor: "pointer",
-                                  transition: "background 0.2s",
-                                }}
-                                onMouseEnter={(e) => (e.currentTarget.style.background = "#3d7bc9")}
-                                onMouseLeave={(e) => (e.currentTarget.style.background = "#4D93D9")}
-                              >
-                                Agreement Sent
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleSoldClick(item)}
-                              style={{
-                                background: "#33cc33",
-                                color: WHITE,
-                                border: `1px solid #33cc33`,
-                                borderRadius: "8px",
-                                padding: "8px 16px",
-                                fontSize: "0.9rem",
-                                fontWeight: 500,
-                                cursor: "pointer",
-                                transition: "background 0.2s",
-                              }}
-                              onMouseEnter={(e) => (e.currentTarget.style.background = "#2bb32b")}
-                              onMouseLeave={(e) => (e.currentTarget.style.background = "#33cc33")}
-                            >
-                              Sold
-                            </button>
-                            <button
-                              onClick={() => handleMakeJobFileClick(item)}
-                              style={{
-                                background: PURPLE,
-                                color: WHITE,
-                                border: `1px solid ${PURPLE}`,
-                                borderRadius: "8px",
-                                padding: "8px 16px",
-                                fontSize: "0.9rem",
-                                fontWeight: 500,
-                                cursor: "pointer",
-                                transition: "background 0.2s",
-                              }}
-                              onMouseEnter={(e) => (e.currentTarget.style.background = PURPLE_HOVER)}
-                              onMouseLeave={(e) => (e.currentTarget.style.background = PURPLE)}
-                            >
-                              Make Job File
-                            </button>
-                            <button
-                              onClick={() => handleEmailClick(item)}
-                              style={{
-                                background: "#FFA500",
-                                color: WHITE,
-                                border: `1px solid #FFA500`,
-                                borderRadius: "8px",
-                                padding: "8px 16px",
-                                fontSize: "0.9rem",
-                                fontWeight: 500,
-                                cursor: "pointer",
-                                transition: "background 0.2s",
-                              }}
-                              onMouseEnter={(e) => (e.currentTarget.style.background = "#FF8C42")}
-                              onMouseLeave={(e) => (e.currentTarget.style.background = "#FFA500")}
-                            >
-                              Email
-                            </button>
-                            <button
-                              onClick={() => handleEditItemClick(item)}
-                              style={{
-                                background: MONUMENT,
-                                color: WHITE,
-                                border: "none",
-                                borderRadius: "8px",
-                                padding: "8px 16px",
-                                fontSize: "0.9rem",
-                                fontWeight: 500,
-                                cursor: "pointer",
-                                transition: "background 0.2s",
-                              }}
-                              onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
-                              onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeleteItem(item.id)}
-                              style={{
-                                background: "#cc3333",
-                                color: WHITE,
-                                border: "none",
-                                borderRadius: "8px",
-                                padding: "8px 16px",
-                                fontSize: "0.9rem",
-                                fontWeight: 500,
-                                cursor: "pointer",
-                                transition: "background 0.2s",
-                              }}
-                              onMouseEnter={(e) => (e.currentTarget.style.background = "#b71c1c")}
-                              onMouseLeave={(e) => (e.currentTarget.style.background = "#cc3333")}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "32px",
+                flex: 1,
+                minHeight: 0,
+                overflowY: "auto",
+              }}
+            >
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px", width: "100%" }}>
+                <h2 style={{ color: MONUMENT, fontSize: "1.15rem", fontWeight: 600, margin: 0 }}>SGF - VIC</h2>
+                {sgfVicItems.length === 0 ? (
+                  <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No items</div>
+                ) : (
+                  sgfVicItems.map((item) => renderHotlistRow(item, "vic"))
+                )}
               </div>
-
-              {/* QLD Section - Bottom Half */}
-              <div
-                style={{
-                  flex: 1,
-                  display: "flex",
-                  flexDirection: "column",
-                  minHeight: 0,
-                }}
-              >
-                <h2 style={{ color: MONUMENT, fontSize: "1.2rem", fontWeight: 600, marginBottom: "16px", marginTop: 0 }}>
-                  QLD
-                </h2>
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "12px",
-                    overflowY: "auto",
-                    flex: 1,
-                  }}
-                >
-                  {qldItems.length === 0 ? (
-                    <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No QLD items</div>
-                  ) : (
-                    qldItems.map((item) => {
-                      const displayName = `${item.street || ""}, ${item.suburb || ""}`.trim() || "Unnamed Address";
-                      const itemIsAgreementSent = isAgreementSent(item);
-                      return (
-                        <div
-                          key={item.id}
-                          style={{
-                            background: itemIsAgreementSent ? "#4D93D9" : WHITE,
-                            borderRadius: "10px",
-                            padding: "8px 16px",
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-                          }}
-                        >
-                          <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-                            <span
-                              style={{
-                                fontSize: "1rem",
-                                fontWeight: 600,
-                                color: itemIsAgreementSent ? WHITE : MONUMENT,
-                              }}
-                            >
-                              {displayName}
-                            </span>
-                            {item.state && (
-                              <>
-                                <span style={{ color: itemIsAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
-                                <span
-                                  style={{
-                                    fontSize: "0.9rem",
-                                    color: itemIsAgreementSent ? "rgba(255,255,255,0.9)" : "#666",
-                                  }}
-                                >
-                                  {item.state}
-                                </span>
-                              </>
-                            )}
-                            {item.client_name && (
-                              <>
-                                <span style={{ color: itemIsAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
-                                <span
-                                  style={{
-                                    fontSize: "0.9rem",
-                                    color: itemIsAgreementSent ? "rgba(255,255,255,0.9)" : "#666",
-                                  }}
-                                >
-                                  {item.client_name}
-                                </span>
-                              </>
-                            )}
-                            {item.email && (
-                              <>
-                                <span style={{ color: itemIsAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
-                                <span
-                                  style={{
-                                    fontSize: "0.9rem",
-                                    color: itemIsAgreementSent ? "rgba(255,255,255,0.8)" : "#888",
-                                  }}
-                                >
-                                  {item.email}
-                                </span>
-                              </>
-                            )}
-                            {item.phone && (
-                              <>
-                                <span style={{ color: itemIsAgreementSent ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
-                                <span
-                                  style={{
-                                    fontSize: "0.9rem",
-                                    color: itemIsAgreementSent ? "rgba(255,255,255,0.8)" : "#888",
-                                  }}
-                                >
-                                  {item.phone}
-                                </span>
-                              </>
-                            )}
-                          </div>
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: "8px",
-                              alignItems: "center",
-                            }}
-                          >
-                            {!itemIsAgreementSent && (
-                              <button
-                                onClick={() => handleAgreementSentClick(item)}
-                                style={{
-                                background: "#4D93D9",
-                                  color: WHITE,
-                                border: `1px solid #4D93D9`,
-                                  borderRadius: "8px",
-                                  padding: "8px 16px",
-                                  fontSize: "0.9rem",
-                                  fontWeight: 500,
-                                  cursor: "pointer",
-                                  transition: "background 0.2s",
-                                }}
-                                onMouseEnter={(e) => (e.currentTarget.style.background = "#3d7bc9")}
-                                onMouseLeave={(e) => (e.currentTarget.style.background = "#4D93D9")}
-                              >
-                                Agreement Sent
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleSoldClick(item)}
-                              style={{
-                                background: "#33cc33",
-                                color: WHITE,
-                                border: `1px solid #33cc33`,
-                                borderRadius: "8px",
-                                padding: "8px 16px",
-                                fontSize: "0.9rem",
-                                fontWeight: 500,
-                                cursor: "pointer",
-                                transition: "background 0.2s",
-                              }}
-                              onMouseEnter={(e) => (e.currentTarget.style.background = "#2bb32b")}
-                              onMouseLeave={(e) => (e.currentTarget.style.background = "#33cc33")}
-                            >
-                              Sold
-                            </button>
-                            <button
-                              onClick={() => handleMakeJobFileClick(item)}
-                              style={{
-                                background: PURPLE,
-                                color: WHITE,
-                                border: `1px solid ${PURPLE}`,
-                                borderRadius: "8px",
-                                padding: "8px 16px",
-                                fontSize: "0.9rem",
-                                fontWeight: 500,
-                                cursor: "pointer",
-                                transition: "background 0.2s",
-                              }}
-                              onMouseEnter={(e) => (e.currentTarget.style.background = PURPLE_HOVER)}
-                              onMouseLeave={(e) => (e.currentTarget.style.background = PURPLE)}
-                            >
-                              Make Job File
-                            </button>
-                            <button
-                              onClick={() => handleEmailClick(item)}
-                              style={{
-                                background: "#FFA500",
-                                color: WHITE,
-                                border: `1px solid #FFA500`,
-                                borderRadius: "8px",
-                                padding: "8px 16px",
-                                fontSize: "0.9rem",
-                                fontWeight: 500,
-                                cursor: "pointer",
-                                transition: "background 0.2s",
-                              }}
-                              onMouseEnter={(e) => (e.currentTarget.style.background = "#FF8C42")}
-                              onMouseLeave={(e) => (e.currentTarget.style.background = "#FFA500")}
-                            >
-                              Email
-                            </button>
-                            <button
-                              onClick={() => handleEditItemClick(item)}
-                              style={{
-                                background: MONUMENT,
-                                color: WHITE,
-                                border: "none",
-                                borderRadius: "8px",
-                                padding: "8px 16px",
-                                fontSize: "0.9rem",
-                                fontWeight: 500,
-                                cursor: "pointer",
-                                transition: "background 0.2s",
-                              }}
-                              onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
-                              onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeleteItem(item.id)}
-                              style={{
-                              background: "#cc3333",
-                                color: WHITE,
-                                border: "none",
-                                borderRadius: "8px",
-                                padding: "8px 16px",
-                                fontSize: "0.9rem",
-                                fontWeight: 500,
-                                cursor: "pointer",
-                                transition: "background 0.2s",
-                              }}
-                              onMouseEnter={(e) => (e.currentTarget.style.background = "#b71c1c")}
-                              onMouseLeave={(e) => (e.currentTarget.style.background = "#cc3333")}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px", width: "100%" }}>
+                <h2 style={{ color: MONUMENT, fontSize: "1.15rem", fontWeight: 600, margin: 0 }}>SGF - QLD</h2>
+                {sgfQldItems.length === 0 ? (
+                  <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No items</div>
+                ) : (
+                  sgfQldItems.map((item) => renderHotlistRow(item, "qld"))
+                )}
               </div>
-            </>
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px", width: "100%" }}>
+                <h2 style={{ color: MONUMENT, fontSize: "1.15rem", fontWeight: 600, margin: 0 }}>Green Streams</h2>
+                {unassignedItems.length === 0 && greenStreamItems.length === 0 ? (
+                  <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No items</div>
+                ) : (
+                  <>
+                    {unassignedItems.map((item) => renderHotlistRow(item, "neutral"))}
+                    {greenStreamItems.map((item) => renderHotlistRow(item, "green"))}
+                  </>
+                )}
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -1580,6 +1477,103 @@ export default function Hotlist() {
               onBack={handleModalBack}
               onNext={handleModalNext}
             />
+          )}
+          {currentModal === 3 && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 99990,
+                background: "rgba(0,0,0,0.45)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "24px",
+              }}
+              onClick={handleModalClose}
+            >
+              <div
+                style={{
+                  background: WHITE,
+                  borderRadius: "12px",
+                  padding: "24px",
+                  maxWidth: "480px",
+                  width: "100%",
+                  boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h2 style={{ margin: "0 0 8px 0", fontSize: "1.25rem", color: MONUMENT, fontWeight: 700 }}>
+                  Project stream
+                </h2>
+                <p style={{ margin: "0 0 16px 0", fontSize: "0.95rem", color: "#555", lineHeight: 1.45 }}>
+                  Choose the stream for this hotlist entry. This is the same <strong>stream</strong> field used on projects.
+                </p>
+                <label style={{ display: "block", fontSize: "0.88rem", color: MONUMENT, fontWeight: 600, marginBottom: "8px" }}>
+                  Stream
+                </label>
+                <select
+                  value={formData.stream || ""}
+                  onChange={(e) =>
+                    handleFormDataChange({ ...formData, stream: e.target.value })
+                  }
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    backgroundColor: WHITE,
+                    boxSizing: "border-box",
+                    marginBottom: "20px",
+                  }}
+                >
+                  <option value="" style={{ color: MONUMENT, backgroundColor: WHITE }}>
+                    Select stream…
+                  </option>
+                  {HOTLIST_PROJECT_STREAM_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt} style={{ color: MONUMENT, backgroundColor: WHITE }}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                  <button
+                    type="button"
+                    onClick={handleModalBack}
+                    style={{
+                      padding: "10px 18px",
+                      borderRadius: "8px",
+                      border: `1px solid ${SECTION_GREY}`,
+                      background: SECTION_GREY,
+                      color: MONUMENT,
+                      fontWeight: 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleModalNext}
+                    style={{
+                      padding: "10px 18px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: MONUMENT,
+                      color: WHITE,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Save entry
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </>
       )}

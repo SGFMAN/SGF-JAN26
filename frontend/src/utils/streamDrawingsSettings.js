@@ -2,8 +2,46 @@
  * Shared helpers for Stream Settings → Drawings and Drawings page recipient logic.
  */
 
-export function isStreamSendDrawingsToClientsEnabled(stream, streamSettingsJson) {
-  const key = stream != null ? String(stream).trim() : "";
+function resolveStateCode(projectOrState) {
+  if (!projectOrState) return "";
+  const raw =
+    typeof projectOrState === "string"
+      ? projectOrState
+      : projectOrState && typeof projectOrState === "object"
+        ? projectOrState.state
+        : "";
+  const s = String(raw || "").trim().toUpperCase();
+  if (s === "VIC" || s === "VICTORIA") return "VIC";
+  if (s === "QLD" || s === "QUEENSLAND") return "QLD";
+  return "";
+}
+
+function resolveStreamSettingsKey(stream, streamSettingsJson, projectOrState) {
+  const base = stream != null ? String(stream).trim() : "";
+  const map =
+    streamSettingsJson && typeof streamSettingsJson === "object" && !Array.isArray(streamSettingsJson)
+      ? streamSettingsJson
+      : {};
+  if (!base) return "";
+  if (base === "SGF - VIC" || base === "SGF - QLD") return base;
+  if (map[base]) return base;
+
+  const normalizedBase =
+    base === "Pumped on Property" ? "Pumped On Property" : base === "Creat Cash Flow" ? "Create Cash Flow" : base;
+  const stateCode = resolveStateCode(projectOrState);
+  if (stateCode) {
+    const keyed = `${normalizedBase} - ${stateCode}`;
+    if (map[keyed]) return keyed;
+  }
+  const vicKey = `${normalizedBase} - VIC`;
+  const qldKey = `${normalizedBase} - QLD`;
+  if (map[vicKey]) return vicKey;
+  if (map[qldKey]) return qldKey;
+  return normalizedBase;
+}
+
+export function isStreamSendDrawingsToClientsEnabled(stream, streamSettingsJson, projectOrState) {
+  const key = resolveStreamSettingsKey(stream, streamSettingsJson, projectOrState);
   const map =
     streamSettingsJson && typeof streamSettingsJson === "object" && !Array.isArray(streamSettingsJson)
       ? streamSettingsJson
@@ -37,8 +75,8 @@ export function getProjectClientEmailsForDrawings(project) {
  * Stream-level extra drawing recipients: checkbox on + non-empty address.
  * Independent of Send to Clients / project contacts.
  */
-export function getStreamExtraDrawingEmails(stream, streamSettingsJson) {
-  const key = stream != null ? String(stream).trim() : "";
+export function getStreamExtraDrawingEmails(stream, streamSettingsJson, projectOrState) {
+  const key = resolveStreamSettingsKey(stream, streamSettingsJson, projectOrState);
   const map =
     streamSettingsJson && typeof streamSettingsJson === "object" && !Array.isArray(streamSettingsJson)
       ? streamSettingsJson
