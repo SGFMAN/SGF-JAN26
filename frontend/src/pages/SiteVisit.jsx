@@ -9,6 +9,69 @@ function siteVisitPhotoSrc(projectId, fileName) {
   return `${API_URL}/api/sitevisit/photo-file?projectId=${encodeURIComponent(String(projectId))}&name=${encodeURIComponent(fileName)}`;
 }
 
+function isHeicLikeSiteVisitFileName(name) {
+  return /\.(hei[cf])$/i.test(name || "");
+}
+
+/** HEIC/HEIF often fail in `<img>` on Chrome/Edge; server usually returns JPEG via sharp; this retries with client decode on error. */
+function SiteVisitPhotoImg({ projectId, fileName, alt, style, loading, draggable }) {
+  const originalSrc = siteVisitPhotoSrc(projectId, fileName);
+  const [src, setSrc] = useState(originalSrc);
+  const blobUrlRef = useRef(null);
+  const heicAttemptedRef = useRef(false);
+
+  useEffect(() => {
+    setSrc(originalSrc);
+    heicAttemptedRef.current = false;
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+  }, [originalSrc]);
+
+  useEffect(() => {
+    return () => {
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  const tryHeicClientDecode = useCallback(async () => {
+    if (heicAttemptedRef.current || !isHeicLikeSiteVisitFileName(fileName)) return;
+    heicAttemptedRef.current = true;
+    try {
+      const res = await fetch(originalSrc);
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const mod = await import("heic2any");
+      const heic2any = mod.default;
+      const out = await heic2any({ blob, toType: "image/jpeg", quality: 0.88 });
+      const first = Array.isArray(out) ? out[0] : out;
+      const u = URL.createObjectURL(first);
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = u;
+      setSrc(u);
+    } catch (e) {
+      console.warn("Site visit HEIC client decode failed:", e);
+    }
+  }, [originalSrc, fileName]);
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      style={style}
+      loading={loading}
+      draggable={draggable}
+      onError={() => {
+        void tryHeicClientDecode();
+      }}
+    />
+  );
+}
+
 /**
  * One file per request (reliable on mobile). Upload progress via xhr.upload.
  */
@@ -932,8 +995,9 @@ export default function SiteVisit({ project, onUpdate }) {
                             display: "block",
                           }}
                         >
-                          <img
-                            src={siteVisitPhotoSrc(project.id, f.name)}
+                          <SiteVisitPhotoImg
+                            projectId={project.id}
+                            fileName={f.name}
                             alt=""
                             loading="lazy"
                             draggable={false}
@@ -1005,7 +1069,7 @@ export default function SiteVisit({ project, onUpdate }) {
             <input
               ref={siteVisitPhotoInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,.heic,.heif,image/heic,image/heif"
               multiple
               disabled={
                 !!uploadSession &&
@@ -1262,11 +1326,9 @@ export default function SiteVisit({ project, onUpdate }) {
                 boxSizing: "border-box",
               }}
             >
-              <img
-                src={siteVisitPhotoSrc(
-                  project.id,
-                  siteVisitPhotoFiles[photoViewerIndex].name
-                )}
+              <SiteVisitPhotoImg
+                projectId={project.id}
+                fileName={siteVisitPhotoFiles[photoViewerIndex].name}
                 alt={siteVisitPhotoFiles[photoViewerIndex].name}
                 style={{
                   maxWidth: "100%",

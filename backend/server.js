@@ -6047,9 +6047,12 @@ const SITE_VISIT_IMAGE_EXT = new Set([
   ".webp",
   ".bmp",
   ".heic",
+  ".heif",
   ".tif",
   ".tiff",
 ]);
+
+const SITE_VISIT_HEIC_LIKE_EXT = new Set([".heic", ".heif"]);
 
 function isSiteVisitListableImage(filename) {
   return SITE_VISIT_IMAGE_EXT.has(path.extname(filename).toLowerCase());
@@ -6065,6 +6068,7 @@ function guessSiteVisitImageContentType(filename) {
     ".webp": "image/webp",
     ".bmp": "image/bmp",
     ".heic": "image/heic",
+    ".heif": "image/heif",
     ".tif": "image/tiff",
     ".tiff": "image/tiff",
   };
@@ -6386,6 +6390,21 @@ app.get("/api/sitevisit/photo-file", async (req, res) => {
     }
     if (!isSiteVisitListableImage(filePath)) {
       return res.status(404).json({ error: "Not found" });
+    }
+    const extLower = path.extname(filePath).toLowerCase();
+    // Browsers (except some Safari builds) won't show HEIC in <img>; serve JPEG when sharp can decode.
+    if (SITE_VISIT_HEIC_LIKE_EXT.has(extLower)) {
+      try {
+        const jpegBuf = await sharp(filePath).rotate().jpeg({ quality: 88, mozjpeg: true }).toBuffer();
+        res.setHeader("Content-Type", "image/jpeg");
+        res.setHeader("Cache-Control", "private, max-age=300");
+        return res.send(jpegBuf);
+      } catch (heicErr) {
+        console.warn(
+          "sitevisit photo-file HEIC→JPEG via sharp failed, sending original:",
+          heicErr?.message || heicErr
+        );
+      }
     }
     res.setHeader("Content-Type", guessSiteVisitImageContentType(filePath));
     res.setHeader("Cache-Control", "private, max-age=120");
