@@ -15,6 +15,8 @@ import {
 import {
   resolveDesignToSalespersonFrom,
   resolveDesignToSalespersonToEmails,
+  resolveSalesToDesignFrom,
+  resolveSalesToDesignToEmails,
   resolveSalespersonToClientFrom,
   resolveSalespersonToClientToEmails,
   parseEmailTemplateToAddressList,
@@ -25,26 +27,12 @@ const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 const API_URL = "";
 
-const DESIGN_MEETING_EMAIL_TO = "ben@superiorgrannyflats.com.au";
-const DESIGN_MEETING_PURPLE = "#6f42c1";
-const DESIGN_MEETING_PURPLE_HOVER = "#5a32a3";
-
-function escapeHtmlForEmail(text) {
-  if (!text) return "";
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-/** Matches template choice in handleEmailDrawingsToClient */
-function clientDrawingsTemplateNameFromStatus(ds) {
-  if (ds === "Drawings Complete") return "DRAWINGS - Client - General";
-  if (ds === "Concept Stage") return "DRAWINGS - Client - CONCEPT";
-  if (ds === "Working Drawing Stage") return "DRAWINGS - Client - WD";
-  return null;
-}
-
-export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) {
+export default function Drawings({
+  project,
+  onUpdate,
+  drawingsPdfSrcOverride,
+  showClearDrawingData = false,
+}) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const [drawingsStatus, setDrawingsStatus] = useState(project?.drawings_status || "Not Assigned");
   const [draftsperson, setDraftsperson] = useState(normalizeDraftspersonField(project?.draftsperson));
@@ -83,10 +71,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
   const [emailDrawingsFlowKind, setEmailDrawingsFlowKind] = useState("client");
   /** VIC SMTP from-address choices for Send Drawings to.. (Primary / Secondary / VIC - SMTP) */
   const [vicSmtpFromOptions, setVicSmtpFromOptions] = useState([]);
-  const [emailPreviewType, setEmailPreviewType] = useState(null); // "drafting" | "sales" | "design_meeting"
-  const [showDesignMeetingModal, setShowDesignMeetingModal] = useState(false);
-  const [designMeetingItems, setDesignMeetingItems] = useState([]);
-  const [designMeetingNewItem, setDesignMeetingNewItem] = useState("");
+  const [emailPreviewType, setEmailPreviewType] = useState(null); // "drafting" | "sales" | "concept_approval" | "working_approval"
   const [showDraftspersonRequiredModal, setShowDraftspersonRequiredModal] = useState(false);
   const [pendingPdfFile, setPendingPdfFile] = useState(null);
   const [draftspersonModalChoice, setDraftspersonModalChoice] = useState(DRAFTSPERSON_UNASSIGNED);
@@ -342,7 +327,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
     await saveField("draftsperson", chosen);
   }
 
-  async function handleMarkConceptConfirmed() {
+  async function applyConceptApproval() {
     if (!project?.id) return;
     
     // Get current drawings history
@@ -449,6 +434,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
         onUpdate();
       }
       console.log("Concept approved successfully");
+      return true;
     } catch (error) {
       console.error("Error approving concept:", error);
       alert("Failed to approve concept");
@@ -456,10 +442,11 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
       if (onUpdate) {
         onUpdate();
       }
+      return false;
     }
   }
 
-  async function handleMarkWorkingDrawingsConfirmed() {
+  async function applyWorkingDrawingsApproval() {
     if (!project?.id) return;
     
     // Get current drawings history
@@ -583,6 +570,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
         onUpdate();
       }
       console.log("Working drawings approved successfully");
+      return true;
     } catch (error) {
       console.error("Error approving working drawings:", error);
       // Revert on error by calling onUpdate to refresh from server
@@ -590,7 +578,107 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
         onUpdate();
       }
       alert("Failed to approve working drawings");
+      return false;
     }
+  }
+
+  async function openApprovalEmailPreview(kind) {
+    if (!project?.id) return;
+    let settingsData = {};
+    let templates = [];
+    try {
+      const [settingsRes, templatesRes] = await Promise.all([
+        fetch(`${API_URL}/api/settings`),
+        fetch(`${API_URL}/api/email-templates`),
+      ]);
+      if (settingsRes.ok) settingsData = await settingsRes.json();
+      if (templatesRes.ok) templates = await templatesRes.json();
+    } catch (e) {
+      console.warn("Could not load settings for approval email preview:", e);
+    }
+
+    const designToSalesFrom = resolveDesignToSalespersonFrom(settingsData, project, "");
+    const designToSalesToList = resolveDesignToSalespersonToEmails(settingsData, project, []);
+    const reversedFrom = designToSalesToList[0] || "";
+    const reversedToList = designToSalesFrom ? [designToSalesFrom] : [];
+
+    if (!reversedFrom || !String(reversedFrom).trim()) {
+      alert(
+        "No sender email in Stream Settings for this approval email. Set Design to Salesperson — To under Settings → Stream Settings → Drawings."
+      );
+      return;
+    }
+    if (!reversedToList.length) {
+      alert(
+        "No recipient email in Stream Settings for this approval email. Set Design to Salesperson — From under Settings → Stream Settings → Drawings."
+      );
+      return;
+    }
+
+    const isConcept = kind === "concept";
+    const templateName = isConcept ? "DRAWINGS - Concept Approved" : "DRAWINGS - WDs Approved";
+    const template = Array.isArray(templates) ? templates.find((t) => t?.name === templateName) : null;
+    if (!template) {
+      alert(`Email template "${templateName}" not found. Please create it in Settings → Email Templates.`);
+      return;
+    }
+    const projectName =
+      project?.street && project?.suburb ? `${project.street}, ${project.suburb}`.trim() : project?.name || "";
+    const replaceProjectNameToken = (txt) =>
+      String(txt || "").replace(/\{ProjectName\}/g, projectName);
+
+    setEmailPreviewTo(reversedToList.join(", "));
+    setEmailPreviewFrom(reversedFrom);
+    setEmailPreviewSubject(replaceProjectNameToken(template.subject));
+    setEmailPreviewBody(replaceProjectNameToken(template.body));
+    setEmailPreviewType(isConcept ? "concept_approval" : "working_approval");
+    setShowEmailPreviewModal(true);
+  }
+
+  async function handleMarkConceptConfirmed() {
+    if (!project?.id) return;
+    let drawingsHistory = [];
+    try {
+      const historyValue = project?.drawings_history;
+      if (historyValue) {
+        drawingsHistory = typeof historyValue === "string" ? JSON.parse(historyValue) : historyValue;
+      }
+    } catch (e) {
+      console.error("Error parsing drawings_history:", e);
+    }
+    if (drawingsHistory.length === 0) {
+      alert("No drawings have been uploaded yet.");
+      return;
+    }
+    await openApprovalEmailPreview("concept");
+  }
+
+  async function handleMarkWorkingDrawingsConfirmed() {
+    if (!project?.id) return;
+    let drawingsHistory = [];
+    try {
+      const historyValue = project?.drawings_history;
+      if (historyValue) {
+        drawingsHistory = typeof historyValue === "string" ? JSON.parse(historyValue) : historyValue;
+      }
+    } catch (e) {
+      console.error("Error parsing drawings_history:", e);
+    }
+    if (drawingsHistory.length === 0) {
+      alert("No drawings have been uploaded yet.");
+      return;
+    }
+
+    const conceptApprovedIndex = drawingsHistory.findIndex((entry) => entry.conceptApproved === true);
+    if (conceptApprovedIndex === -1) {
+      alert("Please approve concept drawings first.");
+      return;
+    }
+    if (conceptApprovedIndex >= drawingsHistory.length - 1) {
+      alert("Please upload new drawings before approving working drawings.");
+      return;
+    }
+    await openApprovalEmailPreview("working");
   }
 
   async function handleClearDrawingData() {
@@ -1518,19 +1606,20 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
       return;
     }
 
-    const opts = await loadVicSmtpFromOptions();
-    if (opts.length === 0) {
-      alert(
-        "No SMTP addresses are configured. Add at least one under Settings → SMTP Settings (SMTP User in any slot)."
-      );
+    let settingsData = {};
+    try {
+      const settingsRes = await fetch(`${API_URL}/api/settings`);
+      if (settingsRes.ok) settingsData = await settingsRes.json();
+    } catch (e) {
+      console.warn("Could not load settings for drawing send:", e);
+    }
+    const fromVal = resolveDesignToSalespersonFrom(settingsData, project, "");
+    if (!fromVal || !String(fromVal).trim()) {
+      alert("No sender email found in Stream Settings for this stream/state.");
       return;
     }
 
-    const tmplFrom = (built.template.from_address || "").trim();
-    const match = opts.find((o) => o.value.toLowerCase() === tmplFrom.toLowerCase());
-    const fromVal = match ? match.value : opts[0].value;
-
-    setVicSmtpFromOptions(opts);
+    setVicSmtpFromOptions([]);
     setEmailDrawingsFlowKind("sendTo");
     setEmailDrawingsToClientTo("");
     setEmailDrawingsToClientFrom(fromVal);
@@ -1576,11 +1665,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
     } catch (e) {
       console.warn("Could not load settings for drawing From override:", e);
     }
-    const clientFromResolved = resolveSalespersonToClientFrom(
-      settingsForFrom,
-      project,
-      built.template.from_address || ""
-    );
+    const clientFromResolved = resolveSalespersonToClientFrom(settingsForFrom, project, "");
     const templateToList = parseEmailTemplateToAddressList(built.template.to_addresses);
     const clientToResolved = resolveSalespersonToClientToEmails(
       settingsForFrom,
@@ -1588,6 +1673,19 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
       templateToList,
       allTo
     );
+
+    if (!clientFromResolved || !String(clientFromResolved).trim()) {
+      alert(
+        "No sender email in Stream Settings for this stream (Sales Person to Client — From). Configure Settings → Stream Settings → Drawings."
+      );
+      return;
+    }
+    if (!clientToResolved.length) {
+      alert(
+        "No recipient addresses for this send. Add stream extra emails in Settings → Stream Settings, enable Send to Clients, and/or add active client emails on the project."
+      );
+      return;
+    }
 
     setVicSmtpFromOptions([]);
     setEmailDrawingsFlowKind("client");
@@ -1663,9 +1761,9 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
       return;
     }
 
-    // Don't attach drawings - just send the email
+    // Don't attach drawings - just send the email after preview confirms.
 
-    // For newly added drawings: send immediately (no preview)
+    /** New uploads: persist status + notes + markup first, then show preview like other drafts. */
     if (notesForRevision?.isNewDrawing) {
       if (isSendingDraftingEmail) return;
 
@@ -1683,135 +1781,28 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
         valuesRef.current.drawingsStatus = nextDrawingsStatus;
         await saveField("drawings_status", nextDrawingsStatus);
 
-        await runWithEmailOverlay(async () => {
-          // If this is a new drawing or current revision, save notes first
-          if (notesForRevision && (notesForRevision.isNewDrawing || notesForRevision.isCurrentRevision)) {
-            await saveNotesForRevision(notesForRevision.index, notesText);
+        await saveNotesForRevision(notesForRevision.index, notesText);
 
-            // If there's a markup file, save it
-            if (markupFile && notesForRevision.isNewDrawing) {
-              await saveMarkupPath(markupFile, notesForRevision.index);
-            }
-          }
-
-          // Fetch email template
-          const templateResponse = await fetch(`${API_URL}/api/email-templates`);
-          if (!templateResponse.ok) {
-            throw new Error("Failed to fetch email templates");
-          }
-          const templates = await templateResponse.json();
-          const template = templates.find((t) => t.name === "DRAWINGS - Design to Sales");
-          if (!template) {
-            throw new Error(
-              'Email template "DRAWINGS - Design to Sales" not found. Please create it in Settings → Email Templates.'
-            );
-          }
-
-          // Get project name
-          const projectName =
-            project?.street && project?.suburb ? `${project.street}, ${project.suburb}`.trim() : project?.name || "";
-
-          // Get draftsperson details
-          const { name: draftspersonName, position: draftspersonPosition } = await getDraftspersonDetails(
-            project.draftsperson
-          );
-
-          // Build email body - insert notes after {ProjectName}
-          let body = template.body || "";
-          if (notesText && notesText.trim()) {
-            const notesHtml = notesText.trim().replace(/\n/g, "<br>");
-            const heading = "<b>Drafting Notes</b><br>";
-            const notesWithHeading = heading + notesHtml;
-
-            const projectNameTokenIndex = body.indexOf("{ProjectName}");
-            if (projectNameTokenIndex !== -1) {
-              const insertIndex = projectNameTokenIndex + "{ProjectName}".length;
-              body = body.slice(0, insertIndex) + "<br><br>" + notesWithHeading + body.slice(insertIndex);
-            } else {
-              const projectNameIndex = body.indexOf(projectName);
-              if (projectNameIndex !== -1) {
-                const insertIndex = projectNameIndex + projectName.length;
-                body = body.slice(0, insertIndex) + "<br><br>" + notesWithHeading + body.slice(insertIndex);
-              } else {
-                body = notesWithHeading + "<br><br>" + body;
-              }
-            }
-          }
-
-          body = body.replace(/{ProjectName}/g, projectName);
-          body = body.replace(/{Draftsperson}/g, draftspersonName);
-          body = body.replace(/{Position}/g, draftspersonPosition);
-
-          let subject = template.subject || "";
-          subject = subject.replace(/{ProjectName}/g, projectName);
-          subject = subject.replace(/{Draftsperson}/g, draftspersonName);
-          subject = subject.replace(/{Position}/g, draftspersonPosition);
-
-          const templateToList = parseEmailTemplateToAddressList(template.to_addresses);
-
-          const settingsRes = await fetch(`${API_URL}/api/settings`);
-          if (!settingsRes.ok) {
-            throw new Error("Failed to load settings for drawing email From address.");
-          }
-          const settingsData = await settingsRes.json();
-          const toEmailsResolved = resolveDesignToSalespersonToEmails(
-            settingsData,
-            project,
-            templateToList
-          );
-          if (toEmailsResolved.length === 0) {
-            throw new Error("No recipient addresses configured for this template.");
-          }
-
-          const designFromResolved = resolveDesignToSalespersonFrom(
-            settingsData,
-            project,
-            template.from_address || ""
-          );
-          if (!designFromResolved || !String(designFromResolved).trim()) {
-            throw new Error("Template has no From address. Please set it in Settings → Email Templates.");
-          }
-
-          const response = await fetch(`${API_URL}/api/emails/send-drawings`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              projectId: project.id,
-              toEmails: toEmailsResolved,
-              customBody: body,
-              from: designFromResolved,
-              subject,
-              attachDrawings: false,
-            }),
-          });
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: response.statusText }));
-            throw new Error(errorData.error || "Failed to send drawings email");
-          }
-          await response.json().catch(() => ({}));
-        });
-
-        alert("Email sent successfully!");
-
-        // Close notes modal after sending
-        handleCloseNotesModal();
+        if (markupFile) {
+          await saveMarkupPath(markupFile, notesForRevision.index);
+        }
       } catch (error) {
-        console.error("Error sending drawings email:", error);
-        alert(`Failed to send email: ${error.message}`);
+        console.error("Error saving before drafting email preview:", error);
+        alert(error.message || "Failed to save notes before preview.");
+        return;
       } finally {
         setIsSendingDraftingEmail(false);
       }
-      return;
+      // Fall through to shared template preview below (with isNewDrawing heading)
     }
 
-    // If this is a new drawing or current revision, save notes first
-    if (notesForRevision && (notesForRevision.isNewDrawing || notesForRevision.isCurrentRevision)) {
+    // If current revision updates (but not handled above): save notes first
+    if (
+      notesForRevision &&
+      notesForRevision.isCurrentRevision &&
+      !notesForRevision.isNewDrawing
+    ) {
       await saveNotesForRevision(notesForRevision.index, notesText);
-      
-      // If there's a markup file, save it
-      if (markupFile && notesForRevision.isNewDrawing) {
-        await saveMarkupPath(markupFile, notesForRevision.index);
-      }
     }
 
     // Fetch email template
@@ -1895,11 +1886,16 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
         project,
         templateToList
       );
-      const previewFromResolved = resolveDesignToSalespersonFrom(
-        settingsForPreview,
-        project,
-        template.from_address || ""
-      );
+      const previewFromResolved = resolveDesignToSalespersonFrom(settingsForPreview, project, "");
+
+      if (!previewToResolved.length) {
+        alert("No recipient addresses configured in Stream Settings for this stream/state.");
+        return;
+      }
+      if (!previewFromResolved || !String(previewFromResolved).trim()) {
+        alert("No sender email configured in Stream Settings for this stream/state.");
+        return;
+      }
 
       // Open preview modal
       setEmailPreviewTo(previewToResolved.join(", "));
@@ -2010,89 +2006,16 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
     }
   }
 
-  function addDesignMeetingItem() {
-    const trimmed = (designMeetingNewItem || "").trim();
-    if (!trimmed) return;
-    setDesignMeetingItems((prev) => [...prev, trimmed]);
-    setDesignMeetingNewItem("");
-  }
-
-  function removeDesignMeetingItem(index) {
-    setDesignMeetingItems((prev) => prev.filter((_, i) => i !== index));
-  }
-
   function closeEmailPreviewModal() {
     setShowEmailPreviewModal(false);
     setEmailPreviewType(null);
-    setDesignMeetingItems([]);
-  }
-
-  function handleDesignMeetingListCancel() {
-    setShowDesignMeetingModal(false);
-    setDesignMeetingItems([]);
-    setDesignMeetingNewItem("");
-  }
-
-  async function handleDesignMeetingListSend() {
-    if (!project?.id) {
-      alert("Error: Project ID is missing");
-      return;
-    }
-    if (designMeetingItems.length === 0) {
-      alert("Add at least one item to the list.");
-      return;
-    }
-
-    const projectName =
-      project?.street && project?.suburb
-        ? `${project.street}, ${project.suburb}`.trim()
-        : project?.name || "Project";
-
-    const listHtml = `<p><strong>Design meeting items</strong></p><ul style="list-style:none;padding-left:0;margin:12px 0 0;">${designMeetingItems
-      .map(
-        (item) =>
-          `<li style="margin-bottom:12px;"><label style="cursor:pointer;display:flex;align-items:flex-start;gap:10px;font-family:Arial,sans-serif;font-size:15px;line-height:1.45;"><input type="checkbox" style="margin-top:4px;width:18px;height:18px;flex-shrink:0;accent-color:#6f42c1;" /><span style="flex:1;">${escapeHtmlForEmail(item)}</span></label></li>`
-      )
-      .join("")}</ul>`;
-
-    let fromAddr = "";
-    try {
-      const sRes = await fetch(`${API_URL}/api/settings`);
-      if (sRes.ok) {
-        const s = await sRes.json();
-        fromAddr = (s.smtp_user_1 || "").trim();
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    if (!fromAddr) {
-      try {
-        const tRes = await fetch(`${API_URL}/api/email-templates`);
-        if (tRes.ok) {
-          const templates = await tRes.json();
-          fromAddr = (templates[0]?.from_address || "").trim();
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    }
-
-    setEmailPreviewTo(DESIGN_MEETING_EMAIL_TO);
-    setEmailPreviewFrom(fromAddr);
-    setEmailPreviewSubject(`Design meeting — ${projectName}`);
-    setEmailPreviewBody(listHtml);
-    setEmailPreviewType("design_meeting");
-    setShowDesignMeetingModal(false);
-    setDesignMeetingNewItem("");
-    setShowEmailPreviewModal(true);
   }
 
   async function handleSendFromPreview() {
-    if (emailPreviewType === "design_meeting") {
-      const toAddresses = emailPreviewTo
-        .split(",")
-        .map((a) => a.trim())
-        .filter((a) => a.length > 0);
+    const isApprovalEmail =
+      emailPreviewType === "concept_approval" || emailPreviewType === "working_approval";
+    if (isApprovalEmail) {
+      const toAddresses = emailPreviewTo.split(",").map((a) => a.trim()).filter((a) => a.length > 0);
       if (toAddresses.length === 0) {
         alert("Please enter at least one email address");
         return;
@@ -2101,6 +2024,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
         alert("From address is required");
         return;
       }
+
       try {
         await runWithEmailOverlay(async () => {
           const response = await fetch(`${API_URL}/api/emails/send`, {
@@ -2109,7 +2033,7 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
             body: JSON.stringify({
               to: toAddresses,
               from: emailPreviewFrom.trim(),
-              subject: emailPreviewSubject || "Design meeting",
+              subject: emailPreviewSubject || "",
               htmlBody: emailPreviewBody || "",
             }),
           });
@@ -2117,14 +2041,22 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
           if (!response.ok) {
             throw new Error(data.error || "Failed to send email");
           }
-          alert(data.message || "Email sent successfully!");
         });
+
+        const approvalOk =
+          emailPreviewType === "concept_approval"
+            ? await applyConceptApproval()
+            : await applyWorkingDrawingsApproval();
+        if (!approvalOk) return;
+
+        alert("Approval email sent successfully!");
         closeEmailPreviewModal();
+        return;
       } catch (error) {
-        console.error("Error sending design meeting email:", error);
+        console.error("Error sending approval email:", error);
         alert(`Failed to send email: ${error.message}`);
+        return;
       }
-      return;
     }
 
     if (!project || !project.id) {
@@ -2292,8 +2224,35 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
         }
       }
 
-      setEmailPreviewTo(toAddresses.join(", "));
-      setEmailPreviewFrom(template.from_address || "");
+      let settingsForSalesPreview = {};
+      try {
+        const settingsRes = await fetch(`${API_URL}/api/settings`);
+        if (settingsRes.ok) settingsForSalesPreview = await settingsRes.json();
+      } catch (e) {
+        console.warn("Could not load settings for Sales→Design From/To:", e);
+      }
+      const previewToResolved = resolveSalesToDesignToEmails(
+        settingsForSalesPreview,
+        project,
+        toAddresses
+      );
+      const previewFromResolved = resolveSalesToDesignFrom(settingsForSalesPreview, project, "");
+
+      if (!previewToResolved.length) {
+        alert(
+          "No design inbox addresses in Stream Settings (Design to Salesperson — From email field used as design To). Configure Settings → Stream Settings → Drawings."
+        );
+        return;
+      }
+      if (!previewFromResolved || !String(previewFromResolved).trim()) {
+        alert(
+          "No sender email in Stream Settings (Sales Person to Client — From). Configure Settings → Stream Settings → Drawings."
+        );
+        return;
+      }
+
+      setEmailPreviewTo(previewToResolved.join(", "));
+      setEmailPreviewFrom(previewFromResolved);
       setEmailPreviewSubject(subject);
       setEmailPreviewBody(body);
       setEmailPreviewType("sales"); // Mark as sales notes email
@@ -2532,43 +2491,6 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
     await saveMarkupPath(markupFile, notesForRevision.index);
   }
 
-  async function handleSendDrawings() {
-    if (!project || !project.drawings_pdf_location) {
-      alert("No drawings PDF available to send.");
-      return;
-    }
-
-    if (!project.id) {
-      alert("Error: Project ID is missing");
-      return;
-    }
-
-    try {
-      await runWithEmailOverlay(async () => {
-        const response = await fetch(`${API_URL}/api/emails/send-drawings`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            projectId: project.id,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: response.statusText }));
-          throw new Error(errorData.error || "Failed to send drawings email");
-        }
-
-        await response.json();
-        alert("Drawings email sent successfully!");
-      });
-    } catch (error) {
-      console.error("Error sending drawings email:", error);
-      alert(`Failed to send drawings email: ${error.message}`);
-    }
-  }
-
   function getDrawingsClientRecipients() {
     const emails = [];
     const labels = [];
@@ -2644,31 +2566,24 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
     let sendFromOverride = "";
     let toEmailsResolved = activeEmails;
     try {
-      const templateName = clientDrawingsTemplateNameFromStatus(drawingsStatus);
-      const [settingsRes, templatesRes] = await Promise.all([
-        fetch(`${API_URL}/api/settings`),
-        templateName ? fetch(`${API_URL}/api/email-templates`) : Promise.resolve(null),
-      ]);
+      const settingsRes = await fetch(`${API_URL}/api/settings`);
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      let templateFrom = "";
-      let templateToList = [];
-      if (templateName && templatesRes && templatesRes.ok) {
-        const templates = await templatesRes.json();
-        const tmpl = Array.isArray(templates)
-          ? templates.find((t) => t.name === templateName)
-          : null;
-        templateFrom = (tmpl?.from_address || "").trim();
-        templateToList = parseEmailTemplateToAddressList(tmpl?.to_addresses);
-      }
-      sendFromOverride = resolveSalespersonToClientFrom(settingsData, project, templateFrom);
+      sendFromOverride = resolveSalespersonToClientFrom(settingsData, project, "");
       toEmailsResolved = resolveSalespersonToClientToEmails(
         settingsData,
         project,
-        templateToList,
+        [],
         activeEmails
       );
     } catch (e) {
       console.warn("Could not resolve From/To for client drawings email:", e);
+    }
+
+    if (!sendFromOverride || !String(sendFromOverride).trim()) {
+      alert(
+        "No sender email in Stream Settings (Sales Person to Client — From). Configure Settings → Stream Settings → Drawings."
+      );
+      return;
     }
 
     if (!toEmailsResolved || toEmailsResolved.length === 0) {
@@ -2688,11 +2603,9 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
           body: JSON.stringify({
             projectId: project.id,
             toEmails: toEmailsResolved,
+            from: String(sendFromOverride).trim(),
             notes: emailClientNotes,
             attachDrawings: attachDrawings,
-            ...(sendFromOverride && String(sendFromOverride).trim()
-              ? { from: String(sendFromOverride).trim() }
-              : {}),
           }),
         });
 
@@ -3001,31 +2914,6 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
                         )}
                         <button
                           type="button"
-                          onClick={() => setShowDesignMeetingModal(true)}
-                          style={{
-                            background: DESIGN_MEETING_PURPLE,
-                            color: WHITE,
-                            border: `1px solid ${DESIGN_MEETING_PURPLE}`,
-                            borderRadius: "6px",
-                            padding: "6px 8px",
-                            fontSize: "0.8rem",
-                            fontWeight: 500,
-                            cursor: "pointer",
-                            transition: "background 0.18s, color 0.15s",
-                            lineHeight: "1.2",
-                            width: "100px",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = DESIGN_MEETING_PURPLE_HOVER;
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = DESIGN_MEETING_PURPLE;
-                          }}
-                        >
-                          Design<br />Meeting
-                        </button>
-                        <button
-                          type="button"
                           onClick={handleEmailDrawingsToClient}
                           style={{
                             background: "#4D93D9",
@@ -3276,29 +3164,30 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
               </div>
             </div>
 
-            {/* Clear Drawing Data and Test Date Buttons */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "12px", width: "100%" }}>
-              <button
-                onClick={handleClearDrawingData}
-                style={{
-                  background: "#ff6b6b",
-                  color: WHITE,
-                  border: `1px solid #ff6b6b`,
-                  borderRadius: "10px",
-                  padding: "8px 8px",
-                  fontSize: "0.95rem",
-                  fontWeight: 500,
-                  textAlign: "center",
-                  letterSpacing: "0.5px",
-                  cursor: "pointer",
-                  transition: "background 0.18s, color 0.15s",
-                  display: "block",
-                  width: "100%",
-                }}
-              >
-                Clear Drawing Data
-              </button>
-            </div>
+            {showClearDrawingData && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "12px", width: "100%" }}>
+                <button
+                  onClick={handleClearDrawingData}
+                  style={{
+                    background: "#ff6b6b",
+                    color: WHITE,
+                    border: `1px solid #ff6b6b`,
+                    borderRadius: "10px",
+                    padding: "8px 8px",
+                    fontSize: "0.95rem",
+                    fontWeight: 500,
+                    textAlign: "center",
+                    letterSpacing: "0.5px",
+                    cursor: "pointer",
+                    transition: "background 0.18s, color 0.15s",
+                    display: "block",
+                    width: "100%",
+                  }}
+                >
+                  Clear Drawing Data
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -3916,140 +3805,6 @@ export default function Drawings({ project, onUpdate, drawingsPdfSrcOverride }) 
                   Close
                 </button>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Design Meeting — build list, then preview email */}
-      {showDesignMeetingModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-          onClick={handleDesignMeetingListCancel}
-        >
-          <div
-            style={{
-              background: WHITE,
-              borderRadius: "12px",
-              padding: "24px",
-              width: "90%",
-              maxWidth: "480px",
-              maxHeight: "85vh",
-              overflowY: "auto",
-              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 style={{ margin: "0 0 16px", fontSize: "1.35rem", color: MONUMENT }}>Design meeting</h2>
-            <p style={{ margin: "0 0 12px", fontSize: "0.9rem", color: "#666" }}>
-              Add items one at a time. When you send, Ben will receive the list by email.
-            </p>
-            <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
-              <input
-                type="text"
-                value={designMeetingNewItem}
-                onChange={(e) => setDesignMeetingNewItem(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addDesignMeetingItem();
-                  }
-                }}
-                placeholder="Type an item and Add (or press Enter)"
-                style={{
-                  flex: 1,
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: `1px solid ${SECTION_GREY}`,
-                  fontSize: "1rem",
-                  boxSizing: "border-box",
-                }}
-              />
-              <button
-                type="button"
-                onClick={addDesignMeetingItem}
-                style={{
-                  padding: "10px 16px",
-                  fontSize: "0.95rem",
-                  fontWeight: 500,
-                  color: WHITE,
-                  background: DESIGN_MEETING_PURPLE,
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Add
-              </button>
-            </div>
-            {designMeetingItems.length > 0 ? (
-              <ul style={{ margin: "0 0 16px", paddingLeft: "20px", color: MONUMENT, fontSize: "0.95rem" }}>
-                {designMeetingItems.map((item, idx) => (
-                  <li key={`${idx}-${item.slice(0, 24)}`} style={{ marginBottom: "6px" }}>
-                    <span style={{ marginRight: "8px" }}>{item}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeDesignMeetingItem(idx)}
-                      style={{
-                        fontSize: "0.75rem",
-                        padding: "2px 8px",
-                        cursor: "pointer",
-                        border: `1px solid ${SECTION_GREY}`,
-                        borderRadius: "4px",
-                        background: WHITE,
-                        color: MONUMENT,
-                      }}
-                    >
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p style={{ fontSize: "0.85rem", color: "#999", marginBottom: "16px" }}>No items yet.</p>
-            )}
-            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
-              <button
-                type="button"
-                onClick={handleDesignMeetingListCancel}
-                style={{
-                  padding: "10px 20px",
-                  fontSize: "1rem",
-                  fontWeight: 500,
-                  color: MONUMENT,
-                  background: "transparent",
-                  border: `1px solid ${SECTION_GREY}`,
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleDesignMeetingListSend}
-                style={{
-                  padding: "10px 20px",
-                  fontSize: "1rem",
-                  fontWeight: 500,
-                  color: WHITE,
-                  background: DESIGN_MEETING_PURPLE,
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                }}
-              >
-                Send
-              </button>
             </div>
           </div>
         </div>

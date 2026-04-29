@@ -9,6 +9,10 @@ import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
 import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { isUserAdmin } from "../utils/auth";
+import {
+  resolveNewProjectTeamFrom,
+  resolveNewProjectTeamToEmailsFromStream,
+} from "../utils/streamNewProjectEmail";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -488,9 +492,13 @@ export default function Hotlist() {
     setSoldPreviewOpen(true);
     setSoldPreviewPreparing(true);
     try {
-      const templatesResponse = await fetch(`${API_URL}/api/email-templates`);
+      const [templatesResponse, settingsResponse] = await Promise.all([
+        fetch(`${API_URL}/api/email-templates`),
+        fetch(`${API_URL}/api/settings`),
+      ]);
       if (!templatesResponse.ok) throw new Error("Failed to fetch email templates");
       const templates = await templatesResponse.json();
+      const settings = settingsResponse.ok ? await settingsResponse.json() : {};
       const template = templates.find(
         (t) => t.name && t.name.toLowerCase().trim() === "hotlist sold"
       );
@@ -500,19 +508,22 @@ export default function Hotlist() {
         return;
       }
 
-      const toList = (template.to_addresses || [])
-        .map((addr) => replaceSoldTokens(addr, item))
-        .filter((addr) => (addr || "").trim() !== "");
-      const fallbackTo = (item?.email || "").trim();
-      const resolvedTo = toList.length > 0 ? toList.join(", ") : fallbackTo;
+      const streamTo = resolveNewProjectTeamToEmailsFromStream(settings, item);
+      const resolvedTo = streamTo.join(", ");
+      const fromAddress = resolveNewProjectTeamFrom(settings, item);
       if (!resolvedTo) {
-        alert("No recipient email found on template or hotlist item.");
+        alert("No recipient email found in Stream Settings.");
+        setSoldPreviewOpen(false);
+        return;
+      }
+      if (!fromAddress || !String(fromAddress).trim()) {
+        alert("No sender email found in Stream Settings.");
         setSoldPreviewOpen(false);
         return;
       }
 
       setSoldEmailTo(resolvedTo);
-      setSoldEmailFrom((template.from_address || "").trim());
+      setSoldEmailFrom(fromAddress);
       setSoldEmailSubject(replaceSoldTokens(template.subject || "", item));
       setSoldEmailBody(replaceSoldTokens(template.body || "", item));
     } catch (err) {

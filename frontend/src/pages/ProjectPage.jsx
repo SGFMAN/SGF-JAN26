@@ -817,6 +817,7 @@ export default function ProjectPage() {
                   drawingsPdfSrcOverride={
                     isPortalProjectPath ? `${API_URL}/api/portal/projects/${id}/drawing` : undefined
                   }
+                  showClearDrawingData={isAdmin && !isPortalProjectPath}
                 />
               )}
               {activeView === "colours" && <Colours project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />}

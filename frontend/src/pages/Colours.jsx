@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import ThreeDVis from "./ThreeDVis";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
+import { resolveNewProjectClientFrom } from "../utils/streamNewProjectEmail";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -306,9 +307,13 @@ export default function Colours({ project, onUpdate }) {
   async function loadEmailTemplate(templateType) {
     // Fetch template and replace tokens
     try {
-      const response = await fetch(`${API_URL}/api/email-templates`);
+      const [response, settingsResponse] = await Promise.all([
+        fetch(`${API_URL}/api/email-templates`),
+        fetch(`${API_URL}/api/settings`),
+      ]);
       if (response.ok) {
         const templates = await response.json();
+        const settings = settingsResponse.ok ? await settingsResponse.json() : {};
         let templateName = "";
         if (templateType === "Send") {
           templateName = "COLOURS - Send";
@@ -328,7 +333,7 @@ export default function Colours({ project, onUpdate }) {
           
           // Set To, From, Subject from template
           setEmailTo(toAddresses);
-          setEmailFrom(template.from_address || "");
+          setEmailFrom(resolveNewProjectClientFrom(settings, project));
           
           // Replace tokens in subject
           let subject = template.subject || "";
@@ -444,9 +449,13 @@ export default function Colours({ project, onUpdate }) {
   async function handleOpenPortalEmailModal() {
     // Load "COLOURS - Portal" template
     try {
-      const response = await fetch(`${API_URL}/api/email-templates`);
+      const [response, settingsResponse] = await Promise.all([
+        fetch(`${API_URL}/api/email-templates`),
+        fetch(`${API_URL}/api/settings`),
+      ]);
       if (response.ok) {
         const templates = await response.json();
+        const settings = settingsResponse.ok ? await settingsResponse.json() : {};
         const template = templates.find(t => t.name === "COLOURS - Portal");
         if (template) {
           // Get active client emails for "To" field
@@ -458,7 +467,7 @@ export default function Colours({ project, onUpdate }) {
           
           // Set To, From, Subject from template
           setPortalEmailTo(toAddresses);
-          setPortalEmailFrom(template.from_address || "");
+          setPortalEmailFrom(resolveNewProjectClientFrom(settings, project));
           
           // Replace tokens in subject
           let subject = template.subject || "";

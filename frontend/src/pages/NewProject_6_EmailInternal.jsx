@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { getNewJobInternalTemplateName } from "../utils/newJobInternalTemplate";
+import {
+  resolveNewProjectTeamFrom,
+  resolveNewProjectTeamToEmailsFromStream,
+} from "../utils/streamNewProjectEmail";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -144,12 +148,15 @@ export default function NewProject_6_EmailInternal({
     setIsPreparing(true);
     try {
       console.log("Preparing new job email for project:", project);
-      // Fetch email templates
-      const templatesResponse = await fetch(`${API_URL}/api/email-templates`);
+      const [templatesResponse, settingsResponse] = await Promise.all([
+        fetch(`${API_URL}/api/email-templates`),
+        fetch(`${API_URL}/api/settings`),
+      ]);
       if (!templatesResponse.ok) {
         throw new Error("Failed to fetch email templates");
       }
       const templates = await templatesResponse.json();
+      const settings = settingsResponse.ok ? await settingsResponse.json() : {};
       console.log("Fetched templates:", templates);
 
       const templateName = getNewJobInternalTemplateName(project);
@@ -166,31 +173,24 @@ export default function NewProject_6_EmailInternal({
 
       console.log("Found template:", template);
 
-      if (!template.from_address || !template.from_address.trim()) {
-        alert("Template has no From address. Edit the template in Settings → Email Templates.");
+      const teamFrom = resolveNewProjectTeamFrom(settings, project);
+      if (!teamFrom || !String(teamFrom).trim()) {
+        alert(
+          "No From address for the new job email. Set Team Email — From under Settings → Stream Settings → New Project."
+        );
         setIsPreparing(false);
         return;
       }
 
-      // Replace tokens in to addresses
-      let toAddresses = template.to_addresses || [];
-      if (Array.isArray(toAddresses)) {
-        const replacedAddresses = await Promise.all(
-          toAddresses.map(addr => replaceTokens(addr, project))
-        );
-        toAddresses = replacedAddresses.filter(addr => addr.trim().length > 0);
-      } else if (toAddresses) {
-        const replaced = await replaceTokens(toAddresses, project);
-        toAddresses = replaced.split(",").map(a => a.trim()).filter(a => a.length > 0);
-      } else {
-        toAddresses = [];
-      }
+      const toAddresses = resolveNewProjectTeamToEmailsFromStream(settings, project);
 
-      console.log("To addresses after replacement:", toAddresses);
+      console.log("To addresses (stream settings or template):", toAddresses);
 
       if (toAddresses.length === 0) {
         console.warn("No valid email addresses found after replacing tokens");
-        alert("No valid email addresses found in template. Please check the template's 'To' addresses.");
+        alert(
+          "No valid Team Email — To addresses in stream settings. Configure Settings → Stream Settings → New Project."
+        );
         setIsPreparing(false);
         return;
       }
@@ -201,7 +201,7 @@ export default function NewProject_6_EmailInternal({
       console.log("Setting email modal state");
       // Set email modal state
       setEmailTo(toAddresses.join(", "));
-      setEmailFrom(template.from_address || "");
+      setEmailFrom(teamFrom);
       setEmailSubject(subject);
       setEmailBody(htmlBody);
       console.log("Email modal should now be visible");

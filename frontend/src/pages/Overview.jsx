@@ -3,6 +3,10 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { PROCESS_RULES, getRequirementStatus, getUnmetRequirements, getMetRequirements } from "../utils/ProcessRules";
 import { DRAFTSPERSON_UNASSIGNED } from "../utils/draftspersonSentinel";
+import {
+  resolveNewProjectClientFrom,
+  resolveNewProjectClientToEmails,
+} from "../utils/streamNewProjectEmail";
 import craig1 from "../images/craig1.jpg";
 import craig2 from "../images/craig2.jpg";
 import craig3 from "../images/craig3.jpg";
@@ -343,25 +347,17 @@ export default function Overview({ project }) {
       return;
     }
 
-    if (!template.from_address || !template.from_address.trim()) {
-      alert("Template has no From address. Edit the template in Settings → Email Templates.");
-      return;
-    }
-
-    // Replace tokens in to addresses (async for salesperson position lookup)
-    let toAddresses = template.to_addresses || [];
-    if (Array.isArray(toAddresses)) {
-      const replacedAddresses = await Promise.all(
-        toAddresses.map(addr => replaceTokens(addr, project))
-      );
-      toAddresses = replacedAddresses.filter(addr => addr.trim().length > 0);
-    } else {
-      const replaced = await replaceTokens(toAddresses, project);
-      toAddresses = replaced.split(",").map(a => a.trim()).filter(a => a.length > 0);
-    }
+    const settingsRes = await fetch(`${API_URL}/api/settings`);
+    const settings = settingsRes.ok ? await settingsRes.json() : {};
+    const fromAddress = resolveNewProjectClientFrom(settings, project);
+    const toAddresses = resolveNewProjectClientToEmails(settings, project);
 
     if (toAddresses.length === 0) {
-      alert("No valid email addresses found after replacing tokens");
+      alert("No valid To addresses found in Stream Settings.");
+      return;
+    }
+    if (!fromAddress || !String(fromAddress).trim()) {
+      alert("No valid From address found in Stream Settings.");
       return;
     }
 
@@ -370,7 +366,7 @@ export default function Overview({ project }) {
 
     // Open preview modal with pre-filled data
     setPreviewTo(toAddresses.join(", "));
-    setPreviewFrom(template.from_address || "");
+    setPreviewFrom(fromAddress);
     setPreviewSubject(subject);
     setPreviewBody(htmlBody);
     setPreviewModalOpen(true);

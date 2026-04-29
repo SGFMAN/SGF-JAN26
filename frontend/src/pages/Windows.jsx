@@ -1,5 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
+import {
+  resolveNewProjectTeamFrom,
+  resolveNewProjectTeamToEmailsFromStream,
+} from "../utils/streamNewProjectEmail";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -54,6 +58,8 @@ export default function Windows({ project, onUpdate }) {
   const windowOrderLocateFileRef = useRef(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailBody, setEmailBody] = useState("");
+  const [windowOrderEmailFrom, setWindowOrderEmailFrom] = useState("");
+  const [windowOrderEmailTo, setWindowOrderEmailTo] = useState("");
   const [showWindowOrderModal, setShowWindowOrderModal] = useState(false);
   /** Bust iframe cache after locate/upload refresh. */
   const [windowOrderIframeNonce, setWindowOrderIframeNonce] = useState(0);
@@ -213,7 +219,10 @@ export default function Windows({ project, onUpdate }) {
 
       // Close order modal and open email modal
       setShowOrderModal(false);
-      await loadEmailTemplate();
+      const emailReady = await loadEmailTemplate();
+      if (!emailReady) {
+        return;
+      }
       setShowEmailModal(true);
     } catch (error) {
       console.error("Error saving window details:", error);
@@ -223,50 +232,78 @@ export default function Windows({ project, onUpdate }) {
     }
   }
 
+  /** Loads template body and stream-based From/To (New Project team fields). Returns false if routing cannot be resolved. */
   async function loadEmailTemplate() {
-    if (!project?.id) return;
+    if (!project?.id) return false;
 
     try {
-      const response = await fetch(`${API_URL}/api/email-templates`);
-      if (response.ok) {
-        const templates = await response.json();
-        const template = templates.find(t => t.name === "WINDOWS - Order");
-        if (template && template.body) {
-          // Build window ordering information
-          const windowInfo = buildWindowOrderingInfo();
-          
-          // Find "<b>Scope</b>" in the body and insert window info after the closing </b>
-          let body = template.body;
-          // Look for <b>Scope</b> or <b>scope</b> (case insensitive)
-          const scopePattern = /<b>Scope<\/b>/i;
-          const match = body.match(scopePattern);
-          if (match) {
-            // Find the position after the closing </b>
-            const insertIndex = match.index + match[0].length;
-            // Insert window info after </b>
-            body = body.slice(0, insertIndex) + "\n\n" + windowInfo + body.slice(insertIndex);
-          } else {
-            // If "<b>Scope</b>" not found, append at the end
-            body = body + "\n\n" + windowInfo;
-          }
-          
-          // Replace tokens
-          const suburb = (project?.suburb || "").toUpperCase();
-          const street = project?.street || "";
-          const projectName = `${street || ""}, ${suburb || ""}`.trim().replace(/^,\s*|,\s*$/g, "");
-          
-          body = body.replace(/\{SUBURB\}/g, suburb)
-                     .replace(/\{STREET\}/g, street)
-                     .replace(/\{ProjectName\}/g, projectName);
-          
-          setEmailBody(body);
-        } else {
-          setEmailBody("");
-        }
+      const [templatesRes, settingsRes] = await Promise.all([
+        fetch(`${API_URL}/api/email-templates`),
+        fetch(`${API_URL}/api/settings`),
+      ]);
+      const settings = settingsRes.ok ? await settingsRes.json() : {};
+      const teamFrom = resolveNewProjectTeamFrom(settings, project);
+      const teamToList = resolveNewProjectTeamToEmailsFromStream(settings, project);
+      if (!teamFrom || !String(teamFrom).trim()) {
+        alert(
+          "No From address for the window order email. Set Team Email — From under Settings → Stream Settings → New Project for this stream."
+        );
+        setWindowOrderEmailFrom("");
+        setWindowOrderEmailTo("");
+        setEmailBody("");
+        return false;
       }
+      if (!teamToList.length) {
+        alert(
+          "No To addresses for the window order email. Set Team Email — To under Settings → Stream Settings → New Project for this stream."
+        );
+        setWindowOrderEmailFrom("");
+        setWindowOrderEmailTo("");
+        setEmailBody("");
+        return false;
+      }
+      setWindowOrderEmailFrom(String(teamFrom).trim());
+      setWindowOrderEmailTo(teamToList.join(", "));
+
+      if (!templatesRes.ok) {
+        setEmailBody("");
+        return true;
+      }
+      const templates = await templatesRes.json();
+      const template = templates.find((t) => t.name === "WINDOWS - Order");
+      if (template && template.body) {
+        const windowInfo = buildWindowOrderingInfo();
+
+        let body = template.body;
+        const scopePattern = /<b>Scope<\/b>/i;
+        const match = body.match(scopePattern);
+        if (match) {
+          const insertIndex = match.index + match[0].length;
+          body = body.slice(0, insertIndex) + "\n\n" + windowInfo + body.slice(insertIndex);
+        } else {
+          body = body + "\n\n" + windowInfo;
+        }
+
+        const suburb = (project?.suburb || "").toUpperCase();
+        const street = project?.street || "";
+        const projectName = `${street || ""}, ${suburb || ""}`.trim().replace(/^,\s*|,\s*$/g, "");
+
+        body = body
+          .replace(/\{SUBURB\}/g, suburb)
+          .replace(/\{STREET\}/g, street)
+          .replace(/\{ProjectName\}/g, projectName);
+
+        setEmailBody(body);
+      } else {
+        setEmailBody("");
+      }
+      return true;
     } catch (error) {
       console.error("Error fetching email template:", error);
       setEmailBody("");
+      setWindowOrderEmailFrom("");
+      setWindowOrderEmailTo("");
+      return false;
     }
   }
 
@@ -316,6 +353,19 @@ Date Required: ${dateRequiredText}`;
       return;
     }
 
+    const toList = windowOrderEmailTo
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean);
+    if (toList.length === 0) {
+      alert("No recipient addresses. Reload the email preview after configuring Stream Settings → New Project.");
+      return;
+    }
+    if (!windowOrderEmailFrom || !windowOrderEmailFrom.trim()) {
+      alert("No From address. Reload the email preview after configuring Stream Settings → New Project.");
+      return;
+    }
+
     try {
       await runWithEmailOverlay(async () => {
         const response = await fetch(`${API_URL}/api/emails/send-windows-order`, {
@@ -325,6 +375,8 @@ Date Required: ${dateRequiredText}`;
           },
           body: JSON.stringify({
             projectId: project.id,
+            from: windowOrderEmailFrom.trim(),
+            toEmails: toList,
             customBody: emailBody,
             windowColour: windowColour,
             windowReveal: reveal === "Other" ? revealOther : reveal,
@@ -362,6 +414,8 @@ Date Required: ${dateRequiredText}`;
   function handleCloseEmailModal() {
     setShowEmailModal(false);
     setEmailBody("");
+    setWindowOrderEmailFrom("");
+    setWindowOrderEmailTo("");
   }
 
   function handleOpenOrderModal() {
@@ -1491,6 +1545,20 @@ Date Required: ${dateRequiredText}`;
             >
               Preview & Send Window Order Email
             </h3>
+
+            <div style={{ marginBottom: "20px", fontSize: "0.9rem", color: MONUMENT, lineHeight: 1.5 }}>
+              <div>
+                <span style={{ color: "#32323399", fontWeight: 500 }}>From</span>{" "}
+                {windowOrderEmailFrom || "—"}
+              </div>
+              <div style={{ marginTop: "8px" }}>
+                <span style={{ color: "#32323399", fontWeight: 500 }}>To</span>{" "}
+                {windowOrderEmailTo || "—"}
+              </div>
+              <div style={{ marginTop: "10px", fontSize: "0.85rem", color: "#32323399" }}>
+                From and To come from Settings → Stream Settings → New Project (team email) for the matching project stream.
+              </div>
+            </div>
 
             {/* Email Body Section */}
             <div style={{ marginBottom: "24px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>

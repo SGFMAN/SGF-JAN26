@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
+import {
+  resolveNewProjectTeamFrom,
+  resolveNewProjectTeamToEmailsFromStream,
+} from "../utils/streamNewProjectEmail";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -222,11 +226,15 @@ export default function Planning({ project, onUpdate }) {
     if (!project?.id) return;
     setIsPreparingEmail(true);
     try {
-      const templatesResponse = await fetch(`${API_URL}/api/email-templates`);
+      const [templatesResponse, settingsResponse] = await Promise.all([
+        fetch(`${API_URL}/api/email-templates`),
+        fetch(`${API_URL}/api/settings`),
+      ]);
       if (!templatesResponse.ok) {
         throw new Error("Failed to fetch email templates");
       }
       const templates = await templatesResponse.json();
+      const settings = settingsResponse.ok ? await settingsResponse.json() : {};
       const template = templates.find(
         (t) => t.name && t.name.toLowerCase().trim() === "septic - organise inspection"
       );
@@ -236,29 +244,22 @@ export default function Planning({ project, onUpdate }) {
         return;
       }
 
-      if (!template.from_address || !template.from_address.trim()) {
-        alert("Template has no From address. Edit the template in Settings → Email Templates.");
+      const fromAddress = resolveNewProjectTeamFrom(settings, project);
+      const toAddresses = resolveNewProjectTeamToEmailsFromStream(settings, project);
+      if (!fromAddress || !String(fromAddress).trim()) {
+        alert("No valid From address found in Stream Settings.");
         return;
       }
-
-      let toAddresses = template.to_addresses || [];
-      if (Array.isArray(toAddresses)) {
-        const replacedAddresses = await Promise.all(
-          toAddresses.map((addr) => replaceSepticTokens(addr, project))
-        );
-        toAddresses = replacedAddresses.map((a) => a.trim()).filter((a) => a.length > 0);
-      } else if (toAddresses) {
-        const replaced = await replaceSepticTokens(toAddresses, project);
-        toAddresses = replaced.split(",").map((a) => a.trim()).filter((a) => a.length > 0);
-      } else {
-        toAddresses = [];
+      if (!toAddresses.length) {
+        alert("No valid To addresses found in Stream Settings.");
+        return;
       }
 
       const subject = await replaceSepticTokens(template.subject || "", project);
       const body = await replaceSepticTokens(template.body || "", project, { html: true });
 
       setEmailTo(toAddresses.join(", "));
-      setEmailFrom(template.from_address || "");
+      setEmailFrom(fromAddress);
       setEmailSubject(subject);
       setEmailBody(body);
       setShowSepticEmailModal(true);

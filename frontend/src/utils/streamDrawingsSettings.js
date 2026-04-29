@@ -16,7 +16,7 @@ function resolveStateCode(projectOrState) {
   return "";
 }
 
-function resolveStreamSettingsKey(stream, streamSettingsJson, projectOrState) {
+export function resolveStreamSettingsKey(stream, streamSettingsJson, projectOrState) {
   const base = stream != null ? String(stream).trim() : "";
   const map =
     streamSettingsJson && typeof streamSettingsJson === "object" && !Array.isArray(streamSettingsJson)

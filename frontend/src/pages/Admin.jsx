@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
+import {
+  resolveNewProjectClientFrom,
+  resolveNewProjectClientToEmails,
+} from "../utils/streamNewProjectEmail";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -276,9 +280,13 @@ export default function Admin({ project, onUpdate }) {
   async function prepareDepositBalanceEmail() {
     setDepositEmailPreparing(true);
     try {
-      const res = await fetch(`${API_URL}/api/email-templates`);
+      const [res, settingsRes] = await Promise.all([
+        fetch(`${API_URL}/api/email-templates`),
+        fetch(`${API_URL}/api/settings`),
+      ]);
       if (!res.ok) throw new Error("Failed to fetch templates");
       const templates = await res.json();
+      const settings = settingsRes.ok ? await settingsRes.json() : {};
       const template = templates.find(
         (t) => t.name && t.name.trim().toLowerCase() === "deposit balance paid"
       );
@@ -291,16 +299,10 @@ export default function Admin({ project, onUpdate }) {
       const projectName = project?.name || "";
       const replaceProjectName = (text) =>
         text != null ? String(text).replace(/{ProjectName}/g, projectName) : "";
-      let toAddresses = template.to_addresses;
-      if (Array.isArray(toAddresses)) {
-        toAddresses = toAddresses.map(replaceProjectName).filter((a) => a.trim()).join(", ");
-      } else if (toAddresses) {
-        toAddresses = replaceProjectName(toAddresses).split(",").map((a) => a.trim()).filter((a) => a).join(", ");
-      } else {
-        toAddresses = "";
-      }
+      const toAddresses = resolveNewProjectClientToEmails(settings, project).join(", ");
+      const fromAddress = resolveNewProjectClientFrom(settings, project);
       setDepositEmailTo(toAddresses);
-      setDepositEmailFrom(template.from_address || "");
+      setDepositEmailFrom(fromAddress);
       setDepositEmailSubject(replaceProjectName(template.subject || ""));
       setDepositEmailBody(replaceProjectName(template.body || ""));
     } catch (err) {

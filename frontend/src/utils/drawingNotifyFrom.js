@@ -1,19 +1,9 @@
 /**
- * Drawing notification From/To using Stream Settings (VIC / QLD / Investor),
- * falling back to email template addresses when a setting is empty.
+ * Drawing notification From/To: only `stream_settings_json[resolvedRow].drawings` (VIC keys or QLD-mapped keys).
+ * No template fallbacks, no top-level `drawings_vic_*` globals, no state-based guessing.
  */
 
-/** @param {Record<string, unknown> | null | undefined} project */
-export function drawingsNotifyRegion(project) {
-  if (!project || typeof project !== "object") return "vic";
-  const st = String(project.state ?? "").trim().toUpperCase();
-  if (st === "QLD" || st === "QUEENSLAND") return "qld";
-  if (st === "VIC" || st === "VICTORIA") return "vic";
-  const stream = String(project.stream ?? "").trim();
-  if (stream === "SGF - QLD") return "qld";
-  if (stream === "SGF - VIC") return "vic";
-  return "investor";
-}
+import { resolveStreamSettingsKey } from "./streamDrawingsSettings";
 
 /** Parse template `to_addresses` (array, JSON array string, or comma list) → unique trimmed emails. */
 export function parseEmailTemplateToAddressList(raw) {
@@ -60,14 +50,6 @@ function parseStreamSettingsMap(raw) {
   return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
 }
 
-function stateCodeFromProject(project) {
-  if (!project || typeof project !== "object") return "";
-  const s = String(project.state ?? "").trim().toUpperCase();
-  if (s === "VIC" || s === "VICTORIA") return "VIC";
-  if (s === "QLD" || s === "QUEENSLAND") return "QLD";
-  return "";
-}
-
 function normalizeBaseStream(stream) {
   const base = String(stream ?? "").trim();
   if (base === "Pumped on Property") return "Pumped On Property";
@@ -75,28 +57,32 @@ function normalizeBaseStream(stream) {
   return base;
 }
 
-function resolveStreamSettingsKeyForProject(project, settings) {
-  const stream = normalizeBaseStream(project?.stream);
-  if (!stream) return "";
-  if (stream === "SGF - VIC" || stream === "SGF - QLD") return stream;
+/** Same key as Drawings helpers / Stream Settings (stream + optional state row). */
+function resolveProjectStreamSettingsRowKey(project, settings) {
   const map = parseStreamSettingsMap(settings?.stream_settings_json);
-  if (map[stream]) return stream;
-  const st = stateCodeFromProject(project);
-  if (st) {
-    const byState = `${stream} - ${st}`;
-    if (map[byState]) return byState;
-  }
-  if (map[`${stream} - VIC`]) return `${stream} - VIC`;
-  if (map[`${stream} - QLD`]) return `${stream} - QLD`;
-  return stream;
+  return resolveStreamSettingsKey(normalizeBaseStream(project?.stream), map, project);
 }
 
-function getNonSgfDrawingOverride(settings, project, key) {
-  const streamKey = resolveStreamSettingsKeyForProject(project, settings);
-  if (!streamKey || streamKey === "SGF - VIC" || streamKey === "SGF - QLD") return "";
+/** `… - QLD` stream rows store QLD drawing fields under `qld*` keys in `drawings`. */
+function drawingFieldKeyForStreamRow(streamKey, vicStyleKey) {
+  const useQld = typeof streamKey === "string" && / - QLD$/i.test(streamKey);
+  if (!useQld) return vicStyleKey;
+  const q = {
+    designToSalespersonFromEmail: "qldDesignToSalespersonFromEmail",
+    designToSalespersonToEmail: "qldDesignToSalespersonToEmail",
+    salespersonToClientFromEmail: "qldSalespersonToClientFromEmail",
+  };
+  return q[vicStyleKey] || vicStyleKey;
+}
+
+/** Per-stream-row `drawings` values only. */
+function getDrawingFieldFromStreamRows(settings, project, vicStyleKey) {
+  const streamKey = resolveProjectStreamSettingsRowKey(project, settings);
+  if (!streamKey) return "";
   const map = parseStreamSettingsMap(settings?.stream_settings_json);
   const row = map[streamKey] && typeof map[streamKey] === "object" ? map[streamKey] : null;
   const drawings = row && row.drawings && typeof row.drawings === "object" ? row.drawings : null;
+  const key = drawingFieldKeyForStreamRow(streamKey, vicStyleKey);
   const v = drawings && drawings[key] != null ? String(drawings[key]).trim() : "";
   return v || "";
 }
@@ -110,67 +96,38 @@ export function parseSettingsToEmailList(raw) {
 /**
  * @param {Record<string, unknown> | null | undefined} settings from GET /api/settings
  * @param {Record<string, unknown> | null | undefined} project
- * @param {string | null | undefined} templateFrom from email_templates.from_address
  */
-export function resolveDesignToSalespersonFrom(settings, project, templateFrom) {
-  const nonSgf = getNonSgfDrawingOverride(settings, project, "designToSalespersonFromEmail");
-  if (nonSgf) return nonSgf;
-  const region = drawingsNotifyRegion(project);
-  const key =
-    region === "qld"
-      ? "drawings_qld_design_to_salesperson_email"
-      : region === "vic"
-        ? "drawings_vic_design_to_salesperson_email"
-        : "drawings_investor_streams_design_to_salesperson_email";
-  const override =
-    settings && settings[key] != null && String(settings[key]).trim()
-      ? String(settings[key]).trim()
-      : "";
-  const base = templateFrom != null ? String(templateFrom).trim() : "";
-  return override || base;
+export function resolveDesignToSalespersonFrom(settings, project, _templateFrom) {
+  return getDrawingFieldFromStreamRows(settings, project, "designToSalespersonFromEmail");
 }
 
 /**
- * To recipients for Design → Salesperson (VIC/QLD settings text; investor uses template only).
- * @param {string[]} templateToEmails from parseEmailTemplateToAddressList(template.to_addresses)
+ * To recipients for Design → Salesperson — stream row `drawings` only.
  */
-export function resolveDesignToSalespersonToEmails(settings, project, templateToEmails) {
-  const nonSgf = getNonSgfDrawingOverride(settings, project, "designToSalespersonToEmail");
-  const nonSgfList = parseSettingsToEmailList(nonSgf);
-  if (nonSgfList.length > 0) return nonSgfList;
-  const region = drawingsNotifyRegion(project);
-  const key =
-    region === "qld"
-      ? "drawings_qld_design_to_salesperson_to_email"
-      : region === "vic"
-        ? "drawings_vic_design_to_salesperson_to_email"
-        : null;
-  const fromSettings = key && settings ? parseSettingsToEmailList(settings[key]) : [];
-  if (fromSettings.length > 0) return fromSettings;
-  return uniqueEmails(templateToEmails);
+export function resolveDesignToSalespersonToEmails(settings, project, _templateToEmails) {
+  const rowTo = getDrawingFieldFromStreamRows(settings, project, "designToSalespersonToEmail");
+  return parseSettingsToEmailList(rowTo);
 }
 
 /**
  * @param {Record<string, unknown> | null | undefined} settings from GET /api/settings
  * @param {Record<string, unknown> | null | undefined} project
- * @param {string | null | undefined} templateFrom from email_templates.from_address
  */
-export function resolveSalespersonToClientFrom(settings, project, templateFrom) {
-  const nonSgf = getNonSgfDrawingOverride(settings, project, "salespersonToClientFromEmail");
-  if (nonSgf) return nonSgf;
-  const region = drawingsNotifyRegion(project);
-  const key =
-    region === "qld"
-      ? "drawings_qld_salesperson_to_client_email"
-      : region === "vic"
-        ? "drawings_vic_salesperson_to_client_email"
-        : "drawings_investor_streams_salesperson_to_client_email";
-  const override =
-    settings && settings[key] != null && String(settings[key]).trim()
-      ? String(settings[key]).trim()
-      : "";
-  const base = templateFrom != null ? String(templateFrom).trim() : "";
-  return override || base;
+export function resolveSalespersonToClientFrom(settings, project, _templateFrom) {
+  return getDrawingFieldFromStreamRows(settings, project, "salespersonToClientFromEmail");
+}
+
+/**
+ * DRAWINGS - Sales to Design: From = salesperson-to-client From on the stream row; To = design inbox list from stream row.
+ */
+export function resolveSalesToDesignFrom(settings, project, _templateFrom) {
+  return resolveSalespersonToClientFrom(settings, project, _templateFrom);
+}
+
+export function resolveSalesToDesignToEmails(settings, project, _templateToEmails) {
+  const fromStream = parseSettingsToEmailList(getDrawingFieldFromStreamRows(settings, project, "designToSalespersonFromEmail"));
+  if (fromStream.length > 0) return fromStream;
+  return [];
 }
 
 /**
@@ -221,21 +178,13 @@ export function expandProjectContactTokensInToAddresses(templateToEmails, projec
 }
 
 /**
- * To for Sales → Client: Stream Settings first (Send to Clients + Extra emails for the stream),
- * then template To with {Contact1}… tokens expanded. Template raw addresses are only used if
- * the settings-based list is empty.
- * @param {string[]} templateToEmails
- * @param {string[]} mergedFallback from getProjectClientEmails + getStreamExtraDrawingEmails, etc.
+ * To for Sales → Client: caller supplies the merged list (clients + stream extras from settings).
+ * Template To is ignored for routing.
  */
-export function resolveSalespersonToClientToEmails(
-  _settings,
-  project,
-  templateToEmails,
-  mergedFallback
-) {
+export function resolveSalespersonToClientToEmails(_settings, project, _templateToEmails, mergedFallback) {
   const fromStream = uniqueEmails(mergedFallback);
-  if (fromStream.length > 0) return fromStream;
-  const expanded = expandProjectContactTokensInToAddresses(templateToEmails, project);
-  if (expanded.length > 0) return expanded;
-  return uniqueEmails(templateToEmails).filter((e) => e.includes("@"));
+  void _settings;
+  void project;
+  void _templateToEmails;
+  return fromStream;
 }

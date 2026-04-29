@@ -992,7 +992,7 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {/* Inbox and Email Generator - Purple (Admin Only) */}
+          {/* Playground (secret game), Email Generator, BenBox — Purple (Admin Only) */}
           {isAdmin && (
             <div
               style={{

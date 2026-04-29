@@ -730,6 +730,7 @@ async function ensureSchema() {
     CREATE TABLE IF NOT EXISTS email_templates (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
+      template_group TEXT,
       to_addresses TEXT,
       from_address TEXT,
       subject TEXT,
@@ -738,6 +739,30 @@ async function ensureSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS email_template_groups (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  // Add template_group column if it doesn't exist (for grouping email templates in UI)
+  try {
+    await pool.query(`
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name='email_templates' AND column_name='template_group'
+        ) THEN
+          ALTER TABLE email_templates ADD COLUMN template_group TEXT;
+        END IF;
+      END $$;
+    `);
+  } catch (e) {
+    console.log(`Column template_group might already exist:`, e.message);
+  }
   // Create user_positions junction table for many-to-many relationship
   await pool.query(`
     CREATE TABLE IF NOT EXISTS user_positions (
@@ -2593,7 +2618,7 @@ app.get("/api/email-templates", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const result = await pool.query(
-      "SELECT id, name, to_addresses, from_address, subject, body, created_at, updated_at FROM email_templates ORDER BY name ASC"
+      "SELECT id, name, template_group, to_addresses, from_address, subject, body, created_at, updated_at FROM email_templates ORDER BY name ASC"
     );
     // Parse to_addresses from JSON string to array
     const templates = result.rows.map(row => ({
@@ -2616,7 +2641,7 @@ app.get("/api/email-templates/:id", async (req, res) => {
       return res.status(400).json({ error: "invalid id" });
     }
     const result = await pool.query(
-      "SELECT id, name, to_addresses, from_address, subject, body, created_at, updated_at FROM email_templates WHERE id = $1",
+      "SELECT id, name, template_group, to_addresses, from_address, subject, body, created_at, updated_at FROM email_templates WHERE id = $1",
       [id]
     );
     if (result.rows.length === 0) {
@@ -2637,7 +2662,7 @@ app.get("/api/email-templates/:id", async (req, res) => {
 app.post("/api/email-templates", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const { name, to_addresses, from_address, subject, body } = req.body || {};
+    const { name, template_group, to_addresses, from_address, subject, body } = req.body || {};
     
     if (!name || !name.trim()) {
       return res.status(400).json({ error: "Template name is required" });
@@ -2648,10 +2673,10 @@ app.post("/api/email-templates", async (req, res) => {
       : (to_addresses ? JSON.stringify([to_addresses]) : null);
 
     const result = await pool.query(
-      `INSERT INTO email_templates (name, to_addresses, from_address, subject, body, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
-       RETURNING id, name, to_addresses, from_address, subject, body, created_at, updated_at`,
-      [name.trim(), toAddressesJson, from_address || null, subject || null, body || null]
+      `INSERT INTO email_templates (name, template_group, to_addresses, from_address, subject, body, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       RETURNING id, name, template_group, to_addresses, from_address, subject, body, created_at, updated_at`,
+      [name.trim(), template_group || null, toAddressesJson, from_address || null, subject || null, body || null]
     );
 
     const template = {
@@ -2674,7 +2699,7 @@ app.put("/api/email-templates/:id", async (req, res) => {
       return res.status(400).json({ error: "invalid id" });
     }
 
-    const { name, to_addresses, from_address, subject, body } = req.body || {};
+    const { name, template_group, to_addresses, from_address, subject, body } = req.body || {};
     
     if (!name || !name.trim()) {
       return res.status(400).json({ error: "Template name is required" });
@@ -2686,10 +2711,10 @@ app.put("/api/email-templates/:id", async (req, res) => {
 
     const result = await pool.query(
       `UPDATE email_templates 
-       SET name = $1, to_addresses = $2, from_address = $3, subject = $4, body = $5, updated_at = NOW()
-       WHERE id = $6
-       RETURNING id, name, to_addresses, from_address, subject, body, created_at, updated_at`,
-      [name.trim(), toAddressesJson, from_address || null, subject || null, body || null, id]
+       SET name = $1, template_group = $2, to_addresses = $3, from_address = $4, subject = $5, body = $6, updated_at = NOW()
+       WHERE id = $7
+       RETURNING id, name, template_group, to_addresses, from_address, subject, body, created_at, updated_at`,
+      [name.trim(), template_group || null, toAddressesJson, from_address || null, subject || null, body || null, id]
     );
 
     if (result.rows.length === 0) {
@@ -2728,6 +2753,41 @@ app.delete("/api/email-templates/:id", async (req, res) => {
     res.json({ success: true, deleted: result.rows[0] });
   } catch (e) {
     console.error("Error deleting email template:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Get custom email template groups
+app.get("/api/email-template-groups", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  try {
+    const result = await pool.query(
+      "SELECT id, name, created_at, updated_at FROM email_template_groups ORDER BY LOWER(name) ASC"
+    );
+    res.json(result.rows || []);
+  } catch (e) {
+    console.error("Error fetching email template groups:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Create custom email template group
+app.post("/api/email-template-groups", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  try {
+    const { name } = req.body || {};
+    const groupName = String(name || "").trim();
+    if (!groupName) return res.status(400).json({ error: "Group name is required" });
+    const result = await pool.query(
+      `INSERT INTO email_template_groups (name, updated_at)
+       VALUES ($1, NOW())
+       ON CONFLICT (name) DO UPDATE SET updated_at = NOW()
+       RETURNING id, name, created_at, updated_at`,
+      [groupName]
+    );
+    res.json(result.rows[0]);
+  } catch (e) {
+    console.error("Error creating email template group:", e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -3018,22 +3078,38 @@ app.post("/api/emails/send-drawings", async (req, res) => {
     return res.status(500).json({ error: "Failed to fetch project details" });
   }
 
-  let fromAddress = from || null;
-  const creds = await getSmtpCredentialsForFromAddress(fromAddress || undefined);
+  const fromTrim = from != null ? String(from).trim() : "";
+  if (!fromTrim) {
+    return res.status(400).json({
+      error: "From address is required. Configure it in Stream Settings and send again; the server does not guess a sender.",
+    });
+  }
+
+  let recipientEmails = [];
+  if (toEmails && Array.isArray(toEmails) && toEmails.length > 0) {
+    recipientEmails = toEmails.map((email) => String(email || "").trim()).filter(Boolean);
+  } else if (toEmail != null && String(toEmail).trim()) {
+    recipientEmails = [String(toEmail).trim()];
+  }
+  if (recipientEmails.length === 0) {
+    return res.status(400).json({
+      error:
+        "At least one recipient (toEmails or toEmail) is required. The server does not use a default recipient address.",
+    });
+  }
+
+  const creds = await getSmtpCredentialsForFromAddress(fromTrim);
   let smtpUser = creds.smtpUser;
   let smtpPass = creds.smtpPass;
-  
+
   if (!smtpUser || !smtpPass) {
     return res.status(503).json({
       error:
         "SMTP not configured. Set SMTP User and SMTP Pass in Settings → SMTP Settings, or use backend .env.",
     });
   }
-  
-  // Use the from address if provided, otherwise use the SMTP user
-  if (!fromAddress) {
-    fromAddress = smtpUser;
-  }
+
+  const fromAddress = fromTrim;
 
   const host = process.env.SMTP_HOST || "smtp.office365.com";
   const port = parseInt(process.env.SMTP_PORT || "587", 10);
@@ -3128,24 +3204,6 @@ app.post("/api/emails/send-drawings", async (req, res) => {
       htmlBody += `<br><br>SGF CENTRAL`;
     }
 
-    // Use provided emails (array or single) or default to info@superiorgrannyflats.com.au
-    let recipientEmails = [];
-    
-    if (toEmails && Array.isArray(toEmails) && toEmails.length > 0) {
-      // Use provided array of emails
-      recipientEmails = toEmails.filter(email => email && email.trim());
-    } else if (toEmail) {
-      // Fallback to single email for backward compatibility
-      recipientEmails = [toEmail];
-    } else {
-      // Default to info@superiorgrannyflats.com.au
-      recipientEmails = ["info@superiorgrannyflats.com.au"];
-    }
-    
-    if (recipientEmails.length === 0) {
-      return res.status(400).json({ error: "No valid recipient email addresses provided" });
-    }
-    
     const recipientEmail = recipientEmails.join(", ");
     
     // fromAddress is already set above based on the "from" parameter and matching SMTP credentials
@@ -3185,7 +3243,7 @@ app.post("/api/emails/send-drawings", async (req, res) => {
 
 // Send colours PDFs via email with attachments
 app.post("/api/emails/send-colours", async (req, res) => {
-  const { projectId, attachAffordable, attachSuperior, toEmails, customBody } = req.body || {};
+  const { projectId, attachAffordable, attachSuperior, toEmails, customBody, from } = req.body || {};
 
   if (!projectId) {
     return res.status(400).json({ error: "Project ID is required" });
@@ -3475,24 +3533,26 @@ app.post("/api/emails/send-colours", async (req, res) => {
       htmlBody = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">${htmlBody}</body></html>`;
     }
 
-    // Use provided emails or template default
+    const fromTrim = from != null ? String(from).trim() : "";
+    if (!fromTrim) {
+      return res.status(400).json({
+        error: "From address is required in the request body. The server does not use the template From field or SMTP user as a fallback.",
+      });
+    }
+
     let recipientEmails = [];
     if (toEmails && Array.isArray(toEmails) && toEmails.length > 0) {
-      recipientEmails = toEmails.filter(email => email && email.trim());
-    } else if (template.to_addresses && Array.isArray(template.to_addresses) && template.to_addresses.length > 0) {
-      recipientEmails = template.to_addresses.filter(email => email && email.trim());
+      recipientEmails = toEmails.map((email) => String(email || "").trim()).filter(Boolean);
     }
-    
     if (recipientEmails.length === 0) {
-      return res.status(400).json({ error: "No valid recipient email addresses provided" });
+      return res.status(400).json({
+        error: "No valid recipient email addresses in toEmails. The server does not fall back to template To addresses.",
+      });
     }
-    
-    const recipientEmail = recipientEmails.join(", ");
 
-    // Use template's from_address (or fallback to SMTP user)
-    // Office 365 requires the "from" address to match the authenticated user
-    const fromAddress = template.from_address || smtpUser;
-    
+    const recipientEmail = recipientEmails.join(", ");
+    const fromAddress = fromTrim;
+
     // Add logo to email (logo will be added to existing attachments array)
     const logoResult = await addLogoToEmail(htmlBody, attachments);
     
@@ -3585,7 +3645,7 @@ app.post("/api/emails/send-colours", async (req, res) => {
 
 // Send colours reminder email - identical to send-colours but uses "COLOURS - Remind" template
 app.post("/api/emails/send-colours-reminder", async (req, res) => {
-  const { projectId, attachAffordable, attachSuperior, toEmails, customBody } = req.body || {};
+  const { projectId, attachAffordable, attachSuperior, toEmails, customBody, from } = req.body || {};
 
   if (!projectId) {
     return res.status(400).json({ error: "Project ID is required" });
@@ -3876,24 +3936,26 @@ app.post("/api/emails/send-colours-reminder", async (req, res) => {
       htmlBody = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">${htmlBody}</body></html>`;
     }
 
-    // Use provided emails or template default
+    const fromTrim = from != null ? String(from).trim() : "";
+    if (!fromTrim) {
+      return res.status(400).json({
+        error: "From address is required in the request body. The server does not use the template From field or SMTP user as a fallback.",
+      });
+    }
+
     let recipientEmails = [];
     if (toEmails && Array.isArray(toEmails) && toEmails.length > 0) {
-      recipientEmails = toEmails.filter(email => email && email.trim());
-    } else if (template.to_addresses && Array.isArray(template.to_addresses) && template.to_addresses.length > 0) {
-      recipientEmails = template.to_addresses.filter(email => email && email.trim());
+      recipientEmails = toEmails.map((email) => String(email || "").trim()).filter(Boolean);
     }
-    
     if (recipientEmails.length === 0) {
-      return res.status(400).json({ error: "No valid recipient email addresses provided" });
+      return res.status(400).json({
+        error: "No valid recipient email addresses in toEmails. The server does not fall back to template To addresses.",
+      });
     }
-    
-    const recipientEmail = recipientEmails.join(", ");
 
-    // Use template's from_address (or fallback to SMTP user)
-    // Office 365 requires the "from" address to match the authenticated user
-    const fromAddress = template.from_address || smtpUser;
-    
+    const recipientEmail = recipientEmails.join(", ");
+    const fromAddress = fromTrim;
+
     // Add logo to email (logo will be added to existing attachments array)
     const logoResult = await addLogoToEmail(htmlBody, attachments);
     
@@ -4601,7 +4663,7 @@ app.post("/api/projects/update-site-visit-scheduled", async (req, res) => {
 
 // Send colours Windows & Roof email - identical to send-colours-reminder but uses "COLORS - Windows&Roof" template
 app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
-  const { projectId, attachAffordable, attachSuperior, toEmails, customBody } = req.body || {};
+  const { projectId, attachAffordable, attachSuperior, toEmails, customBody, from } = req.body || {};
 
   if (!projectId) {
     return res.status(400).json({ error: "Project ID is required" });
@@ -4892,24 +4954,26 @@ app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
       htmlBody = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">${htmlBody}</body></html>`;
     }
 
-    // Use provided emails or template default
+    const fromTrim = from != null ? String(from).trim() : "";
+    if (!fromTrim) {
+      return res.status(400).json({
+        error: "From address is required in the request body. The server does not use the template From field or SMTP user as a fallback.",
+      });
+    }
+
     let recipientEmails = [];
     if (toEmails && Array.isArray(toEmails) && toEmails.length > 0) {
-      recipientEmails = toEmails.filter(email => email && email.trim());
-    } else if (template.to_addresses && Array.isArray(template.to_addresses) && template.to_addresses.length > 0) {
-      recipientEmails = template.to_addresses.filter(email => email && email.trim());
+      recipientEmails = toEmails.map((email) => String(email || "").trim()).filter(Boolean);
     }
-    
     if (recipientEmails.length === 0) {
-      return res.status(400).json({ error: "No valid recipient email addresses provided" });
+      return res.status(400).json({
+        error: "No valid recipient email addresses in toEmails. The server does not fall back to template To addresses.",
+      });
     }
-    
-    const recipientEmail = recipientEmails.join(", ");
 
-    // Use template's from_address (or fallback to SMTP user)
-    // Office 365 requires the "from" address to match the authenticated user
-    const fromAddress = template.from_address || smtpUser;
-    
+    const recipientEmail = recipientEmails.join(", ");
+    const fromAddress = fromTrim;
+
     // Add logo to email (logo will be added to existing attachments array)
     const logoResult = await addLogoToEmail(htmlBody, attachments);
     
@@ -5008,6 +5072,13 @@ app.post("/api/emails/send-colours-portal", async (req, res) => {
     return res.status(400).json({ error: "Project ID is required" });
   }
 
+  const fromTrimPortal = from != null ? String(from).trim() : "";
+  if (!fromTrimPortal) {
+    return res.status(400).json({
+      error: "From address is required. The server does not substitute the SMTP login address.",
+    });
+  }
+
   if (!pool) {
     return res.status(500).json({ error: "DATABASE_URL not set" });
   }
@@ -5030,21 +5101,16 @@ app.post("/api/emails/send-colours-portal", async (req, res) => {
     return res.status(500).json({ error: "Failed to fetch project details" });
   }
 
-  // Get SMTP credentials based on from address
   let smtpUser = null;
   let smtpPass = null;
   try {
-    const smtpCreds = await getSmtpCredentialsForFromAddress(from);
+    const smtpCreds = await getSmtpCredentialsForFromAddress(fromTrimPortal);
     smtpUser = smtpCreds.smtpUser;
     smtpPass = smtpCreds.smtpPass;
   } catch (e) {
     console.error("Error getting SMTP credentials:", e);
   }
 
-  if (!smtpUser || !smtpPass) {
-    smtpUser = process.env.SMTP_USER;
-    smtpPass = process.env.SMTP_PASS;
-  }
   if (!smtpUser || !smtpPass) {
     return res.status(503).json({
       error: "SMTP not configured. Set SMTP User and SMTP Pass in Settings → File Settings, or use backend .env.",
@@ -5108,14 +5174,14 @@ app.post("/api/emails/send-colours-portal", async (req, res) => {
     }
 
     const mailOptions = {
-      from: from || smtpUser,
+      from: fromTrimPortal,
       to: recipientEmail,
       subject: subject || "Colours Portal",
       html: logoResult.htmlBody,
       attachments: logoResult.attachments,
     };
 
-    console.log(`Sending colours portal email from: ${from || smtpUser}`);
+    console.log(`Sending colours portal email from: ${fromTrimPortal}`);
     console.log(`Sending colours portal email to: ${recipientEmail}`);
     console.log(`Subject: ${subject || "Colours Portal"}`);
 
@@ -5196,10 +5262,37 @@ app.post("/api/projects/:id/update-colours", async (req, res) => {
 
 // Send windows order email
 app.post("/api/emails/send-windows-order", async (req, res) => {
-  const { projectId, customBody, windowColour, windowReveal, windowGlazing, windowBalRating, windowDateRequired } = req.body || {};
+  const {
+    projectId,
+    customBody,
+    windowColour,
+    windowReveal,
+    windowGlazing,
+    windowBalRating,
+    windowDateRequired,
+    from,
+    toEmails,
+  } = req.body || {};
 
   if (!projectId) {
     return res.status(400).json({ error: "Project ID is required" });
+  }
+
+  const fromTrim = from != null ? String(from).trim() : "";
+  if (!fromTrim) {
+    return res.status(400).json({
+      error: "From address is required. The server does not use the template From field or SMTP user as a fallback.",
+    });
+  }
+
+  const recipientList =
+    Array.isArray(toEmails) && toEmails.length > 0
+      ? toEmails.map((e) => String(e || "").trim()).filter(Boolean)
+      : [];
+  if (recipientList.length === 0) {
+    return res.status(400).json({
+      error: "At least one recipient in toEmails is required. The server does not use template To addresses.",
+    });
   }
 
   if (!pool) {
@@ -5226,37 +5319,13 @@ app.post("/api/emails/send-windows-order", async (req, res) => {
     return res.status(500).json({ error: "Failed to fetch project details" });
   }
 
-  // Get SMTP settings (QLD → slot 4, else default slot 1)
-  let smtpUser = null;
-  let smtpPass = null;
-  try {
-    const settingsResult = await pool.query(
-      `SELECT smtp_user_${SMTP_SLOT_QLD} AS u_qld, smtp_pass_${SMTP_SLOT_QLD} AS p_qld, smtp_user_${SMTP_SLOT_DEFAULT} AS u_def, smtp_pass_${SMTP_SLOT_DEFAULT} AS p_def FROM settings WHERE id = 1`
-    );
-    
-    if (settingsResult.rows.length > 0) {
-      const settings = settingsResult.rows[0];
-      if (project.state === "QLD") {
-        smtpUser = settings.u_qld;
-        smtpPass = settings.p_qld;
-      } else {
-        smtpUser = settings.u_def;
-        smtpPass = settings.p_def;
-      }
-    }
-  } catch (e) {
-    console.error("Error reading settings:", e);
-    return res.status(500).json({ error: "Failed to fetch settings" });
-  }
-
-  if (!smtpUser || !smtpPass) {
-    smtpUser = process.env.SMTP_USER;
-    smtpPass = process.env.SMTP_PASS;
-  }
+  const smtpCreds = await getSmtpCredentialsForFromAddress(fromTrim);
+  let smtpUser = smtpCreds.smtpUser;
+  let smtpPass = smtpCreds.smtpPass;
   if (!smtpUser || !smtpPass) {
     return res.status(503).json({
       error:
-        "SMTP not configured. Set SMTP User and SMTP Pass in Settings → File Settings, or use backend .env.",
+        "SMTP not configured for this From address, or no matching SMTP slot. Set credentials in Settings → File Settings, or use backend .env.",
     });
   }
 
@@ -5341,21 +5410,9 @@ Date Required: ${windowDateRequired || "N/A"}`;
     htmlBody = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">${htmlBody}</body></html>`;
   }
 
-  // Use template's to_addresses only (not from request)
-  let recipientEmails = [];
-  if (template.to_addresses && Array.isArray(template.to_addresses) && template.to_addresses.length > 0) {
-    recipientEmails = template.to_addresses.filter(email => email && email.trim());
-  }
-  
-  if (recipientEmails.length === 0) {
-    return res.status(400).json({ error: "No recipient email addresses configured in the template. Please set recipients in Settings → Email Templates." });
-  }
-  
-  const recipientEmail = recipientEmails.join(", ");
+  const recipientEmail = recipientList.join(", ");
+  const fromAddress = fromTrim;
 
-  // Use template's from_address (or fallback to SMTP user)
-  const fromAddress = template.from_address || smtpUser;
-  
   // Build attachments array - attach drawings PDF (required)
   const attachments = [];
   

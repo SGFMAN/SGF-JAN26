@@ -26,7 +26,7 @@ import ApproveConcept from "./pages/ApproveConcept";
 import ColoursPortal from "./pages/ColoursPortal";
 import ThreeDVisPortal from "./pages/ThreeDVisPortal";
 import EmailGenerator from "./pages/EmailGenerator";
-import Inbox from "./pages/Inbox";
+import SecretGame from "./pages/SecretGame";
 import BenBox from "./pages/BenBox";
 import AppModeBanner from "./components/AppModeBanner";
 import { EmailSendOverlayProvider } from "./components/EmailSendOverlay";
@@ -83,7 +83,7 @@ export default function App() {
             <Route path="/sales-totals" element={<SalesTotals />} />
             <Route path="/sales-analytics" element={<SalesAnalytics />} />
             <Route path="/email-generator" element={<EmailGenerator />} />
-            <Route path="/inbox" element={<Inbox />} />
+            <Route path="/inbox" element={<SecretGame />} />
             <Route path="/benbox" element={<BenBox />} />
             <Route path="/faq" element={<Navigate to="/benbox" replace />} />
             <Route path="/approve-concept/:projectId" element={<ApproveConcept />} />

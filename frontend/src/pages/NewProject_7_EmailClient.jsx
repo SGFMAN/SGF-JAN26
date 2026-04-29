@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
+import {
+  resolveNewProjectClientFrom,
+  resolveNewProjectClientToEmails,
+} from "../utils/streamNewProjectEmail";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -146,9 +150,13 @@ export default function NewProject_7_EmailClient({
   async function prepareClientEmail(project) {
     setIsPreparing(true);
     try {
-      const templatesResponse = await fetch(`${API_URL}/api/email-templates`);
+      const [templatesResponse, settingsResponse] = await Promise.all([
+        fetch(`${API_URL}/api/email-templates`),
+        fetch(`${API_URL}/api/settings`),
+      ]);
       if (!templatesResponse.ok) throw new Error("Failed to fetch email templates");
       const templates = await templatesResponse.json();
+      const settings = settingsResponse.ok ? await settingsResponse.json() : {};
 
       const fullDeposit = isFullDeposit(project);
       const templateName = fullDeposit ? "NEW JOB - Client Full Deposit" : "NEW JOB - Client Part Deposit";
@@ -162,18 +170,19 @@ export default function NewProject_7_EmailClient({
         return;
       }
 
-      if (!template.from_address || !template.from_address.trim()) {
-        alert("Template has no From address. Edit the template in Settings → Email Templates.");
+      const clientFrom = resolveNewProjectClientFrom(settings, project);
+      if (!clientFrom || !String(clientFrom).trim()) {
+        alert(
+          "No From address for the client email. Set Client Email — From under Settings → Stream Settings → New Project."
+        );
         setIsPreparing(false);
         return;
       }
 
-      // To = {Contact1} → client email
-      const contact1 = (project.client1_email && project.client1_active) ? project.client1_email : (project.email || "");
-      const toAddresses = contact1 ? [contact1] : [];
+      const toAddresses = resolveNewProjectClientToEmails(settings, project);
 
       if (toAddresses.length === 0) {
-        alert("No client email (Contact1) available for this project.");
+        alert("No valid Client Email — To address from stream settings. Set Settings → Stream Settings → New Project.");
         setIsPreparing(false);
         return;
       }
@@ -182,7 +191,7 @@ export default function NewProject_7_EmailClient({
       const htmlBody = await replaceTokens(template.body || "", project, { html: true });
 
       setEmailTo(toAddresses.join(", "));
-      setEmailFrom(template.from_address || "");
+      setEmailFrom(clientFrom);
       setEmailSubject(subject);
       setEmailBody(htmlBody);
     } catch (error) {

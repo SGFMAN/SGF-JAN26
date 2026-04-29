@@ -8,6 +8,10 @@ import { Link } from "react-router-dom";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import {
+  resolveNewProjectClientFrom,
+  resolveNewProjectClientToEmails,
+} from "../utils/streamNewProjectEmail";
+import {
   DRAFTSPERSON_UNASSIGNED,
   normalizeDraftspersonField,
   isDraftspersonAssigned,
@@ -163,11 +167,15 @@ export default function DrawingManager() {
   async function openReminderEmailModal(project) {
     const mainEmail = (getMainEmailContact(project) || "").trim();
     try {
-      const templateResponse = await fetch(`${API_URL}/api/email-templates`);
+      const [templateResponse, settingsResponse] = await Promise.all([
+        fetch(`${API_URL}/api/email-templates`),
+        fetch(`${API_URL}/api/settings`),
+      ]);
       if (!templateResponse.ok) {
         throw new Error("Failed to fetch email templates");
       }
       const templates = await templateResponse.json();
+      const settings = settingsResponse.ok ? await settingsResponse.json() : {};
       const template = templates.find((t) => t.name === "DRAWINGS - Reminder");
       if (!template) {
         alert('Email template "DRAWINGS - Reminder" not found. Please create it in Settings → Email Templates.');
@@ -183,7 +191,6 @@ export default function DrawingManager() {
       const contact1 = project?.client1_active === "true" && project?.client1_email ? project.client1_email : "";
       const contact2 = project?.client2_active === "true" && project?.client2_email ? project.client2_email : "";
       const contact3 = project?.client3_active === "true" && project?.client3_email ? project.client3_email : "";
-      const toFromTemplate = Array.isArray(template.to_addresses) ? template.to_addresses.join(", ") : "";
 
       const tokenMap = {
         ProjectName: projectName,
@@ -211,8 +218,9 @@ export default function DrawingManager() {
       };
 
       setSelectedProjectForReminder(project);
-      setReminderEmailTo(mainEmail || toFromTemplate || "");
-      setReminderEmailFrom((template.from_address || "").trim());
+      const streamTo = resolveNewProjectClientToEmails(settings, project);
+      setReminderEmailTo(streamTo.join(", ") || mainEmail || "");
+      setReminderEmailFrom(resolveNewProjectClientFrom(settings, project));
       setReminderEmailSubject(applyTemplateTokens(template.subject || "", tokenMap));
       setReminderEmailBody(applyTemplateTokens(template.body || "", tokenMap));
       setShowReminderModal(true);
