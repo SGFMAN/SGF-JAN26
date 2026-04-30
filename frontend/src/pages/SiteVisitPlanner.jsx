@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { isUserAdmin } from "../utils/auth";
+import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -29,9 +30,31 @@ const PROJECT_DURATION_MINUTES = 120; // 2 hours
 const PROJECT_WIDTH = 400;
 const PROJECT_HEIGHT = 100;
 
+/** Default From for Site Visit Booking emails (must match an SMTP slot in Settings to send). */
+const DEFAULT_SITE_VISIT_FROM = "craig@superiorgrannyflats.com.au";
+
+/** Same source as Stream Settings / SMTP Settings: non-empty `smtp_user_1`…`smtp_user_16` (deduped, sorted). */
+function smtpSlotEmailsFromSettings(data) {
+  if (!data || typeof data !== "object") return [];
+  const seen = new Set();
+  const list = [];
+  for (let i = 1; i <= 16; i++) {
+    const raw = data[`smtp_user_${i}`];
+    const e = raw == null ? "" : String(raw).trim();
+    if (!e) continue;
+    const key = e.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    list.push(e);
+  }
+  list.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  return list;
+}
+
 export default function SiteVisitPlanner() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { runWithEmailOverlay } = useEmailSendOverlay();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -60,8 +83,14 @@ export default function SiteVisitPlanner() {
   const [hourHeight, setHourHeight] = useState(0);
   const draggingIdRef = useRef(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showSiteVisitEmailPreview, setShowSiteVisitEmailPreview] = useState(false);
   const [currentEmailProjectIndex, setCurrentEmailProjectIndex] = useState(0);
+  const [siteVisitPreviewTo, setSiteVisitPreviewTo] = useState("");
+  const [siteVisitPreviewFrom, setSiteVisitPreviewFrom] = useState(DEFAULT_SITE_VISIT_FROM);
+  const [siteVisitPreviewSubject, setSiteVisitPreviewSubject] = useState("");
+  const [siteVisitPreviewBody, setSiteVisitPreviewBody] = useState("");
+  const [siteVisitSmtpFromList, setSiteVisitSmtpFromList] = useState([]);
+  const siteVisitEmailBodyRef = useRef(null);
   // Drag state for reordering group project list (green rectangles)
   const [groupDragId, setGroupDragId] = useState(null);
   const [groupDragPosition, setGroupDragPosition] = useState({ x: 0, y: 0 });
@@ -148,9 +177,10 @@ export default function SiteVisitPlanner() {
     }
   }, [loading, plannerRef]);
 
-  async function fetchProjects() {
+  async function fetchProjects(options = {}) {
+    const showLoading = options.showLoading !== false;
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       setError(null);
       const response = await fetch(`${API_URL}/api/projects`);
       if (!response.ok) {
@@ -162,7 +192,7 @@ export default function SiteVisitPlanner() {
       setError(err.message);
       console.error("Error fetching projects:", err);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }
 
@@ -292,6 +322,242 @@ export default function SiteVisitPlanner() {
       .filter(Boolean);
   }, [group, projects]);
 
+  const groupProjectsRef = useRef([]);
+  useEffect(() => {
+    groupProjectsRef.current = groupProjects;
+  }, [groupProjects]);
+
+  useEffect(() => {
+    if (showSiteVisitEmailPreview && siteVisitEmailBodyRef.current && siteVisitPreviewBody != null) {
+      if (siteVisitEmailBodyRef.current.innerHTML !== siteVisitPreviewBody) {
+        siteVisitEmailBodyRef.current.innerHTML = siteVisitPreviewBody;
+      }
+    }
+  }, [showSiteVisitEmailPreview, siteVisitPreviewBody]);
+
+  async function loadSiteVisitSmtpFromAddresses() {
+    try {
+      const res = await fetch(`${API_URL}/api/settings`);
+      if (!res.ok) return [DEFAULT_SITE_VISIT_FROM];
+      const s = await res.json();
+      const slots = smtpSlotEmailsFromSettings(s);
+      const seen = new Set();
+      const out = [];
+      const add = (addr) => {
+        const v = addr != null ? String(addr).trim() : "";
+        if (!v) return;
+        const key = v.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push(v);
+      };
+      add(DEFAULT_SITE_VISIT_FROM);
+      for (const e of slots) add(e);
+      return out.length ? out : [DEFAULT_SITE_VISIT_FROM];
+    } catch (e) {
+      console.error("Site visit planner: could not load SMTP from addresses:", e);
+      return [DEFAULT_SITE_VISIT_FROM];
+    }
+  }
+
+  function collectSiteVisitRecipientEmails(project) {
+    const projectToEmails = new Set();
+    if (project.client1_email && project.client1_active === "true") {
+      projectToEmails.add(String(project.client1_email).trim());
+    }
+    if (project.client2_email && project.client2_active === "true") {
+      projectToEmails.add(String(project.client2_email).trim());
+    }
+    if (project.client3_email && project.client3_active === "true") {
+      projectToEmails.add(String(project.client3_email).trim());
+    }
+    if (project.email) {
+      projectToEmails.add(String(project.email).trim());
+    }
+    return Array.from(projectToEmails).filter(Boolean);
+  }
+
+  function formatSiteVisitClientGreeting(project) {
+    const names = [];
+    if (project.client1_name && project.client1_active === "true") names.push(String(project.client1_name).trim());
+    if (project.client2_name && project.client2_active === "true") names.push(String(project.client2_name).trim());
+    if (project.client3_name && project.client3_active === "true") names.push(String(project.client3_name).trim());
+    const firstNames = names
+      .map((name) => name.split(/\s+/)[0])
+      .filter((name) => name.length > 0);
+    if (firstNames.length === 1) return `${firstNames[0]},`;
+    if (firstNames.length === 2) return `${firstNames[0]} and ${firstNames[1]},`;
+    if (firstNames.length > 2) {
+      const copy = [...firstNames];
+      const last = copy.pop();
+      return `${copy.join(", ")} and ${last},`;
+    }
+    return project.client_name || "";
+  }
+
+  function closeSiteVisitEmailPreview() {
+    setShowSiteVisitEmailPreview(false);
+    setCurrentEmailProjectIndex(0);
+    setSiteVisitPreviewTo("");
+    setSiteVisitPreviewFrom(DEFAULT_SITE_VISIT_FROM);
+    setSiteVisitPreviewSubject("");
+    setSiteVisitPreviewBody("");
+  }
+
+  async function openSiteVisitEmailPreviewAtIndex(index) {
+    try {
+      const list = groupProjectsRef.current;
+      if (!groupDate || !list || index < 0 || index >= list.length) {
+        return;
+      }
+      const currentProject = list[index];
+      if (!currentProject) return;
+
+      const smtpList = await loadSiteVisitSmtpFromAddresses();
+      setSiteVisitSmtpFromList(smtpList);
+
+      const period = projectTimePeriods[currentProject.id] !== false ? "AM" : "PM";
+      const projectForTokens = {
+        ...currentProject,
+        site_visit_scheduled_date: groupDate,
+        site_visit_scheduled_period: period,
+        client_name: formatSiteVisitClientGreeting(currentProject) || currentProject.client_name || "",
+      };
+
+      const toEmails = collectSiteVisitRecipientEmails(currentProject);
+      if (toEmails.length === 0) {
+        alert("No active client email addresses found for this project.");
+        return;
+      }
+
+      const templatesResponse = await fetch(`${API_URL}/api/email-templates`);
+      if (!templatesResponse.ok) {
+        alert("Failed to fetch email templates.");
+        return;
+      }
+      const templates = await templatesResponse.json();
+      const template = templates.find((t) => t.name === "SITE VISIT BOOKING");
+      if (!template) {
+        alert("Email template 'SITE VISIT BOOKING' not found. Create it in Settings → Email Templates.");
+        return;
+      }
+
+      const subject = await replaceTokens(template.subject || "", projectForTokens);
+      const body = await replaceTokens(template.body || "", projectForTokens);
+
+      setCurrentEmailProjectIndex(index);
+      setSiteVisitPreviewTo(toEmails.join(", "));
+      setSiteVisitPreviewFrom(DEFAULT_SITE_VISIT_FROM);
+      setSiteVisitPreviewSubject(subject);
+      setSiteVisitPreviewBody(body);
+      setShowSiteVisitEmailPreview(true);
+    } catch (e) {
+      console.error("Site visit email preview:", e);
+      alert(e.message || "Failed to load email preview");
+    }
+  }
+
+  async function handleSiteVisitEmailClientsClick() {
+    if (!groupDate) {
+      alert("Please select a date first");
+      return;
+    }
+    const list = groupProjectsRef.current;
+    if (!list.length) {
+      alert("No projects in this group.");
+      return;
+    }
+    await openSiteVisitEmailPreviewAtIndex(0);
+  }
+
+  async function handleSiteVisitPreviewSend() {
+    const list = groupProjectsRef.current;
+    const idx = currentEmailProjectIndex;
+    const currentProject = list[idx];
+    if (!currentProject || !groupDate) {
+      alert("Missing project or date.");
+      return;
+    }
+
+    const toAddresses = siteVisitPreviewTo
+      .split(",")
+      .map((a) => a.trim())
+      .filter((a) => a.length > 0);
+    const fromForSend = (siteVisitPreviewFrom || "").trim();
+    if (toAddresses.length === 0) {
+      alert("Please enter at least one recipient email address.");
+      return;
+    }
+    if (!fromForSend) {
+      alert("Please enter a From address.");
+      return;
+    }
+
+    const period = projectTimePeriods[currentProject.id] !== false ? "AM" : "PM";
+
+    try {
+      await runWithEmailOverlay(async () => {
+        const scheduleResponse = await fetch(`${API_URL}/api/projects/update-site-visit-scheduled`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projects: [
+              {
+                projectId: currentProject.id,
+                date: groupDate,
+                period,
+              },
+            ],
+            updateStatus: true,
+          }),
+        });
+        if (!scheduleResponse.ok) {
+          const errorData = await scheduleResponse.json().catch(() => ({}));
+          throw new Error(errorData.error || "Failed to save site visit schedule");
+        }
+
+        const sendRes = await fetch(`${API_URL}/api/emails/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: toAddresses,
+            from: fromForSend,
+            subject: siteVisitPreviewSubject || "",
+            htmlBody: siteVisitPreviewBody || "",
+          }),
+        });
+        const sendData = await sendRes.json().catch(() => ({}));
+        if (!sendRes.ok) {
+          throw new Error(sendData.error || "Failed to send email");
+        }
+      });
+
+      await fetchProjects({ showLoading: false });
+      // Let React apply `projects` so `groupProjectsRef` matches before opening the next preview.
+      await new Promise((r) => setTimeout(r, 0));
+
+      if (idx < groupProjectsRef.current.length - 1) {
+        await openSiteVisitEmailPreviewAtIndex(idx + 1);
+      } else {
+        alert("Site visit emails sent for all projects in this group.");
+        closeSiteVisitEmailPreview();
+      }
+    } catch (error) {
+      console.error("Site visit email send:", error);
+      alert(error.message || "Failed to send email");
+    }
+  }
+
+  function handleSiteVisitPreviewSkip() {
+    const list = groupProjectsRef.current;
+    const idx = currentEmailProjectIndex;
+    if (idx < list.length - 1) {
+      void openSiteVisitEmailPreviewAtIndex(idx + 1);
+    } else {
+      closeSiteVisitEmailPreview();
+    }
+  }
+
   // Helper function to get project at a specific position (0-7)
   const getProjectAtPosition = (position) => {
     if (!group || !Array.isArray(group.projectIds) || position < 0 || position >= 8) {
@@ -399,43 +665,9 @@ export default function SiteVisitPlanner() {
       return;
     }
 
-    // Pad array to 8 positions to work with fixed positions
-    let currentIds = Array.isArray(group.projectIds) ? [...group.projectIds] : [];
-    while (currentIds.length < 8) {
-      currentIds.push(null);
-    }
-    
-    const fromIndex = currentIds.indexOf(groupDragId);
-    const toIndex = currentIds.indexOf(targetProjectId);
-
-    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
-      return;
-    }
-
-    // Remove the dragged project and insert it at the new index
-    currentIds[fromIndex] = null;
-    currentIds[toIndex] = groupDragId;
-
-    // Keep the 8-position array (with nulls for empty slots)
-    const updatedGroup = {
-      ...group,
-      projectIds: currentIds,
-    };
-
-    setGroup(updatedGroup);
-
-    // Update AM/PM based on new position (0-3 = AM, 4-7 = PM)
-    const newIsAM = toIndex < 4;
-    setProjectTimePeriods(prev => ({
-      ...prev,
-      [groupDragId]: newIsAM
-    }));
-
-    // Save to localStorage so order persists
-    if (group.id) {
-      const savedOrderKey = `siteVisitGroup_${group.id}_order`;
-      localStorage.setItem(savedOrderKey, JSON.stringify(currentIds));
-    }
+    const toIndex = Array.isArray(group.projectIds) ? group.projectIds.indexOf(targetProjectId) : -1;
+    if (toIndex === -1) return;
+    moveGroupProjectToIndex(toIndex);
   };
 
   const handleGroupDrop = (e) => {
@@ -447,6 +679,57 @@ export default function SiteVisitPlanner() {
   const handleGroupDragEnd = () => {
     setGroupDragId(null);
     setGroupDragPosition({ x: 0, y: 0 });
+  };
+
+  const normalizeEightPositions = (ids) => {
+    const padded = Array.isArray(ids) ? [...ids] : [];
+    while (padded.length < 8) padded.push(null);
+    return padded.slice(0, 8);
+  };
+
+  const moveGroupProjectToIndex = (toIndex) => {
+    if (!group || !groupDragId || toIndex < 0 || toIndex > 7) return;
+
+    const currentIds = normalizeEightPositions(group.projectIds);
+    const fromIndex = currentIds.indexOf(groupDragId);
+    if (fromIndex === -1 || fromIndex === toIndex) return;
+
+    const displacedProjectId = currentIds[toIndex];
+    currentIds[toIndex] = groupDragId;
+    currentIds[fromIndex] = displacedProjectId && displacedProjectId !== groupDragId ? displacedProjectId : null;
+
+    // Defensive dedupe: never allow duplicate IDs to survive rapid drag-over events.
+    const seen = new Set();
+    for (let i = 0; i < currentIds.length; i++) {
+      const id = currentIds[i];
+      if (id == null) continue;
+      if (seen.has(id)) {
+        currentIds[i] = null;
+      } else {
+        seen.add(id);
+      }
+    }
+
+    setGroup({
+      ...group,
+      projectIds: currentIds,
+    });
+
+    setProjectTimePeriods((prev) => {
+      const next = {
+        ...prev,
+        [groupDragId]: toIndex < 4,
+      };
+      if (displacedProjectId && displacedProjectId !== groupDragId) {
+        next[displacedProjectId] = fromIndex < 4;
+      }
+      return next;
+    });
+
+    if (group.id) {
+      const savedOrderKey = `siteVisitGroup_${group.id}_order`;
+      localStorage.setItem(savedOrderKey, JSON.stringify(currentIds));
+    }
   };
 
   // Handle pointer down on project card
@@ -1043,66 +1326,13 @@ export default function SiteVisitPlanner() {
                             onDragOver={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              if (groupDragId && group) {
-                                // Pad array to 8 positions if needed
-                                let currentIds = Array.isArray(group.projectIds) ? [...group.projectIds] : [];
-                                while (currentIds.length < 8) {
-                                  currentIds.push(null);
-                                }
-                                const fromIndex = currentIds.indexOf(groupDragId);
-                                if (fromIndex !== -1) {
-                                  // Remove from current position
-                                  currentIds[fromIndex] = null;
-                                  // Insert at target position (AM zone: 0-3)
-                                  currentIds[index] = groupDragId;
-                                  // Remove nulls to keep array clean
-                                  const cleanIds = currentIds.filter(id => id !== null);
-                                  setGroup({
-                                    ...group,
-                                    projectIds: cleanIds,
-                                  });
-                                  setProjectTimePeriods(prev => ({
-                                    ...prev,
-                                    [groupDragId]: true
-                                  }));
-                                  if (group.id) {
-                                    const savedOrderKey = `siteVisitGroup_${group.id}_order`;
-                                    localStorage.setItem(savedOrderKey, JSON.stringify(cleanIds));
-                                  }
-                                }
-                              }
+                              moveGroupProjectToIndex(index);
                             }}
                             onDrop={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              if (groupDragId && group) {
-                                // Pad array to 8 positions if needed
-                                let currentIds = Array.isArray(group.projectIds) ? [...group.projectIds] : [];
-                                while (currentIds.length < 8) {
-                                  currentIds.push(null);
-                                }
-                                const fromIndex = currentIds.indexOf(groupDragId);
-                                if (fromIndex !== -1) {
-                                  // Remove from current position
-                                  currentIds[fromIndex] = null;
-                                  // Insert at target position (AM zone: 0-3)
-                                  currentIds[index] = groupDragId;
-                                  // Keep the 8-position array (with nulls for empty slots)
-                                  setGroup({
-                                    ...group,
-                                    projectIds: currentIds,
-                                  });
-                                  setProjectTimePeriods(prev => ({
-                                    ...prev,
-                                    [groupDragId]: true
-                                  }));
-                                  if (group.id) {
-                                    const savedOrderKey = `siteVisitGroup_${group.id}_order`;
-                                    localStorage.setItem(savedOrderKey, JSON.stringify(currentIds));
-                                  }
-                                }
-                                handleGroupDragEnd();
-                              }
+                              moveGroupProjectToIndex(index);
+                              handleGroupDragEnd();
                             }}
                             style={{
                               width: "100%",
@@ -1302,67 +1532,13 @@ export default function SiteVisitPlanner() {
                             onDragOver={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              if (groupDragId && group) {
-                                // Pad array to 8 positions if needed
-                                let currentIds = Array.isArray(group.projectIds) ? [...group.projectIds] : [];
-                                while (currentIds.length < 8) {
-                                  currentIds.push(null);
-                                }
-                                const positionIndex = index + 4;
-                                const fromIndex = currentIds.indexOf(groupDragId);
-                                if (fromIndex !== -1) {
-                                  // Remove from current position
-                                  currentIds[fromIndex] = null;
-                                  // Insert at target position (PM zone: 4-7)
-                                  currentIds[positionIndex] = groupDragId;
-                                  // Keep the 8-position array (with nulls for empty slots)
-                                  setGroup({
-                                    ...group,
-                                    projectIds: currentIds,
-                                  });
-                                  setProjectTimePeriods(prev => ({
-                                    ...prev,
-                                    [groupDragId]: false
-                                  }));
-                                  if (group.id) {
-                                    const savedOrderKey = `siteVisitGroup_${group.id}_order`;
-                                    localStorage.setItem(savedOrderKey, JSON.stringify(currentIds));
-                                  }
-                                }
-                              }
+                              moveGroupProjectToIndex(positionIndex);
                             }}
                             onDrop={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              if (groupDragId && group) {
-                                // Pad array to 8 positions if needed
-                                let currentIds = Array.isArray(group.projectIds) ? [...group.projectIds] : [];
-                                while (currentIds.length < 8) {
-                                  currentIds.push(null);
-                                }
-                                const positionIndex = index + 4;
-                                const fromIndex = currentIds.indexOf(groupDragId);
-                                if (fromIndex !== -1) {
-                                  // Remove from current position
-                                  currentIds[fromIndex] = null;
-                                  // Insert at target position (PM zone: 4-7)
-                                  currentIds[positionIndex] = groupDragId;
-                                  // Keep the 8-position array (with nulls for empty slots)
-                                  setGroup({
-                                    ...group,
-                                    projectIds: currentIds,
-                                  });
-                                  setProjectTimePeriods(prev => ({
-                                    ...prev,
-                                    [groupDragId]: false
-                                  }));
-                                  if (group.id) {
-                                    const savedOrderKey = `siteVisitGroup_${group.id}_order`;
-                                    localStorage.setItem(savedOrderKey, JSON.stringify(currentIds));
-                                  }
-                                }
-                                handleGroupDragEnd();
-                              }
+                              moveGroupProjectToIndex(positionIndex);
+                              handleGroupDragEnd();
                             }}
                             style={{
                               width: "100%",
@@ -1721,12 +1897,14 @@ export default function SiteVisitPlanner() {
                 >
                   <button
                     onClick={() => {
-                      if (!groupDate) {
-                        alert("Please select a date first");
-                        return;
-                      }
-                      setCurrentEmailProjectIndex(0);
-                      setShowEmailModal(true);
+                      void (async () => {
+                        try {
+                          await handleSiteVisitEmailClientsClick();
+                        } catch (err) {
+                          console.error(err);
+                          alert(err.message || "Failed to open email preview");
+                        }
+                      })();
                     }}
                     style={{
                       padding: "10px 20px",
@@ -1751,8 +1929,8 @@ export default function SiteVisitPlanner() {
         </div>
       </div>
 
-      {/* Email Modal */}
-      {showEmailModal && (
+      {/* Site visit client email — preview & send (SMTP, same pattern as Drawings) */}
+      {showSiteVisitEmailPreview && (
         <div
           style={{
             position: "fixed",
@@ -1761,257 +1939,162 @@ export default function SiteVisitPlanner() {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            zIndex: 1000,
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowEmailModal(false);
-            }
+            zIndex: 1001,
           }}
         >
           <div
             style={{
               background: WHITE,
-              borderRadius: "16px",
-              padding: "32px",
-              maxWidth: "600px",
+              borderRadius: "12px",
+              padding: "24px",
               width: "90%",
-              boxShadow: "0 4px 24px rgba(0,0,0,0.3)",
+              maxWidth: "800px",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            {currentEmailProjectIndex < groupProjects.length ? (
-              <>
-                <h2 style={{ fontSize: "1.5rem", fontWeight: 600, color: MONUMENT, margin: "0 0 24px 0", textAlign: "center" }}>
-                  Send Email
-                </h2>
-                {(() => {
-                  const currentProject = groupProjects[currentEmailProjectIndex];
-                  const suburb = currentProject.suburb || "Unknown Suburb";
-                  const street = currentProject.street || "No address";
-                  
-                  return (
-                    <div style={{ marginBottom: "24px" }}>
-                      <div style={{ fontSize: "1.2rem", fontWeight: 600, color: MONUMENT, marginBottom: "8px" }}>
-                        {suburb} - {street}
-                      </div>
-                      <div style={{ fontSize: "0.9rem", color: "#666", marginBottom: "16px" }}>
-                        Project {currentEmailProjectIndex + 1} of {groupProjects.length}
-                      </div>
-                    </div>
-                  );
-                })()}
-                <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
-                  <button
-                    onClick={async () => {
-                      const currentProject = groupProjects[currentEmailProjectIndex];
-                      
-                      try {
-                        // Save the schedule and update status to "Email Sent" for this project
-                        const period = projectTimePeriods[currentProject.id] !== false ? "AM" : "PM";
-                        const scheduleResponse = await fetch(`${API_URL}/api/projects/update-site-visit-scheduled`, {
-                          method: "POST",
-                          headers: {
-                            "Content-Type": "application/json",
-                          },
-                          body: JSON.stringify({
-                            projects: [{
-                              projectId: currentProject.id,
-                              date: groupDate,
-                              period: period
-                            }],
-                            updateStatus: true
-                          }),
-                        });
-
-                        if (!scheduleResponse.ok) {
-                          const errorData = await scheduleResponse.json().catch(() => ({}));
-                          throw new Error(errorData.error || "Failed to save site visit schedule");
-                        }
-
-                        // Fetch the "SITE VISIT BOOKING" template
-                        const templatesResponse = await fetch(`${API_URL}/api/email-templates`);
-                        if (!templatesResponse.ok) {
-                          throw new Error("Failed to fetch email templates");
-                        }
-                        const templates = await templatesResponse.json();
-                        const template = templates.find(t => t.name === "SITE VISIT BOOKING");
-                        
-                        if (!template) {
-                          alert("Email template 'SITE VISIT BOOKING' not found. Please create it in Settings → Email Templates.");
-                          return;
-                        }
-
-                        // Refresh projects to get updated data
-                        await fetchProjects();
-
-                        // Get the updated project
-                        let updatedProject = projects.find(p => p.id === currentProject.id);
-                        if (!updatedProject) {
-                          alert("Project not found");
-                          return;
-                        }
-
-                        // Update with the schedule data
-                        updatedProject = {
-                          ...updatedProject,
-                          site_visit_scheduled_date: groupDate,
-                          site_visit_scheduled_period: period
-                        };
-
-                        // Collect active client emails and names
-                        const projectToEmails = new Set();
-                        const projectActiveClientNames = [];
-                        
-                        if (updatedProject.client1_email && updatedProject.client1_active === 'true') {
-                          projectToEmails.add(updatedProject.client1_email);
-                          if (updatedProject.client1_name) {
-                            projectActiveClientNames.push(updatedProject.client1_name);
-                          }
-                        }
-                        if (updatedProject.client2_email && updatedProject.client2_active === 'true') {
-                          projectToEmails.add(updatedProject.client2_email);
-                          if (updatedProject.client2_name) {
-                            projectActiveClientNames.push(updatedProject.client2_name);
-                          }
-                        }
-                        if (updatedProject.client3_email && updatedProject.client3_active === 'true') {
-                          projectToEmails.add(updatedProject.client3_email);
-                          if (updatedProject.client3_name) {
-                            projectActiveClientNames.push(updatedProject.client3_name);
-                          }
-                        }
-                        if (updatedProject.email) {
-                          projectToEmails.add(updatedProject.email);
-                        }
-
-                        if (projectToEmails.size === 0) {
-                          alert("No active client email addresses found for this project");
-                          return;
-                        }
-
-                        // Extract first names and format them
-                        const firstNames = projectActiveClientNames
-                          .map(name => name.trim().split(/\s+/)[0])
-                          .filter(name => name.length > 0);
-                        
-                        let formattedClientNames = "";
-                        if (firstNames.length === 1) {
-                          formattedClientNames = `${firstNames[0]},`;
-                        } else if (firstNames.length === 2) {
-                          formattedClientNames = `${firstNames[0]} and ${firstNames[1]},`;
-                        } else if (firstNames.length > 2) {
-                          const last = firstNames.pop();
-                          formattedClientNames = `${firstNames.join(", ")} and ${last},`;
-                        }
-
-                        // Create project object with formatted client names
-                        const projectForTokens = {
-                          ...updatedProject,
-                          client_name: formattedClientNames || updatedProject.client_name || ""
-                        };
-
-                        // Replace tokens in template
-                        const subject = await replaceTokens(template.subject || "", projectForTokens);
-                        const body = await replaceTokens(template.body || "", projectForTokens);
-
-                        // Create mailto link
-                        const toAddresses = Array.from(projectToEmails).join(";");
-                        const mailtoLink = `mailto:${toAddresses}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-                        
-                        // Open mailto link
-                        const link = document.createElement('a');
-                        link.href = mailtoLink;
-                        link.click();
-
-                        // Move to next project
-                        if (currentEmailProjectIndex < groupProjects.length - 1) {
-                          setCurrentEmailProjectIndex(currentEmailProjectIndex + 1);
-                        } else {
-                          // All projects processed
-                          setShowEmailModal(false);
-                          setCurrentEmailProjectIndex(0);
-                        }
-                        
-                      } catch (error) {
-                        console.error("Error processing email:", error);
-                        alert(error.message || "Failed to process email");
-                      }
-                    }}
-                    style={{
-                      padding: "10px 20px",
-                      fontSize: "1rem",
-                      fontWeight: 500,
-                      color: WHITE,
-                      background: MONUMENT,
-                      border: "none",
-                      borderRadius: "8px",
-                      cursor: "pointer",
-                      transition: "background 0.2s",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
-                  >
-                    Email
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (currentEmailProjectIndex < groupProjects.length - 1) {
-                        setCurrentEmailProjectIndex(currentEmailProjectIndex + 1);
-                      } else {
-                        setShowEmailModal(false);
-                        setCurrentEmailProjectIndex(0);
-                      }
-                    }}
-                    style={{
-                      padding: "10px 20px",
-                      fontSize: "1rem",
-                      fontWeight: 500,
-                      color: MONUMENT,
-                      background: SECTION_GREY,
-                      border: "none",
-                      borderRadius: "8px",
-                      cursor: "pointer",
-                      transition: "background 0.2s",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "#909090")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = SECTION_GREY)}
-                  >
-                    Skip
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowEmailModal(false);
-                      setCurrentEmailProjectIndex(0);
-                    }}
-                    style={{
-                      padding: "10px 20px",
-                      fontSize: "1rem",
-                      fontWeight: 500,
-                      color: MONUMENT,
-                      background: SECTION_GREY,
-                      border: "none",
-                      borderRadius: "8px",
-                      cursor: "pointer",
-                      transition: "background 0.2s",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "#909090")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = SECTION_GREY)}
-                  >
-                    Cancel
-                  </button>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Preview & Send Email</h2>
+              <button
+                type="button"
+                onClick={closeSiteVisitEmailPreview}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "1.5rem",
+                  cursor: "pointer",
+                  color: MONUMENT,
+                  padding: "0",
+                  width: "30px",
+                  height: "30px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ×
+              </button>
+            </div>
+            {(() => {
+              const currentProject = groupProjects[currentEmailProjectIndex];
+              if (!currentProject) return null;
+              const suburb = currentProject.suburb || "Unknown Suburb";
+              const street = currentProject.street || "No address";
+              return (
+                <div style={{ marginBottom: "16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 600, color: MONUMENT }}>
+                    {suburb} — {street}
+                  </div>
+                  <div style={{ fontSize: "0.85rem", color: "#666", marginTop: "4px" }}>
+                    Project {currentEmailProjectIndex + 1} of {groupProjects.length}
+                  </div>
                 </div>
-              </>
-            ) : (
-              <div style={{ textAlign: "center" }}>
-                <h2 style={{ fontSize: "1.5rem", fontWeight: 600, color: MONUMENT, margin: "0 0 24px 0" }}>
-                  All Projects Processed
-                </h2>
-                <button
-                  onClick={() => {
-                    setShowEmailModal(false);
-                    setCurrentEmailProjectIndex(0);
+              );
+            })()}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  To (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={siteVisitPreviewTo}
+                  onChange={(e) => setSiteVisitPreviewTo(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
                   }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  From
+                </label>
+                <select
+                  value={(() => {
+                    const t = (siteVisitPreviewFrom || "").trim().toLowerCase();
+                    const hit = siteVisitSmtpFromList.find((a) => a.toLowerCase() === t);
+                    return hit || DEFAULT_SITE_VISIT_FROM;
+                  })()}
+                  onChange={(e) => setSiteVisitPreviewFrom(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                >
+                  {siteVisitSmtpFromList.map((addr) => (
+                    <option key={addr} value={addr}>
+                      {addr}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  Subject
+                </label>
+                <input
+                  type="text"
+                  value={siteVisitPreviewSubject}
+                  onChange={(e) => setSiteVisitPreviewSubject(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  Body
+                </label>
+                <div
+                  ref={siteVisitEmailBodyRef}
+                  contentEditable
+                  onInput={(e) => setSiteVisitPreviewBody(e.currentTarget.innerHTML)}
+                  onBlur={(e) => setSiteVisitPreviewBody(e.currentTarget.innerHTML)}
+                  style={{
+                    width: "100%",
+                    minHeight: "280px",
+                    padding: "12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "0.9rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                    lineHeight: 1.6,
+                    outline: "none",
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", flexWrap: "wrap", marginTop: "8px" }}>
+                <button
+                  type="button"
+                  onClick={() => void handleSiteVisitPreviewSend()}
                   style={{
                     padding: "10px 20px",
                     fontSize: "1rem",
@@ -2021,15 +2104,44 @@ export default function SiteVisitPlanner() {
                     border: "none",
                     borderRadius: "8px",
                     cursor: "pointer",
-                    transition: "background 0.2s",
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
                 >
-                  Close
+                  Email
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSiteVisitPreviewSkip}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    color: MONUMENT,
+                    background: SECTION_GREY,
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Skip
+                </button>
+                <button
+                  type="button"
+                  onClick={closeSiteVisitEmailPreview}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    color: MONUMENT,
+                    background: "transparent",
+                    border: `1px solid ${SECTION_GREY}`,
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
                 </button>
               </div>
-            )}
+            </div>
           </div>
         </div>
       )}
