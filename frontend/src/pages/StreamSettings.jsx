@@ -1,22 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { getNewJobInternalTemplateName } from "../utils/newJobInternalTemplate";
-import {
-  buildSampleProjectForStreamPreview,
-  buildSampleProjectPartialDeposit,
-  getStreamNewProjectRow,
-  resolveNewProjectClientFrom,
-  resolveNewProjectClientToEmails,
-  resolveNewProjectTeamFrom,
-  resolveNewProjectTeamToEmailsFromStream,
-} from "../utils/streamNewProjectEmail";
-import {
-  parseEmailTemplateToAddressList,
-  resolveDesignToSalespersonFrom,
-  resolveDesignToSalespersonToEmails,
-  resolveSalesToDesignFrom,
-  resolveSalesToDesignToEmails,
-} from "../utils/drawingNotifyFrom";
-
 const MONUMENT = "#323233";
 const WHITE = "#fff";
 const NEW_PROJECT_SECTION_BLUE = {
@@ -90,6 +72,96 @@ const EXTRA_EMAIL_SLOTS = [
   { checkKey: "extraEmail3", addrKey: "extraEmail3Address", label: "Extra Email 3" },
 ];
 
+/** Send-client style sections: extra rows with optional prefix (`""` = legacy `extraEmail1` keys). */
+function drawingsSendClientExtraSlotDefs(prefix) {
+  if (!prefix) return EXTRA_EMAIL_SLOTS;
+  return [1, 2, 3].map((n) => ({
+    checkKey: `${prefix}ExtraEmail${n}`,
+    addrKey: `${prefix}ExtraEmail${n}Address`,
+    label: `Extra Email ${n}`,
+  }));
+}
+
+/** QLD `drawings` key from camelCase base key (e.g. `extraEmail1` → `qldExtraEmail1`). */
+function qldDrawingsKey(baseKey) {
+  return `qld${baseKey.charAt(0).toUpperCase()}${baseKey.slice(1)}`;
+}
+
+/** When Sales Notes From/To are empty, copy from Design Notes with From/To reversed (one-way seed). */
+function seedSalesNotesFromDesignNotesReversed(d) {
+  const T = (v) => (v == null ? "" : String(v).trim());
+  if (!T(d.salesNotesFromEmail) && T(d.designNotesToEmail)) d.salesNotesFromEmail = d.designNotesToEmail;
+  if (!T(d.salesNotesToEmail) && T(d.designNotesFromEmail)) d.salesNotesToEmail = d.designNotesFromEmail;
+  if (!T(d.qldSalesNotesFromEmail) && T(d.qldDesignNotesToEmail)) d.qldSalesNotesFromEmail = d.qldDesignNotesToEmail;
+  if (!T(d.qldSalesNotesToEmail) && T(d.qldDesignNotesFromEmail)) d.qldSalesNotesToEmail = d.qldDesignNotesFromEmail;
+}
+
+function drawingsUploadFieldKeys(fieldGroup) {
+  if (fieldGroup === "drawingsUpload") {
+    return {
+      label: "Drawings Upload",
+      fromVic: "designToSalespersonFromEmail",
+      fromQld: "qldDesignToSalespersonFromEmail",
+      toVic: "designToSalespersonToEmail",
+      toQld: "qldDesignToSalespersonToEmail",
+      to2Qld: "qldDesignToSalespersonToEmail2",
+    };
+  }
+  if (fieldGroup === "designNotes") {
+    return {
+      label: "Design Notes",
+      fromVic: "designNotesFromEmail",
+      fromQld: "qldDesignNotesFromEmail",
+      toVic: "designNotesToEmail",
+      toQld: "qldDesignNotesToEmail",
+    };
+  }
+  if (fieldGroup === "salesNotes") {
+    return {
+      label: "Sales Notes",
+      fromVic: "salesNotesFromEmail",
+      fromQld: "qldSalesNotesFromEmail",
+      toVic: "salesNotesToEmail",
+      toQld: "qldSalesNotesToEmail",
+    };
+  }
+  if (fieldGroup === "conceptApproved") {
+    return {
+      label: "Concept Approved",
+      fromVic: "conceptApprovedFromEmail",
+      fromQld: "qldConceptApprovedFromEmail",
+      toVic: "conceptApprovedToEmail",
+      toQld: "qldConceptApprovedToEmail",
+    };
+  }
+  if (fieldGroup === "wdsApproved") {
+    return {
+      label: "WDs Approved",
+      fromVic: "wdsApprovedFromEmail",
+      fromQld: "qldWdsApprovedFromEmail",
+      toVic: "wdsApprovedToEmail",
+      toQld: "qldWdsApprovedToEmail",
+      to2Vic: "wdsApprovedToEmail2",
+      to2Qld: "qldWdsApprovedToEmail2",
+    };
+  }
+  return null;
+}
+
+function drawingsSendClientFieldKeys(fieldGroup) {
+  if (fieldGroup === "sendDrawingsToClient") {
+    return {
+      label: "Send Drawings to Client",
+      fromVic: "salespersonToClientFromEmail",
+      fromQld: "qldSalespersonToClientFromEmail",
+      sendVic: "sendToClients",
+      sendQld: "qldSendToClients",
+      extraPrefix: "",
+    };
+  }
+  return null;
+}
+
 const SECTION_OPTIONS = [
   { key: "newProject", label: "New Project" },
   { key: "drawings", label: "Drawings" },
@@ -129,15 +201,19 @@ function defaultNewProjectSectionOpen() {
 
 /** Drawings email groups (VIC / QLD columns) — collapsible blue panels like New Project. */
 const DRAWING_EMAIL_SECTIONS = [
-  { title: "Design to Salesperson" },
-  { title: "Sales Person to Client" },
+  { id: "drawingsUpload", title: "Drawings Upload", kind: "upload", fieldGroup: "drawingsUpload" },
+  { id: "sendDrawingsToClient", title: "Send Drawings to Client", kind: "sendClient", fieldGroup: "sendDrawingsToClient" },
+  { id: "designNotes", title: "Design Notes", kind: "upload", fieldGroup: "designNotes" },
+  { id: "salesNotes", title: "Sales Notes", kind: "upload", fieldGroup: "salesNotes" },
+  { id: "conceptApproved", title: "Concept Approved", kind: "upload", fieldGroup: "conceptApproved" },
+  { id: "wdsApproved", title: "WDs Approved", kind: "upload", fieldGroup: "wdsApproved" },
 ];
 
 function defaultDrawingSectionOpen() {
   const open = { vic: {}, qld: {} };
   for (const s of DRAWING_EMAIL_SECTIONS) {
-    open.vic[s.title] = false;
-    open.qld[s.title] = false;
+    open.vic[s.id] = false;
+    open.qld[s.id] = false;
   }
   return open;
 }
@@ -219,7 +295,55 @@ function defaultDrawingsState() {
     qldExtraEmail3Address: "",
     qldDesignToSalespersonFromEmail: "",
     qldDesignToSalespersonToEmail: "",
+    /** QLD-only: second Drawings Upload To slot (merged with primary at send time). */
+    qldDesignToSalespersonToEmail2: "",
     qldSalespersonToClientFromEmail: "",
+    designNotesFromEmail: "",
+    designNotesToEmail: "",
+    qldDesignNotesFromEmail: "",
+    qldDesignNotesToEmail: "",
+    salesNotesFromEmail: "",
+    salesNotesToEmail: "",
+    qldSalesNotesFromEmail: "",
+    qldSalesNotesToEmail: "",
+    conceptApprovedFromEmail: "",
+    conceptApprovedToEmail: "",
+    conceptApprovedSendToClients: false,
+    conceptApprovedExtraEmail1: false,
+    conceptApprovedExtraEmail1Address: "",
+    conceptApprovedExtraEmail2: false,
+    conceptApprovedExtraEmail2Address: "",
+    conceptApprovedExtraEmail3: false,
+    conceptApprovedExtraEmail3Address: "",
+    qldConceptApprovedFromEmail: "",
+    qldConceptApprovedToEmail: "",
+    qldConceptApprovedSendToClients: false,
+    qldConceptApprovedExtraEmail1: false,
+    qldConceptApprovedExtraEmail1Address: "",
+    qldConceptApprovedExtraEmail2: false,
+    qldConceptApprovedExtraEmail2Address: "",
+    qldConceptApprovedExtraEmail3: false,
+    qldConceptApprovedExtraEmail3Address: "",
+    wdsApprovedFromEmail: "",
+    wdsApprovedToEmail: "",
+    wdsApprovedToEmail2: "",
+    wdsApprovedSendToClients: false,
+    wdsApprovedExtraEmail1: false,
+    wdsApprovedExtraEmail1Address: "",
+    wdsApprovedExtraEmail2: false,
+    wdsApprovedExtraEmail2Address: "",
+    wdsApprovedExtraEmail3: false,
+    wdsApprovedExtraEmail3Address: "",
+    qldWdsApprovedFromEmail: "",
+    qldWdsApprovedToEmail: "",
+    qldWdsApprovedToEmail2: "",
+    qldWdsApprovedSendToClients: false,
+    qldWdsApprovedExtraEmail1: false,
+    qldWdsApprovedExtraEmail1Address: "",
+    qldWdsApprovedExtraEmail2: false,
+    qldWdsApprovedExtraEmail2Address: "",
+    qldWdsApprovedExtraEmail3: false,
+    qldWdsApprovedExtraEmail3Address: "",
   };
 }
 
@@ -261,6 +385,7 @@ function normalizeStreamSettingsMap(raw) {
     if (!row.drawings.qldExtraEmail2Address) row.drawings.qldExtraEmail2Address = row.drawings.extraEmail2Address || "";
     if (row.drawings.qldExtraEmail3 == null) row.drawings.qldExtraEmail3 = !!row.drawings.extraEmail3;
     if (!row.drawings.qldExtraEmail3Address) row.drawings.qldExtraEmail3Address = row.drawings.extraEmail3Address || "";
+    seedSalesNotesFromDesignNotesReversed(row.drawings);
     row.newProject = {
       ...defaultNewProjectState(),
       ...(row.newProject && typeof row.newProject === "object" && !Array.isArray(row.newProject) ? row.newProject : {}),
@@ -514,12 +639,6 @@ export default function StreamSettings() {
   const [saving, setSaving] = useState(false);
 
   const [smtpSlotEmails, setSmtpSlotEmails] = useState([]);
-  const [streamPreviewOpen, setStreamPreviewOpen] = useState(null);
-  const [streamPreviewTitle, setStreamPreviewTitle] = useState("");
-  const [streamPreviewLinesByRegion, setStreamPreviewLinesByRegion] = useState({ vic: [], qld: [] });
-  const [streamPreviewRegion, setStreamPreviewRegion] = useState("vic");
-  const [streamPreviewLoading, setStreamPreviewLoading] = useState(false);
-  const [streamPreviewError, setStreamPreviewError] = useState("");
   const [newProjectSectionOpen, setNewProjectSectionOpen] = useState(defaultNewProjectSectionOpen);
   const [drawingSectionOpen, setDrawingSectionOpen] = useState(defaultDrawingSectionOpen);
   const streamDisplayList = streamDisplayItems(STREAM_OPTIONS);
@@ -624,167 +743,6 @@ export default function StreamSettings() {
 
   function flushPersist() {
     void persistStreamSettings(normalizeStreamSettingsMap(streamSettingsMapRef.current));
-  }
-
-  function liteTokenProjectText(s, project) {
-    if (!s || !project) return "";
-    const clientFirst = String(project.client_name || "")
-      .trim()
-      .split(/\s+/)[0];
-    return String(s)
-      .replace(/\{ProjectName\}/g, project.name || "")
-      .replace(/\{ClientName\}/g, clientFirst || project.client_name || "")
-      .replace(/\{Draftsperson\}/g, project.draftsperson || "")
-      .replace(/\{Position\}/g, "Draftsperson")
-      .replace(/\{Salesperson\}/g, project.salesperson || "");
-  }
-
-  function computeNewProjectPreviewLines(settings, templates, streamKey) {
-    const sample = buildSampleProjectForStreamPreview(streamKey);
-    const samplePartial = buildSampleProjectPartialDeposit(streamKey);
-    const rowInfo = getStreamNewProjectRow(settings, sample);
-    const lines = [];
-    lines.push(`Region: ${/ - QLD$/i.test(streamKey) ? "QLD" : "VIC"} — settings row: ${rowInfo.streamKey || "(none)"}`);
-    lines.push(`Sample project.stream: ${streamKey}`);
-    lines.push("");
-
-    const intName = getNewJobInternalTemplateName(sample);
-    const intTmpl = templates.find((t) => t.name && t.name.toLowerCase().trim() === intName.toLowerCase().trim());
-    if (!intTmpl) {
-      lines.push(`— NEW JOB (internal) — Template "${intName}" not found.`);
-    } else {
-      const from = resolveNewProjectTeamFrom(settings, sample);
-      const toList = resolveNewProjectTeamToEmailsFromStream(settings, sample);
-      lines.push("— NEW JOB (internal) —");
-      lines.push(`From: ${from || "(none)"}`);
-      lines.push(`To: ${toList.join(", ") || "(none)"}`);
-      lines.push(`Subject: ${liteTokenProjectText(intTmpl.subject || "", sample)}`);
-      const bodyPlain = liteTokenProjectText(String(intTmpl.body || "").replace(/<[^>]+>/g, " "), sample);
-      lines.push(`Body (excerpt): ${bodyPlain.slice(0, 280)}${bodyPlain.length > 280 ? "…" : ""}`);
-    }
-    lines.push("");
-
-    for (const [heading, proj, tname] of [
-      ["— NEW JOB — Client (full deposit) —", sample, "NEW JOB - Client Full Deposit"],
-      ["— NEW JOB — Client (partial deposit) —", samplePartial, "NEW JOB - Client Part Deposit"],
-    ]) {
-      const tmpl = templates.find((t) => t.name && t.name.trim() === tname);
-      lines.push(heading);
-      if (!tmpl) {
-        lines.push(`Template "${tname}" not found.`);
-      } else {
-        const from = resolveNewProjectClientFrom(settings, proj);
-        const toL = resolveNewProjectClientToEmails(settings, proj);
-        const toDisp = toL.length > 0 ? toL.join(", ") : "(none)";
-        lines.push(`From: ${from || "(none)"}`);
-        lines.push(`To: ${toDisp}`);
-        lines.push(`Subject: ${liteTokenProjectText(tmpl.subject || "", proj)}`);
-        const bodyPlain = liteTokenProjectText(String(tmpl.body || "").replace(/<[^>]+>/g, " "), proj);
-        lines.push(`Body (excerpt): ${bodyPlain.slice(0, 280)}${bodyPlain.length > 280 ? "…" : ""}`);
-      }
-      lines.push("");
-    }
-    return lines;
-  }
-
-  function computeDrawingsPreviewLines(settings, templates, streamKey) {
-    const sample = buildSampleProjectForStreamPreview(streamKey);
-    const lines = [];
-    lines.push(`Region: ${/ - QLD$/i.test(streamKey) ? "QLD" : "VIC"} — sample project.stream: ${streamKey}`);
-    lines.push("");
-
-    const d1 = templates.find((t) => t.name === "DRAWINGS - Design to Sales");
-    lines.push("— DRAWINGS — Design to Sales —");
-    if (!d1) {
-      lines.push('Template "DRAWINGS - Design to Sales" not found.');
-    } else {
-      const tTo = parseEmailTemplateToAddressList(d1.to_addresses);
-      const to = resolveDesignToSalespersonToEmails(settings, sample, tTo);
-      const from = resolveDesignToSalespersonFrom(settings, sample, "");
-      lines.push(`From: ${from || "(none)"}`);
-      lines.push(`To: ${to.join(", ") || "(none)"}`);
-      lines.push(`Subject: ${liteTokenProjectText(d1.subject || "", sample)}`);
-    }
-    lines.push("");
-
-    const d2 = templates.find((t) => t.name === "DRAWINGS - Sales to Design");
-    lines.push("— DRAWINGS — Sales to Design —");
-    if (!d2) {
-      lines.push('Template "DRAWINGS - Sales to Design" not found.');
-    } else {
-      let rawTo = [];
-      if (Array.isArray(d2.to_addresses)) rawTo = d2.to_addresses;
-      else if (d2.to_addresses) {
-        try {
-          rawTo = JSON.parse(d2.to_addresses);
-        } catch {
-          rawTo = String(d2.to_addresses)
-            .split(",")
-            .map((a) => a.trim())
-            .filter(Boolean);
-        }
-      }
-      const to = resolveSalesToDesignToEmails(settings, sample, rawTo);
-      const from = resolveSalesToDesignFrom(settings, sample, "");
-      lines.push(`From: ${from || "(none)"}`);
-      lines.push(`To: ${to.join(", ") || "(none)"}`);
-      lines.push(`Subject: ${liteTokenProjectText(d2.subject || "", sample)}`);
-    }
-    return lines;
-  }
-
-  async function runStreamPreviewNewProject() {
-    setStreamPreviewLoading(true);
-    setStreamPreviewError("");
-    setStreamPreviewTitle("New project — email preview");
-    setStreamPreviewOpen("newProject");
-    setStreamPreviewLinesByRegion({ vic: [], qld: [] });
-    try {
-      const [templatesRes, settingsRes] = await Promise.all([
-        fetch(`${API_URL}/api/email-templates`),
-        fetch(`${API_URL}/api/settings`),
-      ]);
-      if (!templatesRes.ok) throw new Error("Could not load email templates");
-      const templates = await templatesRes.json();
-      const settings = settingsRes.ok ? await settingsRes.json() : {};
-      const { vicKey, qldKey } = resolveVicQldStreamKeys(selectedStream);
-      setStreamPreviewLinesByRegion({
-        vic: computeNewProjectPreviewLines(settings, templates, vicKey),
-        qld: computeNewProjectPreviewLines(settings, templates, qldKey),
-      });
-      setStreamPreviewRegion(/ - QLD$/i.test(selectedStream) ? "qld" : "vic");
-    } catch (e) {
-      setStreamPreviewError(e.message || String(e));
-    } finally {
-      setStreamPreviewLoading(false);
-    }
-  }
-
-  async function runStreamPreviewDrawings() {
-    setStreamPreviewLoading(true);
-    setStreamPreviewError("");
-    setStreamPreviewTitle("Drawings — email preview");
-    setStreamPreviewOpen("drawings");
-    setStreamPreviewLinesByRegion({ vic: [], qld: [] });
-    try {
-      const [templatesRes, settingsRes] = await Promise.all([
-        fetch(`${API_URL}/api/email-templates`),
-        fetch(`${API_URL}/api/settings`),
-      ]);
-      if (!templatesRes.ok) throw new Error("Could not load email templates");
-      const templates = await templatesRes.json();
-      const settings = settingsRes.ok ? await settingsRes.json() : {};
-      const { vicKey, qldKey } = resolveVicQldStreamKeys(selectedStream);
-      setStreamPreviewLinesByRegion({
-        vic: computeDrawingsPreviewLines(settings, templates, vicKey),
-        qld: computeDrawingsPreviewLines(settings, templates, qldKey),
-      });
-      setStreamPreviewRegion(/ - QLD$/i.test(selectedStream) ? "qld" : "vic");
-    } catch (e) {
-      setStreamPreviewError(e.message || String(e));
-    } finally {
-      setStreamPreviewLoading(false);
-    }
   }
 
   const selectedStreamLabel = streamBaseLabel(selectedStream);
@@ -1053,26 +1011,6 @@ export default function StreamSettings() {
                                   )}
                                 </div>
                               ))}
-                              <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: "2px" }}>
-                                <button
-                                  type="button"
-                                  disabled={saving || streamPreviewLoading}
-                                  onClick={() => void runStreamPreviewNewProject()}
-                                  style={{
-                                    flexShrink: 0,
-                                    backgroundColor: "#6f42c1",
-                                    color: WHITE,
-                                    border: "none",
-                                    borderRadius: "10px",
-                                    padding: "6px 10px",
-                                    fontSize: "0.78rem",
-                                    fontWeight: 600,
-                                    cursor: saving || streamPreviewLoading ? "wait" : "pointer",
-                                  }}
-                                >
-                                  Preview emails
-                                </button>
-                              </div>
                             </div>
                             ) : null}
                           </div>
@@ -1088,40 +1026,17 @@ export default function StreamSettings() {
 
             {activeSection === "drawings" ? (
               <div style={{ ...columnPanelStyle, minHeight: "100%" }}>
-                <div
+                <h4
                   style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "10px",
+                    ...columnTitleStyle,
+                    margin: 0,
                     paddingBottom: "6px",
                     borderBottom: `1px solid ${MONUMENT}22`,
                     marginBottom: "10px",
                   }}
                 >
-                  <h4 style={{ ...columnTitleStyle, margin: 0, paddingBottom: 0, borderBottom: "none", flex: "1 1 140px" }}>
-                    Drawings
-                  </h4>
-                  <button
-                    type="button"
-                    disabled={saving || streamPreviewLoading}
-                    onClick={() => void runStreamPreviewDrawings()}
-                    style={{
-                      flexShrink: 0,
-                      backgroundColor: "#6f42c1",
-                      color: WHITE,
-                      border: "none",
-                      borderRadius: "10px",
-                      padding: "8px 14px",
-                      fontSize: "0.85rem",
-                      fontWeight: 600,
-                      cursor: saving || streamPreviewLoading ? "wait" : "pointer",
-                    }}
-                  >
-                    Preview emails
-                  </button>
-                </div>
+                  Drawings
+                </h4>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "12px" }}>
                   {["VIC", "QLD"].map((colTitle) => {
                     const columnKey = colTitle === "VIC" ? "vic" : "qld";
@@ -1133,10 +1048,10 @@ export default function StreamSettings() {
                         <h5 style={{ margin: "0 0 8px 0", fontSize: "0.9rem", fontWeight: 700, color: MONUMENT }}>{colTitle}</h5>
                         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                           {DRAWING_EMAIL_SECTIONS.map((section) => {
-                            const sectionExpanded = !!drawingSectionOpen[columnKey]?.[section.title];
+                            const sectionExpanded = !!drawingSectionOpen[columnKey]?.[section.id];
                             return (
                               <div
-                                key={section.title}
+                                key={section.id}
                                 style={{
                                   display: "flex",
                                   flexDirection: "column",
@@ -1159,13 +1074,13 @@ export default function StreamSettings() {
                                     disabled={saving}
                                     onClick={() => {
                                       setDrawingSectionOpen((prev) => {
-                                        const currentlyOpen = !!prev[columnKey]?.[section.title];
+                                        const currentlyOpen = !!prev[columnKey]?.[section.id];
                                         const nextColumnState = {};
                                         for (const s of DRAWING_EMAIL_SECTIONS) {
-                                          nextColumnState[s.title] = false;
+                                          nextColumnState[s.id] = false;
                                         }
                                         if (!currentlyOpen) {
-                                          nextColumnState[section.title] = true;
+                                          nextColumnState[section.id] = true;
                                         }
                                         return {
                                           ...prev,
@@ -1206,141 +1121,164 @@ export default function StreamSettings() {
                                 </div>
                                 {sectionExpanded ? (
                                   <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                                    {section.title === "Design to Salesperson" ? (
-                                      <>
-                                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                          <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                            Design to Salesperson — From
-                                          </span>
-                                          <DrawingNotifySmtpSelect
-                                            smtpOptions={smtpSlotEmails}
-                                            value={
-                                              isQld
-                                                ? d.qldDesignToSalespersonFromEmail || ""
-                                                : d.designToSalespersonFromEmail || ""
-                                            }
-                                            disabled={saving}
-                                            onValueChange={(next) => {
-                                              updateDrawingText(
-                                                rowKey,
-                                                isQld ? "qldDesignToSalespersonFromEmail" : "designToSalespersonFromEmail",
-                                                next
-                                              );
-                                            }}
-                                            onCommit={flushPersist}
-                                          />
-                                        </div>
-                                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                          <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                            Design to Salesperson — To
-                                          </span>
-                                          <DrawingNotifySmtpSelect
-                                            smtpOptions={smtpSlotEmails}
-                                            value={
-                                              isQld
-                                                ? d.qldDesignToSalespersonToEmail || ""
-                                                : d.designToSalespersonToEmail || ""
-                                            }
-                                            disabled={saving}
-                                            onValueChange={(next) => {
-                                              updateDrawingText(
-                                                rowKey,
-                                                isQld ? "qldDesignToSalespersonToEmail" : "designToSalespersonToEmail",
-                                                next
-                                              );
-                                            }}
-                                            onCommit={flushPersist}
-                                          />
-                                        </div>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                          <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                            Sales Person to Client — From
-                                          </span>
-                                          <DrawingNotifySmtpSelect
-                                            smtpOptions={smtpSlotEmails}
-                                            value={
-                                              isQld
-                                                ? d.qldSalespersonToClientFromEmail || ""
-                                                : d.salespersonToClientFromEmail || ""
-                                            }
-                                            disabled={saving}
-                                            onValueChange={(next) => {
-                                              updateDrawingText(
-                                                rowKey,
-                                                isQld ? "qldSalespersonToClientFromEmail" : "salespersonToClientFromEmail",
-                                                next
-                                              );
-                                            }}
-                                            onCommit={flushPersist}
-                                          />
-                                        </div>
-                                        <label
-                                          style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: "10px",
-                                            fontSize: "0.92rem",
-                                            color: MONUMENT,
-                                            cursor: saving ? "wait" : "pointer",
-                                            fontWeight: 500,
-                                          }}
-                                        >
-                                          <input
-                                            type="checkbox"
-                                            checked={isQld ? !!d.qldSendToClients : !!d.sendToClients}
-                                            disabled={saving}
-                                            onChange={() =>
-                                              toggleDrawingOption(rowKey, isQld ? "qldSendToClients" : "sendToClients")
-                                            }
-                                            style={{ width: "18px", height: "18px", cursor: saving ? "wait" : "pointer" }}
-                                          />
-                                          Send to Clients
-                                        </label>
-                                        {EXTRA_EMAIL_SLOTS.map(({ checkKey, addrKey, label }) => {
-                                          const qldCheckKey = `qld${checkKey.charAt(0).toUpperCase()}${checkKey.slice(1)}`;
-                                          const qldAddrKey = `qld${addrKey.charAt(0).toUpperCase()}${addrKey.slice(1)}`;
-                                          const useCheckKey = isQld ? qldCheckKey : checkKey;
-                                          const useAddrKey = isQld ? qldAddrKey : addrKey;
+                                    {section.kind === "upload"
+                                      ? (() => {
+                                          const K = drawingsUploadFieldKeys(section.fieldGroup);
+                                          if (!K) return null;
+                                          const fromKey = isQld ? K.fromQld : K.fromVic;
+                                          const toKey = isQld ? K.toQld : K.toVic;
                                           return (
-                                            <div key={`${colTitle}-${checkKey}`} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                              <label
-                                                style={{
-                                                  display: "flex",
-                                                  alignItems: "center",
-                                                  gap: "10px",
-                                                  fontSize: "0.92rem",
-                                                  color: MONUMENT,
-                                                  cursor: saving ? "wait" : "pointer",
-                                                  fontWeight: 500,
-                                                }}
-                                              >
-                                                <input
-                                                  type="checkbox"
-                                                  checked={!!d[useCheckKey]}
+                                            <>
+                                              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                                <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                                  {K.label} — From
+                                                </span>
+                                                <DrawingNotifySmtpSelect
+                                                  smtpOptions={smtpSlotEmails}
+                                                  value={d[fromKey] || ""}
                                                   disabled={saving}
-                                                  onChange={() => toggleDrawingOption(rowKey, useCheckKey)}
-                                                  style={{ width: "18px", height: "18px", cursor: saving ? "wait" : "pointer" }}
+                                                  onValueChange={(next) => {
+                                                    updateDrawingText(rowKey, fromKey, next);
+                                                  }}
+                                                  onCommit={flushPersist}
                                                 />
-                                                {label}
-                                              </label>
-                                              <input
-                                                type="email"
-                                                autoComplete="off"
-                                                placeholder="email@example.com"
-                                                value={d[useAddrKey] || ""}
-                                                disabled={saving}
-                                                onChange={(e) => updateDrawingText(rowKey, useAddrKey, e.target.value)}
-                                                onBlur={() => flushPersist()}
-                                                style={inputStyle}
-                                              />
-                                            </div>
+                                              </div>
+                                              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                                <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                                  {K.label} — To
+                                                </span>
+                                                <DrawingNotifySmtpSelect
+                                                  smtpOptions={smtpSlotEmails}
+                                                  value={d[toKey] || ""}
+                                                  disabled={saving}
+                                                  onValueChange={(next) => {
+                                                    updateDrawingText(rowKey, toKey, next);
+                                                  }}
+                                                  onCommit={flushPersist}
+                                                />
+                                              </div>
+                                              {!isQld && K.to2Vic ? (
+                                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                                  <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                                    {K.label} — To (additional)
+                                                  </span>
+                                                  <DrawingNotifySmtpSelect
+                                                    smtpOptions={smtpSlotEmails}
+                                                    value={d[K.to2Vic] || ""}
+                                                    disabled={saving}
+                                                    onValueChange={(next) => {
+                                                      updateDrawingText(rowKey, K.to2Vic, next);
+                                                    }}
+                                                    onCommit={flushPersist}
+                                                  />
+                                                </div>
+                                              ) : null}
+                                              {isQld && K.to2Qld ? (
+                                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                                  <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                                    {K.label} — To (additional)
+                                                  </span>
+                                                  <DrawingNotifySmtpSelect
+                                                    smtpOptions={smtpSlotEmails}
+                                                    value={d[K.to2Qld] || ""}
+                                                    disabled={saving}
+                                                    onValueChange={(next) => {
+                                                      updateDrawingText(rowKey, K.to2Qld, next);
+                                                    }}
+                                                    onCommit={flushPersist}
+                                                  />
+                                                </div>
+                                              ) : null}
+                                            </>
                                           );
-                                        })}
-                                      </>
-                                    )}
+                                        })()
+                                      : section.kind === "sendClient"
+                                        ? (() => {
+                                            const K = drawingsSendClientFieldKeys(section.fieldGroup);
+                                            if (!K) return null;
+                                            const fromKey = isQld ? K.fromQld : K.fromVic;
+                                            const sendKey = isQld ? K.sendQld : K.sendVic;
+                                            const slots = drawingsSendClientExtraSlotDefs(K.extraPrefix);
+                                            return (
+                                              <>
+                                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                                  <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                                    {K.label} — From
+                                                  </span>
+                                                  <DrawingNotifySmtpSelect
+                                                    smtpOptions={smtpSlotEmails}
+                                                    value={d[fromKey] || ""}
+                                                    disabled={saving}
+                                                    onValueChange={(next) => {
+                                                      updateDrawingText(rowKey, fromKey, next);
+                                                    }}
+                                                    onCommit={flushPersist}
+                                                  />
+                                                </div>
+                                                <label
+                                                  style={{
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    gap: "10px",
+                                                    fontSize: "0.92rem",
+                                                    color: MONUMENT,
+                                                    cursor: saving ? "wait" : "pointer",
+                                                    fontWeight: 500,
+                                                  }}
+                                                >
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={!!d[sendKey]}
+                                                    disabled={saving}
+                                                    onChange={() => toggleDrawingOption(rowKey, sendKey)}
+                                                    style={{ width: "18px", height: "18px", cursor: saving ? "wait" : "pointer" }}
+                                                  />
+                                                  Send to Clients
+                                                </label>
+                                                {slots.map(({ checkKey, addrKey, label }) => {
+                                                  const qldCheckKey = qldDrawingsKey(checkKey);
+                                                  const qldAddrKey = qldDrawingsKey(addrKey);
+                                                  const useCheckKey = isQld ? qldCheckKey : checkKey;
+                                                  const useAddrKey = isQld ? qldAddrKey : addrKey;
+                                                  return (
+                                                    <div key={`${colTitle}-${section.id}-${checkKey}`} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                                      <label
+                                                        style={{
+                                                          display: "flex",
+                                                          alignItems: "center",
+                                                          gap: "10px",
+                                                          fontSize: "0.92rem",
+                                                          color: MONUMENT,
+                                                          cursor: saving ? "wait" : "pointer",
+                                                          fontWeight: 500,
+                                                        }}
+                                                      >
+                                                        <input
+                                                          type="checkbox"
+                                                          checked={!!d[useCheckKey]}
+                                                          disabled={saving}
+                                                          onChange={() => toggleDrawingOption(rowKey, useCheckKey)}
+                                                          style={{ width: "18px", height: "18px", cursor: saving ? "wait" : "pointer" }}
+                                                        />
+                                                        {label}
+                                                      </label>
+                                                      <input
+                                                        type="email"
+                                                        autoComplete="off"
+                                                        placeholder="email@example.com"
+                                                        value={d[useAddrKey] || ""}
+                                                        disabled={saving}
+                                                        onChange={(e) => updateDrawingText(rowKey, useAddrKey, e.target.value)}
+                                                        onBlur={() => flushPersist()}
+                                                        style={inputStyle}
+                                                      />
+                                                    </div>
+                                                  );
+                                                })}
+                                              </>
+                                            );
+                                          })()
+                                        : null}
                                   </div>
                                 ) : null}
                               </div>
@@ -1375,105 +1313,6 @@ export default function StreamSettings() {
         )}
       </div>
     </div>
-    {streamPreviewOpen ? (
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={streamPreviewTitle}
-        style={{
-          position: "fixed",
-          inset: 0,
-          backgroundColor: "rgba(0,0,0,0.45)",
-          zIndex: 6000,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "16px",
-          boxSizing: "border-box",
-        }}
-        onClick={() => setStreamPreviewOpen(null)}
-      >
-        <div
-          style={{
-            background: WHITE,
-            borderRadius: "12px",
-            maxWidth: "640px",
-            width: "100%",
-            maxHeight: "85vh",
-            overflow: "auto",
-            padding: "20px",
-            boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
-            color: MONUMENT,
-            boxSizing: "border-box",
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
-            <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 700 }}>{streamPreviewTitle}</h3>
-            <button
-              type="button"
-              onClick={() => setStreamPreviewOpen(null)}
-              style={{
-                background: "transparent",
-                border: "none",
-                fontSize: "1.4rem",
-                lineHeight: 1,
-                cursor: "pointer",
-                color: MONUMENT,
-                padding: "0 4px",
-              }}
-            >
-              ×
-            </button>
-          </div>
-          <p style={{ margin: "10px 0 12px", fontSize: "0.82rem", color: "#323233aa", lineHeight: 1.45 }}>
-            Sample projects for the VIC and QLD stream rows only. From/To come from Stream Settings → Drawings on those
-            rows (not from global settings or email templates). Use VIC / QLD to switch previews.
-          </p>
-          {streamPreviewLoading ? (
-            <div style={{ fontSize: "0.92rem" }}>Loading…</div>
-          ) : null}
-          {streamPreviewError ? (
-            <div style={{ fontSize: "0.92rem", color: "#b00020", marginBottom: "10px" }}>{streamPreviewError}</div>
-          ) : null}
-          {!streamPreviewLoading && !streamPreviewError ? (
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-              <span style={{ fontSize: "0.8rem", fontWeight: 600, color: `${MONUMENT}b3` }}>Show:</span>
-              {["vic", "qld"].map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setStreamPreviewRegion(r)}
-                  style={{
-                    padding: "7px 14px",
-                    borderRadius: "8px",
-                    border: `2px solid ${streamPreviewRegion === r ? "#6f42c1" : `${MONUMENT}33`}`,
-                    background: streamPreviewRegion === r ? "#ede7f6" : WHITE,
-                    color: MONUMENT,
-                    fontWeight: streamPreviewRegion === r ? 700 : 500,
-                    fontSize: "0.85rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  {r.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          ) : null}
-          <pre
-            style={{
-              margin: 0,
-              whiteSpace: "pre-wrap",
-              fontFamily: "system-ui, sans-serif",
-              fontSize: "0.84rem",
-              lineHeight: 1.5,
-            }}
-          >
-            {(streamPreviewLinesByRegion[streamPreviewRegion] || []).join("\n")}
-          </pre>
-        </div>
-      </div>
-    ) : null}
     </>
   );
 }

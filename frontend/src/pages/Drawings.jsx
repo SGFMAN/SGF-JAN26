@@ -13,6 +13,12 @@ import {
   isDraftspersonAssigned,
 } from "../utils/draftspersonSentinel";
 import {
+  resolveConceptApprovedFrom,
+  resolveConceptApprovedToEmails,
+  resolveWdsApprovedFrom,
+  resolveWdsApprovedToEmails,
+  resolveDesignNotesFrom,
+  resolveDesignNotesToEmails,
   resolveDesignToSalespersonFrom,
   resolveDesignToSalespersonToEmails,
   resolveSalesToDesignFrom,
@@ -597,25 +603,42 @@ export default function Drawings({
       console.warn("Could not load settings for approval email preview:", e);
     }
 
-    const designToSalesFrom = resolveDesignToSalespersonFrom(settingsData, project, "");
-    const designToSalesToList = resolveDesignToSalespersonToEmails(settingsData, project, []);
-    const reversedFrom = designToSalesToList[0] || "";
-    const reversedToList = designToSalesFrom ? [designToSalesFrom] : [];
-
-    if (!reversedFrom || !String(reversedFrom).trim()) {
-      alert(
-        "No sender email in Stream Settings for this approval email. Set Design to Salesperson — To under Settings → Stream Settings → Drawings."
-      );
-      return;
-    }
-    if (!reversedToList.length) {
-      alert(
-        "No recipient email in Stream Settings for this approval email. Set Design to Salesperson — From under Settings → Stream Settings → Drawings."
-      );
-      return;
-    }
-
     const isConcept = kind === "concept";
+    let previewFrom = "";
+    let previewToList = [];
+
+    if (isConcept) {
+      previewFrom = resolveConceptApprovedFrom(settingsData, project, "");
+      previewToList = resolveConceptApprovedToEmails(settingsData, project, []);
+      if (!previewFrom || !String(previewFrom).trim()) {
+        alert(
+          "No sender email in Stream Settings → Drawings → Concept Approved — From. Configure Settings → Stream Settings → Drawings."
+        );
+        return;
+      }
+      if (!previewToList.length) {
+        alert(
+          "No recipient addresses in Stream Settings → Drawings → Concept Approved — To. Configure Settings → Stream Settings → Drawings."
+        );
+        return;
+      }
+    } else {
+      previewFrom = resolveWdsApprovedFrom(settingsData, project, "");
+      previewToList = resolveWdsApprovedToEmails(settingsData, project, []);
+      if (!previewFrom || !String(previewFrom).trim()) {
+        alert(
+          "No sender email in Stream Settings → Drawings → WDs Approved — From. Configure Settings → Stream Settings → Drawings."
+        );
+        return;
+      }
+      if (!previewToList.length) {
+        alert(
+          "No recipient addresses in Stream Settings → Drawings → WDs Approved — To. Configure Settings → Stream Settings → Drawings."
+        );
+        return;
+      }
+    }
+
     const templateName = isConcept ? "DRAWINGS - Concept Approved" : "DRAWINGS - WDs Approved";
     const template = Array.isArray(templates) ? templates.find((t) => t?.name === templateName) : null;
     if (!template) {
@@ -627,8 +650,8 @@ export default function Drawings({
     const replaceProjectNameToken = (txt) =>
       String(txt || "").replace(/\{ProjectName\}/g, projectName);
 
-    setEmailPreviewTo(reversedToList.join(", "));
-    setEmailPreviewFrom(reversedFrom);
+    setEmailPreviewTo(previewToList.join(", "));
+    setEmailPreviewFrom(previewFrom);
     setEmailPreviewSubject(replaceProjectNameToken(template.subject));
     setEmailPreviewBody(replaceProjectNameToken(template.body));
     setEmailPreviewType(isConcept ? "concept_approval" : "working_approval");
@@ -1676,7 +1699,7 @@ export default function Drawings({
 
     if (!clientFromResolved || !String(clientFromResolved).trim()) {
       alert(
-        "No sender email in Stream Settings for this stream (Sales Person to Client — From). Configure Settings → Stream Settings → Drawings."
+        "No sender email in Stream Settings for this stream (Send Drawings to Client — From). Configure Settings → Stream Settings → Drawings."
       );
       return;
     }
@@ -1881,19 +1904,23 @@ export default function Drawings({
       } catch (e) {
         console.warn("Could not load settings for drawing From override:", e);
       }
-      const previewToResolved = resolveDesignToSalespersonToEmails(
+      const previewToResolved = resolveDesignNotesToEmails(
         settingsForPreview,
         project,
         templateToList
       );
-      const previewFromResolved = resolveDesignToSalespersonFrom(settingsForPreview, project, "");
+      const previewFromResolved = resolveDesignNotesFrom(settingsForPreview, project, "");
 
       if (!previewToResolved.length) {
-        alert("No recipient addresses configured in Stream Settings for this stream/state.");
+        alert(
+          "No recipient addresses in Stream Settings → Drawings → Design Notes — To. Configure Settings → Stream Settings → Drawings."
+        );
         return;
       }
       if (!previewFromResolved || !String(previewFromResolved).trim()) {
-        alert("No sender email configured in Stream Settings for this stream/state.");
+        alert(
+          "No sender email in Stream Settings → Drawings → Design Notes — From. Configure Settings → Stream Settings → Drawings."
+        );
         return;
       }
 
@@ -2016,12 +2043,13 @@ export default function Drawings({
       emailPreviewType === "concept_approval" || emailPreviewType === "working_approval";
     if (isApprovalEmail) {
       const toAddresses = emailPreviewTo.split(",").map((a) => a.trim()).filter((a) => a.length > 0);
+      const fromForApproval = (emailPreviewFrom || "").trim();
       if (toAddresses.length === 0) {
-        alert("Please enter at least one email address");
+        alert("Please enter at least one recipient email address.");
         return;
       }
-      if (!emailPreviewFrom || !emailPreviewFrom.trim()) {
-        alert("From address is required");
+      if (!fromForApproval) {
+        alert("Please enter a From address.");
         return;
       }
 
@@ -2032,7 +2060,7 @@ export default function Drawings({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               to: toAddresses,
-              from: emailPreviewFrom.trim(),
+              from: fromForApproval,
               subject: emailPreviewSubject || "",
               htmlBody: emailPreviewBody || "",
             }),
@@ -2064,13 +2092,14 @@ export default function Drawings({
       return;
     }
 
-    const toAddresses = emailPreviewTo.split(",").map(a => a.trim()).filter(a => a.length > 0);
+    const toAddresses = emailPreviewTo.split(",").map((a) => a.trim()).filter((a) => a.length > 0);
+    const fromForSend = (emailPreviewFrom || "").trim();
     if (toAddresses.length === 0) {
-      alert("Please enter at least one email address");
+      alert("Please enter at least one recipient email address.");
       return;
     }
-    if (!emailPreviewFrom || !emailPreviewFrom.trim()) {
-      alert("From address is required");
+    if (!fromForSend) {
+      alert("Please enter a From address.");
       return;
     }
 
@@ -2086,7 +2115,7 @@ export default function Drawings({
             projectId: project.id,
             toEmails: toAddresses,
             customBody: emailPreviewBody,
-            from: emailPreviewFrom,
+            from: fromForSend,
             subject: emailPreviewSubject,
             attachDrawings: false,
           }),
@@ -2210,20 +2239,6 @@ export default function Drawings({
       subject = subject.replace(/{Draftsperson}/g, draftspersonName);
       subject = subject.replace(/{Position}/g, draftspersonPosition);
 
-      // Get to addresses from template
-      let toAddresses = [];
-      if (template.to_addresses) {
-        if (Array.isArray(template.to_addresses)) {
-          toAddresses = template.to_addresses;
-        } else {
-          try {
-            toAddresses = JSON.parse(template.to_addresses);
-          } catch (e) {
-            toAddresses = template.to_addresses.split(",").map(a => a.trim()).filter(a => a.length > 0);
-          }
-        }
-      }
-
       let settingsForSalesPreview = {};
       try {
         const settingsRes = await fetch(`${API_URL}/api/settings`);
@@ -2234,19 +2249,19 @@ export default function Drawings({
       const previewToResolved = resolveSalesToDesignToEmails(
         settingsForSalesPreview,
         project,
-        toAddresses
+        []
       );
       const previewFromResolved = resolveSalesToDesignFrom(settingsForSalesPreview, project, "");
 
       if (!previewToResolved.length) {
         alert(
-          "No design inbox addresses in Stream Settings (Design to Salesperson — From email field used as design To). Configure Settings → Stream Settings → Drawings."
+          "No recipient addresses in Stream Settings → Drawings → Sales Notes — To. Configure Settings → Stream Settings → Drawings."
         );
         return;
       }
       if (!previewFromResolved || !String(previewFromResolved).trim()) {
         alert(
-          "No sender email in Stream Settings (Sales Person to Client — From). Configure Settings → Stream Settings → Drawings."
+          "No sender email in Stream Settings → Drawings → Sales Notes — From. Configure Settings → Stream Settings → Drawings."
         );
         return;
       }
@@ -2581,7 +2596,7 @@ export default function Drawings({
 
     if (!sendFromOverride || !String(sendFromOverride).trim()) {
       alert(
-        "No sender email in Stream Settings (Sales Person to Client — From). Configure Settings → Stream Settings → Drawings."
+        "No sender email in Stream Settings (Send Drawings to Client — From). Configure Settings → Stream Settings → Drawings."
       );
       return;
     }

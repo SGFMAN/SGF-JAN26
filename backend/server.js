@@ -3148,7 +3148,7 @@ app.post("/api/emails/send-drawings", async (req, res) => {
       // Do NOT add it for "Email Drawings to Client" emails (when attachDrawings is true)
       if (attachPdf === false) {
         // Add button link to drawings page directly after the notes
-        const drawingsUrl = `http://192.168.0.222:3001/project/${projectId}?view=drawings`;
+        const drawingsUrl = `${getPublicBaseUrl(req)}/project/${projectId}?view=drawings`;
         const buttonHtml = `
           <br><br>
           <div style="text-align: left; margin: 20px 0;">
@@ -5131,7 +5131,7 @@ app.post("/api/emails/send-colours-portal", async (req, res) => {
     });
 
     // Add "Click here for colours" button to email body
-    const portalUrl = `http://192.168.0.222:3001/3d-vis-portal/${projectId}`;
+    const portalUrl = `${getPublicBaseUrl(req)}/3d-vis-portal/${projectId}`;
     const buttonHtml = `
       <br><br>
       <div style="text-align: center; margin: 30px 0;">

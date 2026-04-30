@@ -37,19 +37,60 @@ export function resolveStreamSettingsKey(stream, streamSettingsJson, projectOrSt
   const qldKey = `${normalizedBase} - QLD`;
   if (map[vicKey]) return vicKey;
   if (map[qldKey]) return qldKey;
-  return normalizedBase;
+  /** Never return a key that is not in `map` — callers would read a missing row and show “no recipients”. */
+  if (map[normalizedBase]) return normalizedBase;
+  /** Retail label used on some projects; settings rows are `SGF - VIC` / `SGF - QLD`. */
+  if (normalizedBase === "SGF - Retail" || normalizedBase === "SGF Retail") {
+    if (stateCode === "QLD" && map["SGF - QLD"]) return "SGF - QLD";
+    if (map["SGF - VIC"]) return "SGF - VIC";
+    if (map["SGF - QLD"]) return "SGF - QLD";
+  }
+  return "";
+}
+
+function isQldStreamSettingsRowKey(key) {
+  return typeof key === "string" && / - QLD$/i.test(key);
 }
 
 export function isStreamSendDrawingsToClientsEnabled(stream, streamSettingsJson, projectOrState) {
+  return isStreamDrawingsSectionSendToClientsEnabled(stream, streamSettingsJson, projectOrState, "sendClient");
+}
+
+/**
+ * Send to Clients toggle for Drawings substreams (Send Drawings to Client, Concept Approved, WDs Approved).
+ * QLD rows use `qld*` keys. Missing flag defaults to true (include client contacts).
+ */
+export function isStreamDrawingsSectionSendToClientsEnabled(stream, streamSettingsJson, projectOrState, section) {
   const key = resolveStreamSettingsKey(stream, streamSettingsJson, projectOrState);
   const map =
     streamSettingsJson && typeof streamSettingsJson === "object" && !Array.isArray(streamSettingsJson)
       ? streamSettingsJson
       : {};
   const row = key ? map[key] : null;
-  const v = row && row.drawings && typeof row.drawings === "object" ? row.drawings.sendToClients : undefined;
-  if (typeof v !== "boolean") return true;
-  return v === true;
+  const d = row && row.drawings && typeof row.drawings === "object" ? row.drawings : {};
+  const qld = isQldStreamSettingsRowKey(key);
+  const primaryKey =
+    section === "sendClient"
+      ? qld
+        ? "qldSendToClients"
+        : "sendToClients"
+      : section === "conceptApproved"
+        ? qld
+          ? "qldConceptApprovedSendToClients"
+          : "conceptApprovedSendToClients"
+        : section === "wdsApproved"
+          ? qld
+            ? "qldWdsApprovedSendToClients"
+            : "wdsApprovedSendToClients"
+          : qld
+            ? "qldSendToClients"
+            : "sendToClients";
+  const v = d[primaryKey];
+  if (typeof v === "boolean") {
+    if (section === "sendClient") return v === true;
+    return v === true;
+  }
+  return true;
 }
 
 /** Primary + client contacts that have an email (same rules as drawings template client list). */
