@@ -4,6 +4,8 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   server: {
+    /** Listen on all interfaces so phones/tablets on the same Wi‑Fi can open `http://<this-PC-LAN-IP>:5173`. */
+    host: true,
     proxy: {
       "/api": {
         target: "http://localhost:3001",

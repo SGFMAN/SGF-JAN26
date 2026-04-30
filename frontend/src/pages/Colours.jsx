@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import ThreeDVis from "./ThreeDVis";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
+import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 import { resolveNewProjectClientFrom } from "../utils/streamNewProjectEmail";
 
 const MONUMENT = "#323233";
@@ -588,6 +589,7 @@ export default function Colours({ project, onUpdate }) {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
+            ...emailLinkBaseForApiBody(),
             projectId: project.id,
             toEmails: toAddresses,
             from: portalEmailFrom,

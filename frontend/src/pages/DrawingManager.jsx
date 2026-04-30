@@ -16,6 +16,7 @@ import {
   normalizeDraftspersonField,
   isDraftspersonAssigned,
 } from "../utils/draftspersonSentinel";
+import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -2361,6 +2362,7 @@ export default function DrawingManager() {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
+                          ...emailLinkBaseForApiBody(),
                           projectId: selectedProjectForReminder.id,
                           toEmails: toAddresses,
                           from: reminderEmailFrom.trim(),

@@ -27,6 +27,7 @@ import {
   resolveSalespersonToClientToEmails,
   parseEmailTemplateToAddressList,
 } from "../utils/drawingNotifyFrom";
+import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -1746,6 +1747,7 @@ export default function Drawings({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
+            ...emailLinkBaseForApiBody(),
             projectId: project.id,
             toEmails: toAddresses,
             customBody: emailDrawingsToClientBody,
@@ -2112,6 +2114,7 @@ export default function Drawings({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
+            ...emailLinkBaseForApiBody(),
             projectId: project.id,
             toEmails: toAddresses,
             customBody: emailPreviewBody,
@@ -2616,6 +2619,7 @@ export default function Drawings({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
+            ...emailLinkBaseForApiBody(),
             projectId: project.id,
             toEmails: toEmailsResolved,
             from: String(sendFromOverride).trim(),

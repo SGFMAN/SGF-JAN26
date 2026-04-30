@@ -3148,7 +3148,7 @@ app.post("/api/emails/send-drawings", async (req, res) => {
       // Do NOT add it for "Email Drawings to Client" emails (when attachDrawings is true)
       if (attachPdf === false) {
         // Add button link to drawings page directly after the notes
-        const drawingsUrl = `${getPublicBaseUrl(req)}/project/${projectId}?view=drawings`;
+        const drawingsUrl = `${getPublicBaseUrl(req, req.body)}/project/${projectId}?view=drawings`;
         const buttonHtml = `
           <br><br>
           <div style="text-align: left; margin: 20px 0;">
@@ -5131,7 +5131,7 @@ app.post("/api/emails/send-colours-portal", async (req, res) => {
     });
 
     // Add "Click here for colours" button to email body
-    const portalUrl = `${getPublicBaseUrl(req)}/3d-vis-portal/${projectId}`;
+    const portalUrl = `${getPublicBaseUrl(req, req.body)}/3d-vis-portal/${projectId}`;
     const buttonHtml = `
       <br><br>
       <div style="text-align: center; margin: 30px 0;">
@@ -6876,11 +6876,41 @@ const VARIATION_INTRO_TEXT =
 const VARIATION_NOTE_TEXT =
   'Note: This variation request becomes an "Authority for Variation to Contract" once signed by Owners and by authorised Superior Granny Flats representative. Not valid unless signed by both parties. It is the responsibility of the Owner/s to check all variations prior to signing. Superior Granny Flats holds no responsibility for omitted items or superseded inclusions.';
 
-function getPublicBaseUrl(req) {
+/** Allow only http(s) origins for links in emails (no javascript:, etc.). */
+function sanitizeHttpBaseUrl(raw) {
+  if (raw == null) return "";
+  const s = String(raw).trim().replace(/\/+$/, "");
+  if (s.length < 10 || s.length > 512) return "";
+  if (!/^https?:\/\//i.test(s)) return "";
+  try {
+    const u = new URL(s);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return "";
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Base URL for links embedded in outbound email / PDF (project page, portals, etc.).
+ * Priority: explicit client body → PUBLIC_APP_URL → Origin (browser SPA) → Host header.
+ * Phones on cellular need a reachable URL: set PUBLIC_APP_URL to your public https host,
+ * or open the app from the LAN IP:port you want (Origin) before sending test mail.
+ */
+function getPublicBaseUrl(req, body) {
+  const b = body && typeof body === "object" && !Array.isArray(body) ? body : {};
+  const fromBody = sanitizeHttpBaseUrl(b.linkBaseUrl || b.appBaseUrl);
+  if (fromBody) return fromBody;
+
   const env = process.env.PUBLIC_APP_URL;
   if (env && String(env).trim()) {
-    return String(env).trim().replace(/\/$/, "");
+    const cleaned = sanitizeHttpBaseUrl(env);
+    if (cleaned) return cleaned;
   }
+
+  const originHdr = sanitizeHttpBaseUrl(req.get("origin"));
+  if (originHdr) return originHdr;
+
   const proto = req.get("x-forwarded-proto") || req.protocol || "http";
   const host = req.get("host") || "localhost";
   return `${proto}://${host}`;
@@ -7141,7 +7171,7 @@ app.post("/api/projects/:id/variations/create-pdf", async (req, res) => {
          VALUES ($1, $2, $3::jsonb, $4, $5, $6)`,
         [token, projectId, JSON.stringify(items), consultantTrimmed, notifyTrim, expiresAt]
       );
-      const base = getPublicBaseUrl(req);
+      const base = getPublicBaseUrl(req, req.body);
       approvalUrl = `${base}/api/projects/variations/approve?token=${encodeURIComponent(token)}`;
     }
 
