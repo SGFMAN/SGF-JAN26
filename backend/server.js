@@ -18,6 +18,11 @@ const crypto = require("crypto");
 const app = express();
 app.use(cors({ origin: true }));
 
+// Outbound email links (View Drawings, colours portal, variation approve, etc.).
+// Sending staff often use localhost or a LAN IP; `linkBaseUrl` from the browser would break phones and off-site PCs.
+// Recipients open the live app here unless overridden by DB `public_app_url` or `PUBLIC_APP_URL`.
+const DEFAULT_EMAIL_PUBLIC_APP_ORIGIN = "https://portal.superiorgrannyflats.com.au";
+
 // Increase body size limit for file uploads (50MB)
 // Only parse JSON for requests with application/json content-type (skip multipart/form-data)
 const jsonParser = express.json({ limit: '50mb' });
@@ -1152,6 +1157,14 @@ async function ensureSchema() {
     // Column might already exist, which is fine
     if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
       console.log(`Error adding column app_mode:`, e.message);
+    }
+  }
+  // Public https (or http) base for outbound email links — set once in File Settings or PUBLIC_APP_URL
+  try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN public_app_url TEXT`);
+  } catch (e) {
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column public_app_url:`, e.message);
     }
   }
   // Insert default row if it doesn't exist
@@ -3148,7 +3161,8 @@ app.post("/api/emails/send-drawings", async (req, res) => {
       // Do NOT add it for "Email Drawings to Client" emails (when attachDrawings is true)
       if (attachPdf === false) {
         // Add button link to drawings page directly after the notes
-        const drawingsUrl = `${getPublicBaseUrl(req, req.body)}/project/${projectId}?view=drawings`;
+        const emailBase = await resolveEmailAppPublicBase(pool, req, req.body);
+        const drawingsUrl = `${emailBase}/project/${projectId}?view=drawings`;
         const buttonHtml = `
           <br><br>
           <div style="text-align: left; margin: 20px 0;">
@@ -5131,7 +5145,8 @@ app.post("/api/emails/send-colours-portal", async (req, res) => {
     });
 
     // Add "Click here for colours" button to email body
-    const portalUrl = `${getPublicBaseUrl(req, req.body)}/3d-vis-portal/${projectId}`;
+    const portalBase = await resolveEmailAppPublicBase(pool, req, req.body);
+    const portalUrl = `${portalBase}/3d-vis-portal/${projectId}`;
     const buttonHtml = `
       <br><br>
       <div style="text-align: center; margin: 30px 0;">
@@ -6892,10 +6907,8 @@ function sanitizeHttpBaseUrl(raw) {
 }
 
 /**
- * Base URL for links embedded in outbound email / PDF (project page, portals, etc.).
- * Priority: explicit client body → PUBLIC_APP_URL → Origin (browser SPA) → Host header.
- * Phones on cellular need a reachable URL: set PUBLIC_APP_URL to your public https host,
- * or open the app from the LAN IP:port you want (Origin) before sending test mail.
+ * Sync fallback chain for outbound links (when DB setting is unset).
+ * Priority: linkBaseUrl / appBaseUrl in body → PUBLIC_APP_URL → Origin → Host.
  */
 function getPublicBaseUrl(req, body) {
   const b = body && typeof body === "object" && !Array.isArray(body) ? body : {};
@@ -6914,6 +6927,20 @@ function getPublicBaseUrl(req, body) {
   const proto = req.get("x-forwarded-proto") || req.protocol || "http";
   const host = req.get("host") || "localhost";
   return `${proto}://${host}`;
+}
+
+/**
+ * Prefer: PUBLIC_APP_URL → live portal hostname → sender browser/origin fallback.
+ * The portal default avoids embedding localhost/private IPs from whoever clicked Send.
+ */
+async function resolveEmailAppPublicBase(pool, req, body) {
+  const envClean = sanitizeHttpBaseUrl(process.env.PUBLIC_APP_URL);
+  if (envClean) return envClean;
+
+  const portalDefault = sanitizeHttpBaseUrl(DEFAULT_EMAIL_PUBLIC_APP_ORIGIN);
+  if (portalDefault) return portalDefault;
+
+  return getPublicBaseUrl(req, body);
 }
 
 /** Large diagonal green stamp on top of the page (call after all content). */
@@ -7171,7 +7198,7 @@ app.post("/api/projects/:id/variations/create-pdf", async (req, res) => {
          VALUES ($1, $2, $3::jsonb, $4, $5, $6)`,
         [token, projectId, JSON.stringify(items), consultantTrimmed, notifyTrim, expiresAt]
       );
-      const base = getPublicBaseUrl(req, req.body);
+      const base = await resolveEmailAppPublicBase(pool, req, req.body);
       approvalUrl = `${base}/api/projects/variations/approve?token=${encodeURIComponent(token)}`;
     }
 
