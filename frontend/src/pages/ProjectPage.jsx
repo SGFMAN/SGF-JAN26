@@ -100,6 +100,16 @@ function buildLinkRenovationFromSourceForm(project, folderPath) {
   };
 }
 
+/** Street, suburb, state (comma-separated) when present; otherwise project name. */
+function getProjectClipboardAddress(p) {
+  if (!p) return "";
+  const parts = [p.street, p.suburb, p.state]
+    .map((s) => (s == null ? "" : String(s).trim()))
+    .filter(Boolean);
+  if (parts.length) return parts.join(", ");
+  return String(p.name || "").trim();
+}
+
 // Menu options for this page plus back to main
 const MENU_OPTIONS = [
   { label: "Overview", key: "overview" },
@@ -149,6 +159,8 @@ export default function ProjectPage() {
   const [linkRenoDupStep, setLinkRenoDupStep] = useState("cost");
   const [linkRenoDupFormData, setLinkRenoDupFormData] = useState(() => ({ ...RENOVATION_DUP_FORM_EMPTY }));
   const [linkRenoDupCreatedForEmail, setLinkRenoDupCreatedForEmail] = useState(null);
+  const copyToastAnimIdRef = useRef(0);
+  const [copyToastAnimId, setCopyToastAnimId] = useState(0);
 
   useEffect(() => {
     if (id) {
@@ -229,6 +241,31 @@ export default function ProjectPage() {
       }
     };
   }, []);
+
+  async function copyProjectAddressToClipboard() {
+    if (!project) return;
+    const text = getProjectClipboardAddress(project);
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch {
+        return;
+      }
+    }
+    copyToastAnimIdRef.current += 1;
+    setCopyToastAnimId(copyToastAnimIdRef.current);
+  }
 
   async function fetchProject(skipLoading = false) {
     try {
@@ -515,6 +552,8 @@ export default function ProjectPage() {
             const hasNext = currentIndex >= 0 && currentIndex < allProjects.length - 1;
             const previousProject = hasPrevious ? allProjects[currentIndex - 1] : null;
             const nextProject = hasNext ? allProjects[currentIndex + 1] : null;
+            const canCopyAddressHeading =
+              !loading && !error && project && Boolean(getProjectClipboardAddress(project));
 
             return (
               <>
@@ -545,17 +584,77 @@ export default function ProjectPage() {
                   </button>
                 )}
                 
-                <h1
+                <div
                   style={{
-                    margin: 0,
-                    fontSize: "2.4rem",
-                    fontWeight: 700,
-                    color: WHITE,
-                    letterSpacing: "1px",
+                    position: "relative",
+                    display: "inline-flex",
+                    alignItems: "center",
                   }}
                 >
-                  {loading ? "Loading..." : error ? "Error" : project?.name || "Project"}
-                </h1>
+                  <h1
+                    onClick={() => {
+                      if (!canCopyAddressHeading) return;
+                      void copyProjectAddressToClipboard();
+                    }}
+                    title={canCopyAddressHeading ? "Click to copy address" : undefined}
+                    aria-label={canCopyAddressHeading ? "Copy project address to clipboard" : undefined}
+                    style={{
+                      margin: 0,
+                      fontSize: "2.4rem",
+                      fontWeight: 700,
+                      color: WHITE,
+                      letterSpacing: "1px",
+                      cursor: canCopyAddressHeading ? "pointer" : "default",
+                    }}
+                  >
+                    {loading ? "Loading..." : error ? "Error" : project?.name || "Project"}
+                  </h1>
+                  {copyToastAnimId > 0 && (
+                    <div
+                      key={copyToastAnimId}
+                      className="project-page-copy-toast"
+                      onAnimationEnd={(e) => {
+                        if (e.target !== e.currentTarget) return;
+                        setCopyToastAnimId(0);
+                      }}
+                      role="status"
+                      aria-live="polite"
+                    >
+                      <div className="project-page-copy-toast__sparkles" aria-hidden>
+                        {[
+                          { ch: "✦", sx: -36, sy: 14, dx: -52, dy: -8 },
+                          { ch: "✧", sx: 38, sy: 10, dx: 48, dy: -12 },
+                          { ch: "✦", sx: -22, sy: 22, dx: -36, dy: 4 },
+                          { ch: "·", sx: 24, sy: 20, dx: 32, dy: 2 },
+                          { ch: "✦", sx: 0, sy: 26, dx: 0, dy: 12 },
+                          { ch: "✧", sx: -48, sy: 6, dx: -58, dy: -22 },
+                          { ch: "✦", sx: 50, sy: 18, dx: 62, dy: -4 },
+                          { ch: "✧", sx: -8, sy: 8, dx: -14, dy: -28 },
+                        ].map((s, i) => (
+                          <span
+                            key={i}
+                            className="project-page-copy-toast__sparkle-wrap"
+                            style={{
+                              left: `calc(50% + ${s.sx}px)`,
+                              top: `${s.sy}px`,
+                            }}
+                          >
+                            <span
+                              className="project-page-copy-toast__sparkle"
+                              style={{
+                                ["--sp-dx"]: `${s.dx}px`,
+                                ["--sp-dy"]: `${s.dy}px`,
+                              }}
+                            >
+                              {s.ch}
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                      <span className="project-page-copy-toast__label">Copied</span>
+                    </div>
+                  )}
+                </div>
 
                 {hasNext && (
                   <button

@@ -409,6 +409,38 @@ function parseStreamSettingsJsonColumn(raw) {
   return {};
 }
 
+/** Settings → Email Settings → General → Hot List (global; VIC vs QLD by project state, not stream). */
+function parseEmailGeneralJsonColumn(raw) {
+  const emptyHotList = {
+    soldFromEmail: "",
+    soldToEmail: "",
+    qldSoldFromEmail: "",
+    qldSoldToEmail: "",
+  };
+  const empty = { hotList: { ...emptyHotList } };
+  if (raw == null || raw === "") return empty;
+  let o = raw;
+  if (typeof raw === "string") {
+    try {
+      o = JSON.parse(raw);
+    } catch {
+      return empty;
+    }
+  }
+  if (!o || typeof o !== "object" || Array.isArray(o)) return empty;
+  const hl = o.hotList && typeof o.hotList === "object" && !Array.isArray(o.hotList) ? o.hotList : {};
+  const trim = (v) => (v == null ? "" : String(v).trim());
+  return {
+    ...o,
+    hotList: {
+      soldFromEmail: trim(hl.soldFromEmail),
+      soldToEmail: trim(hl.soldToEmail),
+      qldSoldFromEmail: trim(hl.qldSoldFromEmail),
+      qldSoldToEmail: trim(hl.qldSoldToEmail),
+    },
+  };
+}
+
 /** Match template From → slot (same order as former secondary → vic → QLD → 5–16 → primary). */
 const SMTP_FROM_ADDRESS_MATCH_ORDER = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 1];
 
@@ -1088,6 +1120,14 @@ async function ensureSchema() {
   } catch (e) {
     if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
       console.log(`Error adding column stream_settings_json:`, e.message);
+    }
+  }
+  // Email Settings → General (global JSON; e.g. Hot List sold notification From/To)
+  try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN email_general_json TEXT`);
+  } catch (e) {
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column email_general_json:`, e.message);
     }
   }
   // Drawing Settings page: notification emails (VIC / QLD / Investor Streams)
@@ -2323,7 +2363,7 @@ app.get("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      `SELECT id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, stream_settings_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at FROM settings WHERE id = 1`
+      `SELECT id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, stream_settings_json, email_general_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at FROM settings WHERE id = 1`
     );
     if (r.rows.length === 0) {
       const empty = {
@@ -2351,6 +2391,9 @@ app.get("/api/settings", async (req, res) => {
         drawings_vic_design_to_salesperson_to_email: null,
         drawings_qld_design_to_salesperson_to_email: null,
         stream_settings_json: {},
+        email_general_json: {
+          hotList: { soldFromEmail: "", soldToEmail: "", qldSoldFromEmail: "", qldSoldToEmail: "" },
+        },
         updated_at: null,
       };
       for (let i = 1; i <= 16; i++) {
@@ -2380,6 +2423,7 @@ app.get("/api/settings", async (req, res) => {
       result.send_drawings_qld = [];
     }
     result.stream_settings_json = parseStreamSettingsJsonColumn(result.stream_settings_json);
+    result.email_general_json = parseEmailGeneralJsonColumn(result.email_general_json);
     res.json(result);
   } catch (e) {
     console.error("Error fetching settings:", e);
@@ -2416,6 +2460,7 @@ app.put("/api/settings", async (req, res) => {
       drawings_vic_design_to_salesperson_to_email,
       drawings_qld_design_to_salesperson_to_email,
       stream_settings_json,
+      email_general_json,
     } = req.body || {};
     const body = req.body || {};
 
@@ -2454,6 +2499,18 @@ app.put("/api/settings", async (req, res) => {
       return null;
     };
 
+    const processEmailGeneralJson = (val) => {
+      if (val === undefined || val === null) return null;
+      if (typeof val === "object" && !Array.isArray(val)) {
+        return JSON.stringify(parseEmailGeneralJsonColumn(val));
+      }
+      if (typeof val === "string") {
+        const t = val.trim();
+        return t === "" ? null : t;
+      }
+      return null;
+    };
+
     const smtpInsertCols = [];
     const smtpValuePlaceholders = [];
     const smtpCoalesceParts = [];
@@ -2472,12 +2529,14 @@ app.put("/api/settings", async (req, res) => {
 
     const streamSettingsParam = processStreamSettingsJson(stream_settings_json);
     const streamSettingsParamIndex = 22 + smtpParams.length + 1;
+    const emailGeneralParam = processEmailGeneralJson(email_general_json);
+    const emailGeneralParamIndex = streamSettingsParamIndex + 1;
 
     const r = await pool.query(
       `INSERT INTO settings (id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, ${smtpInsertCols.join(
         ", "
-      )}, stream_settings_json, updated_at)
-       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, ${smtpValuePlaceholders.join(", ")}, $${streamSettingsParamIndex}, NOW())
+      )}, stream_settings_json, email_general_json, updated_at)
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, ${smtpValuePlaceholders.join(", ")}, $${streamSettingsParamIndex}, $${emailGeneralParamIndex}, NOW())
        ON CONFLICT (id)
        DO UPDATE SET
          root_directory = COALESCE($1, settings.root_directory),
@@ -2504,8 +2563,9 @@ app.put("/api/settings", async (req, res) => {
          drawings_qld_design_to_salesperson_to_email = COALESCE($22, settings.drawings_qld_design_to_salesperson_to_email),
          ${smtpCoalesceParts.join(",\n         ")},
          stream_settings_json = COALESCE($${streamSettingsParamIndex}, settings.stream_settings_json),
+         email_general_json = COALESCE($${emailGeneralParamIndex}, settings.email_general_json),
          updated_at = NOW()
-       RETURNING id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, stream_settings_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at`,
+       RETURNING id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, stream_settings_json, email_general_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at`,
       [
         processValue(root_directory),
         processBoolean(create_folders),
@@ -2531,6 +2591,7 @@ app.put("/api/settings", async (req, res) => {
         processValue(drawings_qld_design_to_salesperson_to_email),
         ...smtpParams,
         streamSettingsParam,
+        emailGeneralParam,
       ]
     );
 
@@ -2555,6 +2616,7 @@ app.put("/api/settings", async (req, res) => {
       result.send_drawings_qld = [];
     }
     result.stream_settings_json = parseStreamSettingsJsonColumn(result.stream_settings_json);
+    result.email_general_json = parseEmailGeneralJsonColumn(result.email_general_json);
 
     res.json(result);
   } catch (e) {
@@ -3044,6 +3106,97 @@ app.post("/api/emails/send", async (req, res) => {
   }
 });
 
+/** Match `resolveRegionalSalespersonName` / `projectStateCode` in `frontend/src/utils/drawingNotifyFrom.js`. */
+function drawingsEmailProjectStateCode(row) {
+  const s = String(row?.state ?? "").trim().toUpperCase();
+  if (s === "VIC" || s === "VICTORIA") return "VIC";
+  if (s === "QLD" || s === "QUEENSLAND") return "QLD";
+  return "";
+}
+
+function resolveRegionalSalespersonNameForDrawingsEmail(row) {
+  const code = drawingsEmailProjectStateCode(row);
+  if (code === "QLD") return "Brian Willis";
+  if (code === "VIC") return "Ben Donnan";
+  return String(row?.salesperson ?? "").trim();
+}
+
+/** Same idea as Drawings.jsx `getSalespersonDetailsByName` (first position by name order). */
+async function fetchSalespersonDetailsByNameForDrawingsEmail(pool, salespersonName) {
+  const name = String(salespersonName || "").trim();
+  if (!name) return { position: "", phone: "", email: "" };
+  try {
+    const r = await pool.query(
+      `SELECT u.email, u.phone,
+        (SELECT p.name FROM positions p
+         INNER JOIN user_positions up ON p.id = up.position_id
+         WHERE up.user_id = u.id
+         ORDER BY p.name ASC LIMIT 1) AS position_name
+       FROM users u
+       WHERE LOWER(TRIM(u.name)) = LOWER(TRIM($1::text))
+       LIMIT 1`,
+      [name]
+    );
+    if (!r.rows.length) return { position: "", phone: "", email: "" };
+    const row0 = r.rows[0];
+    const position = String(row0.position_name || "").trim();
+    return {
+      position,
+      phone: String(row0.phone || "").trim(),
+      email: String(row0.email || "").trim(),
+    };
+  } catch (e) {
+    console.error("fetchSalespersonDetailsByNameForDrawingsEmail:", e);
+    return { position: "", phone: "", email: "" };
+  }
+}
+
+async function applyDrawingsSalespersonTokenSubstitution(pool, htmlBody, subject, projectRow) {
+  const h = String(htmlBody ?? "");
+  const sub = subject == null ? "" : String(subject);
+  const combined = `${h}\n${sub}`;
+  if (
+    !/\{Salesperson\}/.test(combined) &&
+    !/\{SalespersonPosition\}/.test(combined) &&
+    !/\{SalespersonPhone\}/.test(combined) &&
+    !/\{SalespersonEmail\}/.test(combined)
+  ) {
+    return { html: h, subject: sub };
+  }
+  const salespersonName = resolveRegionalSalespersonNameForDrawingsEmail(projectRow);
+  let html = h.replace(/\{Salesperson\}/g, salespersonName);
+  let subjectOut = sub.replace(/\{Salesperson\}/g, salespersonName);
+  const needDetails =
+    /\{SalespersonPosition\}/.test(html + subjectOut) ||
+    /\{SalespersonPhone\}/.test(html + subjectOut) ||
+    /\{SalespersonEmail\}/.test(html + subjectOut);
+  if (needDetails && salespersonName) {
+    const { position, phone, email } = await fetchSalespersonDetailsByNameForDrawingsEmail(
+      pool,
+      salespersonName
+    );
+    const positionBody = position ? `<br>${position}` : "";
+    html = html
+      .replace(/\{SalespersonPosition\}/g, positionBody)
+      .replace(/\{SalespersonPhone\}/g, phone || "")
+      .replace(/\{SalespersonEmail\}/g, email || "");
+    subjectOut = subjectOut
+      .replace(/\{SalespersonPosition\}/g, position || "")
+      .replace(/\{SalespersonPhone\}/g, phone || "")
+      .replace(/\{SalespersonEmail\}/g, email || "");
+  } else {
+    html = html
+      .replace(/\{SalespersonPosition\}/g, "")
+      .replace(/\{SalespersonPhone\}/g, "")
+      .replace(/\{SalespersonEmail\}/g, "");
+    subjectOut = subjectOut
+      .replace(/\{SalespersonPosition\}/g, "")
+      .replace(/\{SalespersonPhone\}/g, "")
+      .replace(/\{SalespersonEmail\}/g, "");
+  }
+  return { html, subject: subjectOut };
+}
+
 // Send drawings PDF via email with attachment
 app.post("/api/emails/send-drawings", async (req, res) => {
   const { projectId, toEmail, attachDrawings, toEmails, customBody, from, subject: customSubject } = req.body || {};
@@ -3062,7 +3215,7 @@ app.post("/api/emails/send-drawings", async (req, res) => {
   let drawingsPdfPath = null;
   try {
     const projectResult = await pool.query(
-      "SELECT suburb, street, drawings_pdf_location FROM projects WHERE id = $1",
+      "SELECT suburb, street, state, salesperson, drawings_pdf_location FROM projects WHERE id = $1",
       [projectId]
     );
 
@@ -3150,7 +3303,10 @@ app.post("/api/emails/send-drawings", async (req, res) => {
     const street = project.street || "";
     
     // Use custom subject if provided, otherwise use default
-    const subject = customSubject || `New Drawings - ${suburb} - ${street}`;
+    let subject =
+      customSubject != null && String(customSubject).trim() !== ""
+        ? String(customSubject)
+        : `New Drawings - ${suburb} - ${street}`;
     
     // Use custom body if provided, otherwise build default body
     let htmlBody;
@@ -3217,6 +3373,10 @@ app.post("/api/emails/send-drawings", async (req, res) => {
       }
       htmlBody += `<br><br>SGF CENTRAL`;
     }
+
+    const spTokens = await applyDrawingsSalespersonTokenSubstitution(pool, htmlBody, subject, project);
+    htmlBody = spTokens.html;
+    subject = spTokens.subject;
 
     const recipientEmail = recipientEmails.join(", ");
     

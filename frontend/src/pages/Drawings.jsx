@@ -26,6 +26,7 @@ import {
   resolveSalespersonToClientFrom,
   resolveSalespersonToClientToEmails,
   parseEmailTemplateToAddressList,
+  resolveRegionalSalespersonName,
 } from "../utils/drawingNotifyFrom";
 import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 
@@ -215,6 +216,29 @@ export default function Drawings({
     } catch (error) {
       console.error("Error fetching draftsperson details:", error);
       return { name: stored, position: "" };
+    }
+  }
+
+  async function getSalespersonDetailsByName(salespersonName) {
+    if (!salespersonName) return { position: "", phone: "", email: "" };
+    try {
+      const response = await fetch(`${API_URL}/api/users`);
+      if (!response.ok) return { position: "", phone: "", email: "" };
+      const users = await response.json();
+      const user = users.find((u) => u.name === salespersonName);
+      if (!user) return { position: "", phone: "", email: "" };
+      const position =
+        user.positions && Array.isArray(user.positions) && user.positions.length > 0
+          ? user.positions[0].name
+          : "";
+      return {
+        position: position || "",
+        phone: user.phone || "",
+        email: user.email || "",
+      };
+    } catch (error) {
+      console.error("Error fetching salesperson details:", error);
+      return { position: "", phone: "", email: "" };
     }
   }
 
@@ -648,13 +672,42 @@ export default function Drawings({
     }
     const projectName =
       project?.street && project?.suburb ? `${project.street}, ${project.suburb}`.trim() : project?.name || "";
-    const replaceProjectNameToken = (txt) =>
-      String(txt || "").replace(/\{ProjectName\}/g, projectName);
+    let previewSubject = String(template.subject || "").replace(/\{ProjectName\}/g, projectName);
+    let previewBody = String(template.body || "").replace(/\{ProjectName\}/g, projectName);
+    const salespersonName = resolveRegionalSalespersonName(project);
+    previewSubject = previewSubject.replace(/\{Salesperson\}/g, salespersonName);
+    previewBody = previewBody.replace(/\{Salesperson\}/g, salespersonName);
+    const needsSpDetails =
+      /\{SalespersonPosition\}|\{SalespersonPhone\}|\{SalespersonEmail\}/.test(
+        `${previewSubject}\n${previewBody}`
+      );
+    if (needsSpDetails && salespersonName) {
+      const { position, phone, email } = await getSalespersonDetailsByName(salespersonName);
+      const positionBody = position ? `<br>${position}` : "";
+      const positionSubject = position || "";
+      previewBody = previewBody
+        .replace(/\{SalespersonPosition\}/g, positionBody)
+        .replace(/\{SalespersonPhone\}/g, phone || "")
+        .replace(/\{SalespersonEmail\}/g, email || "");
+      previewSubject = previewSubject
+        .replace(/\{SalespersonPosition\}/g, positionSubject)
+        .replace(/\{SalespersonPhone\}/g, phone || "")
+        .replace(/\{SalespersonEmail\}/g, email || "");
+    } else {
+      previewBody = previewBody
+        .replace(/\{SalespersonPosition\}/g, "")
+        .replace(/\{SalespersonPhone\}/g, "")
+        .replace(/\{SalespersonEmail\}/g, "");
+      previewSubject = previewSubject
+        .replace(/\{SalespersonPosition\}/g, "")
+        .replace(/\{SalespersonPhone\}/g, "")
+        .replace(/\{SalespersonEmail\}/g, "");
+    }
 
     setEmailPreviewTo(previewToList.join(", "));
     setEmailPreviewFrom(previewFrom);
-    setEmailPreviewSubject(replaceProjectNameToken(template.subject));
-    setEmailPreviewBody(replaceProjectNameToken(template.body));
+    setEmailPreviewSubject(previewSubject);
+    setEmailPreviewBody(previewBody);
     setEmailPreviewType(isConcept ? "concept_approval" : "working_approval");
     setShowEmailPreviewModal(true);
   }
@@ -1581,6 +1634,38 @@ export default function Drawings({
         /{Contact3}/g,
         project?.client3_active === "true" && project?.client3_email ? project.client3_email : ""
       );
+
+      const salespersonName = resolveRegionalSalespersonName(project);
+      body = body.replace(/{Salesperson}/g, salespersonName);
+      subject = subject.replace(/{Salesperson}/g, salespersonName);
+      const needsSalespersonDetails =
+        (body.includes("{SalespersonPosition}") ||
+          body.includes("{SalespersonPhone}") ||
+          body.includes("{SalespersonEmail}") ||
+          subject.includes("{SalespersonPosition}") ||
+          subject.includes("{SalespersonPhone}") ||
+          subject.includes("{SalespersonEmail}")) &&
+        salespersonName;
+      if (needsSalespersonDetails) {
+        const { position, phone, email } = await getSalespersonDetailsByName(salespersonName);
+        const positionBody = position ? `<br>${position}` : "";
+        const positionSubject = position || "";
+        body = body.replace(/{SalespersonPosition}/g, positionBody);
+        subject = subject.replace(/{SalespersonPosition}/g, positionSubject);
+        body = body.replace(/{SalespersonPhone}/g, phone || "");
+        subject = subject.replace(/{SalespersonPhone}/g, phone || "");
+        body = body.replace(/{SalespersonEmail}/g, email || "");
+        subject = subject.replace(/{SalespersonEmail}/g, email || "");
+      } else {
+        body = body
+          .replace(/{SalespersonPosition}/g, "")
+          .replace(/{SalespersonPhone}/g, "")
+          .replace(/{SalespersonEmail}/g, "");
+        subject = subject
+          .replace(/{SalespersonPosition}/g, "")
+          .replace(/{SalespersonPhone}/g, "")
+          .replace(/{SalespersonEmail}/g, "");
+      }
 
       return {
         ok: true,

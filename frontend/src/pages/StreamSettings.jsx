@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { parseEmailGeneralJson } from "../utils/emailGeneralSettings";
 const MONUMENT = "#323233";
 const WHITE = "#fff";
 const NEW_PROJECT_SECTION_BLUE = {
@@ -165,8 +166,6 @@ function drawingsSendClientFieldKeys(fieldGroup) {
 const SECTION_OPTIONS = [
   { key: "newProject", label: "New Project" },
   { key: "drawings", label: "Drawings" },
-  { key: "colours", label: "Colours" },
-  { key: "general", label: "General" },
 ];
 
 /** Per-stream new-project emails (stored on each `… - VIC` / `… - QLD` row separately). */
@@ -629,9 +628,19 @@ function DrawingNotifySmtpSelect({ smtpOptions, value, disabled, onValueChange, 
   );
 }
 
+/** Left column: global email settings (not tied to a stream row). */
+const EMAIL_NAV_GENERAL = "general";
+
+const GLOBAL_EMAIL_SECTIONS = [
+  { key: "colours", label: "Colours" },
+  { key: "hotList", label: "Hot List" },
+];
+
 export default function StreamSettings() {
+  const [emailNavScope, setEmailNavScope] = useState("stream"); // "stream" | EMAIL_NAV_GENERAL
   const [selectedStream, setSelectedStream] = useState(STREAM_OPTIONS[0]);
   const [activeSection, setActiveSection] = useState("drawings");
+  const [globalEmailSection, setGlobalEmailSection] = useState("colours");
   const [streamSettingsMap, setStreamSettingsMap] = useState(() => normalizeStreamSettingsMap({}));
   const streamSettingsMapRef = useRef(streamSettingsMap);
   streamSettingsMapRef.current = streamSettingsMap;
@@ -641,14 +650,25 @@ export default function StreamSettings() {
   const [smtpSlotEmails, setSmtpSlotEmails] = useState([]);
   const [newProjectSectionOpen, setNewProjectSectionOpen] = useState(defaultNewProjectSectionOpen);
   const [drawingSectionOpen, setDrawingSectionOpen] = useState(defaultDrawingSectionOpen);
+  const [hotListSoldSectionOpen, setHotListSoldSectionOpen] = useState(false);
+  const [emailGeneral, setEmailGeneral] = useState(() => parseEmailGeneralJson(null));
+  const emailGeneralRef = useRef(emailGeneral);
+  emailGeneralRef.current = emailGeneral;
   const streamDisplayList = streamDisplayItems(STREAM_OPTIONS);
 
   useEffect(() => {
+    if (emailNavScope !== "stream") return;
     if (activeSection === "newProject") {
       setNewProjectSectionOpen(defaultNewProjectSectionOpen());
     }
     if (activeSection === "drawings") {
       setDrawingSectionOpen(defaultDrawingSectionOpen());
+    }
+  }, [activeSection, emailNavScope]);
+
+  useEffect(() => {
+    if (activeSection === "colours") {
+      setActiveSection("drawings");
     }
   }, [activeSection]);
 
@@ -660,10 +680,16 @@ export default function StreamSettings() {
       const data = await res.json();
       setStreamSettingsMap(normalizeStreamSettingsMap(data.stream_settings_json));
       setSmtpSlotEmails(smtpSlotEmailsFromSettings(data));
+      const eg = parseEmailGeneralJson(data.email_general_json);
+      setEmailGeneral(eg);
+      emailGeneralRef.current = eg;
     } catch (e) {
       console.error(e);
       setStreamSettingsMap(normalizeStreamSettingsMap({}));
       setSmtpSlotEmails([]);
+      const eg = parseEmailGeneralJson(null);
+      setEmailGeneral(eg);
+      emailGeneralRef.current = eg;
     } finally {
       setLoading(false);
     }
@@ -688,6 +714,9 @@ export default function StreamSettings() {
       const data = await res.json();
       setStreamSettingsMap(normalizeStreamSettingsMap(data.stream_settings_json));
       setSmtpSlotEmails(smtpSlotEmailsFromSettings(data));
+      const eg = parseEmailGeneralJson(data.email_general_json);
+      setEmailGeneral(eg);
+      emailGeneralRef.current = eg;
     } catch (e) {
       console.error(e);
       alert(`Could not save stream settings: ${e.message}`);
@@ -695,6 +724,47 @@ export default function StreamSettings() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function persistEmailGeneral(nextJson) {
+    try {
+      setSaving(true);
+      const res = await fetch(`${API_URL}/api/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email_general_json: nextJson }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || res.statusText);
+      }
+      const data = await res.json();
+      const eg = parseEmailGeneralJson(data.email_general_json);
+      setEmailGeneral(eg);
+      emailGeneralRef.current = eg;
+      setSmtpSlotEmails(smtpSlotEmailsFromSettings(data));
+    } catch (e) {
+      console.error(e);
+      alert(`Could not save Hot List email settings: ${e.message}`);
+      await loadSettings();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function updateHotListSoldField(fieldKey, value) {
+    setEmailGeneral((prev) => {
+      const next = {
+        ...prev,
+        hotList: { ...prev.hotList, [fieldKey]: value },
+      };
+      emailGeneralRef.current = next;
+      return next;
+    });
+  }
+
+  function flushPersistHotListEmail() {
+    void persistEmailGeneral(emailGeneralRef.current);
   }
 
   function toggleDrawingOption(stream, optionKey) {
@@ -780,15 +850,45 @@ export default function StreamSettings() {
         }}
       >
         <h3 style={{ margin: "0 0 12px 0", fontSize: "1rem", fontWeight: 700 }}>
-          Current Streams ({streamDisplayList.length})
+          General & streams ({streamDisplayList.length + 1})
         </h3>
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <button
+            type="button"
+            onClick={() => {
+              setEmailNavScope(EMAIL_NAV_GENERAL);
+              setGlobalEmailSection("colours");
+            }}
+            style={{
+              width: "fit-content",
+              minWidth: "100%",
+              background: emailNavScope === EMAIL_NAV_GENERAL ? WHITE : "transparent",
+              color: emailNavScope === EMAIL_NAV_GENERAL ? MONUMENT : "#404049",
+              border: "none",
+              borderRadius: "10px",
+              padding: "10px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 600,
+              textAlign: "center",
+              letterSpacing: "0.3px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              outline: emailNavScope === EMAIL_NAV_GENERAL ? `2px solid ${MONUMENT}` : "none",
+              boxShadow: emailNavScope === EMAIL_NAV_GENERAL ? "0 2px 4px rgba(50,50,51,.04)" : "none",
+            }}
+          >
+            General
+          </button>
           {streamDisplayList.map(({ label, keys }) => {
-            const isSelected = keys.includes(selectedStream);
-            const onPick = () => setSelectedStream(isSelected ? selectedStream : keys[0]);
+            const isSelected = emailNavScope === "stream" && keys.includes(selectedStream);
+            const onPick = () => {
+              setEmailNavScope("stream");
+              setSelectedStream(isSelected ? selectedStream : keys[0]);
+            };
             return (
             <button
               key={label}
+              type="button"
               onClick={onPick}
               style={{
                 width: "fit-content",
@@ -830,32 +930,61 @@ export default function StreamSettings() {
         }}
       >
         <h4 style={{ margin: "0 0 4px 0", fontSize: "0.92rem", fontWeight: 700 }}>Sections</h4>
-        {SECTION_OPTIONS.map((section) => {
-          const isOpen = activeSection === section.key;
-          return (
-            <button
-              key={section.key}
-              type="button"
-              onClick={() => setActiveSection((prev) => (prev === section.key ? null : section.key))}
-              style={{
-                width: "100%",
-                background: isOpen ? WHITE : "transparent",
-                color: isOpen ? MONUMENT : "#404049",
-                border: "none",
-                borderRadius: "10px",
-                padding: "10px 8px",
-                fontSize: "0.92rem",
-                fontWeight: 500,
-                textAlign: "left",
-                letterSpacing: "0.2px",
-                cursor: "pointer",
-                outline: isOpen ? `2px solid ${MONUMENT}` : "none",
-              }}
-            >
-              {section.label} {isOpen ? "▾" : "▸"}
-            </button>
-          );
-        })}
+        {emailNavScope === EMAIL_NAV_GENERAL
+          ? GLOBAL_EMAIL_SECTIONS.map((section) => {
+              const isOpen = globalEmailSection === section.key;
+              return (
+                <button
+                  key={section.key}
+                  type="button"
+                  onClick={() =>
+                    setGlobalEmailSection((prev) => (prev === section.key ? null : section.key))
+                  }
+                  style={{
+                    width: "100%",
+                    background: isOpen ? WHITE : "transparent",
+                    color: isOpen ? MONUMENT : "#404049",
+                    border: "none",
+                    borderRadius: "10px",
+                    padding: "10px 8px",
+                    fontSize: "0.92rem",
+                    fontWeight: 500,
+                    textAlign: "left",
+                    letterSpacing: "0.2px",
+                    cursor: "pointer",
+                    outline: isOpen ? `2px solid ${MONUMENT}` : "none",
+                  }}
+                >
+                  {section.label} {isOpen ? "▾" : "▸"}
+                </button>
+              );
+            })
+          : SECTION_OPTIONS.map((section) => {
+              const isOpen = activeSection === section.key;
+              return (
+                <button
+                  key={section.key}
+                  type="button"
+                  onClick={() => setActiveSection((prev) => (prev === section.key ? null : section.key))}
+                  style={{
+                    width: "100%",
+                    background: isOpen ? WHITE : "transparent",
+                    color: isOpen ? MONUMENT : "#404049",
+                    border: "none",
+                    borderRadius: "10px",
+                    padding: "10px 8px",
+                    fontSize: "0.92rem",
+                    fontWeight: 500,
+                    textAlign: "left",
+                    letterSpacing: "0.2px",
+                    cursor: "pointer",
+                    outline: isOpen ? `2px solid ${MONUMENT}` : "none",
+                  }}
+                >
+                  {section.label} {isOpen ? "▾" : "▸"}
+                </button>
+              );
+            })}
       </div>
 
       <div
@@ -873,10 +1002,145 @@ export default function StreamSettings() {
           minWidth: 0,
         }}
       >
-        <h3 style={{ margin: "0 0 12px 0", fontSize: "1.05rem", fontWeight: 700 }}>{selectedStreamLabel}</h3>
+        <h3 style={{ margin: "0 0 12px 0", fontSize: "1.05rem", fontWeight: 700 }}>
+          {emailNavScope === EMAIL_NAV_GENERAL ? "General" : selectedStreamLabel}
+        </h3>
 
         {loading ? (
           <div style={{ fontSize: "0.95rem", color: "#32323399" }}>Loading stream settings…</div>
+        ) : emailNavScope === EMAIL_NAV_GENERAL ? (
+          !globalEmailSection ? (
+            <div style={{ fontSize: "0.95rem", color: "#32323399" }}>Select a section in column 2.</div>
+          ) : globalEmailSection === "colours" ? (
+            <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}>
+              <div style={{ ...columnPanelStyle, minHeight: "100%" }}>
+                <h4 style={{ ...columnTitleStyle, marginBottom: "10px" }}>Colours</h4>
+                <p style={{ margin: 0, fontSize: "0.88rem", color: "#32323399", lineHeight: 1.45 }}>
+                  Colour email options will go here.
+                </p>
+              </div>
+            </div>
+          ) : globalEmailSection === "hotList" ? (
+            <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}>
+              <div style={{ ...columnPanelStyle, minHeight: "100%" }}>
+                <h4 style={{ ...columnTitleStyle, marginBottom: "10px" }}>Hot List</h4>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: hotListSoldSectionOpen ? "10px" : "0",
+                    ...NEW_PROJECT_SECTION_BLUE,
+                  }}
+                >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "8px",
+                    padding: "2px 0 8px 0",
+                    borderBottom: hotListSoldSectionOpen ? "1px solid #4d93d955" : "none",
+                  }}
+                >
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => setHotListSoldSectionOpen((o) => !o)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "8px",
+                      flex: 1,
+                      minWidth: 0,
+                      margin: 0,
+                      padding: 0,
+                      border: "none",
+                      background: "transparent",
+                      cursor: saving ? "wait" : "pointer",
+                      textAlign: "left",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: "0.82rem",
+                        fontWeight: 700,
+                        color: "#1e4d7a",
+                        letterSpacing: "0.02em",
+                      }}
+                    >
+                      Sold email
+                    </span>
+                    <span aria-hidden style={{ fontSize: "0.75rem", color: "#1e4d7a", flexShrink: 0 }}>
+                      {hotListSoldSectionOpen ? "▾" : "▸"}
+                    </span>
+                  </button>
+                </div>
+                {hotListSoldSectionOpen ? (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: "12px",
+                    }}
+                  >
+                    <div style={{ ...columnPanelStyle, minHeight: 0, margin: 0 }}>
+                      <h5 style={{ margin: "0 0 10px 0", fontSize: "0.9rem", fontWeight: 700, color: MONUMENT }}>VIC</h5>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                          <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>From</span>
+                          <DrawingNotifySmtpSelect
+                            smtpOptions={smtpSlotEmails}
+                            value={emailGeneral.hotList?.soldFromEmail || ""}
+                            disabled={saving}
+                            onValueChange={(next) => updateHotListSoldField("soldFromEmail", next)}
+                            onCommit={flushPersistHotListEmail}
+                          />
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                          <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>To</span>
+                          <DrawingNotifySmtpSelect
+                            smtpOptions={smtpSlotEmails}
+                            value={emailGeneral.hotList?.soldToEmail || ""}
+                            disabled={saving}
+                            onValueChange={(next) => updateHotListSoldField("soldToEmail", next)}
+                            onCommit={flushPersistHotListEmail}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ ...columnPanelStyle, minHeight: 0, margin: 0 }}>
+                      <h5 style={{ margin: "0 0 10px 0", fontSize: "0.9rem", fontWeight: 700, color: MONUMENT }}>QLD</h5>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                          <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>From</span>
+                          <DrawingNotifySmtpSelect
+                            smtpOptions={smtpSlotEmails}
+                            value={emailGeneral.hotList?.qldSoldFromEmail || ""}
+                            disabled={saving}
+                            onValueChange={(next) => updateHotListSoldField("qldSoldFromEmail", next)}
+                            onCommit={flushPersistHotListEmail}
+                          />
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                          <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>To</span>
+                          <DrawingNotifySmtpSelect
+                            smtpOptions={smtpSlotEmails}
+                            value={emailGeneral.hotList?.qldSoldToEmail || ""}
+                            disabled={saving}
+                            onValueChange={(next) => updateHotListSoldField("qldSoldToEmail", next)}
+                            onCommit={flushPersistHotListEmail}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+                </div>
+              </div>
+            </div>
+          ) : null
         ) : !activeSection ? (
           <div style={{ fontSize: "0.95rem", color: "#32323399" }}>Select a section in column 2.</div>
         ) : (
@@ -1289,24 +1553,6 @@ export default function StreamSettings() {
                     );
                   })}
                 </div>
-              </div>
-            ) : null}
-
-            {activeSection === "colours" ? (
-              <div style={{ ...columnPanelStyle, minHeight: "100%" }}>
-                <h4 style={columnTitleStyle}>Colours</h4>
-                <p style={{ margin: 0, fontSize: "0.88rem", color: "#32323399", lineHeight: 1.45 }}>
-                  Options for this stream will go here.
-                </p>
-              </div>
-            ) : null}
-
-            {activeSection === "general" ? (
-              <div style={{ ...columnPanelStyle, minHeight: "100%" }}>
-                <h4 style={columnTitleStyle}>General</h4>
-                <p style={{ margin: 0, fontSize: "0.88rem", color: "#32323399", lineHeight: 1.45 }}>
-                  General options for this stream will go here.
-                </p>
               </div>
             ) : null}
           </div>

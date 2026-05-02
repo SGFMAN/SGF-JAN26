@@ -99,6 +99,20 @@ function projectStateCode(project) {
   return "";
 }
 
+/** Display name for drawing-related client emails: fixed by state; other states use `project.salesperson`. */
+const REGIONAL_SALESPERSON_DISPLAY_NAME = {
+  QLD: "Brian Willis",
+  VIC: "Ben Donnan",
+};
+
+export function resolveRegionalSalespersonName(project) {
+  const code = projectStateCode(project);
+  if (code && Object.prototype.hasOwnProperty.call(REGIONAL_SALESPERSON_DISPLAY_NAME, code)) {
+    return REGIONAL_SALESPERSON_DISPLAY_NAME[code];
+  }
+  return String(project?.salesperson ?? "").trim();
+}
+
 /**
  * Stream row for Sales Notes email: same resolver as other drawings, then match any `… - VIC`/`… - QLD`
  * row when the primary key is missing (stale stream string on the project).

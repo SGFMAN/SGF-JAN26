@@ -1,5 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
+import { DayPicker } from "react-day-picker";
+import { enAU } from "date-fns/locale";
+import "react-day-picker/style.css";
 import { isUserAdmin } from "../utils/auth";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import logo from "../images/logo.png";
@@ -29,6 +32,14 @@ const PLANNER_TOTAL_MINUTES = (PLANNER_END_HOUR - PLANNER_START_HOUR) * 60; // 5
 const PROJECT_DURATION_MINUTES = 120; // 2 hours
 const PROJECT_WIDTH = 400;
 const PROJECT_HEIGHT = 100;
+
+function formatDateToIsoLocal(d) {
+  if (!d || !(d instanceof Date) || Number.isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 /** Default From for Site Visit Booking emails (must match an SMTP slot in Settings to send). */
 const DEFAULT_SITE_VISIT_FROM = "craig@superiorgrannyflats.com.au";
@@ -321,6 +332,12 @@ export default function SiteVisitPlanner() {
       .map((id) => idToProject.get(id))
       .filter(Boolean);
   }, [group, projects]);
+
+  const siteVisitCalendarSelected = useMemo(() => {
+    if (!groupDate || !/^\d{4}-\d{2}-\d{2}$/.test(groupDate)) return undefined;
+    const d = new Date(`${groupDate}T12:00:00`);
+    return Number.isNaN(d.getTime()) ? undefined : d;
+  }, [groupDate]);
 
   const groupProjectsRef = useRef([]);
   useEffect(() => {
@@ -1829,48 +1846,49 @@ export default function SiteVisitPlanner() {
                 })()}
               </div>
 
-              {/* Column 2: Single Date Selector for the group */}
+              {/* Column 2: Site visit date — inline calendar (react-day-picker) */}
               <div
                 style={{
                   gridColumn: "2",
                   display: "flex",
                   flexDirection: "column",
-                  gap: "12px",
+                  gap: "8px",
                   alignContent: "flex-start",
                   minWidth: 0,
                 }}
               >
+                <style>{`
+                  .site-visit-planner-rdp.rdp-root {
+                    --rdp-accent-color: #4d93d9;
+                    --rdp-accent-background-color: #e8f2fc;
+                    margin: 0 auto;
+                  }
+                `}</style>
                 <div
+                  className="site-visit-planner-rdp"
                   style={{
-                    background: "#d3d3d3",
+                    width: "100%",
+                    maxWidth: "320px",
+                    margin: "0 auto",
+                    background: WHITE,
                     borderRadius: "12px",
-                    padding: "20px",
-                    display: "flex",
-                    alignItems: "flex-start",
-                    justifyContent: "center",
-                    height: "500px",
-                    paddingTop: "20px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    padding: "12px 10px",
+                    boxSizing: "border-box",
                   }}
                 >
-                  <input
-                    type="date"
-                    value={groupDate}
-                    onChange={(e) => {
-                      setGroupDate(e.target.value);
-                    }}
-                    style={{
-                      padding: "8px 12px",
-                      fontSize: "0.9rem",
-                      fontWeight: 500,
-                      color: MONUMENT,
-                      background: WHITE,
-                      border: `2px solid ${MONUMENT}`,
-                      borderRadius: "8px",
-                      cursor: "pointer",
-                      width: "100%",
-                      maxWidth: "200px",
-                      boxSizing: "border-box",
-                      marginTop: "0",
+                  <DayPicker
+                    mode="single"
+                    locale={enAU}
+                    weekStartsOn={1}
+                    selected={siteVisitCalendarSelected}
+                    defaultMonth={siteVisitCalendarSelected ?? new Date()}
+                    onSelect={(date) => {
+                      if (!date) {
+                        setGroupDate("");
+                        return;
+                      }
+                      setGroupDate(formatDateToIsoLocal(date));
                     }}
                   />
                 </div>

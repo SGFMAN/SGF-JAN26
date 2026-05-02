@@ -66,3 +66,91 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+/* Project page: address copied toast — linear motion up; opacity fades only at edges */
+@keyframes projectPageCopyToastRise {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(78px);
+  }
+  6% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-102px);
+  }
+}
+
+/* Straight-line drift (same timing as toast); no scale/rotate jumps */
+@keyframes projectPageCopySparkle {
+  from {
+    opacity: 0;
+    transform: translate(0, 26px);
+  }
+  6% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translate(var(--sp-dx, 0px), var(--sp-dy, 0px));
+  }
+}
+
+.project-page-copy-toast {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  margin-top: 12px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  white-space: nowrap;
+  z-index: 30;
+  will-change: transform, opacity;
+  animation: projectPageCopyToastRise 2.1s linear forwards;
+}
+
+.project-page-copy-toast__sparkles {
+  position: relative;
+  width: 140px;
+  height: 34px;
+  margin: 0 auto 2px;
+}
+
+.project-page-copy-toast__sparkle-wrap {
+  position: absolute;
+  transform: translate(-50%, -50%);
+}
+
+.project-page-copy-toast__sparkle {
+  display: block;
+  color: #fce78a;
+  font-size: 14px;
+  line-height: 1;
+  text-shadow:
+    0 0 8px #d4af37,
+    0 0 18px rgba(212, 175, 55, 0.9),
+    0 0 28px rgba(255, 220, 120, 0.5);
+  will-change: transform, opacity;
+  animation: projectPageCopySparkle 2.1s linear forwards;
+}
+
+.project-page-copy-toast__label {
+  font-size: 1.12rem;
+  font-weight: 700;
+  color: #f0d060;
+  letter-spacing: 0.1em;
+  text-shadow:
+    0 0 14px rgba(232, 197, 71, 1),
+    0 0 32px rgba(212, 175, 55, 0.65),
+    0 2px 4px rgba(0, 0, 0, 0.5);
+}

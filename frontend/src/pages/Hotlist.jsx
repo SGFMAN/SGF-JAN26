@@ -10,9 +10,10 @@ import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { isUserAdmin } from "../utils/auth";
 import {
-  resolveNewProjectTeamFrom,
-  resolveNewProjectTeamToEmailsFromStream,
-} from "../utils/streamNewProjectEmail";
+  generalEmailStateCode,
+  resolveHotlistSoldFromEmail,
+  resolveHotlistSoldToEmail,
+} from "../utils/emailGeneralSettings";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -508,16 +509,28 @@ export default function Hotlist() {
         return;
       }
 
-      const streamTo = resolveNewProjectTeamToEmailsFromStream(settings, item);
-      const resolvedTo = streamTo.join(", ");
-      const fromAddress = resolveNewProjectTeamFrom(settings, item);
-      if (!resolvedTo) {
-        alert("No recipient email found in Stream Settings.");
+      const stateCode = generalEmailStateCode(item);
+      if (!stateCode) {
+        alert(
+          "Set State to VIC or QLD on this Hot List entry. General → Hot List Sold email uses that state (not the stream) to pick addresses."
+        );
         setSoldPreviewOpen(false);
         return;
       }
-      if (!fromAddress || !String(fromAddress).trim()) {
-        alert("No sender email found in Stream Settings.");
+
+      const fromAddress = resolveHotlistSoldFromEmail(settings, item).trim();
+      const resolvedTo = resolveHotlistSoldToEmail(settings, item).trim();
+      if (!resolvedTo) {
+        alert(
+          `Set To for ${stateCode} under Settings → Email Settings → General → Hot List → Sold email (${stateCode} column).`
+        );
+        setSoldPreviewOpen(false);
+        return;
+      }
+      if (!fromAddress) {
+        alert(
+          `Set From for ${stateCode} under Settings → Email Settings → General → Hot List → Sold email (${stateCode} column).`
+        );
         setSoldPreviewOpen(false);
         return;
       }

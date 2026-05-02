@@ -14,15 +14,15 @@ const SECTION_GREY = "#a1a1a3";
 const LIGHT_MONUMENT = "#42464d"; // More blue and slightly lighter version of monument
 const WHITE = "#fff";
 
-// Sidebar menu entries
+// Sidebar menu entries (alphabetical by label)
 const menuOptions = [
-  { key: "file", label: "File Settings" },
-  { key: "emailTemplates", label: "Email Templates" },
-  { key: "emailSettings", label: "SMTP Settings" },
-  { key: "users", label: "Users" },
   { key: "account", label: "Account Settings" },
   { key: "colourSettings", label: "Colour Settings" },
-  { key: "streamSettings", label: "Stream Settings" },
+  { key: "streamSettings", label: "Email Settings" },
+  { key: "emailTemplates", label: "Email Templates" },
+  { key: "file", label: "File Settings" },
+  { key: "emailSettings", label: "SMTP Settings" },
+  { key: "users", label: "Users" },
 ];
 
 export default function SettingsPage() {
