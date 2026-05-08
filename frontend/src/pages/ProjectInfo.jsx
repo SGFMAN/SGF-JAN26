@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { PROJECT_STATUS_OPTIONS as STATUS_OPTIONS } from "../utils/projectStatus";
 import { CLASSIFICATION_OPTIONS } from "../utils/classifications";
+import SiteSatelliteMapModal from "../components/SiteSatelliteMapModal";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -33,6 +34,8 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
   const [projectInfoNotes, setProjectInfoNotes] = useState(project?.project_info_notes || "");
   const [onHold, setOnHold] = useState(project?.on_hold === 'true' || project?.on_hold === true);
   const [qpNumber, setQpNumber] = useState(project?.qp_number || "");
+  const [siteMapModalOpen, setSiteMapModalOpen] = useState(false);
+  const [siteMapAddressQuery, setSiteMapAddressQuery] = useState("");
 
   // Use ref to track latest values for saving
   const valuesRef = useRef({ status, street, suburb, state, specs, classification, projectInfoNotes, onHold, qpNumber });
@@ -476,6 +479,36 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
               >
                 {project?.proposal_pdf_location ? "Show Proposal" : "Locate Proposal"}
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const q = [street, suburb, state]
+                    .map((s) => String(s || "").trim())
+                    .filter(Boolean)
+                    .join(", ");
+                  if (!q) {
+                    alert("Add street, suburb, and state first so the map can find the site.");
+                    return;
+                  }
+                  setSiteMapAddressQuery(q);
+                  setSiteMapModalOpen(true);
+                }}
+                style={{
+                  marginTop: "12px",
+                  display: "block",
+                  background: MONUMENT,
+                  color: WHITE,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  transition: "background 0.17s",
+                }}
+              >
+                Show Site Map
+              </button>
             </div>
           </div>
 
@@ -671,6 +704,11 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
         </div>
       )}
     </div>
+    <SiteSatelliteMapModal
+      open={siteMapModalOpen}
+      onClose={() => setSiteMapModalOpen(false)}
+      addressQuery={siteMapAddressQuery}
+    />
     </>
   );
 }

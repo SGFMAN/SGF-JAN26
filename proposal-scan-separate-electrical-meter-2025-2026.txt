@@ -1,0 +1,1103 @@
+Scan: Separate Electrical Meter (case-insensitive substring) in ONE root-level PDF per job
+Base: Z:\1.SGF PROJECT MANAGEMENT
+Roots: 2025/QLD, 2025/VIC, 2026/QLD, 2026/VIC
+Generated: 2026-05-06T04:40:14.097Z
+
+Job folders scanned: 363
+Root read errors: 0
+No PDF in root: 3
+PDF read/parse errors: 0
+Matches (phrase found): 74
+PDF chosen but phrase not found: 286
+
+=== MATCHES ===
+
+2025/QLD/BETHANIA - 6 Zircon Court
+  PDF: Proposal.1679225_1764812269060 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\BETHANIA - 6 Zircon Court\Proposal.1679225_1764812269060 (1).pdf
+2025/QLD/CLONTARF - 7 Waterton Street
+  PDF: Proposal quote 7 Waterton Street Clontarf Qld 4019 (4).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\CLONTARF - 7 Waterton Street\Proposal quote 7 Waterton Street Clontarf Qld 4019 (4).pdf
+2025/QLD/EAGLEBY - 28 Tarlo Street
+  PDF: 28 Tarlo St, Eagleby - Granny Flat.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\EAGLEBY - 28 Tarlo Street\28 Tarlo St, Eagleby - Granny Flat.pdf
+2025/QLD/EAGLEBY - 6 Melwood St
+  PDF: Proposal quote 6 Melwood Street Eagleby Qld 4207.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\EAGLEBY - 6 Melwood St\Proposal quote 6 Melwood Street Eagleby Qld 4207.pdf
+2025/QLD/EIGHT MILE PLAINS - 9 Byzance Close
+  PDF: Proposal.1584109_1757304715666.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\EIGHT MILE PLAINS - 9 Byzance Close\Proposal.1584109_1757304715666.pdf
+2025/QLD/FLINDERS VIEW - 47 Edwards Street
+  PDF: Proposal.1521031_1751586543955.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\FLINDERS VIEW - 47 Edwards Street\Proposal.1521031_1751586543955.pdf
+2025/QLD/FORESTDALE - 13-17 Sheriff Street
+  PDF: Proposal_1368929_Mon, 20 Oct 2025 00-41-42 GMT (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\FORESTDALE - 13-17 Sheriff Street\Proposal_1368929_Mon, 20 Oct 2025 00-41-42 GMT (1).pdf
+2025/QLD/KALLANGUR - 8 Beattie Street
+  PDF: Proposal.1480797_1765227306047.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\KALLANGUR - 8 Beattie Street\Proposal.1480797_1765227306047.pdf
+2025/QLD/KALLANGUR - 8 Glenmore Street
+  PDF: Proposal_1342602_Mon, 26 May 2025 04-34-56 GMT.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\KALLANGUR - 8 Glenmore Street\Proposal_1342602_Mon, 26 May 2025 04-34-56 GMT.pdf
+2025/QLD/KENMORE - 77 Sunset Road
+  PDF: Proposal quote 77 Sunset Road Kenmore Qld 4069.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\KENMORE - 77 Sunset Road\Proposal quote 77 Sunset Road Kenmore Qld 4069.pdf
+2025/QLD/MOOROOKA - 11 Fegen Drive
+  PDF: Proposal.1730045_1764827806576.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\MOOROOKA - 11 Fegen Drive\Proposal.1730045_1764827806576.pdf
+2025/QLD/MOUNT GRAVATT EAST - 81 Nightingale Street
+  PDF: Proposal - Mount Gravatt East - 81 Nightingale St.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\MOUNT GRAVATT EAST - 81 Nightingale Street\Proposal - Mount Gravatt East - 81 Nightingale St.pdf
+2025/QLD/PETRIE - 59 Rue Montaigne
+  PDF: Proposal.1431305_1749599699094 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\PETRIE - 59 Rue Montaigne\Proposal.1431305_1749599699094 (1).pdf
+2025/QLD/REGENTS PARK - 8 Latana Court
+  PDF: Proposal.1607297_1757911570858.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\REGENTS PARK - 8 Latana Court\Proposal.1607297_1757911570858.pdf
+2025/QLD/RIVERHILLS - 20 Zambesi Street
+  PDF: Proposal.signed.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\RIVERHILLS - 20 Zambesi Street\Proposal.signed.pdf
+2025/QLD/ROCHEDALE SOUTH - 31 Tolverne Street
+  PDF: Proposal.1528659_1751330812767.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\ROCHEDALE SOUTH - 31 Tolverne Street\Proposal.1528659_1751330812767.pdf
+2025/QLD/SALISBURY - 380 Orange Grove Road
+  PDF: Proposal quote 380 Orange Grove Road Salisbury Qld 4107 (2).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\SALISBURY - 380 Orange Grove Road\Proposal quote 380 Orange Grove Road Salisbury Qld 4107 (2).pdf
+2025/QLD/SALISBURY - 39 Salford Street
+  PDF: Proposal quote 39 Salford Street Salisbury Qld 4107.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\SALISBURY - 39 Salford Street\Proposal quote 39 Salford Street Salisbury Qld 4107.pdf
+2025/QLD/STRATHPINE - 28 Bateman Street
+  PDF: Proposal quote 28 Bateman Street Strathpine Qld 4500..pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\STRATHPINE - 28 Bateman Street\Proposal quote 28 Bateman Street Strathpine Qld 4500..pdf
+2025/QLD/SUNNYBANK - 5 Lavinia Street
+  PDF: Proposal quote 5 Lavinia Street Sunnybank Qld 4109 (7).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\SUNNYBANK - 5 Lavinia Street\Proposal quote 5 Lavinia Street Sunnybank Qld 4109 (7).pdf
+2025/QLD/SUNNYBANK HILLS - 587 Compton Road
+  PDF: Proposal quote 587 Compton Road Sunnybamk Hills  Qld 4109.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\SUNNYBANK HILLS - 587 Compton Road\Proposal quote 587 Compton Road Sunnybamk Hills  Qld 4109.pdf
+2025/QLD/TINGALPA - 13 Cox Close
+  PDF: Proposal.1500695_1747621302391 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\TINGALPA - 13 Cox Close\Proposal.1500695_1747621302391 (1).pdf
+2025/QLD/WAVELL HEIGHTS - 23 Newman Road
+  PDF: Proposal.1500751_1747779663974.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\WAVELL HEIGHTS - 23 Newman Road\Proposal.1500751_1747779663974.pdf
+2025/QLD/WOODRIDGE - 13 Phillip Street
+  PDF: Proposal quote 13 Phillip Street Woodridge Qld 4114.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\WOODRIDGE - 13 Phillip Street\Proposal quote 13 Phillip Street Woodridge Qld 4114.pdf
+2025/VIC/ALTONA MEADOWS - 51 Donald Street
+  PDF: Proposal.1623536_1757030742976.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\ALTONA MEADOWS - 51 Donald Street\Proposal.1623536_1757030742976.pdf
+2025/VIC/AVONDALE HEIGHTS - 10 Deutscher Street
+  PDF: Proposal.1150830_1744862943282 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\AVONDALE HEIGHTS - 10 Deutscher Street\Proposal.1150830_1744862943282 (1).pdf
+2025/VIC/BAYSWATER - 919 Mountain Highway
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BAYSWATER - 919 Mountain Highway\Cover Sheet.pdf
+2025/VIC/BORONIA - 392 Boronia Road
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BORONIA - 392 Boronia Road\Cover Sheet.pdf
+2025/VIC/BORONIA - 394 Boronia Road
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BORONIA - 394 Boronia Road\Cover Sheet.pdf
+2025/VIC/BUNYIP - 20 Strafford Lane
+  PDF: Proposal_1693087_Sat, 29 Nov 2025 00-54-19 GMT.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BUNYIP - 20 Strafford Lane\Proposal_1693087_Sat, 29 Nov 2025 00-54-19 GMT.pdf
+2025/VIC/CORIO - 13 Macedon Avenue
+  PDF: Proposal.1419383_1743991564545.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\CORIO - 13 Macedon Avenue\Proposal.1419383_1743991564545.pdf
+2025/VIC/DALLAS - 7 Apollo Crescent
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\DALLAS - 7 Apollo Crescent\Cover Sheet.pdf
+2025/VIC/FERNTREE GULLY - 9 Hancock Drive
+  PDF: Proposal.1536814_1749781153780.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\FERNTREE GULLY - 9 Hancock Drive\Proposal.1536814_1749781153780.pdf
+2025/VIC/FRANKSTON - 51 Laurina Crescent
+  PDF: Proposal.1706183_1763335309747.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\FRANKSTON - 51 Laurina Crescent\Proposal.1706183_1763335309747.pdf
+2025/VIC/FRANKSTON NORTH - 17 Mahogany Avenue
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\FRANKSTON NORTH - 17 Mahogany Avenue\Cover Sheet.pdf
+2025/VIC/HOPPERS CROSSING - 12 Kathleen Crescent
+  PDF: Proposal.633777_1747788138076.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\HOPPERS CROSSING - 12 Kathleen Crescent\Proposal.633777_1747788138076.pdf
+2025/VIC/HOPPERS CROSSING - 8 Paruna Place
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\HOPPERS CROSSING - 8 Paruna Place\Cover Sheet.pdf
+2025/VIC/KENNINGTON - 93 Condon Street
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\KENNINGTON - 93 Condon Street\Cover Sheet.pdf
+2025/VIC/LARA - 100 McClelland Avenue
+  PDF: Proposal.1734114_1764818582856 (2).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\LARA - 100 McClelland Avenue\Proposal.1734114_1764818582856 (2).pdf
+2025/VIC/MORNINGTON - 56 Van Ness Avenue
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\MORNINGTON - 56 Van Ness Avenue\Cover Sheet.pdf
+2025/VIC/MORWELL - 28 Gillie Crescent
+  PDF: Proposal.1275270_1748556675266.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\MORWELL - 28 Gillie Crescent\Proposal.1275270_1748556675266.pdf
+2025/VIC/RINGWOOD - 24 Kendall Street
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\RINGWOOD - 24 Kendall Street\Cover Sheet.pdf
+2025/VIC/ROXBURGH PARK - 21 Wilkinson Court
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\ROXBURGH PARK - 21 Wilkinson Court\Cover Sheet.pdf
+2025/VIC/SUNSHINE - 7 Lowe Crescent
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\SUNSHINE - 7 Lowe Crescent\Cover Sheet.pdf
+2026/QLD/AVOCA - 38 Glenview Cr
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\AVOCA - 38 Glenview Cr\Proposal.PDF
+2026/QLD/BROWNS PLAINS - 8 Saratoga Street
+  PDF: tenants_1709_marketplace_318368_documents_Proposal_e_signed_Proposal.318368_1772577742138_03 Mar 2026 22_42_23 GMT.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\BROWNS PLAINS - 8 Saratoga Street\tenants_1709_marketplace_318368_documents_Proposal_e_signed_Proposal.318368_1772577742138_03 Mar 2026 22_42_23 GMT.pdf
+2026/QLD/CRESTMEAD - 2 Citron Ct
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\CRESTMEAD - 2 Citron Ct\Proposal.PDF
+2026/QLD/DAISY HILL - 7 Begonia Street
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\DAISY HILL - 7 Begonia Street\Proposal.PDF
+2026/QLD/EAGLEBY - 33 Rinto Drive
+  PDF: Proposal.1577467_1769553318473 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\EAGLEBY - 33 Rinto Drive\Proposal.1577467_1769553318473 (1).pdf
+2026/QLD/OXLEY - 1137 Oxley Road
+  PDF: Proposal quote 1137 Oxley Road Oxley Qld 4075.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\OXLEY - 1137 Oxley Road\Proposal quote 1137 Oxley Road Oxley Qld 4075.pdf
+2026/QLD/REGENTS PARK - 20 Dryade St Regents
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\REGENTS PARK - 20 Dryade St Regents\Proposal.PDF
+2026/QLD/SCARNESS - 24 Wuruma Street
+  PDF: Proposal.1832543_1773286761741_12 Mar 2026 03_39_22 GMT.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\SCARNESS - 24 Wuruma Street\Proposal.1832543_1773286761741_12 Mar 2026 03_39_22 GMT.pdf
+2026/QLD/SLACKS CREEK - 35 Janice St
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\SLACKS CREEK - 35 Janice St\Proposal.PDF
+2026/QLD/SOUTHPORT - 76 Stevens Street
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\SOUTHPORT - 76 Stevens Street\Proposal.PDF
+2026/QLD/STAFFORD - 15 Goorama St
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\STAFFORD - 15 Goorama St\Proposal.PDF
+2026/VIC/BAIRNSDALE - 13 Drevermann St
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\BAIRNSDALE - 13 Drevermann St\Proposal.PDF
+2026/VIC/BELMONT - 12 Dudley Street
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\BELMONT - 12 Dudley Street\Proposal.PDF
+2026/VIC/BELMONT - 97 Laura Av
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\BELMONT - 97 Laura Av\Proposal.PDF
+2026/VIC/DIGGERS REST - 12 Mullock Road
+  PDF: Proposal.1718424_1765436562862 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\DIGGERS REST - 12 Mullock Road\Proposal.1718424_1765436562862 (1).pdf
+2026/VIC/FRANKSTON - 15 Dell Road
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\FRANKSTON - 15 Dell Road\Proposal.PDF
+2026/VIC/KEYSBOROUGH - 10 Clarence Avenue
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\KEYSBOROUGH - 10 Clarence Avenue\Cover Sheet.pdf
+2026/VIC/LARA - 55 Curletts Rd
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\LARA - 55 Curletts Rd\Proposal.PDF
+2026/VIC/MACLEOD - 19 Thornton Street
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\MACLEOD - 19 Thornton Street\Proposal.PDF
+2026/VIC/MACLEOD - 22 Lindsay St
+  PDF: Proposal.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\MACLEOD - 22 Lindsay St\Proposal.pdf
+2026/VIC/MELTON - 14 Vista Drive
+  PDF: Proposal.1591172_1768192030772.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\MELTON - 14 Vista Drive\Proposal.1591172_1768192030772.pdf
+2026/VIC/MOOROOLBARK - 23 Croydondale Dr
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\MOOROOLBARK - 23 Croydondale Dr\Proposal.PDF
+2026/VIC/NORLANE - 33 Pettitt Cr
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\NORLANE - 33 Pettitt Cr\Proposal.PDF
+2026/VIC/NORTH GEELONG - 98 Walsgott Street
+  PDF: Proposal.1814127_1771720497623 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\NORTH GEELONG - 98 Walsgott Street\Proposal.1814127_1771720497623 (1).pdf
+2026/VIC/RESEARCH - 486 Reynolds Rd
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\RESEARCH - 486 Reynolds Rd\Proposal.PDF
+2026/VIC/RINGWOOD - 54 Warrandyte Rd
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\RINGWOOD - 54 Warrandyte Rd\Proposal.PDF
+2026/VIC/SEAFORD - 15 Chicquita Av
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\SEAFORD - 15 Chicquita Av\Proposal.PDF
+2026/VIC/TORQUAY - 48 Glaneuse Av
+  PDF: Proposal.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\TORQUAY - 48 Glaneuse Av\Proposal.pdf
+2026/VIC/WERRIBEE - 1 Magpie Court
+  PDF: Proposal.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\WERRIBEE - 1 Magpie Court\Proposal.pdf
+2026/VIC/WHITTINGTON - 17 Conrad Ct
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\WHITTINGTON - 17 Conrad Ct\Proposal.PDF
+
+=== CHOSEN PDF BUT NO PHRASE ===
+
+2025/QLD/BARELLAN POINT - 1-5 Mitchell Street
+  PDF: Proposal quote 1-5 Mitchell Street Barellan Point Qld 4306.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\BARELLAN POINT - 1-5 Mitchell Street\Proposal quote 1-5 Mitchell Street Barellan Point Qld 4306.pdf
+2025/QLD/BEAUDESERT - 8 Cedar Drive
+  PDF: administration___as_constructed_infomation_request.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\BEAUDESERT - 8 Cedar Drive\administration___as_constructed_infomation_request.pdf
+2025/QLD/BEENLEIGH - 45 Pheasant Avenue
+  PDF: 24-04198_COVER_SHEET_LOCALITY_PLAN_DWG_SCHEDULE__NOTES_32_PHEASENT_AVENUE.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\BEENLEIGH - 45 Pheasant Avenue\24-04198_COVER_SHEET_LOCALITY_PLAN_DWG_SCHEDULE__NOTES_32_PHEASENT_AVENUE.pdf
+2025/QLD/BEERBURRUM - 85 Murphys Road
+  PDF: Canibuild 85 Murphys Road Beerburrum Qld 5417.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\BEERBURRUM - 85 Murphys Road\Canibuild 85 Murphys Road Beerburrum Qld 5417.pdf
+2025/QLD/BELLBIRD PARK - 30 Sherwood Crescent
+  PDF: Proposal.1496104_1746574932383.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\BELLBIRD PARK - 30 Sherwood Crescent\Proposal.1496104_1746574932383.pdf
+2025/QLD/BIRKDALE - 14 Thomas Street
+  PDF: 1st Dep SGF.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\BIRKDALE - 14 Thomas Street\1st Dep SGF.pdf
+2025/QLD/BIRKDALE - 18-20 Creswick Place
+  PDF: 18-20 Creswick Place, Birkdale - Energy Bill.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\BIRKDALE - 18-20 Creswick Place\18-20 Creswick Place, Birkdale - Energy Bill.pdf
+2025/QLD/BONOGIN - 6 Glenmore Drive
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\BONOGIN - 6 Glenmore Drive\Form 15 - Design Certificate - Temp.pdf
+2025/QLD/BOONDALL - 161 Lyndhurst Road
+  PDF: Proposal quote 161 Lyndhurst Road Boondall Qld 4034.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\BOONDALL - 161 Lyndhurst Road\Proposal quote 161 Lyndhurst Road Boondall Qld 4034.pdf
+2025/QLD/BROWNS PLAINS - 55 Yancey Street
+  PDF: 3535308_PN212402_House_Drainage_As_Constructed_Plans.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\BROWNS PLAINS - 55 Yancey Street\3535308_PN212402_House_Drainage_As_Constructed_Plans.pdf
+2025/QLD/BROWNS PLAINS - 8 Furzer Street
+  PDF: Proposal.1572234_1753836809060.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\BROWNS PLAINS - 8 Furzer Street\Proposal.1572234_1753836809060.pdf
+2025/QLD/BUDERIM - 1 Geehi Court
+  PDF: ENERGY BILL - AlintaEnergy-103740951-33979881.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\BUDERIM - 1 Geehi Court\ENERGY BILL - AlintaEnergy-103740951-33979881.pdf
+2025/QLD/BURNSIDE - 21 Tramline Rise
+  PDF: Proposal.471065_1748320054164 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\BURNSIDE - 21 Tramline Rise\Proposal.471065_1748320054164 (1).pdf
+2025/QLD/CABOOLTURE - 220 King Street
+  PDF: Easement.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\CABOOLTURE - 220 King Street\Easement.pdf
+2025/QLD/CABOOLTURE - 7 Linwood Court
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\CABOOLTURE - 7 Linwood Court\Form 15 - Design Certificate - Temp.pdf
+2025/QLD/CALAMVALE - 12 Begonia Place
+  PDF: Proposal quote 12 Begonia Place Calamvale Qld 4116.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\CALAMVALE - 12 Begonia Place\Proposal quote 12 Begonia Place Calamvale Qld 4116.pdf
+2025/QLD/CALLAMVALE - 72 Sunflower Crescent
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\CALLAMVALE - 72 Sunflower Crescent\Form 15 - Design Certificate - Temp.pdf
+2025/QLD/CALOUNDRA - 8 Suller Street
+  PDF: Proposal.1621085_1756252035442.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\CALOUNDRA - 8 Suller Street\Proposal.1621085_1756252035442.pdf
+2025/QLD/CHERMSIDE - 57 Meemar Street
+  PDF: 7706657.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\CHERMSIDE - 57 Meemar Street\7706657.pdf
+2025/QLD/CLIFTON - 75 Gillam Street
+  PDF: $5000 DEPOSIT LODGEMENT SLIP DAVEY_LY DAVEY 25062025.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\CLIFTON - 75 Gillam Street\$5000 DEPOSIT LODGEMENT SLIP DAVEY_LY DAVEY 25062025.pdf
+2025/QLD/CLONTARF - 3 Conley Street
+  PDF: 20251106092220898.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\CLONTARF - 3 Conley Street\20251106092220898.pdf
+2025/QLD/CRESTMEAD - 15 Pinewood Street
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\CRESTMEAD - 15 Pinewood Street\Form 15 - Design Certificate - Temp.pdf
+2025/QLD/CRESTMEAD - 44 Royena Court
+  PDF: 44 Royena Court Crestmead - ENERGY BILL.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\CRESTMEAD - 44 Royena Court\44 Royena Court Crestmead - ENERGY BILL.pdf
+2025/QLD/CRESTMEAD - 7 Wisdom Way
+  PDF: Form 15 - Design Certificate - 7 Wisdom Way Creastmead.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\CRESTMEAD - 7 Wisdom Way\Form 15 - Design Certificate - 7 Wisdom Way Creastmead.pdf
+2025/QLD/DECEPTION BAY - 25 Kate Avenue
+  PDF: 20260209153348145.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\DECEPTION BAY - 25 Kate Avenue\20260209153348145.pdf
+2025/QLD/DECEPTION BAY - 3 St Lucia Court
+  PDF: Proposal quote 3 St Lucia Court Deception Bay Qld 4508.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\DECEPTION BAY - 3 St Lucia Court\Proposal quote 3 St Lucia Court Deception Bay Qld 4508.pdf
+2025/QLD/DELANEYS CREEK - 26 Attunga Court
+  PDF: 26 Attunga Court, Delaneys Creek - Energy Creek.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\DELANEYS CREEK - 26 Attunga Court\26 Attunga Court, Delaneys Creek - Energy Creek.pdf
+2025/QLD/DURACK - 39 Randwick Street
+  PDF: Proposal quote 39 Randwick Street Durack Qld 4077.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\DURACK - 39 Randwick Street\Proposal quote 39 Randwick Street Durack Qld 4077.pdf
+2025/QLD/EAGLEBY - 14 Palmer Street
+  PDF: 14 Palmer Street Eagleby.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\EAGLEBY - 14 Palmer Street\14 Palmer Street Eagleby.pdf
+2025/QLD/EAGLEBY - 3 Bedford Crescent
+  PDF: Annex floor plan Dec 7 2025.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\EAGLEBY - 3 Bedford Crescent\Annex floor plan Dec 7 2025.pdf
+2025/QLD/EDENS LANDING - 42 Avonmore Street
+  PDF: 7658734_1 - Energy Bill.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\EDENS LANDING - 42 Avonmore Street\7658734_1 - Energy Bill.pdf
+2025/QLD/ELI WATERS - 10 Kestrel Court
+  PDF: 5378-SKH-001-A - Setout.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\ELI WATERS - 10 Kestrel Court\5378-SKH-001-A - Setout.pdf
+2025/QLD/ELIMBAH - 9-11 Greentree Road
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\ELIMBAH - 9-11 Greentree Road\Form 15 - Design Certificate - Temp.pdf
+2025/QLD/EVERTON PARK - 8 Everton Terrace
+  PDF: 2502635-FORM 12-A SETOUT 8 EVERTON TCE EVERTON PARK_signed.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\EVERTON PARK - 8 Everton Terrace\2502635-FORM 12-A SETOUT 8 EVERTON TCE EVERTON PARK_signed.pdf
+2025/QLD/GLENVIEW - 5 Whipbird Place
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\GLENVIEW - 5 Whipbird Place\Form 15 - Design Certificate - Temp.pdf
+2025/QLD/GRACEVILLE - 36 Park Road
+  PDF: 36 Park Road, Graceville - ENERGY BILL.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\GRACEVILLE - 36 Park Road\36 Park Road, Graceville - ENERGY BILL.pdf
+2025/QLD/GREENBANK - 245-249 Ison Road
+  PDF: 09122025121348.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\GREENBANK - 245-249 Ison Road\09122025121348.pdf
+2025/QLD/GREENBANK - 29-33 Birdsville Street
+  PDF: Proposal quote 29-33 Birdsville Street Greenbank Qld 4124..pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\GREENBANK - 29-33 Birdsville Street\Proposal quote 29-33 Birdsville Street Greenbank Qld 4124..pdf
+2025/QLD/GREENSLOPES - 30-32 Hunter Street
+  PDF: Proposal quote 30-32 Hunter Street Greenslopes Qld 4120 [3456-7383-3023_1].pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\GREENSLOPES - 30-32 Hunter Street\Proposal quote 30-32 Hunter Street Greenslopes Qld 4120 [3456-7383-3023_1].pdf
+2025/QLD/GUMDALE - 235 Stanbrough Road
+  PDF: Proposal.1526619_1754519185159.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\GUMDALE - 235 Stanbrough Road\Proposal.1526619_1754519185159.pdf
+2025/QLD/HARRISTOWN - 29 Merritt Street
+  PDF: 4- Proposal quote 29 Merritt Street Harristown Qld 4350.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\HARRISTOWN - 29 Merritt Street\4- Proposal quote 29 Merritt Street Harristown Qld 4350.pdf
+2025/QLD/INALA - 30 Kestrel Street
+  PDF: Proposal.1586327_1754279484859 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\INALA - 30 Kestrel Street\Proposal.1586327_1754279484859 (1).pdf
+2025/QLD/INALA - 4 Aldebaran Street
+  PDF: 2502455-FORM 12-A SETOUT 4 ALDEBARAN ST INALA PDF and SKETCH.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\INALA - 4 Aldebaran Street\2502455-FORM 12-A SETOUT 4 ALDEBARAN ST INALA PDF and SKETCH.pdf
+2025/QLD/INALA - 96 Biota Street
+  PDF: 263495809 - Urban Utilities Plan.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\INALA - 96 Biota Street\263495809 - Urban Utilities Plan.pdf
+2025/QLD/IPSWICH - 38 Warwick Road
+  PDF: 38 Warwick Road Ipswich - ENERGY BILL.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\IPSWICH - 38 Warwick Road\38 Warwick Road Ipswich - ENERGY BILL.pdf
+2025/QLD/JIMBOOMBA - 57-67 Markwell Circuit
+  PDF: Form 15 - Design Cert- 57-67 Markell Crt, Jimboomba.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\JIMBOOMBA - 57-67 Markwell Circuit\Form 15 - Design Cert- 57-67 Markell Crt, Jimboomba.pdf
+2025/QLD/JINDALEE - 8 Moolingal Street
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\JINDALEE - 8 Moolingal Street\Form 15 - Design Certificate - Temp.pdf
+2025/QLD/KALLANGUR - 36 Leslie Street
+  PDF: 210.550-NAYA_8_S-en-AU.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\KALLANGUR - 36 Leslie Street\210.550-NAYA_8_S-en-AU.pdf
+2025/QLD/KARALEE - 9-11 Melbourne Street
+  PDF: 20251103 Ozzi Kleen Commissioning Certificate 9-11 Melbourne St KARALEE.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\KARALEE - 9-11 Melbourne Street\20251103 Ozzi Kleen Commissioning Certificate 9-11 Melbourne St KARALEE.pdf
+2025/QLD/KEPERRA - 17 Marble Street
+  PDF: [SINGED]Proposal quote 17 Marble Street Keperra Qld 4054.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\KEPERRA - 17 Marble Street\[SINGED]Proposal quote 17 Marble Street Keperra Qld 4054.pdf
+2025/QLD/KIPPA RING - 18 Dorothy Street
+  PDF: Form 15 - Design Cert- 18 Dorothy St, Kippa Ring.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\KIPPA RING - 18 Dorothy Street\Form 15 - Design Cert- 18 Dorothy St, Kippa Ring.pdf
+2025/QLD/KOORALBYN - 30-40 Yulgibar Close
+  PDF: Proposal.1694650_1762395149043 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\KOORALBYN - 30-40 Yulgibar Close\Proposal.1694650_1762395149043 (1).pdf
+2025/QLD/LABRADOR - 52 Whiting Street
+  PDF: Proposal.1500718_1747964154069.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\LABRADOR - 52 Whiting Street\Proposal.1500718_1747964154069.pdf
+2025/QLD/LOGAN CENTRAL - 13 Moore Street
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\LOGAN CENTRAL - 13 Moore Street\Form 15 - Design Certificate - Temp.pdf
+2025/QLD/LOGAN CENTRAL - 49 Cherry Street
+  PDF: 49 Cherry Street, Logan Central - Contract (Signed).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\LOGAN CENTRAL - 49 Cherry Street\49 Cherry Street, Logan Central - Contract (Signed).pdf
+2025/QLD/LOGAN CENTRAL - 7 Yugumbri Crescent
+  PDF: 7 Yugumbri Crescent, Logan Central - Energy Bill.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\LOGAN CENTRAL - 7 Yugumbri Crescent\7 Yugumbri Crescent, Logan Central - Energy Bill.pdf
+2025/QLD/LOGANLEA - 10 Edward Street
+  PDF: 10 Edward Street Loganlea.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\LOGANLEA - 10 Edward Street\10 Edward Street Loganlea.pdf
+2025/QLD/LUTWYCHE - 2 Wellington Street
+  PDF: ENERGY BILL - 2 Wellington St, Lutwyche.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\LUTWYCHE - 2 Wellington Street\ENERGY BILL - 2 Wellington St, Lutwyche.pdf
+2025/QLD/MARGATE - 11 Dover Road
+  PDF: 11 Dover Granny.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\MARGATE - 11 Dover Road\11 Dover Granny.pdf
+2025/QLD/MERINGANDAN WEST - 4 Corella Street
+  PDF: (Signed) Proposal quote 4 Corella Street Meringandan West Qld 4352.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\MERINGANDAN WEST - 4 Corella Street\(Signed) Proposal quote 4 Corella Street Meringandan West Qld 4352.pdf
+2025/QLD/MIDDLE PARK - 7 Meadow Place
+  PDF: COLOUR FINISH SCHEDULE - 7 Meadow Park, Middle Park.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\MIDDLE PARK - 7 Meadow Place\COLOUR FINISH SCHEDULE - 7 Meadow Park, Middle Park.pdf
+2025/QLD/MILES - 16 Acacia Drive
+  PDF: ELEC BOX- 16 Acacia Drive, Miles.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\MILES - 16 Acacia Drive\ELEC BOX- 16 Acacia Drive, Miles.pdf
+2025/QLD/MITCHELTON - 190 Blackwood Street
+  PDF: Proposal quote 190 Blackwood Street Mitchelton Qld 4053 (2).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\MITCHELTON - 190 Blackwood Street\Proposal quote 190 Blackwood Street Mitchelton Qld 4053 (2).pdf
+2025/QLD/MOUNT GRAVATT EAST - 89 Broadwater Road
+  PDF: 2501379-FORM 12-A SETOUT 89 BROADWATER RD MT GRAVATT EAST_signed.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\MOUNT GRAVATT EAST - 89 Broadwater Road\2501379-FORM 12-A SETOUT 89 BROADWATER RD MT GRAVATT EAST_signed.pdf
+2025/QLD/MOUNT WARREN PARK - 7 Lane Court
+  PDF: MOUNT WARREN PARK - 7 Lane Ct_Concept_16.04.25.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\MOUNT WARREN PARK - 7 Lane Court\MOUNT WARREN PARK - 7 Lane Ct_Concept_16.04.25.pdf
+2025/QLD/MUNDOOLUN - 42-44 Portsmouth Court
+  PDF: Proposal quote 42-44 Portsmouth Court Mundoolun Qld 4285 (2).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\MUNDOOLUN - 42-44 Portsmouth Court\Proposal quote 42-44 Portsmouth Court Mundoolun Qld 4285 (2).pdf
+2025/QLD/MUNDOOLUN - 61-65 Bredalbane Street
+  PDF: Proposal.1386851_1740456121815 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\MUNDOOLUN - 61-65 Bredalbane Street\Proposal.1386851_1740456121815 (1).pdf
+2025/QLD/NERANG - 21 Spring Court
+  PDF: Proposal.1657682_1765341238670 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\NERANG - 21 Spring Court\Proposal.1657682_1765341238670 (1).pdf
+2025/QLD/NERANG - 3 Kew Court
+  PDF: (QP842) - NERANG - 3 Kew Court_26.08.25_CPT_markup.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\NERANG - 3 Kew Court\(QP842) - NERANG - 3 Kew Court_26.08.25_CPT_markup.pdf
+2025/QLD/NEW BEITH - 12-18 Horseshoe Crescent
+  PDF: Proposal quote 12-18 Horsehoe Crescent New Beith Qld 4124..pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\NEW BEITH - 12-18 Horseshoe Crescent\Proposal quote 12-18 Horsehoe Crescent New Beith Qld 4124..pdf
+2025/QLD/NEW BEITH - 67-71 Melrose Place
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\NEW BEITH - 67-71 Melrose Place\Form 15 - Design Certificate - Temp.pdf
+2025/QLD/NEW BEITH - 7-11 Bidyan Boulevard
+  PDF: Proposal quote 7-11 Bidyan Bvd New Beith Qld 4124.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\NEW BEITH - 7-11 Bidyan Boulevard\Proposal quote 7-11 Bidyan Bvd New Beith Qld 4124.pdf
+2025/QLD/NINGI - 2-6 Triton Court
+  PDF: 2-6 Triton Court, Ningi - Energy Bill.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\NINGI - 2-6 Triton Court\2-6 Triton Court, Ningi - Energy Bill.pdf
+2025/QLD/NINGI - 6 Grice Crescent
+  PDF: ENERGY BILL - 6 Grice Cres, Ningi.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\NINGI - 6 Grice Crescent\ENERGY BILL - 6 Grice Cres, Ningi.pdf
+2025/QLD/NOOSAVILLE - 1 Juron Street
+  PDF: Proposal.1471830_1748927367557 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\NOOSAVILLE - 1 Juron Street\Proposal.1471830_1748927367557 (1).pdf
+2025/QLD/NORTH BOOVAL - 6 Beth Street
+  PDF: ENERGY BILL - 6 Beth Street, North Booval.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\NORTH BOOVAL - 6 Beth Street\ENERGY BILL - 6 Beth Street, North Booval.pdf
+2025/QLD/NORTH MACLEAN - 216-226 Teviot Road
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\NORTH MACLEAN - 216-226 Teviot Road\Form 15 - Design Certificate - Temp.pdf
+2025/QLD/PARKINSON - 8 Yengo Street
+  PDF: 2502457-FORM 12-A SETOUT 8 YENGO STREET PARKINSON PDF and SKETCH.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\PARKINSON - 8 Yengo Street\2502457-FORM 12-A SETOUT 8 YENGO STREET PARKINSON PDF and SKETCH.pdf
+2025/QLD/POINT VERNON - 8 Galatea Street
+  PDF: Proposal.1477595_1752119425563 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\POINT VERNON - 8 Galatea Street\Proposal.1477595_1752119425563 (1).pdf
+2025/QLD/REDBANK PLAINS - 12 Yarrow Court
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\REDBANK PLAINS - 12 Yarrow Court\Form 15 - Design Certificate - Temp.pdf
+2025/QLD/REDBANK PLAINS - 51 Blaxland Crescent
+  PDF: 51 Blaxland Crescent, Redbank Plains - Plumbing .pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\REDBANK PLAINS - 51 Blaxland Crescent\51 Blaxland Crescent, Redbank Plains - Plumbing .pdf
+2025/QLD/REDCLIFFE - 33 Hibiscus Avenue
+  PDF: 33 Hibisus Ave Redcliffe Approved Plans.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\REDCLIFFE - 33 Hibiscus Avenue\33 Hibisus Ave Redcliffe Approved Plans.pdf
+2025/QLD/REDCLIFFE - 9 Highland Street
+  PDF: Proposal quote 9 Highland Street Redcliffe Qld 4020 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\REDCLIFFE - 9 Highland Street\Proposal quote 9 Highland Street Redcliffe Qld 4020 (1).pdf
+2025/QLD/REDCLIFFE - 9 Longland Street
+  PDF: Changes to 9 Longland Street Redcliffe Qld.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\REDCLIFFE - 9 Longland Street\Changes to 9 Longland Street Redcliffe Qld.pdf
+2025/QLD/REGENTS PARK - 21 Greenvale Court
+  PDF: _House_Drainage - 21 Greenvale Crt, Regents Park.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\REGENTS PARK - 21 Greenvale Court\_House_Drainage - 21 Greenvale Crt, Regents Park.pdf
+2025/QLD/REGENTS PARK - 30 Charlton Place
+  PDF: 30 Charlton Place, Regents Park EOI.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\REGENTS PARK - 30 Charlton Place\30 Charlton Place, Regents Park EOI.pdf
+2025/QLD/ROCHEDALE SOUTH - 8 Tarcoola Street
+  PDF: 8 Tarcoola Street Rochedale South - HANDOVER FORM.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\ROCHEDALE SOUTH - 8 Tarcoola Street\8 Tarcoola Street Rochedale South - HANDOVER FORM.pdf
+2025/QLD/RUNCORN - 38 Ervatamia Street
+  PDF: ENERGY BILL - AlintaEnergy-103391831-33386686.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\RUNCORN - 38 Ervatamia Street\ENERGY BILL - AlintaEnergy-103391831-33386686.pdf
+2025/QLD/SALISBURY - 416 Orange Grove Road
+  PDF: 416 Orange Grove Road Salisbury Qld - Energy Bill.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\SALISBURY - 416 Orange Grove Road\416 Orange Grove Road Salisbury Qld - Energy Bill.pdf
+2025/QLD/SAMFORD VALLEY - 50 Greggs Road
+  PDF: Proposal.985310_1733194596049.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\SAMFORD VALLEY - 50 Greggs Road\Proposal.985310_1733194596049.pdf
+2025/QLD/SANDGATE - 25 Perkins Street
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\SANDGATE - 25 Perkins Street\Form 15 - Design Certificate - Temp.pdf
+2025/QLD/SHAILER PARK - 35 Moogara Street
+  PDF: Electricity Bill Jan 2026.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\SHAILER PARK - 35 Moogara Street\Electricity Bill Jan 2026.pdf
+2025/QLD/SILKSTONE - 5 Louise Court
+  PDF: Proposal quote 5 Louise Court Silkstone Qld 4304.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\SILKSTONE - 5 Louise Court\Proposal quote 5 Louise Court Silkstone Qld 4304.pdf
+2025/QLD/SLACKS CREEK - 5 Geeba Street
+  PDF: Proposal.1324504_1733446524942.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\SLACKS CREEK - 5 Geeba Street\Proposal.1324504_1733446524942.pdf
+2025/QLD/SLACKS CREEK - 7 Kunari Street
+  PDF: Changes to drawings for 7 Kunari Street Slacks Creek Qld.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\SLACKS CREEK - 7 Kunari Street\Changes to drawings for 7 Kunari Street Slacks Creek Qld.pdf
+2025/QLD/STRATHPINE - 117 Peter Street
+  PDF: 2nd SITE VISIT- 117 Peter St, Strathpine.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\STRATHPINE - 117 Peter Street\2nd SITE VISIT- 117 Peter St, Strathpine.pdf
+2025/QLD/SUNNYBANK HILLS - 23 Kelceda Street
+  PDF: Proposal.1661295_1761344060563.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\SUNNYBANK HILLS - 23 Kelceda Street\Proposal.1661295_1761344060563.pdf
+2025/QLD/TAMBORINE - 63-65 Martin Place
+  PDF: Proposal quote 63-65 Martin Place Tamborine Qld 4270.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\TAMBORINE - 63-65 Martin Place\Proposal quote 63-65 Martin Place Tamborine Qld 4270.pdf
+2025/QLD/THORNLANDS - 6 Ransom Court
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\THORNLANDS - 6 Ransom Court\Form 15 - Design Certificate - Temp.pdf
+2025/QLD/UNDERWOOD - 34 The Concourse
+  PDF: 34 The Concourse , Underwood - ENERGY BILL.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\UNDERWOOD - 34 The Concourse\34 The Concourse , Underwood - ENERGY BILL.pdf
+2025/QLD/UNDERWOOD - 9 Diana Street
+  PDF: dkt-1071609.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\UNDERWOOD - 9 Diana Street\dkt-1071609.pdf
+2025/QLD/URANGAN - 106 Elizabeth Street
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\URANGAN - 106 Elizabeth Street\Form 15 - Design Certificate - Temp.pdf
+2025/QLD/VICTORIA POINT - 47 Fir St
+  PDF: 47 Fir Street Concept Plans.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\VICTORIA POINT - 47 Fir St\47 Fir Street Concept Plans.pdf
+2025/QLD/WEST END - 9 Forbes Street
+  PDF: Proposal.1284072_1746659097469.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\WEST END - 9 Forbes Street\Proposal.1284072_1746659097469.pdf
+2025/QLD/WISHART - 23 Sovereign Close
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\WISHART - 23 Sovereign Close\Form 15 - Design Certificate - Temp.pdf
+2025/QLD/WONGLEPONG - 81-95 Spoonbill Road
+  PDF: Proposal quote 81-95 Spoonbill Road Wonglepond Qld 4275.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\WONGLEPONG - 81-95 Spoonbill Road\Proposal quote 81-95 Spoonbill Road Wonglepond Qld 4275.pdf
+2025/QLD/WOODRIDGE - 30 Bruce Road
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\WOODRIDGE - 30 Bruce Road\Form 15 - Design Certificate - Temp.pdf
+2025/QLD/WOODRIDGE - 45 Orchid Street
+  PDF: 05-00581_RETIC_PLAN_AS_CONST__HURON_BALLADONIA_OMAR_ORCHID.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\WOODRIDGE - 45 Orchid Street\05-00581_RETIC_PLAN_AS_CONST__HURON_BALLADONIA_OMAR_ORCHID.pdf
+2025/QLD/WOOLLOONGABBA - 49 Peterson Street
+  PDF: Proposal.1526456_1751345721044_Correct Price.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\QLD\WOOLLOONGABBA - 49 Peterson Street\Proposal.1526456_1751345721044_Correct Price.pdf
+2025/VIC/BAYSWATER - 13 Larne Avenue
+  PDF: Proposal.753176_1757046696040.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BAYSWATER - 13 Larne Avenue\Proposal.753176_1757046696040.pdf
+2025/VIC/BAYSWATER - 55 Sasses Avenue
+  PDF: 123.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BAYSWATER - 55 Sasses Avenue\123.pdf
+2025/VIC/BAYSWATER - 69 Bona Vista Road
+  PDF: Signed Contract.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BAYSWATER - 69 Bona Vista Road\Signed Contract.pdf
+2025/VIC/BAYSWATER - 874 Mountain Hwy
+  PDF: 7x12 2BR (Option 12) with Verandah- Nat Gas- WD's.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BAYSWATER - 874 Mountain Hwy\7x12 2BR (Option 12) with Verandah- Nat Gas- WD's.pdf
+2025/VIC/BEAUMARIS - 2 Wallace Crescent
+  PDF: Proposal.1739050_1764895722246.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BEAUMARIS - 2 Wallace Crescent\Proposal.1739050_1764895722246.pdf
+2025/VIC/BELGRAVE SOUTH - 68 Lockwood Road
+  PDF: Shane's Assessment.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BELGRAVE SOUTH - 68 Lockwood Road\Shane's Assessment.pdf
+2025/VIC/BIRCHIP - 2 Sherwood Street
+  PDF: 138904v1.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BIRCHIP - 2 Sherwood Street\138904v1.pdf
+2025/VIC/BIRREGURRA - 47 Strachan Street
+  PDF: Proposal.1314971_1733530746730.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BIRREGURRA - 47 Strachan Street\Proposal.1314971_1733530746730.pdf
+2025/VIC/BORONIA - 20 Robertson Crescent
+  PDF: Proposal.1364518_1742850427499 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BORONIA - 20 Robertson Crescent\Proposal.1364518_1742850427499 (1).pdf
+2025/VIC/BORONIA - 24 Olive Grove
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BORONIA - 24 Olive Grove\Cover Sheet.pdf
+2025/VIC/BORONIA - 3 Biscay Court
+  PDF: 137208v1_001.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BORONIA - 3 Biscay Court\137208v1_001.pdf
+2025/VIC/BORONIA - 3 Cardiff Street
+  PDF: Proposal.1653494_1758762018048.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BORONIA - 3 Cardiff Street\Proposal.1653494_1758762018048.pdf
+2025/VIC/BORONIA - 4 Shalimar Crescent
+  PDF: Proposal.1649222_1758325266737.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BORONIA - 4 Shalimar Crescent\Proposal.1649222_1758325266737.pdf
+2025/VIC/BORONIA - 8 Eugenia Court
+  PDF: Proposal.1468884_1752444991157.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BORONIA - 8 Eugenia Court\Proposal.1468884_1752444991157.pdf
+2025/VIC/BOX HILL - 11 Bedford Street
+  PDF: Proposal.1510740_1748913916970.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BOX HILL - 11 Bedford Street\Proposal.1510740_1748913916970.pdf
+2025/VIC/BOX HILL - 3 Kintore Crescent
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BOX HILL - 3 Kintore Crescent\Cover Sheet.pdf
+2025/VIC/BREAKWATER - 2-22 Fellmongers Road
+  PDF: Barwon Water.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BREAKWATER - 2-22 Fellmongers Road\Barwon Water.pdf
+2025/VIC/BRIGHTON - 84 Bay Street
+  PDF: Proposal.1629880_1762722040060.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BRIGHTON - 84 Bay Street\Proposal.1629880_1762722040060.pdf
+2025/VIC/BUNDOORA - 35 Chaucer Crescent
+  PDF: Proposal.1713068_1764217678862.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BUNDOORA - 35 Chaucer Crescent\Proposal.1713068_1764217678862.pdf
+2025/VIC/BURWOOD - 41 Arthur St
+  PDF: 139235v2.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\BURWOOD - 41 Arthur St\139235v2.pdf
+2025/VIC/CAMPBELLFIELD - 14 Roebourne Crescent
+  PDF: Shane's Assessment.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\CAMPBELLFIELD - 14 Roebourne Crescent\Shane's Assessment.pdf
+2025/VIC/CASTLEMAINE - 11 Maltby Drive
+  PDF: Proposal.1552479_1762737655943 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\CASTLEMAINE - 11 Maltby Drive\Proposal.1552479_1762737655943 (1).pdf
+2025/VIC/CASTLEMAINE - 4C Butterworth Street
+  PDF: CASTLEMAINE - 4C Butterworth Street_Final Certs.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\CASTLEMAINE - 4C Butterworth Street\CASTLEMAINE - 4C Butterworth Street_Final Certs.pdf
+2025/VIC/CRAIGIEBURN - 3 Crestmont Terrace
+  PDF: Proposal.1368910_1737689339472.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\CRAIGIEBURN - 3 Crestmont Terrace\Proposal.1368910_1737689339472.pdf
+2025/VIC/CRAIGIEBURN - 8 Chelmsford Court
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\CRAIGIEBURN - 8 Chelmsford Court\Cover Sheet.pdf
+2025/VIC/CRESWICK - 15 Lalor Lane
+  PDF: Proposal.1337753_1734138639930.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\CRESWICK - 15 Lalor Lane\Proposal.1337753_1734138639930.pdf
+2025/VIC/CRIB POINT - 107 Disney Street
+  PDF: Proposal.1373545_1739407990836.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\CRIB POINT - 107 Disney Street\Proposal.1373545_1739407990836.pdf
+2025/VIC/CROYDON - 2-6 Bennison Street
+  PDF: Proposal.1422724_1741148867818.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\CROYDON - 2-6 Bennison Street\Proposal.1422724_1741148867818.pdf
+2025/VIC/DANDENONG NORTH - 7 Gardiner Avenue
+  PDF: BA 288 - 7 Gardiner Avenue DANDENONG NORTH - Rev I.A (Neighbour set).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\DANDENONG NORTH - 7 Gardiner Avenue\BA 288 - 7 Gardiner Avenue DANDENONG NORTH - Rev I.A (Neighbour set).pdf
+2025/VIC/DON VALLEY - 1905 Don Road
+  PDF: Shane's Assessment.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\DON VALLEY - 1905 Don Road\Shane's Assessment.pdf
+2025/VIC/DONCASTER - 20 Margot Avenue
+  PDF: 137203v1_001.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\DONCASTER - 20 Margot Avenue\137203v1_001.pdf
+2025/VIC/DONCASTER EAST - 27 Montreal Drive
+  PDF: 1.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\DONCASTER EAST - 27 Montreal Drive\1.pdf
+2025/VIC/DONVALE - 63-65 Heads Road
+  PDF: Proposal.1514922_1751335012773.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\DONVALE - 63-65 Heads Road\Proposal.1514922_1751335012773.pdf
+2025/VIC/DRYSDALE - 15-19 Station Street
+  PDF: Barwon Water.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\DRYSDALE - 15-19 Station Street\Barwon Water.pdf
+2025/VIC/FERNTREE GULLY - 1-412 Scoresby Road
+  PDF: Shane's Assessment.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\FERNTREE GULLY - 1-412 Scoresby Road\Shane's Assessment.pdf
+2025/VIC/FERNTREE GULLY - 20 Greenaway Drive
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\FERNTREE GULLY - 20 Greenaway Drive\Cover Sheet.pdf
+2025/VIC/FERNTREE GULLY - 27 James Road
+  PDF: Proposal.1723434_1764733812351 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\FERNTREE GULLY - 27 James Road\Proposal.1723434_1764733812351 (1).pdf
+2025/VIC/FERNTREE GULLY - 74 Taldra Drive
+  PDF: Proposal.1124319_1739938459940 (2).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\FERNTREE GULLY - 74 Taldra Drive\Proposal.1124319_1739938459940 (2).pdf
+2025/VIC/FOREST HILL - 55 Bennett Street
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\FOREST HILL - 55 Bennett Street\Cover Sheet.pdf
+2025/VIC/FRANKSTON - 9 Leawarra Parade
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\FRANKSTON - 9 Leawarra Parade\Cover Sheet.pdf
+2025/VIC/FRANKSTON NORTH - 2-37 Longleaf Street
+  PDF: Shane's Assessment.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\FRANKSTON NORTH - 2-37 Longleaf Street\Shane's Assessment.pdf
+2025/VIC/FYANS CREEK - 192 Mokepilly Road
+  PDF: BAL Report - 192 MOKEPILLY ROAD FYANS CREEK VIC 3381.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\FYANS CREEK - 192 Mokepilly Road\BAL Report - 192 MOKEPILLY ROAD FYANS CREEK VIC 3381.pdf
+2025/VIC/HAMPTON EAST - 27 Widdop Cr
+  PDF: 27 Widdop Cres Hampton East - CCTV Inspection.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\HAMPTON EAST - 27 Widdop Cr\27 Widdop Cres Hampton East - CCTV Inspection.pdf
+2025/VIC/HAMPTON PARK - 5 Cirrus Close
+  PDF: Proposal.1605601_1758066627368.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\HAMPTON PARK - 5 Cirrus Close\Proposal.1605601_1758066627368.pdf
+2025/VIC/HARKNESS - 34 Brooksby Circuit
+  PDF: Greater Western Water Declaration.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\HARKNESS - 34 Brooksby Circuit\Greater Western Water Declaration.pdf
+2025/VIC/HEATHMONT - 48 Viviani Crescent
+  PDF: 137206v1_001.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\HEATHMONT - 48 Viviani Crescent\137206v1_001.pdf
+2025/VIC/HEIDELBERG HEIGHTS - 5-22 Porter Road
+  PDF: 135870v1.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\HEIDELBERG HEIGHTS - 5-22 Porter Road\135870v1.pdf
+2025/VIC/HIGHETT - 7 Herbert St
+  PDF: Proposal.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\HIGHETT - 7 Herbert St\Proposal.pdf
+2025/VIC/HOPPERS CROSSING - 17 Hunter Avenue
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\HOPPERS CROSSING - 17 Hunter Avenue\Cover Sheet.pdf
+2025/VIC/HOPPERS CROSSING - 2 Gabo Street
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\HOPPERS CROSSING - 2 Gabo Street\Cover Sheet.pdf
+2025/VIC/HORSHAM - 18 Philip Street
+  PDF: 2026-02-02 - 2units 3bedrooms.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\HORSHAM - 18 Philip Street\2026-02-02 - 2units 3bedrooms.pdf
+2025/VIC/KANGAROO FLAT - 17 Bronze Drive
+  PDF: COLIBAN Meter and NCCS Invoice.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\KANGAROO FLAT - 17 Bronze Drive\COLIBAN Meter and NCCS Invoice.pdf
+2025/VIC/KEILOR PARK - 54 Spence St
+  PDF: Site-Plan.1451754_1744061825524 (002).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\KEILOR PARK - 54 Spence St\Site-Plan.1451754_1744061825524 (002).pdf
+2025/VIC/KEYSBOROUGH - 11 Chris Court
+  PDF: Proposal.1577325_1755670943987 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\KEYSBOROUGH - 11 Chris Court\Proposal.1577325_1755670943987 (1).pdf
+2025/VIC/KEYSBOROUGH - 4 Trina Court
+  PDF: Proposal.1630635_1761605041566 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\KEYSBOROUGH - 4 Trina Court\Proposal.1630635_1761605041566 (1).pdf
+2025/VIC/KEYSBOROUGH - 9 Beverley Place
+  PDF: Proposal.1452215_1745459058061.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\KEYSBOROUGH - 9 Beverley Place\Proposal.1452215_1745459058061.pdf
+2025/VIC/KILMORE EAST - 5 Louis Rise
+  PDF: Proposal.1697762_1761892175250_31 Oct 2025 06_29_36 GMT.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\KILMORE EAST - 5 Louis Rise\Proposal.1697762_1761892175250_31 Oct 2025 06_29_36 GMT.pdf
+2025/VIC/KILSYTH - 10 Atherton Court
+  PDF: 136049v1.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\KILSYTH - 10 Atherton Court\136049v1.pdf
+2025/VIC/KILSYTH - 175 Sheffield Road
+  PDF: Proposal.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\KILSYTH - 175 Sheffield Road\Proposal.pdf
+2025/VIC/KILSYTH - 82 Cambridge Road
+  PDF: Proposal.1709135_1762728221650.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\KILSYTH - 82 Cambridge Road\Proposal.1709135_1762728221650.pdf
+2025/VIC/KNOXFIELD - 3 The Ridge
+  PDF: 3 The Ridge Knoxfield VIC - signed agreement.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\KNOXFIELD - 3 The Ridge\3 The Ridge Knoxfield VIC - signed agreement.pdf
+2025/VIC/KNOXFIELD - 60 O'Connor Road
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\KNOXFIELD - 60 O'Connor Road\Cover Sheet.pdf
+2025/VIC/LANGWARRIN - 15 Leisureland Drive
+  PDF: (LANGWARRIN) - 15 Leisureland Drive_Concept 01.12.25 JB markup.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\LANGWARRIN - 15 Leisureland Drive\(LANGWARRIN) - 15 Leisureland Drive_Concept 01.12.25 JB markup.pdf
+2025/VIC/LANGWARRIN SOUTH - 40 West Road
+  PDF: Proposal.1636720_1761344831152 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\LANGWARRIN SOUTH - 40 West Road\Proposal.1636720_1761344831152 (1).pdf
+2025/VIC/LAVERTON - 5 Campbell Street
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\LAVERTON - 5 Campbell Street\Cover Sheet.pdf
+2025/VIC/LEONGATHA - 27 Ritchie Street
+  PDF: Proposal.1687585_1765758218653 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\LEONGATHA - 27 Ritchie Street\Proposal.1687585_1765758218653 (1).pdf
+2025/VIC/LILYDALE - 11 Berry Court
+  PDF: 11 Berry Ct, Lilydale VIC 3180.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\LILYDALE - 11 Berry Court\11 Berry Ct, Lilydale VIC 3180.pdf
+2025/VIC/LONGFORD - 43 Peppertree Hill Road
+  PDF: Shane's Assessment.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\LONGFORD - 43 Peppertree Hill Road\Shane's Assessment.pdf
+2025/VIC/LYNBROOK - 8 Caversham Terrace
+  PDF: Quote.1377727-3 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\LYNBROOK - 8 Caversham Terrace\Quote.1377727-3 (1).pdf
+2025/VIC/LYSTERFIELD SOUTH - 7 Parkview Terrace
+  PDF: Proposal.1339777_1734410738413.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\LYSTERFIELD SOUTH - 7 Parkview Terrace\Proposal.1339777_1734410738413.pdf
+2025/VIC/MACLEOD - 22 Lindsay Street
+  PDF: 22 Lindsay Street, Macleod - Henderson Group - Copy.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\MACLEOD - 22 Lindsay Street\22 Lindsay Street, Macleod - Henderson Group - Copy.pdf
+2025/VIC/MITCHAM - 429 Whitehorse Road
+  PDF: Proposal.1392075_1739835926096.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\MITCHAM - 429 Whitehorse Road\Proposal.1392075_1739835926096.pdf
+2025/VIC/MOOROOLBARK - 18 Kipling Avenue
+  PDF: SETTLEMENT AGREEMENT.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\MOOROOLBARK - 18 Kipling Avenue\SETTLEMENT AGREEMENT.pdf
+2025/VIC/MOUNT WAVERLEY - 20 Andrew Street
+  PDF: 20 Andrew St Mount Waverley .pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\MOUNT WAVERLEY - 20 Andrew Street\20 Andrew St Mount Waverley .pdf
+2025/VIC/NARRE WARREN - 11 Warrington Close
+  PDF: Proposal.752176_1755833428146 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\NARRE WARREN - 11 Warrington Close\Proposal.752176_1755833428146 (1).pdf
+2025/VIC/NARRE WARREN - 2 Darling Way
+  PDF: Proposal.1596799_1754528026068 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\NARRE WARREN - 2 Darling Way\Proposal.1596799_1754528026068 (1).pdf
+2025/VIC/NARRE WARREN NORTH - 35 Avenview Drive
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\NARRE WARREN NORTH - 35 Avenview Drive\Cover Sheet.pdf
+2025/VIC/NARRE WARREN SOUTH - 261 Ormond Road
+  PDF: 137207v2_001.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\NARRE WARREN SOUTH - 261 Ormond Road\137207v2_001.pdf
+2025/VIC/NEWINGTON - 28 Inkerman Street
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\NEWINGTON - 28 Inkerman Street\Cover Sheet.pdf
+2025/VIC/NOBLE PARK - 6 Taranto Drive
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\NOBLE PARK - 6 Taranto Drive\Cover Sheet.pdf
+2025/VIC/NORLANE - 27 Tennyson Street, Norlane
+  PDF: 139240v1.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\NORLANE - 27 Tennyson Street, Norlane\139240v1.pdf
+2025/VIC/NOTTING HILL - 14 Westerfield Drive
+  PDF: Proposal.1513132_1748410554757 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\NOTTING HILL - 14 Westerfield Drive\Proposal.1513132_1748410554757 (1).pdf
+2025/VIC/NUNAWADING - 16 Cyprus Avenue
+  PDF: Proposal.1526550_1749170863179 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\NUNAWADING - 16 Cyprus Avenue\Proposal.1526550_1749170863179 (1).pdf
+2025/VIC/PARKDALE - 28 Davey Street
+  PDF: 135868v1.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\PARKDALE - 28 Davey Street\135868v1.pdf
+2025/VIC/RIDDELLS CREEK - 20 Whittakers Lane
+  PDF: Proposal.1379719_1739741738373 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\RIDDELLS CREEK - 20 Whittakers Lane\Proposal.1379719_1739741738373 (1).pdf
+2025/VIC/RINGWOOD EAST - 7 Rotherwood Avenue
+  PDF: Proposal.1510597_1750630657988.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\RINGWOOD EAST - 7 Rotherwood Avenue\Proposal.1510597_1750630657988.pdf
+2025/VIC/RINGWOOD NORTH - 38 Park Hill Drive
+  PDF: Proposal.1483598_1748576369051 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\RINGWOOD NORTH - 38 Park Hill Drive\Proposal.1483598_1748576369051 (1).pdf
+2025/VIC/ROSANNA - 9 Alfreda Avenue
+  PDF: 133208v2.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\ROSANNA - 9 Alfreda Avenue\133208v2.pdf
+2025/VIC/ROWVILLE - 195 Dandelion Drive
+  PDF: Proposal.1498909_1748839755384 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\ROWVILLE - 195 Dandelion Drive\Proposal.1498909_1748839755384 (1).pdf
+2025/VIC/ROWVILLE - 5 Mantung Crescent
+  PDF: Shane's Assessment.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\ROWVILLE - 5 Mantung Crescent\Shane's Assessment.pdf
+2025/VIC/SCOTSBURN - 68 Wiggins Road
+  PDF: Proposal.1406065_1740021434504.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\SCOTSBURN - 68 Wiggins Road\Proposal.1406065_1740021434504.pdf
+2025/VIC/SEAFORD - 19 Hunt Drive
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\SEAFORD - 19 Hunt Drive\Cover Sheet.pdf
+2025/VIC/SEAFORD - 65 Hadley Street
+  PDF: Proposal.1593101_1755734731759 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\SEAFORD - 65 Hadley Street\Proposal.1593101_1755734731759 (1).pdf
+2025/VIC/SOLDIERS HILL - 506 Gregory Street
+  PDF: Proposal.1610457_1757982820164.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\SOLDIERS HILL - 506 Gregory Street\Proposal.1610457_1757982820164.pdf
+2025/VIC/SPRINGVALE - 797 Heatherton Road
+  PDF: Proposal.1554486_1758073885657 (signed).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\SPRINGVALE - 797 Heatherton Road\Proposal.1554486_1758073885657 (signed).pdf
+2025/VIC/SPRINGVALE SOUTH - 31 Glenwood Drive
+  PDF: Agreement contract .pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\SPRINGVALE SOUTH - 31 Glenwood Drive\Agreement contract .pdf
+2025/VIC/SPRINGVALE SOUTH - 6 Camelot Drive
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\SPRINGVALE SOUTH - 6 Camelot Drive\Cover Sheet.pdf
+2025/VIC/SPRINGVALE SOUTH - 6 Lansor Street
+  PDF: 20250709070921956.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\SPRINGVALE SOUTH - 6 Lansor Street\20250709070921956.pdf
+2025/VIC/SUNBURY - 1 Gurners Lane
+  PDF: Heathcote_Brochure_2024.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\SUNBURY - 1 Gurners Lane\Heathcote_Brochure_2024.pdf
+2025/VIC/SUNBURY - 25 Higgs Circuit
+  PDF: A.Legg Requirements.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\SUNBURY - 25 Higgs Circuit\A.Legg Requirements.pdf
+2025/VIC/SUNBURY - 48 Emu Road
+  PDF: Proposal.1562543_1759375786645.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\SUNBURY - 48 Emu Road\Proposal.1562543_1759375786645.pdf
+2025/VIC/SYDENHAM - 6 Innkeeper Place
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\SYDENHAM - 6 Innkeeper Place\Cover Sheet.pdf
+2025/VIC/TEESDALE - 25 Squires Road
+  PDF: Proposal.1150898_1736305298006.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\TEESDALE - 25 Squires Road\Proposal.1150898_1736305298006.pdf
+2025/VIC/TEMPLESTOWE - 13 Anthlin Court
+  PDF: Proposal.1624575_1756711132265 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\TEMPLESTOWE - 13 Anthlin Court\Proposal.1624575_1756711132265 (1).pdf
+2025/VIC/THE BASIN - 45 Old Forest Road
+  PDF: Proposal.1735722_1765252241862.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\THE BASIN - 45 Old Forest Road\Proposal.1735722_1765252241862.pdf
+2025/VIC/THORNBURY - 52 Clarendon Street
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\THORNBURY - 52 Clarendon Street\Cover Sheet.pdf
+2025/VIC/TRAFALGAR EAST - 19 Waratah Way
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\TRAFALGAR EAST - 19 Waratah Way\Cover Sheet.pdf
+2025/VIC/TULLAMARINE - 4 Columbia Close
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\TULLAMARINE - 4 Columbia Close\Cover Sheet.pdf
+2025/VIC/VERMONT - 20 Trinian Street
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\VERMONT - 20 Trinian Street\Cover Sheet.pdf
+2025/VIC/VERMONT SOUTH - 2 Woodleigh Crescent
+  PDF: proposal.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\VERMONT SOUTH - 2 Woodleigh Crescent\proposal.pdf
+2025/VIC/WARRAGUL - 3 Nursery Rise
+  PDF: 138886v1.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\WARRAGUL - 3 Nursery Rise\138886v1.pdf
+2025/VIC/WERRIBEE - 6 Parrakeet Road
+  PDF: 6 Parrakeet Rd, Werribee - Power Bill.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\WERRIBEE - 6 Parrakeet Road\6 Parrakeet Rd, Werribee - Power Bill.pdf
+2025/VIC/WOORI YALLOCK - 1606 Warburton Highway
+  PDF: Proposal.1673537_1761621587247 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\WOORI YALLOCK - 1606 Warburton Highway\Proposal.1673537_1761621587247 (1).pdf
+2025/VIC/WYNDHAM VALE - 15 Provan Drive
+  PDF: Proposal.1291483_1741128598682.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\WYNDHAM VALE - 15 Provan Drive\Proposal.1291483_1741128598682.pdf
+2025/VIC/WYNDHAM VALE - 196 McGrath Road
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\WYNDHAM VALE - 196 McGrath Road\Cover Sheet.pdf
+2025/VIC/WYNDHAM VALE - 6 Brimpton Grove
+  PDF: Cover Sheet.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\WYNDHAM VALE - 6 Brimpton Grove\Cover Sheet.pdf
+2025/VIC/YANNATHAN - 250 Hall Road
+  PDF: Shane's Assessment.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\YANNATHAN - 250 Hall Road\Shane's Assessment.pdf
+2025/VIC/YARRAMBAT - 261-279 Ironbark Road
+  PDF: Proposal.1372937_1737605212663.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2025\VIC\YARRAMBAT - 261-279 Ironbark Road\Proposal.1372937_1737605212663.pdf
+2026/QLD/BASIN POCKET - 8 McGill Street
+  PDF: 8 McGilll Basin Pocket Deposit 2351266433.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\BASIN POCKET - 8 McGill Street\8 McGilll Basin Pocket Deposit 2351266433.pdf
+2026/QLD/BRACKEN RIDGE - 5 Buckra Street
+  PDF: Proposal quote 5 Buckra Street Bracken Ridge Qld 4017 - Signed 24032026.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\BRACKEN RIDGE - 5 Buckra Street\Proposal quote 5 Buckra Street Bracken Ridge Qld 4017 - Signed 24032026.pdf
+2026/QLD/BUCCAN - 8-14 Veronica Court
+  PDF: tenants_1709_marketplace_1855706_documents_Proposal_e_signed_Proposal.1855706_1774834327248_30 Mar 2026 01_32_09 GMT.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\BUCCAN - 8-14 Veronica Court\tenants_1709_marketplace_1855706_documents_Proposal_e_signed_Proposal.1855706_1774834327248_30 Mar 2026 01_32_09 GMT.pdf
+2026/QLD/CABOOLTURE SOUTH - 16 Matthew Flinders Dr
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\CABOOLTURE SOUTH - 16 Matthew Flinders Dr\Proposal.PDF
+2026/QLD/CHAPEL HILL - 3 Keil Place
+  PDF: Proposal quote 3 Keil Place Chapel Hill Qld 4069 (3).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\CHAPEL HILL - 3 Keil Place\Proposal quote 3 Keil Place Chapel Hill Qld 4069 (3).pdf
+2026/QLD/COOPERS PLAINS - 11 Bosworth Street
+  PDF: COOPERS PLAINS - 11 Bosworth St_Form 15_26.03.26.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\COOPERS PLAINS - 11 Bosworth Street\COOPERS PLAINS - 11 Bosworth St_Form 15_26.03.26.pdf
+2026/QLD/EAGLEBY - 22 Dion Drive
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\EAGLEBY - 22 Dion Drive\Form 15 - Design Certificate - Temp.pdf
+2026/QLD/HERITAGE PARK - 5 Excelsa Place
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\HERITAGE PARK - 5 Excelsa Place\Form 15 - Design Certificate - Temp.pdf
+2026/QLD/JIMBOOMBA - 25-33 Alluring Court
+  PDF: 25-33 Alluring Court Jimboomba Qld 4280 unique building envelope.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\JIMBOOMBA - 25-33 Alluring Court\25-33 Alluring Court Jimboomba Qld 4280 unique building envelope.pdf
+2026/QLD/JIMBOOMBA - 300-312 Mundoolun Road
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\JIMBOOMBA - 300-312 Mundoolun Road\Proposal.PDF
+2026/QLD/KINGSTON - 69 Anchusa Street
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\KINGSTON - 69 Anchusa Street\Form 15 - Design Certificate - Temp.pdf
+2026/QLD/LOGAN CENTRAL - 4 Waitara Street
+  PDF: 4 Waitara Street Logan Centra.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\LOGAN CENTRAL - 4 Waitara Street\4 Waitara Street Logan Centra.pdf
+2026/QLD/LOGANLEA - 24 Keyes Street
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\LOGANLEA - 24 Keyes Street\Form 15 - Design Certificate - Temp.pdf
+2026/QLD/MARSDEN - 95 Second Avenue
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\MARSDEN - 95 Second Avenue\Form 15 - Design Certificate - Temp.pdf
+2026/QLD/MORAYFIELD - 9-13 Bridges Road
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\MORAYFIELD - 9-13 Bridges Road\Form 15 - Design Certificate - Temp.pdf
+2026/QLD/MOUNT CROSBY - 59 Highfield Place Mount Crosby
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\MOUNT CROSBY - 59 Highfield Place Mount Crosby\Proposal.PDF
+2026/QLD/NEW BEITH - 75-79 Bradman Street
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\NEW BEITH - 75-79 Bradman Street\Proposal.PDF
+2026/QLD/RIVERBEND - 202-206 Payne Rd
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\RIVERBEND - 202-206 Payne Rd\Proposal.PDF
+2026/QLD/ROCKLEA - 45 Marshall Road
+  PDF: Proposal.1555457_1750995538554.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\ROCKLEA - 45 Marshall Road\Proposal.1555457_1750995538554.pdf
+2026/QLD/RUNCORN - 8 Davina Court Runcorn
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\RUNCORN - 8 Davina Court Runcorn\Proposal.PDF
+2026/QLD/SEVEN HILLS - 125 D'Arcy Rd
+  PDF: Changes to drawings 125 D'Arcy Road Seven Hilld Qld 4170.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\SEVEN HILLS - 125 D'Arcy Rd\Changes to drawings 125 D'Arcy Road Seven Hilld Qld 4170.pdf
+2026/QLD/SHAILER PARK - 42A Hester Street
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\SHAILER PARK - 42A Hester Street\Proposal.PDF
+2026/QLD/STAFFORD - 13 Theodore St
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\STAFFORD - 13 Theodore St\Proposal.PDF
+2026/QLD/STRATHPINE - 44 Fox Street
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\STRATHPINE - 44 Fox Street\Form 15 - Design Certificate - Temp.pdf
+2026/QLD/STRATHPINE - 59 Samsonvale Road
+  PDF: Form 15 - Design Certificate - Temp.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\STRATHPINE - 59 Samsonvale Road\Form 15 - Design Certificate - Temp.pdf
+2026/QLD/SUNNYBANK - 25 Agnes Street
+  PDF: Form 15 - Design Certificate - SUNNYBANK - 25 Agnes Street.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\SUNNYBANK - 25 Agnes Street\Form 15 - Design Certificate - SUNNYBANK - 25 Agnes Street.pdf
+2026/QLD/SUNNYBANK HILLS - 2 Sollya Place
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\SUNNYBANK HILLS - 2 Sollya Place\Proposal.PDF
+2026/QLD/THE GAP (BRISBANE CITY) - 1043 Waterworks Rd
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\THE GAP (BRISBANE CITY) - 1043 Waterworks Rd\Proposal.PDF
+2026/QLD/TINGALPA - 25 Cashel Street
+  PDF: Proposal_1519288_Mon, 12 Jan 2026 01-02-35 GMT.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\TINGALPA - 25 Cashel Street\Proposal_1519288_Mon, 12 Jan 2026 01-02-35 GMT.pdf
+2026/QLD/UPPER BROOKFIELD - 388 Haven Road
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\UPPER BROOKFIELD - 388 Haven Road\Proposal.PDF
+2026/QLD/WOODHILL - 92-108 Munroe Drive
+  PDF: Client changes 26.2.26.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\WOODHILL - 92-108 Munroe Drive\Client changes 26.2.26.pdf
+2026/QLD/WOODRIDGE - 16-18 Parkdale Street
+  PDF: 2026_03 (80m2 GFA Option 16) - Proposal quote 16-18 Parkdale Street Woodridge Qld 4114 (Signed_260326).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\QLD\WOODRIDGE - 16-18 Parkdale Street\2026_03 (80m2 GFA Option 16) - Proposal quote 16-18 Parkdale Street Woodridge Qld 4114 (Signed_260326).pdf
+2026/VIC/BAXTER - 288-292 Golf Links Road
+  PDF: Proposal.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\BAXTER - 288-292 Golf Links Road\Proposal.pdf
+2026/VIC/BELGRAVE - 10 Benson Street
+  PDF: Proposal.1832108_1772227851332 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\BELGRAVE - 10 Benson Street\Proposal.1832108_1772227851332 (1).pdf
+2026/VIC/BENTLEIGH EAST - 55 Gowrie St
+  PDF: Proposal.197500_1772413959130 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\BENTLEIGH EAST - 55 Gowrie St\Proposal.197500_1772413959130 (1).pdf
+2026/VIC/CAMBERWELL - 6 Aird Street
+  PDF: Proposal.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\CAMBERWELL - 6 Aird Street\Proposal.pdf
+2026/VIC/CARRUM DOWNS - 15 Viking Court
+  PDF: Shane's Assessment.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\CARRUM DOWNS - 15 Viking Court\Shane's Assessment.pdf
+2026/VIC/CROYDON SOUTH - 136 Belmont Road
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\CROYDON SOUTH - 136 Belmont Road\Proposal.PDF
+2026/VIC/DOREEN - 18 Holmwood Cr
+  PDF: Proposal.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\DOREEN - 18 Holmwood Cr\Proposal.pdf
+2026/VIC/DROUIN - 3 Amberly Dr
+  PDF: Proposal.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\DROUIN - 3 Amberly Dr\Proposal.pdf
+2026/VIC/ELTHAM - 141 Brougham Street
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\ELTHAM - 141 Brougham Street\Proposal.PDF
+2026/VIC/FERNTREE GULLY - 2 Piperita Rd
+  PDF: Proposal.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\FERNTREE GULLY - 2 Piperita Rd\Proposal.pdf
+2026/VIC/GLENWAVERLY - 2-8 Myers Ave
+  PDF: Proposal.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\GLENWAVERLY - 2-8 Myers Ave\Proposal.pdf
+2026/VIC/HIGHETT - 7 Herbert St
+  PDF: Proposal.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\HIGHETT - 7 Herbert St\Proposal.pdf
+2026/VIC/HOPPERS CROSSING - 30 Macedon Street
+  PDF: Greater Western Water Declaration.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\HOPPERS CROSSING - 30 Macedon Street\Greater Western Water Declaration.pdf
+2026/VIC/LILYDALE - 37 Mitchell Road
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\LILYDALE - 37 Mitchell Road\Proposal.PDF
+2026/VIC/MOOROOLBARK - 25 Highland Crescent
+  PDF: Signed Contract.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\MOOROOLBARK - 25 Highland Crescent\Signed Contract.pdf
+2026/VIC/MOOROOLBARK - 6 Wilde Ct
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\MOOROOLBARK - 6 Wilde Ct\Proposal.PDF
+2026/VIC/MOUNT EVELYN - 95 Fernhill Road
+  PDF: Proposal.1253820_1769491243470.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\MOUNT EVELYN - 95 Fernhill Road\Proposal.1253820_1769491243470.pdf
+2026/VIC/MOUNT WAVERLEY - 47 Alice Street
+  PDF: Proposal.1780636_1772233669979 (1).pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\MOUNT WAVERLEY - 47 Alice Street\Proposal.1780636_1772233669979 (1).pdf
+2026/VIC/NARRE WARREN - 9 Saxonwood Dr
+  PDF: Proposal.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\NARRE WARREN - 9 Saxonwood Dr\Proposal.pdf
+2026/VIC/NARRE WARREN SOUTH - 242 Ormond Road
+  PDF: 242 Ormond Rd Narre Warren South - CCTV Inspection.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\NARRE WARREN SOUTH - 242 Ormond Road\242 Ormond Rd Narre Warren South - CCTV Inspection.pdf
+2026/VIC/PARKDALE - 20 Sixth Street
+  PDF: Proposal.1726511_1768773546562.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\PARKDALE - 20 Sixth Street\Proposal.1726511_1768773546562.pdf
+2026/VIC/RESERVOIR - 30 Carrington Road
+  PDF: 30 Carrington Road Reservoir - HOME OFFICE.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\RESERVOIR - 30 Carrington Road\30 Carrington Road Reservoir - HOME OFFICE.pdf
+2026/VIC/RINGWOOD  - 6 Bidston Ct
+  PDF: Proposal.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\RINGWOOD  - 6 Bidston Ct\Proposal.pdf
+2026/VIC/SOMERVILLE - 2-52 Station St
+  PDF: Proposal.PDF
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\SOMERVILLE - 2-52 Station St\Proposal.PDF
+2026/VIC/SUNSHINE - 20 Moira Street
+  PDF: Shane's Assessment.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\SUNSHINE - 20 Moira Street\Shane's Assessment.pdf
+2026/VIC/THE BASIN - 5 St Ives Court
+  PDF: Proposal.1741523_1769481318183.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\THE BASIN - 5 St Ives Court\Proposal.1741523_1769481318183.pdf
+2026/VIC/WANTIRNA - 7 Aminya Court
+  PDF: Proposal.1769955_1768785170067.pdf
+  Path: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\WANTIRNA - 7 Aminya Court\Proposal.1769955_1768785170067.pdf
+
+=== NO PDF IN ROOT ===
+
+2025/VIC/1- Folder Structure
+2025/VIC/BROOKFIELD - 26 Rita Cres
+2026/VIC/BENTLEIGH - 8 Balmoral Av

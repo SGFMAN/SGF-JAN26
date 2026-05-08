@@ -28,6 +28,7 @@ import {
   parseEmailTemplateToAddressList,
   resolveRegionalSalespersonName,
 } from "../utils/drawingNotifyFrom";
+import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
 import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 
 const MONUMENT = "#323233";
@@ -921,14 +922,11 @@ export default function Drawings({
         return;
       }
       
-      const suburb = (project.suburb || "").toUpperCase();
-      const street = project.street || "";
-      
       // Construct the file path with "2. PUBLISHED PLANS" subfolder
       // Format: root_directory\year\state\suburb - street\2. PUBLISHED PLANS\filename
       // NOTE: This function ONLY saves the path to the database - it does NOT create folders or copy files
       const fileName = file.name;
-      const projectFolderName = `${suburb} - ${street}`.replace(/[<>:"/\\|?*]/g, '_');
+      const projectFolderName = buildJobFolderNameSegment(project.suburb, project.street);
       const filePath = `${rootDirectory}\\${projectYear}\\${state}\\${projectFolderName}\\2. PUBLISHED PLANS\\${fileName}`;
 
       // Get current drawings history or initialize empty array
@@ -2472,12 +2470,9 @@ export default function Drawings({
         return;
       }
       
-      const suburb = (project.suburb || "").toUpperCase();
-      const street = project.street || "";
-      
       // Construct the file path: root_directory\year\state\suburb - street\1. DRAFTING\DESIGN NOTES\filename
       const fileName = file.name;
-      const projectFolderName = `${suburb} - ${street}`.replace(/[<>:"/\\|?*]/g, '_');
+      const projectFolderName = buildJobFolderNameSegment(project.suburb, project.street);
       const filePath = `${rootDirectory}\\${projectYear}\\${state}\\${projectFolderName}\\1. DRAFTING\\DESIGN NOTES\\${fileName}`;
 
       // Get current drawings history

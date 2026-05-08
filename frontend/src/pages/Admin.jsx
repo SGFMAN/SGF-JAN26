@@ -4,6 +4,7 @@ import {
   resolveNewProjectClientFrom,
   resolveNewProjectClientToEmails,
 } from "../utils/streamNewProjectEmail";
+import { fullFivePercentDeposit, isFullFivePercentDepositPaid } from "../utils/projectDeposit";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -239,36 +240,23 @@ export default function Admin({ project, onUpdate }) {
     valuesRef.current.projectCost = formattedValue;
   }
 
-  // Calculate full 5% deposit from project cost
+  // Calculate full 5% deposit from project cost (same rule as Planning / Overview)
   function calculateFullDeposit() {
-    const costValue = projectCost.replace(/[^0-9]/g, "");
-    const numeric = parseInt(costValue) || 0;
-    if (numeric === 0) return "$0";
-    const fullDeposit = Math.floor(numeric / 20); // 5% = divide by 20
+    const fullDeposit = fullFivePercentDeposit(projectCost);
+    if (fullDeposit === 0) return "$0";
     return `$${fullDeposit.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
   }
 
-  // Check if deposit paid equals full 5% deposit
   function isDepositFullyPaid() {
-    const costValue = projectCost.replace(/[^0-9]/g, "");
-    const costNumeric = parseInt(costValue) || 0;
-    if (costNumeric === 0) return false;
-    
-    const fullDepositAmount = Math.floor(costNumeric / 20); // 5% = divide by 20
-    const depositPaidValue = customDeposit.replace(/[^0-9]/g, "");
-    const depositPaidNumeric = parseInt(depositPaidValue) || 0;
-    
-    return depositPaidNumeric === fullDepositAmount && fullDepositAmount > 0;
+    return isFullFivePercentDepositPaid(customDeposit, projectCost);
   }
 
   async function handleFullDepositPaid() {
-    const costValue = projectCost.replace(/[^0-9]/g, "");
-    const numeric = parseInt(costValue) || 0;
-    if (numeric === 0) {
+    const fullDepositAmount = fullFivePercentDeposit(projectCost);
+    if (fullDepositAmount === 0) {
       alert("Please enter a Project Cost first.");
       return;
     }
-    const fullDepositAmount = Math.floor(numeric / 20); // 5% = divide by 20
     const formattedDeposit = `$${fullDepositAmount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
     setCustomDeposit(formattedDeposit);
     valuesRef.current.deposit = formattedDeposit;

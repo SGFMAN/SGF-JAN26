@@ -634,6 +634,7 @@ const EMAIL_NAV_GENERAL = "general";
 const GLOBAL_EMAIL_SECTIONS = [
   { key: "colours", label: "Colours" },
   { key: "hotList", label: "Hot List" },
+  { key: "windows", label: "Windows" },
 ];
 
 export default function StreamSettings() {
@@ -651,6 +652,7 @@ export default function StreamSettings() {
   const [newProjectSectionOpen, setNewProjectSectionOpen] = useState(defaultNewProjectSectionOpen);
   const [drawingSectionOpen, setDrawingSectionOpen] = useState(defaultDrawingSectionOpen);
   const [hotListSoldSectionOpen, setHotListSoldSectionOpen] = useState(false);
+  const [windowsOrderingSectionOpen, setWindowsOrderingSectionOpen] = useState(false);
   const [emailGeneral, setEmailGeneral] = useState(() => parseEmailGeneralJson(null));
   const emailGeneralRef = useRef(emailGeneral);
   emailGeneralRef.current = emailGeneral;
@@ -745,7 +747,7 @@ export default function StreamSettings() {
       setSmtpSlotEmails(smtpSlotEmailsFromSettings(data));
     } catch (e) {
       console.error(e);
-      alert(`Could not save Hot List email settings: ${e.message}`);
+      alert(`Could not save General email settings: ${e.message}`);
       await loadSettings();
     } finally {
       setSaving(false);
@@ -764,6 +766,21 @@ export default function StreamSettings() {
   }
 
   function flushPersistHotListEmail() {
+    void persistEmailGeneral(emailGeneralRef.current);
+  }
+
+  function updateWindowsField(fieldKey, value) {
+    setEmailGeneral((prev) => {
+      const next = {
+        ...prev,
+        windows: { ...(prev.windows || {}), [fieldKey]: value },
+      };
+      emailGeneralRef.current = next;
+      return next;
+    });
+  }
+
+  function flushPersistWindowsEmail() {
     void persistEmailGeneral(emailGeneralRef.current);
   }
 
@@ -1137,6 +1154,136 @@ export default function StreamSettings() {
                     </div>
                   </div>
                 ) : null}
+                </div>
+              </div>
+            </div>
+          ) : globalEmailSection === "windows" ? (
+            <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}>
+              <div style={{ ...columnPanelStyle, minHeight: "100%" }}>
+                <h4 style={{ ...columnTitleStyle, marginBottom: "10px" }}>Windows</h4>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: windowsOrderingSectionOpen ? "10px" : "0",
+                    ...NEW_PROJECT_SECTION_BLUE,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "8px",
+                      padding: "2px 0 8px 0",
+                      borderBottom: windowsOrderingSectionOpen ? "1px solid #4d93d955" : "none",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => setWindowsOrderingSectionOpen((o) => !o)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "8px",
+                        flex: 1,
+                        minWidth: 0,
+                        margin: 0,
+                        padding: 0,
+                        border: "none",
+                        background: "transparent",
+                        cursor: saving ? "wait" : "pointer",
+                        textAlign: "left",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "0.82rem",
+                          fontWeight: 700,
+                          color: "#1e4d7a",
+                          letterSpacing: "0.02em",
+                        }}
+                      >
+                        Ordering Windows
+                      </span>
+                      <span aria-hidden style={{ fontSize: "0.75rem", color: "#1e4d7a", flexShrink: 0 }}>
+                        {windowsOrderingSectionOpen ? "▾" : "▸"}
+                      </span>
+                    </button>
+                  </div>
+                  {windowsOrderingSectionOpen ? (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                        gap: "12px",
+                      }}
+                    >
+                      <div style={{ ...columnPanelStyle, minHeight: 0, margin: 0 }}>
+                        <h5 style={{ margin: "0 0 10px 0", fontSize: "0.9rem", fontWeight: 700, color: MONUMENT }}>VIC</h5>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                            <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>From</span>
+                            <DrawingNotifySmtpSelect
+                              smtpOptions={smtpSlotEmails}
+                              value={emailGeneral.windows?.vicFromEmail || ""}
+                              disabled={saving}
+                              onValueChange={(next) => updateWindowsField("vicFromEmail", next)}
+                              onCommit={flushPersistWindowsEmail}
+                            />
+                          </div>
+                          {[1, 2, 3].map((n) => (
+                            <div key={`vic-to-${n}`} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                              <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>{`To ${n}`}</span>
+                              <input
+                                type="text"
+                                autoComplete="off"
+                                disabled={saving}
+                                value={emailGeneral.windows?.[`vicToEmail${n}`] || ""}
+                                onChange={(e) => updateWindowsField(`vicToEmail${n}`, e.target.value)}
+                                onBlur={flushPersistWindowsEmail}
+                                placeholder="name@example.com"
+                                style={inputStyle}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{ ...columnPanelStyle, minHeight: 0, margin: 0 }}>
+                        <h5 style={{ margin: "0 0 10px 0", fontSize: "0.9rem", fontWeight: 700, color: MONUMENT }}>QLD</h5>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                            <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>From</span>
+                            <DrawingNotifySmtpSelect
+                              smtpOptions={smtpSlotEmails}
+                              value={emailGeneral.windows?.qldFromEmail || ""}
+                              disabled={saving}
+                              onValueChange={(next) => updateWindowsField("qldFromEmail", next)}
+                              onCommit={flushPersistWindowsEmail}
+                            />
+                          </div>
+                          {[1, 2, 3].map((n) => (
+                            <div key={`qld-to-${n}`} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                              <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>{`To ${n}`}</span>
+                              <input
+                                type="text"
+                                autoComplete="off"
+                                disabled={saving}
+                                value={emailGeneral.windows?.[`qldToEmail${n}`] || ""}
+                                onChange={(e) => updateWindowsField(`qldToEmail${n}`, e.target.value)}
+                                onBlur={flushPersistWindowsEmail}
+                                placeholder="name@example.com"
+                                style={inputStyle}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>

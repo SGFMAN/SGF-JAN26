@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import {
-  resolveNewProjectTeamFrom,
-  resolveNewProjectTeamToEmailsFromStream,
-} from "../utils/streamNewProjectEmail";
+  generalEmailStateCode,
+  parseEmailGeneralJson,
+} from "../utils/emailGeneralSettings";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -38,10 +38,32 @@ const DATE_REQUIRED_OPTIONS = ["Normal", "Urgent"];
 
 const RED_DANGER = "#c62828";
 
+function resolveWindowsOrderingEmails(settings, project) {
+  const code = generalEmailStateCode(project);
+  const windows = parseEmailGeneralJson(settings?.email_general_json).windows || {};
+
+  if (code === "QLD") {
+    const from = (windows.qldFromEmail || "").trim();
+    const to = [windows.qldToEmail1, windows.qldToEmail2, windows.qldToEmail3]
+      .map((v) => String(v || "").trim())
+      .filter(Boolean);
+    return { code, from, to };
+  }
+
+  if (code === "VIC") {
+    const from = (windows.vicFromEmail || "").trim();
+    const to = [windows.vicToEmail1, windows.vicToEmail2, windows.vicToEmail3]
+      .map((v) => String(v || "").trim())
+      .filter(Boolean);
+    return { code, from, to };
+  }
+
+  return { code: "", from: "", to: [] };
+}
+
 export default function Windows({ project, onUpdate }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const [showOrderModal, setShowOrderModal] = useState(false);
-  const [showReceivedModal, setShowReceivedModal] = useState(false);
   const [windowColour, setWindowColour] = useState(project?.window_colour || "");
   const [reveal, setReveal] = useState(project?.window_reveal || "95mm");
   const [revealOther, setRevealOther] = useState(project?.window_reveal_other || "");
@@ -53,6 +75,9 @@ export default function Windows({ project, onUpdate }) {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [orderNumber, setOrderNumber] = useState("");
+  const [requireOrderNumberOpen, setRequireOrderNumberOpen] = useState(false);
+  const [pendingFile, setPendingFile] = useState(null);
+  const [pendingOrderNumber, setPendingOrderNumber] = useState("");
   const fileInputRef = useRef(null);
   /** Pick PDF to register path when missing or file not on disk (like Project Info proposal). */
   const windowOrderLocateFileRef = useRef(null);
@@ -68,6 +93,23 @@ export default function Windows({ project, onUpdate }) {
   const windowStatus = project?.window_status || "Not Ordered";
   
   const WINDOW_STATUS_OPTIONS = ["Not Ordered", "Ordered", "Complete"];
+
+  useEffect(() => {
+    if (!project?.id) return;
+    if (windowStatus !== "Ordered") return;
+    setOrderNumber(project?.window_order_number || "");
+    setSelectedFile(null);
+    setIsDragging(false);
+  }, [project?.id, project?.window_order_number, windowStatus]);
+
+  useEffect(() => {
+    if (!requireOrderNumberOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [requireOrderNumberOpen]);
 
   useEffect(() => {
     if (!showWindowOrderModal) return undefined;
@@ -232,7 +274,7 @@ export default function Windows({ project, onUpdate }) {
     }
   }
 
-  /** Loads template body and stream-based From/To (New Project team fields). Returns false if routing cannot be resolved. */
+  /** Loads template body and state-based From/To from General → Windows. Returns false if routing cannot be resolved. */
   async function loadEmailTemplate() {
     if (!project?.id) return false;
 
@@ -242,28 +284,36 @@ export default function Windows({ project, onUpdate }) {
         fetch(`${API_URL}/api/settings`),
       ]);
       const settings = settingsRes.ok ? await settingsRes.json() : {};
-      const teamFrom = resolveNewProjectTeamFrom(settings, project);
-      const teamToList = resolveNewProjectTeamToEmailsFromStream(settings, project);
-      if (!teamFrom || !String(teamFrom).trim()) {
+      const route = resolveWindowsOrderingEmails(settings, project);
+      if (!route.code) {
         alert(
-          "No From address for the window order email. Set Team Email — From under Settings → Stream Settings → New Project for this stream."
+          "Project state must be VIC or QLD to send Window Order emails."
         );
         setWindowOrderEmailFrom("");
         setWindowOrderEmailTo("");
         setEmailBody("");
         return false;
       }
-      if (!teamToList.length) {
+      if (!route.from) {
         alert(
-          "No To addresses for the window order email. Set Team Email — To under Settings → Stream Settings → New Project for this stream."
+          `No From address for the window order email. Set it under Settings → Email Settings → General → Windows → Ordering Windows (${route.code}).`
         );
         setWindowOrderEmailFrom("");
         setWindowOrderEmailTo("");
         setEmailBody("");
         return false;
       }
-      setWindowOrderEmailFrom(String(teamFrom).trim());
-      setWindowOrderEmailTo(teamToList.join(", "));
+      if (!route.to.length) {
+        alert(
+          `No To addresses for the window order email. Set at least one To field under Settings → Email Settings → General → Windows → Ordering Windows (${route.code}).`
+        );
+        setWindowOrderEmailFrom("");
+        setWindowOrderEmailTo("");
+        setEmailBody("");
+        return false;
+      }
+      setWindowOrderEmailFrom(route.from);
+      setWindowOrderEmailTo(route.to.join(", "));
 
       if (!templatesRes.ok) {
         setEmailBody("");
@@ -358,11 +408,11 @@ Date Required: ${dateRequiredText}`;
       .map((a) => a.trim())
       .filter(Boolean);
     if (toList.length === 0) {
-      alert("No recipient addresses. Reload the email preview after configuring Stream Settings → New Project.");
+      alert("No recipient addresses. Reload the email preview after configuring Settings → Email Settings → General → Windows.");
       return;
     }
     if (!windowOrderEmailFrom || !windowOrderEmailFrom.trim()) {
-      alert("No From address. Reload the email preview after configuring Stream Settings → New Project.");
+      alert("No From address. Reload the email preview after configuring Settings → Email Settings → General → Windows.");
       return;
     }
 
@@ -451,73 +501,39 @@ Date Required: ${dateRequiredText}`;
     e.stopPropagation();
   }
 
-  function handleDropReceived(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-
-    const files = e.dataTransfer.files;
-    if (files && files.length > 0) {
-      const file = files[0];
-      if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-        setSelectedFile(file);
-      } else {
-        alert("Please select a PDF file");
-      }
-    }
+  function openOrderNumberModalForFile(file) {
+    setPendingFile(file);
+    setPendingOrderNumber("");
+    setRequireOrderNumberOpen(true);
   }
 
-  function handleFileSelectReceived(e) {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      const file = files[0];
-      if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-        setSelectedFile(file);
-      } else {
-        alert("Please select a PDF file");
-      }
-    }
+  function closeOrderNumberModal() {
+    setRequireOrderNumberOpen(false);
+    setPendingFile(null);
+    setPendingOrderNumber("");
   }
 
-  function handleBrowseClickReceived() {
-    fileInputRef.current?.click();
-  }
-
-  function handleOpenReceivedModal() {
-    setSelectedFile(null);
-    setOrderNumber(project?.window_order_number || "");
-    setIsDragging(false);
-    setShowReceivedModal(true);
-  }
-
-  function handleCloseReceivedModal() {
-    setShowReceivedModal(false);
-    setSelectedFile(null);
-    setOrderNumber("");
-    setIsDragging(false);
-  }
-
-  async function handleUploadReceived() {
-    if (!selectedFile) {
+  async function uploadReceived(file, orderNo) {
+    if (!file) {
       alert("Please select a PDF file");
-      return;
+      return false;
     }
-    if (!orderNumber.trim()) {
+    const n = String(orderNo || "").trim();
+    if (!n) {
       alert("Please enter an order number");
-      return;
+      return false;
     }
     if (!project?.id) {
       alert("Error: Project ID is missing");
-      return;
+      return false;
     }
 
     setIsReceiving(true);
     try {
-      // Server builds full path (4-digit year + 8. COLOURS & WINDOWS + actual filename), same idea as drawings PDF.
       const uploadFormData = new FormData();
-      uploadFormData.append("file", selectedFile);
+      uploadFormData.append("file", file);
       uploadFormData.append("projectId", project.id.toString());
-      uploadFormData.append("orderNumber", orderNumber.trim());
+      uploadFormData.append("orderNumber", n);
 
       const uploadResponse = await fetch(`${API_URL}/api/files/upload-window-order`, {
         method: "POST",
@@ -593,22 +609,74 @@ Date Required: ${dateRequiredText}`;
         console.error("Error updating window status:", updateError);
       }
 
-      // Refresh project data
-      if (onUpdate) {
-        onUpdate();
-      }
-
-      // Close modal
-      setShowReceivedModal(false);
+      if (onUpdate) onUpdate();
       setSelectedFile(null);
-      setOrderNumber("");
+      setIsDragging(false);
+      setWindowOrderIframeNonce((x) => x + 1);
+      return true;
     } catch (error) {
       console.error("Error uploading window order:", error);
       alert(`Error uploading window order: ${error.message}`);
+      return false;
     } finally {
       setIsReceiving(false);
     }
   }
+
+  async function confirmOrderNumber() {
+    const n = (pendingOrderNumber || "").trim();
+    if (!n) {
+      alert("Please enter an order number");
+      return;
+    }
+    if (!pendingFile) {
+      alert("No file selected");
+      return;
+    }
+    const file = pendingFile;
+    setOrderNumber(n);
+    setSelectedFile(file);
+    setRequireOrderNumberOpen(false);
+    setPendingFile(null);
+    setPendingOrderNumber("");
+
+    // Auto-upload immediately after order number is provided
+    void uploadReceived(file, n);
+  }
+
+  function handleDropReceived(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+        openOrderNumberModalForFile(file);
+      } else {
+        alert("Please select a PDF file");
+      }
+    }
+  }
+
+  function handleFileSelectReceived(e) {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+        openOrderNumberModalForFile(file);
+      } else {
+        alert("Please select a PDF file");
+      }
+    }
+  }
+
+  function handleBrowseClickReceived() {
+    fileInputRef.current?.click();
+  }
+
+  // Upload now happens automatically after the order number modal is confirmed.
 
   return (
     <div>
@@ -851,52 +919,158 @@ Date Required: ${dateRequiredText}`;
 
           {/* Column 3 - Windows Received / View Order */}
           <div style={{ flex: "1", minWidth: "200px" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "12px" }}>
-              {windowStatus === "Ordered" && (
-                <button
-                  type="button"
-                  onClick={handleOpenReceivedModal}
-                  style={{
-                    padding: "10px 20px",
-                    fontSize: "1rem",
-                    fontWeight: "500",
-                    color: WHITE,
-                    background: MONUMENT,
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Windows Received
-                </button>
-              )}
+            <input
+              ref={windowOrderLocateFileRef}
+              type="file"
+              accept=".pdf,application/pdf"
+              style={{ display: "none" }}
+              onChange={(e) => void handleWindowOrderLocateFileChange(e)}
+            />
 
-              <input
-                ref={windowOrderLocateFileRef}
-                type="file"
-                accept=".pdf,application/pdf"
-                style={{ display: "none" }}
-                onChange={(e) => void handleWindowOrderLocateFileChange(e)}
-              />
-              {windowStatus !== "Ordered" && (
-                <button
-                  type="button"
-                  onClick={openWindowOrderModal}
-                  style={{
-                    padding: "10px 20px",
-                    fontSize: "1rem",
-                    fontWeight: "500",
-                    color: WHITE,
-                    background: MONUMENT,
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                  }}
-                >
-                  {project?.window_order_pdf_location ? "View Order" : "Locate Order"}
-                </button>
-              )}
-            </div>
+            {windowStatus === "Ordered" ? (
+              <div>
+                <h3 style={{ fontSize: "1.05rem", marginTop: 0, marginBottom: "16px", color: MONUMENT }}>
+                  Windows Received
+                </h3>
+
+                {(String(project?.window_order_number || "").trim() || (orderNumber || "").trim()) && (
+                  <div style={{ marginBottom: "20px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "0.9rem",
+                        color: "#32323399",
+                        marginBottom: "6px",
+                        fontWeight: "500",
+                      }}
+                    >
+                      Order Number
+                    </label>
+                    <div
+                      style={{
+                        width: "100%",
+                        maxWidth: "300px",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid #ddd",
+                        fontSize: "1rem",
+                        color: MONUMENT,
+                        background: WHITE,
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      {(orderNumber || project?.window_order_number || "").toString()}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ marginBottom: "18px" }}>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: "0.9rem",
+                      color: "#32323399",
+                      marginBottom: "6px",
+                      fontWeight: "500",
+                    }}
+                  >
+                    Window Order PDF *
+                  </label>
+                  <div
+                    onDragEnter={handleDragEnterReceived}
+                    onDragOver={handleDragOverReceived}
+                    onDragLeave={handleDragLeaveReceived}
+                    onDrop={handleDropReceived}
+                    onClick={handleBrowseClickReceived}
+                    style={{
+                      border: `2px dashed ${isDragging ? MONUMENT : "#ddd"}`,
+                      borderRadius: "8px",
+                      padding: "32px 16px",
+                      textAlign: "center",
+                      cursor: "pointer",
+                      background: isDragging ? "#f5f5f5" : WHITE,
+                      transition: "background 0.2s, border-color 0.2s",
+                      maxWidth: "300px",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    {selectedFile ? (
+                      <div>
+                        <div style={{ color: MONUMENT, fontWeight: "500", marginBottom: "8px" }}>
+                          {selectedFile.name}
+                        </div>
+                        <div style={{ fontSize: "0.9rem", color: "#32323399" }}>
+                          Click to select a different file
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div style={{ color: MONUMENT, fontWeight: "500", marginBottom: "8px" }}>
+                          Drag and drop PDF file here
+                        </div>
+                        <div style={{ fontSize: "0.9rem", color: "#32323399" }}>
+                          or click to browse
+                        </div>
+                      </div>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      onChange={handleFileSelectReceived}
+                      style={{ display: "none" }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                  {project?.window_order_pdf_location?.trim() ? (
+                    <button
+                      type="button"
+                      onClick={openWindowOrderModal}
+                      disabled={isReceiving}
+                      style={{
+                        padding: "10px 16px",
+                        fontSize: "1rem",
+                        fontWeight: "500",
+                        color: WHITE,
+                        background: MONUMENT,
+                        border: "none",
+                        borderRadius: "8px",
+                        cursor: isReceiving ? "not-allowed" : "pointer",
+                        opacity: isReceiving ? 0.6 : 1,
+                      }}
+                    >
+                      Show Order
+                    </button>
+                  ) : null}
+                  {isReceiving ? (
+                    <div style={{ fontSize: "0.9rem", color: "#32323399" }}>Uploading…</div>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "12px" }}>
+                {windowStatus !== "Not Ordered" && (
+                  <button
+                    type="button"
+                    onClick={openWindowOrderModal}
+                    style={{
+                      padding: "10px 20px",
+                      fontSize: "1rem",
+                      fontWeight: "500",
+                      color: WHITE,
+                      background: MONUMENT,
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {project?.window_order_pdf_location ? "View Order" : "Locate Order"}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Column 4 - Empty for now */}
@@ -1189,183 +1363,6 @@ Date Required: ${dateRequiredText}`;
             </div>
           )}
 
-      {/* Windows Received Modal */}
-      {showReceivedModal && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-          onClick={handleCloseReceivedModal}
-        >
-          <div
-            style={{
-              background: WHITE,
-              borderRadius: "12px",
-              padding: "32px",
-              maxWidth: "600px",
-              width: "90%",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              boxShadow: "0 4px 20px rgba(0, 0, 0, 0.2)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3
-              style={{
-                fontSize: "1.5rem",
-                marginTop: 0,
-                marginBottom: "24px",
-                color: MONUMENT,
-              }}
-            >
-              Windows Received
-            </h3>
-
-            {/* Order Number */}
-            <div style={{ marginBottom: "20px" }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: "#32323399",
-                  marginBottom: "6px",
-                  fontWeight: "500",
-                }}
-              >
-                Order Number *
-              </label>
-              <input
-                type="text"
-                value={orderNumber}
-                onChange={(e) => setOrderNumber(e.target.value)}
-                placeholder="Enter order number"
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "1px solid #ddd",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
-              />
-            </div>
-
-            {/* Dropzone */}
-            <div style={{ marginBottom: "24px" }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: "#32323399",
-                  marginBottom: "6px",
-                  fontWeight: "500",
-                }}
-              >
-                Window Order PDF *
-              </label>
-              <div
-                onDragEnter={handleDragEnterReceived}
-                onDragOver={handleDragOverReceived}
-                onDragLeave={handleDragLeaveReceived}
-                onDrop={handleDropReceived}
-                onClick={handleBrowseClickReceived}
-                style={{
-                  border: `2px dashed ${isDragging ? MONUMENT : "#ddd"}`,
-                  borderRadius: "8px",
-                  padding: "40px 20px",
-                  textAlign: "center",
-                  cursor: "pointer",
-                  background: isDragging ? "#f5f5f5" : WHITE,
-                  transition: "background 0.2s, border-color 0.2s",
-                }}
-              >
-                {selectedFile ? (
-                  <div>
-                    <div style={{ color: MONUMENT, fontWeight: "500", marginBottom: "8px" }}>
-                      {selectedFile.name}
-                    </div>
-                    <div style={{ fontSize: "0.9rem", color: "#32323399" }}>
-                      Click to select a different file
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{ color: MONUMENT, fontWeight: "500", marginBottom: "8px" }}>
-                      Drag and drop PDF file here
-                    </div>
-                    <div style={{ fontSize: "0.9rem", color: "#32323399" }}>
-                      or click to browse
-                    </div>
-                  </div>
-                )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  onChange={handleFileSelectReceived}
-                  style={{ display: "none" }}
-                />
-              </div>
-            </div>
-
-            {/* Modal Buttons */}
-            <div
-              style={{
-                display: "flex",
-                gap: "12px",
-                justifyContent: "flex-end",
-              }}
-            >
-              <button
-                onClick={handleCloseReceivedModal}
-                disabled={isReceiving}
-                style={{
-                  padding: "10px 20px",
-                  fontSize: "1rem",
-                  fontWeight: "500",
-                  color: MONUMENT,
-                  background: WHITE,
-                  border: `1px solid ${MONUMENT}`,
-                  borderRadius: "8px",
-                  cursor: isReceiving ? "not-allowed" : "pointer",
-                  opacity: isReceiving ? 0.6 : 1,
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleUploadReceived}
-                disabled={isReceiving}
-                style={{
-                  padding: "10px 20px",
-                  fontSize: "1rem",
-                  fontWeight: "500",
-                  color: WHITE,
-                  background: MONUMENT,
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: isReceiving ? "not-allowed" : "pointer",
-                  opacity: isReceiving ? 0.6 : 1,
-                }}
-              >
-                {isReceiving ? "Uploading..." : "Upload"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {showWindowOrderModal && project?.id && (
         <div
           style={{
@@ -1551,12 +1548,29 @@ Date Required: ${dateRequiredText}`;
                 <span style={{ color: "#32323399", fontWeight: 500 }}>From</span>{" "}
                 {windowOrderEmailFrom || "—"}
               </div>
-              <div style={{ marginTop: "8px" }}>
-                <span style={{ color: "#32323399", fontWeight: 500 }}>To</span>{" "}
-                {windowOrderEmailTo || "—"}
-              </div>
-              <div style={{ marginTop: "10px", fontSize: "0.85rem", color: "#32323399" }}>
-                From and To come from Settings → Stream Settings → New Project (team email) for the matching project stream.
+              <div style={{ marginTop: "12px" }}>
+                <div style={{ fontSize: "0.85rem", color: "#32323399", fontWeight: 500, marginBottom: "6px" }}>
+                  To
+                </div>
+                <input
+                  type="text"
+                  value={windowOrderEmailTo}
+                  onChange={(e) => setWindowOrderEmailTo(e.target.value)}
+                  placeholder="name@example.com, other@example.com"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "0.95rem",
+                    fontFamily: "inherit",
+                    color: MONUMENT,
+                    boxSizing: "border-box",
+                  }}
+                />
+                <div style={{ marginTop: "8px", fontSize: "0.82rem", color: "#32323399", lineHeight: 1.4 }}>
+                  Tip: separate multiple emails with commas.
+                </div>
               </div>
             </div>
 
@@ -1621,6 +1635,98 @@ Date Required: ${dateRequiredText}`;
                 }}
               >
                 Send Email
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {requireOrderNumberOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1300,
+            padding: "16px",
+          }}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              width: "min(520px, 100%)",
+              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="windows-order-number-title"
+          >
+            <h3 id="windows-order-number-title" style={{ margin: "0 0 12px 0", color: MONUMENT, fontSize: "1.2rem" }}>
+              Enter order number
+            </h3>
+            <p style={{ margin: "0 0 16px 0", color: "#32323399", fontSize: "0.9rem", lineHeight: 1.45 }}>
+              An order number is required before uploading the window order PDF.
+            </p>
+            <input
+              type="text"
+              autoComplete="off"
+              value={pendingOrderNumber}
+              onChange={(e) => setPendingOrderNumber(e.target.value)}
+              placeholder="Order number"
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: "8px",
+                border: "1px solid #ddd",
+                fontSize: "1rem",
+                color: MONUMENT,
+                background: WHITE,
+                boxSizing: "border-box",
+                marginBottom: "16px",
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") confirmOrderNumber();
+              }}
+              autoFocus
+            />
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={closeOrderNumberModal}
+                style={{
+                  padding: "10px 16px",
+                  fontSize: "1rem",
+                  fontWeight: "500",
+                  color: MONUMENT,
+                  background: WHITE,
+                  border: `1px solid ${MONUMENT}`,
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmOrderNumber}
+                style={{
+                  padding: "10px 16px",
+                  fontSize: "1rem",
+                  fontWeight: "500",
+                  color: WHITE,
+                  background: MONUMENT,
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                }}
+              >
+                Continue
               </button>
             </div>
           </div>

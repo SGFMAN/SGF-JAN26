@@ -1,5 +1,21 @@
 const API_URL = "";
 
+const UNICODE_ADDRESS_DASHES = /[\u2013\u2014\u2212]/g;
+const WIN_FILENAME_ILLEGAL_CHARS = /[<>:"/\\|?*]/g;
+
+/** En dash / em dash / Unicode minus → ASCII hyphen (must match backend job folder naming). */
+export function normalizeAddressHyphensForFilesystem(s) {
+  if (s == null || s === "") return "";
+  return String(s).replace(UNICODE_ADDRESS_DASHES, "-");
+}
+
+/** Leaf folder segment: `SUBURB - street` with ASCII hyphen between parts + Windows-safe sanitise. */
+export function buildJobFolderNameSegment(suburb, street) {
+  const sub = normalizeAddressHyphensForFilesystem(suburb || "").toUpperCase();
+  const st = normalizeAddressHyphensForFilesystem(street || "");
+  return `${sub} - ${st}`.replace(WIN_FILENAME_ILLEGAL_CHARS, "_");
+}
+
 /** YYYY from project `year` (date string or year-only). */
 export function folderYearFromProjectYear(y) {
   if (y == null || y === "") return new Date().getFullYear().toString();
@@ -31,11 +47,12 @@ export async function computeProjectFolderPathFromRecord(project) {
     if (!rootDir || !state) return "";
 
     const projectYear = folderYearFromProjectYear(project.year);
-    const suburb = (project.suburb || "").toUpperCase().replace(/[/\\]/g, "_");
-    const street = (project.street || "").replace(/[/\\]/g, "_");
-    if (!suburb || !street) return "";
+    const projectFolderName = buildJobFolderNameSegment(project.suburb, project.street);
+    const suburbPart = normalizeAddressHyphensForFilesystem(project.suburb || "").toUpperCase();
+    const streetPart = normalizeAddressHyphensForFilesystem(project.street || "");
+    if (!suburbPart.trim() || !streetPart.trim()) return "";
 
-    return `${rootDir}\\${projectYear}\\${state}\\${suburb} - ${street}`;
+    return `${rootDir}\\${projectYear}\\${state}\\${projectFolderName}`;
   } catch {
     return "";
   }

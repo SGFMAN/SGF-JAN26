@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
+import { isFullFivePercentDepositPaid } from "../utils/projectDeposit";
+import SiteVisit from "./SiteVisit";
 
 const MONUMENT = "#323233";
 const TILE_BLUE = "#63a7e8";
@@ -280,12 +282,22 @@ function getSurveySoilTileState(statusValue) {
   return { color: TILE_RED, label: "Not Booked" };
 }
 
+function getSiteVisitPlanningTileState(statusValue) {
+  const normalized = (statusValue || "").toString().trim().toLowerCase();
+  if (normalized === "complete") {
+    return { color: TILE_GREEN, label: "Complete" };
+  }
+  if (normalized === "booked") {
+    return { color: TILE_ORANGE, label: "Booked" };
+  }
+  if (normalized === "email sent") {
+    return { color: TILE_ORANGE, label: "Email Sent" };
+  }
+  return { color: TILE_RED, label: "Not Complete" };
+}
+
 function getDepositStatus(depositValue, projectCostValue) {
-  const depositNumeric = parseInt((depositValue || "").toString().replace(/[^0-9]/g, ""), 10) || 0;
-  const projectCostNumeric = parseInt((projectCostValue || "").toString().replace(/[^0-9]/g, ""), 10) || 0;
-  const fullDepositAmount = Math.round(projectCostNumeric * 0.05);
-  const isFull =
-    depositNumeric > 0 && fullDepositAmount > 0 && depositNumeric === fullDepositAmount;
+  const isFull = isFullFivePercentDepositPaid(depositValue, projectCostValue);
   return {
     label: isFull ? "Full Deposit Paid" : "Partial Deposit Paid",
     color: isFull ? TILE_GREEN : TILE_RED,
@@ -759,7 +771,9 @@ export default function PlanningNew({ project, onUpdate }) {
             ? surveyTileState
             : category === "Soil Test"
               ? soilTileState
-              : null;
+              : category === "Site Visit"
+                ? getSiteVisitPlanningTileState(project?.site_visit_status)
+                : null;
     const selected = planningSection === category;
     return (
       <button
@@ -1081,6 +1095,10 @@ export default function PlanningNew({ project, onUpdate }) {
                 </div>
               )}
 
+              {planningSection === "Site Visit" && (
+                <SiteVisit project={project} onUpdate={onUpdate} />
+              )}
+
               {planningSection === "Job File Documents" && (
                 <div
                   role="region"
@@ -1324,16 +1342,20 @@ export default function PlanningNew({ project, onUpdate }) {
 
               {planningSection !== "JCA Land Survey" &&
                 planningSection !== "Soil Test" &&
+                planningSection !== "Site Visit" &&
                 planningSection !== "Job File Documents" &&
                 planningSection !== "Job File Complete" && (
                   <div>
                     <h3 style={{ margin: "0 0 10px 0", color: MONUMENT, fontSize: "1.1rem" }}>{planningSection}</h3>
                     <p style={{ margin: 0, fontSize: "0.9rem", color: SECTION_GREY, lineHeight: 1.5, maxWidth: "640px" }}>
-                      {planningSection === "Concept Drawings" || planningSection === "Working Drawings" ? (
+                      {planningSection === "Concept Drawings" ? (
                         <>
-                          Status comes from the Drawings page. Concept:{" "}
+                          Status comes from the Drawings page (Concept).{" "}
                           <strong style={{ color: drawingStates.concept.color }}>{drawingStates.concept.label}</strong>
-                          {" · "}Working:{" "}
+                        </>
+                      ) : planningSection === "Working Drawings" ? (
+                        <>
+                          Status comes from the Drawings page (Working).{" "}
                           <strong style={{ color: drawingStates.working.color }}>{drawingStates.working.label}</strong>
                         </>
                       ) : (

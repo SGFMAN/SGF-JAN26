@@ -5,17 +5,177 @@ const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
 const path = require("path");
+const { pathToFileURL, fileURLToPath } = require("node:url");
 const fsSync = require("fs");
 const fs = require("fs").promises;
 const XLSX = require("xlsx");
 const multer = require("multer");
 const nodemailer = require("nodemailer");
 const OpenAI = require("openai");
+const { toFile } = require("openai/uploads");
 const PDFDocument = require("pdfkit");
 const { PDFDocument: PdfLibDocument } = require("pdf-lib");
 const sharp = require("sharp");
 const crypto = require("crypto");
 const app = express();
+
+const AI_RENDER_FILENAME = "AI Render.png";
+
+/**
+ * Stored paths match Drawings / Colours pages (e.g. Z:\...\file.pdf).
+ * Accept optional file:// URLs. Normalizes slashes for fs.* on Windows.
+ */
+function resolveStoredFilesystemPath(location) {
+  if (location == null) return "";
+  let s = String(location).trim();
+  if (!s) return "";
+  if (/^file:/i.test(s)) {
+    try {
+      s = fileURLToPath(s);
+    } catch {
+      return "";
+    }
+  }
+  return path.normalize(s);
+}
+
+/** En dash / em dash / Unicode minus → ASCII hyphen (job folder names must match on disk). */
+function normalizeAddressHyphensForFilesystem(s) {
+  if (s == null) return "";
+  return String(s).replace(/[\u2013\u2014\u2212]/g, "-");
+}
+
+const WIN_FILENAME_ILLEGAL_CHARS = /[<>:"/\\|?*]/g;
+
+function buildJobProjectFolderName(suburb, street) {
+  const sub = normalizeAddressHyphensForFilesystem(suburb ?? "").toUpperCase();
+  const st = normalizeAddressHyphensForFilesystem(street ?? "");
+  return `${sub} - ${st}`.replace(WIN_FILENAME_ILLEGAL_CHARS, "_");
+}
+
+/** Common street-type variants accepted for folder matching. */
+const STREET_TYPE_CANONICAL_MAP = {
+  STREET: "STREET",
+  ST: "STREET",
+  STRE: "STREET",
+  STS: "STREET",
+  AVENUE: "AVENUE",
+  AVE: "AVENUE",
+  AV: "AVENUE",
+  CRESCENT: "CRESCENT",
+  CRES: "CRESCENT",
+  CR: "CRESCENT",
+  ROAD: "ROAD",
+  RD: "ROAD",
+  DRIVE: "DRIVE",
+  DR: "DRIVE",
+  COURT: "COURT",
+  CT: "COURT",
+  PLACE: "PLACE",
+  PL: "PLACE",
+  LANE: "LANE",
+  LN: "LANE",
+  TERRACE: "TERRACE",
+  TCE: "TERRACE",
+  CLOSE: "CLOSE",
+  CL: "CLOSE",
+  BOULEVARD: "BOULEVARD",
+  BLVD: "BOULEVARD",
+  HIGHWAY: "HIGHWAY",
+  HWY: "HIGHWAY",
+  PARADE: "PARADE",
+  PDE: "PARADE",
+  CIRCUIT: "CIRCUIT",
+  CCT: "CIRCUIT",
+};
+
+function normalizeAddressTokenString(s) {
+  return normalizeAddressHyphensForFilesystem(String(s || ""))
+    .toUpperCase()
+    .replace(/[.,]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseStreetForFolderMatch(streetRaw) {
+  const normalized = normalizeAddressTokenString(streetRaw);
+  if (!normalized) return { number: "", name: "", type: "" };
+  const tokens = normalized.split(" ").filter(Boolean);
+  if (tokens.length === 0) return { number: "", name: "", type: "" };
+
+  const number = /^\d+[A-Z]?$/.test(tokens[0]) ? tokens[0] : "";
+  const afterNumber = number ? tokens.slice(1) : tokens.slice();
+  if (afterNumber.length === 0) return { number, name: "", type: "" };
+
+  const last = afterNumber[afterNumber.length - 1];
+  const type = STREET_TYPE_CANONICAL_MAP[last] || "";
+  const nameTokens = type ? afterNumber.slice(0, -1) : afterNumber;
+  const name = nameTokens.join(" ").trim();
+  return { number, name, type };
+}
+
+function parseProjectFolderLeaf(folderLeaf) {
+  const raw = String(folderLeaf || "");
+  const sep = raw.indexOf(" - ");
+  if (sep < 0) return null;
+  return {
+    suburb: raw.slice(0, sep).trim(),
+    street: raw.slice(sep + 3).trim(),
+  };
+}
+
+/**
+ * Strict-but-lenient folder matching:
+ * - suburb exact (case-insensitive, dash-normalized)
+ * - street number exact
+ * - street name exact
+ * - street type allows common abbreviations (Street/St, Avenue/Ave/Av, Crescent/Cres/Cr, etc)
+ */
+function isLenientAddressFolderMatch(projectSuburb, projectStreet, folderLeaf) {
+  const parsedLeaf = parseProjectFolderLeaf(folderLeaf);
+  if (!parsedLeaf) return false;
+
+  const suburbA = normalizeAddressTokenString(projectSuburb);
+  const suburbB = normalizeAddressTokenString(parsedLeaf.suburb);
+  if (!suburbA || !suburbB || suburbA !== suburbB) return false;
+
+  const pStreet = parseStreetForFolderMatch(projectStreet);
+  const fStreet = parseStreetForFolderMatch(parsedLeaf.street);
+  if (!pStreet.number || !fStreet.number || pStreet.number !== fStreet.number) return false;
+  if (!pStreet.name || !fStreet.name || pStreet.name !== fStreet.name) return false;
+  if (!pStreet.type || !fStreet.type || pStreet.type !== fStreet.type) return false;
+  return true;
+}
+
+async function findBestProjectFolderPathLenient(rootDir, projectYear, stateUpper, suburb, street) {
+  const stateDir = path.join(rootDir, projectYear, stateUpper);
+  let entries = [];
+  try {
+    entries = await fs.readdir(stateDir, { withFileTypes: true });
+  } catch {
+    return "";
+  }
+  const dirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+  if (dirs.length === 0) return "";
+
+  const exactLeaf = buildJobProjectFolderName(suburb, street);
+  if (dirs.includes(exactLeaf)) {
+    return path.join(stateDir, exactLeaf);
+  }
+
+  const matches = dirs.filter((leaf) => isLenientAddressFolderMatch(suburb, street, leaf));
+  if (matches.length === 0) return "";
+  matches.sort((a, b) => a.localeCompare(b));
+  return path.join(stateDir, matches[0]);
+}
+
+function projectDirectoryFromColoursOrDrawings(coloursPdfLocation, drawingsPdfLocation) {
+  const c = resolveStoredFilesystemPath(coloursPdfLocation);
+  const d = resolveStoredFilesystemPath(drawingsPdfLocation);
+  if (c) return path.dirname(c);
+  if (d) return path.dirname(d);
+  return null;
+}
 app.use(cors({ origin: true }));
 
 // Outbound email links (View Drawings, colours portal, variation approve, etc.).
@@ -890,6 +1050,35 @@ async function ensureSchema() {
       console.log(`Column ${column} might already exist:`, e.message);
     }
   }
+
+  // Project map cache (lat/lng persisted so maps don't re-geocode every time)
+  try {
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'projects' AND column_name = 'project_lat'
+        ) THEN
+          ALTER TABLE projects ADD COLUMN project_lat DOUBLE PRECISION;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'projects' AND column_name = 'project_lng'
+        ) THEN
+          ALTER TABLE projects ADD COLUMN project_lng DOUBLE PRECISION;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'projects' AND column_name = 'project_geocoded_at'
+        ) THEN
+          ALTER TABLE projects ADD COLUMN project_geocoded_at TIMESTAMPTZ;
+        END IF;
+      END $$;
+    `);
+  } catch (e) {
+    console.log("Project map cache columns:", e.message);
+  }
   try {
     await pool.query(`
       DO $$
@@ -1238,7 +1427,7 @@ app.get("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, duplicate_source_project_id, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects ORDER BY updated_at DESC, id DESC"
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, duplicate_source_project_id, project_lat, project_lng, project_geocoded_at, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects ORDER BY updated_at DESC, id DESC"
     );
     res.json(r.rows);
   } catch (e) {
@@ -1259,7 +1448,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, duplicate_source_project_id, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects WHERE id = $1",
+      "SELECT id, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, duplicate_source_project_id, project_lat, project_lng, project_geocoded_at, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects WHERE id = $1",
       [id]
     );
     
@@ -1353,7 +1542,9 @@ app.post("/api/projects/bulk", async (req, res) => {
     let skippedCount = 0;
 
     for (const projectData of projects) {
-      const { suburb, street, specs, project_cost, year, state, stream, status } = projectData;
+      const { suburb: suburbRaw, street: streetRaw, specs, project_cost, year, state, stream, status } = projectData;
+      const suburb = suburbRaw ? normalizeAddressHyphensForFilesystem(String(suburbRaw).trim()) : "";
+      const street = streetRaw ? normalizeAddressHyphensForFilesystem(String(streetRaw).trim()) : "";
       
       if (!suburb || !street) {
         results.push({ error: `Missing suburb or street for project`, data: projectData });
@@ -1391,8 +1582,8 @@ app.post("/api/projects/bulk", async (req, res) => {
         [
           name.trim(),
           (status || "Design Phase").trim(),
-          suburb ? suburb.trim() : null,
-          street ? street.trim() : null,
+          suburb || null,
+          street || null,
           (state || "QLD").trim(),
           (stream || "SGF - QLD").trim(),
           projectDate,
@@ -1444,8 +1635,11 @@ app.post("/api/projects/bulk", async (req, res) => {
 app.post("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const { name, status, suburb, street, state, stream, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, specs, classification, year, duplicate_source_project_id, duplicateSourceProjectId } = req.body || {};
+    let { name, status, suburb, street, state, stream, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, specs, classification, year, duplicate_source_project_id, duplicateSourceProjectId } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
+    name = normalizeAddressHyphensForFilesystem(String(name).trim());
+    suburb = suburb ? normalizeAddressHyphensForFilesystem(String(suburb).trim()) : suburb;
+    street = street ? normalizeAddressHyphensForFilesystem(String(street).trim()) : street;
 
     let duplicateSourceProjectIdVal = null;
     const dupRaw = duplicate_source_project_id ?? duplicateSourceProjectId;
@@ -1621,6 +1815,10 @@ app.put("/api/projects/:id", async (req, res) => {
         return trimmed === "" ? null : trimmed;
       }
       return null;
+    };
+    const processAddressText = (val) => {
+      const v = processValue(val);
+      return v === null ? null : normalizeAddressHyphensForFilesystem(v);
     };
     /** `draftsperson` is never NULL in DB — empty/clear maps to sentinel. */
     const processDraftsperson = (val) => {
@@ -1844,11 +2042,11 @@ app.put("/api/projects/:id", async (req, res) => {
       RETURNING *
       `,
       [
-        processValue(name),
+        processAddressText(name),
         processValue(status),
         processValue(stream),
-        processValue(suburb),
-        processValue(street),
+        processAddressText(suburb),
+        processAddressText(street),
         processValue(state),
         processValue(deposit),
         processValue(project_cost),
@@ -1992,6 +2190,80 @@ app.put("/api/projects/:id", async (req, res) => {
     console.error("Update query error:", e.message);
     console.error("Stack:", e.stack);
     res.status(500).json({ error: e.message });
+  }
+});
+
+// --- Project geocoding cache (Nominatim) ---
+let lastNominatimRequestAtMs = 0;
+async function throttleNominatim() {
+  const minGapMs = 1150;
+  const now = Date.now();
+  const wait = Math.max(0, lastNominatimRequestAtMs + minGapMs - now);
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  lastNominatimRequestAtMs = Date.now();
+}
+
+async function geocodeWithNominatim(q) {
+  const query = String(q || "").trim();
+  if (!query) return null;
+  await throttleNominatim();
+  const params = new URLSearchParams({ q: query, format: "json", limit: "1" });
+  const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
+  const resp = await fetch(url, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      "User-Agent": "SGF-Central/1.0 (maps geocoding cache)",
+    },
+  });
+  if (!resp.ok) return null;
+  const data = await resp.json().catch(() => []);
+  if (!Array.isArray(data) || data.length === 0) return null;
+  const hit = data[0];
+  const lat = Number.parseFloat(hit.lat);
+  const lng = Number.parseFloat(hit.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng, display_name: hit.display_name || "" };
+}
+
+// Geocode one project and persist project_lat/project_lng (only if missing unless force=true)
+app.post("/api/projects/:id/geocode", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  const force = !!(req.body && req.body.force);
+
+  try {
+    const r = await pool.query(
+      "SELECT id, street, suburb, state, project_lat, project_lng FROM projects WHERE id = $1",
+      [id]
+    );
+    if (r.rows.length === 0) return res.status(404).json({ error: "not found" });
+    const row = r.rows[0];
+    const existingLat = row.project_lat;
+    const existingLng = row.project_lng;
+    if (!force && existingLat != null && existingLng != null) {
+      return res.json({ ok: true, id, lat: existingLat, lng: existingLng, cached: true });
+    }
+
+    const state = String(row.state || "").trim().toUpperCase();
+    const street = String(row.street || "").trim();
+    const suburb = String(row.suburb || "").trim();
+    const addr = [street, suburb, state].filter(Boolean).join(", ");
+    if (!addr) return res.status(400).json({ error: "missing address" });
+
+    const hit = await geocodeWithNominatim(addr);
+    if (!hit) return res.status(404).json({ error: "geocode not found" });
+
+    await pool.query(
+      "UPDATE projects SET project_lat = $1, project_lng = $2, project_geocoded_at = NOW(), updated_at = NOW() WHERE id = $3",
+      [hit.lat, hit.lng, id]
+    );
+
+    res.json({ ok: true, id, lat: hit.lat, lng: hit.lng, cached: false, display_name: hit.display_name, query: addr });
+  } catch (e) {
+    console.error("Error geocoding project:", e);
+    res.status(500).json({ error: e.message || "geocode failed" });
   }
 });
 
@@ -4277,7 +4549,7 @@ app.post("/api/folders/create", async (req, res) => {
 
     // Normalize paths to handle different path separators
     // On Windows, normalize will convert forward slashes to backslashes
-    let folderPathNormalized = path.normalize(folderPath);
+    let folderPathNormalized = normalizeAddressHyphensForFilesystem(path.normalize(folderPath));
     
     // Fix Windows drive letter paths - ensure there's a backslash after the colon
     // e.g., "Z\path" should become "Z:\path"
@@ -4488,13 +4760,8 @@ app.post("/api/files/locate-proposal", upload.single("file"), async (req, res) =
             return res.status(400).json({ error: "Project state is required to save proposal" });
           }
           
-          // Get suburb and street
-          const suburb = (project.suburb || "").toUpperCase();
-          const street = project.street || "";
-          
-          // Build project path: root_directory/year/state/suburb - street
-          // NOTE: Do NOT include classification abbreviation in folder name
-          const projectFolderName = `${suburb} - ${street}`.replace(/[<>:"/\\|?*]/g, '_');
+          // Get suburb and street (ASCII hyphen between parts; unicode dashes normalized)
+          const projectFolderName = buildJobProjectFolderName(project.suburb, project.street);
           projectPath = path.join(rootDir, projectYear, state, projectFolderName);
         }
       }
@@ -4625,7 +4892,7 @@ function folderYearFromProjectYear(y) {
   return yearStr;
 }
 
-// Upload window order PDF (path derived on server: year = 4 digits only; filename = original upload name, like drawings)
+// Upload window order PDF (path derived on server: year = 4 digits only; always writes Windows.PDF into 8. COLOURS & WINDOWS)
 app.post("/api/files/upload-window-order", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
@@ -4680,20 +4947,21 @@ app.post("/api/files/upload-window-order", upload.single("file"), async (req, re
     if (!/^\d{4}$/.test(projectYear)) {
       return res.status(400).json({ error: "Project year must be YYYY (4 digits)" });
     }
-    const suburb = (row.suburb || "").toUpperCase();
-    const street = row.street || "";
-    const projectFolderName = `${suburb} - ${street}`.replace(/[<>:"/\\|?*]/g, "_");
-    const fileSafeName = path.basename(req.file.originalname || "window-order.pdf");
-    const filePath = path.join(
+    const projectFolderName = buildJobProjectFolderName(row.suburb, row.street);
+    const fileSafeName = "Windows.PDF";
+    const folderPath = path.join(
       rootDir,
       projectYear,
       state,
       projectFolderName,
-      WINDOW_ORDER_SUBFOLDER,
-      fileSafeName
+      WINDOW_ORDER_SUBFOLDER
     );
+    const filePath = path.join(folderPath, fileSafeName);
 
-    console.log(`Window order PDF path set to: ${filePath} (filename from upload; no files or folders created)`);
+    console.log(`Window order PDF path set to: ${filePath} (writes file + creates folders if needed)`);
+
+    await fs.mkdir(folderPath, { recursive: true });
+    await fs.writeFile(filePath, req.file.buffer);
 
     await pool.query(
       "UPDATE projects SET window_order_pdf_location = $1, window_order_number = $2 WHERE id = $3",
@@ -4764,9 +5032,7 @@ app.post("/api/files/locate-window-order", upload.single("file"), async (req, re
       return res.status(400).json({ error: "Project year must be YYYY (4 digits)" });
     }
 
-    const suburb = (row.suburb || "").toUpperCase();
-    const street = row.street || "";
-    const projectFolderName = `${suburb} - ${street}`.replace(/[<>:"/\\|?*]/g, "_");
+    const projectFolderName = buildJobProjectFolderName(row.suburb, row.street);
     const projectPath = path.join(rootDir, projectYear, state, projectFolderName);
     const fileName = path.basename(req.file.originalname || "window-order.pdf");
     const fileLocation = path.join(projectPath, WINDOW_ORDER_SUBFOLDER, fileName);
@@ -5762,7 +6028,7 @@ app.get("/api/files/drawings/:id", async (req, res) => {
 
     // Get project and drawings PDF location
     const projectResult = await pool.query(
-      "SELECT drawings_pdf_location FROM projects WHERE id = $1",
+      "SELECT drawings_pdf_location, suburb, street, state, year FROM projects WHERE id = $1",
       [id]
     );
 
@@ -5770,7 +6036,8 @@ app.get("/api/files/drawings/:id", async (req, res) => {
       return res.status(404).json({ error: "Project not found" });
     }
 
-    const drawingsPdfPath = projectResult.rows[0].drawings_pdf_location;
+    const projectRow = projectResult.rows[0];
+    let drawingsPdfPath = resolveStoredFilesystemPath(projectRow.drawings_pdf_location);
 
     if (!drawingsPdfPath) {
       return res.status(404).json({ error: "Drawings PDF not found for this project" });
@@ -5780,7 +6047,51 @@ app.get("/api/files/drawings/:id", async (req, res) => {
     try {
       await fs.access(drawingsPdfPath);
     } catch (e) {
-      return res.status(404).json({ error: "Drawings PDF file does not exist" });
+      // Recovery path:
+      // If suburb/street/year changed after drawings path was first saved (e.g. "St" -> "Street"),
+      // rebuild expected folder from current project fields and try same filename there.
+      const stateUpper = (projectRow.state || "").toString().toUpperCase().trim();
+      const projectYear = folderYearFromProjectYear(projectRow.year);
+      const fileName = path.basename(drawingsPdfPath || "").trim();
+      if (!stateUpper || !projectYear || !fileName) {
+        return res.status(404).json({ error: "Drawings PDF file does not exist" });
+      }
+
+      const settingsResult = await pool.query(
+        "SELECT root_directory, root_directory_qld FROM settings WHERE id = 1"
+      );
+      const st = settingsResult.rows[0] || {};
+      const rootDir =
+        stateUpper === "QLD"
+          ? String(st.root_directory_qld || st.root_directory || "").trim()
+          : String(st.root_directory || "").trim();
+      if (!rootDir) {
+        return res.status(404).json({ error: "Drawings PDF file does not exist" });
+      }
+
+      const matchedProjectFolderPath = await findBestProjectFolderPathLenient(
+        rootDir,
+        projectYear,
+        stateUpper,
+        projectRow.suburb,
+        projectRow.street
+      );
+      if (!matchedProjectFolderPath) {
+        return res.status(404).json({ error: "Drawings PDF file does not exist" });
+      }
+      const recoveredPath = path.join(matchedProjectFolderPath, "2. PUBLISHED PLANS", fileName);
+
+      try {
+        await fs.access(recoveredPath);
+        drawingsPdfPath = recoveredPath;
+        // Self-heal saved path so future opens are fast and stable.
+        await pool.query(
+          "UPDATE projects SET drawings_pdf_location = $1, updated_at = NOW() WHERE id = $2",
+          [recoveredPath, id]
+        );
+      } catch {
+        return res.status(404).json({ error: "Drawings PDF file does not exist" });
+      }
     }
 
     // Read and send the file
@@ -5842,7 +6153,7 @@ const PLANNING_JF_UPLOAD_FILE_BASE_BY_SLOT = {
 const PLANNING_JF_PROPERTY_INFO_SUBFOLDER = "7. PROPERTY INFORMATION";
 
 function planningJfSanitizeProjectFolderName(suburb, street) {
-  const s = `${(suburb || "").toString().toUpperCase()} - ${(street || "").toString()}`.replace(/[<>:"/\\|?*]/g, "_");
+  const s = buildJobProjectFolderName(suburb, street);
   return s.trim() ? s : "_";
 }
 
@@ -6225,7 +6536,7 @@ app.get("/api/files/colours/:id", async (req, res) => {
       return res.status(404).json({ error: "Project not found" });
     }
 
-    const coloursPdfPath = projectResult.rows[0].colours_pdf_location;
+    const coloursPdfPath = resolveStoredFilesystemPath(projectResult.rows[0].colours_pdf_location);
 
     if (!coloursPdfPath) {
       return res.status(404).json({ error: "Colours PDF not found for this project" });
@@ -6245,6 +6556,41 @@ app.get("/api/files/colours/:id", async (req, res) => {
     res.send(fileBuffer);
   } catch (error) {
     console.error("Error serving colours PDF:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Serve generated AI exterior render PNG (saved next to colours PDF in project folder)
+app.get("/api/files/ai-render/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!pool) {
+      return res.status(500).json({ error: "DATABASE_URL not set" });
+    }
+    const projectResult = await pool.query(
+      "SELECT drawings_pdf_location, colours_pdf_location FROM projects WHERE id = $1",
+      [id]
+    );
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+    const row = projectResult.rows[0];
+    const projectDir = projectDirectoryFromColoursOrDrawings(row.colours_pdf_location, row.drawings_pdf_location);
+    if (!projectDir) {
+      return res.status(404).json({ error: "No project folder resolved for this render" });
+    }
+    const abs = path.join(projectDir, AI_RENDER_FILENAME);
+    try {
+      await fs.access(abs);
+    } catch {
+      return res.status(404).json({ error: "AI render has not been generated yet." });
+    }
+    const img = await fs.readFile(abs);
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Content-Disposition", `inline; filename="${AI_RENDER_FILENAME}"`);
+    res.send(img);
+  } catch (error) {
+    console.error("Error serving AI render:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -6307,6 +6653,24 @@ function guessSiteVisitImageContentType(filename) {
   return map[ext] || "application/octet-stream";
 }
 
+/** HEIC→JPEG: try sharp first, then `heic-convert` (works when libvips lacks HEIF, e.g. many Windows installs). */
+async function siteVisitHeicFileToJpegBuffer(filePath) {
+  const inputBuffer = await fs.readFile(filePath);
+  try {
+    return await sharp(inputBuffer).rotate().jpeg({ quality: 88, mozjpeg: true }).toBuffer();
+  } catch (e1) {
+    console.warn(
+      "sitevisit HEIC→JPEG sharp failed, trying heic-convert:",
+      e1?.message || e1
+    );
+  }
+  const convert = require("heic-convert");
+  const out = await convert({ buffer: inputBuffer, format: "JPEG", quality: 0.88 });
+  if (Buffer.isBuffer(out)) return out;
+  if (out instanceof ArrayBuffer) return Buffer.from(out);
+  return Buffer.from(out);
+}
+
 function resolveSiteVisitPhotoFilePath(photosDirNorm, name) {
   const base = path.basename(name);
   if (!base || base === "." || base === "..") return null;
@@ -6337,13 +6701,38 @@ function isSiteVisitUploadImageFile(file) {
   return allowedExt.has(ext);
 }
 
-async function resolveSiteVisitPreConstructionPhotosDir(projectId) {
+/** Under `5. PHOTOS`: pre-construction site photos vs construction photos. */
+const SITE_VISIT_PHOTO_SUBFOLDERS = {
+  pre: "Pre-Construction -Site Photos",
+  construction: "Construction Photos",
+};
+
+function normalizeSiteVisitPhotoSet(raw) {
+  const s = String(raw || "").trim().toLowerCase();
+  if (s === "construction") return "construction";
+  return "pre";
+}
+
+/** Prefer `photoSet` (avoids ambiguous `set` in caches/proxies); still accept `set` / `folder`. */
+function siteVisitPhotoSetFromRequest(req) {
+  const q = req.query || {};
+  const raw = q.photoSet ?? q.set ?? q.folder;
+  return normalizeSiteVisitPhotoSet(raw);
+}
+
+async function resolveSiteVisitPhotosDir(projectId, photoSetKey) {
   if (!pool) {
     return { ok: false, status: 500, error: "Database not configured" };
   }
   if (!projectId) {
     return { ok: false, status: 400, error: "Missing projectId" };
   }
+  const setKey = normalizeSiteVisitPhotoSet(photoSetKey);
+  const subfolder = SITE_VISIT_PHOTO_SUBFOLDERS[setKey];
+  if (!subfolder) {
+    return { ok: false, status: 400, error: "Invalid photo set" };
+  }
+
   const projectResult = await pool.query(
     "SELECT suburb, street, state, year FROM projects WHERE id = $1",
     [projectId]
@@ -6370,9 +6759,7 @@ async function resolveSiteVisitPreConstructionPhotosDir(projectId) {
   }
 
   const projectYear = getProjectYearFolderSegment(proj.year);
-  const suburbUpper = (proj.suburb || "").toString().toUpperCase();
-  const street = (proj.street || "").toString();
-  const projectFolderName = `${suburbUpper} - ${street}`.replace(/[<>:"/\\|?*]/g, "_");
+  const projectFolderName = buildJobProjectFolderName(proj.suburb, proj.street);
 
   const photosDir = path.join(
     rootDir,
@@ -6380,7 +6767,7 @@ async function resolveSiteVisitPreConstructionPhotosDir(projectId) {
     stateUpper,
     projectFolderName,
     "5. PHOTOS",
-    "Pre-Construction -Site Photos"
+    subfolder
   );
   const photosDirNorm = path.resolve(photosDir);
   try {
@@ -6402,6 +6789,10 @@ async function resolveSiteVisitPreConstructionPhotosDir(projectId) {
     };
   }
   return { ok: true, photosDirNorm };
+}
+
+async function resolveSiteVisitPreConstructionPhotosDir(projectId) {
+  return resolveSiteVisitPhotosDir(projectId, "pre");
 }
 
 const siteVisitUploadTempDir = path.join(__dirname, "temp-sitevisit-uploads");
@@ -6566,7 +6957,8 @@ app.get("/api/sitevisit/photos", async (req, res) => {
     if (!projectId) {
       return res.status(400).json({ error: "Missing projectId" });
     }
-    const resolved = await resolveSiteVisitPreConstructionPhotosDir(projectId);
+    const photoSet = siteVisitPhotoSetFromRequest(req);
+    const resolved = await resolveSiteVisitPhotosDir(projectId, photoSet);
     if (!resolved.ok) {
       if (resolved.error === "Target photo folder does not exist") {
         return res.json({ files: [] });
@@ -6600,7 +6992,8 @@ app.get("/api/sitevisit/photo-file", async (req, res) => {
     if (name === undefined || name === null || String(name).trim() === "") {
       return res.status(400).json({ error: "Missing name" });
     }
-    const resolved = await resolveSiteVisitPreConstructionPhotosDir(projectId);
+    const photoSet = siteVisitPhotoSetFromRequest(req);
+    const resolved = await resolveSiteVisitPhotosDir(projectId, photoSet);
     if (!resolved.ok) {
       if (resolved.error === "Target photo folder does not exist") {
         return res.status(404).json({ error: "Not found" });
@@ -6627,13 +7020,13 @@ app.get("/api/sitevisit/photo-file", async (req, res) => {
     // Browsers (except some Safari builds) won't show HEIC in <img>; serve JPEG when sharp can decode.
     if (SITE_VISIT_HEIC_LIKE_EXT.has(extLower)) {
       try {
-        const jpegBuf = await sharp(filePath).rotate().jpeg({ quality: 88, mozjpeg: true }).toBuffer();
+        const jpegBuf = await siteVisitHeicFileToJpegBuffer(filePath);
         res.setHeader("Content-Type", "image/jpeg");
         res.setHeader("Cache-Control", "private, max-age=300");
         return res.send(jpegBuf);
       } catch (heicErr) {
         console.warn(
-          "sitevisit photo-file HEIC→JPEG via sharp failed, sending original:",
+          "sitevisit photo-file HEIC→JPEG (sharp + heic-convert) failed, sending original:",
           heicErr?.message || heicErr
         );
       }
@@ -6787,10 +7180,7 @@ async function getVariationsFolderForProjectId(projectId) {
   }
 
   const projectYearFolder = getProjectYearFolderSegment(year);
-  const suburbUpper = suburb.toString().toUpperCase();
-  const projectFolderName = `${suburbUpper} - ${street}`
-    .toString()
-    .replace(/[<>:"/\\|?*]/g, "_");
+  const projectFolderName = buildJobProjectFolderName(suburb, street);
   const projectPath = path.join(rootDir, projectYearFolder, stateUpper, projectFolderName);
 
   const resolved = await resolveVariationsDirectory(projectPath);
@@ -8082,8 +8472,9 @@ app.post("/api/hotlist", async (req, res) => {
   try {
     const { street, suburb, state, stream, client_name, email, phone } = req.body || {};
     
-    // Derive name from street + suburb (same as normal projects)
-    const projectName = `${street || ""}, ${suburb || ""}`.trim() || "New Hotlist Item";
+    // Derive name from street + suburb (same as normal projects); Unicode dashes → ASCII like other inserts
+    const projectName =
+      normalizeAddressHyphensForFilesystem(`${street || ""}, ${suburb || ""}`.trim()) || "New Hotlist Item";
     
     // year = project start date (YYYY-MM-DD). When user clicks Sold, we set it to Sold date; until then use today.
     const projectDate = new Date().toISOString().split('T')[0];
@@ -8102,8 +8493,8 @@ app.post("/api/hotlist", async (req, res) => {
       [
         projectName,
         "Hotlist", // Status is "Hotlist"
-        suburb ? suburb.trim() : null,
-        street ? street.trim() : null,
+        suburb ? normalizeAddressHyphensForFilesystem(suburb.trim()) : null,
+        street ? normalizeAddressHyphensForFilesystem(street.trim()) : null,
         state ? state.trim() : null,
         streamVal,
         client_name ? client_name.trim() : null,
@@ -8156,8 +8547,16 @@ app.put("/api/hotlist/:id", async (req, res) => {
       return val;
     };
 
+    const streetVal = processValue(street);
+    const suburbVal = processValue(suburb);
+    const streetNorm =
+      streetVal === null ? null : normalizeAddressHyphensForFilesystem(streetVal);
+    const suburbNorm =
+      suburbVal === null ? null : normalizeAddressHyphensForFilesystem(suburbVal);
     // Derive name from street + suburb
-    const projectName = `${processValue(street) || ""}, ${processValue(suburb) || ""}`.trim() || "New Hotlist Item";
+    const projectName =
+      normalizeAddressHyphensForFilesystem(`${streetNorm || ""}, ${suburbNorm || ""}`.trim()) ||
+      "New Hotlist Item";
 
     // Keep client1 fields in sync with client_name, email, phone (same as normal projects)
     const streamVal = processValue(stream);
@@ -8169,8 +8568,8 @@ app.put("/api/hotlist/:id", async (req, res) => {
        WHERE id = $9 AND status = $10 RETURNING id, name, status, suburb, street, state, stream, client_name, email, phone, updated_at`,
       [
         projectName,
-        processValue(street),
-        processValue(suburb),
+        streetNorm,
+        suburbNorm,
         processValue(state),
         streamVal,
         processValue(client_name),
@@ -8409,6 +8808,446 @@ if (process.env.OPENAI_API_KEY) {
 } else {
   console.warn("⚠️  OPENAI_API_KEY not set - AI features will be disabled");
 }
+
+/** Max longer edge (px) for the cropped elevation PNG sent to image edit — higher preserves roof lines and openings from the PDF crop. */
+const AI_RENDER_ELEVATION_MAX_EDGE = 3072;
+
+/** Margins: sky around + grass strip below—extra bottom/lateral space helps pass‑1 landscaping read less cramped. */
+const AI_RENDER_PAD_LR_FRAC = 0.13;
+const AI_RENDER_PAD_TOP_FRAC = 0.13;
+const AI_RENDER_PAD_BOTTOM_FRAC = 0.26;
+const AI_RENDER_PAD_MIN = 28;
+const AI_RENDER_SKY_PAD = { r: 218, g: 234, b: 250, alpha: 255 };
+const AI_RENDER_GRASS_PAD = { r: 46, g: 125, b: 72, alpha: 255 };
+
+/**
+ * Two-pass renders (see generate-render): margins first with building masked non-editable, then building
+ * texture only with margins masked — OpenAI masks use alpha=0 = edit zone, alpha=255 = preserve input pixels.
+ */
+
+/** Pass 1 — editable margin only; emphasize high-end viz grass/trees/sky (older single-pass quality). */
+const AI_RENDER_PROMPT_MARGIN_PASS = `Edit ONLY pixels where this image’s PNG mask is fully transparent (the outer margins).
+
+Architectural-visualization quality—not flat or game-looking. Goal: inviting Australian suburban frontage.
+
+SKY & LIGHT: soft natural daylight (late-morning clear or gentle golden side-light), pale blue gradient sky with faint high wisps—believable DSLR photo.
+
+LAWN: lush, dense, manicured turf in rich greens with subtle natural variation—healthy grass blades catching light—NEVER muddy brown strips, dusty dirt, bald patches, or plastic-looking flat green.
+
+PLANTING: layer depth—foundation shrubs mixed heights, ornamental grasses where it reads natural, and 1–2 mature canopy trees (e.g. native eucalypt or broadleaf) placed in the side margins to frame the house. Varied foliage colour and soft shadows on the ground. Keep trunks and major branches clearly outside the building footprint—no canopy overlap on roof or façade.
+
+Do NOT alter pixels under the opaque-mask region—the plans elevation must remain pixel-identical there (unchanged linework, silhouette, openings, roof outline as drawn).`;
+
+/** Pass 2 — editable elevation only; roof is explicitly 2D outline from drawing—no mental “typical roof” model. */
+const AI_RENDER_PROMPT_BUILDING_PASS = `Edit ONLY pixels where this image’s PNG mask is fully transparent (the building footprint only).
+
+This is a 2D elevation raster from construction plans. Your job is ONLY to paint photoreal **materials and colour** onto what is already drawn—cladding, roof surface, glass, trims, subtle micro-shadows—per the finish list below. You are NOT redesigning the building in 3D.
+
+ROOF (critical): The roof’s **shape is exactly the closed outline and internal lines already in the image**—period. Apply sheeting colour/texture **inside that drawn silhouette only**. Do NOT substitute a “normal” pitched roof, hip ends, extra ridges, or gable bulk that is not in the linework. A side elevation often shows a **simple flat or near-flat band or rectangle**—keep that; do NOT invent visible pitch or cartoon gable geometry if the drawing is shallow or perpendicular to view. Near-flat/low-slope reads as shallow sheet; triangular end reads as triangular only if drawn.
+
+WALLS & OPENINGS: Same edges as drawn—identical opening count/layout. Timber baseboards as drawn—not brick plinth.
+
+Do NOT repaint margins outside the transparent mask.
+
+FORBIDDEN: inventing hip returns at image edges, “completing” roof geometry not shown, swapping in a catalogue house silhouette.`;
+
+/** Fallback if masked two-pass fails (API quirks): single unmasked generation—less strict pixel lock. */
+const AI_RENDER_PROMPT_SINGLE_PASS_FALLBACK = `${AI_RENDER_PROMPT_MARGIN_PASS}\n\n${AI_RENDER_PROMPT_BUILDING_PASS}`;
+
+function decodeOpenAiImageEditB64Json(imagesResp) {
+  const b64 = imagesResp?.data?.[0]?.b64_json;
+  if (!b64) throw new Error("OpenAI returned no image data.");
+  return Buffer.from(b64, "base64");
+}
+
+function buildAiRenderFinishInstructionsFromDb(projectRow) {
+  const bits = [];
+  const rc = projectRow?.roof_colour != null ? String(projectRow.roof_colour).trim() : "";
+  const cc = projectRow?.cladding_colour != null ? String(projectRow.cladding_colour).trim() : "";
+  const bc = projectRow?.baseboards_colour != null ? String(projectRow.baseboards_colour).trim() : "";
+  if (rc) bits.push(`Roof / Colorbond: ${rc}`);
+  if (cc) bits.push(`Wall cladding: ${cc}`);
+  if (bc) bits.push(`Baseboards / trims: ${bc}`);
+  if (bits.length === 0) {
+    return "FINISHES: No roof/cladding/baseboard colours saved on this project yet—use subdued Australian exterior neutrals only; still do not change geometry.";
+  }
+  return [
+    "FINISHES (project record): apply colour and surface texture ONLY inside the outlines already drawn. Schedule lines name products, not roof shape—every roof edge in the image is fixed; never replace the drawn profile with a typical pitched/hip/gable from memory or brochure photos.",
+    bits.join("\n"),
+  ].join("\n");
+}
+
+async function sharpResizePngForAiInput(buffer, maxEdge = 1536) {
+  const meta = await sharp(buffer).metadata();
+  const w = meta.width || 0;
+  const h = meta.height || 0;
+  if (!w || !h || (w <= maxEdge && h <= maxEdge)) {
+    return buffer;
+  }
+  return sharp(buffer)
+    .resize({
+      width: maxEdge,
+      height: maxEdge,
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .png()
+    .toBuffer();
+}
+
+function elevationBreathingPaddingPx(cropW, cropH) {
+  const lw = Math.max(AI_RENDER_PAD_MIN, Math.round(cropW * AI_RENDER_PAD_LR_FRAC));
+  const topPad = Math.max(AI_RENDER_PAD_MIN, Math.round(cropH * AI_RENDER_PAD_TOP_FRAC));
+  const bottomPad = Math.max(AI_RENDER_PAD_MIN + 8, Math.round(cropH * AI_RENDER_PAD_BOTTOM_FRAC));
+  return { lw, topPad, bottomPad, cropW, cropH };
+}
+
+/** Sky margin + grass hint below elevation. Returns `{ buffer, elevationPad }` for downstream mask bbox math. */
+async function padElevationPngWithBreathingRoom(buffer) {
+  const meta = await sharp(buffer).metadata();
+  const iw = meta.width || 0;
+  const ih = meta.height || 0;
+  if (!iw || !ih) {
+    return { buffer, elevationPad: { lw: 0, topPad: 0, bottomPad: 0, cropW: iw || 0, cropH: ih || 0 } };
+  }
+  const pad = elevationBreathingPaddingPx(iw, ih);
+  const { lw, topPad, bottomPad } = pad;
+  const W = iw + lw + lw;
+  const H = ih + topPad + bottomPad;
+  const grassStrip = await sharp({
+    create: { width: W, height: bottomPad, channels: 4, background: AI_RENDER_GRASS_PAD },
+  })
+    .png()
+    .toBuffer();
+  const padded = await sharp({
+    create: { width: W, height: H, channels: 4, background: AI_RENDER_SKY_PAD },
+  })
+    .composite([
+      { input: grassStrip, left: 0, top: topPad + ih },
+      { input: buffer, left: lw, top: topPad },
+    ])
+    .png()
+    .toBuffer();
+  return { buffer: padded, elevationPad: pad };
+}
+
+/** gpt-image-1 edit output size → pixel dimensions. */
+function parseGptImageOneEditSize(sizeStr) {
+  if (sizeStr === "1536x1024") return [1536, 1024];
+  if (sizeStr === "1024x1536") return [1024, 1536];
+  return [1024, 1024];
+}
+
+/**
+ * Picks API `size` from the **plans crop** aspect ratio (width ÷ height) only—
+ * not from padded canvas—so portrait/landscape matches the elevation.
+ */
+function pickGptImageOneEditSizeFromPlansAspectRatio(aspectWoverH) {
+  if (!Number.isFinite(aspectWoverH) || aspectWoverH <= 0) return "1024x1024";
+  if (aspectWoverH < 1 / 1.05) return "1024x1536";
+  if (aspectWoverH > 1.05) return "1536x1024";
+  return "1024x1024";
+}
+
+function clampElevRectToTile(rect, tw, th) {
+  let { left, top, width, height } = rect;
+  left = Math.max(0, Math.min(Math.floor(left), tw - 1));
+  top = Math.max(0, Math.min(Math.floor(top), th - 1));
+  width = Math.max(1, Math.floor(width));
+  height = Math.max(1, Math.floor(height));
+  if (left + width > tw) width = tw - left;
+  if (top + height > th) height = th - top;
+  return { left, top, width, height };
+}
+
+/**
+ * Uniformly scales padded image into API tile & letterboxes. Returns `{ tileBuffer, tw, th, elevInTile }`.
+ */
+async function fitPaddedImageToExactOpenAiEditTile(paddedBuffer, sizeStr, elevationPad) {
+  const [tw, th] = parseGptImageOneEditSize(sizeStr);
+  const meta = await sharp(paddedBuffer).metadata();
+  const W0 = meta.width || 1;
+  const H0 = meta.height || 1;
+  const scale = Math.min(1, Math.min(tw / W0, th / H0));
+  const W1 = Math.max(1, Math.round(W0 * scale));
+  const H1 = Math.max(1, Math.round(H0 * scale));
+  const resized = await sharp(paddedBuffer).resize(W1, H1).png().toBuffer();
+  const slackW = tw - W1;
+  const slackH = th - H1;
+  const canvasLeft = Math.floor(slackW / 2);
+  const canvasTop = Math.floor(slackH * 0.32);
+  const grassH = th - canvasTop - H1;
+  const base = sharp({
+    create: { width: tw, height: th, channels: 4, background: AI_RENDER_SKY_PAD },
+  });
+  const composites = [];
+  if (grassH > 0) {
+    const grassBuf = await sharp({
+      create: { width: tw, height: grassH, channels: 4, background: AI_RENDER_GRASS_PAD },
+    })
+      .png()
+      .toBuffer();
+    composites.push({ input: grassBuf, left: 0, top: canvasTop + H1 });
+  }
+  composites.push({ input: resized, left: canvasLeft, top: canvasTop });
+  const tileBuffer = await base.composite(composites).png().toBuffer();
+
+  const { lw, topPad, cropW, cropH } = elevationPad;
+  const lx = Math.round((lw / W0) * W1);
+  const ly = Math.round((topPad / H0) * H1);
+  const ew = Math.round((cropW / W0) * W1);
+  const eh = Math.round((cropH / H0) * H1);
+  let elevInTile = {
+    left: canvasLeft + lx,
+    top: canvasTop + ly,
+    width: ew,
+    height: eh,
+  };
+  elevInTile = clampElevRectToTile(elevInTile, tw, th);
+
+  return { tileBuffer, tw, th, elevInTile };
+}
+
+/** Transparent = edit margins; opaque = preserve building raster (plans crop only). */
+async function buildElevationMaskPreserveBuildingEditMargins(tw, th, elev) {
+  const whiteRect = await sharp({
+    create: {
+      width: elev.width,
+      height: elev.height,
+      channels: 4,
+      background: { r: 255, g: 255, b: 255, alpha: 255 },
+    },
+  })
+    .png()
+    .toBuffer();
+  return sharp({
+    create: {
+      width: tw,
+      height: th,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite([{ input: whiteRect, left: elev.left, top: elev.top }])
+    .png()
+    .toBuffer();
+}
+
+/** Transparent = texture building footprint; opaque = preserve rendered margins/skies. */
+async function buildElevationMaskPreserveMarginsEditBuilding(tw, th, elev) {
+  const hole = await sharp({
+    create: {
+      width: elev.width,
+      height: elev.height,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .png()
+    .toBuffer();
+  return sharp({
+    create: {
+      width: tw,
+      height: th,
+      channels: 4,
+      background: { r: 255, g: 255, b: 255, alpha: 255 },
+    },
+  })
+    .composite([{ input: hole, left: elev.left, top: elev.top }])
+    .png()
+    .toBuffer();
+}
+
+/** POST cropped drawings elevation PNG → OpenAI image edit (high input fidelity) + DB colours → saves AI Render.png in project folder. */
+app.post("/api/projects/:id/generate-render", async (req, res) => {
+  if (!openaiClient) {
+    return res.status(503).json({ error: "OpenAI API key not configured" });
+  }
+  if (!pool) {
+    return res.status(500).json({ error: "DATABASE_URL not set" });
+  }
+  const projectId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(projectId)) {
+    return res.status(400).json({ error: "Invalid project id" });
+  }
+  try {
+    const projectResult = await pool.query(
+      "SELECT drawings_pdf_location, colours_pdf_location, roof_colour, cladding_colour, baseboards_colour FROM projects WHERE id = $1",
+      [projectId]
+    );
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+    const row = projectResult.rows[0];
+    const drawingsPath = resolveStoredFilesystemPath(row.drawings_pdf_location);
+    const coloursPath = resolveStoredFilesystemPath(row.colours_pdf_location);
+    if (!drawingsPath) {
+      return res.status(400).json({
+        error: "Drawings (plan) PDF path is not set for this project. Add it on the drawings step first.",
+      });
+    }
+    if (!coloursPath) {
+      return res.status(400).json({ error: "Colours PDF path is not set for this project." });
+    }
+    try {
+      await fs.access(drawingsPath);
+    } catch {
+      return res.status(400).json({ error: "Drawings PDF file was not found on disk.", path: drawingsPath });
+    }
+    try {
+      await fs.access(coloursPath);
+    } catch {
+      return res.status(400).json({ error: "Colours PDF file was not found on disk.", path: coloursPath });
+    }
+
+    let planPageRaw = req.body?.planPage;
+    let planPage = typeof planPageRaw === "number" ? planPageRaw : parseInt(String(planPageRaw || ""), 10);
+
+    const pdfMod = await import(pathToFileURL(path.join(__dirname, "pdfPageToPng.mjs")).href);
+    const { renderPdfPageToPngBuffer, getPdfPageCount, cropPngNormalized, AI_PLAN_RASTER_DPI } = pdfMod;
+
+    let planPngBuf;
+    let planNumPages;
+    try {
+      planNumPages = await getPdfPageCount(drawingsPath);
+    } catch (e) {
+      console.error("generate-render: could not open plan PDF:", e);
+      return res.status(400).json({ error: `Could not read plan PDF for conversion: ${e.message}` });
+    }
+    if (planNumPages < 1) {
+      return res.status(400).json({ error: "Plan PDF has no pages." });
+    }
+    if (!Number.isFinite(planPage) || planPage < 1 || planPage > planNumPages) {
+      return res.status(400).json({
+        error: "Pick a drawings page number in the elevation picker before generating.",
+      });
+    }
+
+    const ec = req.body?.elevationCrop;
+    if (!ec || typeof ec !== "object") {
+      return res.status(400).json({
+        error: "Draw a red elevation rectangle on the drawings before generating.",
+      });
+    }
+    const nx = Number(ec.nx);
+    const ny = Number(ec.ny);
+    const nw = Number(ec.nw);
+    const nh = Number(ec.nh);
+    if (
+      ![nx, ny, nw, nh].every(Number.isFinite) ||
+      nx < -0.001 ||
+      ny < -0.001 ||
+      nw < 0.02 ||
+      nh < 0.02 ||
+      nx + nw > 1.001 ||
+      ny + nh > 1.001
+    ) {
+      return res.status(400).json({
+        error: "Invalid elevation crop. Redraw a rectangle covering the elevation on the plan page.",
+      });
+    }
+
+    planPage = Math.min(Math.max(1, Math.floor(planPage)), planNumPages);
+
+    try {
+      planPngBuf = await renderPdfPageToPngBuffer(drawingsPath, planPage, AI_PLAN_RASTER_DPI);
+      planPngBuf = await cropPngNormalized(planPngBuf, { nx, ny, nw, nh });
+    } catch (e) {
+      console.error("generate-render: PDF rasterize failed:", e);
+      return res.status(500).json({ error: `PDF-to-image conversion failed: ${e.message}` });
+    }
+
+    const cropMeta = await sharp(planPngBuf).metadata();
+    const plansAspectRatio = (cropMeta.width || 1) / (cropMeta.height || 1);
+
+    planPngBuf = await sharpResizePngForAiInput(planPngBuf, AI_RENDER_ELEVATION_MAX_EDGE);
+
+    const editSize = pickGptImageOneEditSizeFromPlansAspectRatio(plansAspectRatio);
+
+    let outBuf;
+    const finishBlock = buildAiRenderFinishInstructionsFromDb(row);
+    const editParamsShared = {
+      model: "gpt-image-1",
+      quality: "high",
+      input_fidelity: "high",
+      size: editSize,
+      n: 1,
+    };
+
+    try {
+      const padded = await padElevationPngWithBreathingRoom(planPngBuf);
+      const fitted = await fitPaddedImageToExactOpenAiEditTile(padded.buffer, editSize, padded.elevationPad);
+      const maskMarginsBuf = await buildElevationMaskPreserveBuildingEditMargins(
+        fitted.tw,
+        fitted.th,
+        fitted.elevInTile
+      );
+      const maskBuildingBuf = await buildElevationMaskPreserveMarginsEditBuilding(
+        fitted.tw,
+        fitted.th,
+        fitted.elevInTile
+      );
+
+      const tileFile = await toFile(fitted.tileBuffer, "plan-elevation-tile.png", { type: "image/png" });
+      const maskMarginFile = await toFile(maskMarginsBuf, "mask-margins.png", { type: "image/png" });
+
+      let pass1Resp = await openaiClient.images.edit({
+        ...editParamsShared,
+        prompt: `${AI_RENDER_PROMPT_MARGIN_PASS}\n\n${finishBlock}`,
+        image: tileFile,
+        mask: maskMarginFile,
+      });
+
+      const pass1Buf = decodeOpenAiImageEditB64Json(pass1Resp);
+      const pass1File = await toFile(pass1Buf, "ai-render-pass1.png", { type: "image/png" });
+      const maskBuildingFile = await toFile(maskBuildingBuf, "mask-building.png", { type: "image/png" });
+
+      let pass2Resp = await openaiClient.images.edit({
+        ...editParamsShared,
+        prompt: `${AI_RENDER_PROMPT_BUILDING_PASS}\n\n${finishBlock}`,
+        image: pass1File,
+        mask: maskBuildingFile,
+      });
+
+      outBuf = decodeOpenAiImageEditB64Json(pass2Resp);
+    } catch (e) {
+      console.warn(
+        "generate-render: masked two-pass failed; falling back to single pass (weaker geometric lock):",
+        e?.message || e
+      );
+      try {
+        const padded = await padElevationPngWithBreathingRoom(planPngBuf);
+        const fitted = await fitPaddedImageToExactOpenAiEditTile(padded.buffer, editSize, padded.elevationPad);
+        const tileFile = await toFile(fitted.tileBuffer, "plan-elevation-tile.png", { type: "image/png" });
+        const fbResp = await openaiClient.images.edit({
+          ...editParamsShared,
+          prompt: `${AI_RENDER_PROMPT_SINGLE_PASS_FALLBACK}\n\n${finishBlock}`,
+          image: tileFile,
+        });
+        outBuf = decodeOpenAiImageEditB64Json(fbResp);
+      } catch (e2) {
+        console.error("generate-render OpenAI error:", e2);
+        const msg = e2.message || String(e2);
+        return res.status(502).json({ error: `OpenAI image generation failed: ${msg}` });
+      }
+    }
+
+    const projectDir = projectDirectoryFromColoursOrDrawings(coloursPath, drawingsPath);
+    if (!projectDir) {
+      return res.status(500).json({ error: "Could not resolve project folder for saving the render." });
+    }
+    const outAbs = path.join(projectDir, AI_RENDER_FILENAME);
+
+    await fs.mkdir(projectDir, { recursive: true });
+    await fs.writeFile(outAbs, outBuf);
+
+    const renderUrl = `/api/files/ai-render/${projectId}`;
+    return res.json({ success: true, renderPath: outAbs, renderUrl });
+  } catch (e) {
+    console.error("generate-render:", e);
+    return res.status(500).json({ error: e.message || "Failed to generate render" });
+  }
+});
 
 // Email Generator: Analyze text and break into response points
 app.post("/api/email-generator/analyze", async (req, res) => {

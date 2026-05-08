@@ -426,8 +426,8 @@ export default function HomePage() {
       // Calculate 5% of project cost
       const fullDepositAmount = Math.floor(costNumeric / 20); // 5% = divide by 20
       
-      // Check if deposit equals full deposit amount
-      if (depositNumeric === fullDepositAmount && fullDepositAmount > 0) {
+      // Match Admin / Planning: full when paid >= canonical 5% (floor(cost/20))
+      if (fullDepositAmount > 0 && depositNumeric >= fullDepositAmount) {
         return "Full Deposit";
       } else if (depositNumeric > 0) {
         return "Partial Deposit";
@@ -992,7 +992,7 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {/* Playground (secret game), Email Generator, BenBox — Purple (Admin Only) */}
+          {/* Playground (secret game), Email Generator, Maps — Purple (Admin Only) */}
           {isAdmin && (
             <div
               style={{
@@ -1050,7 +1050,7 @@ export default function HomePage() {
                 Email Generator
               </Link>
               <Link
-                to="/benbox"
+                to="/maps"
                 style={{
                   background: "transparent",
                   color: "#404049",
@@ -1069,7 +1069,7 @@ export default function HomePage() {
                   display: "block",
                 }}
               >
-                BenBox
+                Maps
               </Link>
             </div>
           )}

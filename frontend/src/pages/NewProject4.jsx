@@ -6,6 +6,7 @@ import {
   resolveNewProjectTeamToEmailsFromStream,
 } from "../utils/streamNewProjectEmail";
 import { CLASSIFICATION_OPTIONS, CLASSIFICATION_ABBREV_MAP as CLASSIFICATION_MAP } from "../utils/classifications";
+import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -528,8 +529,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
         }
 
         const currentYear = new Date().getFullYear().toString();
-        const suburb = (formData.suburb || "").toUpperCase();
-        const street = formData.street || "";
+        const projectFolderName = buildJobFolderNameSegment(formData.suburb, formData.street);
         const stateUpper = (formData.state || "").toUpperCase();
 
         if (!stateUpper) {
@@ -540,7 +540,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
 
         folderPath = (formData.folderPath || "").trim();
         if (!folderPath) {
-          folderPath = `${rootDirectory}\\${currentYear}\\${stateUpper}\\${suburb} - ${street}`;
+          folderPath = `${rootDirectory}\\${currentYear}\\${stateUpper}\\${projectFolderName}`;
         }
 
         console.log("Creating folder at path:", folderPath);

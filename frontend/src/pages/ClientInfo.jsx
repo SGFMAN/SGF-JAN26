@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -7,9 +6,6 @@ const WHITE = "#fff";
 const API_URL = "";
 
 export default function ClientInfo({ project, onUpdate }) {
-  const navigate = useNavigate();
-  
-  // Contact 1 state
   const [client1Name, setClient1Name] = useState(project?.client1_name || "");
   const [client1Email, setClient1Email] = useState(project?.client1_email || "");
   const [client1Phone, setClient1Phone] = useState(project?.client1_phone || "");
@@ -64,7 +60,7 @@ export default function ClientInfo({ project, onUpdate }) {
     setClientNotes(project?.client_notes || "");
   }, [project?.id]);
 
-  function buildClientInfoPayload() {
+  const buildClientInfoPayload = useCallback(() => {
     const currentValues = valuesRef.current;
     const processValue = (val) => {
       if (val === undefined || val === null) return null;
@@ -91,9 +87,9 @@ export default function ClientInfo({ project, onUpdate }) {
       project_cost: project?.project_cost || null,
       deposit: project?.deposit || null,
     };
-  }
+  }, [project?.project_cost, project?.deposit]);
 
-  async function saveAllFields() {
+  const saveAllFields = useCallback(async () => {
     if (!project?.id) {
       console.error("Cannot save: no project ID");
       return;
@@ -115,12 +111,10 @@ export default function ClientInfo({ project, onUpdate }) {
         console.error("Full error response:", errorText);
         return;
       }
-      
-      // Parse response but don't block on it
+
       const result = await response.json().catch(() => null);
       console.log("Successfully saved all fields. Response:", result);
 
-      // CRITICAL: ALWAYS call onUpdate after successful save - this refreshes the project data
       if (onUpdate) {
         console.log("Calling onUpdate to refresh project data...");
         onUpdate();
@@ -130,7 +124,21 @@ export default function ClientInfo({ project, onUpdate }) {
     } catch (error) {
       console.error("Error saving fields:", error);
     }
+  }, [project?.id, buildClientInfoPayload, onUpdate]);
+
+  const saveAllFieldsRef = useRef(saveAllFields);
+  saveAllFieldsRef.current = saveAllFields;
+
+  /** Blur / leaving the tab: persist contact fields (they only lived in local state before). */
+  function flushSave() {
+    void saveAllFieldsRef.current();
   }
+
+  useEffect(() => {
+    return () => {
+      flushSave();
+    };
+  }, []);
 
   // Contact 1 handlers
   function handleClient1NameChange(e) {
@@ -402,6 +410,7 @@ export default function ClientInfo({ project, onUpdate }) {
                   name="client1Name"
                   value={client1Name}
                   onChange={handleClient1NameChange}
+                  onBlur={flushSave}
                   style={inputStyle}
                 />
               </div>
@@ -412,6 +421,7 @@ export default function ClientInfo({ project, onUpdate }) {
                   name="client1Email"
                   value={client1Email}
                   onChange={handleClient1EmailChange}
+                  onBlur={flushSave}
                   style={inputStyle}
                 />
               </div>
@@ -422,6 +432,7 @@ export default function ClientInfo({ project, onUpdate }) {
                   name="client1Phone"
                   value={client1Phone}
                   onChange={handleClient1PhoneChange}
+                  onBlur={flushSave}
                   style={inputStyle}
                 />
               </div>
@@ -451,6 +462,7 @@ export default function ClientInfo({ project, onUpdate }) {
                 name="client2Name"
                 value={client2Name}
                 onChange={handleClient2NameChange}
+                onBlur={flushSave}
                 style={inputStyle}
               />
             </div>
@@ -461,6 +473,7 @@ export default function ClientInfo({ project, onUpdate }) {
                 name="client2Email"
                 value={client2Email}
                 onChange={handleClient2EmailChange}
+                onBlur={flushSave}
                 style={inputStyle}
               />
             </div>
@@ -471,6 +484,7 @@ export default function ClientInfo({ project, onUpdate }) {
                 name="client2Phone"
                 value={client2Phone}
                 onChange={handleClient2PhoneChange}
+                onBlur={flushSave}
                 style={inputStyle}
               />
             </div>
@@ -500,6 +514,7 @@ export default function ClientInfo({ project, onUpdate }) {
                 name="client3Name"
                 value={client3Name}
                 onChange={handleClient3NameChange}
+                onBlur={flushSave}
                 style={inputStyle}
               />
             </div>
@@ -510,6 +525,7 @@ export default function ClientInfo({ project, onUpdate }) {
                 name="client3Email"
                 value={client3Email}
                 onChange={handleClient3EmailChange}
+                onBlur={flushSave}
                 style={inputStyle}
               />
             </div>
@@ -520,6 +536,7 @@ export default function ClientInfo({ project, onUpdate }) {
                 name="client3Phone"
                 value={client3Phone}
                 onChange={handleClient3PhoneChange}
+                onBlur={flushSave}
                 style={inputStyle}
               />
             </div>
@@ -534,7 +551,7 @@ export default function ClientInfo({ project, onUpdate }) {
               name="client_notes"
               value={clientNotes}
               onChange={handleClientNotesChange}
-              onBlur={() => void saveAllFields()}
+              onBlur={flushSave}
               placeholder="Add client notes..."
               style={{
                 width: "100%",

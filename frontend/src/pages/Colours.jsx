@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import ThreeDVis from "./ThreeDVis";
+import ElevationPickerModal from "../components/ElevationPickerModal";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 import { resolveNewProjectClientFrom } from "../utils/streamNewProjectEmail";
+import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -44,6 +46,11 @@ export default function Colours({ project, onUpdate }) {
   const [portalEmailSubject, setPortalEmailSubject] = useState("");
   const [portalEmailBody, setPortalEmailBody] = useState("");
   const portalEmailBodyRef = useRef(null);
+  const [showElevationPicker, setShowElevationPicker] = useState(false);
+  const [showAiRenderModal, setShowAiRenderModal] = useState(false);
+  const [aiRenderBusy, setAiRenderBusy] = useState(false);
+  const [aiRenderError, setAiRenderError] = useState(null);
+  const [aiRenderPreviewUrl, setAiRenderPreviewUrl] = useState(null);
 
   const valuesRef = useRef({ coloursStatus, notes, roofColour, claddingColour, baseboardsColour, roofStyle, fasciaGutterColour, balustradeColour, frontDoorColour, windowFramesColour, windowSurroundsColour });
   
@@ -75,6 +82,14 @@ export default function Colours({ project, onUpdate }) {
       setAttachAffordable(false);
       setAttachSuperior(false);
     }
+  }, [project?.id]);
+
+  useEffect(() => {
+    setShowElevationPicker(false);
+    setShowAiRenderModal(false);
+    setAiRenderBusy(false);
+    setAiRenderError(null);
+    setAiRenderPreviewUrl(null);
   }, [project?.id]);
 
   // Update contentEditable when emailBody changes and modal is open
@@ -821,14 +836,11 @@ export default function Colours({ project, onUpdate }) {
         return;
       }
       
-      const suburb = (project.suburb || "").toUpperCase();
-      const street = project.street || "";
-      
       // Construct the file path with "8. COLOURS & WINDOWS" subfolder
       // Format: root_directory\year\state\suburb - street\8. COLOURS & WINDOWS\filename
       // NOTE: This function ONLY saves the path to the database - it does NOT create folders or copy files
       const fileName = file.name;
-      const projectFolderName = `${suburb} - ${street}`.replace(/[<>:"/\\|?*]/g, '_');
+      const projectFolderName = buildJobFolderNameSegment(project.suburb, project.street);
       const filePath = `${rootDirectory}\\${projectYear}\\${state}\\${projectFolderName}\\8. COLOURS & WINDOWS\\${fileName}`;
 
       // Store the file path in the database
@@ -982,6 +994,64 @@ export default function Colours({ project, onUpdate }) {
     }
     const pdfUrl = `${API_URL}/api/files/colours/${project.id}`;
     window.open(pdfUrl, "_blank");
+  }
+
+  const canGenerateAiRender =
+    !!(project?.id && project?.drawings_pdf_location && project?.colours_pdf_location);
+
+  function openElevationPickerForRender() {
+    if (!project?.id || !canGenerateAiRender || aiRenderBusy) return;
+    setShowElevationPicker(true);
+  }
+
+  /** Runs after elevation rectangle is chosen; file is saved on disk as AI Render.png in the project folder. */
+  async function runAiRenderGeneration({ planPage, elevationCrop }) {
+    if (!project?.id) return;
+    setShowElevationPicker(false);
+    setShowAiRenderModal(true);
+    setAiRenderBusy(true);
+    setAiRenderError(null);
+    setAiRenderPreviewUrl(null);
+    try {
+      const response = await fetch(`${API_URL}/api/projects/${project.id}/generate-render`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          planPage,
+          elevationCrop,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error || response.statusText || "Generation failed");
+      }
+      if (data?.renderUrl) {
+        setAiRenderPreviewUrl(`${API_URL}${data.renderUrl}?t=${Date.now()}`);
+      } else {
+        throw new Error("Server did not return an image URL.");
+      }
+    } catch (e) {
+      setAiRenderError(e?.message || "Failed to generate render");
+    } finally {
+      setAiRenderBusy(false);
+    }
+  }
+
+  function openAiRenderModalViewLast() {
+    if (!project?.id) return;
+    setShowAiRenderModal(true);
+    setAiRenderBusy(false);
+    setAiRenderError(null);
+    setAiRenderPreviewUrl(`${API_URL}/api/files/ai-render/${project.id}?t=${Date.now()}`);
+  }
+
+  function closeAiRenderModal() {
+    setShowAiRenderModal(false);
+  }
+
+  function handleOpenAiRenderInNewTab() {
+    if (!project?.id) return;
+    window.open(`${API_URL}/api/files/ai-render/${project.id}`, "_blank");
   }
 
   if (show3DVis) {
@@ -1225,8 +1295,68 @@ export default function Colours({ project, onUpdate }) {
             </div>
           </div>
 
-          {/* Column 3 - Empty for now */}
-          <div style={{ flex: "1", minWidth: "200px" }}></div>
+          {/* Column 3 - AI exterior render */}
+          <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", gap: "12px" }}>
+            <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
+              AI exterior render
+            </div>
+            <p style={{ margin: 0, fontSize: "0.85rem", color: SECTION_GREY, lineHeight: 1.45 }}>
+              Draw a red box on the <strong style={{ color: MONUMENT }}>drawings PDF</strong> around the elevation. The
+              server uses that crop as the only shape, then applies your project{" "}
+              <strong style={{ color: MONUMENT }}>roof / cladding / baseboard</strong> colours (saved on this page) with
+              OpenAI high input-fidelity. Output is saved next to your colours PDF as{" "}
+              <strong style={{ color: MONUMENT }}>AI Render.png</strong>.
+            </p>
+            <button
+              type="button"
+              onClick={openElevationPickerForRender}
+              disabled={!canGenerateAiRender || aiRenderBusy}
+              title={
+                canGenerateAiRender
+                  ? "Cropped drawings elevation + project roof/cladding/baseboard colours (OpenAI, preserve geometry)"
+                  : "Set drawings PDF and colours PDF paths first"
+              }
+              style={{
+                width: "100%",
+                background: !canGenerateAiRender || aiRenderBusy ? SECTION_GREY : MONUMENT,
+                color: WHITE,
+                border: "none",
+                borderRadius: "8px",
+                padding: "12px 20px",
+                fontSize: "1rem",
+                fontWeight: 500,
+                cursor: !canGenerateAiRender || aiRenderBusy ? "not-allowed" : "pointer",
+                transition: "background 0.2s",
+              }}
+              onMouseEnter={(e) => {
+                if (canGenerateAiRender && !aiRenderBusy) e.currentTarget.style.background = "#1a1a1b";
+              }}
+              onMouseLeave={(e) => {
+                if (canGenerateAiRender && !aiRenderBusy) e.currentTarget.style.background = MONUMENT;
+              }}
+            >
+              Generate AI Render
+            </button>
+            <button
+              type="button"
+              onClick={openAiRenderModalViewLast}
+              disabled={!project?.id}
+              style={{
+                width: "100%",
+                background: WHITE,
+                color: MONUMENT,
+                border: `1px solid ${SECTION_GREY}`,
+                borderRadius: "8px",
+                padding: "10px 20px",
+                fontSize: "1rem",
+                fontWeight: 500,
+                cursor: project?.id ? "pointer" : "not-allowed",
+                opacity: project?.id ? 1 : 0.65,
+              }}
+            >
+              View last render
+            </button>
+          </div>
 
           {/* Column 4 - Notes */}
           <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", height: "100%" }}>
@@ -1254,6 +1384,193 @@ export default function Colours({ project, onUpdate }) {
                 fontFamily: "inherit",
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Drawings PDF: navigate + define elevation rectangle before generate */}
+      {project?.id ? (
+        <ElevationPickerModal
+          open={showElevationPicker}
+          onClose={() => setShowElevationPicker(false)}
+          drawingsPdfUrl={`${API_URL}/api/files/drawings/${project.id}`}
+          onConfirm={(sel) => void runAiRenderGeneration(sel)}
+        />
+      ) : null}
+
+      {/* AI exterior render modal — opens immediately on Generate; image saved on server as AI Render.png */}
+      {showAiRenderModal && (
+        <div
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeAiRenderModal();
+          }}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0, 0, 0, 0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1001,
+            pointerEvents: "auto",
+            padding: "16px",
+            boxSizing: "border-box",
+          }}
+        >
+          <div
+            role="dialog"
+            aria-labelledby="ai-render-modal-title"
+            aria-busy={aiRenderBusy}
+            style={{
+              background: WHITE,
+              borderRadius: "14px",
+              padding: "22px",
+              width: "100%",
+              maxWidth: "920px",
+              maxHeight: "92vh",
+              overflowY: "auto",
+              boxShadow: "0 12px 40px rgba(0, 0, 0, 0.28)",
+              boxSizing: "border-box",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", gap: "12px" }}>
+              <h2 id="ai-render-modal-title" style={{ margin: 0, fontSize: "1.35rem", color: MONUMENT }}>
+                AI exterior render
+              </h2>
+              <button
+                type="button"
+                onClick={closeAiRenderModal}
+                title="Close"
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "1.6rem",
+                  lineHeight: 1,
+                  cursor: "pointer",
+                  color: SECTION_GREY,
+                  padding: "4px 8px",
+                  flexShrink: 0,
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <p style={{ margin: "0 0 16px 0", fontSize: "0.88rem", color: SECTION_GREY, lineHeight: 1.45 }}>
+              Shape from your cropped elevation; colours from this project’s roof, cladding, and baseboards (saved on
+              Colours). File on disk: <strong style={{ color: MONUMENT }}>AI Render.png</strong> next to your colours
+              file.
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "18px", minHeight: "120px" }}>
+              {aiRenderBusy ? (
+                <>
+                  <div
+                    aria-hidden
+                    style={{
+                      width: "46px",
+                      height: "46px",
+                      border: `4px solid ${SECTION_GREY}`,
+                      borderTopColor: MONUMENT,
+                      borderRadius: "50%",
+                      animation: "spin 0.88s linear infinite",
+                    }}
+                  />
+                  <div style={{ fontSize: "1rem", color: MONUMENT, fontWeight: 600, textAlign: "center" }}>
+                    Generating render…
+                  </div>
+                  <div style={{ fontSize: "0.88rem", color: SECTION_GREY, textAlign: "center", maxWidth: "420px" }}>
+                    Rasterizing drawings and colours PDFs, then requesting the image from AI. This often takes a minute.
+                  </div>
+                </>
+              ) : null}
+
+              {!aiRenderBusy && aiRenderError ? (
+                <div
+                  role="alert"
+                  style={{
+                    width: "100%",
+                    padding: "12px 14px",
+                    borderRadius: "10px",
+                    fontSize: "0.9rem",
+                    background: "#fdecea",
+                    border: "1px solid #f5c2c0",
+                    color: "#842029",
+                  }}
+                >
+                  {aiRenderError}
+                </div>
+              ) : null}
+
+              {!aiRenderBusy && aiRenderPreviewUrl ? (
+                <img
+                  src={aiRenderPreviewUrl}
+                  alt="AI-generated exterior render"
+                  onError={() => {
+                    setAiRenderError((prev) =>
+                      prev || "Could not load this image. If you have not generated a render yet, use Generate AI Render."
+                    );
+                    setAiRenderPreviewUrl(null);
+                  }}
+                  style={{
+                    maxWidth: "100%",
+                    height: "auto",
+                    maxHeight: "min(68vh, 720px)",
+                    objectFit: "contain",
+                    borderRadius: "10px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    display: "block",
+                  }}
+                />
+              ) : null}
+
+              {!aiRenderBusy && !aiRenderError && !aiRenderPreviewUrl ? (
+                <div style={{ fontSize: "0.9rem", color: SECTION_GREY, textAlign: "center" }}>
+                  No preview yet.
+                </div>
+              ) : null}
+            </div>
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", marginTop: "22px", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={handleOpenAiRenderInNewTab}
+                disabled={!project?.id || !aiRenderPreviewUrl}
+                style={{
+                  padding: "10px 18px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  borderRadius: "8px",
+                  border: `1px solid ${SECTION_GREY}`,
+                  background: WHITE,
+                  color: MONUMENT,
+                  cursor: project?.id && aiRenderPreviewUrl ? "pointer" : "not-allowed",
+                  opacity: project?.id && aiRenderPreviewUrl ? 1 : 0.55,
+                }}
+              >
+                Open in new tab
+              </button>
+              <button
+                type="button"
+                onClick={closeAiRenderModal}
+                style={{
+                  padding: "10px 22px",
+                  fontSize: "0.95rem",
+                  fontWeight: 600,
+                  borderRadius: "8px",
+                  border: "none",
+                  background: MONUMENT,
+                  color: WHITE,
+                  cursor: "pointer",
+                }}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

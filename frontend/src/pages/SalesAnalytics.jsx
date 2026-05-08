@@ -38,7 +38,6 @@ export default function SalesAnalytics() {
     return new Date().getFullYear().toString();
   });
   const [selectedView, setSelectedView] = useState("pie"); // "pie" or "bar"
-  const [showLastYear, setShowLastYear] = useState(false);
   const [showTotals, setShowTotals] = useState(true);
 
   useEffect(() => {
@@ -225,8 +224,6 @@ export default function SalesAnalytics() {
 
   // Calculate previous year pie data for comparison
   const previousYearPieData = React.useMemo(() => {
-    if (!showLastYear) return null;
-    
     const previousYear = (parseInt(selectedYear) - 1).toString();
     const prevYearProjects = projects.filter((project) => {
       // Exclude Home Office / Studio projects
@@ -330,7 +327,7 @@ export default function SalesAnalytics() {
       green: greenTotal,
       total: total,
     };
-  }, [projects, selectedYear, showLastYear]);
+  }, [projects, selectedYear]);
 
   // Calculate monthly totals for bar chart (VIC and QLD breakdown)
   const monthlyData = React.useMemo(() => {
@@ -456,8 +453,6 @@ export default function SalesAnalytics() {
 
   // Calculate monthly totals for previous year (for comparison)
   const previousYearData = React.useMemo(() => {
-    if (!showLastYear) return [];
-    
     const previousYear = (parseInt(selectedYear) - 1).toString();
     const months = [];
     
@@ -575,7 +570,7 @@ export default function SalesAnalytics() {
     }
     
     return months;
-  }, [projects, selectedYear, showLastYear]);
+  }, [projects, selectedYear]);
 
   // Format number with commas
   function formatCurrency(amount) {
@@ -679,25 +674,6 @@ export default function SalesAnalytics() {
               </option>
             ))}
           </select>
-          {selectedView === "bar" && (
-            <button
-              onClick={() => setShowLastYear(!showLastYear)}
-              style={{
-                padding: "8px 16px",
-                borderRadius: "8px",
-                border: "2px solid #FFD54F",
-                fontSize: "0.9rem",
-                fontWeight: 500,
-                color: showLastYear ? MONUMENT : WHITE,
-                background: showLastYear ? "#FFD54F" : "transparent",
-                cursor: "pointer",
-                outline: "none",
-                transition: "background 0.2s, color 0.2s",
-              }}
-            >
-              Show Last Year
-            </button>
-          )}
         </div>
       </div>
 
@@ -783,33 +759,6 @@ export default function SalesAnalytics() {
               }}
             >
               Pie Chart
-            </button>
-          </div>
-          
-          {/* Show Last Year - Light Yellow */}
-          <div style={{ background: "#FFE082", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
-            <button
-              onClick={() => setShowLastYear(!showLastYear)}
-              style={{
-                background: showLastYear ? "#FFD54F" : "transparent",
-                color: showLastYear ? MONUMENT : "#404049",
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-                width: "100%",
-              }}
-            >
-              Show Last Year
             </button>
           </div>
           
@@ -921,7 +870,7 @@ export default function SalesAnalytics() {
                       </svg>
                       
                       {/* Previous year pie chart overlay (ghost) */}
-                      {showLastYear && previousYearPieData && (() => {
+                      {previousYearPieData && previousYearPieData.total > 0 && (() => {
                         const prevTotal = previousYearPieData.total;
                         const prevPieData = [
                           {
@@ -992,7 +941,7 @@ export default function SalesAnalytics() {
                   </h2>
                   
                   {/* Bar Chart */}
-                  <div style={{ width: "100%", maxWidth: "900px", position: "relative", display: "flex" }}>
+                  <div style={{ width: "100%", maxWidth: "1240px", position: "relative", display: "flex" }}>
                     {/* Y-axis scale */}
                     <div style={{ width: "60px", flexShrink: 0, position: "relative", height: "600px", marginRight: "8px" }}>
                       {(() => {
@@ -1038,7 +987,7 @@ export default function SalesAnalytics() {
                     {/* Chart area */}
                     <div style={{ flex: 1, position: "relative" }}>
                       {/* Grid lines */}
-                      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "600px", pointerEvents: "none", padding: "0 20px" }}>
+                      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "600px", pointerEvents: "none", padding: "0 10px" }}>
                         {(() => {
                           const maxJobsRounded = 50; // Fixed scale: always 0-50 jobs
                           const numIncrements = maxJobsRounded / 5; // 11 lines (0, 5, 10, ..., 50)
@@ -1059,8 +1008,8 @@ export default function SalesAnalytics() {
                                 style={{
                                   position: "absolute",
                                   bottom: `${bottomPosition}px`,
-                                  left: "20px",
-                                  right: "20px",
+                                  left: "10px",
+                                  right: "10px",
                                   height: "1px",
                                   backgroundColor: "#d0d0d0",
                                   opacity: 0.5,
@@ -1071,7 +1020,7 @@ export default function SalesAnalytics() {
                         })()}
                       </div>
                       
-                      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "8px", height: "600px", padding: "0 20px", position: "relative" }}>
+                      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "4px", height: "600px", padding: "0 10px", position: "relative" }}>
                       {monthlyData.map((month, index) => {
                         const maxJobsRounded = 50; // Fixed scale: always 0-50 jobs
                         
@@ -1098,135 +1047,194 @@ export default function SalesAnalytics() {
                               position: "relative",
                             }}
                           >
-                            {/* Stacked bars container */}
+                            {showTotals && totalBarHeight > 0 && (
+                                <div
+                                  style={{
+                                    width: "100%",
+                                    marginBottom: "16px",
+                                    fontSize: "0.72rem",
+                                    fontWeight: 700,
+                                    color: MONUMENT,
+                                    textAlign: "center",
+                                    lineHeight: "1.15",
+                                    flexShrink: 0,
+                                    position: "relative",
+                                    zIndex: 5,
+                                    whiteSpace: "nowrap",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                  }}
+                                >
+                                  {month.totalSalesCount} - {formatCurrency(month.totalValue)}
+                                </div>
+                            )}
+                            <div
+                              style={{
+                                position: "relative",
+                                width: "100%",
+                                flexShrink: 0,
+                                alignSelf: "stretch",
+                              }}
+                            >
+                              {prevTotalBarHeight > 0 && (
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    height: `${prevTotalBarHeight}px`,
+                                    boxSizing: "border-box",
+                                    border: "2px solid #FFD54F",
+                                    borderRadius: "4px 4px 0 0",
+                                    backgroundColor: "transparent",
+                                    pointerEvents: "none",
+                                    zIndex: 1,
+                                  }}
+                                />
+                              )}
+                            {/* Stacked bars — heights are exact (jobCount/50)*550 px; never inflated for labels */}
                             <div
                               style={{
                                 width: "100%",
                                 height: `${totalBarHeight}px`,
+                                maxHeight: `${totalBarHeight}px`,
                                 display: "flex",
                                 flexDirection: "column",
                                 justifyContent: "flex-end",
                                 position: "relative",
-                                minHeight: totalBarHeight > 0 ? "80px" : "0",
                                 zIndex: 2,
+                                flexShrink: 0,
+                                boxSizing: "border-box",
+                                overflow: "hidden",
                               }}
                             >
                               {/* DOM order is top → bottom of stack; flex-end anchors stack to baseline, so first = top (green), last = bottom (blue). */}
                               {/* Green streams (green) — top of bar */}
                               {greenStreamBarHeight > 0 && (
                                 <div
+                                  title={`Green streams: ${month.greenStreamSalesCount} - ${formatCurrency(month.greenStreamTotalValue)}`}
                                   style={{
                                     width: "100%",
                                     height: `${greenStreamBarHeight}px`,
+                                    maxHeight: `${greenStreamBarHeight}px`,
+                                    flex: "0 0 auto",
                                     backgroundColor: "#92D050",
                                     borderRadius: "4px 4px 0 0",
                                     display: "flex",
                                     flexDirection: "column",
-                                    justifyContent: "flex-start",
+                                    justifyContent: "center",
                                     alignItems: "center",
-                                    padding: "4px 2px",
-                                    minHeight: "30px",
+                                    padding: "1px 3px",
+                                    boxSizing: "border-box",
+                                    overflow: "hidden",
+                                    minHeight: 0,
                                   }}
                                 >
-                                  <div style={{ fontSize: "0.7rem", fontWeight: 700, color: WHITE, marginBottom: "2px" }}>
-                                    {month.greenStreamSalesCount}
-                                  </div>
-                                  <div style={{ fontSize: "0.65rem", color: WHITE }}>
-                                    {formatCurrency(month.greenStreamTotalValue)}
-                                  </div>
+                                  {greenStreamBarHeight >= 18 && (
+                                    <div
+                                      style={{
+                                        fontSize: "0.58rem",
+                                        fontWeight: 700,
+                                        color: WHITE,
+                                        lineHeight: 1.1,
+                                        whiteSpace: "nowrap",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        maxWidth: "100%",
+                                        textAlign: "center",
+                                      }}
+                                    >
+                                      {month.greenStreamSalesCount} - {formatCurrency(month.greenStreamTotalValue)}
+                                    </div>
+                                  )}
                                 </div>
                               )}
 
                               {/* QLD (red) — middle */}
                               {qldBarHeight > 0 && (
                                 <div
+                                  title={`QLD: ${month.qldSalesCount} - ${formatCurrency(month.qldTotalValue)}`}
                                   style={{
                                     width: "100%",
                                     height: `${qldBarHeight}px`,
+                                    maxHeight: `${qldBarHeight}px`,
+                                    flex: "0 0 auto",
                                     backgroundColor: "#D54358",
                                     borderRadius: qldBarHeight > 0 && greenStreamBarHeight === 0 ? "4px 4px 0 0" : "0",
                                     display: "flex",
                                     flexDirection: "column",
-                                    justifyContent: "flex-start",
+                                    justifyContent: "center",
                                     alignItems: "center",
-                                    padding: "4px 2px",
-                                    minHeight: "30px",
+                                    padding: "1px 3px",
+                                    boxSizing: "border-box",
+                                    overflow: "hidden",
+                                    minHeight: 0,
                                   }}
                                 >
-                                  <div style={{ fontSize: "0.7rem", fontWeight: 700, color: WHITE, marginBottom: "2px" }}>
-                                    {month.qldSalesCount}
-                                  </div>
-                                  <div style={{ fontSize: "0.65rem", color: WHITE }}>
-                                    {formatCurrency(month.qldTotalValue)}
-                                  </div>
+                                  {qldBarHeight >= 18 && (
+                                    <div
+                                      style={{
+                                        fontSize: "0.58rem",
+                                        fontWeight: 700,
+                                        color: WHITE,
+                                        lineHeight: 1.1,
+                                        whiteSpace: "nowrap",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        maxWidth: "100%",
+                                        textAlign: "center",
+                                      }}
+                                    >
+                                      {month.qldSalesCount} - {formatCurrency(month.qldTotalValue)}
+                                    </div>
+                                  )}
                                 </div>
                               )}
 
                               {/* VIC (blue) — bottom on baseline */}
                               {vicBarHeight > 0 && (
                                 <div
+                                  title={`VIC: ${month.vicSalesCount} - ${formatCurrency(month.vicTotalValue)}`}
                                   style={{
                                     width: "100%",
                                     height: `${vicBarHeight}px`,
+                                    maxHeight: `${vicBarHeight}px`,
+                                    flex: "0 0 auto",
                                     backgroundColor: "#4D93D9",
                                     borderRadius: vicBarHeight === totalBarHeight ? "4px 4px 0 0" : "0",
                                     display: "flex",
                                     flexDirection: "column",
-                                    justifyContent: "flex-start",
+                                    justifyContent: "center",
                                     alignItems: "center",
-                                    padding: "4px 2px",
-                                    minHeight: "30px",
+                                    padding: "1px 3px",
+                                    boxSizing: "border-box",
+                                    overflow: "hidden",
+                                    minHeight: 0,
                                   }}
                                 >
-                                  <div style={{ fontSize: "0.7rem", fontWeight: 700, color: WHITE, marginBottom: "2px" }}>
-                                    {month.vicSalesCount}
-                                  </div>
-                                  <div style={{ fontSize: "0.65rem", color: WHITE }}>
-                                    {formatCurrency(month.vicTotalValue)}
-                                  </div>
-                                </div>
-                              )}
-                              
-                              {/* Total on top of bars */}
-                              {showTotals && totalBarHeight > 0 && (
-                                <div
-                                  style={{
-                                    position: "absolute",
-                                    top: "-30px",
-                                    left: "50%",
-                                    transform: "translateX(-50%)",
-                                    fontSize: "0.75rem",
-                                    fontWeight: 700,
-                                    color: MONUMENT,
-                                    whiteSpace: "nowrap",
-                                    textAlign: "center",
-                                    lineHeight: "1.2",
-                                  }}
-                                >
-                                  <div>{month.totalSalesCount}</div>
-                                  <div style={{ fontSize: "0.7rem" }}>{formatCurrency(month.totalValue)}</div>
+                                  {vicBarHeight >= 18 && (
+                                    <div
+                                      style={{
+                                        fontSize: "0.58rem",
+                                        fontWeight: 700,
+                                        color: WHITE,
+                                        lineHeight: 1.1,
+                                        whiteSpace: "nowrap",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        maxWidth: "100%",
+                                        textAlign: "center",
+                                      }}
+                                    >
+                                      {month.vicSalesCount} - {formatCurrency(month.vicTotalValue)}
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
-                            
-                            {/* Previous year ghost overlay - single total bar (positioned to align with 0 line) */}
-                            {showLastYear && prevTotalBarHeight > 0 && (
-                              <div
-                                style={{
-                                  position: "absolute",
-                                  bottom: "25px",
-                                  left: "1px",
-                                  width: "100%",
-                                  height: `${prevTotalBarHeight}px`,
-                                  border: "2px solid #FFD54F",
-                                  borderRadius: "4px 4px 0 0",
-                                  backgroundColor: "transparent",
-                                  pointerEvents: "none",
-                                  zIndex: 3,
-                                }}
-                              />
-                            )}
-                            
+                            </div>
+
                             {/* Month label */}
                             <div
                               style={{

@@ -1,0 +1,72 @@
+VIC projects with project year 2026 — proposals containing: Separate Electrical Meter
+Generated: 2026-05-06T02:07:45.986Z
+Projects in scope (DB): 62
+
+Matches (16 jobs):
+
+1 Magpie Court, Werribee (id 533)
+  PDF: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\WERRIBEE - 1 Magpie Court\Proposal.PDF
+98 Walsgott Street, North Geelong (id 539)
+  PDF: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\NORTH GEELONG - 98 Walsgott Street\Proposal.1814127_1771720497623 (1).pdf
+48 Glaneuse Av, Torquay (id 546)
+  PDF: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\TORQUAY - 48 Glaneuse Av\Proposal.pdf
+55 Curletts Rd, Lara (id 585)
+  PDF: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\LARA - 55 Curletts Rd\Proposal.PDF
+13 Drevermann St, Bairnsdale (id 586)
+  PDF: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\BAIRNSDALE - 13 Drevermann St\Proposal.PDF
+486 Reynolds Rd, Research (id 588)
+  PDF: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\RESEARCH - 486 Reynolds Rd\Proposal.PDF
+23 Croydondale Dr, Mooroolbark (id 589)
+  PDF: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\MOOROOLBARK - 23 Croydondale Dr\Proposal.PDF
+22 Lindsay St, Macleod (id 616)
+  PDF: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\MACLEOD - 22 Lindsay St\Proposal.PDF
+19 Thornton Street, Macleod (id 619)
+  PDF: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\MACLEOD - 19 Thornton Street\Proposal.PDF
+15 Dell Road, Frankston (id 622)
+  PDF: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\FRANKSTON - 15 Dell Road\Proposal.PDF
+12 Dudley Street, Belmont (id 652)
+  PDF: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\BELMONT - 12 Dudley Street\Proposal.PDF
+17 Conrad Ct, Whittington (id 654)
+  PDF: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\WHITTINGTON - 17 Conrad Ct\Proposal.PDF
+97 Laura Av, Belmont (id 677)
+  PDF: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\BELMONT - 97 Laura Av\Proposal.PDF
+54 Warrandyte Rd, Ringwood (id 683)
+  PDF: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\RINGWOOD - 54 Warrandyte Rd\Proposal.PDF
+15 Chicquita Av, Seaford (id 696)
+  PDF: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\SEAFORD - 15 Chicquita Av\Proposal.PDF
+33 Pettitt Cr, Norlane (id 705)
+  PDF: Z:\1.SGF PROJECT MANAGEMENT\2026\VIC\NORLANE - 33 Pettitt Cr\Proposal.PDF
+
+No readable proposal PDF (31):
+
+15 Viking Court, CARRUM DOWNS (id 338)
+12 Mullock Road, DIGGERS REST (id 339)
+30 Macedon Street, HOPPERS CROSSING (id 340)
+10 Clarence Avenue, KEYSBOROUGH (id 341)
+14 Vista Drive, MELTON (id 342)
+242 Ormond Road, NARRE WARREN SOUTH (id 343)
+20 Sixth Street, PARKDALE (id 344)
+20 Moira Street, SUNSHINE (id 345)
+7 Aminya Court, WANTIRNA (id 346)
+5 St Ives Court, The Basin (id 351)
+95 Fernhill Road, MOUNT EVELYN (id 353)
+25 Highland Cres, MOOROOLBARK (id 364)
+6 Bidston Ct, Ringwood (id 534)
+30 Carrington Road, Reservoir (id 540)
+10 Benson Street, Belgrave (id 543)
+47 Alice Street, Mount Waverley (id 545)
+6 Proton Ct, Whittington (id 560)
+131 Dalgetty Rd, Beaumaris (id 582)
+10 Carnavon Ct, Sunbury (id 583)
+73 Rebecca Street, Doveton (id 621)
+149 Old Gobur Rd, Merton (id 627)
+9 Marama Rd, Belgrave Heights (id 636)
+8 Balmoral Av, Bentleigh (id 647)
+22 Lindsay St, Macleod (id 650)
+8 Whimbrel Ct, Werribee (id 678)
+29 Benston St, Craigieburn (id 693)
+31 Alfreda Av, Bulleen (id 701)
+20 Maryborough Rd, Boronia (id 702)
+12 Mumm St, Waurn Ponds (id 704)
+1 Gerard Ct, Croydon North (id 706)
+10 Vidos Rd, Greenvale (id 707)

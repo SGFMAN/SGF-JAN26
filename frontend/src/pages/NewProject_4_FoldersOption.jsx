@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { buildJobFolderNameSegment, normalizeAddressHyphensForFilesystem } from "../utils/projectFolderPath";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -47,11 +48,12 @@ export default function NewProject_4_FoldersOption({ isOpen, onClose, formData, 
       
       // Calculate folder path
       const currentYear = new Date().getFullYear().toString();
-      const suburb = (formData.suburb || "").toUpperCase().replace(/[/\\]/g, "_");
-      const street = (formData.street || "").replace(/[/\\]/g, "_");
-      
-      if (rootDir && state && suburb && street) {
-        const path = `${rootDir}\\${currentYear}\\${state}\\${suburb} - ${street}`;
+      const suburbOk = normalizeAddressHyphensForFilesystem(formData.suburb || "").trim();
+      const streetOk = normalizeAddressHyphensForFilesystem(formData.street || "").trim();
+      const projectFolderName = buildJobFolderNameSegment(formData.suburb, formData.street);
+
+      if (rootDir && state && suburbOk && streetOk) {
+        const path = `${rootDir}\\${currentYear}\\${state}\\${projectFolderName}`;
         setFolderPath(path);
       } else {
         setFolderPath("Path cannot be calculated - missing required information");

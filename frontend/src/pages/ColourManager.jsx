@@ -676,17 +676,43 @@ const data = await response.json();
                       fontSize: "0.9rem",
                     }}
                   >
-                    <Link
-                      to={`/project/${project.id}`}
-                      style={{
-                        textDecoration: "none",
-                        color: MONUMENT,
-                        fontWeight: 500,
-                        display: "block",
-                      }}
-                    >
-                      {projectName}
-                    </Link>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px", minWidth: 0 }}>
+                      <Link
+                        to={`/project/${project.id}`}
+                        style={{
+                          textDecoration: "none",
+                          color: MONUMENT,
+                          fontWeight: 500,
+                          display: "block",
+                        }}
+                      >
+                        {projectName}
+                      </Link>
+                      {project.drawings_pdf_location &&
+                      project.colours_pdf_location &&
+                      String(project.drawings_pdf_location).trim() &&
+                      String(project.colours_pdf_location).trim() ? (
+                        <Link
+                          to={`/project/${project.id}?view=colours`}
+                          style={{
+                            fontSize: "0.82rem",
+                            color: LIGHT_MONUMENT,
+                            textDecoration: "underline",
+                            fontWeight: 500,
+                            alignSelf: "flex-start",
+                          }}
+                        >
+                          Render
+                        </Link>
+                      ) : (
+                        <span
+                          title="Needs drawings PDF and colours PDF paths on the project"
+                          style={{ fontSize: "0.82rem", color: "#32323377" }}
+                        >
+                          Render (paths needed)
+                        </span>
+                      )}
+                    </div>
                     <select
                       value={coloursStatus}
                       onChange={(e) => handleStatusChange(project.id, "colours_status", e.target.value)}
