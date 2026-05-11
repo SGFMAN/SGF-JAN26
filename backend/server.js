@@ -8825,31 +8825,22 @@ const AI_RENDER_GRASS_PAD = { r: 46, g: 125, b: 72, alpha: 255 };
  * texture only with margins masked — OpenAI masks use alpha=0 = edit zone, alpha=255 = preserve input pixels.
  */
 
-/** Pass 1 — editable margin only; emphasize high-end viz grass/trees/sky (older single-pass quality). */
-const AI_RENDER_PROMPT_MARGIN_PASS = `Edit ONLY pixels where this image’s PNG mask is fully transparent (the outer margins).
+/** Pass 1 — editable margin only; building region stays pixel-identical. */
+const AI_RENDER_PROMPT_MARGIN_PASS = `Edit ONLY pixels where this image’s PNG mask is fully transparent (outer margins only).
 
-Architectural-visualization quality—not flat or game-looking. Goal: inviting Australian suburban frontage.
+MARGIN PASS SCOPE:
+- Keep the building region unchanged and create a photoreal environment around it.
+- Use natural daylight and realistic Australian suburban landscaping, sky, shadows, driveway, and fencing.
+- Aim for clean, high-quality architectural-visualization output.`;
 
-SKY & LIGHT: soft natural daylight (late-morning clear or gentle golden side-light), pale blue gradient sky with faint high wisps—believable DSLR photo.
+/** Pass 2 — editable building only; margins stay unchanged. */
+const AI_RENDER_PROMPT_BUILDING_PASS = `Edit ONLY pixels where this image’s PNG mask is fully transparent (building footprint only).
 
-LAWN: lush, dense, manicured turf in rich greens with subtle natural variation—healthy grass blades catching light—NEVER muddy brown strips, dusty dirt, bald patches, or plastic-looking flat green.
-
-PLANTING: layer depth—foundation shrubs mixed heights, ornamental grasses where it reads natural, and 1–2 mature canopy trees (e.g. native eucalypt or broadleaf) placed in the side margins to frame the house. Varied foliage colour and soft shadows on the ground. Keep trunks and major branches clearly outside the building footprint—no canopy overlap on roof or façade.
-
-Do NOT alter pixels under the opaque-mask region—the plans elevation must remain pixel-identical there (unchanged linework, silhouette, openings, roof outline as drawn).`;
-
-/** Pass 2 — editable elevation only; roof is explicitly 2D outline from drawing—no mental “typical roof” model. */
-const AI_RENDER_PROMPT_BUILDING_PASS = `Edit ONLY pixels where this image’s PNG mask is fully transparent (the building footprint only).
-
-This is a 2D elevation raster from construction plans. Your job is ONLY to paint photoreal **materials and colour** onto what is already drawn—cladding, roof surface, glass, trims, subtle micro-shadows—per the finish list below. You are NOT redesigning the building in 3D.
-
-ROOF (critical): The roof’s **shape is exactly the closed outline and internal lines already in the image**—period. Apply sheeting colour/texture **inside that drawn silhouette only**. Do NOT substitute a “normal” pitched roof, hip ends, extra ridges, or gable bulk that is not in the linework. A side elevation often shows a **simple flat or near-flat band or rectangle**—keep that; do NOT invent visible pitch or cartoon gable geometry if the drawing is shallow or perpendicular to view. Near-flat/low-slope reads as shallow sheet; triangular end reads as triangular only if drawn.
-
-WALLS & OPENINGS: Same edges as drawn—identical opening count/layout. Timber baseboards as drawn—not brick plinth.
-
-Do NOT repaint margins outside the transparent mask.
-
-FORBIDDEN: inventing hip returns at image edges, “completing” roof geometry not shown, swapping in a catalogue house silhouette.`;
+BUILDING PASS SCOPE:
+- Create a photoreal exterior render based on this elevation and the provided finishes.
+- Apply realistic materials, textures, glazing, trims, and lighting to the building.
+- Preserve clear architectural lines and overall proportions from the elevation.
+- Do not repaint margins outside the transparent mask.`;
 
 /** Fallback if masked two-pass fails (API quirks): single unmasked generation—less strict pixel lock. */
 const AI_RENDER_PROMPT_SINGLE_PASS_FALLBACK = `${AI_RENDER_PROMPT_MARGIN_PASS}\n\n${AI_RENDER_PROMPT_BUILDING_PASS}`;
@@ -8869,10 +8860,10 @@ function buildAiRenderFinishInstructionsFromDb(projectRow) {
   if (cc) bits.push(`Wall cladding: ${cc}`);
   if (bc) bits.push(`Baseboards / trims: ${bc}`);
   if (bits.length === 0) {
-    return "FINISHES: No roof/cladding/baseboard colours saved on this project yet—use subdued Australian exterior neutrals only; still do not change geometry.";
+    return "FINISHES: No roof/cladding/baseboard colours saved on this project yet—use subdued Australian exterior neutrals.";
   }
   return [
-    "FINISHES (project record): apply colour and surface texture ONLY inside the outlines already drawn. Schedule lines name products, not roof shape—every roof edge in the image is fixed; never replace the drawn profile with a typical pitched/hip/gable from memory or brochure photos.",
+    "FINISHES (project record): apply these colours/materials to the render.",
     bits.join("\n"),
   ].join("\n");
 }

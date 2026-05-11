@@ -497,23 +497,6 @@ export default function Drawings({
       return;
     }
 
-    // Check if there are new drawings after concept approval
-    const conceptApprovedIndex = drawingsHistory.findIndex((entry, index) => {
-      // Find the last entry that was concept approved
-      return entry.conceptApproved === true;
-    });
-
-    if (conceptApprovedIndex === -1) {
-      alert("Please approve concept drawings first.");
-      return;
-    }
-
-    // Check if there are new drawings after the concept approved entry
-    if (conceptApprovedIndex >= drawingsHistory.length - 1) {
-      alert("Please upload new drawings before approving working drawings.");
-      return;
-    }
-
     // Mark the last entry as working drawings approved
     const lastIndex = drawingsHistory.length - 1;
     drawingsHistory[lastIndex] = {
@@ -747,15 +730,6 @@ export default function Drawings({
       return;
     }
 
-    const conceptApprovedIndex = drawingsHistory.findIndex((entry) => entry.conceptApproved === true);
-    if (conceptApprovedIndex === -1) {
-      alert("Please approve concept drawings first.");
-      return;
-    }
-    if (conceptApprovedIndex >= drawingsHistory.length - 1) {
-      alert("Please upload new drawings before approving working drawings.");
-      return;
-    }
     await openApprovalEmailPreview("working");
   }
 
@@ -3139,19 +3113,8 @@ export default function Drawings({
 
                   const hasDrawings = drawingsHistory && drawingsHistory.length > 0;
                   
-                  // Check if concept has been approved
-                  const conceptApprovedIndex = drawingsHistory.findIndex(entry => entry.conceptApproved === true);
-                  const hasConceptApproved = conceptApprovedIndex !== -1;
-                  
-                  // Check if there are new drawings after concept approval
-                  // If concept is approved, we need new drawings after that entry to approve working drawings
-                  const hasNewDrawingsAfterConcept = hasConceptApproved && conceptApprovedIndex < drawingsHistory.length - 1;
-                  
-                  // Can approve working drawings if:
-                  // 1. There are drawings, AND
-                  // 2. Either concept hasn't been approved yet (can approve first time), OR
-                  // 3. Concept has been approved AND there are new drawings after the concept-approved entry
-                  const canApproveWorkingDrawings = hasDrawings && (!hasConceptApproved || hasNewDrawingsAfterConcept);
+                  // Working drawings can be approved any time, as long as at least one drawing exists.
+                  const canApproveWorkingDrawings = hasDrawings;
 
                   return (
                     <>

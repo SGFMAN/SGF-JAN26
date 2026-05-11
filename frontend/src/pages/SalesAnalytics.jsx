@@ -1089,7 +1089,7 @@ export default function SalesAnalytics() {
                                     borderRadius: "4px 4px 0 0",
                                     backgroundColor: "transparent",
                                     pointerEvents: "none",
-                                    zIndex: 1,
+                                    zIndex: 4,
                                   }}
                                 />
                               )}
