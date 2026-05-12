@@ -2771,7 +2771,7 @@ export default function Drawings({
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "1fr 200px 70px 90px 100px 100px",
+                      gridTemplateColumns: "1fr minmax(140px, 260px) minmax(170px, 240px) 70px 90px 100px 100px",
                       gap: "6px",
                       padding: "4px 8px",
                       borderBottom: `1px solid ${SECTION_GREY}`,
@@ -2782,6 +2782,7 @@ export default function Drawings({
                     }}
                   >
                     <div>Drawing Name</div>
+                    <div />
                     <div style={{ textAlign: "center" }}>Sent to Client</div>
                     <div style={{ textAlign: "right" }}>Revision</div>
                     <div style={{ textAlign: "right" }}>Uploaded</div>
@@ -2809,7 +2810,7 @@ export default function Drawings({
                         <div
                           style={{
                             display: "grid",
-                            gridTemplateColumns: "1fr 200px 70px 90px 100px 100px",
+                            gridTemplateColumns: "1fr minmax(140px, 260px) minmax(170px, 240px) 70px 90px 100px 100px",
                             gap: "6px",
                             padding: "4px 8px",
                             marginBottom: currentRevision ? "2px" : (index > 0 ? "4px" : "0"),
@@ -2823,10 +2824,68 @@ export default function Drawings({
                         <div style={{ fontWeight: "500", color: MONUMENT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}>
                           {drawing.name}
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "flex-end",
+                            minWidth: 0,
+                            overflowX: "auto",
+                          }}
+                        >
+                          {drawing.workingDrawingsApproved ? (
+                            <span
+                              style={{
+                                flexShrink: 0,
+                                padding: "0 2px",
+                                fontSize: "0.72rem",
+                                fontWeight: 500,
+                                letterSpacing: "0.04em",
+                                color: "rgba(30, 86, 140, 0.42)",
+                                background: "transparent",
+                                border: "none",
+                                borderRadius: 0,
+                                whiteSpace: "nowrap",
+                                lineHeight: 1.25,
+                                userSelect: "none",
+                              }}
+                            >
+                              Working Drawings Approved
+                            </span>
+                          ) : drawing.conceptApproved ? (
+                            <span
+                              style={{
+                                flexShrink: 0,
+                                padding: "0 2px",
+                                fontSize: "0.72rem",
+                                fontWeight: 500,
+                                letterSpacing: "0.04em",
+                                color: "rgba(28, 95, 42, 0.42)",
+                                background: "transparent",
+                                border: "none",
+                                borderRadius: 0,
+                                whiteSpace: "nowrap",
+                                lineHeight: 1.25,
+                                userSelect: "none",
+                              }}
+                            >
+                              Concept Approved
+                            </span>
+                          ) : null}
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            minWidth: 0,
+                            overflowX: "auto",
+                          }}
+                        >
                           {drawing.sent_to_client_date ? (
                             <div
                               style={{
+                                flexShrink: 0,
                                 background: "#33cc33",
                                 color: WHITE,
                                 padding: "4px 10px",
@@ -3125,9 +3184,9 @@ export default function Drawings({
                           disabled={!hasDrawings}
                           style={{
                             flex: 1,
-                            background: !hasDrawings ? "#e0e0e0" : WHITE,
-                            color: !hasDrawings ? "#999" : MONUMENT,
-                            border: `1px solid ${SECTION_GREY}`,
+                            background: !hasDrawings ? "#e0e0e0" : "#e8f5e9",
+                            color: !hasDrawings ? "#999" : "#1b5e20",
+                            border: !hasDrawings ? "1px solid #ccc" : "1px solid rgba(40, 167, 69, 0.55)",
                             borderRadius: "10px",
                             padding: "8px 8px",
                             fontSize: "0.95rem",
@@ -3135,7 +3194,7 @@ export default function Drawings({
                             textAlign: "center",
                             letterSpacing: "0.5px",
                             cursor: !hasDrawings ? "not-allowed" : "pointer",
-                            transition: "background 0.18s, color 0.15s",
+                            transition: "background 0.18s, color 0.15s, border-color 0.15s",
                             opacity: !hasDrawings ? 0.6 : 1,
                           }}
                         >
@@ -3146,9 +3205,9 @@ export default function Drawings({
                           disabled={!canApproveWorkingDrawings}
                           style={{
                             flex: 1,
-                            background: !canApproveWorkingDrawings ? "#e0e0e0" : WHITE,
-                            color: !canApproveWorkingDrawings ? "#999" : MONUMENT,
-                            border: `1px solid ${SECTION_GREY}`,
+                            background: !canApproveWorkingDrawings ? "#e0e0e0" : "#e3f2fd",
+                            color: !canApproveWorkingDrawings ? "#999" : "#0d47a1",
+                            border: !canApproveWorkingDrawings ? "1px solid #ccc" : "1px solid rgba(77, 147, 217, 0.65)",
                             borderRadius: "10px",
                             padding: "8px 8px",
                             fontSize: "0.95rem",
@@ -3156,7 +3215,7 @@ export default function Drawings({
                             textAlign: "center",
                             letterSpacing: "0.5px",
                             cursor: !canApproveWorkingDrawings ? "not-allowed" : "pointer",
-                            transition: "background 0.18s, color 0.15s",
+                            transition: "background 0.18s, color 0.15s, border-color 0.15s",
                             opacity: !canApproveWorkingDrawings ? 0.6 : 1,
                           }}
                         >

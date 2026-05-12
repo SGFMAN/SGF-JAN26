@@ -136,6 +136,83 @@ function formatJfDateDisplay(iso) {
   return t;
 }
 
+function formatWrittenAdviceDateTime(iso) {
+  if (!iso || typeof iso !== "string") return "";
+  const t = iso.trim();
+  if (!t) return "";
+  const d = new Date(t);
+  if (Number.isNaN(d.getTime())) return t;
+  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+const PLANNING_NA_REQUIRED_OPTIONS = ["N/A", "Required"];
+
+const LAND_FLOODING_REG_OPTIONS = ["N/A", "REG 153", "REG 154", "REG 153 & REG 154"];
+const ENERGY_SPECS_OPTIONS = ["Not Completed", "Completed"];
+
+function landFloodingRegulationFromProject(project) {
+  const t = (project?.planning_land_flooding_regulation ?? "").toString().trim();
+  return LAND_FLOODING_REG_OPTIONS.includes(t) ? t : "N/A";
+}
+
+function energySpecsAddedToPlansFromProject(project) {
+  const t = (project?.planning_energy_specs_added_to_plans ?? "").toString().trim();
+  return ENERGY_SPECS_OPTIONS.includes(t) ? t : "Not Completed";
+}
+
+function RequestedReceivedControls({
+  requestedAt,
+  receivedAt,
+  onRequested,
+  onReceived,
+  disabled,
+  maxWidth = "520px",
+}) {
+  const buttonStyle = {
+    border: "none",
+    background: MONUMENT,
+    color: WHITE,
+    borderRadius: "8px",
+    padding: "8px 16px",
+    fontSize: "0.95rem",
+    fontWeight: 500,
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.65 : 1,
+  };
+  const textStyle = {
+    fontSize: "0.82rem",
+    color: "#323233cc",
+    lineHeight: 1.35,
+    maxWidth: "100%",
+    wordBreak: "break-word",
+  };
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+        gap: "20px",
+        alignItems: "start",
+        maxWidth,
+      }}
+    >
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
+        <button type="button" onClick={onRequested} disabled={disabled} style={buttonStyle}>
+          Requested
+        </button>
+        {requestedAt ? <div style={textStyle}>{formatWrittenAdviceDateTime(requestedAt)}</div> : null}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
+        <button type="button" onClick={onReceived} disabled={disabled} style={buttonStyle}>
+          Received
+        </button>
+        {receivedAt ? <div style={textStyle}>{formatWrittenAdviceDateTime(receivedAt)}</div> : null}
+      </div>
+    </div>
+  );
+}
+
 /** Resolved doc status from local draft (when set) or saved project. */
 function jfRowStatusFromDraftOrProject(row, jfDocDraft, project) {
   const fromDraft = jfDocDraft?.[row.key];
@@ -200,8 +277,7 @@ const PLANNING_CATEGORIES = [
   "Job File Complete",
   "JCA Land Survey",
   "Soil Test",
-  "Concept Drawings",
-  "Working Drawings",
+  "Drawings",
   "Site Visit",
   "Written Planning Advice",
   "Town Planning",
@@ -209,7 +285,6 @@ const PLANNING_CATEGORIES = [
   "BAL",
   "Footing Certification",
   "Energy Report",
-  "Energy Specs Added to Plans",
   "Windows",
   "Sewer PIC",
   "Septic Approval",
@@ -223,7 +298,7 @@ const PLANNING_CATEGORIES = [
   "Asset Protection Bond Refund",
 ];
 
-/** Left / right nav columns (13 + 12) — same order as PLANNING_CATEGORIES. */
+/** Left / right nav columns — same order as PLANNING_CATEGORIES. */
 const PLANNING_NAV_COLUMN_1 = PLANNING_CATEGORIES.slice(0, 13);
 const PLANNING_NAV_COLUMN_2 = PLANNING_CATEGORIES.slice(13);
 
@@ -269,6 +344,17 @@ function getDrawingTileStates(drawingsStatus) {
     concept: { label: "Not Completed", color: TILE_RED },
     working: { label: "Not Completed", color: TILE_RED },
   };
+}
+
+function getPlanningDrawingsTileState(drawingsStatus) {
+  const states = getDrawingTileStates(drawingsStatus);
+  if (states.concept.label === "Completed" && states.working.label === "Completed") {
+    return { label: "Completed", color: TILE_GREEN };
+  }
+  if (states.concept.label === "Completed") {
+    return { label: "In Progress", color: TILE_ORANGE };
+  }
+  return { label: "Not Completed", color: TILE_RED };
 }
 
 function getSurveySoilTileState(statusValue) {
@@ -533,6 +619,139 @@ export default function PlanningNew({ project, onUpdate }) {
     }
   }
 
+  const writtenPlanningAdvice =
+    project?.planning_written_advice != null && String(project.planning_written_advice).trim() === "Required"
+      ? "Required"
+      : "N/A";
+
+  async function handleWrittenPlanningAdviceRequirementChange(e) {
+    const next = e.target.value === "Required" ? "Required" : "N/A";
+    if (next === "N/A") {
+      await saveJobFileFields({
+        planning_written_advice: "N/A",
+        planning_written_advice_requested_at: null,
+        planning_written_advice_received_at: null,
+      });
+    } else {
+      await saveField("planning_written_advice", "Required");
+    }
+  }
+
+  function handleWrittenPlanningAdviceStampRequested() {
+    void saveField("planning_written_advice_requested_at", new Date().toISOString());
+  }
+
+  function handleWrittenPlanningAdviceStampReceived() {
+    void saveField("planning_written_advice_received_at", new Date().toISOString());
+  }
+
+  const townPlanningRequirement =
+    project?.planning_town_planning != null && String(project.planning_town_planning).trim() === "Required"
+      ? "Required"
+      : "N/A";
+
+  async function handleTownPlanningRequirementChange(e) {
+    const next = e.target.value === "Required" ? "Required" : "N/A";
+    if (next === "N/A") {
+      await saveJobFileFields({
+        planning_town_planning: "N/A",
+        planning_town_planning_requested_at: null,
+        planning_town_planning_received_at: null,
+      });
+    } else {
+      await saveField("planning_town_planning", "Required");
+    }
+  }
+
+  function handleTownPlanningStampRequested() {
+    void saveField("planning_town_planning_requested_at", new Date().toISOString());
+  }
+
+  function handleTownPlanningStampReceived() {
+    void saveField("planning_town_planning_received_at", new Date().toISOString());
+  }
+
+  const landFloodingRegulation = landFloodingRegulationFromProject(project);
+
+  async function handleLandFloodingRegulationChange(e) {
+    const next = e.target.value;
+    const safe = LAND_FLOODING_REG_OPTIONS.includes(next) ? next : "N/A";
+    if (safe === "N/A") {
+      await saveJobFileFields({
+        planning_land_flooding_regulation: "N/A",
+        planning_land_flooding_fpa_requested_at: null,
+        planning_land_flooding_fpa_received_at: null,
+        planning_land_flooding_cc_requested_at: null,
+        planning_land_flooding_cc_received_at: null,
+      });
+    } else {
+      await saveField("planning_land_flooding_regulation", safe);
+    }
+  }
+
+  function handleLandFloodingFpaStampRequested() {
+    void saveField("planning_land_flooding_fpa_requested_at", new Date().toISOString());
+  }
+
+  function handleLandFloodingFpaStampReceived() {
+    void saveField("planning_land_flooding_fpa_received_at", new Date().toISOString());
+  }
+
+  function handleLandFloodingCcStampRequested() {
+    void saveField("planning_land_flooding_cc_requested_at", new Date().toISOString());
+  }
+
+  function handleLandFloodingCcStampReceived() {
+    void saveField("planning_land_flooding_cc_received_at", new Date().toISOString());
+  }
+
+  const balRequirement =
+    project?.planning_bal != null && String(project.planning_bal).trim() === "Required" ? "Required" : "N/A";
+
+  async function handleBalRequirementChange(e) {
+    const next = e.target.value === "Required" ? "Required" : "N/A";
+    if (next === "N/A") {
+      await saveJobFileFields({
+        planning_bal: "N/A",
+        planning_bal_requested_at: null,
+        planning_bal_received_at: null,
+      });
+    } else {
+      await saveField("planning_bal", "Required");
+    }
+  }
+
+  function handleBalStampRequested() {
+    void saveField("planning_bal_requested_at", new Date().toISOString());
+  }
+
+  function handleBalStampReceived() {
+    void saveField("planning_bal_received_at", new Date().toISOString());
+  }
+
+  function handleFootingCertificationStampRequested() {
+    void saveField("planning_footing_certification_requested_at", new Date().toISOString());
+  }
+
+  function handleFootingCertificationStampReceived() {
+    void saveField("planning_footing_certification_received_at", new Date().toISOString());
+  }
+
+  function handleEnergyReportStampRequested() {
+    void saveField("planning_energy_report_requested_at", new Date().toISOString());
+  }
+
+  function handleEnergyReportStampReceived() {
+    void saveField("planning_energy_report_received_at", new Date().toISOString());
+  }
+
+  const energySpecsAddedToPlans = energySpecsAddedToPlansFromProject(project);
+
+  async function handleEnergySpecsAddedToPlansChange(e) {
+    const next = e.target.value === "Completed" ? "Completed" : "Not Completed";
+    await saveField("planning_energy_specs_added_to_plans", next);
+  }
+
   async function savePlanningJfUploadForRow(row, file) {
     if (!file || !project?.id) return false;
     if (!isAllowedPlanningJfUpload(file)) {
@@ -763,10 +982,8 @@ export default function PlanningNew({ project, onUpdate }) {
           : jobFileCompleteStatus === "In Progress"
             ? { label: "In Progress", color: TILE_ORANGE }
             : null
-        : category === "Concept Drawings"
-        ? drawingStates.concept
-        : category === "Working Drawings"
-          ? drawingStates.working
+        : category === "Drawings"
+        ? getPlanningDrawingsTileState(project?.drawings_status)
           : category === "JCA Land Survey"
             ? surveyTileState
             : category === "Soil Test"
@@ -1340,27 +1557,660 @@ export default function PlanningNew({ project, onUpdate }) {
                 </div>
               )}
 
+              {planningSection === "Written Planning Advice" && (
+                <div role="region" aria-labelledby="written-planning-advice-title">
+                  <h3 id="written-planning-advice-title" style={{ margin: "0 0 16px 0", color: MONUMENT, fontSize: "1.1rem" }}>
+                    Written planning advice
+                  </h3>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        writtenPlanningAdvice === "Required"
+                          ? "minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)"
+                          : "minmax(0, 280px)",
+                      gap: "20px",
+                      alignItems: "start",
+                      maxWidth: "760px",
+                    }}
+                  >
+                    <div>
+                      <label
+                        htmlFor="written-planning-advice-select"
+                        style={{
+                          display: "block",
+                          fontSize: "0.9rem",
+                          color: "#32323399",
+                          marginBottom: "6px",
+                          fontWeight: 500,
+                        }}
+                      >
+                        Requirement
+                      </label>
+                      <select
+                        id="written-planning-advice-select"
+                        value={writtenPlanningAdvice}
+                        onChange={handleWrittenPlanningAdviceRequirementChange}
+                        disabled={!project?.id}
+                        style={{
+                          width: "100%",
+                          padding: "10px 12px",
+                          borderRadius: "8px",
+                          border: "1px solid #ddd",
+                          fontSize: "1rem",
+                          color: MONUMENT,
+                          background: WHITE,
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        {PLANNING_NA_REQUIRED_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {writtenPlanningAdvice === "Required" ? (
+                      <>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
+                          <button
+                            type="button"
+                            onClick={handleWrittenPlanningAdviceStampRequested}
+                            disabled={!project?.id || isSaving}
+                            style={{
+                              border: "none",
+                              background: MONUMENT,
+                              color: WHITE,
+                              borderRadius: "8px",
+                              padding: "8px 16px",
+                              fontSize: "0.95rem",
+                              fontWeight: 500,
+                              cursor: !project?.id || isSaving ? "not-allowed" : "pointer",
+                              opacity: !project?.id || isSaving ? 0.65 : 1,
+                            }}
+                          >
+                            Requested
+                          </button>
+                          {project?.planning_written_advice_requested_at ? (
+                            <div style={{ fontSize: "0.82rem", color: "#323233cc", lineHeight: 1.35, maxWidth: "100%", wordBreak: "break-word" }}>
+                              {formatWrittenAdviceDateTime(project.planning_written_advice_requested_at)}
+                            </div>
+                          ) : null}
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
+                          <button
+                            type="button"
+                            onClick={handleWrittenPlanningAdviceStampReceived}
+                            disabled={!project?.id || isSaving}
+                            style={{
+                              border: "none",
+                              background: MONUMENT,
+                              color: WHITE,
+                              borderRadius: "8px",
+                              padding: "8px 16px",
+                              fontSize: "0.95rem",
+                              fontWeight: 500,
+                              cursor: !project?.id || isSaving ? "not-allowed" : "pointer",
+                              opacity: !project?.id || isSaving ? 0.65 : 1,
+                            }}
+                          >
+                            Received
+                          </button>
+                          {project?.planning_written_advice_received_at ? (
+                            <div style={{ fontSize: "0.82rem", color: "#323233cc", lineHeight: 1.35, maxWidth: "100%", wordBreak: "break-word" }}>
+                              {formatWrittenAdviceDateTime(project.planning_written_advice_received_at)}
+                            </div>
+                          ) : null}
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+
+              {planningSection === "Town Planning" && (
+                <div role="region" aria-labelledby="town-planning-title">
+                  <h3 id="town-planning-title" style={{ margin: "0 0 16px 0", color: MONUMENT, fontSize: "1.1rem" }}>
+                    Town planning
+                  </h3>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        townPlanningRequirement === "Required"
+                          ? "minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)"
+                          : "minmax(0, 280px)",
+                      gap: "20px",
+                      alignItems: "start",
+                      maxWidth: "760px",
+                    }}
+                  >
+                    <div>
+                      <label
+                        htmlFor="town-planning-select"
+                        style={{
+                          display: "block",
+                          fontSize: "0.9rem",
+                          color: "#32323399",
+                          marginBottom: "6px",
+                          fontWeight: 500,
+                        }}
+                      >
+                        Requirement
+                      </label>
+                      <select
+                        id="town-planning-select"
+                        value={townPlanningRequirement}
+                        onChange={handleTownPlanningRequirementChange}
+                        disabled={!project?.id}
+                        style={{
+                          width: "100%",
+                          padding: "10px 12px",
+                          borderRadius: "8px",
+                          border: "1px solid #ddd",
+                          fontSize: "1rem",
+                          color: MONUMENT,
+                          background: WHITE,
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        {PLANNING_NA_REQUIRED_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {townPlanningRequirement === "Required" ? (
+                      <>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
+                          <button
+                            type="button"
+                            onClick={handleTownPlanningStampRequested}
+                            disabled={!project?.id || isSaving}
+                            style={{
+                              border: "none",
+                              background: MONUMENT,
+                              color: WHITE,
+                              borderRadius: "8px",
+                              padding: "8px 16px",
+                              fontSize: "0.95rem",
+                              fontWeight: 500,
+                              cursor: !project?.id || isSaving ? "not-allowed" : "pointer",
+                              opacity: !project?.id || isSaving ? 0.65 : 1,
+                            }}
+                          >
+                            Requested
+                          </button>
+                          {project?.planning_town_planning_requested_at ? (
+                            <div style={{ fontSize: "0.82rem", color: "#323233cc", lineHeight: 1.35, maxWidth: "100%", wordBreak: "break-word" }}>
+                              {formatWrittenAdviceDateTime(project.planning_town_planning_requested_at)}
+                            </div>
+                          ) : null}
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
+                          <button
+                            type="button"
+                            onClick={handleTownPlanningStampReceived}
+                            disabled={!project?.id || isSaving}
+                            style={{
+                              border: "none",
+                              background: MONUMENT,
+                              color: WHITE,
+                              borderRadius: "8px",
+                              padding: "8px 16px",
+                              fontSize: "0.95rem",
+                              fontWeight: 500,
+                              cursor: !project?.id || isSaving ? "not-allowed" : "pointer",
+                              opacity: !project?.id || isSaving ? 0.65 : 1,
+                            }}
+                          >
+                            Received
+                          </button>
+                          {project?.planning_town_planning_received_at ? (
+                            <div style={{ fontSize: "0.82rem", color: "#323233cc", lineHeight: 1.35, maxWidth: "100%", wordBreak: "break-word" }}>
+                              {formatWrittenAdviceDateTime(project.planning_town_planning_received_at)}
+                            </div>
+                          ) : null}
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+
+              {planningSection === "Land Subject to Flooding" && (
+                <div role="region" aria-labelledby="land-flooding-title">
+                  <h3 id="land-flooding-title" style={{ margin: "0 0 16px 0", color: MONUMENT, fontSize: "1.1rem" }}>
+                    Land subject to flooding
+                  </h3>
+                  <div style={{ maxWidth: "760px", display: "flex", flexDirection: "column", gap: "16px" }}>
+                    <div style={{ maxWidth: "400px" }}>
+                      <label
+                        htmlFor="land-flooding-reg-select"
+                        style={{
+                          display: "block",
+                          fontSize: "0.9rem",
+                          color: "#32323399",
+                          marginBottom: "6px",
+                          fontWeight: 500,
+                        }}
+                      >
+                        Regulation
+                      </label>
+                      <select
+                        id="land-flooding-reg-select"
+                        value={landFloodingRegulation}
+                        onChange={handleLandFloodingRegulationChange}
+                        disabled={!project?.id}
+                        style={{
+                          width: "100%",
+                          padding: "10px 12px",
+                          borderRadius: "8px",
+                          border: "1px solid #ddd",
+                          fontSize: "1rem",
+                          color: MONUMENT,
+                          background: WHITE,
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        {LAND_FLOODING_REG_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {landFloodingRegulation !== "N/A" ? (
+                      <>
+                        <div>
+                          <h4
+                            style={{
+                              margin: "0 0 12px 0",
+                              color: MONUMENT,
+                              fontSize: "0.98rem",
+                              fontWeight: 600,
+                            }}
+                          >
+                            Flood Plain Authority
+                          </h4>
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                              gap: "20px",
+                              alignItems: "start",
+                              maxWidth: "520px",
+                            }}
+                          >
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
+                              <button
+                                type="button"
+                                onClick={handleLandFloodingFpaStampRequested}
+                                disabled={!project?.id || isSaving}
+                                style={{
+                                  border: "none",
+                                  background: MONUMENT,
+                                  color: WHITE,
+                                  borderRadius: "8px",
+                                  padding: "8px 16px",
+                                  fontSize: "0.95rem",
+                                  fontWeight: 500,
+                                  cursor: !project?.id || isSaving ? "not-allowed" : "pointer",
+                                  opacity: !project?.id || isSaving ? 0.65 : 1,
+                                }}
+                              >
+                                Requested
+                              </button>
+                              {project?.planning_land_flooding_fpa_requested_at ? (
+                                <div
+                                  style={{
+                                    fontSize: "0.82rem",
+                                    color: "#323233cc",
+                                    lineHeight: 1.35,
+                                    maxWidth: "100%",
+                                    wordBreak: "break-word",
+                                  }}
+                                >
+                                  {formatWrittenAdviceDateTime(project.planning_land_flooding_fpa_requested_at)}
+                                </div>
+                              ) : null}
+                            </div>
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
+                              <button
+                                type="button"
+                                onClick={handleLandFloodingFpaStampReceived}
+                                disabled={!project?.id || isSaving}
+                                style={{
+                                  border: "none",
+                                  background: MONUMENT,
+                                  color: WHITE,
+                                  borderRadius: "8px",
+                                  padding: "8px 16px",
+                                  fontSize: "0.95rem",
+                                  fontWeight: 500,
+                                  cursor: !project?.id || isSaving ? "not-allowed" : "pointer",
+                                  opacity: !project?.id || isSaving ? 0.65 : 1,
+                                }}
+                              >
+                                Received
+                              </button>
+                              {project?.planning_land_flooding_fpa_received_at ? (
+                                <div
+                                  style={{
+                                    fontSize: "0.82rem",
+                                    color: "#323233cc",
+                                    lineHeight: 1.35,
+                                    maxWidth: "100%",
+                                    wordBreak: "break-word",
+                                  }}
+                                >
+                                  {formatWrittenAdviceDateTime(project.planning_land_flooding_fpa_received_at)}
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <h4
+                            style={{
+                              margin: "0 0 12px 0",
+                              color: MONUMENT,
+                              fontSize: "0.98rem",
+                              fontWeight: 600,
+                            }}
+                          >
+                            Council Consent
+                          </h4>
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                              gap: "20px",
+                              alignItems: "start",
+                              maxWidth: "520px",
+                            }}
+                          >
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
+                              <button
+                                type="button"
+                                onClick={handleLandFloodingCcStampRequested}
+                                disabled={!project?.id || isSaving}
+                                style={{
+                                  border: "none",
+                                  background: MONUMENT,
+                                  color: WHITE,
+                                  borderRadius: "8px",
+                                  padding: "8px 16px",
+                                  fontSize: "0.95rem",
+                                  fontWeight: 500,
+                                  cursor: !project?.id || isSaving ? "not-allowed" : "pointer",
+                                  opacity: !project?.id || isSaving ? 0.65 : 1,
+                                }}
+                              >
+                                Requested
+                              </button>
+                              {project?.planning_land_flooding_cc_requested_at ? (
+                                <div
+                                  style={{
+                                    fontSize: "0.82rem",
+                                    color: "#323233cc",
+                                    lineHeight: 1.35,
+                                    maxWidth: "100%",
+                                    wordBreak: "break-word",
+                                  }}
+                                >
+                                  {formatWrittenAdviceDateTime(project.planning_land_flooding_cc_requested_at)}
+                                </div>
+                              ) : null}
+                            </div>
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
+                              <button
+                                type="button"
+                                onClick={handleLandFloodingCcStampReceived}
+                                disabled={!project?.id || isSaving}
+                                style={{
+                                  border: "none",
+                                  background: MONUMENT,
+                                  color: WHITE,
+                                  borderRadius: "8px",
+                                  padding: "8px 16px",
+                                  fontSize: "0.95rem",
+                                  fontWeight: 500,
+                                  cursor: !project?.id || isSaving ? "not-allowed" : "pointer",
+                                  opacity: !project?.id || isSaving ? 0.65 : 1,
+                                }}
+                              >
+                                Received
+                              </button>
+                              {project?.planning_land_flooding_cc_received_at ? (
+                                <div
+                                  style={{
+                                    fontSize: "0.82rem",
+                                    color: "#323233cc",
+                                    lineHeight: 1.35,
+                                    maxWidth: "100%",
+                                    wordBreak: "break-word",
+                                  }}
+                                >
+                                  {formatWrittenAdviceDateTime(project.planning_land_flooding_cc_received_at)}
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+
+              {planningSection === "Drawings" && (
+                <div role="region" aria-labelledby="planning-drawings-title">
+                  <h3 id="planning-drawings-title" style={{ margin: "0 0 16px 0", color: MONUMENT, fontSize: "1.1rem" }}>
+                    Drawings
+                  </h3>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                      gap: "20px",
+                      maxWidth: "760px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        border: `1px solid ${SECTION_GREY}`,
+                        borderRadius: "12px",
+                        padding: "16px",
+                        background: "rgba(67, 160, 71, 0.06)",
+                      }}
+                    >
+                      <div style={{ fontSize: "0.95rem", fontWeight: 600, color: MONUMENT, marginBottom: "8px" }}>
+                        Concept Drawings
+                      </div>
+                      <div style={{ fontSize: "0.9rem", color: SECTION_GREY, lineHeight: 1.5 }}>
+                        Status comes from the Drawings page.
+                      </div>
+                      <div style={{ marginTop: "10px", fontSize: "0.98rem", fontWeight: 600, color: drawingStates.concept.color }}>
+                        {drawingStates.concept.label}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        border: `1px solid ${SECTION_GREY}`,
+                        borderRadius: "12px",
+                        padding: "16px",
+                        background: "rgba(99, 167, 232, 0.08)",
+                      }}
+                    >
+                      <div style={{ fontSize: "0.95rem", fontWeight: 600, color: MONUMENT, marginBottom: "8px" }}>
+                        Working Drawings
+                      </div>
+                      <div style={{ fontSize: "0.9rem", color: SECTION_GREY, lineHeight: 1.5 }}>
+                        Status comes from the Drawings page.
+                      </div>
+                      <div style={{ marginTop: "10px", fontSize: "0.98rem", fontWeight: 600, color: drawingStates.working.color }}>
+                        {drawingStates.working.label}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {planningSection === "BAL" && (
+                <div role="region" aria-labelledby="bal-title">
+                  <h3 id="bal-title" style={{ margin: "0 0 16px 0", color: MONUMENT, fontSize: "1.1rem" }}>
+                    BAL
+                  </h3>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: balRequirement === "Required" ? "minmax(0, 280px) minmax(0, 1fr)" : "minmax(0, 280px)",
+                      gap: "20px",
+                      alignItems: "start",
+                      maxWidth: "760px",
+                    }}
+                  >
+                    <div>
+                      <label
+                        htmlFor="bal-select"
+                        style={{
+                          display: "block",
+                          fontSize: "0.9rem",
+                          color: "#32323399",
+                          marginBottom: "6px",
+                          fontWeight: 500,
+                        }}
+                      >
+                        Requirement
+                      </label>
+                      <select
+                        id="bal-select"
+                        value={balRequirement}
+                        onChange={handleBalRequirementChange}
+                        disabled={!project?.id}
+                        style={{
+                          width: "100%",
+                          padding: "10px 12px",
+                          borderRadius: "8px",
+                          border: "1px solid #ddd",
+                          fontSize: "1rem",
+                          color: MONUMENT,
+                          background: WHITE,
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        {PLANNING_NA_REQUIRED_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {balRequirement === "Required" ? (
+                      <RequestedReceivedControls
+                        requestedAt={project?.planning_bal_requested_at}
+                        receivedAt={project?.planning_bal_received_at}
+                        onRequested={handleBalStampRequested}
+                        onReceived={handleBalStampReceived}
+                        disabled={!project?.id || isSaving}
+                      />
+                    ) : null}
+                  </div>
+                </div>
+              )}
+
+              {planningSection === "Footing Certification" && (
+                <div role="region" aria-labelledby="footing-certification-title">
+                  <h3 id="footing-certification-title" style={{ margin: "0 0 16px 0", color: MONUMENT, fontSize: "1.1rem" }}>
+                    Footing certification
+                  </h3>
+                  <RequestedReceivedControls
+                    requestedAt={project?.planning_footing_certification_requested_at}
+                    receivedAt={project?.planning_footing_certification_received_at}
+                    onRequested={handleFootingCertificationStampRequested}
+                    onReceived={handleFootingCertificationStampReceived}
+                    disabled={!project?.id || isSaving}
+                  />
+                </div>
+              )}
+
+              {planningSection === "Energy Report" && (
+                <div role="region" aria-labelledby="energy-report-title">
+                  <h3 id="energy-report-title" style={{ margin: "0 0 16px 0", color: MONUMENT, fontSize: "1.1rem" }}>
+                    Energy report
+                  </h3>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "20px", maxWidth: "760px" }}>
+                    <div>
+                      <RequestedReceivedControls
+                        requestedAt={project?.planning_energy_report_requested_at}
+                        receivedAt={project?.planning_energy_report_received_at}
+                        onRequested={handleEnergyReportStampRequested}
+                        onReceived={handleEnergyReportStampReceived}
+                        disabled={!project?.id || isSaving}
+                      />
+                    </div>
+
+                    <div style={{ maxWidth: "320px" }}>
+                      <label
+                        htmlFor="energy-specs-added-select"
+                        style={{
+                          display: "block",
+                          fontSize: "0.9rem",
+                          color: "#32323399",
+                          marginBottom: "6px",
+                          fontWeight: 500,
+                        }}
+                      >
+                        Energy Specs Added to Plans
+                      </label>
+                      <select
+                        id="energy-specs-added-select"
+                        value={energySpecsAddedToPlans}
+                        onChange={handleEnergySpecsAddedToPlansChange}
+                        disabled={!project?.id || isSaving}
+                        style={{
+                          width: "100%",
+                          padding: "10px 12px",
+                          borderRadius: "8px",
+                          border: "1px solid #ddd",
+                          fontSize: "1rem",
+                          color: MONUMENT,
+                          background: WHITE,
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        {ENERGY_SPECS_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {planningSection !== "JCA Land Survey" &&
                 planningSection !== "Soil Test" &&
                 planningSection !== "Site Visit" &&
                 planningSection !== "Job File Documents" &&
-                planningSection !== "Job File Complete" && (
+                planningSection !== "Job File Complete" &&
+                planningSection !== "Drawings" &&
+                planningSection !== "Written Planning Advice" &&
+                planningSection !== "Town Planning" &&
+                planningSection !== "Land Subject to Flooding" &&
+                planningSection !== "BAL" &&
+                planningSection !== "Footing Certification" &&
+                planningSection !== "Energy Report" && (
                   <div>
                     <h3 style={{ margin: "0 0 10px 0", color: MONUMENT, fontSize: "1.1rem" }}>{planningSection}</h3>
                     <p style={{ margin: 0, fontSize: "0.9rem", color: SECTION_GREY, lineHeight: 1.5, maxWidth: "640px" }}>
-                      {planningSection === "Concept Drawings" ? (
-                        <>
-                          Status comes from the Drawings page (Concept).{" "}
-                          <strong style={{ color: drawingStates.concept.color }}>{drawingStates.concept.label}</strong>
-                        </>
-                      ) : planningSection === "Working Drawings" ? (
-                        <>
-                          Status comes from the Drawings page (Working).{" "}
-                          <strong style={{ color: drawingStates.working.color }}>{drawingStates.working.label}</strong>
-                        </>
-                      ) : (
-                        <>Use other project sections to update this item when applicable. No extra controls are on this tab yet.</>
-                      )}
+                      <>Use other project sections to update this item when applicable. No extra controls are on this tab yet.</>
                     </p>
                   </div>
                 )}
