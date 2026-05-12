@@ -1553,7 +1553,7 @@ app.post("/api/projects/bulk", async (req, res) => {
     let skippedCount = 0;
 
     for (const projectData of projects) {
-      const { suburb: suburbRaw, street: streetRaw, specs, project_cost, year, state, stream, status } = projectData;
+      const { suburb: suburbRaw, street: streetRaw, specs, classification, project_cost, year, state, stream, status } = projectData;
       const suburb = suburbRaw ? normalizeAddressHyphensForFilesystem(String(suburbRaw).trim()) : "";
       const street = streetRaw ? normalizeAddressHyphensForFilesystem(String(streetRaw).trim()) : "";
       
@@ -1620,7 +1620,7 @@ app.post("/api/projects/bulk", async (req, res) => {
           'Not Submitted',  // building_permit_status - default to Not Submitted
           'Not Required',  // septic_permit - default for new jobs
           specs ? specs.trim() : null,
-          null, // classification
+          classification ? classification.trim() : null,
           initialLogEntry, // project_log - initial entry
         ]
       );

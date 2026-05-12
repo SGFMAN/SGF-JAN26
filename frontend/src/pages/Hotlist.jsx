@@ -107,6 +107,8 @@ export default function Hotlist() {
     deposit: "",
     stream: "",
     salesperson: "",
+    specs: "",
+    classification: "",
     proposalFile: null,
     customDeposit: "",
   });
@@ -183,6 +185,8 @@ export default function Hotlist() {
       deposit: "",
       stream: "",
       salesperson: "",
+      specs: "",
+      classification: "",
       proposalFile: null,
       customDeposit: "",
     });
@@ -203,6 +207,8 @@ export default function Hotlist() {
       deposit: "",
       stream: item.stream || "",
       salesperson: "",
+      specs: "",
+      classification: "",
       proposalFile: null,
       customDeposit: "",
     });
@@ -271,6 +277,8 @@ export default function Hotlist() {
       deposit: "",
       stream: "",
       salesperson: "",
+      specs: "",
+      classification: "",
       proposalFile: null,
       customDeposit: "",
     });
@@ -629,6 +637,8 @@ export default function Hotlist() {
       deposit: "",
       stream: "",
       salesperson: "",
+      specs: "",
+      classification: "",
       proposalFile: null,
       customDeposit: "",
     });
@@ -663,6 +673,8 @@ export default function Hotlist() {
         deposit: formData.deposit || null,
         stream: formData.stream || null,
         salesperson: formData.salesperson || null,
+        specs: formData.specs || null,
+        classification: formData.classification || null,
       };
 
       const updateResponse = await fetch(`${API_URL}/api/projects/${newProject.id}`, {
@@ -687,6 +699,8 @@ export default function Hotlist() {
         deposit: formData.deposit || newProject.deposit,
         stream: formData.stream || newProject.stream,
         salesperson: formData.salesperson || newProject.salesperson,
+        specs: formData.specs || newProject.specs,
+        classification: formData.classification || newProject.classification,
       };
       return projectForEmail;
     } catch (err) {
