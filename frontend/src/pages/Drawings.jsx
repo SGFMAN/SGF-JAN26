@@ -87,6 +87,12 @@ export default function Drawings({
   /** When a new PDF is uploaded, user must pick concept vs working before Save and Send ("", "concept", "working"). */
   const [newDrawingUploadKind, setNewDrawingUploadKind] = useState("");
   const [streamSettingsJson, setStreamSettingsJson] = useState({});
+  const drawingUploadPreverifiedPublishedPlansDirRef = useRef(null);
+  const [drawingsFolderCheckPending, setDrawingsFolderCheckPending] = useState(false);
+  const [showDrawingsFolderMissingModal, setShowDrawingsFolderMissingModal] = useState(false);
+  const [drawingsFolderMissingProjectName, setDrawingsFolderMissingProjectName] = useState("");
+  const [showDrawingsPathErrorModal, setShowDrawingsPathErrorModal] = useState(false);
+  const [drawingsPathErrorMessage, setDrawingsPathErrorMessage] = useState("");
 
   const valuesRef = useRef({ drawingsStatus, draftsperson });
   
@@ -851,35 +857,53 @@ export default function Drawings({
     e.stopPropagation();
   }
 
+  function openDrawingsPathErrorModal(message) {
+    setDrawingsPathErrorMessage(String(message || "Something went wrong."));
+    setShowDrawingsPathErrorModal(true);
+  }
+
+  function closeDrawingsFolderMissingModal() {
+    setShowDrawingsFolderMissingModal(false);
+    setDrawingsFolderMissingProjectName("");
+  }
+
+  function closeDrawingsPathErrorModal() {
+    setShowDrawingsPathErrorModal(false);
+    setDrawingsPathErrorMessage("");
+  }
+
   async function saveDrawingsPath(file) {
     if (!file) return;
     if (!project?.id) {
-      alert("Error: Project ID is missing");
+      openDrawingsPathErrorModal("Project ID is missing.");
       return;
     }
 
     try {
       const fileName = file.name;
 
-      const verifyRes = await fetch(
-        `${API_URL}/api/projects/${project.id}/verify-drawings-job-folder`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
-      );
-      const verifyData = await verifyRes.json().catch(() => ({}));
-      if (!verifyRes.ok) {
-        if (verifyRes.status === 409 && verifyData.code === "DRAWINGS_JOB_FOLDER_NOT_FOUND") {
-          const pn = verifyData.projectName || "this project";
-          alert(
-            `Folder not found for ${pn}.\n\nYour drawings were not uploaded.\n\nThis issue has been flagged. Ben will let you know when it is OK to upload the drawings again.`
-          );
-          setSelectedFile(null);
-          if (fileInputRef.current) fileInputRef.current.value = "";
-          return;
+      let publishedPlansDir = drawingUploadPreverifiedPublishedPlansDirRef.current;
+      const hadPreverified = typeof publishedPlansDir === "string" && publishedPlansDir.length > 0;
+      if (!hadPreverified) {
+        const verifyRes = await fetch(
+          `${API_URL}/api/projects/${project.id}/verify-drawings-job-folder`,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
+        );
+        const verifyData = await verifyRes.json().catch(() => ({}));
+        if (!verifyRes.ok) {
+          if (verifyRes.status === 409 && verifyData.code === "DRAWINGS_JOB_FOLDER_NOT_FOUND") {
+            const pn = verifyData.projectName || "this project";
+            setDrawingsFolderMissingModalProjectName(pn);
+            setShowDrawingsFolderMissingModal(true);
+            setSelectedFile(null);
+            if (fileInputRef.current) fileInputRef.current.value = "";
+            return;
+          }
+          throw new Error(verifyData.error || "Could not verify job folder on disk");
         }
-        throw new Error(verifyData.error || "Could not verify job folder on disk");
+        publishedPlansDir = verifyData.publishedPlansDir;
       }
 
-      const publishedPlansDir = verifyData.publishedPlansDir;
       if (!publishedPlansDir || typeof publishedPlansDir !== "string") {
         throw new Error("Server did not return the PUBLISHED PLANS folder path");
       }
@@ -1004,6 +1028,10 @@ export default function Drawings({
         throw new Error(errorData.error || "Failed to save drawings path");
       }
 
+      if (hadPreverified) {
+        drawingUploadPreverifiedPublishedPlansDirRef.current = null;
+      }
+
       // Get the updated project from the server response
       const updatedProject = await response.json();
       
@@ -1030,7 +1058,7 @@ export default function Drawings({
       setShowNotesModal(true);
     } catch (error) {
       console.error("Error saving drawings path:", error);
-      alert(`Error saving drawings path: ${error.message}`);
+      openDrawingsPathErrorModal(error.message || "Failed to save drawings path");
     }
   }
 
@@ -1040,18 +1068,62 @@ export default function Drawings({
 
   async function beginDrawingPdfUpload(file) {
     if (!file) return;
+    if (drawingsFolderCheckPending) return;
     if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
       alert("Please select a PDF file");
       return;
     }
-    setSelectedFile(file);
-    if (!hasDraftspersonAssigned()) {
-      setPendingPdfFile(file);
-      setDraftspersonModalChoice(DRAFTSPERSON_UNASSIGNED);
-      setShowDraftspersonRequiredModal(true);
+    if (!project?.id) {
+      openDrawingsPathErrorModal("Project ID is missing.");
       return;
     }
-    await saveDrawingsPath(file);
+
+    drawingUploadPreverifiedPublishedPlansDirRef.current = null;
+    setDrawingsFolderCheckPending(true);
+    try {
+      const verifyRes = await fetch(
+        `${API_URL}/api/projects/${project.id}/verify-drawings-job-folder`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
+      );
+      const verifyData = await verifyRes.json().catch(() => ({}));
+
+      if (verifyRes.status === 409 && verifyData.code === "DRAWINGS_JOB_FOLDER_NOT_FOUND") {
+        const pn = verifyData.projectName || "this project";
+        setDrawingsFolderMissingModalProjectName(pn);
+        setShowDrawingsFolderMissingModal(true);
+        setSelectedFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+
+      if (!verifyRes.ok) {
+        openDrawingsPathErrorModal(verifyData.error || "Could not verify job folder on disk");
+        setSelectedFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+
+      const publishedPlansDir = verifyData.publishedPlansDir;
+      if (!publishedPlansDir || typeof publishedPlansDir !== "string") {
+        openDrawingsPathErrorModal("Server did not return the PUBLISHED PLANS folder path.");
+        setSelectedFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+
+      drawingUploadPreverifiedPublishedPlansDirRef.current = publishedPlansDir;
+      setSelectedFile(file);
+
+      if (!hasDraftspersonAssigned()) {
+        setPendingPdfFile(file);
+        setDraftspersonModalChoice(DRAFTSPERSON_UNASSIGNED);
+        setShowDraftspersonRequiredModal(true);
+        return;
+      }
+      await saveDrawingsPath(file);
+    } finally {
+      setDrawingsFolderCheckPending(false);
+    }
   }
 
   async function handleConfirmDraftspersonForUpload() {
@@ -1081,6 +1153,7 @@ export default function Drawings({
     setShowDraftspersonRequiredModal(false);
     setPendingPdfFile(null);
     setDraftspersonModalChoice(DRAFTSPERSON_UNASSIGNED);
+    drawingUploadPreverifiedPublishedPlansDirRef.current = null;
     setSelectedFile(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -1106,6 +1179,7 @@ export default function Drawings({
   }
 
   function handleBrowseClick() {
+    if (drawingsFolderCheckPending) return;
     fileInputRef.current?.click();
   }
 
@@ -3212,6 +3286,7 @@ export default function Drawings({
               <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
                 Drawings PDF
               </div>
+              <div style={{ position: "relative", width: "100%" }}>
               <div
                 onDragEnter={handleDragEnter}
                 onDragOver={handleDragOver}
@@ -3223,7 +3298,7 @@ export default function Drawings({
                   borderRadius: "8px",
                   padding: "40px 20px",
                   textAlign: "center",
-                  cursor: "pointer",
+                  cursor: drawingsFolderCheckPending ? "wait" : "pointer",
                   background: MONUMENT,
                   transition: "background 0.2s, border-color 0.2s",
                   display: "flex",
@@ -3233,8 +3308,32 @@ export default function Drawings({
                   width: "100%",
                   minHeight: "200px",
                   boxSizing: "border-box",
+                  position: "relative",
                 }}
               >
+                {drawingsFolderCheckPending && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      borderRadius: "8px",
+                      background: "rgba(32, 32, 35, 0.9)",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      zIndex: 3,
+                      pointerEvents: "all",
+                    }}
+                  >
+                    <div style={{ color: WHITE, fontWeight: 600, fontSize: "1rem", letterSpacing: "0.02em" }}>
+                      Checking job folder…
+                    </div>
+                    <div style={{ color: "#ffffffb3", fontSize: "0.88rem", marginTop: "10px" }}>
+                      Verifying path on disk
+                    </div>
+                  </div>
+                )}
                 {selectedFile ? (
                   <div>
                     <div style={{ color: WHITE, fontWeight: "500", marginBottom: "8px" }}>
@@ -3261,6 +3360,7 @@ export default function Drawings({
                   onChange={handleFileSelect}
                   style={{ display: "none" }}
                 />
+              </div>
               </div>
             </div>
 
@@ -3427,6 +3527,118 @@ export default function Drawings({
                 onMouseLeave={(e) => (e.currentTarget.style.background = "#4D93D9")}
               >
                 Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Job folder missing — drawings not saved (Ben notified server-side) */}
+      {showDrawingsFolderMissingModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1030,
+          }}
+          onClick={closeDrawingsFolderMissingModal}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "26px 28px",
+              maxWidth: "460px",
+              width: "90%",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: "14px", color: MONUMENT, fontSize: "1.15rem" }}>
+              Job folder not found
+            </h3>
+            <p style={{ margin: "0 0 12px", fontSize: "0.95rem", color: MONUMENT, lineHeight: 1.5 }}>
+              <strong>Folder not found for {drawingsFolderMissingProjectName || "this project"}.</strong>
+            </p>
+            <p style={{ margin: "0 0 12px", fontSize: "0.95rem", color: "#555", lineHeight: 1.55 }}>
+              Your drawings were not uploaded.
+            </p>
+            <p style={{ margin: "0 0 22px", fontSize: "0.95rem", color: "#555", lineHeight: 1.55 }}>
+              This issue has been flagged. Ben will let you know when it is OK to upload the drawings again.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={closeDrawingsFolderMissingModal}
+                style={{
+                  background: "#4D93D9",
+                  color: WHITE,
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "10px 22px",
+                  fontSize: "0.95rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generic drawings path / verify error */}
+      {showDrawingsPathErrorModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1035,
+          }}
+          onClick={closeDrawingsPathErrorModal}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "26px 28px",
+              maxWidth: "440px",
+              width: "90%",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: "14px", color: MONUMENT, fontSize: "1.1rem" }}>
+              Drawings upload
+            </h3>
+            <p style={{ margin: "0 0 22px", fontSize: "0.95rem", color: "#555", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
+              {drawingsPathErrorMessage}
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={closeDrawingsPathErrorModal}
+                style={{
+                  background: "#4D93D9",
+                  color: WHITE,
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "10px 22px",
+                  fontSize: "0.95rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                OK
               </button>
             </div>
           </div>
