@@ -93,7 +93,6 @@ export default function Drawings({
   const drawingUploadPreverifiedPublishedPlansDirRef = useRef(null);
   const [drawingsFolderCheckPending, setDrawingsFolderCheckPending] = useState(false);
   const [showDrawingsFolderMissingModal, setShowDrawingsFolderMissingModal] = useState(false);
-  const [drawingsFolderMissingProjectName, setDrawingsFolderMissingProjectName] = useState("");
   const [showDrawingsPathErrorModal, setShowDrawingsPathErrorModal] = useState(false);
   const [drawingsPathErrorMessage, setDrawingsPathErrorMessage] = useState("");
 
@@ -867,7 +866,6 @@ export default function Drawings({
 
   function closeDrawingsFolderMissingModal() {
     setShowDrawingsFolderMissingModal(false);
-    setDrawingsFolderMissingProjectName("");
   }
 
   function closeDrawingsPathErrorModal() {
@@ -884,13 +882,7 @@ export default function Drawings({
     return d.ok === false;
   }
 
-  function showFolderMissingUiFromVerifyBody(verifyData) {
-    const d = verifyData && typeof verifyData === "object" ? verifyData : {};
-    const pn =
-      (typeof d.projectName === "string" && d.projectName.trim()) ||
-      (typeof d.error === "string" && d.error.replace(/^Folder not found for\s+/i, "").trim()) ||
-      "this project";
-    setDrawingsFolderMissingModalProjectName(pn);
+  function showFolderMissingUiFromVerifyBody(_verifyData) {
     setShowDrawingsFolderMissingModal(true);
   }
 
@@ -3594,17 +3586,9 @@ export default function Drawings({
               }}
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 style={{ marginTop: 0, marginBottom: "14px", color: MONUMENT, fontSize: "1.15rem" }}>
-                Job folder not found
-              </h3>
-              <p style={{ margin: "0 0 12px", fontSize: "0.95rem", color: MONUMENT, lineHeight: 1.5 }}>
-                <strong>Folder not found for {drawingsFolderMissingProjectName || "this project"}.</strong>
-              </p>
-              <p style={{ margin: "0 0 12px", fontSize: "0.95rem", color: "#555", lineHeight: 1.55 }}>
-                Your drawings were not uploaded.
-              </p>
-              <p style={{ margin: "0 0 22px", fontSize: "0.95rem", color: "#555", lineHeight: 1.55 }}>
-                This issue has been flagged. Ben will let you know when it is OK to upload the drawings again.
+              <p style={{ margin: "0 0 24px", fontSize: "0.98rem", color: "#444", lineHeight: 1.6 }}>
+                Whoops — there was an issue with the upload. Ben has been emailed and he will follow up and let you
+                know when it&apos;s OK to re-upload the drawings.
               </p>
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button
