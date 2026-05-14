@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import {
   getProjectClientEmailsForDrawings,
@@ -35,6 +36,8 @@ const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 const API_URL = "";
+/** Above `EmailSendOverlay` (2147483000) so folder / upload errors are never hidden behind it. */
+const DRAWINGS_ALERT_MODAL_Z = 2147483646;
 
 export default function Drawings({
   project,
@@ -872,6 +875,25 @@ export default function Drawings({
     setDrawingsPathErrorMessage("");
   }
 
+  /** 409 from verify endpoint, or same semantics if `code` is missing from body. */
+  function isVerifyFolderMissingResponse(status, data) {
+    if (status !== 409) return false;
+    const d = data && typeof data === "object" ? data : {};
+    if (d.code === "DRAWINGS_JOB_FOLDER_NOT_FOUND") return true;
+    if (typeof d.error === "string" && /folder not found/i.test(d.error)) return true;
+    return d.ok === false;
+  }
+
+  function showFolderMissingUiFromVerifyBody(verifyData) {
+    const d = verifyData && typeof verifyData === "object" ? verifyData : {};
+    const pn =
+      (typeof d.projectName === "string" && d.projectName.trim()) ||
+      (typeof d.error === "string" && d.error.replace(/^Folder not found for\s+/i, "").trim()) ||
+      "this project";
+    setDrawingsFolderMissingModalProjectName(pn);
+    setShowDrawingsFolderMissingModal(true);
+  }
+
   async function saveDrawingsPath(file) {
     if (!file) return;
     if (!project?.id) {
@@ -891,10 +913,8 @@ export default function Drawings({
         );
         const verifyData = await verifyRes.json().catch(() => ({}));
         if (!verifyRes.ok) {
-          if (verifyRes.status === 409 && verifyData.code === "DRAWINGS_JOB_FOLDER_NOT_FOUND") {
-            const pn = verifyData.projectName || "this project";
-            setDrawingsFolderMissingModalProjectName(pn);
-            setShowDrawingsFolderMissingModal(true);
+          if (isVerifyFolderMissingResponse(verifyRes.status, verifyData)) {
+            showFolderMissingUiFromVerifyBody(verifyData);
             setSelectedFile(null);
             if (fileInputRef.current) fileInputRef.current.value = "";
             return;
@@ -1081,16 +1101,26 @@ export default function Drawings({
     drawingUploadPreverifiedPublishedPlansDirRef.current = null;
     setDrawingsFolderCheckPending(true);
     try {
-      const verifyRes = await fetch(
-        `${API_URL}/api/projects/${project.id}/verify-drawings-job-folder`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
-      );
-      const verifyData = await verifyRes.json().catch(() => ({}));
+      let verifyRes;
+      let verifyData;
+      try {
+        verifyRes = await fetch(
+          `${API_URL}/api/projects/${project.id}/verify-drawings-job-folder`,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
+        );
+        verifyData = await verifyRes.json().catch(() => ({}));
+      } catch (netErr) {
+        console.error("verify-drawings-job-folder fetch failed:", netErr);
+        openDrawingsPathErrorModal(
+          netErr?.message || "Could not reach the server to verify the job folder. Check your connection and try again."
+        );
+        setSelectedFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
 
-      if (verifyRes.status === 409 && verifyData.code === "DRAWINGS_JOB_FOLDER_NOT_FOUND") {
-        const pn = verifyData.projectName || "this project";
-        setDrawingsFolderMissingModalProjectName(pn);
-        setShowDrawingsFolderMissingModal(true);
+      if (isVerifyFolderMissingResponse(verifyRes.status, verifyData)) {
+        showFolderMissingUiFromVerifyBody(verifyData);
         setSelectedFile(null);
         if (fileInputRef.current) fileInputRef.current.value = "";
         return;
@@ -1121,6 +1151,11 @@ export default function Drawings({
         return;
       }
       await saveDrawingsPath(file);
+    } catch (e) {
+      console.error("beginDrawingPdfUpload:", e);
+      openDrawingsPathErrorModal(e?.message || "Something went wrong while starting the upload.");
+      setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     } finally {
       setDrawingsFolderCheckPending(false);
     }
@@ -3533,117 +3568,129 @@ export default function Drawings({
         </div>
       )}
 
-      {/* Job folder missing — drawings not saved (Ben notified server-side) */}
-      {showDrawingsFolderMissingModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1030,
-          }}
-          onClick={closeDrawingsFolderMissingModal}
-        >
+      {typeof document !== "undefined" &&
+        showDrawingsFolderMissingModal &&
+        createPortal(
           <div
             style={{
-              background: WHITE,
-              borderRadius: "12px",
-              padding: "26px 28px",
-              maxWidth: "460px",
-              width: "90%",
-              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0, 0, 0, 0.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: DRAWINGS_ALERT_MODAL_Z,
             }}
-            onClick={(e) => e.stopPropagation()}
+            onClick={closeDrawingsFolderMissingModal}
           >
-            <h3 style={{ marginTop: 0, marginBottom: "14px", color: MONUMENT, fontSize: "1.15rem" }}>
-              Job folder not found
-            </h3>
-            <p style={{ margin: "0 0 12px", fontSize: "0.95rem", color: MONUMENT, lineHeight: 1.5 }}>
-              <strong>Folder not found for {drawingsFolderMissingProjectName || "this project"}.</strong>
-            </p>
-            <p style={{ margin: "0 0 12px", fontSize: "0.95rem", color: "#555", lineHeight: 1.55 }}>
-              Your drawings were not uploaded.
-            </p>
-            <p style={{ margin: "0 0 22px", fontSize: "0.95rem", color: "#555", lineHeight: 1.55 }}>
-              This issue has been flagged. Ben will let you know when it is OK to upload the drawings again.
-            </p>
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button
-                type="button"
-                onClick={closeDrawingsFolderMissingModal}
-                style={{
-                  background: "#4D93D9",
-                  color: WHITE,
-                  border: "none",
-                  borderRadius: "8px",
-                  padding: "10px 22px",
-                  fontSize: "0.95rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                OK
-              </button>
+            <div
+              style={{
+                background: WHITE,
+                borderRadius: "12px",
+                padding: "26px 28px",
+                maxWidth: "460px",
+                width: "90%",
+                boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 style={{ marginTop: 0, marginBottom: "14px", color: MONUMENT, fontSize: "1.15rem" }}>
+                Job folder not found
+              </h3>
+              <p style={{ margin: "0 0 12px", fontSize: "0.95rem", color: MONUMENT, lineHeight: 1.5 }}>
+                <strong>Folder not found for {drawingsFolderMissingProjectName || "this project"}.</strong>
+              </p>
+              <p style={{ margin: "0 0 12px", fontSize: "0.95rem", color: "#555", lineHeight: 1.55 }}>
+                Your drawings were not uploaded.
+              </p>
+              <p style={{ margin: "0 0 22px", fontSize: "0.95rem", color: "#555", lineHeight: 1.55 }}>
+                This issue has been flagged. Ben will let you know when it is OK to upload the drawings again.
+              </p>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  onClick={closeDrawingsFolderMissingModal}
+                  style={{
+                    background: "#4D93D9",
+                    color: WHITE,
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "10px 22px",
+                    fontSize: "0.95rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  OK
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
-      {/* Generic drawings path / verify error */}
-      {showDrawingsPathErrorModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1035,
-          }}
-          onClick={closeDrawingsPathErrorModal}
-        >
+      {typeof document !== "undefined" &&
+        showDrawingsPathErrorModal &&
+        createPortal(
           <div
             style={{
-              background: WHITE,
-              borderRadius: "12px",
-              padding: "26px 28px",
-              maxWidth: "440px",
-              width: "90%",
-              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0, 0, 0, 0.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: DRAWINGS_ALERT_MODAL_Z,
             }}
-            onClick={(e) => e.stopPropagation()}
+            onClick={closeDrawingsPathErrorModal}
           >
-            <h3 style={{ marginTop: 0, marginBottom: "14px", color: MONUMENT, fontSize: "1.1rem" }}>
-              Drawings upload
-            </h3>
-            <p style={{ margin: "0 0 22px", fontSize: "0.95rem", color: "#555", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
-              {drawingsPathErrorMessage}
-            </p>
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button
-                type="button"
-                onClick={closeDrawingsPathErrorModal}
+            <div
+              style={{
+                background: WHITE,
+                borderRadius: "12px",
+                padding: "26px 28px",
+                maxWidth: "440px",
+                width: "90%",
+                boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 style={{ marginTop: 0, marginBottom: "14px", color: MONUMENT, fontSize: "1.1rem" }}>
+                Drawings upload
+              </h3>
+              <p
                 style={{
-                  background: "#4D93D9",
-                  color: WHITE,
-                  border: "none",
-                  borderRadius: "8px",
-                  padding: "10px 22px",
+                  margin: "0 0 22px",
                   fontSize: "0.95rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
+                  color: "#555",
+                  lineHeight: 1.55,
+                  whiteSpace: "pre-wrap",
                 }}
               >
-                OK
-              </button>
+                {drawingsPathErrorMessage}
+              </p>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  onClick={closeDrawingsPathErrorModal}
+                  style={{
+                    background: "#4D93D9",
+                    color: WHITE,
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "10px 22px",
+                    fontSize: "0.95rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  OK
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* Require draftsperson before uploading drawings (before notes / email modals) */}
       {showDraftspersonRequiredModal && (
