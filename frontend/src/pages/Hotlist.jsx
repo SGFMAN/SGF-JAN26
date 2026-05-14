@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import NewProject from "./NewProject_1_Address";
 import NewProject2 from "./NewProject_2_ClientDetails";
@@ -36,6 +36,13 @@ const HOTLIST_PROJECT_STREAM_OPTIONS = [
   "Creat Cash Flow",
   "Fresh Start Advisory",
 ];
+
+/** Section headers: bar colours match agreement-sent row tints; darker outline marks headings. */
+const HOTLIST_SECTION_HEADING = {
+  vic: { label: "SGF - VIC", bar: "#4D93D9", outline: "#2a5f96" },
+  qld: { label: "SGF - QLD", bar: "#D54358", outline: "#8c1e30" },
+  green: { label: "Green Streams", bar: "#92D050", outline: "#4d7a24" },
+};
 
 function normalizeHotlistProjectStream(s) {
   const t = (s || "").trim();
@@ -113,6 +120,28 @@ export default function Hotlist() {
     customDeposit: "",
   });
 
+  const [hotlistSectionOpen, setHotlistSectionOpen] = useState({
+    vic: false,
+    qld: false,
+    green: false,
+  });
+  const [notesModalItem, setNotesModalItem] = useState(null);
+  const [notesModalText, setNotesModalText] = useState("");
+  const [notesSaveStatus, setNotesSaveStatus] = useState("idle");
+  const notesModalTextRef = useRef("");
+  const notesDebounceRef = useRef(null);
+  const notesTextAreaRef = useRef(null);
+
+  useEffect(() => {
+    notesModalTextRef.current = notesModalText;
+  }, [notesModalText]);
+
+  useEffect(() => {
+    if (notesModalItem && notesTextAreaRef.current) {
+      notesTextAreaRef.current.focus();
+    }
+  }, [notesModalItem]);
+
   useEffect(() => {
     checkAdminStatus();
     fetchHotlist();
@@ -172,6 +201,57 @@ export default function Hotlist() {
       setLoading(false);
     }
   }
+
+  async function persistHotlistNotes(itemId, text) {
+    const response = await fetch(`${API_URL}/api/hotlist/${itemId}/notes`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hotlist_notes: text }),
+    });
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => response.statusText);
+      throw new Error(errorText);
+    }
+    return response.json();
+  }
+
+  useEffect(() => {
+    if (!notesModalItem) return;
+    const id = notesModalItem.id;
+    if (notesDebounceRef.current) clearTimeout(notesDebounceRef.current);
+    notesDebounceRef.current = setTimeout(async () => {
+      notesDebounceRef.current = null;
+      setNotesSaveStatus("saving");
+      try {
+        const row = await persistHotlistNotes(id, notesModalTextRef.current);
+        setHotlistItems((prev) =>
+          prev.map((it) => (it.id === id ? { ...it, hotlist_notes: row.hotlist_notes } : it))
+        );
+        setNotesSaveStatus("saved");
+        window.setTimeout(() => {
+          setNotesSaveStatus((s) => (s === "saved" ? "idle" : s));
+        }, 2000);
+      } catch (err) {
+        console.error("Hotlist notes save failed:", err);
+        setNotesSaveStatus("error");
+      }
+    }, 600);
+    return () => {
+      if (notesDebounceRef.current) {
+        clearTimeout(notesDebounceRef.current);
+        notesDebounceRef.current = null;
+      }
+    };
+  }, [notesModalText, notesModalItem?.id]);
+
+  useEffect(() => {
+    if (notesModalItem) {
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = "";
+      };
+    }
+  }, [notesModalItem]);
 
   function handleNewItemClick() {
     setFormData({
@@ -410,6 +490,41 @@ export default function Hotlist() {
       console.error("Error updating hotlist stream:", err);
       alert("Error updating stream: " + err.message);
     }
+  }
+
+  function toggleHotlistSection(key) {
+    setHotlistSectionOpen((o) => ({ ...o, [key]: !o[key] }));
+  }
+
+  function openHotlistNotesModal(item) {
+    setNotesModalItem(item);
+    setNotesModalText(item.hotlist_notes || "");
+    setNotesSaveStatus("idle");
+  }
+
+  async function handleCloseNotesModal() {
+    const item = notesModalItem;
+    if (notesDebounceRef.current) {
+      clearTimeout(notesDebounceRef.current);
+      notesDebounceRef.current = null;
+    }
+    if (item) {
+      setNotesSaveStatus("saving");
+      try {
+        const row = await persistHotlistNotes(item.id, notesModalTextRef.current);
+        setHotlistItems((prev) =>
+          prev.map((it) => (it.id === item.id ? { ...it, hotlist_notes: row.hotlist_notes } : it))
+        );
+      } catch (err) {
+        console.error("Hotlist notes flush save failed:", err);
+        setNotesSaveStatus("error");
+        alert("Could not save notes: " + err.message);
+        return;
+      }
+    }
+    setNotesModalItem(null);
+    setNotesModalText("");
+    setNotesSaveStatus("idle");
   }
 
   async function handleAgreementSentClick(item) {
@@ -757,6 +872,41 @@ export default function Hotlist() {
     [hotlistItems, agreementSentItems]
   );
 
+  function renderHotlistSectionHeader(sectionKey, itemCount) {
+    const cfg = HOTLIST_SECTION_HEADING[sectionKey];
+    const open = hotlistSectionOpen[sectionKey];
+    return (
+      <button
+        type="button"
+        onClick={() => toggleHotlistSection(sectionKey)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: "12px",
+          padding: "12px 16px",
+          margin: 0,
+          background: cfg.bar,
+          border: `2px solid ${cfg.outline}`,
+          borderRadius: "10px",
+          cursor: "pointer",
+          textAlign: "left",
+          boxSizing: "border-box",
+          fontFamily: "inherit",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.2)",
+        }}
+      >
+        <span style={{ flex: 1, fontSize: "1.15rem", fontWeight: 700, color: WHITE }}>
+          {cfg.label}
+          <span style={{ fontWeight: 500, color: "rgba(255,255,255,0.88)", fontSize: "0.9rem", marginLeft: "8px" }}>
+            ({itemCount})
+          </span>
+        </span>
+        <span style={{ fontSize: "0.85rem", fontWeight: 700, color: WHITE, flexShrink: 0 }}>{open ? "▼" : "▶"}</span>
+      </button>
+    );
+  }
+
   function renderHotlistRow(item, columnAccent) {
     const displayName = `${item.street || ""}, ${item.suburb || ""}`.trim() || "Unnamed Address";
     const itemIsAgreementSent = isAgreementSent(item);
@@ -782,14 +932,14 @@ export default function Hotlist() {
           borderRadius: "10px",
           padding: "8px 16px",
           display: "flex",
-          justifyContent: "space-between",
           alignItems: "center",
+          justifyContent: "flex-start",
           boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
           flexWrap: "wrap",
           gap: "8px",
         }}
       >
-        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", minWidth: 0 }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", minWidth: "120px" }}>
           <span
             style={{
               fontSize: "1rem",
@@ -824,7 +974,7 @@ export default function Hotlist() {
             </>
           ) : null}
         </div>
-        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", flex: "0 1 auto" }}>
           <select
             aria-label="Project stream"
             value={streamVal || ""}
@@ -855,6 +1005,45 @@ export default function Hotlist() {
               </option>
             ) : null}
           </select>
+          <button
+            type="button"
+            onClick={() => openHotlistNotesModal(item)}
+            style={{
+              background: useLightText ? "rgba(255,255,255,0.22)" : "#e8e8ea",
+              color: useLightText ? WHITE : MONUMENT,
+              border: useLightText ? "1px solid rgba(255,255,255,0.5)" : `1px solid ${MONUMENT}44`,
+              borderRadius: "8px",
+              padding: "8px 16px",
+              fontSize: "0.9rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "background 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = useLightText ? "rgba(255,255,255,0.32)" : "#dcdce0";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = useLightText ? "rgba(255,255,255,0.22)" : "#e8e8ea";
+            }}
+          >
+            Notes
+            {(item.hotlist_notes || "").trim() ? (
+              <span
+                aria-hidden="true"
+                title="Has notes"
+                style={{
+                  display: "inline-block",
+                  width: "8px",
+                  height: "8px",
+                  marginLeft: "7px",
+                  borderRadius: "50%",
+                  background: useLightText ? WHITE : MONUMENT,
+                  verticalAlign: "middle",
+                  boxShadow: useLightText ? "0 0 0 1px rgba(255,255,255,0.35)" : "0 0 0 1px rgba(50,50,51,0.2)",
+                }}
+              />
+            ) : null}
+          </button>
           {!itemIsAgreementSent ? (
             <button
               type="button"
@@ -1463,31 +1652,40 @@ export default function Hotlist() {
               }}
             >
               <div style={{ display: "flex", flexDirection: "column", gap: "12px", width: "100%" }}>
-                <h2 style={{ color: MONUMENT, fontSize: "1.15rem", fontWeight: 600, margin: 0 }}>SGF - VIC</h2>
-                {sgfVicItems.length === 0 ? (
-                  <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No items</div>
-                ) : (
-                  sgfVicItems.map((item) => renderHotlistRow(item, "vic"))
-                )}
+                {renderHotlistSectionHeader("vic", sgfVicItems.length)}
+                {hotlistSectionOpen.vic ? (
+                  sgfVicItems.length === 0 ? (
+                    <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No items</div>
+                  ) : (
+                    sgfVicItems.map((item) => renderHotlistRow(item, "vic"))
+                  )
+                ) : null}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "12px", width: "100%" }}>
-                <h2 style={{ color: MONUMENT, fontSize: "1.15rem", fontWeight: 600, margin: 0 }}>SGF - QLD</h2>
-                {sgfQldItems.length === 0 ? (
-                  <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No items</div>
-                ) : (
-                  sgfQldItems.map((item) => renderHotlistRow(item, "qld"))
-                )}
+                {renderHotlistSectionHeader("qld", sgfQldItems.length)}
+                {hotlistSectionOpen.qld ? (
+                  sgfQldItems.length === 0 ? (
+                    <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No items</div>
+                  ) : (
+                    sgfQldItems.map((item) => renderHotlistRow(item, "qld"))
+                  )
+                ) : null}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "12px", width: "100%" }}>
-                <h2 style={{ color: MONUMENT, fontSize: "1.15rem", fontWeight: 600, margin: 0 }}>Green Streams</h2>
-                {unassignedItems.length === 0 && greenStreamItems.length === 0 ? (
-                  <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No items</div>
-                ) : (
-                  <>
-                    {unassignedItems.map((item) => renderHotlistRow(item, "neutral"))}
-                    {greenStreamItems.map((item) => renderHotlistRow(item, "green"))}
-                  </>
+                {renderHotlistSectionHeader(
+                  "green",
+                  unassignedItems.length + greenStreamItems.length
                 )}
+                {hotlistSectionOpen.green ? (
+                  unassignedItems.length === 0 && greenStreamItems.length === 0 ? (
+                    <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No items</div>
+                  ) : (
+                    <>
+                      {unassignedItems.map((item) => renderHotlistRow(item, "neutral"))}
+                      {greenStreamItems.map((item) => renderHotlistRow(item, "green"))}
+                    </>
+                  )
+                ) : null}
               </div>
             </div>
           )}
@@ -1495,6 +1693,101 @@ export default function Hotlist() {
       </div>
 
       {/* Modals */}
+      {notesModalItem ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="hotlist-notes-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1200,
+            padding: "16px",
+          }}
+          onClick={handleCloseNotesModal}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "20px 22px",
+              width: "100%",
+              maxWidth: "560px",
+              maxHeight: "85vh",
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
+              <h2 id="hotlist-notes-title" style={{ margin: 0, fontSize: "1.15rem", fontWeight: 700, color: MONUMENT }}>
+                Notes
+              </h2>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
+                <span style={{ fontSize: "0.8rem", color: "#666" }}>
+                  {notesSaveStatus === "saving" ? "Saving…" : null}
+                  {notesSaveStatus === "saved" ? "Saved" : null}
+                  {notesSaveStatus === "error" ? "Save failed" : null}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCloseNotesModal}
+                  style={{
+                    background: MONUMENT,
+                    color: WHITE,
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "6px 12px",
+                    fontSize: "0.85rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+            <p style={{ margin: 0, fontSize: "0.88rem", color: "#555" }}>
+              {`${notesModalItem.street || ""}, ${notesModalItem.suburb || ""}`.trim() || notesModalItem.name || "Entry"}
+            </p>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "#888" }}>
+              Edits save automatically after you pause typing.
+            </p>
+            <textarea
+              ref={notesTextAreaRef}
+              value={notesModalText}
+              onChange={(e) => setNotesModalText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  handleCloseNotesModal();
+                }
+              }}
+              placeholder="Type notes here…"
+              style={{
+                width: "100%",
+                minHeight: "260px",
+                flex: 1,
+                resize: "vertical",
+                boxSizing: "border-box",
+                padding: "12px",
+                fontSize: "0.95rem",
+                lineHeight: 1.45,
+                border: `1px solid ${MONUMENT}33`,
+                borderRadius: "8px",
+                fontFamily: "inherit",
+                color: MONUMENT,
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
+
       {isNewItemOpen && (
         <>
           {currentModal === 1 && (

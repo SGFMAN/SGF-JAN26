@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -25,6 +25,7 @@ const STREAMS = [
 ];
 
 export default function Sales() {
+  const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -36,25 +37,10 @@ export default function Sales() {
     // Default to current year
     return new Date().getFullYear().toString();
   });
-  const [editingProject, setEditingProject] = useState(null);
-  const [projectCostInput, setProjectCostInput] = useState("");
-  const [dateInput, setDateInput] = useState("");
 
   useEffect(() => {
     fetchProjects();
   }, []);
-
-  // Prevent background scrolling when modal is open
-  useEffect(() => {
-    if (editingProject) {
-      // Disable body scroll
-      document.body.style.overflow = "hidden";
-      return () => {
-        // Re-enable body scroll when modal closes
-        document.body.style.overflow = "";
-      };
-    }
-  }, [editingProject]);
 
   async function fetchProjects() {
     try {
@@ -75,99 +61,9 @@ export default function Sales() {
   }
 
   function handleProjectClick(project) {
-    // Format existing project cost for input
-    const existingCost = project.project_cost 
-      ? project.project_cost.toString().replace(/[^0-9]/g, "")
-      : "";
-    const formattedCost = existingCost 
-      ? `$${parseInt(existingCost).toLocaleString()}`
-      : "";
-    setProjectCostInput(formattedCost);
-    
-    // Extract day from date (YYYY-MM-DD format)
-    let day = "";
-    if (project.year) {
-      const dateStr = project.year.toString();
-      if (dateStr.includes("-")) {
-        const parts = dateStr.split("-");
-        if (parts.length >= 3) {
-          day = parts[2].trim();
-        }
-      }
+    if (project?.id != null) {
+      navigate(`/project/${project.id}`);
     }
-    setDateInput(day);
-    setEditingProject(project);
-  }
-
-  function handleProjectCostChange(e) {
-    // Format project cost: remove all non-numeric characters, add $ prefix and commas
-    const numericValue = e.target.value.replace(/[^0-9]/g, "");
-    const numeric = parseInt(numericValue) || 0;
-    const formattedValue = numeric > 0 ? `$${numeric.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : "";
-    setProjectCostInput(formattedValue);
-  }
-
-  async function handleSaveProjectCost() {
-    if (!editingProject) return;
-    
-    try {
-      const numericValue = projectCostInput.replace(/[^0-9]/g, "");
-      const costToSave = numericValue ? `$${parseInt(numericValue).toLocaleString()}` : "";
-      
-      // Build date from day input (1-31) using current selected month and year
-      let dateToSave = null;
-      if (dateInput && dateInput.trim() !== "") {
-        const day = parseInt(dateInput.trim());
-        if (day >= 1 && day <= 31) {
-          // Use selected year and month, with the entered day
-          dateToSave = `${selectedYear}-${monthNumber}-${String(day).padStart(2, "0")}`;
-        }
-      }
-      
-      const updateData = {
-        project_cost: costToSave,
-      };
-      
-      // Only include year if date input is provided
-      if (dateToSave) {
-        updateData.year = dateToSave;
-      }
-      
-      const response = await fetch(`${API_URL}/api/projects/${editingProject.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(updateData),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: response.statusText }));
-        throw new Error(errorData.error || "Failed to update project");
-      }
-
-      // Update local state
-      const updatedProjects = projects.map(p => 
-        p.id === editingProject.id 
-          ? { ...p, project_cost: costToSave, year: dateToSave || p.year }
-          : p
-      );
-      setProjects(updatedProjects);
-      
-      // Close modal
-      setEditingProject(null);
-      setProjectCostInput("");
-      setDateInput("");
-    } catch (err) {
-      console.error("Error saving project:", err);
-      alert(`Failed to save: ${err.message}`);
-    }
-  }
-
-  function handleCloseModal() {
-    setEditingProject(null);
-    setProjectCostInput("");
-    setDateInput("");
   }
 
   // Get month index (0-11) from selected month name
@@ -1302,144 +1198,6 @@ export default function Sales() {
           )}
         </div>
       </div>
-
-      {/* Project Cost Edit Modal */}
-      {editingProject && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-            overflow: "hidden",
-          }}
-          onClick={handleCloseModal}
-          onWheel={(e) => e.stopPropagation()}
-          onTouchMove={(e) => e.stopPropagation()}
-        >
-          <div
-            style={{
-              backgroundColor: WHITE,
-              padding: "24px",
-              borderRadius: "8px",
-              minWidth: "400px",
-              maxWidth: "90%",
-              boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 style={{ margin: "0 0 16px 0", fontSize: "1.25rem", color: MONUMENT }}>
-              Edit Project
-            </h2>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: MONUMENT, marginBottom: "8px" }}>
-                <strong>{editingProject.suburb && editingProject.street 
-                  ? `${editingProject.suburb.toUpperCase()} - ${editingProject.street}`
-                  : editingProject.name || "Unknown Project"}</strong>
-              </div>
-            </div>
-            <div style={{ marginBottom: "16px" }}>
-              <label style={{ display: "block", marginBottom: "8px", fontSize: "0.9rem", color: MONUMENT }}>
-                Project Cost
-              </label>
-              <input
-                type="text"
-                value={projectCostInput}
-                onChange={handleProjectCostChange}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    handleSaveProjectCost();
-                  } else if (e.key === "Escape") {
-                    handleCloseModal();
-                  }
-                }}
-                style={{
-                  width: "100%",
-                  padding: "8px 12px",
-                  fontSize: "1rem",
-                  border: "1px solid #ccc",
-                  borderRadius: "4px",
-                  boxSizing: "border-box",
-                }}
-                placeholder="$0"
-              />
-            </div>
-            <div style={{ marginBottom: "16px" }}>
-              <label style={{ display: "block", marginBottom: "8px", fontSize: "0.9rem", color: MONUMENT }}>
-                Date (Day of Month: 1-31)
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="31"
-                value={dateInput}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  // Only allow numbers 1-31
-                  if (value === "" || (parseInt(value) >= 1 && parseInt(value) <= 31)) {
-                    setDateInput(value);
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    handleSaveProjectCost();
-                  } else if (e.key === "Escape") {
-                    handleCloseModal();
-                  }
-                }}
-                style={{
-                  width: "100%",
-                  padding: "8px 12px",
-                  fontSize: "1rem",
-                  border: "1px solid #ccc",
-                  borderRadius: "4px",
-                  boxSizing: "border-box",
-                }}
-                placeholder="Day (1-31)"
-              />
-              <div style={{ fontSize: "0.75rem", color: "#666", marginTop: "4px" }}>
-                Using: {selectedMonth} {selectedYear}
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-              <button
-                onClick={handleCloseModal}
-                style={{
-                  padding: "8px 16px",
-                  fontSize: "0.9rem",
-                  border: "1px solid #ccc",
-                  borderRadius: "4px",
-                  backgroundColor: WHITE,
-                  color: MONUMENT,
-                  cursor: "pointer",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveProjectCost}
-                style={{
-                  padding: "8px 16px",
-                  fontSize: "0.9rem",
-                  border: "none",
-                  borderRadius: "4px",
-                  backgroundColor: MONUMENT,
-                  color: WHITE,
-                  cursor: "pointer",
-                }}
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

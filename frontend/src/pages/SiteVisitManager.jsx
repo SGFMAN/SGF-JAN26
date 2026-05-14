@@ -12,6 +12,23 @@ const WHITE = "#fff";
 const API_URL = "";
 
 // Predefined colors for groups
+/** `year` on project = start date (usually YYYY-MM-DD). */
+function formatProjectStartDateForCard(yearVal) {
+  if (yearVal == null || yearVal === "") return "";
+  const s = String(yearVal).trim();
+  if (!s) return "";
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const y = parseInt(s.slice(0, 4), 10);
+    const mo = parseInt(s.slice(5, 7), 10) - 1;
+    const d = parseInt(s.slice(8, 10), 10);
+    const dt = new Date(y, mo, d);
+    if (Number.isNaN(dt.getTime())) return "";
+    return dt.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+  }
+  if (/^\d{4}$/.test(s)) return s;
+  return s;
+}
+
 const GROUP_COLORS = [
   "#52BE80", // Green (first group)
   "#4ECDC4", // Teal
@@ -594,6 +611,7 @@ export default function SiteVisitManager() {
                   return allProjects.map(({ project, group }) => {
                     const suburb = (project.suburb || "Unknown Suburb").toUpperCase();
                     const street = project.street || "No address";
+                    const startDateLabel = formatProjectStartDateForCard(project.year);
                     const isSelected = selectedProjectIds.has(project.id);
                     const isAlreadyGrouped = group !== null;
                     // Use group color if project is in a group, blue if selected, otherwise use MONUMENT
@@ -764,6 +782,23 @@ export default function SiteVisitManager() {
                                 <div style={{ fontSize: "0.95rem", color: WHITE, fontWeight: 400 }}>
                                   {street}
                                 </div>
+                                {startDateLabel ? (
+                                  <div
+                                    style={{
+                                      fontSize: "0.68rem",
+                                      color: "rgba(255,255,255,0.92)",
+                                      fontWeight: 500,
+                                      letterSpacing: "0.02em",
+                                      marginTop: "2px",
+                                      textAlign: "center",
+                                      maxWidth: "100%",
+                                      padding: "0 6px",
+                                      lineHeight: 1.2,
+                                    }}
+                                  >
+                                    Start {startDateLabel}
+                                  </div>
+                                ) : null}
                               </div>
                               <div 
                                 style={{ 

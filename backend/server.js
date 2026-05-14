@@ -1029,7 +1029,7 @@ async function ensureSchema() {
     'notes', 'project_info_notes', 'specs', 'classification', 'project_log',
     'window_status', 'window_colour', 'window_reveal', 'window_reveal_other', 'window_glazing', 'window_bal_rating', 'window_date_required', 'window_ordered_date', 'window_order_pdf_location', 'window_order_number',
     'drawings_status', 'drawings_pdf_location', 'drawings_history', 'drawings_viewed_date', 'drawings_sent_to_client_date', 'drawings_holder_date', 'draftsperson', 'drawings_holder', 'drawing_manager_notes', 'colours_status', 'colours_notes', 'colours_pdf_location', 'colours_sent_date', 'colours_reminder_sent_date', 'roof_colour', 'cladding_colour', 'baseboards_colour', 'roof_style', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status', 'septic_permit', 'septic_notes', 'septic_email_sent_date', 'pic',
-    'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail', 'on_hold', 'survey_status', 'soil_status', 'agreement_sent', 'qp_number',
+    'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail', 'on_hold', 'survey_status', 'soil_status', 'agreement_sent', 'hotlist_notes', 'qp_number',
     'planning_jf_planning_property_report_path', 'planning_jf_title_covenant_subdivision_path', 'planning_jf_title_path', 'planning_jf_covenant_path', 'planning_jf_section_173_agreement_path', 'planning_jf_plan_of_subdivision_path', 'planning_jf_ebyda_stormwater_path', 'planning_jf_byda_sewer_main_path', 'planning_jf_internal_sewer_plan_path', 'planning_jf_sewer_main_size_depth_offset_path', 'planning_jf_legal_point_discharge_path', 'planning_jf_property_info_report_path',
     'planning_jf_job_file_pdf_path',
     'planning_written_advice', 'planning_written_advice_requested_at', 'planning_written_advice_received_at',
@@ -8520,7 +8520,7 @@ app.get("/api/hotlist", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, stream, client_name, email, phone, agreement_sent, updated_at FROM projects WHERE status = $1 ORDER BY updated_at DESC, id DESC",
+      "SELECT id, name, status, suburb, street, state, stream, client_name, email, phone, agreement_sent, hotlist_notes, updated_at FROM projects WHERE status = $1 ORDER BY updated_at DESC, id DESC",
       ["Hotlist"]
     );
     res.json(r.rows);
@@ -8540,7 +8540,7 @@ app.get("/api/hotlist/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, stream, client_name, email, phone, agreement_sent, updated_at FROM projects WHERE id = $1 AND status = $2",
+      "SELECT id, name, status, suburb, street, state, stream, client_name, email, phone, agreement_sent, hotlist_notes, updated_at FROM projects WHERE id = $1 AND status = $2",
       [id, "Hotlist"]
     );
     
@@ -8653,7 +8653,7 @@ app.put("/api/hotlist/:id", async (req, res) => {
       `UPDATE projects 
        SET name = $1, street = $2, suburb = $3, state = $4, stream = $5, client_name = $6, email = $7, phone = $8, 
            client1_name = $6, client1_email = $7, client1_phone = $8, updated_at = NOW()
-       WHERE id = $9 AND status = $10 RETURNING id, name, status, suburb, street, state, stream, client_name, email, phone, updated_at`,
+       WHERE id = $9 AND status = $10 RETURNING id, name, status, suburb, street, state, stream, client_name, email, phone, hotlist_notes, updated_at`,
       [
         projectName,
         streetNorm,
@@ -8666,6 +8666,40 @@ app.put("/api/hotlist/:id", async (req, res) => {
         id,
         "Hotlist"
       ]
+    );
+
+    if (r.rowCount === 0) {
+      return res.status(404).json({ error: "not found" });
+    }
+
+    res.json(r.rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Autosave hotlist-only notes (does not touch other project fields)
+app.patch("/api/hotlist/:id/notes", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: "invalid id" });
+  }
+
+  const raw = req.body?.hotlist_notes;
+  if (typeof raw !== "string") {
+    return res.status(400).json({ error: "hotlist_notes (string) required" });
+  }
+  const notesVal = raw;
+
+  try {
+    const r = await pool.query(
+      `UPDATE projects
+       SET hotlist_notes = $1, updated_at = NOW()
+       WHERE id = $2 AND status = $3
+       RETURNING id, hotlist_notes, updated_at`,
+      [notesVal, id, "Hotlist"]
     );
 
     if (r.rowCount === 0) {
