@@ -28,7 +28,7 @@ import {
   parseEmailTemplateToAddressList,
   resolveRegionalSalespersonName,
 } from "../utils/drawingNotifyFrom";
-import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
+import { buildJobFolderNameSegment, folderYearFromProjectYear } from "../utils/projectFolderPath";
 import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 
 const MONUMENT = "#323233";
@@ -859,49 +859,32 @@ export default function Drawings({
     }
 
     try {
-      // Get project folder path from settings
-      const settingsResponse = await fetch(`${API_URL}/api/settings`);
-      if (!settingsResponse.ok) {
-        throw new Error("Failed to fetch settings");
-      }
-      const settings = await settingsResponse.json();
-      const rootDirectory = settings.root_directory || "";
-      
-      if (!rootDirectory) {
-        alert("Error: Root directory is not set. Please configure it in File Settings.");
-        return;
+      const fileName = file.name;
+
+      const verifyRes = await fetch(
+        `${API_URL}/api/projects/${project.id}/verify-drawings-job-folder`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
+      );
+      const verifyData = await verifyRes.json().catch(() => ({}));
+      if (!verifyRes.ok) {
+        if (verifyRes.status === 409 && verifyData.code === "DRAWINGS_JOB_FOLDER_NOT_FOUND") {
+          const pn = verifyData.projectName || "this project";
+          alert(
+            `Folder not found for ${pn}.\n\nYour drawings were not uploaded.\n\nThis issue has been flagged. Ben will let you know when it is OK to upload the drawings again.`
+          );
+          setSelectedFile(null);
+          if (fileInputRef.current) fileInputRef.current.value = "";
+          return;
+        }
+        throw new Error(verifyData.error || "Could not verify job folder on disk");
       }
 
-      // Get project year (from project or current year)
-      // Extract year from year field (could be "2026-01-15" or just "2026")
-      let projectYear = "";
-      if (project.year) {
-        const yearStr = project.year.toString();
-        if (yearStr.includes("-")) {
-          // Extract year from date format (YYYY-MM-DD)
-          projectYear = yearStr.split("-")[0];
-        } else {
-          // Already just a year
-          projectYear = yearStr;
-        }
-      } else {
-        // Fallback to current year if no year set
-        projectYear = new Date().getFullYear().toString();
+      const publishedPlansDir = verifyData.publishedPlansDir;
+      if (!publishedPlansDir || typeof publishedPlansDir !== "string") {
+        throw new Error("Server did not return the PUBLISHED PLANS folder path");
       }
-      
-      // Get state (uppercase) - required for path construction
-      const state = (project.state || "").toUpperCase();
-      if (!state) {
-        alert("Error: Project state is required to save drawings path. Please set the state in Project Info.");
-        return;
-      }
-      
-      // Construct the file path with "2. PUBLISHED PLANS" subfolder
-      // Format: root_directory\year\state\suburb - street\2. PUBLISHED PLANS\filename
-      // NOTE: This function ONLY saves the path to the database - it does NOT create folders or copy files
-      const fileName = file.name;
-      const projectFolderName = buildJobFolderNameSegment(project.suburb, project.street);
-      const filePath = `${rootDirectory}\\${projectYear}\\${state}\\${projectFolderName}\\2. PUBLISHED PLANS\\${fileName}`;
+      const sep = publishedPlansDir.includes("\\") ? "\\" : "/";
+      const filePath = `${String(publishedPlansDir).replace(/[/\\]+$/, "")}${sep}${fileName}`;
 
       // Get current drawings history or initialize empty array
       let drawingsHistory = [];
@@ -2417,32 +2400,28 @@ export default function Drawings({
         throw new Error("Failed to fetch settings");
       }
       const settings = await settingsResponse.json();
-      const rootDirectory = settings.root_directory || "";
-      
-      if (!rootDirectory) {
-        alert("Error: Root directory is not set. Please configure it in File Settings.");
-        return;
-      }
 
-      // Get project year
-      let projectYear = "";
-      if (project.year) {
-        const yearStr = project.year.toString();
-        if (yearStr.includes("-")) {
-          projectYear = yearStr.split("-")[0];
-        } else {
-          projectYear = yearStr;
-        }
-      } else {
-        projectYear = new Date().getFullYear().toString();
-      }
-      
-      // Get state (uppercase) - required for path construction
       const state = (project.state || "").toUpperCase();
       if (!state) {
         alert("Error: Project state is required to save markup path. Please set the state in Project Info.");
         return;
       }
+
+      let rootDirectory = "";
+      if (state === "VIC" || state === "VICTORIA") {
+        rootDirectory = settings.root_directory || "";
+      } else if (state === "QLD" || state === "QUEENSLAND") {
+        rootDirectory = settings.root_directory_qld || settings.root_directory || "";
+      } else {
+        rootDirectory = settings.root_directory || "";
+      }
+
+      if (!rootDirectory) {
+        alert("Error: Root directory is not set. Please configure it in File Settings.");
+        return;
+      }
+
+      const projectYear = folderYearFromProjectYear(project.year);
       
       // Construct the file path: root_directory\year\state\suburb - street\1. DRAFTING\DESIGN NOTES\filename
       const fileName = file.name;

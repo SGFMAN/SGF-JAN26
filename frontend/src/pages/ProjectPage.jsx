@@ -30,6 +30,16 @@ const WHITE = "#fff";
 
 const API_URL = "";
 
+function isPortalAllowedVerifyDrawingsFolderPost(pathAndSearch, method, portalProjectId) {
+  if (method !== "POST") return false;
+  const path = pathAndSearch.split("?")[0];
+  const m = path.match(/^\/api\/projects\/(\d+)\/verify-drawings-job-folder$/);
+  if (!m) return false;
+  const pid = Number(portalProjectId);
+  if (!Number.isFinite(pid)) return false;
+  return Number(m[1]) === pid;
+}
+
 /**
  * Portal mode blocks most mutations; allow the same drawings email endpoint as the
  * main app, but only when the body targets the project currently open in the portal.
@@ -352,7 +362,8 @@ export default function ProjectPage() {
       const allowedPortalMutation =
         pathAndSearch.startsWith("/api/portal/") ||
         pathAndSearch.startsWith("/api/sitevisit/") ||
-        isPortalAllowedSendDrawingsPost(pathAndSearch, method, init, id);
+        isPortalAllowedSendDrawingsPost(pathAndSearch, method, init, id) ||
+        isPortalAllowedVerifyDrawingsFolderPost(pathAndSearch, method, id);
       if (isMutation && pathAndSearch.startsWith("/api/") && !allowedPortalMutation) {
         return Promise.resolve(
           new Response(JSON.stringify({ error: "Read-only in client portal" }), {

@@ -169,6 +169,101 @@ async function findBestProjectFolderPathLenient(rootDir, projectYear, stateUpper
   return path.join(stateDir, matches[0]);
 }
 
+const DRAWINGS_JOB_FOLDER_MISMATCH_ALERT_TO = "ben@superiorgrannyflats.com.au";
+
+/** Root for job-folder layout: matches Drawings page / `projectFolderPath` (VIC vs QLD). */
+function resolveRootDirForProjectDrawings(settingsRow, stateUpper) {
+  const s = String(stateUpper || "").trim().toUpperCase();
+  if (s === "VIC" || s === "VICTORIA") {
+    return String(settingsRow?.root_directory || "").trim();
+  }
+  if (s === "QLD" || s === "QUEENSLAND") {
+    return String(settingsRow?.root_directory_qld || settingsRow?.root_directory || "").trim();
+  }
+  return String(settingsRow?.root_directory || "").trim();
+}
+
+function projectDisplayNameForDrawingsAlert(row) {
+  const street = String(row?.street || "").trim();
+  const suburb = String(row?.suburb || "").trim();
+  if (street && suburb) return `${street}, ${suburb}`;
+  const n = String(row?.name || "").trim();
+  if (n) return n;
+  const id = row?.id;
+  return id != null ? `Project #${id}` : "Unknown project";
+}
+
+async function getDefaultSystemSmtpFrom(pool) {
+  if (!pool) {
+    const u = (process.env.SMTP_USER || "").trim();
+    return u || "";
+  }
+  try {
+    const r = await pool.query("SELECT smtp_user_1 FROM settings WHERE id = 1");
+    const u = r.rows[0]?.smtp_user_1;
+    if (u && String(u).trim()) return String(u).trim();
+  } catch (e) {
+    console.warn("getDefaultSystemSmtpFrom:", e?.message || e);
+  }
+  return (process.env.SMTP_USER || "").trim();
+}
+
+async function pathExistsAsDirectory(absPath) {
+  try {
+    const st = await fs.stat(path.resolve(absPath));
+    return st.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * When drawings upload is blocked because the exact job folder is missing on disk,
+ * notify Ben. Uses default SMTP slot 1 / env.
+ */
+async function sendDrawingsJobFolderMismatchAlertEmail(pool, { projectId, projectName, expectedFolderPath }) {
+  const from = await getDefaultSystemSmtpFrom(pool);
+  if (!from) {
+    console.warn("sendDrawingsJobFolderMismatchAlertEmail: no SMTP from; email not sent");
+    return { sent: false, reason: "no_smtp_from" };
+  }
+  const creds = await getSmtpCredentialsForFromAddress(from);
+  if (!creds.smtpUser || !creds.smtpPass) {
+    console.warn("sendDrawingsJobFolderMismatchAlertEmail: no SMTP credentials");
+    return { sent: false, reason: "no_smtp_credentials" };
+  }
+  const host = process.env.SMTP_HOST || "smtp.office365.com";
+  const port = parseInt(process.env.SMTP_PORT || "587", 10);
+  const secure = process.env.SMTP_SECURE === "true";
+  const subject = `Drawings upload blocked — job folder not found (${projectName})`;
+  const safePath = String(expectedFolderPath || "").replace(/</g, "&lt;");
+  const htmlBody = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+<p><strong>Job folder does not exist on disk (exact path expected from suburb/street).</strong></p>
+<p><strong>Project:</strong> ${String(projectName || "").replace(/</g, "&lt;").replace(/>/g, "&gt;")}<br/>
+<strong>Project ID:</strong> ${projectId}</p>
+<p><strong>Expected folder:</strong><br/><span style="word-break: break-all;">${safePath}</span></p>
+<p>Someone tried to upload drawings in SGF Central; the upload was blocked until this folder exists and matches exactly.</p>
+</body></html>`;
+  try {
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user: creds.smtpUser, pass: creds.smtpPass },
+    });
+    await transporter.sendMail({
+      from,
+      to: DRAWINGS_JOB_FOLDER_MISMATCH_ALERT_TO,
+      subject,
+      html: htmlBody,
+    });
+    return { sent: true };
+  } catch (e) {
+    console.error("sendDrawingsJobFolderMismatchAlertEmail:", e);
+    return { sent: false, reason: e?.message || String(e) };
+  }
+}
+
 function projectDirectoryFromColoursOrDrawings(coloursPdfLocation, drawingsPdfLocation) {
   const c = resolveStoredFilesystemPath(coloursPdfLocation);
   const d = resolveStoredFilesystemPath(drawingsPdfLocation);
@@ -2387,6 +2482,89 @@ app.post("/api/projects/:id/reset-window-data", async (req, res) => {
   } catch (e) {
     console.error("reset-window-data:", e);
     res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * Before saving a new drawings path: confirm the exact job folder
+ * `<root>/<year>/<STATE>/<SUBURB - street>` exists on disk (same rules as Drawings page).
+ * On failure: emails Ben and returns 409 (client shows message; do not PUT or send usual drawing emails).
+ */
+app.post("/api/projects/:id/verify-drawings-job-folder", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: "invalid id", code: "INVALID_ID" });
+  }
+  try {
+    const pr = await pool.query(
+      "SELECT id, name, suburb, street, state, year FROM projects WHERE id = $1",
+      [id]
+    );
+    if (pr.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found", code: "NOT_FOUND" });
+    }
+    const row = pr.rows[0];
+    const stateUpper = String(row.state || "").trim().toUpperCase();
+    if (!stateUpper) {
+      return res.status(400).json({
+        error: "Project state is required",
+        code: "MISSING_STATE",
+      });
+    }
+    const suburb = String(row.suburb || "").trim();
+    const street = String(row.street || "").trim();
+    if (!suburb || !street) {
+      return res.status(400).json({
+        error: "Project suburb and street are required to locate the job folder",
+        code: "MISSING_ADDRESS",
+      });
+    }
+
+    const sr = await pool.query(
+      "SELECT root_directory, root_directory_qld FROM settings WHERE id = 1"
+    );
+    const settingsRow = sr.rows[0] || {};
+    const rootDir = resolveRootDirForProjectDrawings(settingsRow, stateUpper);
+    if (!rootDir) {
+      return res.status(400).json({
+        error: "Root directory is not set in File Settings for this state",
+        code: "NO_ROOT",
+      });
+    }
+
+    const yearSeg = getProjectYearFolderSegment(row.year);
+    const folderLeaf = buildJobProjectFolderName(row.suburb, row.street);
+    const expectedFolderAbs = path.resolve(path.join(rootDir, yearSeg, stateUpper, folderLeaf));
+    const ok = await pathExistsAsDirectory(expectedFolderAbs);
+    if (ok) {
+      const publishedPlansDir = path.join(expectedFolderAbs, "2. PUBLISHED PLANS");
+      return res.json({
+        ok: true,
+        expectedPath: expectedFolderAbs,
+        publishedPlansDir,
+        projectName: projectDisplayNameForDrawingsAlert(row),
+      });
+    }
+
+    const projectName = projectDisplayNameForDrawingsAlert(row);
+    const emailResult = await sendDrawingsJobFolderMismatchAlertEmail(pool, {
+      projectId: id,
+      projectName,
+      expectedFolderPath: expectedFolderAbs,
+    });
+
+    return res.status(409).json({
+      ok: false,
+      code: "DRAWINGS_JOB_FOLDER_NOT_FOUND",
+      error: `Folder not found for ${projectName}`,
+      projectName,
+      expectedPath: expectedFolderAbs,
+      alertEmailSent: emailResult.sent === true,
+    });
+  } catch (e) {
+    console.error("verify-drawings-job-folder:", e);
+    return res.status(500).json({ error: e.message || "verification failed" });
   }
 });
 
