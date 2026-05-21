@@ -370,6 +370,78 @@ export default function SalesTotals() {
     return `$${amount.toLocaleString()}`;
   }
 
+  const MS_PER_DAY = 86400000;
+
+  /**
+   * How far through the selected calendar year we are (Jan 1 .. today, inclusive of today),
+   * as a fraction and percentage. Uses actual days in year (365/366).
+   */
+  function getCalendarYearProgressMeta(yearStr) {
+    const yearNum = parseInt(String(yearStr).trim(), 10);
+    if (!Number.isFinite(yearNum)) return null;
+
+    const now = new Date();
+    const nowY = now.getFullYear();
+    const jan1 = new Date(yearNum, 0, 1);
+    jan1.setHours(0, 0, 0, 0);
+    const jan1NextYear = new Date(yearNum + 1, 0, 1);
+    jan1NextYear.setHours(0, 0, 0, 0);
+    const daysInYear = Math.round((jan1NextYear.getTime() - jan1.getTime()) / MS_PER_DAY);
+
+    if (yearNum < nowY) {
+      return {
+        daysInYear,
+        daysElapsed: daysInYear,
+        fraction: 1,
+        percentThrough: 100,
+        mode: "complete",
+      };
+    }
+    if (yearNum > nowY) {
+      return {
+        daysInYear,
+        daysElapsed: 0,
+        fraction: 0,
+        percentThrough: 0,
+        mode: "future",
+      };
+    }
+
+    const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const daysSinceJan1 = Math.floor((today0.getTime() - jan1.getTime()) / MS_PER_DAY);
+    const daysElapsed = Math.min(daysInYear, Math.max(1, daysSinceJan1 + 1));
+    const fraction = daysElapsed / daysInYear;
+    const percentThrough = Math.min(100, Math.round(fraction * 1000) / 10);
+    return {
+      daysInYear,
+      daysElapsed,
+      fraction,
+      percentThrough,
+      mode: "ytd",
+    };
+  }
+
+  const calendarYearMeta = getCalendarYearProgressMeta(selectedYear);
+  const yearProgressFraction = calendarYearMeta
+    ? Math.max(calendarYearMeta.fraction, 1 / calendarYearMeta.daysInYear)
+    : 0;
+
+  function projectedEndOfYearForCost(totalCost) {
+    if (!calendarYearMeta || calendarYearMeta.mode === "future" || !(yearProgressFraction > 0)) {
+      return null;
+    }
+    const n = Number(totalCost) || 0;
+    return Math.round(n / yearProgressFraction);
+  }
+
+  const projectedYearEndValue = projectedEndOfYearForCost(grandTotal.totalCost);
+
+  const projectedSgfVicValue = projectedEndOfYearForCost((streamTotals["SGF - VIC"] || { totalCost: 0 }).totalCost);
+  const projectedSgfQldValue = projectedEndOfYearForCost((streamTotals["SGF - QLD"] || { totalCost: 0 }).totalCost);
+  const projectedGreenStreamsValue = projectedEndOfYearForCost(greenStreamsTotal.totalCost);
+  const projectedVicStateValue = projectedEndOfYearForCost(stateTotals.VIC.totalCost);
+  const projectedQldStateValue = projectedEndOfYearForCost(stateTotals.QLD.totalCost);
+
   const RANGE_START_ISO = "2026-01-01";
 
   function normalizeProjectYearToISO(yearValue) {
@@ -693,6 +765,7 @@ export default function SalesTotals() {
                   const stream = "SGF - VIC";
                   const totals = streamTotals[stream] || { salesCount: 0, totalCost: 0 };
                   const colors = STREAM_COLORS[stream];
+                  const projected = projectedSgfVicValue;
                   return (
                     <div
                       key={stream}
@@ -746,11 +819,30 @@ export default function SalesTotals() {
                         </div>
                       </div>
                       <div style={{ marginTop: "auto", borderTop: `1px solid ${colors.darker}`, paddingTop: "12px" }}>
-                        <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                          Total Value
-                        </div>
-                        <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
-                          {formatCurrency(totals.totalCost)}
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "flex-end",
+                            gap: "10px",
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
+                              Total Value
+                            </div>
+                            <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
+                              {formatCurrency(totals.totalCost)}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: "right", flexShrink: 0 }}>
+                            <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
+                              Projected
+                            </div>
+                            <div style={{ fontSize: "1.15rem", fontWeight: 700, color: MONUMENT }}>
+                              {projected != null ? formatCurrency(projected) : "—"}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -762,6 +854,7 @@ export default function SalesTotals() {
                   const stream = "SGF - QLD";
                   const totals = streamTotals[stream] || { salesCount: 0, totalCost: 0 };
                   const colors = STREAM_COLORS[stream];
+                  const projected = projectedSgfQldValue;
                   return (
                     <div
                       key={stream}
@@ -815,11 +908,30 @@ export default function SalesTotals() {
                         </div>
                       </div>
                       <div style={{ marginTop: "auto", borderTop: `1px solid ${colors.darker}`, paddingTop: "12px" }}>
-                        <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                          Total Value
-                        </div>
-                        <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
-                          {formatCurrency(totals.totalCost)}
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "flex-end",
+                            gap: "10px",
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
+                              Total Value
+                            </div>
+                            <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
+                              {formatCurrency(totals.totalCost)}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: "right", flexShrink: 0 }}>
+                            <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
+                              Projected
+                            </div>
+                            <div style={{ fontSize: "1.15rem", fontWeight: 700, color: MONUMENT }}>
+                              {projected != null ? formatCurrency(projected) : "—"}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -903,11 +1015,30 @@ export default function SalesTotals() {
                     })}
                   </div>
                   <div style={{ marginTop: "auto", borderTop: `1px solid #92D050`, paddingTop: "12px" }}>
-                    <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                      Total Value
-                    </div>
-                    <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
-                      {formatCurrency(greenStreamsTotal.totalCost)}
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-end",
+                        gap: "10px",
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
+                          Total Value
+                        </div>
+                        <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
+                          {formatCurrency(greenStreamsTotal.totalCost)}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
+                          Projected
+                        </div>
+                        <div style={{ fontSize: "1.15rem", fontWeight: 700, color: MONUMENT }}>
+                          {projectedGreenStreamsValue != null ? formatCurrency(projectedGreenStreamsValue) : "—"}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1015,32 +1146,83 @@ export default function SalesTotals() {
                   >
                     VIC TOTAL
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                      columnGap: "16px",
+                      rowGap: "12px",
+                      alignItems: "start",
+                    }}
+                  >
                     <div>
                       <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
-                        Sales
+                        Total Sales
                       </div>
                       <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
                         {stateTotals.VIC.salesCount}
                       </div>
                     </div>
+                    <div
+                      style={{
+                        borderLeft: "1px solid #4a4d55",
+                        paddingLeft: "14px",
+                        minWidth: 0,
+                      }}
+                    >
+                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>Average price</div>
+                      <div style={{ fontSize: "1.15rem", fontWeight: 600, color: WHITE, lineHeight: 1.35 }}>
+                        {formatCurrency(stateTotals.VIC.averagePrice)}
+                      </div>
+                      <span
+                        aria-hidden
+                        style={{
+                          display: "block",
+                          fontSize: "0.72rem",
+                          fontWeight: 500,
+                          color: "#a1a1a3",
+                          marginTop: "3px",
+                          lineHeight: 1.35,
+                          visibility: "hidden",
+                        }}
+                      >
+                        Day 000 of 000
+                      </span>
+                    </div>
                     <div>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", marginBottom: "4px" }}>
-                        <div style={{ fontSize: "0.8rem", color: "#a1a1a3" }}>
-                          Value
-                        </div>
-                        <div style={{ fontSize: "0.8rem", color: "#a1a1a3" }}>
-                          Average Price
-                        </div>
+                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
+                        Total Value
                       </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
-                        <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
-                          {formatCurrency(stateTotals.VIC.totalCost)}
-                        </div>
-                        <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
-                          {formatCurrency(stateTotals.VIC.averagePrice)}
-                        </div>
+                      <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
+                        {formatCurrency(stateTotals.VIC.totalCost)}
                       </div>
+                    </div>
+                    <div
+                      style={{
+                        borderLeft: "1px solid #4a4d55",
+                        paddingLeft: "14px",
+                        minWidth: 0,
+                      }}
+                    >
+                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
+                        Projected year-end value
+                      </div>
+                      {!calendarYearMeta ? (
+                        <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 }}>—</div>
+                      ) : calendarYearMeta.mode === "future" ? (
+                        <div style={{ fontSize: "1rem", fontWeight: 600, color: WHITE, opacity: 0.85 }}>—</div>
+                      ) : (
+                        <>
+                          <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 }}>
+                            {projectedVicStateValue != null ? formatCurrency(projectedVicStateValue) : "—"}
+                          </div>
+                          <div style={{ fontSize: "0.65rem", color: "#888", marginTop: "4px", lineHeight: 1.35 }}>
+                            {calendarYearMeta.mode === "complete"
+                              ? "Same as total (full year)."
+                              : "Run rate: total ÷ (days elapsed ÷ days in year)."}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1078,32 +1260,83 @@ export default function SalesTotals() {
                   >
                     QLD TOTAL
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                      columnGap: "16px",
+                      rowGap: "12px",
+                      alignItems: "start",
+                    }}
+                  >
                     <div>
                       <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
-                        Sales
+                        Total Sales
                       </div>
                       <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
                         {stateTotals.QLD.salesCount}
                       </div>
                     </div>
+                    <div
+                      style={{
+                        borderLeft: "1px solid #4a4d55",
+                        paddingLeft: "14px",
+                        minWidth: 0,
+                      }}
+                    >
+                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>Average price</div>
+                      <div style={{ fontSize: "1.15rem", fontWeight: 600, color: WHITE, lineHeight: 1.35 }}>
+                        {formatCurrency(stateTotals.QLD.averagePrice)}
+                      </div>
+                      <span
+                        aria-hidden
+                        style={{
+                          display: "block",
+                          fontSize: "0.72rem",
+                          fontWeight: 500,
+                          color: "#a1a1a3",
+                          marginTop: "3px",
+                          lineHeight: 1.35,
+                          visibility: "hidden",
+                        }}
+                      >
+                        Day 000 of 000
+                      </span>
+                    </div>
                     <div>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", marginBottom: "4px" }}>
-                        <div style={{ fontSize: "0.8rem", color: "#a1a1a3" }}>
-                          Value
-                        </div>
-                        <div style={{ fontSize: "0.8rem", color: "#a1a1a3" }}>
-                          Average Price
-                        </div>
+                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
+                        Total Value
                       </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
-                        <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
-                          {formatCurrency(stateTotals.QLD.totalCost)}
-                        </div>
-                        <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
-                          {formatCurrency(stateTotals.QLD.averagePrice)}
-                        </div>
+                      <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
+                        {formatCurrency(stateTotals.QLD.totalCost)}
                       </div>
+                    </div>
+                    <div
+                      style={{
+                        borderLeft: "1px solid #4a4d55",
+                        paddingLeft: "14px",
+                        minWidth: 0,
+                      }}
+                    >
+                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
+                        Projected year-end value
+                      </div>
+                      {!calendarYearMeta ? (
+                        <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 }}>—</div>
+                      ) : calendarYearMeta.mode === "future" ? (
+                        <div style={{ fontSize: "1rem", fontWeight: 600, color: WHITE, opacity: 0.85 }}>—</div>
+                      ) : (
+                        <>
+                          <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 }}>
+                            {projectedQldStateValue != null ? formatCurrency(projectedQldStateValue) : "—"}
+                          </div>
+                          <div style={{ fontSize: "0.65rem", color: "#888", marginTop: "4px", lineHeight: 1.35 }}>
+                            {calendarYearMeta.mode === "complete"
+                              ? "Same as total (full year)."
+                              : "Run rate: total ÷ (days elapsed ÷ days in year)."}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1121,20 +1354,34 @@ export default function SalesTotals() {
                 >
                   <div
                     style={{
+                      background:
+                        "linear-gradient(90deg, #4D93D9 0%, #2ca84a 28%, #e6c619 56%, #e85d04 100%)",
                       color: WHITE,
                       padding: "10px 12px",
                       borderRadius: "8px",
                       marginBottom: "16px",
                       textAlign: "center",
-                      fontWeight: 700,
+                      fontWeight: 600,
                       fontSize: "0.85rem",
                       letterSpacing: "0.5px",
-                      background: MONUMENT,
+                      textShadow: "0 1px 2px rgba(0,0,0,0.35)",
                     }}
                   >
                     GRAND TOTAL
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  <div
+                    style={
+                      calendarYearMeta
+                        ? {
+                            display: "grid",
+                            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                            columnGap: "16px",
+                            rowGap: "12px",
+                            alignItems: "start",
+                          }
+                        : { display: "flex", flexDirection: "column", gap: "16px" }
+                    }
+                  >
                     <div>
                       <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
                         Total Sales
@@ -1143,6 +1390,39 @@ export default function SalesTotals() {
                         {grandTotal.totalSales}
                       </div>
                     </div>
+                    {calendarYearMeta ? (
+                      <div
+                        style={{
+                          borderLeft: "1px solid #4a4d55",
+                          paddingLeft: "14px",
+                          minWidth: 0,
+                        }}
+                      >
+                        <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
+                          Year progress ({selectedYear})
+                        </div>
+                        <div style={{ fontSize: "1.15rem", fontWeight: 600, color: WHITE, lineHeight: 1.35 }}>
+                          {calendarYearMeta.mode === "future" ? (
+                            <span style={{ opacity: 0.9, fontSize: "0.95rem" }}>Not started</span>
+                          ) : (
+                            <>
+                              {calendarYearMeta.percentThrough}%
+                              <span
+                                style={{
+                                  display: "block",
+                                  fontSize: "0.72rem",
+                                  fontWeight: 500,
+                                  color: "#a1a1a3",
+                                  marginTop: "3px",
+                                }}
+                              >
+                                Day {calendarYearMeta.daysElapsed} of {calendarYearMeta.daysInYear}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
                     <div>
                       <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
                         Total Value
@@ -1151,6 +1431,33 @@ export default function SalesTotals() {
                         {formatCurrency(grandTotal.totalCost)}
                       </div>
                     </div>
+                    {calendarYearMeta ? (
+                      <div
+                        style={{
+                          borderLeft: "1px solid #4a4d55",
+                          paddingLeft: "14px",
+                          minWidth: 0,
+                        }}
+                      >
+                        <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
+                          Projected year-end value
+                        </div>
+                        {calendarYearMeta.mode !== "future" ? (
+                          <>
+                            <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 }}>
+                              {projectedYearEndValue != null ? formatCurrency(projectedYearEndValue) : "—"}
+                            </div>
+                            <div style={{ fontSize: "0.65rem", color: "#888", marginTop: "4px", lineHeight: 1.35 }}>
+                              {calendarYearMeta.mode === "complete"
+                                ? "Same as total (full year)."
+                                : "Run rate: total ÷ (days elapsed ÷ days in year)."}
+                            </div>
+                          </>
+                        ) : (
+                          <div style={{ fontSize: "1rem", fontWeight: 600, color: WHITE, opacity: 0.85 }}>—</div>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>

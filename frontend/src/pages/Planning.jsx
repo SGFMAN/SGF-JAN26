@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import {
+  findSalespersonUserInList,
   resolveNewProjectTeamFrom,
   resolveNewProjectTeamToEmailsFromStream,
 } from "../utils/streamNewProjectEmail";
@@ -226,15 +227,18 @@ export default function Planning({ project, onUpdate }) {
     if (!project?.id) return;
     setIsPreparingEmail(true);
     try {
-      const [templatesResponse, settingsResponse] = await Promise.all([
+      const [templatesResponse, settingsResponse, usersResponse] = await Promise.all([
         fetch(`${API_URL}/api/email-templates`),
         fetch(`${API_URL}/api/settings`),
+        fetch(`${API_URL}/api/users`),
       ]);
       if (!templatesResponse.ok) {
         throw new Error("Failed to fetch email templates");
       }
       const templates = await templatesResponse.json();
       const settings = settingsResponse.ok ? await settingsResponse.json() : {};
+      const users = usersResponse.ok ? await usersResponse.json() : [];
+      const salespersonUser = findSalespersonUserInList(users, project?.salesperson);
       const template = templates.find(
         (t) => t.name && t.name.toLowerCase().trim() === "septic - organise inspection"
       );
@@ -244,14 +248,16 @@ export default function Planning({ project, onUpdate }) {
         return;
       }
 
-      const fromAddress = resolveNewProjectTeamFrom(settings, project);
+      const fromAddress = resolveNewProjectTeamFrom(settings, project, salespersonUser);
       const toAddresses = resolveNewProjectTeamToEmailsFromStream(settings, project);
       if (!fromAddress || !String(fromAddress).trim()) {
-        alert("No valid From address found in Stream Settings.");
+        alert(
+          "No valid From address. Under Settings → Email Settings → General → New Project → Email to Team, set From for Sales Manager and/or Other for this project's state, or the legacy Team Email — From."
+        );
         return;
       }
       if (!toAddresses.length) {
-        alert("No valid To addresses found in Stream Settings.");
+        alert("No valid To addresses found. Configure Settings → Email Settings → General → New Project.");
         return;
       }
 

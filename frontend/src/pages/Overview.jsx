@@ -6,6 +6,7 @@ import { DRAFTSPERSON_UNASSIGNED } from "../utils/draftspersonSentinel";
 import {
   resolveNewProjectClientFrom,
   resolveNewProjectClientToEmails,
+  findSalespersonUserInList,
 } from "../utils/streamNewProjectEmail";
 import craig1 from "../images/craig1.jpg";
 import craig2 from "../images/craig2.jpg";
@@ -348,16 +349,19 @@ export default function Overview({ project }) {
     }
 
     const settingsRes = await fetch(`${API_URL}/api/settings`);
+    const usersRes = await fetch(`${API_URL}/api/users`);
     const settings = settingsRes.ok ? await settingsRes.json() : {};
-    const fromAddress = resolveNewProjectClientFrom(settings, project);
+    const users = usersRes.ok ? await usersRes.json() : [];
+    const salespersonUser = findSalespersonUserInList(users, project?.salesperson);
+    const fromAddress = resolveNewProjectClientFrom(settings, project, salespersonUser);
     const toAddresses = resolveNewProjectClientToEmails(settings, project);
 
     if (toAddresses.length === 0) {
-      alert("No valid To addresses found in Stream Settings.");
+      alert("No valid To addresses found. Configure Settings → Email Settings → General → New Project.");
       return;
     }
     if (!fromAddress || !String(fromAddress).trim()) {
-      alert("No valid From address found in Stream Settings.");
+      alert("No valid From address found. Configure Settings → Email Settings → General → New Project.");
       return;
     }
 

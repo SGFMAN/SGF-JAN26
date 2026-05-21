@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { parseEmailGeneralJson } from "../utils/emailGeneralSettings";
+import {
+  parseEmailGeneralJson,
+  isGeneralNewProjectConfigEmpty,
+  normalizeNewProjectBranchFromRaw,
+  coerceNewProjectTeamEmailToArray,
+  emailGeneralJsonForPersist,
+} from "../utils/emailGeneralSettings";
 const MONUMENT = "#323233";
 const WHITE = "#fff";
 const NEW_PROJECT_SECTION_BLUE = {
@@ -104,6 +110,7 @@ function drawingsUploadFieldKeys(fieldGroup) {
       fromVic: "designToSalespersonFromEmail",
       fromQld: "qldDesignToSalespersonFromEmail",
       toVic: "designToSalespersonToEmail",
+      to2Vic: "designToSalespersonToEmail2",
       toQld: "qldDesignToSalespersonToEmail",
       to2Qld: "qldDesignToSalespersonToEmail2",
     };
@@ -163,29 +170,19 @@ function drawingsSendClientFieldKeys(fieldGroup) {
   return null;
 }
 
-const SECTION_OPTIONS = [
-  { key: "newProject", label: "New Project" },
-  { key: "drawings", label: "Drawings" },
-];
+const SECTION_OPTIONS = [{ key: "drawings", label: "Drawings" }];
 
-/** Per-stream new-project emails (stored on each `… - VIC` / `… - QLD` row separately). */
 /** Stored on `clientEmailTo`; expanded at send time to `project.client1_email` when active. */
 const NEW_PROJECT_CLIENT_TO_TOKEN = "{Contact1}";
 
 const NEW_PROJECT_SECTIONS = [
   {
     title: "Email to Client",
-    fields: [
-      { key: "clientEmailFrom", label: "Client Email - From", selectKind: "smtp" },
-      { key: "clientEmailTo", label: "Client Email - To", selectKind: "client1ContactTo" },
-    ],
+    fields: [{ key: "clientEmailTo", label: "Client Email - To", selectKind: "client1ContactTo" }],
   },
   {
     title: "Email to Team",
-    fields: [
-      { key: "teamEmailFrom", label: "Team Email - From", selectKind: "smtp" },
-      { key: "teamEmailTo", label: "Team Email - To", selectKind: "teamEmailToList" },
-    ],
+    fields: [{ key: "teamEmailTo", label: "Team Email - To", selectKind: "teamEmailToList" }],
   },
 ];
 
@@ -217,58 +214,34 @@ function defaultDrawingSectionOpen() {
   return open;
 }
 
-function uniqueTrimmedEmails(list) {
-  const seen = new Set();
-  const out = [];
-  for (const e of list || []) {
-    const t = String(e ?? "").trim();
-    if (!t) continue;
-    const k = t.toLowerCase();
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(t);
+function parseStreamSettingsRaw(raw) {
+  if (raw == null || raw === "") return {};
+  if (typeof raw === "object" && !Array.isArray(raw)) return { ...raw };
+  if (typeof raw === "string") {
+    try {
+      const o = JSON.parse(raw);
+      return o && typeof o === "object" && !Array.isArray(o) ? o : {};
+    } catch {
+      return {};
+    }
   }
-  return out;
+  return {};
 }
 
-/**
- * `teamEmailTo` in UI state: string[] (trimmed; may include "" while editing).
- * Legacy single string or comma-separated string is split into non-empty addresses.
- */
-function coerceNewProjectTeamEmailToArray(raw) {
-  if (raw == null) return [];
-  if (Array.isArray(raw)) return raw.map((x) => String(x ?? "").trim());
-  const s = String(raw).trim();
-  if (!s) return [];
-  return uniqueTrimmedEmails(s.split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean));
-}
-
-/**
- * Payload for PUT: same shape as in-memory (trimmed rows; empty strings kept so
- * new “Add email” rows are not stripped before the round-trip).
- */
+/** Payload for PUT: normalized map (no per-stream `newProject`; that lives in General). */
 function streamSettingsMapForPersist(map) {
-  const norm = normalizeStreamSettingsMap(map);
-  const out = { ...norm };
-  for (const stream of Object.keys(out)) {
-    const row = out[stream];
-    if (!row || typeof row !== "object" || !row.newProject || typeof row.newProject !== "object") continue;
-    out[stream] = {
-      ...row,
-      newProject: {
-        ...row.newProject,
-        teamEmailTo: coerceNewProjectTeamEmailToArray(row.newProject.teamEmailTo),
-      },
-    };
-  }
-  return out;
+  return normalizeStreamSettingsMap(map);
 }
 
 function defaultNewProjectState() {
   return {
     clientEmailFrom: "",
+    clientEmailFromSalesManager: "",
+    clientEmailFromOther: "",
     clientEmailTo: "",
     teamEmailFrom: "",
+    teamEmailFromSalesManager: "",
+    teamEmailFromOther: "",
     teamEmailTo: [],
   };
 }
@@ -277,6 +250,8 @@ function defaultDrawingsState() {
   return {
     designToSalespersonFromEmail: "",
     designToSalespersonToEmail: "",
+    /** VIC: second Drawings Upload To slot (merged with primary at send time). */
+    designToSalespersonToEmail2: "",
     salespersonToClientFromEmail: "",
     sendToClients: false,
     extraEmail1: false,
@@ -294,7 +269,7 @@ function defaultDrawingsState() {
     qldExtraEmail3Address: "",
     qldDesignToSalespersonFromEmail: "",
     qldDesignToSalespersonToEmail: "",
-    /** QLD-only: second Drawings Upload To slot (merged with primary at send time). */
+    /** QLD: second Drawings Upload To slot (merged with primary at send time). */
     qldDesignToSalespersonToEmail2: "",
     qldSalespersonToClientFromEmail: "",
     designNotesFromEmail: "",
@@ -372,6 +347,9 @@ function normalizeStreamSettingsMap(raw) {
     if (!row.drawings.qldDesignToSalespersonToEmail) {
       row.drawings.qldDesignToSalespersonToEmail = row.drawings.designToSalespersonToEmail || "";
     }
+    if (!row.drawings.qldDesignToSalespersonToEmail2) {
+      row.drawings.qldDesignToSalespersonToEmail2 = row.drawings.designToSalespersonToEmail2 || "";
+    }
     if (!row.drawings.qldSalespersonToClientFromEmail) {
       row.drawings.qldSalespersonToClientFromEmail = row.drawings.salespersonToClientFromEmail || "";
     }
@@ -385,37 +363,7 @@ function normalizeStreamSettingsMap(raw) {
     if (row.drawings.qldExtraEmail3 == null) row.drawings.qldExtraEmail3 = !!row.drawings.extraEmail3;
     if (!row.drawings.qldExtraEmail3Address) row.drawings.qldExtraEmail3Address = row.drawings.extraEmail3Address || "";
     seedSalesNotesFromDesignNotesReversed(row.drawings);
-    row.newProject = {
-      ...defaultNewProjectState(),
-      ...(row.newProject && typeof row.newProject === "object" && !Array.isArray(row.newProject) ? row.newProject : {}),
-    };
-    const np = row.newProject;
-    const trim = (v) => (v == null ? "" : String(v).trim());
-    if (!trim(np.clientEmailFrom) && np.emailToClientFullDeposit != null) {
-      np.clientEmailFrom = String(np.emailToClientFullDeposit || "").trim();
-    }
-    if (!trim(np.clientEmailTo) && np.emailToClientPartialDeposit != null) {
-      np.clientEmailTo = String(np.emailToClientPartialDeposit || "").trim();
-    }
-    const teamToEmpty =
-      np.teamEmailTo == null ||
-      (Array.isArray(np.teamEmailTo) && np.teamEmailTo.length === 0) ||
-      (typeof np.teamEmailTo === "string" && !String(np.teamEmailTo).trim());
-    if (teamToEmpty && np.emailToTeam != null) {
-      np.teamEmailTo = String(np.emailToTeam || "").trim();
-    }
-    delete np.emailToClientFullDeposit;
-    delete np.emailToClientPartialDeposit;
-    delete np.emailToTeam;
-    {
-      const c = String(np.clientEmailTo ?? "").trim();
-      row.newProject = {
-        clientEmailFrom: trim(np.clientEmailFrom),
-        clientEmailTo: c ? NEW_PROJECT_CLIENT_TO_TOKEN : "",
-        teamEmailFrom: trim(np.teamEmailFrom),
-        teamEmailTo: coerceNewProjectTeamEmailToArray(np.teamEmailTo),
-      };
-    }
+    delete row.newProject;
     out[stream] = row;
   }
   return out;
@@ -497,21 +445,33 @@ const selectStyle = {
 };
 
 function NewProjectTeamEmailToListEditor({ emails, disabled, onListChange, onCommit }) {
-  const list = coerceNewProjectTeamEmailToArray(emails);
+  const externalList = coerceNewProjectTeamEmailToArray(emails);
+  const [list, setList] = useState(externalList);
+  const externalKey = JSON.stringify(externalList);
+
+  useEffect(() => {
+    setList(coerceNewProjectTeamEmailToArray(emails));
+  }, [externalKey, emails]);
 
   function updateAt(i, val) {
     const next = [...list];
     next[i] = val;
+    setList(next);
     onListChange(next);
   }
 
-  function addRow() {
-    onListChange([...list, ""]);
-    onCommit();
+  function addRow(e) {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    const next = [...list, ""];
+    setList(next);
+    onListChange(next);
   }
 
   function removeAt(i) {
-    onListChange(list.filter((_, j) => j !== i));
+    const next = list.filter((_, j) => j !== i);
+    setList(next);
+    onListChange(next);
     onCommit();
   }
 
@@ -635,6 +595,7 @@ const GLOBAL_EMAIL_SECTIONS = [
   { key: "colours", label: "Colours" },
   { key: "hotList", label: "Hot List" },
   { key: "windows", label: "Windows" },
+  { key: "newProject", label: "New Project" },
 ];
 
 export default function StreamSettings() {
@@ -655,18 +616,17 @@ export default function StreamSettings() {
   const [windowsOrderingSectionOpen, setWindowsOrderingSectionOpen] = useState(false);
   const [emailGeneral, setEmailGeneral] = useState(() => parseEmailGeneralJson(null));
   const emailGeneralRef = useRef(emailGeneral);
-  emailGeneralRef.current = emailGeneral;
   const streamDisplayList = streamDisplayItems(STREAM_OPTIONS);
 
   useEffect(() => {
-    if (emailNavScope !== "stream") return;
-    if (activeSection === "newProject") {
+    if (emailNavScope === EMAIL_NAV_GENERAL && globalEmailSection === "newProject") {
       setNewProjectSectionOpen(defaultNewProjectSectionOpen());
     }
+    if (emailNavScope !== "stream") return;
     if (activeSection === "drawings") {
       setDrawingSectionOpen(defaultDrawingSectionOpen());
     }
-  }, [activeSection, emailNavScope]);
+  }, [activeSection, emailNavScope, globalEmailSection]);
 
   useEffect(() => {
     if (activeSection === "colours") {
@@ -679,10 +639,42 @@ export default function StreamSettings() {
       setLoading(true);
       const res = await fetch(`${API_URL}/api/settings`);
       if (!res.ok) throw new Error("Failed to load settings");
-      const data = await res.json();
+      let data = await res.json();
+      const rawStreamMap = parseStreamSettingsRaw(data.stream_settings_json);
+      let eg = parseEmailGeneralJson(data.email_general_json);
+      if (isGeneralNewProjectConfigEmpty(eg)) {
+        const vicL = rawStreamMap["SGF - VIC"]?.newProject;
+        const qldL = rawStreamMap["SGF - QLD"]?.newProject;
+        const migrated = {
+          ...eg,
+          newProject: {
+            vic: normalizeNewProjectBranchFromRaw(vicL),
+            qld: normalizeNewProjectBranchFromRaw(qldL),
+          },
+        };
+        if (!isGeneralNewProjectConfigEmpty(migrated)) {
+          try {
+            setSaving(true);
+            const putRes = await fetch(`${API_URL}/api/settings`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email_general_json: migrated }),
+            });
+            if (putRes.ok) {
+              data = await putRes.json();
+              eg = parseEmailGeneralJson(data.email_general_json);
+            } else {
+              console.warn("Could not persist migrated New Project general settings:", await putRes.text());
+            }
+          } catch (migErr) {
+            console.warn("Could not persist migrated New Project general settings:", migErr);
+          } finally {
+            setSaving(false);
+          }
+        }
+      }
       setStreamSettingsMap(normalizeStreamSettingsMap(data.stream_settings_json));
       setSmtpSlotEmails(smtpSlotEmailsFromSettings(data));
-      const eg = parseEmailGeneralJson(data.email_general_json);
       setEmailGeneral(eg);
       emailGeneralRef.current = eg;
     } catch (e) {
@@ -734,7 +726,7 @@ export default function StreamSettings() {
       const res = await fetch(`${API_URL}/api/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email_general_json: nextJson }),
+        body: JSON.stringify({ email_general_json: emailGeneralJsonForPersist(nextJson) }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -784,6 +776,39 @@ export default function StreamSettings() {
     void persistEmailGeneral(emailGeneralRef.current);
   }
 
+  function updateGeneralNewProjectField(region, fieldKey, value) {
+    let v = value;
+    if (fieldKey === "clientEmailTo") {
+      const t = v == null ? "" : String(v).trim();
+      v = !t ? "" : /^\{contact1\}$/i.test(t) ? NEW_PROJECT_CLIENT_TO_TOKEN : "";
+    }
+    if (fieldKey === "teamEmailTo") {
+      v = coerceNewProjectTeamEmailToArray(v);
+    }
+    const branchKey = region === "qld" ? "qld" : "vic";
+    setEmailGeneral((prev) => {
+      const npRoot =
+        prev.newProject && typeof prev.newProject === "object"
+          ? prev.newProject
+          : { vic: defaultNewProjectState(), qld: defaultNewProjectState() };
+      const mergedBranch = {
+        ...defaultNewProjectState(),
+        ...(npRoot[branchKey] && typeof npRoot[branchKey] === "object" ? npRoot[branchKey] : {}),
+        [fieldKey]: v,
+      };
+      const next = {
+        ...prev,
+        newProject: { ...npRoot, [branchKey]: mergedBranch },
+      };
+      emailGeneralRef.current = next;
+      return next;
+    });
+  }
+
+  function flushPersistGeneralNewProject() {
+    void persistEmailGeneral(emailGeneralRef.current);
+  }
+
   function toggleDrawingOption(stream, optionKey) {
     const next = normalizeStreamSettingsMap(streamSettingsMapRef.current);
     const cur = !!next[stream].drawings[optionKey];
@@ -806,36 +831,24 @@ export default function StreamSettings() {
     setStreamSettingsMap(next);
   }
 
-  function updateNewProjectText(stream, fieldKey, value) {
-    let v = value;
-    if (fieldKey === "clientEmailTo") {
-      const t = v == null ? "" : String(v).trim();
-      v = !t ? "" : /^\{contact1\}$/i.test(t) ? NEW_PROJECT_CLIENT_TO_TOKEN : "";
-    }
-    if (fieldKey === "teamEmailTo") {
-      v = coerceNewProjectTeamEmailToArray(v);
-    }
-    const next = normalizeStreamSettingsMap(streamSettingsMapRef.current);
-    next[stream] = {
-      ...next[stream],
-      newProject: {
-        ...defaultNewProjectState(),
-        ...(next[stream].newProject && typeof next[stream].newProject === "object" ? next[stream].newProject : {}),
-        [fieldKey]: v,
-      },
-    };
-    streamSettingsMapRef.current = next;
-    setStreamSettingsMap(next);
-  }
-
   function flushPersist() {
     void persistStreamSettings(normalizeStreamSettingsMap(streamSettingsMapRef.current));
   }
 
   const selectedStreamLabel = streamBaseLabel(selectedStream);
   const { vicKey, qldKey } = resolveVicQldStreamKeys(selectedStream);
-  const vicNewProject = streamSettingsMap[vicKey]?.newProject || defaultNewProjectState();
-  const qldNewProject = streamSettingsMap[qldKey]?.newProject || defaultNewProjectState();
+  const npRoot =
+    emailGeneral.newProject && typeof emailGeneral.newProject === "object"
+      ? emailGeneral.newProject
+      : { vic: defaultNewProjectState(), qld: defaultNewProjectState() };
+  const vicGenNp = {
+    ...defaultNewProjectState(),
+    ...(npRoot.vic && typeof npRoot.vic === "object" ? npRoot.vic : {}),
+  };
+  const qldGenNp = {
+    ...defaultNewProjectState(),
+    ...(npRoot.qld && typeof npRoot.qld === "object" ? npRoot.qld : {}),
+  };
   const drawingsVicRow = streamSettingsMap[vicKey]?.drawings || defaultDrawingsState();
   const drawingsQldRow = streamSettingsMap[qldKey]?.drawings || defaultDrawingsState();
 
@@ -1287,12 +1300,8 @@ export default function StreamSettings() {
                 </div>
               </div>
             </div>
-          ) : null
-        ) : !activeSection ? (
-          <div style={{ fontSize: "0.95rem", color: "#32323399" }}>Select a section in column 2.</div>
-        ) : (
-          <div style={{ flex: 1, minHeight: 0 }}>
-            {activeSection === "newProject" ? (
+          ) : globalEmailSection === "newProject" ? (
+            <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}>
               <div style={{ ...columnPanelStyle, minHeight: "100%" }}>
                 <div
                   style={{
@@ -1310,131 +1319,383 @@ export default function StreamSettings() {
                     New Project
                   </h4>
                 </div>
+                <p style={{ margin: "0 0 12px", fontSize: "0.86rem", color: "#32323399", lineHeight: 1.45 }}>
+                  One set of addresses for all streams. VIC vs QLD follows the project&apos;s state when sending.
+                  Under Email to Client and Email to Team, set From separately for Sales Manager and Other in each state
+                  column. At send time, users with the VIC or QLD Sales Manager position use the Sales Manager From;
+                  everyone else uses Other. If those team From buckets are empty, the legacy single Team Email — From is
+                  used. New-job client templates follow state, deposit, and the same manager vs non-manager rule
+                  (standard vs INTRO templates).
+                </p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "12px" }}>
                   {[
-                    { title: "VIC", streamKey: vicKey, data: vicNewProject },
-                    { title: "QLD", streamKey: qldKey, data: qldNewProject },
-                  ].map(({ title, streamKey, data }) => {
-                    const columnKey = title === "VIC" ? "vic" : "qld";
+                    { title: "VIC", region: "vic", data: vicGenNp },
+                    { title: "QLD", region: "qld", data: qldGenNp },
+                  ].map(({ title, region, data }) => {
+                    const columnKey = region;
                     return (
-                    <div key={title} style={{ ...columnPanelStyle, minHeight: 0 }}>
-                      <h5 style={{ margin: "0 0 8px 0", fontSize: "0.9rem", fontWeight: 700, color: MONUMENT }}>{title}</h5>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                        {NEW_PROJECT_SECTIONS.map((section) => {
-                          const sectionExpanded = !!newProjectSectionOpen[columnKey]?.[section.title];
-                          return (
-                          <div
-                            key={section.title}
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: sectionExpanded ? "10px" : "0",
-                              ...NEW_PROJECT_SECTION_BLUE,
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "space-between",
-                                gap: "8px",
-                                padding: "2px 0 8px 0",
-                                borderBottom: sectionExpanded ? "1px solid #4d93d955" : "none",
-                              }}
-                            >
-                              <button
-                                type="button"
-                                disabled={saving}
-                                onClick={() => {
-                                  setNewProjectSectionOpen((prev) => {
-                                    const currentlyOpen = !!prev[columnKey]?.[section.title];
-                                    const nextColumnState = {};
-                                    for (const s of NEW_PROJECT_SECTIONS) {
-                                      nextColumnState[s.title] = false;
-                                    }
-                                    if (!currentlyOpen) {
-                                      nextColumnState[section.title] = true;
-                                    }
-                                    return {
-                                      ...prev,
-                                      [columnKey]: nextColumnState,
-                                    };
-                                  });
-                                }}
+                      <div key={title} style={{ ...columnPanelStyle, minHeight: 0 }}>
+                        <h5 style={{ margin: "0 0 8px 0", fontSize: "0.9rem", fontWeight: 700, color: MONUMENT }}>{title}</h5>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                          {NEW_PROJECT_SECTIONS.map((section) => {
+                            const sectionExpanded = !!newProjectSectionOpen[columnKey]?.[section.title];
+                            return (
+                              <div
+                                key={section.title}
                                 style={{
                                   display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "space-between",
-                                  gap: "8px",
-                                  flex: 1,
-                                  minWidth: 0,
-                                  margin: 0,
-                                  padding: 0,
-                                  border: "none",
-                                  background: "transparent",
-                                  cursor: saving ? "wait" : "pointer",
-                                  textAlign: "left",
-                                  fontFamily: "inherit",
+                                  flexDirection: "column",
+                                  gap: sectionExpanded ? "10px" : "0",
+                                  ...NEW_PROJECT_SECTION_BLUE,
                                 }}
                               >
-                                <span
+                                <div
                                   style={{
-                                    fontSize: "0.82rem",
-                                    fontWeight: 700,
-                                    color: "#1e4d7a",
-                                    letterSpacing: "0.02em",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    gap: "8px",
+                                    padding: "2px 0 8px 0",
+                                    borderBottom: sectionExpanded ? "1px solid #4d93d955" : "none",
                                   }}
                                 >
-                                  {section.title}
-                                </span>
-                                <span aria-hidden style={{ fontSize: "0.75rem", color: "#1e4d7a", flexShrink: 0 }}>
-                                  {sectionExpanded ? "▾" : "▸"}
-                                </span>
-                              </button>
-                            </div>
-                            {sectionExpanded ? (
-                            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                              {section.fields.map(({ key, label, selectKind = "smtp" }) => (
-                                <div key={key} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                  <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>{label}</span>
-                                  {selectKind === "client1ContactTo" ? (
-                                    <NewProjectClientEmailToSelect
-                                      value={data[key] || ""}
-                                      disabled={saving}
-                                      onValueChange={(next) => updateNewProjectText(streamKey, key, next)}
-                                      onCommit={flushPersist}
-                                    />
-                                  ) : selectKind === "teamEmailToList" ? (
-                                    <NewProjectTeamEmailToListEditor
-                                      emails={data.teamEmailTo}
-                                      disabled={saving}
-                                      onListChange={(next) => updateNewProjectText(streamKey, "teamEmailTo", next)}
-                                      onCommit={flushPersist}
-                                    />
-                                  ) : (
-                                    <DrawingNotifySmtpSelect
-                                      smtpOptions={smtpSlotEmails}
-                                      value={data[key] || ""}
-                                      disabled={saving}
-                                      onValueChange={(next) => updateNewProjectText(streamKey, key, next)}
-                                      onCommit={flushPersist}
-                                    />
-                                  )}
+                                  <button
+                                    type="button"
+                                    disabled={saving}
+                                    onClick={() => {
+                                      setNewProjectSectionOpen((prev) => {
+                                        const currentlyOpen = !!prev[columnKey]?.[section.title];
+                                        const nextColumnState = {};
+                                        for (const s of NEW_PROJECT_SECTIONS) {
+                                          nextColumnState[s.title] = false;
+                                        }
+                                        if (!currentlyOpen) {
+                                          nextColumnState[section.title] = true;
+                                        }
+                                        return {
+                                          ...prev,
+                                          [columnKey]: nextColumnState,
+                                        };
+                                      });
+                                    }}
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "space-between",
+                                      gap: "8px",
+                                      flex: 1,
+                                      minWidth: 0,
+                                      margin: 0,
+                                      padding: 0,
+                                      border: "none",
+                                      background: "transparent",
+                                      cursor: saving ? "wait" : "pointer",
+                                      textAlign: "left",
+                                      fontFamily: "inherit",
+                                    }}
+                                  >
+                                    <span
+                                      style={{
+                                        fontSize: "0.82rem",
+                                        fontWeight: 700,
+                                        color: "#1e4d7a",
+                                        letterSpacing: "0.02em",
+                                      }}
+                                    >
+                                      {section.title}
+                                    </span>
+                                    <span aria-hidden style={{ fontSize: "0.75rem", color: "#1e4d7a", flexShrink: 0 }}>
+                                      {sectionExpanded ? "▾" : "▸"}
+                                    </span>
+                                  </button>
                                 </div>
-                              ))}
-                            </div>
-                            ) : null}
-                          </div>
-                          );
-                        })}
+                                {sectionExpanded ? (
+                                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                                    {section.title === "Email to Client" ? (
+                                      <>
+                                        {section.fields.map(({ key, label, selectKind = "smtp" }) => (
+                                          <div key={key} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                            <span
+                                              style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}
+                                            >
+                                              {label}
+                                            </span>
+                                            {selectKind === "client1ContactTo" ? (
+                                              <NewProjectClientEmailToSelect
+                                                value={data[key] || ""}
+                                                disabled={saving}
+                                                onValueChange={(next) =>
+                                                  updateGeneralNewProjectField(region, key, next)
+                                                }
+                                                onCommit={flushPersistGeneralNewProject}
+                                              />
+                                            ) : selectKind === "teamEmailToList" ? (
+                                              <NewProjectTeamEmailToListEditor
+                                                emails={data.teamEmailTo}
+                                                disabled={saving}
+                                                onListChange={(next) =>
+                                                  updateGeneralNewProjectField(region, "teamEmailTo", next)
+                                                }
+                                                onCommit={flushPersistGeneralNewProject}
+                                              />
+                                            ) : (
+                                              <DrawingNotifySmtpSelect
+                                                smtpOptions={smtpSlotEmails}
+                                                value={data[key] || ""}
+                                                disabled={saving}
+                                                onValueChange={(next) =>
+                                                  updateGeneralNewProjectField(region, key, next)
+                                                }
+                                                onCommit={flushPersistGeneralNewProject}
+                                              />
+                                            )}
+                                          </div>
+                                        ))}
+                                        <div
+                                          style={{
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            gap: "12px",
+                                          }}
+                                        >
+                                          <span
+                                            style={{
+                                              fontSize: "0.78rem",
+                                              fontWeight: 600,
+                                              color: `${MONUMENT}b3`,
+                                            }}
+                                          >
+                                            Client Email - From
+                                          </span>
+                                          <div
+                                            style={{ display: "flex", flexDirection: "column", gap: "10px" }}
+                                          >
+                                            <div
+                                              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+                                            >
+                                              <span
+                                                style={{
+                                                  fontSize: "0.78rem",
+                                                  fontWeight: 600,
+                                                  color: `${MONUMENT}b3`,
+                                                }}
+                                              >
+                                                Sales Manager
+                                              </span>
+                                              <DrawingNotifySmtpSelect
+                                                smtpOptions={smtpSlotEmails}
+                                                value={data.clientEmailFromSalesManager || ""}
+                                                disabled={saving}
+                                                onValueChange={(next) =>
+                                                  updateGeneralNewProjectField(
+                                                    region,
+                                                    "clientEmailFromSalesManager",
+                                                    next
+                                                  )
+                                                }
+                                                onCommit={flushPersistGeneralNewProject}
+                                              />
+                                            </div>
+                                            <div
+                                              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+                                            >
+                                              <span
+                                                style={{
+                                                  fontSize: "0.78rem",
+                                                  fontWeight: 600,
+                                                  color: `${MONUMENT}b3`,
+                                                }}
+                                              >
+                                                Other
+                                              </span>
+                                              <DrawingNotifySmtpSelect
+                                                smtpOptions={smtpSlotEmails}
+                                                value={data.clientEmailFromOther || ""}
+                                                disabled={saving}
+                                                onValueChange={(next) =>
+                                                  updateGeneralNewProjectField(
+                                                    region,
+                                                    "clientEmailFromOther",
+                                                    next
+                                                  )
+                                                }
+                                                onCommit={flushPersistGeneralNewProject}
+                                              />
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </>
+                                    ) : section.title === "Email to Team" ? (
+                                      <>
+                                        <div
+                                          style={{
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            gap: "12px",
+                                          }}
+                                        >
+                                          <span
+                                            style={{
+                                              fontSize: "0.78rem",
+                                              fontWeight: 600,
+                                              color: `${MONUMENT}b3`,
+                                            }}
+                                          >
+                                            Team Email - From
+                                          </span>
+                                          <div
+                                            style={{ display: "flex", flexDirection: "column", gap: "10px" }}
+                                          >
+                                            <div
+                                              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+                                            >
+                                              <span
+                                                style={{
+                                                  fontSize: "0.78rem",
+                                                  fontWeight: 600,
+                                                  color: `${MONUMENT}b3`,
+                                                }}
+                                              >
+                                                Sales Manager
+                                              </span>
+                                              <DrawingNotifySmtpSelect
+                                                smtpOptions={smtpSlotEmails}
+                                                value={data.teamEmailFromSalesManager || ""}
+                                                disabled={saving}
+                                                onValueChange={(next) =>
+                                                  updateGeneralNewProjectField(
+                                                    region,
+                                                    "teamEmailFromSalesManager",
+                                                    next
+                                                  )
+                                                }
+                                                onCommit={flushPersistGeneralNewProject}
+                                              />
+                                            </div>
+                                            <div
+                                              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+                                            >
+                                              <span
+                                                style={{
+                                                  fontSize: "0.78rem",
+                                                  fontWeight: 600,
+                                                  color: `${MONUMENT}b3`,
+                                                }}
+                                              >
+                                                Other
+                                              </span>
+                                              <DrawingNotifySmtpSelect
+                                                smtpOptions={smtpSlotEmails}
+                                                value={data.teamEmailFromOther || ""}
+                                                disabled={saving}
+                                                onValueChange={(next) =>
+                                                  updateGeneralNewProjectField(
+                                                    region,
+                                                    "teamEmailFromOther",
+                                                    next
+                                                  )
+                                                }
+                                                onCommit={flushPersistGeneralNewProject}
+                                              />
+                                            </div>
+                                          </div>
+                                        </div>
+                                        {section.fields.map(({ key, label, selectKind = "smtp" }) => (
+                                          <div key={key} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                            <span
+                                              style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}
+                                            >
+                                              {label}
+                                            </span>
+                                            {selectKind === "client1ContactTo" ? (
+                                              <NewProjectClientEmailToSelect
+                                                value={data[key] || ""}
+                                                disabled={saving}
+                                                onValueChange={(next) =>
+                                                  updateGeneralNewProjectField(region, key, next)
+                                                }
+                                                onCommit={flushPersistGeneralNewProject}
+                                              />
+                                            ) : selectKind === "teamEmailToList" ? (
+                                              <NewProjectTeamEmailToListEditor
+                                                emails={data.teamEmailTo}
+                                                disabled={saving}
+                                                onListChange={(next) =>
+                                                  updateGeneralNewProjectField(region, "teamEmailTo", next)
+                                                }
+                                                onCommit={flushPersistGeneralNewProject}
+                                              />
+                                            ) : (
+                                              <DrawingNotifySmtpSelect
+                                                smtpOptions={smtpSlotEmails}
+                                                value={data[key] || ""}
+                                                disabled={saving}
+                                                onValueChange={(next) =>
+                                                  updateGeneralNewProjectField(region, key, next)
+                                                }
+                                                onCommit={flushPersistGeneralNewProject}
+                                              />
+                                            )}
+                                          </div>
+                                        ))}
+                                      </>
+                                    ) : (
+                                      section.fields.map(({ key, label, selectKind = "smtp" }) => (
+                                        <div key={key} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                          <span
+                                            style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}
+                                          >
+                                            {label}
+                                          </span>
+                                          {selectKind === "client1ContactTo" ? (
+                                            <NewProjectClientEmailToSelect
+                                              value={data[key] || ""}
+                                              disabled={saving}
+                                              onValueChange={(next) =>
+                                                updateGeneralNewProjectField(region, key, next)
+                                              }
+                                              onCommit={flushPersistGeneralNewProject}
+                                            />
+                                          ) : selectKind === "teamEmailToList" ? (
+                                            <NewProjectTeamEmailToListEditor
+                                              emails={data.teamEmailTo}
+                                              disabled={saving}
+                                              onListChange={(next) =>
+                                                updateGeneralNewProjectField(region, "teamEmailTo", next)
+                                              }
+                                              onCommit={flushPersistGeneralNewProject}
+                                            />
+                                          ) : (
+                                            <DrawingNotifySmtpSelect
+                                              smtpOptions={smtpSlotEmails}
+                                              value={data[key] || ""}
+                                              disabled={saving}
+                                              onValueChange={(next) =>
+                                                updateGeneralNewProjectField(region, key, next)
+                                              }
+                                              onCommit={flushPersistGeneralNewProject}
+                                            />
+                                          )}
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
                     );
                   })}
                 </div>
               </div>
-            ) : null}
-
+            </div>
+          ) : null
+        ) : !activeSection ? (
+          <div style={{ fontSize: "0.95rem", color: "#32323399" }}>Select a section in column 2.</div>
+        ) : (
+          <div style={{ flex: 1, minHeight: 0 }}>
             {activeSection === "drawings" ? (
               <div style={{ ...columnPanelStyle, minHeight: "100%" }}>
                 <h4

@@ -30,6 +30,353 @@ const MONTHS = [
   "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"
 ];
 
+const SALES_ANALYTICS_MONTHLY_TARGETS_KEY = "sgf_salesAnalytics_monthlyTargets_v1";
+const DEFAULT_MONTHLY_SALES_TARGETS = { vic: 10, qld: 10, greenStreams: 6 };
+
+function clampMonthlyTargetInt(value, fallback) {
+  const v = typeof value === "number" ? value : parseInt(String(value), 10);
+  if (!Number.isFinite(v)) return fallback;
+  return Math.max(0, Math.min(999, Math.round(v)));
+}
+
+function readStoredMonthlyTargets() {
+  if (typeof window === "undefined") return { ...DEFAULT_MONTHLY_SALES_TARGETS };
+  try {
+    const raw = localStorage.getItem(SALES_ANALYTICS_MONTHLY_TARGETS_KEY);
+    if (!raw) return { ...DEFAULT_MONTHLY_SALES_TARGETS };
+    const p = JSON.parse(raw);
+    return {
+      vic: clampMonthlyTargetInt(p.vic, DEFAULT_MONTHLY_SALES_TARGETS.vic),
+      qld: clampMonthlyTargetInt(p.qld, DEFAULT_MONTHLY_SALES_TARGETS.qld),
+      greenStreams: clampMonthlyTargetInt(p.greenStreams, DEFAULT_MONTHLY_SALES_TARGETS.greenStreams),
+    };
+  } catch {
+    return { ...DEFAULT_MONTHLY_SALES_TARGETS };
+  }
+}
+/** Target outlines: darker than bar fills (#4D93D9, #D54358, #92D050) */
+const TARGET_OUTLINE_COLORS = {
+  vic: "#2A5588",
+  qld: "#8B2635",
+  greenStreams: "#4A7020",
+};
+
+/** Space reserved above each target / adjusted outline for the integer label */
+const TARGET_OVERLAY_LABEL_ROW_PX = 17;
+
+/** Previous-year comparison line on Rates chart (matches pie ghost outline) */
+const RATES_LAST_YEAR_YELLOW = "#FFD54F";
+
+/**
+ * Annual target = basePerMonth × 12.
+ * YTD = actual sold from Jan through the effective month (inclusive).
+ * Pace = (annual − YTD) ÷ months after the effective month. Can be **below** basePerMonth
+ * when ahead on the year, or negative if already past annual — callers clamp for display.
+ * December: returns remaining jobs for the month (annual − YTD), not divided.
+ */
+function adjustedPaceFromYtd(basePerMonth, effectiveMonthIndexZeroBased, ytdActualThroughEffectiveMonth) {
+  const yearlyTarget = basePerMonth * 12;
+  const remainingNeed = yearlyTarget - ytdActualThroughEffectiveMonth;
+  const monthsAfterThis = 12 - (effectiveMonthIndexZeroBased + 1);
+  if (monthsAfterThis > 0) {
+    return remainingNeed / monthsAfterThis;
+  }
+  return remainingNeed;
+}
+
+/**
+ * Planned: straight line (0,0) → (12 mo, combinedAnnualTargetJobs).
+ * Actual: straight line from origin with slope = cumulative jobs to date ÷ months elapsed (×12 for year-end read).
+ */
+function CumulativeRatesLineChart({
+  monthlyData,
+  selectedYear,
+  combinedMonthlyTargetJobs,
+  combinedAnnualTargetJobs,
+  includeVic = true,
+  includeQld = true,
+  includeGreen = true,
+  chartTitle = "Cumulative jobs (VIC + QLD + Green streams)",
+  previousYearMonthlyData,
+  showLastYearRates = false,
+}) {
+  const selYearNum = parseInt(selectedYear, 10);
+  const today = new Date();
+  const isCalendarCurrentYear =
+    Number.isFinite(selYearNum) && selYearNum === today.getFullYear();
+  const todayMonthIndex = today.getMonth();
+  const effectiveMonthIndex = isCalendarCurrentYear ? Math.min(11, todayMonthIndex) : 11;
+
+  const monthsElapsed = Math.max(1, effectiveMonthIndex + 1);
+  let ytdVic = 0;
+  let ytdQld = 0;
+  let ytdGreen = 0;
+  for (let j = 0; j <= effectiveMonthIndex; j++) {
+    const row = monthlyData[j];
+    if (!row) continue;
+    ytdVic += row.vicSalesCount;
+    ytdQld += row.qldSalesCount;
+    ytdGreen += row.greenStreamSalesCount;
+  }
+
+  const monthJobCount = (m) =>
+    (includeVic ? m.vicSalesCount : 0) +
+    (includeQld ? m.qldSalesCount : 0) +
+    (includeGreen ? m.greenStreamSalesCount : 0);
+
+  let running = 0;
+  const cumThroughEachMonth = monthlyData.map((m) => {
+    running += monthJobCount(m);
+    return running;
+  });
+  const cumThroughEffective = cumThroughEachMonth[effectiveMonthIndex] ?? 0;
+  const projectedYearEndActual = (cumThroughEffective / monthsElapsed) * 12;
+
+  const prevMonthJobCount = (m) =>
+    m
+      ? (includeVic ? m.vicSalesCount : 0) +
+        (includeQld ? m.qldSalesCount : 0) +
+        (includeGreen ? m.greenStreamSalesCount : 0)
+      : 0;
+  let prevRun = 0;
+  const prevCumThroughMonth =
+    Array.isArray(previousYearMonthlyData) && previousYearMonthlyData.length === 12
+      ? previousYearMonthlyData.map((m) => {
+          prevRun += prevMonthJobCount(m);
+          return prevRun;
+        })
+      : [];
+  const prevYearTotalJobs = prevCumThroughMonth[11] ?? 0;
+  const prevYearLabel = Number.isFinite(parseInt(selectedYear, 10))
+    ? String(parseInt(selectedYear, 10) - 1)
+    : "";
+
+  const pad = { t: 52, r: 40, b: 58, l: 72 };
+  const svgW = 1080;
+  const svgH = 560;
+  const innerW = svgW - pad.l - pad.r;
+  const innerH = svgH - pad.t - pad.b;
+  const maxYAxis = Math.max(
+    80,
+    Math.ceil(
+      Math.max(
+        combinedAnnualTargetJobs,
+        projectedYearEndActual,
+        cumThroughEffective,
+        showLastYearRates ? prevYearTotalJobs : 0
+      ) / 40
+    ) * 40
+  );
+  const yStep = maxYAxis <= 120 ? 20 : maxYAxis <= 240 ? 40 : 60;
+
+  const xAt = (month /* 0..12 */) => pad.l + (month / 12) * innerW;
+  const yAt = (jobs) => pad.t + innerH - (Math.min(Math.max(0, jobs), maxYAxis) / maxYAxis) * innerH;
+
+  const baselineY = yAt(0);
+
+  const ratesAreaColors = {
+    vic: STREAM_COLORS["SGF - VIC"].darker,
+    qld: STREAM_COLORS["SGF - QLD"].darker,
+    green: STREAM_COLORS["Green Streams"].darker,
+  };
+
+  /** Bottom → top: Green, QLD, VIC (matches bar stack order). Each layer is a solid triangle under that stream's projected slope. */
+  const actualShadeLayers = [];
+  const stackSpec = [
+    includeGreen && { key: "green", color: ratesAreaColors.green, ytd: ytdGreen },
+    includeQld && { key: "qld", color: ratesAreaColors.qld, ytd: ytdQld },
+    includeVic && { key: "vic", color: ratesAreaColors.vic, ytd: ytdVic },
+  ].filter(Boolean);
+
+  let cumLower = 0;
+  for (const s of stackSpec) {
+    const proj = (s.ytd / monthsElapsed) * 12;
+    const cumUpper = cumLower + proj;
+    if (cumUpper - cumLower > 0.001) {
+      actualShadeLayers.push({
+        key: s.key,
+        color: s.color,
+        cumLower,
+        cumUpper,
+      });
+    }
+    cumLower = cumUpper;
+  }
+
+  const showActualAreaShade =
+    actualShadeLayers.length > 0 &&
+    projectedYearEndActual > 0 &&
+    yAt(projectedYearEndActual) < baselineY - 0.5;
+
+  const gridLines = [];
+  for (let g = 0; g <= maxYAxis; g += yStep) {
+    const y = yAt(g);
+    gridLines.push(
+      <line
+        key={g}
+        x1={pad.l}
+        y1={y}
+        x2={svgW - pad.r}
+        y2={y}
+        stroke="#d0d0d0"
+        strokeOpacity={0.65}
+        strokeWidth={1}
+      />
+    );
+  }
+
+  return (
+    <div style={{ width: "100%", maxWidth: "1200px" }}>
+      <svg
+        viewBox={`0 0 ${svgW} ${svgH}`}
+        width="100%"
+        style={{ display: "block", maxHeight: "600px" }}
+        role="img"
+        aria-label="Cumulative planned versus actual run rate"
+      >
+        {gridLines}
+        <line
+          x1={pad.l}
+          y1={svgH - pad.b}
+          x2={svgW - pad.r}
+          y2={svgH - pad.b}
+          stroke={MONUMENT}
+          strokeOpacity={0.35}
+          strokeWidth={1.5}
+        />
+        {showActualAreaShade &&
+          actualShadeLayers.map((layer) => (
+            <polygon
+              key={layer.key}
+              points={`${xAt(0)},${yAt(0)} ${xAt(12)},${yAt(layer.cumLower)} ${xAt(12)},${yAt(layer.cumUpper)}`}
+              fill={layer.color}
+              fillOpacity={0.42}
+              stroke="none"
+            />
+          ))}
+        {showLastYearRates &&
+          prevYearTotalJobs > 0.5 &&
+          yAt(prevYearTotalJobs) < baselineY - 0.5 && (
+            <>
+              <line
+                x1={xAt(0)}
+                y1={yAt(0)}
+                x2={xAt(12)}
+                y2={yAt(prevYearTotalJobs)}
+                stroke={RATES_LAST_YEAR_YELLOW}
+                strokeWidth={3}
+                strokeLinecap="round"
+              />
+              <circle
+                cx={xAt(12)}
+                cy={yAt(prevYearTotalJobs)}
+                r={5.5}
+                fill={RATES_LAST_YEAR_YELLOW}
+                stroke={MONUMENT}
+                strokeOpacity={0.28}
+                strokeWidth={1.25}
+              />
+            </>
+          )}
+        <line
+          x1={xAt(0)}
+          y1={yAt(0)}
+          x2={xAt(12)}
+          y2={yAt(combinedAnnualTargetJobs)}
+          stroke="#7B68A8"
+          strokeWidth={3}
+          strokeLinecap="round"
+        />
+        <line
+          x1={xAt(0)}
+          y1={yAt(0)}
+          x2={xAt(12)}
+          y2={yAt(projectedYearEndActual)}
+          stroke="#4D93D9"
+          strokeWidth={3.5}
+          strokeLinecap="round"
+        />
+        <circle
+          cx={xAt(12)}
+          cy={yAt(combinedAnnualTargetJobs)}
+          r={6}
+          fill="#7B68A8"
+          stroke={WHITE}
+          strokeWidth={1.5}
+        />
+        <circle
+          cx={xAt(12)}
+          cy={yAt(projectedYearEndActual)}
+          r={6}
+          fill="#4D93D9"
+          stroke={WHITE}
+          strokeWidth={1.5}
+        />
+        {MONTHS.map((name, i) => (
+          <text
+            key={name}
+            x={xAt(i + 0.5)}
+            y={svgH - pad.b + 34}
+            textAnchor="middle"
+            fontSize="11"
+            fontWeight={700}
+            fill={MONUMENT}
+          >
+            {name.substring(0, 3)}
+          </text>
+        ))}
+        {Array.from({ length: Math.floor(maxYAxis / yStep) + 1 }, (_, j) => {
+          const g = j * yStep;
+          return (
+            <text
+              key={`yl-${g}`}
+              x={pad.l - 10}
+              y={yAt(g) + 4}
+              textAnchor="end"
+              fontSize="11"
+              fontWeight={600}
+              fill={MONUMENT}
+            >
+              {g}
+            </text>
+          );
+        })}
+        <text x={pad.l + innerW / 2} y={34} textAnchor="middle" fontSize="15" fontWeight={700} fill={MONUMENT}>
+          {chartTitle}
+        </text>
+      </svg>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "28px",
+          justifyContent: "center",
+          marginTop: "14px",
+          fontSize: "0.88rem",
+          fontWeight: 600,
+          color: MONUMENT,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <span style={{ width: 36, height: 4, background: "#7B68A8", borderRadius: 2 }} />
+          Planned — {combinedAnnualTargetJobs} jobs / yr ({combinedMonthlyTargetJobs}/mo × 12)
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <span style={{ width: 36, height: 4, background: "#4D93D9", borderRadius: 2 }} />
+          Actual run rate — YTD {cumThroughEffective} jobs over {monthsElapsed} mo → slope to{" "}
+          {Math.round(projectedYearEndActual)} projected / yr
+        </div>
+        {showLastYearRates && prevYearTotalJobs > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ width: 36, height: 4, background: RATES_LAST_YEAR_YELLOW, borderRadius: 2 }} />
+            Last year ({prevYearLabel}) — {prevYearTotalJobs} jobs (full year actual, same streams)
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function SalesAnalytics() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,8 +384,53 @@ export default function SalesAnalytics() {
   const [selectedYear, setSelectedYear] = useState(() => {
     return new Date().getFullYear().toString();
   });
-  const [selectedView, setSelectedView] = useState("pie"); // "pie" or "bar"
-  const [showTotals, setShowTotals] = useState(true);
+  const [selectedView, setSelectedView] = useState("bar"); // "bar" | "pie" | "rates" | "targets"
+  const [showLastYearOutline, setShowLastYearOutline] = useState(true);
+  const [showMonthlyTargets, setShowMonthlyTargets] = useState(false);
+  const [showAdjustedTargets, setShowAdjustedTargets] = useState(false);
+  const [showBarVic, setShowBarVic] = useState(true);
+  const [showBarQld, setShowBarQld] = useState(true);
+  const [showBarGreen, setShowBarGreen] = useState(true);
+  const [monthlySalesTargets, setMonthlySalesTargets] = useState(readStoredMonthlyTargets);
+  const [ratesIncludeVic, setRatesIncludeVic] = useState(true);
+  const [ratesIncludeQld, setRatesIncludeQld] = useState(true);
+  const [ratesIncludeGreen, setRatesIncludeGreen] = useState(true);
+  const [ratesShowLastYear, setRatesShowLastYear] = useState(true);
+
+  const combinedMonthlyTargetJobs = React.useMemo(
+    () =>
+      monthlySalesTargets.vic + monthlySalesTargets.qld + monthlySalesTargets.greenStreams,
+    [monthlySalesTargets]
+  );
+  const combinedAnnualTargetJobs = combinedMonthlyTargetJobs * 12;
+
+  const ratesChartMonthlyTargetJobs = React.useMemo(
+    () =>
+      (ratesIncludeVic ? monthlySalesTargets.vic : 0) +
+      (ratesIncludeQld ? monthlySalesTargets.qld : 0) +
+      (ratesIncludeGreen ? monthlySalesTargets.greenStreams : 0),
+    [monthlySalesTargets, ratesIncludeVic, ratesIncludeQld, ratesIncludeGreen]
+  );
+  const ratesChartAnnualTargetJobs = ratesChartMonthlyTargetJobs * 12;
+
+  const ratesChartTitle = React.useMemo(() => {
+    const parts = [
+      ratesIncludeVic && "VIC",
+      ratesIncludeQld && "QLD",
+      ratesIncludeGreen && "Green streams",
+    ].filter(Boolean);
+    if (parts.length === 0) return "Cumulative jobs (no region selected)";
+    return `Cumulative jobs (${parts.join(" + ")})`;
+  }, [ratesIncludeVic, ratesIncludeQld, ratesIncludeGreen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(SALES_ANALYTICS_MONTHLY_TARGETS_KEY, JSON.stringify(monthlySalesTargets));
+    } catch (e) {
+      console.error("Failed to save sales analytics monthly targets:", e);
+    }
+  }, [monthlySalesTargets]);
 
   useEffect(() => {
     fetchProjects();
@@ -579,7 +971,7 @@ export default function SalesAnalytics() {
   }
 
   // Calculate pie chart path
-  function getPieSlicePath(data, index, total) {
+  function getPieSlicePath(data, index) {
     const centerX = 200;
     const centerY = 200;
     const radius = 150;
@@ -641,7 +1033,7 @@ export default function SalesAnalytics() {
             }}
           />
         </Link>
-        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap", justifyContent: "center" }}>
           <h1
             style={{
               margin: 0,
@@ -653,27 +1045,152 @@ export default function SalesAnalytics() {
           >
             Sales Analytics
           </h1>
-          <select
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(e.target.value)}
-            style={{
-              padding: "8px 12px",
-              borderRadius: "8px",
-              border: "none",
-              fontSize: "1rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              cursor: "pointer",
-              outline: "none",
-            }}
-          >
-            {availableYears.map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
-          </select>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              style={{
+                padding: "8px 12px",
+                borderRadius: "8px",
+                border: "none",
+                fontSize: "1rem",
+                fontWeight: 500,
+                color: MONUMENT,
+                background: WHITE,
+                cursor: "pointer",
+                outline: "none",
+              }}
+            >
+              {availableYears.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+            {selectedView !== "rates" && selectedView !== "targets" && (
+              <>
+            <button
+              type="button"
+              aria-pressed={showLastYearOutline}
+              onClick={() => setShowLastYearOutline((v) => !v)}
+              style={{
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: showLastYearOutline ? "2px solid #FFD54F" : "2px solid transparent",
+                fontSize: "0.95rem",
+                fontWeight: 600,
+                color: MONUMENT,
+                background: WHITE,
+                cursor: "pointer",
+                outline: "none",
+                whiteSpace: "nowrap",
+                boxShadow: showLastYearOutline ? "inset 0 0 0 1px rgba(0,0,0,0.06)" : "none",
+              }}
+            >
+              Show Last Year
+            </button>
+            <button
+              type="button"
+              aria-pressed={showMonthlyTargets}
+              title="Monthly job-count targets per region (set under Targets; bar chart overlay)"
+              onClick={() => setShowMonthlyTargets((v) => !v)}
+              style={{
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: showMonthlyTargets ? "2px solid #7B68A8" : "2px solid transparent",
+                fontSize: "0.95rem",
+                fontWeight: 600,
+                color: MONUMENT,
+                background: WHITE,
+                cursor: "pointer",
+                outline: "none",
+                whiteSpace: "nowrap",
+                boxShadow: showMonthlyTargets ? "inset 0 0 0 1px rgba(0,0,0,0.06)" : "none",
+              }}
+            >
+              Show Targets
+            </button>
+            <button
+              type="button"
+              aria-pressed={showAdjustedTargets}
+              title="Avg jobs/mo for the rest of the year: (annual 12× monthly target − YTD) ÷ months left. Lower than the usual monthly target when ahead, higher when behind. If already past the annual total, the chart shows 0. For the current year, future month columns use the same effective month as today."
+              onClick={() => setShowAdjustedTargets((v) => !v)}
+              style={{
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: showAdjustedTargets ? "2px solid #C45C26" : "2px solid transparent",
+                fontSize: "0.95rem",
+                fontWeight: 600,
+                color: MONUMENT,
+                background: WHITE,
+                cursor: "pointer",
+                outline: "none",
+                whiteSpace: "nowrap",
+                boxShadow: showAdjustedTargets ? "inset 0 0 0 1px rgba(0,0,0,0.06)" : "none",
+              }}
+            >
+              Show Adjusted Targets
+            </button>
+            <button
+              type="button"
+              aria-pressed={showBarVic}
+              onClick={() => setShowBarVic((v) => !v)}
+              style={{
+                padding: "8px 12px",
+                borderRadius: "8px",
+                border: showBarVic ? "2px solid #2A5588" : "2px solid rgba(50,50,51,0.25)",
+                fontSize: "0.9rem",
+                fontWeight: 700,
+                color: showBarVic ? WHITE : MONUMENT,
+                background: showBarVic ? STREAM_COLORS["SGF - VIC"].darker : "rgba(255,255,255,0.75)",
+                cursor: "pointer",
+                outline: "none",
+                minWidth: "44px",
+              }}
+            >
+              VIC
+            </button>
+            <button
+              type="button"
+              aria-pressed={showBarQld}
+              onClick={() => setShowBarQld((v) => !v)}
+              style={{
+                padding: "8px 12px",
+                borderRadius: "8px",
+                border: showBarQld ? "2px solid #6B1F2A" : "2px solid rgba(50,50,51,0.25)",
+                fontSize: "0.9rem",
+                fontWeight: 700,
+                color: showBarQld ? WHITE : MONUMENT,
+                background: showBarQld ? STREAM_COLORS["SGF - QLD"].darker : "rgba(255,255,255,0.75)",
+                cursor: "pointer",
+                outline: "none",
+                minWidth: "44px",
+              }}
+            >
+              QLD
+            </button>
+            <button
+              type="button"
+              aria-pressed={showBarGreen}
+              onClick={() => setShowBarGreen((v) => !v)}
+              style={{
+                padding: "8px 12px",
+                borderRadius: "8px",
+                border: showBarGreen ? "2px solid #4A7020" : "2px solid rgba(50,50,51,0.25)",
+                fontSize: "0.9rem",
+                fontWeight: 700,
+                color: showBarGreen ? WHITE : MONUMENT,
+                background: showBarGreen ? STREAM_COLORS["Green Streams"].darker : "rgba(255,255,255,0.75)",
+                cursor: "pointer",
+                outline: "none",
+                minWidth: "44px",
+              }}
+            >
+              GREEN
+            </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -761,14 +1278,14 @@ export default function SalesAnalytics() {
               Pie Chart
             </button>
           </div>
-          
-          {/* Totals - Light Blue */}
-          <div style={{ background: "#A6C9EC", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+
+          {/* Rates — cumulative planned vs actual */}
+          <div style={{ background: "#E8D4F5", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
             <button
-              onClick={() => setShowTotals(!showTotals)}
+              onClick={() => setSelectedView("rates")}
               style={{
-                background: showTotals ? "#4D93D9" : "transparent",
-                color: showTotals ? WHITE : "#404049",
+                background: selectedView === "rates" ? "#8E44AD" : "transparent",
+                color: selectedView === "rates" ? WHITE : "#404049",
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -785,7 +1302,34 @@ export default function SalesAnalytics() {
                 width: "100%",
               }}
             >
-              Totals
+              Rates
+            </button>
+          </div>
+
+          {/* Targets — monthly job counts (VIC / QLD / Green) */}
+          <div style={{ background: "#FFF3E0", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+            <button
+              onClick={() => setSelectedView("targets")}
+              style={{
+                background: selectedView === "targets" ? "#E65100" : "transparent",
+                color: selectedView === "targets" ? WHITE : "#404049",
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+                width: "100%",
+              }}
+            >
+              Targets
             </button>
           </div>
           
@@ -861,7 +1405,7 @@ export default function SalesAnalytics() {
                         {pieData.map((slice, index) => (
                           <path
                             key={slice.name}
-                            d={getPieSlicePath(pieData, index, pieData.reduce((sum, s) => sum + s.value, 0))}
+                            d={getPieSlicePath(pieData, index)}
                             fill={slice.color}
                             stroke={WHITE}
                             strokeWidth="2"
@@ -870,7 +1414,7 @@ export default function SalesAnalytics() {
                       </svg>
                       
                       {/* Previous year pie chart overlay (ghost) */}
-                      {previousYearPieData && previousYearPieData.total > 0 && (() => {
+                      {showLastYearOutline && previousYearPieData && previousYearPieData.total > 0 && (() => {
                         const prevTotal = previousYearPieData.total;
                         const prevPieData = [
                           {
@@ -895,7 +1439,7 @@ export default function SalesAnalytics() {
                             {prevPieData.map((slice, index) => (
                               <path
                                 key={slice.name}
-                                d={getPieSlicePath(prevPieData, index, prevTotal)}
+                                d={getPieSlicePath(prevPieData, index)}
                                 fill="transparent"
                                 stroke="#FFD54F"
                                 strokeWidth="3"
@@ -923,14 +1467,199 @@ export default function SalesAnalytics() {
                             <div style={{ fontSize: "0.9rem", fontWeight: 600, color: MONUMENT }}>
                               {slice.name}
                             </div>
-                            {showTotals && (
-                              <div style={{ fontSize: "0.8rem", color: "#32323399" }}>
-                                {formatCurrency(slice.value)} ({slice.percentage.toFixed(1)}%)
-                              </div>
-                            )}
+                            <div style={{ fontSize: "0.8rem", color: "#32323399" }}>
+                              {formatCurrency(slice.value)} ({slice.percentage.toFixed(1)}%)
+                            </div>
                           </div>
                         </div>
                       ))}
+                    </div>
+                  </div>
+                </>
+              ) : selectedView === "rates" ? (
+                <>
+                  <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "16px" }}>
+                    Planned vs actual cumulative jobs — {selectedYear}
+                  </h2>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                      gap: "10px",
+                      marginBottom: "20px",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <span style={{ fontSize: "0.82rem", fontWeight: 700, color: MONUMENT, marginRight: "4px" }}>
+                      Include in lines:
+                    </span>
+                    <button
+                      type="button"
+                      aria-pressed={ratesIncludeVic}
+                      onClick={() => setRatesIncludeVic((v) => !v)}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: "8px",
+                        border: ratesIncludeVic ? "2px solid #2A5588" : "2px solid rgba(50,50,51,0.25)",
+                        fontSize: "0.9rem",
+                        fontWeight: 700,
+                        color: ratesIncludeVic ? WHITE : MONUMENT,
+                        background: ratesIncludeVic ? STREAM_COLORS["SGF - VIC"].darker : "rgba(255,255,255,0.75)",
+                        cursor: "pointer",
+                        outline: "none",
+                        minWidth: "44px",
+                      }}
+                    >
+                      VIC
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={ratesIncludeQld}
+                      onClick={() => setRatesIncludeQld((v) => !v)}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: "8px",
+                        border: ratesIncludeQld ? "2px solid #6B1F2A" : "2px solid rgba(50,50,51,0.25)",
+                        fontSize: "0.9rem",
+                        fontWeight: 700,
+                        color: ratesIncludeQld ? WHITE : MONUMENT,
+                        background: ratesIncludeQld ? STREAM_COLORS["SGF - QLD"].darker : "rgba(255,255,255,0.75)",
+                        cursor: "pointer",
+                        outline: "none",
+                        minWidth: "44px",
+                      }}
+                    >
+                      QLD
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={ratesIncludeGreen}
+                      onClick={() => setRatesIncludeGreen((v) => !v)}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: "8px",
+                        border: ratesIncludeGreen ? "2px solid #4A7020" : "2px solid rgba(50,50,51,0.25)",
+                        fontSize: "0.9rem",
+                        fontWeight: 700,
+                        color: ratesIncludeGreen ? WHITE : MONUMENT,
+                        background: ratesIncludeGreen ? STREAM_COLORS["Green Streams"].darker : "rgba(255,255,255,0.75)",
+                        cursor: "pointer",
+                        outline: "none",
+                        minWidth: "44px",
+                      }}
+                    >
+                      GREEN
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={ratesShowLastYear}
+                      onClick={() => setRatesShowLastYear((v) => !v)}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: "8px",
+                        border: ratesShowLastYear ? "2px solid #FFD54F" : "2px solid rgba(50,50,51,0.25)",
+                        fontSize: "0.9rem",
+                        fontWeight: 600,
+                        color: MONUMENT,
+                        background: ratesShowLastYear ? "rgba(255, 213, 79, 0.35)" : "rgba(255,255,255,0.75)",
+                        cursor: "pointer",
+                        outline: "none",
+                        whiteSpace: "nowrap",
+                        boxShadow: ratesShowLastYear ? "inset 0 0 0 1px rgba(0,0,0,0.06)" : "none",
+                      }}
+                    >
+                      Show Last Year
+                    </button>
+                  </div>
+                  <CumulativeRatesLineChart
+                    monthlyData={monthlyData}
+                    selectedYear={selectedYear}
+                    combinedMonthlyTargetJobs={ratesChartMonthlyTargetJobs}
+                    combinedAnnualTargetJobs={ratesChartAnnualTargetJobs}
+                    includeVic={ratesIncludeVic}
+                    includeQld={ratesIncludeQld}
+                    includeGreen={ratesIncludeGreen}
+                    chartTitle={ratesChartTitle}
+                    previousYearMonthlyData={previousYearData}
+                    showLastYearRates={ratesShowLastYear}
+                  />
+                </>
+              ) : selectedView === "targets" ? (
+                <>
+                  <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "24px" }}>
+                    Monthly job targets
+                  </h2>
+                  <div
+                    style={{
+                      width: "100%",
+                      maxWidth: "720px",
+                      padding: "20px 24px",
+                      borderRadius: "12px",
+                      background: "rgba(255,255,255,0.72)",
+                      border: "1px solid rgba(50,50,51,0.14)",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <div style={{ fontSize: "0.95rem", fontWeight: 700, color: MONUMENT, marginBottom: "6px" }}>
+                      Jobs per month (by region)
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#323233aa", marginBottom: "18px", lineHeight: 1.45 }}>
+                      These values feed the Rates planned line, bar-chart target outlines, and adjusted targets. They
+                      save automatically in this browser.
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "16px 28px", alignItems: "flex-end" }}>
+                      {[
+                        { key: "vic", label: "VIC", accent: STREAM_COLORS["SGF - VIC"].darker },
+                        { key: "qld", label: "QLD", accent: STREAM_COLORS["SGF - QLD"].darker },
+                        { key: "greenStreams", label: "Green", accent: STREAM_COLORS["Green Streams"].darker },
+                      ].map(({ key, label, accent }) => (
+                        <label
+                          key={key}
+                          style={{ display: "flex", flexDirection: "column", gap: "6px", minWidth: "100px" }}
+                        >
+                          <span style={{ fontSize: "0.8rem", fontWeight: 700, color: accent }}>{label}</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={999}
+                            step={1}
+                            value={monthlySalesTargets[key]}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              setMonthlySalesTargets((prev) => {
+                                if (raw === "") return { ...prev, [key]: 0 };
+                                const n = parseInt(raw, 10);
+                                if (!Number.isFinite(n)) return prev;
+                                return { ...prev, [key]: clampMonthlyTargetInt(n, prev[key]) };
+                              });
+                            }}
+                            style={{
+                              width: "100px",
+                              padding: "8px 10px",
+                              borderRadius: "8px",
+                              border: `2px solid ${accent}`,
+                              fontSize: "1rem",
+                              fontWeight: 600,
+                              color: MONUMENT,
+                              boxSizing: "border-box",
+                            }}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: "20px",
+                        paddingTop: "16px",
+                        borderTop: "1px solid rgba(50,50,51,0.12)",
+                        fontSize: "0.85rem",
+                        fontWeight: 600,
+                        color: MONUMENT,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      Combined plan: {combinedMonthlyTargetJobs} jobs/mo × 12 = {combinedAnnualTargetJobs} jobs/year
                     </div>
                   </div>
                 </>
@@ -939,8 +1668,6 @@ export default function SalesAnalytics() {
                   <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "32px" }}>
                     Monthly Sales for {selectedYear}
                   </h2>
-                  
-                  {/* Bar Chart */}
                   <div style={{ width: "100%", maxWidth: "1240px", position: "relative", display: "flex" }}>
                     {/* Y-axis scale */}
                     <div style={{ width: "60px", flexShrink: 0, position: "relative", height: "600px", marginRight: "8px" }}>
@@ -1028,11 +1755,216 @@ export default function SalesAnalytics() {
                         const vicBarHeight = (month.vicSalesCount / maxJobsRounded) * 550;
                         const qldBarHeight = (month.qldSalesCount / maxJobsRounded) * 550;
                         const greenStreamBarHeight = (month.greenStreamSalesCount / maxJobsRounded) * 550;
-                        const totalBarHeight = vicBarHeight + qldBarHeight + greenStreamBarHeight;
-                        
-                        // Previous year data for comparison (ghost overlay)
+
+                        const barSegments = [];
+                        if (showBarGreen && greenStreamBarHeight > 0) {
+                          barSegments.push({
+                            key: "green",
+                            height: greenStreamBarHeight,
+                            count: month.greenStreamSalesCount,
+                            value: month.greenStreamTotalValue,
+                            bg: "#92D050",
+                            title: `Green streams: ${month.greenStreamSalesCount} - ${formatCurrency(month.greenStreamTotalValue)}`,
+                          });
+                        }
+                        if (showBarQld && qldBarHeight > 0) {
+                          barSegments.push({
+                            key: "qld",
+                            height: qldBarHeight,
+                            count: month.qldSalesCount,
+                            value: month.qldTotalValue,
+                            bg: "#D54358",
+                            title: `QLD: ${month.qldSalesCount} - ${formatCurrency(month.qldTotalValue)}`,
+                          });
+                        }
+                        if (showBarVic && vicBarHeight > 0) {
+                          barSegments.push({
+                            key: "vic",
+                            height: vicBarHeight,
+                            count: month.vicSalesCount,
+                            value: month.vicTotalValue,
+                            bg: "#4D93D9",
+                            title: `VIC: ${month.vicSalesCount} - ${formatCurrency(month.vicTotalValue)}`,
+                          });
+                        }
+                        const totalBarHeight = barSegments.reduce((sum, s) => sum + s.height, 0);
+
+                        let visibleSalesCount = 0;
+                        let visibleTotalValue = 0;
+                        if (showBarVic) {
+                          visibleSalesCount += month.vicSalesCount;
+                          visibleTotalValue += month.vicTotalValue;
+                        }
+                        if (showBarQld) {
+                          visibleSalesCount += month.qldSalesCount;
+                          visibleTotalValue += month.qldTotalValue;
+                        }
+                        if (showBarGreen) {
+                          visibleSalesCount += month.greenStreamSalesCount;
+                          visibleTotalValue += month.greenStreamTotalValue;
+                        }
+
+                        // Previous year: same streams as visible on chart
                         const prevMonth = previousYearData[index];
-                        const prevTotalBarHeight = prevMonth ? (prevMonth.totalSalesCount / maxJobsRounded) * 550 : 0;
+                        let prevVisibleCount = 0;
+                        if (prevMonth) {
+                          if (showBarVic) prevVisibleCount += prevMonth.vicSalesCount;
+                          if (showBarQld) prevVisibleCount += prevMonth.qldSalesCount;
+                          if (showBarGreen) prevVisibleCount += prevMonth.greenStreamSalesCount;
+                        }
+                        const prevTotalBarHeight =
+                          prevVisibleCount > 0 ? (prevVisibleCount / maxJobsRounded) * 550 : 0;
+
+                        const tgtVicH = (monthlySalesTargets.vic / maxJobsRounded) * 550;
+                        const tgtQldH = (monthlySalesTargets.qld / maxJobsRounded) * 550;
+                        const tgtGreenH = (monthlySalesTargets.greenStreams / maxJobsRounded) * 550;
+                        const dashVic = `2px dashed ${TARGET_OUTLINE_COLORS.vic}`;
+                        const dashQld = `2px dashed ${TARGET_OUTLINE_COLORS.qld}`;
+                        const dashGreen = `2px dashed ${TARGET_OUTLINE_COLORS.greenStreams}`;
+
+                        const targetSegments = [];
+                        if (showBarGreen) {
+                          targetSegments.push({
+                            key: "green",
+                            h: tgtGreenH,
+                            dash: dashGreen,
+                            labelValue: monthlySalesTargets.greenStreams,
+                            title: `Target Green Streams: ${monthlySalesTargets.greenStreams}/mo`,
+                          });
+                        }
+                        if (showBarQld) {
+                          targetSegments.push({
+                            key: "qld",
+                            h: tgtQldH,
+                            dash: dashQld,
+                            labelValue: monthlySalesTargets.qld,
+                            title: `Target QLD: ${monthlySalesTargets.qld}/mo`,
+                          });
+                        }
+                        if (showBarVic) {
+                          targetSegments.push({
+                            key: "vic",
+                            h: tgtVicH,
+                            dash: dashVic,
+                            labelValue: monthlySalesTargets.vic,
+                            title: `Target VIC: ${monthlySalesTargets.vic}/mo`,
+                          });
+                        }
+
+                        const selYearNum = parseInt(selectedYear, 10);
+                        const today = new Date();
+                        const isCalendarCurrentYear =
+                          Number.isFinite(selYearNum) && selYearNum === today.getFullYear();
+                        const todayMonthIndex = today.getMonth(); // 0 = Jan
+                        const effectiveMonthIndex = isCalendarCurrentYear
+                          ? Math.min(index, todayMonthIndex)
+                          : index;
+
+                        let ytdVic = 0;
+                        let ytdQld = 0;
+                        let ytdGreen = 0;
+                        for (let j = 0; j <= effectiveMonthIndex; j++) {
+                          ytdVic += monthlyData[j].vicSalesCount;
+                          ytdQld += monthlyData[j].qldSalesCount;
+                          ytdGreen += monthlyData[j].greenStreamSalesCount;
+                        }
+                        const monthsAfterThis = 12 - (effectiveMonthIndex + 1);
+                        const paceNote =
+                          effectiveMonthIndex < index
+                            ? ` (through ${MONTHS[effectiveMonthIndex]}; same for months not yet reached this year)`
+                            : "";
+
+                        const adjustedTargetSegments = [];
+                        if (showBarGreen) {
+                          const yearlyG = monthlySalesTargets.greenStreams * 12;
+                          const adjG = adjustedPaceFromYtd(
+                            monthlySalesTargets.greenStreams,
+                            effectiveMonthIndex,
+                            ytdGreen
+                          );
+                          const adjIntG = Math.max(0, Math.round(adjG));
+                          if (adjIntG > 0) {
+                            const displayG = Math.min(adjIntG, maxJobsRounded);
+                            const remG = yearlyG - ytdGreen;
+                            const paceTailG =
+                              monthsAfterThis > 0
+                                ? `${remG} left ÷ ${monthsAfterThis} mo after this`
+                                : `${Math.max(0, remG)} left to hit annual (Dec)`;
+                            adjustedTargetSegments.push({
+                              key: "green",
+                              h: (displayG / maxJobsRounded) * 550,
+                              dash: `2px dotted ${TARGET_OUTLINE_COLORS.greenStreams}`,
+                              labelValue: adjIntG,
+                              title:
+                                adjIntG > maxJobsRounded
+                                  ? `Adjusted Green Streams: ${adjIntG}/mo (outline height capped at ${maxJobsRounded}; annual ${yearlyG}, YTD ${ytdGreen}; ${paceTailG})${paceNote}`
+                                  : `Adjusted Green Streams: ${adjIntG}/mo (annual ${yearlyG}, YTD ${ytdGreen}; ${paceTailG})${paceNote}`,
+                            });
+                          }
+                        }
+                        if (showBarQld) {
+                          const yearlyQ = monthlySalesTargets.qld * 12;
+                          const adjQ = adjustedPaceFromYtd(
+                            monthlySalesTargets.qld,
+                            effectiveMonthIndex,
+                            ytdQld
+                          );
+                          const adjIntQ = Math.max(0, Math.round(adjQ));
+                          if (adjIntQ > 0) {
+                            const displayQ = Math.min(adjIntQ, maxJobsRounded);
+                            const remQ = yearlyQ - ytdQld;
+                            const paceTailQ =
+                              monthsAfterThis > 0
+                                ? `${remQ} left ÷ ${monthsAfterThis} mo after this`
+                                : `${Math.max(0, remQ)} left to hit annual (Dec)`;
+                            adjustedTargetSegments.push({
+                              key: "qld",
+                              h: (displayQ / maxJobsRounded) * 550,
+                              dash: `2px dotted ${TARGET_OUTLINE_COLORS.qld}`,
+                              labelValue: adjIntQ,
+                              title:
+                                adjIntQ > maxJobsRounded
+                                  ? `Adjusted QLD: ${adjIntQ}/mo (outline height capped at ${maxJobsRounded}; annual ${yearlyQ}, YTD ${ytdQld}; ${paceTailQ})${paceNote}`
+                                  : `Adjusted QLD: ${adjIntQ}/mo (annual ${yearlyQ}, YTD ${ytdQld}; ${paceTailQ})${paceNote}`,
+                            });
+                          }
+                        }
+                        if (showBarVic) {
+                          const yearlyV = monthlySalesTargets.vic * 12;
+                          const adjV = adjustedPaceFromYtd(
+                            monthlySalesTargets.vic,
+                            effectiveMonthIndex,
+                            ytdVic
+                          );
+                          const adjIntV = Math.max(0, Math.round(adjV));
+                          if (adjIntV > 0) {
+                            const displayV = Math.min(adjIntV, maxJobsRounded);
+                            const remV = yearlyV - ytdVic;
+                            const paceTailV =
+                              monthsAfterThis > 0
+                                ? `${remV} left ÷ ${monthsAfterThis} mo after this`
+                                : `${Math.max(0, remV)} left to hit annual (Dec)`;
+                            adjustedTargetSegments.push({
+                              key: "vic",
+                              h: (displayV / maxJobsRounded) * 550,
+                              dash: `2px dotted ${TARGET_OUTLINE_COLORS.vic}`,
+                              labelValue: adjIntV,
+                              title:
+                                adjIntV > maxJobsRounded
+                                  ? `Adjusted VIC: ${adjIntV}/mo (outline height capped at ${maxJobsRounded}; annual ${yearlyV}, YTD ${ytdVic}; ${paceTailV})${paceNote}`
+                                  : `Adjusted VIC: ${adjIntV}/mo (annual ${yearlyV}, YTD ${ytdVic}; ${paceTailV})${paceNote}`,
+                            });
+                          }
+                        }
+
+                        const showTargetOverlay =
+                          (showAdjustedTargets && adjustedTargetSegments.length > 0) ||
+                          (showMonthlyTargets && !showAdjustedTargets && targetSegments.length > 0);
+                        const overlaySegments = showAdjustedTargets ? adjustedTargetSegments : targetSegments;
+                        const overlayStackHeight = overlaySegments.reduce(
+                          (s, t) => s + t.h + TARGET_OVERLAY_LABEL_ROW_PX,
+                          0
+                        );
                         
                         return (
                           <div
@@ -1047,7 +1979,7 @@ export default function SalesAnalytics() {
                               position: "relative",
                             }}
                           >
-                            {showTotals && totalBarHeight > 0 && (
+                            {totalBarHeight > 0 && (
                                 <div
                                   style={{
                                     width: "100%",
@@ -1065,7 +1997,7 @@ export default function SalesAnalytics() {
                                     textOverflow: "ellipsis",
                                   }}
                                 >
-                                  {month.totalSalesCount} - {formatCurrency(month.totalValue)}
+                                  {visibleSalesCount} - {formatCurrency(visibleTotalValue)}
                                 </div>
                             )}
                             <div
@@ -1076,7 +2008,7 @@ export default function SalesAnalytics() {
                                 alignSelf: "stretch",
                               }}
                             >
-                              {prevTotalBarHeight > 0 && (
+                              {showLastYearOutline && prevTotalBarHeight > 0 && (
                                 <div
                                   style={{
                                     position: "absolute",
@@ -1093,7 +2025,71 @@ export default function SalesAnalytics() {
                                   }}
                                 />
                               )}
-                            {/* Stacked bars — heights are exact (jobCount/50)*550 px; never inflated for labels */}
+                              {showTargetOverlay && (
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    height: `${overlayStackHeight}px`,
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    justifyContent: "flex-end",
+                                    alignItems: "stretch",
+                                    pointerEvents: "none",
+                                    zIndex: 3,
+                                  }}
+                                >
+                                  {overlaySegments.map((ts, ti) => {
+                                    const n = overlaySegments.length;
+                                    const isTop = ti === 0;
+                                    const isBottom = ti === n - 1;
+                                    return (
+                                      <div
+                                        key={ts.key}
+                                        style={{
+                                          display: "flex",
+                                          flexDirection: "column",
+                                          alignItems: "center",
+                                          flexShrink: 0,
+                                        }}
+                                      >
+                                        <div
+                                          title={ts.title}
+                                          style={{
+                                            fontSize: "0.65rem",
+                                            fontWeight: 800,
+                                            color: MONUMENT,
+                                            lineHeight: 1.05,
+                                            marginBottom: "3px",
+                                            flexShrink: 0,
+                                            userSelect: "none",
+                                          }}
+                                        >
+                                          {ts.labelValue}
+                                        </div>
+                                        <div
+                                          title={ts.title}
+                                          style={{
+                                            width: "100%",
+                                            height: `${ts.h}px`,
+                                            boxSizing: "border-box",
+                                            borderLeft: ts.dash,
+                                            borderRight: ts.dash,
+                                            borderTop: isTop ? ts.dash : "none",
+                                            borderBottom: isBottom ? ts.dash : "none",
+                                            borderRadius:
+                                              n === 1 ? "4px 4px 0 0" : isTop ? "4px 4px 0 0" : isBottom ? "0 0 4px 4px" : "0",
+                                            flexShrink: 0,
+                                          }}
+                                        />
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            {/* Stacked bars — green (top) → QLD → VIC (bottom); hidden streams omitted with no gap */}
                             <div
                               style={{
                                 width: "100%",
@@ -1109,129 +2105,55 @@ export default function SalesAnalytics() {
                                 overflow: "hidden",
                               }}
                             >
-                              {/* DOM order is top → bottom of stack; flex-end anchors stack to baseline, so first = top (green), last = bottom (blue). */}
-                              {/* Green streams (green) — top of bar */}
-                              {greenStreamBarHeight > 0 && (
-                                <div
-                                  title={`Green streams: ${month.greenStreamSalesCount} - ${formatCurrency(month.greenStreamTotalValue)}`}
-                                  style={{
-                                    width: "100%",
-                                    height: `${greenStreamBarHeight}px`,
-                                    maxHeight: `${greenStreamBarHeight}px`,
-                                    flex: "0 0 auto",
-                                    backgroundColor: "#92D050",
-                                    borderRadius: "4px 4px 0 0",
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    justifyContent: "center",
-                                    alignItems: "center",
-                                    padding: "1px 3px",
-                                    boxSizing: "border-box",
-                                    overflow: "hidden",
-                                    minHeight: 0,
-                                  }}
-                                >
-                                  {greenStreamBarHeight >= 18 && (
-                                    <div
-                                      style={{
-                                        fontSize: "0.58rem",
-                                        fontWeight: 700,
-                                        color: WHITE,
-                                        lineHeight: 1.1,
-                                        whiteSpace: "nowrap",
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        maxWidth: "100%",
-                                        textAlign: "center",
-                                      }}
-                                    >
-                                      {month.greenStreamSalesCount} - {formatCurrency(month.greenStreamTotalValue)}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* QLD (red) — middle */}
-                              {qldBarHeight > 0 && (
-                                <div
-                                  title={`QLD: ${month.qldSalesCount} - ${formatCurrency(month.qldTotalValue)}`}
-                                  style={{
-                                    width: "100%",
-                                    height: `${qldBarHeight}px`,
-                                    maxHeight: `${qldBarHeight}px`,
-                                    flex: "0 0 auto",
-                                    backgroundColor: "#D54358",
-                                    borderRadius: qldBarHeight > 0 && greenStreamBarHeight === 0 ? "4px 4px 0 0" : "0",
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    justifyContent: "center",
-                                    alignItems: "center",
-                                    padding: "1px 3px",
-                                    boxSizing: "border-box",
-                                    overflow: "hidden",
-                                    minHeight: 0,
-                                  }}
-                                >
-                                  {qldBarHeight >= 18 && (
-                                    <div
-                                      style={{
-                                        fontSize: "0.58rem",
-                                        fontWeight: 700,
-                                        color: WHITE,
-                                        lineHeight: 1.1,
-                                        whiteSpace: "nowrap",
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        maxWidth: "100%",
-                                        textAlign: "center",
-                                      }}
-                                    >
-                                      {month.qldSalesCount} - {formatCurrency(month.qldTotalValue)}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* VIC (blue) — bottom on baseline */}
-                              {vicBarHeight > 0 && (
-                                <div
-                                  title={`VIC: ${month.vicSalesCount} - ${formatCurrency(month.vicTotalValue)}`}
-                                  style={{
-                                    width: "100%",
-                                    height: `${vicBarHeight}px`,
-                                    maxHeight: `${vicBarHeight}px`,
-                                    flex: "0 0 auto",
-                                    backgroundColor: "#4D93D9",
-                                    borderRadius: vicBarHeight === totalBarHeight ? "4px 4px 0 0" : "0",
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    justifyContent: "center",
-                                    alignItems: "center",
-                                    padding: "1px 3px",
-                                    boxSizing: "border-box",
-                                    overflow: "hidden",
-                                    minHeight: 0,
-                                  }}
-                                >
-                                  {vicBarHeight >= 18 && (
-                                    <div
-                                      style={{
-                                        fontSize: "0.58rem",
-                                        fontWeight: 700,
-                                        color: WHITE,
-                                        lineHeight: 1.1,
-                                        whiteSpace: "nowrap",
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        maxWidth: "100%",
-                                        textAlign: "center",
-                                      }}
-                                    >
-                                      {month.vicSalesCount} - {formatCurrency(month.vicTotalValue)}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
+                              {barSegments.map((seg, si) => {
+                                const n = barSegments.length;
+                                const isTop = si === 0;
+                                const isBottom = si === n - 1;
+                                let barBorderRadius = "0";
+                                if (n === 1) barBorderRadius = "4px 4px 0 0";
+                                else if (isTop) barBorderRadius = "4px 4px 0 0";
+                                else if (isBottom) barBorderRadius = "0 0 4px 4px";
+                                return (
+                                  <div
+                                    key={seg.key}
+                                    title={seg.title}
+                                    style={{
+                                      width: "100%",
+                                      height: `${seg.height}px`,
+                                      maxHeight: `${seg.height}px`,
+                                      flex: "0 0 auto",
+                                      backgroundColor: seg.bg,
+                                      borderRadius: barBorderRadius,
+                                      display: "flex",
+                                      flexDirection: "column",
+                                      justifyContent: "center",
+                                      alignItems: "center",
+                                      padding: "1px 3px",
+                                      boxSizing: "border-box",
+                                      overflow: "hidden",
+                                      minHeight: 0,
+                                    }}
+                                  >
+                                    {seg.height >= 18 && (
+                                      <div
+                                        style={{
+                                          fontSize: "0.58rem",
+                                          fontWeight: 700,
+                                          color: WHITE,
+                                          lineHeight: 1.1,
+                                          whiteSpace: "nowrap",
+                                          overflow: "hidden",
+                                          textOverflow: "ellipsis",
+                                          maxWidth: "100%",
+                                          textAlign: "center",
+                                        }}
+                                      >
+                                        {seg.count} - {formatCurrency(seg.value)}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                             </div>
 

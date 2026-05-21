@@ -3,6 +3,8 @@ import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import {
   resolveNewProjectClientFrom,
   resolveNewProjectClientToEmails,
+  pickNewJobClientTemplateName,
+  findSalespersonUserInList,
 } from "../utils/streamNewProjectEmail";
 
 const MONUMENT = "#323233";
@@ -123,6 +125,14 @@ export default function NewProject_7_EmailClient({
       replaced = replaced.replace(/{SalespersonPosition}/g, formattedPosition);
     }
 
+    // Match POST /api/emails/send: plain newlines become <br> so preview matches the sent HTML.
+    if (html) {
+      replaced = replaced
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n")
+        .replace(/\n/g, "<br>");
+    }
+
     return replaced;
   }
 
@@ -150,30 +160,35 @@ export default function NewProject_7_EmailClient({
   async function prepareClientEmail(project) {
     setIsPreparing(true);
     try {
-      const [templatesResponse, settingsResponse] = await Promise.all([
+      const [templatesResponse, settingsResponse, usersResponse] = await Promise.all([
         fetch(`${API_URL}/api/email-templates`),
         fetch(`${API_URL}/api/settings`),
+        fetch(`${API_URL}/api/users`),
       ]);
       if (!templatesResponse.ok) throw new Error("Failed to fetch email templates");
       const templates = await templatesResponse.json();
       const settings = settingsResponse.ok ? await settingsResponse.json() : {};
+      const users = usersResponse.ok ? await usersResponse.json() : [];
+      const salespersonUser = findSalespersonUserInList(users, project?.salesperson);
 
       const fullDeposit = isFullDeposit(project);
-      const templateName = fullDeposit ? "NEW JOB - Client Full Deposit" : "NEW JOB - Client Part Deposit";
+      const templateName = pickNewJobClientTemplateName(project, fullDeposit, salespersonUser);
       const template = templates.find(
         (t) => t.name && t.name.toLowerCase().trim() === templateName.toLowerCase()
       );
 
       if (!template) {
-        alert(`Template "${templateName}" not found. Please create it in Settings → Email Templates.`);
+        alert(
+          `Template "${templateName}" not found. Create it in Settings → Email Templates (state ${String(project?.state ?? "").trim() || "?"}, ${fullDeposit ? "full" : "partial"} deposit).`
+        );
         setIsPreparing(false);
         return;
       }
 
-      const clientFrom = resolveNewProjectClientFrom(settings, project);
+      const clientFrom = resolveNewProjectClientFrom(settings, project, salespersonUser);
       if (!clientFrom || !String(clientFrom).trim()) {
         alert(
-          "No From address for the client email. Set Client Email — From under Settings → Stream Settings → New Project."
+          "No From address for the client email. Under Settings → Email Settings → General → New Project → Email to Client, set From for Sales Manager and/or Other for this project's state (VIC or QLD column)."
         );
         setIsPreparing(false);
         return;
@@ -182,7 +197,7 @@ export default function NewProject_7_EmailClient({
       const toAddresses = resolveNewProjectClientToEmails(settings, project);
 
       if (toAddresses.length === 0) {
-        alert("No valid Client Email — To address from stream settings. Set Settings → Stream Settings → New Project.");
+        alert("No valid Client Email — To address. Set Settings → Email Settings → General → New Project.");
         setIsPreparing(false);
         return;
       }

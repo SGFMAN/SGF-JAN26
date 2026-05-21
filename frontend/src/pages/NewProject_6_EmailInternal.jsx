@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { getNewJobInternalTemplateName } from "../utils/newJobInternalTemplate";
 import {
+  findSalespersonUserInList,
   resolveNewProjectTeamFrom,
   resolveNewProjectTeamToEmailsFromStream,
 } from "../utils/streamNewProjectEmail";
@@ -140,6 +141,14 @@ export default function NewProject_6_EmailInternal({
       replaced = replaced.replace(/{SalespersonEmail}/g, email);
     }
 
+    // Match POST /api/emails/send: plain newlines become <br> so preview matches the sent HTML.
+    if (html) {
+      replaced = replaced
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n")
+        .replace(/\n/g, "<br>");
+    }
+
     return replaced;
   }
 
@@ -148,15 +157,18 @@ export default function NewProject_6_EmailInternal({
     setIsPreparing(true);
     try {
       console.log("Preparing new job email for project:", project);
-      const [templatesResponse, settingsResponse] = await Promise.all([
+      const [templatesResponse, settingsResponse, usersResponse] = await Promise.all([
         fetch(`${API_URL}/api/email-templates`),
         fetch(`${API_URL}/api/settings`),
+        fetch(`${API_URL}/api/users`),
       ]);
       if (!templatesResponse.ok) {
         throw new Error("Failed to fetch email templates");
       }
       const templates = await templatesResponse.json();
       const settings = settingsResponse.ok ? await settingsResponse.json() : {};
+      const users = usersResponse.ok ? await usersResponse.json() : [];
+      const salespersonUser = findSalespersonUserInList(users, project?.salesperson);
       console.log("Fetched templates:", templates);
 
       const templateName = getNewJobInternalTemplateName(project);
@@ -173,10 +185,10 @@ export default function NewProject_6_EmailInternal({
 
       console.log("Found template:", template);
 
-      const teamFrom = resolveNewProjectTeamFrom(settings, project);
+      const teamFrom = resolveNewProjectTeamFrom(settings, project, salespersonUser);
       if (!teamFrom || !String(teamFrom).trim()) {
         alert(
-          "No From address for the new job email. Set Team Email — From under Settings → Stream Settings → New Project."
+          "No From address for the new job email. Under Settings → Email Settings → General → New Project → Email to Team, set From for Sales Manager and/or Other for this project's state (VIC or QLD column), or the legacy Team Email — From."
         );
         setIsPreparing(false);
         return;
@@ -189,7 +201,7 @@ export default function NewProject_6_EmailInternal({
       if (toAddresses.length === 0) {
         console.warn("No valid email addresses found after replacing tokens");
         alert(
-          "No valid Team Email — To addresses in stream settings. Configure Settings → Stream Settings → New Project."
+          "No valid Team Email — To addresses. Configure Settings → Email Settings → General → New Project."
         );
         setIsPreparing(false);
         return;

@@ -4,6 +4,7 @@ const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 const API_URL = "";
+const TEMPLATE_TEST_EMAIL_TO = "ben@superiorgrannyflats.com.au";
 const TEMPLATE_SECTIONS = ["Colours", "Drawings", "New Project", "Misc"];
 const ADD_NEW_GROUP_VALUE = "__add_new_group__";
 
@@ -60,6 +61,7 @@ export default function EmailTemplate() {
   const [body, setBody] = useState("");
   const [loading, setLoading] = useState(true);
   const [openSection, setOpenSection] = useState("Colours");
+  const [testSending, setTestSending] = useState(false);
 
   useEffect(() => {
     fetchTemplates();
@@ -103,6 +105,48 @@ export default function EmailTemplate() {
       setTemplates([]);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function sendFormattingTestEmail() {
+    const subj = subject.trim() || "(no subject)";
+    const bodyContent = body.trim();
+    try {
+      setTestSending(true);
+      const settingsRes = await fetch(`${API_URL}/api/settings`);
+      const settings = settingsRes.ok ? await settingsRes.json() : {};
+      let fromAddr = "";
+      for (let i = 1; i <= 16; i++) {
+        const raw = settings[`smtp_user_${i}`];
+        if (raw != null && String(raw).trim()) {
+          fromAddr = String(raw).trim();
+          break;
+        }
+      }
+      if (!fromAddr) {
+        alert(
+          "No SMTP From address found. Configure at least one SMTP user (e.g. smtp_user_1) in Settings before sending a test."
+        );
+        return;
+      }
+      const res = await fetch(`${API_URL}/api/emails/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: TEMPLATE_TEST_EMAIL_TO,
+          from: fromAddr,
+          subject: `[Template test] ${subj}`,
+          htmlBody: bodyContent || "<p>(empty body)</p>",
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Send failed (${res.status})`);
+      alert(`Test email sent to ${TEMPLATE_TEST_EMAIL_TO}`);
+    } catch (e) {
+      console.error("Template test send:", e);
+      alert(e.message || "Failed to send test email.");
+    } finally {
+      setTestSending(false);
     }
   }
 
@@ -656,7 +700,25 @@ export default function EmailTemplate() {
           </div>
 
           {/* Action Buttons */}
-          <div style={{ display: "flex", gap: "12px", marginTop: "auto" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "auto" }}>
+            <button
+              type="button"
+              disabled={testSending}
+              onClick={sendFormattingTestEmail}
+              style={{
+                padding: "10px 20px",
+                fontSize: "1rem",
+                fontWeight: 500,
+                color: MONUMENT,
+                background: WHITE,
+                border: `2px solid ${MONUMENT}`,
+                borderRadius: "8px",
+                cursor: testSending ? "wait" : "pointer",
+                opacity: testSending ? 0.75 : 1,
+              }}
+            >
+              {testSending ? "Sending test…" : "Send formatting test email"}
+            </button>
             <button
               type="button"
               onClick={saveTemplate}

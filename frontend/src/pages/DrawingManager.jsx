@@ -10,6 +10,7 @@ import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stat
 import {
   resolveNewProjectClientFrom,
   resolveNewProjectClientToEmails,
+  findSalespersonUserInList,
 } from "../utils/streamNewProjectEmail";
 import {
   DRAFTSPERSON_UNASSIGNED,
@@ -168,15 +169,18 @@ export default function DrawingManager() {
   async function openReminderEmailModal(project) {
     const mainEmail = (getMainEmailContact(project) || "").trim();
     try {
-      const [templateResponse, settingsResponse] = await Promise.all([
+      const [templateResponse, settingsResponse, usersResponse] = await Promise.all([
         fetch(`${API_URL}/api/email-templates`),
         fetch(`${API_URL}/api/settings`),
+        fetch(`${API_URL}/api/users`),
       ]);
       if (!templateResponse.ok) {
         throw new Error("Failed to fetch email templates");
       }
       const templates = await templateResponse.json();
       const settings = settingsResponse.ok ? await settingsResponse.json() : {};
+      const users = usersResponse.ok ? await usersResponse.json() : [];
+      const salespersonUser = findSalespersonUserInList(users, project?.salesperson);
       const template = templates.find((t) => t.name === "DRAWINGS - Reminder");
       if (!template) {
         alert('Email template "DRAWINGS - Reminder" not found. Please create it in Settings → Email Templates.');
@@ -221,7 +225,7 @@ export default function DrawingManager() {
       setSelectedProjectForReminder(project);
       const streamTo = resolveNewProjectClientToEmails(settings, project);
       setReminderEmailTo(streamTo.join(", ") || mainEmail || "");
-      setReminderEmailFrom(resolveNewProjectClientFrom(settings, project));
+      setReminderEmailFrom(resolveNewProjectClientFrom(settings, project, salespersonUser));
       setReminderEmailSubject(applyTemplateTokens(template.subject || "", tokenMap));
       setReminderEmailBody(applyTemplateTokens(template.body || "", tokenMap));
       setShowReminderModal(true);

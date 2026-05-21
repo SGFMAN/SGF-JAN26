@@ -18,8 +18,6 @@ import {
   resolveConceptApprovedToEmails,
   resolveWdsApprovedFrom,
   resolveWdsApprovedToEmails,
-  resolveDesignNotesFrom,
-  resolveDesignNotesToEmails,
   resolveDesignToSalespersonFrom,
   resolveDesignToSalespersonToEmails,
   resolveSalesToDesignFrom,
@@ -2038,8 +2036,6 @@ export default function Drawings({
       subject = subject.replace(/{Draftsperson}/g, draftspersonName);
       subject = subject.replace(/{Position}/g, draftspersonPosition);
 
-      const templateToList = parseEmailTemplateToAddressList(template.to_addresses);
-
       let settingsForPreview = {};
       try {
         const settingsRes = await fetch(`${API_URL}/api/settings`);
@@ -2047,22 +2043,18 @@ export default function Drawings({
       } catch (e) {
         console.warn("Could not load settings for drawing From override:", e);
       }
-      const previewToResolved = resolveDesignNotesToEmails(
-        settingsForPreview,
-        project,
-        templateToList
-      );
-      const previewFromResolved = resolveDesignNotesFrom(settingsForPreview, project, "");
+      const previewToResolved = resolveDesignToSalespersonToEmails(settingsForPreview, project, []);
+      const previewFromResolved = resolveDesignToSalespersonFrom(settingsForPreview, project, "");
 
       if (!previewToResolved.length) {
         alert(
-          "No recipient addresses in Stream Settings → Drawings → Design Notes — To. Configure Settings → Stream Settings → Drawings."
+          "No recipient addresses in Stream Settings → Drawings → Drawings Upload — To. Configure Settings → Email Settings → Streams → Drawings → Drawings Upload for this stream (VIC/QLD column)."
         );
         return;
       }
       if (!previewFromResolved || !String(previewFromResolved).trim()) {
         alert(
-          "No sender email in Stream Settings → Drawings → Design Notes — From. Configure Settings → Stream Settings → Drawings."
+          "No sender email in Stream Settings → Drawings → Drawings Upload — From. Configure Settings → Email Settings → Streams → Drawings → Drawings Upload for this stream (VIC/QLD column)."
         );
         return;
       }

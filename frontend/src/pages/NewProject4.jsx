@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { getNewJobInternalTemplateName } from "../utils/newJobInternalTemplate";
 import {
+  findSalespersonUserInList,
   resolveNewProjectTeamFrom,
   resolveNewProjectTeamToEmailsFromStream,
 } from "../utils/streamNewProjectEmail";
@@ -24,7 +25,7 @@ const STREAM_OPTIONS = [
   "Fresh Start Advisory",
 ];
 
-const DEPOSIT_OPTIONS = ["Full 5%", "$5k only", "Other"];
+const DEPOSIT_OPTIONS = ["Full 5%", "$7.5k only", "Other"];
 
 const SPECS_OPTIONS = ["Affordable", "Superior"];
 
@@ -41,7 +42,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
   const [createdProject, setCreatedProject] = useState(null);
   const [tempDepositAmount, setTempDepositAmount] = useState("");
   const [previousDepositType, setPreviousDepositType] = useState("");
-  const [depositType, setDepositType] = useState(""); // "Full 5%", "$5k only", "Other", or ""
+  const [depositType, setDepositType] = useState(""); // "Full 5%", "$7.5k only", "Other", or ""
   const [salesTeamUsers, setSalesTeamUsers] = useState([]);
   const [loadingSalesUsers, setLoadingSalesUsers] = useState(false);
 
@@ -64,8 +65,8 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
     if (depositType === "Full 5%") {
       const amount = projectCostNum > 0 ? Math.floor(projectCostNum / 20) : 0;
       return amount > 0 ? `$${formatWithCommas(amount)}` : "$0";
-    } else if (depositType === "$5k only") {
-      return "$5,000";
+    } else if (depositType === "$7.5k only") {
+      return "$7,500";
     } else if (depositType === "Other" && formData.customDeposit) {
       // Format the custom deposit with commas
       const customNum = parseFormattedNumber(formData.customDeposit);
@@ -134,13 +135,15 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
     if (isOpen) {
       // Check if formData.deposit is one of the preset values or a custom amount
       const depositValue = formData.deposit || "";
-      if (depositValue === "Full 5%" || depositValue === "$5k only") {
-        setDepositType(depositValue);
+      if (depositValue === "Full 5%") {
+        setDepositType("Full 5%");
+      } else if (depositValue === "$7.5k only" || depositValue === "$5k only") {
+        setDepositType("$7.5k only");
       } else {
-        // Check if it's $5,000 or $5000
+        // Check if it's $7,500 or $7500
         const depositNum = parseFormattedNumber(depositValue);
-        if (depositNum === 5000) {
-          setDepositType("$5k only");
+        if (depositNum === 7500) {
+          setDepositType("$7.5k only");
         } else if (depositValue && depositValue !== "") {
           // Check if it's a calculated 5% value
           const projectCostNum = parseFormattedNumber(formData.projectCost);
@@ -183,11 +186,11 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
           customDeposit: "",
           deposit: formattedAmount,
         });
-      } else if (value === "$5k only") {
+      } else if (value === "$7.5k only") {
         onFormDataChange({
           ...formData,
           customDeposit: "",
-          deposit: "$5,000",
+          deposit: "$7,500",
         });
       } else {
         // Empty selection
@@ -245,10 +248,10 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
           deposit: formattedAmount,
           customDeposit: "",
         });
-      } else if (previousDepositType === "$5k only") {
+      } else if (previousDepositType === "$7.5k only") {
         onFormDataChange({
           ...formData,
-          deposit: "$5,000",
+          deposit: "$7,500",
           customDeposit: "",
         });
       } else {
@@ -276,10 +279,10 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
         deposit: formattedAmount,
         customDeposit: "",
       });
-    } else if (previousDepositType === "$5k only") {
+    } else if (previousDepositType === "$7.5k only") {
       onFormDataChange({
         ...formData,
-        deposit: "$5,000",
+        deposit: "$7,500",
         customDeposit: "",
       });
     } else {
@@ -381,6 +384,14 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
       replaced = replaced.replace(/{SalespersonEmail}/g, email);
     }
 
+    // Match POST /api/emails/send: plain newlines become <br> so preview matches the sent HTML.
+    if (html) {
+      replaced = replaced
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n")
+        .replace(/\n/g, "<br>");
+    }
+
     return replaced;
   }
 
@@ -389,15 +400,18 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
     try {
       console.log("Preparing new job email for project:", project);
       // Fetch email templates
-      const [templatesResponse, settingsResponse] = await Promise.all([
+      const [templatesResponse, settingsResponse, usersResponse] = await Promise.all([
         fetch(`${API_URL}/api/email-templates`),
         fetch(`${API_URL}/api/settings`),
+        fetch(`${API_URL}/api/users`),
       ]);
       if (!templatesResponse.ok) {
         throw new Error("Failed to fetch email templates");
       }
       const templates = await templatesResponse.json();
       const settings = settingsResponse.ok ? await settingsResponse.json() : {};
+      const users = usersResponse.ok ? await usersResponse.json() : [];
+      const salespersonUser = findSalespersonUserInList(users, project?.salesperson);
       console.log("Fetched templates:", templates);
 
       const templateName = getNewJobInternalTemplateName(project);
@@ -414,10 +428,10 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
 
       console.log("Found template:", template);
 
-      const teamFrom = resolveNewProjectTeamFrom(settings, project);
+      const teamFrom = resolveNewProjectTeamFrom(settings, project, salespersonUser);
       if (!teamFrom || !String(teamFrom).trim()) {
         alert(
-          "No From address for the new job email. Set Team Email — From under Settings → Stream Settings → New Project."
+          "No From address for the new job email. Under Settings → Email Settings → General → New Project → Email to Team, set From for Sales Manager and/or Other for this project's state (VIC or QLD column), or the legacy Team Email — From."
         );
         return;
       }
@@ -429,7 +443,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
       if (toAddresses.length === 0) {
         console.warn("No valid email addresses found after replacing tokens");
         alert(
-          "No valid Team Email — To addresses in stream settings. Configure Settings → Stream Settings → New Project."
+          "No valid Team Email — To addresses. Configure Settings → Email Settings → General → New Project."
         );
         return;
       }

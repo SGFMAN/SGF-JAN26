@@ -245,9 +245,71 @@ function resolveWdsApprovedStreamRowKey(project, settings) {
   return bestKey;
 }
 
+/** Stream row for Drawings Upload (design → sales): primary key, else best row with Upload From/To set. */
+function resolveDesignToSalespersonStreamRowKey(project, settings) {
+  const map = parseStreamSettingsMap(settings?.stream_settings_json);
+  const baseRaw = normalizeBaseStream(project?.stream);
+  const baseStr = String(baseRaw || "").trim();
+  if (!baseStr) return "";
+
+  let key = resolveStreamSettingsKey(baseStr, map, project);
+  if (key && map[key] && typeof map[key] === "object") {
+    const d = map[key].drawings;
+    if (
+      d &&
+      (drawingValue(d, key, "designToSalespersonFromEmail") ||
+        drawingValue(d, key, "designToSalespersonToEmail") ||
+        drawingValue(d, key, "designToSalespersonToEmail2"))
+    ) {
+      return key;
+    }
+  }
+
+  const nb = baseStr.replace(/\s*-\s*(VIC|QLD)\s*$/i, "").trim().toLowerCase();
+  const st = projectStateCode(project);
+  const lb = baseStr.toLowerCase();
+  let bestKey = "";
+  let bestScore = -1;
+  for (const k of Object.keys(map)) {
+    const row = map[k];
+    if (!row || typeof row !== "object") continue;
+    const d = row.drawings;
+    if (!d || typeof d !== "object") continue;
+    const hasRouting =
+      drawingValue(d, k, "designToSalespersonFromEmail") ||
+      drawingValue(d, k, "designToSalespersonToEmail") ||
+      drawingValue(d, k, "designToSalespersonToEmail2");
+    if (!hasRouting) continue;
+
+    const lk = k.toLowerCase();
+    let score = 0;
+    if (lk === lb) score += 100;
+    else if (lk.startsWith(lb + " -")) score += 90;
+    const rowBase = k.replace(/\s*-\s*(VIC|QLD)\s*$/i, "").trim().toLowerCase();
+    if (nb && rowBase === nb) score += 70;
+    if (st === "QLD" && / - QLD$/i.test(k)) score += 15;
+    if (st === "VIC" && / - VIC$/i.test(k)) score += 15;
+    if (score > bestScore) {
+      bestScore = score;
+      bestKey = k;
+    }
+  }
+  return bestKey;
+}
+
+const DESIGN_TO_SALESPERSON_FIELD_KEYS = new Set([
+  "designToSalespersonFromEmail",
+  "designToSalespersonToEmail",
+  "designToSalespersonToEmail2",
+]);
+
 /** Per-stream-row `drawings` values only. */
 function getDrawingFieldFromStreamRows(settings, project, vicStyleKey) {
-  const streamKey = resolveProjectStreamSettingsRowKey(project, settings);
+  let streamKey = resolveProjectStreamSettingsRowKey(project, settings);
+  if (DESIGN_TO_SALESPERSON_FIELD_KEYS.has(vicStyleKey)) {
+    const uploadKey = resolveDesignToSalespersonStreamRowKey(project, settings);
+    if (uploadKey) streamKey = uploadKey;
+  }
   if (!streamKey) return "";
   const map = parseStreamSettingsMap(settings?.stream_settings_json);
   const row = map[streamKey] && typeof map[streamKey] === "object" ? map[streamKey] : null;
@@ -272,7 +334,7 @@ export function resolveDesignToSalespersonFrom(settings, project, _templateFrom)
 }
 
 /**
- * To recipients for Drawings Upload (stream row `drawings` Design-to-salesperson To fields; QLD includes second To).
+ * To recipients for Drawings Upload (primary + optional second To on VIC/QLD stream row `drawings`).
  */
 export function resolveDesignToSalespersonToEmails(settings, project, _templateToEmails) {
   const primary = parseSettingsToEmailList(getDrawingFieldFromStreamRows(settings, project, "designToSalespersonToEmail"));

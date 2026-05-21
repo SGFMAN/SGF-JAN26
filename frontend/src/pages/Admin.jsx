@@ -3,6 +3,7 @@ import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import {
   resolveNewProjectClientFrom,
   resolveNewProjectClientToEmails,
+  findSalespersonUserInList,
 } from "../utils/streamNewProjectEmail";
 import { fullFivePercentDeposit, isFullFivePercentDepositPaid } from "../utils/projectDeposit";
 
@@ -29,7 +30,7 @@ function getLongestText(arr, include = "") {
   );
 }
 
-const DEPOSIT_OPTIONS = ["Full 5%", "$5k only", "Other"];
+const DEPOSIT_OPTIONS = ["Full 5%", "$7.5k only", "Other"];
 
 export default function Admin({ project, onUpdate }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
@@ -268,13 +269,16 @@ export default function Admin({ project, onUpdate }) {
   async function prepareDepositBalanceEmail() {
     setDepositEmailPreparing(true);
     try {
-      const [res, settingsRes] = await Promise.all([
+      const [res, settingsRes, usersRes] = await Promise.all([
         fetch(`${API_URL}/api/email-templates`),
         fetch(`${API_URL}/api/settings`),
+        fetch(`${API_URL}/api/users`),
       ]);
       if (!res.ok) throw new Error("Failed to fetch templates");
       const templates = await res.json();
       const settings = settingsRes.ok ? await settingsRes.json() : {};
+      const users = usersRes.ok ? await usersRes.json() : [];
+      const salespersonUser = findSalespersonUserInList(users, project?.salesperson);
       const template = templates.find(
         (t) => t.name && t.name.trim().toLowerCase() === "deposit balance paid"
       );
@@ -288,7 +292,7 @@ export default function Admin({ project, onUpdate }) {
       const replaceProjectName = (text) =>
         text != null ? String(text).replace(/{ProjectName}/g, projectName) : "";
       const toAddresses = resolveNewProjectClientToEmails(settings, project).join(", ");
-      const fromAddress = resolveNewProjectClientFrom(settings, project);
+      const fromAddress = resolveNewProjectClientFrom(settings, project, salespersonUser);
       setDepositEmailTo(toAddresses);
       setDepositEmailFrom(fromAddress);
       setDepositEmailSubject(replaceProjectName(template.subject || ""));
