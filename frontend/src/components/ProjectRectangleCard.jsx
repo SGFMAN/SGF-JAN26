@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { CLASSIFICATION_BADGE_MAP } from "../utils/classifications";
+import { projectPath } from "../utils/projectUrl";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -256,7 +257,7 @@ export default function ProjectRectangleCard({ project, fitColumn = false, onInt
   }
 
   return (
-    <Link to={`/project/${project.id}`} style={outerStyle}>
+    <Link to={projectPath(project)} style={outerStyle}>
       {inner}
     </Link>
   );

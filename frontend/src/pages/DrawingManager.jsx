@@ -7,6 +7,7 @@ import {
 import { Link } from "react-router-dom";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
+import { projectPath } from "../utils/projectUrl";
 import {
   resolveNewProjectClientFrom,
   resolveNewProjectClientToEmails,
@@ -1640,7 +1641,7 @@ export default function DrawingManager() {
                           {/* Column 1: Project Name */}
                           <Link
                             key={`${project.id}-name`}
-                            to={`/project/${project.id}`}
+                            to={projectPath(project)}
                             style={{
                               padding: "8px 12px",
                               background: WHITE,

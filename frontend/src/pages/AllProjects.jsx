@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import { CLASSIFICATION_BADGE_MAP } from "../utils/classifications";
+import { projectPath } from "../utils/projectUrl";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -675,7 +676,7 @@ export default function AllProjects() {
                 return (
                   <Link
                     key={project.id}
-                    to={`/project/${project.id}`}
+                    to={projectPath(project)}
                     style={{
                       textDecoration: "none",
                       display: "block",

@@ -8,6 +8,7 @@ import {
   isCancelledStatus,
 } from "../utils/projectStatus";
 import logo from "../images/logo.png";
+import { projectPath } from "../utils/projectUrl";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -733,7 +734,7 @@ export default function ContractManager() {
                     }}
                   >
                     <Link
-                      to={`/project/${project.id}`}
+                      to={projectPath(project)}
                       style={{
                         textDecoration: "none",
                         color: MONUMENT,

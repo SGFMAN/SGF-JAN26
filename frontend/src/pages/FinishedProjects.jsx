@@ -7,6 +7,7 @@ import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import { CLASSIFICATION_OPTIONS as CLASSIFICATION_SORT_ORDER, CLASSIFICATION_BADGE_MAP } from "../utils/classifications";
+import { projectPath } from "../utils/projectUrl";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -846,7 +847,7 @@ export default function FinishedProjects() {
                         </div>
                       )}
                     <Link
-                      to={`/project/${project.id}`}
+                      to={projectPath(project)}
                       style={{
                         textDecoration: "none",
                         display: "block",

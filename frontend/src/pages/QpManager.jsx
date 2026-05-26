@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import { isUserAdmin } from "../utils/auth";
 import logo from "../images/logo.png";
+import { projectPath } from "../utils/projectUrl";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -519,7 +520,7 @@ export default function QpManager() {
                           </td>
                           <td style={{ padding: "10px 14px", verticalAlign: "middle" }}>
                             <Link
-                              to={`/project/${project.id}?view=project-info`}
+                              to={projectPath(project, { view: "project-info" })}
                               style={{ color: "#2a6ebb", fontWeight: 500, textDecoration: "none" }}
                             >
                               Project

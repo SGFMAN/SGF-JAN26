@@ -47,7 +47,7 @@ export default function App() {
           <>
             {/* Public portal-only mode when accessed via Cloudflare tunnel */}
             <Route path="/portal" element={<PortalProjects />} />
-            <Route path="/portal/projects/:id" element={<ProjectPage />} />
+            <Route path="/portal/projects/:token" element={<ProjectPage />} />
             <Route path="/approve-concept/:projectId" element={<ApproveConcept />} />
             <Route path="/colours-portal/:projectId" element={<ColoursPortal />} />
             <Route path="/3d-vis-portal/:projectId" element={<ThreeDVisPortal />} />
@@ -59,7 +59,7 @@ export default function App() {
             <Route path="/projects" element={<HomePage />} />
             {/* Old standalone URL; Variations lives under Project → menu */}
             <Route path="/variations" element={<Navigate to="/projects" replace />} />
-            <Route path="/project/:id" element={<ProjectPage />} />
+            <Route path="/project/:token" element={<ProjectPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/apply-fields" element={<ApplyFields />} />
             <Route path="/finished-projects" element={<FinishedProjects />} />
@@ -91,7 +91,7 @@ export default function App() {
             <Route path="/colours-portal/:projectId" element={<ColoursPortal />} />
             <Route path="/3d-vis-portal/:projectId" element={<ThreeDVisPortal />} />
             <Route path="/portal" element={<PortalProjects />} />
-            <Route path="/portal/projects/:id" element={<ProjectPage />} />
+            <Route path="/portal/projects/:token" element={<ProjectPage />} />
           </>
         )}
       </Routes>

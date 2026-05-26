@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import logo from "../images/logo.png";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import { CLASSIFICATION_BADGE_MAP as CLASSIFICATION_MAP } from "../utils/classifications";
+import { portalProjectPath } from "../utils/projectUrl";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -559,7 +560,7 @@ export default function PortalProjects() {
                     )}
 
                     <Link
-                      to={`/portal/projects/${project.id}`}
+                      to={portalProjectPath(project)}
                       style={{
                         textDecoration: "none",
                         display: "block",

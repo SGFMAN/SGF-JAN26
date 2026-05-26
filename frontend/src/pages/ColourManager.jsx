@@ -6,6 +6,7 @@ import {
 } from "../utils/projectStatus";
 import { Link } from "react-router-dom";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
+import { projectPath } from "../utils/projectUrl";
 import { isUserAdmin } from "../utils/auth";
 import logo from "../images/logo.png";
 
@@ -678,7 +679,7 @@ const data = await response.json();
                   >
                     <div style={{ display: "flex", flexDirection: "column", gap: "6px", minWidth: 0 }}>
                       <Link
-                        to={`/project/${project.id}`}
+                        to={projectPath(project)}
                         style={{
                           textDecoration: "none",
                           color: MONUMENT,
@@ -693,7 +694,7 @@ const data = await response.json();
                       String(project.drawings_pdf_location).trim() &&
                       String(project.colours_pdf_location).trim() ? (
                         <Link
-                          to={`/project/${project.id}?view=colours`}
+                          to={projectPath(project, { view: "colours" })}
                           style={{
                             fontSize: "0.82rem",
                             color: LIGHT_MONUMENT,

@@ -19,6 +19,7 @@ import Robes from "./Robes";
 import Variations from "./Variations";
 import { isUserAdmin } from "../utils/auth";
 import { computeProjectFolderPathFromRecord } from "../utils/projectFolderPath";
+import { projectPath, portalProjectPath } from "../utils/projectUrl";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -146,7 +147,7 @@ const CONSTRUCTION_MENU_OPTIONS = [
 ];
 
 export default function ProjectPage() {
-  const { id } = useParams();
+  const { token } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   /** Client portal project URL: same full UI as internal /project/:id, but read-only and portal API */
@@ -171,15 +172,20 @@ export default function ProjectPage() {
   const [linkRenoDupCreatedForEmail, setLinkRenoDupCreatedForEmail] = useState(null);
   const copyToastAnimIdRef = useRef(0);
   const [copyToastAnimId, setCopyToastAnimId] = useState(0);
+  const portalProjectIdRef = useRef(null);
 
   useEffect(() => {
-    if (id) {
+    portalProjectIdRef.current = project?.id ?? null;
+  }, [project?.id]);
+
+  useEffect(() => {
+    if (token) {
       fetchProject();
       fetchAllProjects();
     }
     checkAdminStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, location.pathname]);
+  }, [token, location.pathname]);
 
   async function checkAdminStatus() {
     const admin = await isUserAdmin();
@@ -201,7 +207,7 @@ export default function ProjectPage() {
       // If no view parameter, default to overview
       setActiveView("overview");
     }
-  }, [id, location.search, isPortalProjectPath]);
+  }, [token, location.search, isPortalProjectPath]);
 
   // Set default menu view for Construction Phase projects
   useEffect(() => {
@@ -284,15 +290,15 @@ export default function ProjectPage() {
       }
       setError(null);
       const url = isPortalProjectPath
-        ? `${API_URL}/api/portal/projects/${id}/full`
-        : `${API_URL}/api/projects/${id}`;
+        ? `${API_URL}/api/portal/projects/${token}/full`
+        : `${API_URL}/api/projects/${token}`;
       console.log("Fetching project from:", url);
       const response = await fetch(url);
       console.log("Response status:", response.status);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: response.statusText }));
         if (response.status === 404) {
-          throw new Error(`Project not found (ID: ${id})`);
+          throw new Error("Project not found");
         }
         throw new Error(errorData.error || `Failed to fetch project: ${response.statusText}`);
       }
@@ -313,11 +319,11 @@ export default function ProjectPage() {
   // Reload project when opening Drawings so `draftsperson` and other fields match the DB
   // (e.g. assigned via Project Claim while this page had an older in-memory `project`).
   useEffect(() => {
-    if (!id) return;
+    if (!token) return;
     if (activeView !== "drawings") return;
     void fetchProject(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only when tab or id changes
-  }, [activeView, id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only when tab or token changes
+  }, [activeView, token]);
 
   // Debounced update function to prevent flash
   function updateProject(immediate = false) {
@@ -362,8 +368,8 @@ export default function ProjectPage() {
       const allowedPortalMutation =
         pathAndSearch.startsWith("/api/portal/") ||
         pathAndSearch.startsWith("/api/sitevisit/") ||
-        isPortalAllowedSendDrawingsPost(pathAndSearch, method, init, id) ||
-        isPortalAllowedVerifyDrawingsFolderPost(pathAndSearch, method, id);
+        isPortalAllowedSendDrawingsPost(pathAndSearch, method, init, portalProjectIdRef.current) ||
+        isPortalAllowedVerifyDrawingsFolderPost(pathAndSearch, method, portalProjectIdRef.current);
       if (isMutation && pathAndSearch.startsWith("/api/") && !allowedPortalMutation) {
         return Promise.resolve(
           new Response(JSON.stringify({ error: "Read-only in client portal" }), {
@@ -377,13 +383,13 @@ export default function ProjectPage() {
     return () => {
       window.fetch = origFetch;
     };
-  }, [isPortalProjectPath, id]);
+  }, [isPortalProjectPath, token]);
 
   async function handleDeleteProject() {
-    if (!id) return;
+    if (!project?.id) return;
     setIsDeleting(true);
     try {
-      const response = await fetch(`${API_URL}/api/projects/${id}`, {
+      const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "DELETE",
       });
       if (!response.ok) {
@@ -557,8 +563,9 @@ export default function ProjectPage() {
         </Link>
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           {(() => {
-            const currentProjectId = parseInt(id);
-            const currentIndex = allProjects.findIndex(p => p.id === currentProjectId);
+            const currentIndex = allProjects.findIndex(
+              (p) => p.access_token === token
+            );
             const hasPrevious = currentIndex > 0;
             const hasNext = currentIndex >= 0 && currentIndex < allProjects.length - 1;
             const previousProject = hasPrevious ? allProjects[currentIndex - 1] : null;
@@ -572,8 +579,13 @@ export default function ProjectPage() {
                   <button
                     onClick={() => {
                       if (previousProject) {
-                        const base = isPortalProjectPath ? "/portal/projects" : "/project";
-                        navigate(`${base}/${previousProject.id}?view=${activeView}`, { replace: true });
+                        navigate(
+                          (isPortalProjectPath ? portalProjectPath : projectPath)(
+                            previousProject,
+                            { view: activeView }
+                          ),
+                          { replace: true }
+                        );
                       }
                     }}
                     style={{
@@ -671,8 +683,13 @@ export default function ProjectPage() {
                   <button
                     onClick={() => {
                       if (nextProject) {
-                        const base = isPortalProjectPath ? "/portal/projects" : "/project";
-                        navigate(`${base}/${nextProject.id}?view=${activeView}`, { replace: true });
+                        navigate(
+                          (isPortalProjectPath ? portalProjectPath : projectPath)(
+                            nextProject,
+                            { view: activeView }
+                          ),
+                          { replace: true }
+                        );
                       }
                     }}
                     style={{
@@ -925,7 +942,7 @@ export default function ProjectPage() {
                   project={project}
                   onUpdate={isPortalProjectPath ? () => {} : updateProject}
                   drawingsPdfSrcOverride={
-                    isPortalProjectPath ? `${API_URL}/api/portal/projects/${id}/drawing` : undefined
+                    isPortalProjectPath ? `${API_URL}/api/portal/projects/${token}/drawing` : undefined
                   }
                   showClearDrawingData={isAdmin && !isPortalProjectPath}
                 />
@@ -990,10 +1007,10 @@ export default function ProjectPage() {
       <NewProject_7_EmailClient
         isOpen={renovationDupOpen && renovationDupStep === 7}
         onClose={() => {
-          const newId = renovationDupCreatedForEmail?.id;
+          const newToken = renovationDupCreatedForEmail?.access_token;
           resetRenovationDupWizard();
-          if (newId) {
-            navigate(`/project/${newId}?view=project-info`);
+          if (newToken) {
+            navigate(projectPath(newToken, { view: "project-info" }));
           }
         }}
         createdProjectForEmail={renovationDupCreatedForEmail}
@@ -1142,10 +1159,10 @@ export default function ProjectPage() {
       <NewProject_7_EmailClient
         isOpen={linkRenoDupOpen && linkRenoDupStep === "emailclient"}
         onClose={() => {
-          const newId = linkRenoDupCreatedForEmail?.id;
+          const newToken = linkRenoDupCreatedForEmail?.access_token;
           resetLinkRenoDupWizard();
-          if (newId) {
-            navigate(`/project/${newId}?view=project-info`);
+          if (newToken) {
+            navigate(projectPath(newToken, { view: "project-info" }));
           }
         }}
         createdProjectForEmail={linkRenoDupCreatedForEmail}

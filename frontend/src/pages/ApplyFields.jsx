@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import { CLASSIFICATION_OPTIONS } from "../utils/classifications";
+import { projectPath } from "../utils/projectUrl";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -1017,7 +1018,7 @@ export default function ApplyFields() {
                     }}
                   >
                     <Link
-                      to={`/project/${project.id}`}
+                      to={projectPath(project)}
                       style={{
                         textDecoration: "none",
                         display: "block",

@@ -10,6 +10,7 @@ import NewProject2 from "./NewProject_2_ClientDetails";
 import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
 import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
 import { isUserAdmin } from "../utils/auth";
+import { projectPath } from "../utils/projectUrl";
 import { getStateFilter, setStateFilter } from "../utils/stateFilter";
 import { CLASSIFICATION_OPTIONS as CLASSIFICATION_SORT_ORDER, CLASSIFICATION_BADGE_MAP } from "../utils/classifications";
 import logo from "../images/logo.png";
@@ -882,7 +883,7 @@ export default function InConstruction() {
                         </div>
                       )}
                     <Link
-                      to={`/project/${project.id}`}
+                      to={projectPath(project)}
                       style={{
                         textDecoration: "none",
                         display: "block",

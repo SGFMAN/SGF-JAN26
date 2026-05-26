@@ -9,6 +9,7 @@ import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
 import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { isUserAdmin } from "../utils/auth";
+import { projectPath } from "../utils/projectUrl";
 import {
   generalEmailStateCode,
   resolveHotlistSoldFromEmail,
@@ -100,7 +101,7 @@ export default function Hotlist() {
   const [soldEmailSubject, setSoldEmailSubject] = useState("");
   const [soldEmailBody, setSoldEmailBody] = useState("");
   const [currentModal, setCurrentModal] = useState(1); // New: 1–3 (address, client, stream). Edit: 1–2. Sold: 3–7 (ProjectCost→…)
-  const [createdProjectId, setCreatedProjectId] = useState(null);
+  const [createdProjectAccessToken, setCreatedProjectAccessToken] = useState(null);
   const [createdProjectForEmail, setCreatedProjectForEmail] = useState(null);
   const [agreementSentItems, setAgreementSentItems] = useState(new Set());
   const [formData, setFormData] = useState({
@@ -338,7 +339,7 @@ export default function Hotlist() {
 
   function handleModalClose() {
     const wasSoldFlow = isSoldFlowOpen;
-    const projectId = createdProjectId;
+    const projectToken = createdProjectAccessToken;
     
     setIsNewItemOpen(false);
     setIsEditItemOpen(false);
@@ -364,13 +365,13 @@ export default function Hotlist() {
     });
     
     // Navigate to project if we just completed a sold flow
-    if (wasSoldFlow && projectId) {
+    if (wasSoldFlow && projectToken) {
       setTimeout(() => {
-        window.location.href = `/project/${projectId}`;
+        window.location.href = projectPath(projectToken);
       }, 100);
     }
     
-    setCreatedProjectId(null);
+    setCreatedProjectAccessToken(null);
     setCreatedProjectForEmail(null);
   }
 
@@ -805,7 +806,7 @@ export default function Hotlist() {
       }
 
       await fetchHotlist();
-      setCreatedProjectId(newProject.id);
+      setCreatedProjectAccessToken(newProject.access_token);
 
       // Merge form data into project so email modal (step 6) has deposit, project_cost, etc.
       const projectForEmail = {

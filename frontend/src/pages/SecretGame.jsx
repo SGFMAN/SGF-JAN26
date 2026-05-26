@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import logo from "../images/logo.png";
 import NightWalkerGame from "./NightWalkerGame";
 import PlaygroundTrain from "./PlaygroundTrain";
+import FlySwatGame from "./FlySwatGame";
 
 const LIGHT_MONUMENT = "#42464d";
 const WHITE = "#fff";
@@ -11,10 +12,14 @@ const WHITE = "#fff";
  * Playground hub: mini-projects (routes from Home “Playground” → /inbox).
  */
 export default function SecretGame() {
-  const [activeGame, setActiveGame] = useState(null); // null | "nightWalker" | "train"
+  const [activeGame, setActiveGame] = useState(null); // null | "nightWalker" | "train" | "flySwat"
 
   if (activeGame === "train") {
     return <PlaygroundTrain />;
+  }
+
+  if (activeGame === "flySwat") {
+    return <FlySwatGame onBack={() => setActiveGame(null)} />;
   }
 
   return (
@@ -149,6 +154,25 @@ export default function SecretGame() {
               }}
             >
               Train
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveGame("flySwat")}
+              style={{
+                padding: "16px 28px",
+                borderRadius: "14px",
+                border: "2px solid #ffb74d",
+                fontSize: "1.1rem",
+                fontWeight: 700,
+                color: WHITE,
+                background: "#f57c00",
+                cursor: "pointer",
+                outline: "none",
+                letterSpacing: "0.4px",
+                minWidth: "200px",
+              }}
+            >
+              Fly Swat
             </button>
           </div>
         </div>

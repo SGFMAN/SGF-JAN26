@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import logo from "../images/logo.png";
+import { projectPath } from "../utils/projectUrl";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -61,8 +62,8 @@ export default function Sales() {
   }
 
   function handleProjectClick(project) {
-    if (project?.id != null) {
-      navigate(`/project/${project.id}`);
+    if (project?.access_token) {
+      navigate(projectPath(project));
     }
   }
 

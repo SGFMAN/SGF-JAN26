@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import { CLASSIFICATION_BADGE_MAP } from "../utils/classifications";
+import { projectPath } from "../utils/projectUrl";
 import { isOnHoldFlag, isHotlistStatus } from "../utils/projectStatus";
 import logo from "../images/logo.png";
 
@@ -681,7 +682,7 @@ export default function OnHold() {
                 return (
                   <Link
                     key={project.id}
-                    to={`/project/${project.id}`}
+                    to={projectPath(project)}
                     style={{
                       textDecoration: "none",
                       display: "block",

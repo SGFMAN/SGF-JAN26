@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { projectPath } from "../utils/projectUrl";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { PROCESS_RULES, getRequirementStatus, getUnmetRequirements, getMetRequirements } from "../utils/ProcessRules";
 import { DRAFTSPERSON_UNASSIGNED } from "../utils/draftspersonSentinel";
@@ -20,7 +21,6 @@ const API_URL = "";
 export default function Overview({ project }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const navigate = useNavigate();
-  const { id } = useParams();
   const [emailTemplates, setEmailTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
@@ -1327,7 +1327,7 @@ export default function Overview({ project }) {
                   Deposit Status
                 </div>
                 <div
-                  onClick={() => navigate(`/project/${project?.id || id}?view=admin&t=${Date.now()}`, { replace: false })}
+                  onClick={() => navigate(projectPath(project, { view: "admin", t: Date.now() }), { replace: false })}
                   style={{
                     padding: "8px 10px",
                     borderRadius: "8px",
@@ -1361,7 +1361,7 @@ export default function Overview({ project }) {
                   Drawings Status
                 </div>
                 <div
-                  onClick={() => navigate(`/project/${project?.id || id}?view=drawings&t=${Date.now()}`, { replace: false })}
+                  onClick={() => navigate(projectPath(project, { view: "drawings", t: Date.now() }), { replace: false })}
                   style={{
                     padding: "8px 10px",
                     borderRadius: "8px",
@@ -1395,7 +1395,7 @@ export default function Overview({ project }) {
                   Site Visit Status
                 </div>
                 <div
-                  onClick={() => navigate(`/project/${project?.id || id}?view=site-visit&t=${Date.now()}`, { replace: false })}
+                  onClick={() => navigate(projectPath(project, { view: "site-visit", t: Date.now() }), { replace: false })}
                   style={{
                     padding: "8px 10px",
                     borderRadius: "8px",
@@ -1429,7 +1429,7 @@ export default function Overview({ project }) {
                   Colour Status
                 </div>
                 <div
-                  onClick={() => navigate(`/project/${project?.id || id}?view=colours&t=${Date.now()}`, { replace: false })}
+                  onClick={() => navigate(projectPath(project, { view: "colours", t: Date.now() }), { replace: false })}
                   style={{
                     padding: "8px 10px",
                     borderRadius: "8px",
@@ -1463,7 +1463,7 @@ export default function Overview({ project }) {
                   Window Status
                 </div>
                 <div
-                  onClick={() => navigate(`/project/${project?.id || id}?view=windows&t=${Date.now()}`, { replace: false })}
+                  onClick={() => navigate(projectPath(project, { view: "windows", t: Date.now() }), { replace: false })}
                   style={{
                     padding: "8px 10px",
                     borderRadius: "8px",
@@ -1497,7 +1497,7 @@ export default function Overview({ project }) {
                   Contract Status
                 </div>
                 <div
-                  onClick={() => navigate(`/project/${project?.id || id}?view=contract&t=${Date.now()}`, { replace: false })}
+                  onClick={() => navigate(projectPath(project, { view: "contract", t: Date.now() }), { replace: false })}
                   style={{
                     padding: "8px 10px",
                     borderRadius: "8px",
@@ -1531,7 +1531,7 @@ export default function Overview({ project }) {
                   Survey & Soils
                 </div>
                 <div
-                  onClick={() => navigate(`/project/${project?.id || id}?view=survey-soil&t=${Date.now()}`, { replace: false })}
+                  onClick={() => navigate(projectPath(project, { view: "survey-soil", t: Date.now() }), { replace: false })}
                   style={{
                     padding: "8px 10px",
                     borderRadius: "8px",
@@ -1565,7 +1565,7 @@ export default function Overview({ project }) {
                   Planning Permit Status
                 </div>
                 <div
-                  onClick={() => navigate(`/project/${project?.id || id}?view=planning&t=${Date.now()}`, { replace: false })}
+                  onClick={() => navigate(projectPath(project, { view: "planning", t: Date.now() }), { replace: false })}
                   style={{
                     padding: "8px 10px",
                     borderRadius: "8px",
@@ -1599,7 +1599,7 @@ export default function Overview({ project }) {
                   Energy Report Status
                 </div>
                 <div
-                  onClick={() => navigate(`/project/${project?.id || id}?view=planning&t=${Date.now()}`, { replace: false })}
+                  onClick={() => navigate(projectPath(project, { view: "planning", t: Date.now() }), { replace: false })}
                   style={{
                     padding: "8px 10px",
                     borderRadius: "8px",
@@ -1634,7 +1634,7 @@ export default function Overview({ project }) {
                   Footing Certification Status
                 </div>
                 <div
-                  onClick={() => navigate(`/project/${project?.id || id}?view=planning&t=${Date.now()}`, { replace: false })}
+                  onClick={() => navigate(projectPath(project, { view: "planning", t: Date.now() }), { replace: false })}
                   style={{
                     padding: "8px 10px",
                     borderRadius: "8px",
@@ -1669,7 +1669,7 @@ export default function Overview({ project }) {
                   Building Permit Status
                 </div>
                 <div
-                  onClick={() => navigate(`/project/${project?.id || id}?view=planning&t=${Date.now()}`, { replace: false })}
+                  onClick={() => navigate(projectPath(project, { view: "planning", t: Date.now() }), { replace: false })}
                   style={{
                     padding: "8px 10px",
                     borderRadius: "8px",
@@ -1704,7 +1704,7 @@ export default function Overview({ project }) {
                   PIC
                 </div>
                 <div
-                  onClick={() => navigate(`/project/${project?.id || id}?view=planning&t=${Date.now()}`, { replace: false })}
+                  onClick={() => navigate(projectPath(project, { view: "planning", t: Date.now() }), { replace: false })}
                   style={{
                     padding: "8px 10px",
                     borderRadius: "8px",
