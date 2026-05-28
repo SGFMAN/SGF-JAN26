@@ -13,7 +13,7 @@ git add .
 git commit -m "%MSG%"
 
 cd /d C:\SGF\frontend
-npm run build
+call npm run build
 
 cd /d C:\SGF\backend
 pm2 restart sgfcentral
