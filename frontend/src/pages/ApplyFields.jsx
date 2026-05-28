@@ -159,7 +159,7 @@ export default function ApplyFields() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`${API_URL}/api/projects`);
+      const response = await fetch(`${API_URL}/api/projects?full=1`);
       if (!response.ok) {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }

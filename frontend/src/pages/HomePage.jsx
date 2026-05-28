@@ -246,38 +246,26 @@ export default function HomePage() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    // Check admin status first so buttons show up quickly
     checkAdminStatus();
     fetchProjects();
-  }, []);
 
-  // Refetch projects when navigating back to this page or when window gains focus
-  useEffect(() => {
     let isMounted = true;
-    
+
     const handleFocus = () => {
       if (isMounted && location.pathname === "/projects") {
-        console.log("Window focused, refetching projects...");
         fetchProjects();
       }
     };
-    
+
     const handleVisibilityChange = () => {
       if (isMounted && !document.hidden && location.pathname === "/projects") {
-        console.log("Page visible, refetching projects...");
         fetchProjects();
       }
     };
-    
-    // Refetch when navigating to this page
-    if (location.pathname === "/projects") {
-      fetchProjects();
-    }
-    
-    // Also refetch when window gains focus (user returns to tab/window)
+
     window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    
+
     return () => {
       isMounted = false;
       window.removeEventListener("focus", handleFocus);
@@ -300,16 +288,19 @@ export default function HomePage() {
       setLoading(true);
       setError(null);
       const url = `${API_URL}/api/projects`;
-      console.log("Fetching projects from:", url);
-      const response = await fetch(url);
-      console.log("Projects response status:", response.status, response.statusText);
+      let response = await fetch(url);
+      // Retry while backend finishes migrations (listen-first startup)
+      let attempts = 0;
+      while (response.status === 503 && attempts < 60) {
+        await new Promise((r) => setTimeout(r, 1000));
+        attempts += 1;
+        response = await fetch(url);
+      }
       if (!response.ok) {
         const errorText = await response.text().catch(() => response.statusText);
-        console.error("Projects API error:", errorText);
-        throw new Error(`Failed to fetch projects: ${response.status} ${response.statusText}`);
+        throw new Error(`Failed to fetch projects: ${response.status} ${response.statusText} ${errorText}`);
       }
       const data = await response.json();
-      console.log("Projects from API:", data);
       setProjects(data || []);
     } catch (err) {
       setError(err.message);
@@ -619,7 +610,7 @@ export default function HomePage() {
               margin: 0,
               fontSize: "2.4rem",
               fontWeight: 700,
-              color: "#D54358",
+              color: WHITE,
               letterSpacing: "1px",
             }}
           >

@@ -23,7 +23,20 @@ const {
   resolveProjectIdFromAccessToken,
   getProjectAccessTokenById,
 } = require("./projectAccessToken");
+const {
+  SCHEMA_VERSION,
+  ensureAppMeta,
+  isSchemaUpToDate,
+  markSchemaUpToDate,
+  addMissingColumns,
+  shouldRunPlanningJfScrub,
+  markPlanningJfScrubDone,
+} = require("./schemaStartup");
+const { buildProjectsListQuery } = require("./projectQueries");
 const app = express();
+
+/** False until migrations finish; API returns 503 until then (server listens immediately). */
+let serverReady = false;
 
 const AI_RENDER_FILENAME = "AI Render.png";
 
@@ -279,6 +292,23 @@ function projectDirectoryFromColoursOrDrawings(coloursPdfLocation, drawingsPdfLo
 }
 app.use(cors({ origin: true }));
 
+// Block API until migrations complete (health always allowed)
+app.use((req, res, next) => {
+  if (serverReady || req.path === "/health") return next();
+  if (req.path.startsWith("/api")) {
+    return res.status(503).json({
+      ok: false,
+      starting: true,
+      message: "Server is starting up, please retry shortly.",
+    });
+  }
+  next();
+});
+
+app.get("/health", (req, res) => {
+  res.json({ ok: true, db: !!pool, ready: serverReady, schemaVersion: SCHEMA_VERSION });
+});
+
 // Outbound email links (View Drawings, colours portal, variation approve, etc.).
 // Sending staff often use localhost or a LAN IP; `linkBaseUrl` from the browser would break phones and off-site PCs.
 // Recipients open the live app here unless overridden by DB `public_app_url` or `PUBLIC_APP_URL`.
@@ -323,7 +353,7 @@ const upload = multer({
 
 // App mode cache (refreshed every 1-2 seconds or on update)
 let appModeCache = { mode: "USE", lastCheck: 0 };
-const APP_MODE_CACHE_TTL = 1500; // 1.5 seconds
+const APP_MODE_CACHE_TTL = 30000; // 30 seconds — reduces DB reads on every API call
 
 // Helper function to check if request is from admin
 async function isAdminRequest(req) {
@@ -744,11 +774,6 @@ async function migrateLegacySmtpIntoNumberedSlots() {
   }
 }
 
-// Health check
-app.get("/health", (req, res) => {
-  res.json({ ok: true, db: !!pool });
-});
-
 /** Planning UI: alien mascot (backend/alien.png). Alpha is flattened onto white so transparency checkerboard does not show. */
 app.get("/api/assets/alien.png", async (req, res) => {
   const filePath = path.join(__dirname, "alien.png");
@@ -958,6 +983,13 @@ app.get("/api/pricing-catalog/meta", async (req, res) => {
 // Ensure schema
 async function ensureSchema() {
   if (!pool) return;
+  await ensureAppMeta(pool);
+  if (await isSchemaUpToDate(pool)) {
+    console.log(`Schema ${SCHEMA_VERSION} already applied — skipping migrations`);
+    await ensureProjectAccessTokens(pool);
+    return;
+  }
+  console.log(`Applying schema migrations (target ${SCHEMA_VERSION})…`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS projects (
       id SERIAL PRIMARY KEY,
@@ -1144,24 +1176,7 @@ async function ensureSchema() {
     'planning_footing_certification_requested_at', 'planning_footing_certification_received_at',
     'planning_energy_report_requested_at', 'planning_energy_report_received_at',
     'planning_energy_specs_added_to_plans'];
-  for (const column of columnsToAdd) {
-    try {
-      await pool.query(`
-        DO $$ 
-        BEGIN
-          IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns 
-            WHERE table_name='projects' AND column_name='${column}'
-          ) THEN
-            ALTER TABLE projects ADD COLUMN ${column} TEXT;
-          END IF;
-        END $$;
-      `);
-    } catch (e) {
-      // Column might already exist, ignore
-      console.log(`Column ${column} might already exist:`, e.message);
-    }
-  }
+  await addMissingColumns(pool, "projects", columnsToAdd);
 
   // Project map cache (lat/lng persisted so maps don't re-geocode every time)
   try {
@@ -1533,15 +1548,16 @@ async function ensureSchema() {
   }
   await migrateLegacySmtpIntoNumberedSlots();
   await ensureProjectAccessTokens(pool);
+  await markSchemaUpToDate(pool);
+  console.log(`Schema ${SCHEMA_VERSION} applied`);
 }
 
-// List projects
+// List projects (?full=1 for all columns; default lite omits logs, notes, file paths)
 app.get("/api/projects", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const r = await pool.query(
-      "SELECT id, access_token, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, planning_written_advice, planning_written_advice_requested_at, planning_written_advice_received_at, planning_town_planning, planning_town_planning_requested_at, planning_town_planning_received_at, planning_land_flooding_regulation, planning_land_flooding_fpa_requested_at, planning_land_flooding_fpa_received_at, planning_land_flooding_cc_requested_at, planning_land_flooding_cc_received_at, planning_bal, planning_bal_requested_at, planning_bal_received_at, planning_footing_certification_requested_at, planning_footing_certification_received_at, planning_energy_report_requested_at, planning_energy_report_received_at, planning_energy_specs_added_to_plans, duplicate_source_project_id, project_lat, project_lng, project_geocoded_at, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects ORDER BY updated_at DESC, id DESC"
-    );
+    const useLite = req.query.full !== "1";
+    const r = await pool.query(buildProjectsListQuery(useLite));
     res.json(r.rows);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -2585,25 +2601,19 @@ app.get("/api/users", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const usersResult = await pool.query(
-      "SELECT id, name, email, phone, primary_position_id, created_at, updated_at FROM users ORDER BY name ASC, id ASC"
+      `SELECT u.id, u.name, u.email, u.phone, u.primary_position_id, u.created_at, u.updated_at,
+              COALESCE(
+                json_agg(json_build_object('id', p.id, 'name', p.name) ORDER BY p.name)
+                  FILTER (WHERE p.id IS NOT NULL),
+                '[]'::json
+              ) AS positions
+       FROM users u
+       LEFT JOIN user_positions up ON up.user_id = u.id
+       LEFT JOIN positions p ON p.id = up.position_id
+       GROUP BY u.id, u.name, u.email, u.phone, u.primary_position_id, u.created_at, u.updated_at
+       ORDER BY u.name ASC, u.id ASC`
     );
-    // Get positions for each user
-    const usersWithPositions = await Promise.all(
-      usersResult.rows.map(async (user) => {
-        const positionsResult = await pool.query(
-          `SELECT p.id, p.name 
-           FROM positions p 
-           INNER JOIN user_positions up ON p.id = up.position_id 
-           WHERE up.user_id = $1`,
-          [user.id]
-        );
-        return {
-          ...user,
-          positions: positionsResult.rows,
-        };
-      })
-    );
-    res.json(usersWithPositions);
+    res.json(usersResult.rows);
   } catch (e) {
     console.error("Error fetching users:", e);
     console.error("Error stack:", e.stack);
@@ -10275,14 +10285,23 @@ app.delete("/api/email-generator/learned-answers/:id", async (req, res) => {
   }
 });
 
-// Start server
+// Start server (listen immediately; migrations run in background)
 (async () => {
   try {
-    await ensureSchema();
-    await scrubPlanningJfPathsNotReceived(pool);
     app.listen(PORT, "0.0.0.0", () => {
-      console.log(`✅ SGF API running on http://0.0.0.0:${PORT}`);
+      console.log(`✅ SGF API listening on http://0.0.0.0:${PORT} (migrations running…)`);
     });
+    const t0 = Date.now();
+    await ensureSchema();
+    console.log(`ensureSchema: ${Date.now() - t0}ms`);
+    if (await shouldRunPlanningJfScrub(pool)) {
+      const t1 = Date.now();
+      await scrubPlanningJfPathsNotReceived(pool);
+      await markPlanningJfScrubDone(pool);
+      console.log(`planning JF path scrub: ${Date.now() - t1}ms`);
+    }
+    serverReady = true;
+    console.log(`✅ Server ready (total ${Date.now() - t0}ms)`);
   } catch (e) {
     console.error("❌ Startup error:", e);
     process.exit(1);
