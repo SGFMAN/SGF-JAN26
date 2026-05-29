@@ -144,6 +144,13 @@ function circleHitsAabb(px, pz, radius, box) {
   return dx * dx + dz * dz < radius * radius;
 }
 
+function clampXZ(x, z, bound) {
+  return {
+    x: Math.max(-bound, Math.min(bound, x)),
+    z: Math.max(-bound, Math.min(bound, z)),
+  };
+}
+
 function remotePlayerList(remotePlayers) {
   if (remotePlayers instanceof Map) {
     return [...remotePlayers.values()];
@@ -151,49 +158,171 @@ function remotePlayerList(remotePlayers) {
   return [...remotePlayers];
 }
 
-function isPositionBlocked(px, pz, radius, deskColliders, remotePlayers, selfGroup) {
+function circleHitsAnyDesk(px, pz, radius, deskColliders) {
   for (const box of deskColliders) {
     if (circleHitsAabb(px, pz, radius, box)) return true;
   }
-  for (const remote of remotePlayerList(remotePlayers)) {
-    if (!remote?.group || remote.group === selfGroup) continue;
-    const dx = px - remote.group.position.x;
-    const dz = pz - remote.group.position.z;
-    const distSq = dx * dx + dz * dz;
-    if (distSq < 0.0001) continue;
-    const minDist = radius * 2;
-    if (distSq < minDist * minDist) return true;
-  }
   return false;
+}
+
+function pushOutOfAabb(px, pz, radius, box) {
+  const closestX = Math.max(box.x - box.hx, Math.min(px, box.x + box.hx));
+  const closestZ = Math.max(box.z - box.hz, Math.min(pz, box.z + box.hz));
+  const dx = px - closestX;
+  const dz = pz - closestZ;
+  const distSq = dx * dx + dz * dz;
+  if (distSq >= radius * radius) return { x: px, z: pz };
+  const dist = Math.sqrt(Math.max(distSq, 1e-8));
+  const push = radius - dist;
+  return { x: px + (dx / dist) * push, z: pz + (dz / dist) * push };
+}
+
+function resolveDeskCollisions(px, pz, radius, deskColliders, walkBound) {
+  let x = px;
+  let z = pz;
+  for (let i = 0; i < deskColliders.length; i += 1) {
+    const next = pushOutOfAabb(x, z, radius, deskColliders[i]);
+    x = next.x;
+    z = next.z;
+  }
+  return clampXZ(x, z, walkBound);
+}
+
+/** Push local player out of overlap with remotes (also uses network target to reduce lerping-into stuck). */
+function separateFromPlayers(px, pz, radius, remotePlayers, selfGroup, walkBound) {
+  const minDist = radius * 2;
+  let x = px;
+  let z = pz;
+  const others = remotePlayerList(remotePlayers);
+
+  for (let iter = 0; iter < 6; iter += 1) {
+    let changed = false;
+    for (const remote of others) {
+      if (!remote?.group || remote.group === selfGroup) continue;
+
+      const points = [
+        { x: remote.group.position.x, z: remote.group.position.z },
+        { x: remote.targetX, z: remote.targetZ },
+      ];
+
+      for (const { x: rx, z: rz } of points) {
+        let dx = x - rx;
+        let dz = z - rz;
+        let distSq = dx * dx + dz * dz;
+        if (distSq >= minDist * minDist) continue;
+
+        if (distSq < 1e-8) {
+          const angle = Math.atan2(x - rx, z - rz) + 0.3;
+          x = rx + Math.sin(angle) * minDist;
+          z = rz + Math.cos(angle) * minDist;
+        } else {
+          const dist = Math.sqrt(distSq);
+          const overlap = minDist - dist;
+          x += (dx / dist) * overlap;
+          z += (dz / dist) * overlap;
+        }
+
+        changed = true;
+      }
+    }
+
+    const clamped = clampXZ(x, z, walkBound);
+    x = clamped.x;
+    z = clamped.z;
+    if (!changed) break;
+  }
+
+  return { x, z };
+}
+
+function slideMoveFromCircle(px, pz, ox, oz, dx, dz, rx, rz, minDist) {
+  const mx = ox + dx;
+  const mz = oz + dz;
+  let sdx = mx - rx;
+  let sdz = mz - rz;
+  let distSq = sdx * sdx + sdz * sdz;
+  if (distSq >= minDist * minDist) return { x: mx, z: mz };
+
+  const mvx = mx - ox;
+  const mvz = mz - oz;
+  if (mvx * mvx + mvz * mvz < 1e-10) return { x: ox, z: oz };
+
+  if (distSq < 1e-8) return { x: ox, z: oz };
+
+  const dist = Math.sqrt(distSq);
+  sdx /= dist;
+  sdz /= dist;
+  const mvLen = Math.sqrt(mvx * mvx + mvz * mvz);
+  const mvnx = mvx / mvLen;
+  const mvnz = mvz / mvLen;
+  const dot = mvnx * sdx + mvnz * sdz;
+  const slideX = mvx - sdx * dot * mvLen;
+  const slideZ = mvz - sdz * dot * mvLen;
+
+  return { x: ox + slideX, z: oz + slideZ };
 }
 
 function applyPlayerMove(player, dx, dz, walkBound, deskColliders, remotePlayers) {
   if (dx === 0 && dz === 0) return;
 
   const radius = PLAYER_COLLISION_RADIUS;
+  const minDist = radius * 2;
   const ox = player.position.x;
   const oz = player.position.z;
-  let nx = Math.max(-walkBound, Math.min(walkBound, ox + dx));
-  let nz = Math.max(-walkBound, Math.min(walkBound, oz + dz));
+  const others = remotePlayerList(remotePlayers);
 
-  if (!isPositionBlocked(nx, nz, radius, deskColliders, remotePlayers, player)) {
-    player.position.x = nx;
-    player.position.z = nz;
-    return;
+  let { x: px, z: pz } = clampXZ(ox + dx, oz + dz, walkBound);
+
+  if (circleHitsAnyDesk(px, pz, radius, deskColliders)) {
+    const tx = clampXZ(ox + dx, oz, walkBound);
+    const tz = clampXZ(ox, oz + dz, walkBound);
+    if (!circleHitsAnyDesk(tx.x, tx.z, radius, deskColliders)) {
+      px = tx.x;
+      pz = tx.z;
+    } else if (!circleHitsAnyDesk(ox, tz.z, radius, deskColliders)) {
+      px = ox;
+      pz = tz.z;
+    } else {
+      return;
+    }
   }
 
-  nx = Math.max(-walkBound, Math.min(walkBound, ox + dx));
-  nz = oz;
-  if (!isPositionBlocked(nx, nz, radius, deskColliders, remotePlayers, player)) {
-    player.position.x = nx;
-    return;
+  for (const remote of others) {
+    if (!remote?.group || remote.group === selfGroup) continue;
+    const slid = slideMoveFromCircle(
+      px,
+      pz,
+      ox,
+      oz,
+      px - ox,
+      pz - oz,
+      remote.group.position.x,
+      remote.group.position.z,
+      minDist
+    );
+    px = clampXZ(slid.x, slid.z, walkBound).x;
+    pz = clampXZ(slid.x, slid.z, walkBound).z;
   }
 
-  nx = ox;
-  nz = Math.max(-walkBound, Math.min(walkBound, oz + dz));
-  if (!isPositionBlocked(nx, nz, radius, deskColliders, remotePlayers, player)) {
-    player.position.z = nz;
-  }
+  ({ x: px, z: pz } = resolveDeskCollisions(px, pz, radius, deskColliders, walkBound));
+  ({ x: px, z: pz } = separateFromPlayers(px, pz, radius, remotePlayers, player, walkBound));
+
+  player.position.x = px;
+  player.position.z = pz;
+}
+
+function resolveLocalPlayerOverlaps(player, walkBound, deskColliders, remotePlayers) {
+  const radius = PLAYER_COLLISION_RADIUS;
+  let { x: px, z: pz } = resolveDeskCollisions(
+    player.position.x,
+    player.position.z,
+    radius,
+    deskColliders,
+    walkBound
+  );
+  ({ x: px, z: pz } = separateFromPlayers(px, pz, radius, remotePlayers, player, walkBound));
+  player.position.x = px;
+  player.position.z = pz;
 }
 
 function addPlayerToScene(scene, slot) {
@@ -620,6 +749,12 @@ export default function NightWalkerCharacterWalk({ onRoomFull, disconnectRef }) 
           (keys.has("arrowup") ? 1 : 0) + (keys.has("arrowdown") ? -1 : 0);
         const moving = moveInput !== 0;
 
+        for (const remote of remotes.values()) {
+          lerpRemote(remote, dt);
+        }
+
+        resolveLocalPlayerOverlaps(player, WALK_BOUNDS, deskColliders, remotes);
+
         if (turnInput !== 0) {
           player.rotation.y += turnInput * TURN_SPEED * dt;
         }
@@ -629,6 +764,7 @@ export default function NightWalkerCharacterWalk({ onRoomFull, disconnectRef }) 
           const stepX = Math.sin(player.rotation.y) * moveInput * MOVE_SPEED * dt;
           const stepZ = Math.cos(player.rotation.y) * moveInput * MOVE_SPEED * dt;
           applyPlayerMove(player, stepX, stepZ, WALK_BOUNDS, deskColliders, remotes);
+          resolveLocalPlayerOverlaps(player, WALK_BOUNDS, deskColliders, remotes);
           localPlayer.walkPhase += dt * 9.5;
           applyWalkCycle(armRig, legRig, localPlayer.walkPhase);
         } else {
@@ -640,10 +776,6 @@ export default function NightWalkerCharacterWalk({ onRoomFull, disconnectRef }) 
           lastStateSend = now;
           lastMovingSent = moving;
           sendState(player.position.x, player.position.z, player.rotation.y, moving);
-        }
-
-        for (const remote of remotes.values()) {
-          lerpRemote(remote, dt);
         }
 
         cameraQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), player.rotation.y);
