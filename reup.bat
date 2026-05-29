@@ -18,3 +18,5 @@ call npm run build
 cd /d C:\SGF\backend
 pm2 restart sgfcentral
 pm2 status
+
+cd /d C:\SGF

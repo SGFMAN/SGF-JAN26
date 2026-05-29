@@ -138,10 +138,29 @@ function disposePlayer(scene, player) {
   player.materials.forEach((m) => m.dispose());
 }
 
+function leaveSecretAreaSocket(socket) {
+  if (!socket) return;
+  try {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "leave" }));
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+      socket.close(1000, "client_leave");
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Secret area — up to two players via WebSocket; arrow keys move your character.
+ * @param {{ onRoomFull?: () => void, disconnectRef?: React.MutableRefObject<(() => void) | null> }} props
  */
-export default function NightWalkerCharacterWalk({ onRoomFull }) {
+export default function NightWalkerCharacterWalk({ onRoomFull, disconnectRef }) {
   const mountRef = useRef(null);
   const onRoomFullRef = useRef(onRoomFull);
   onRoomFullRef.current = onRoomFull;
@@ -160,6 +179,19 @@ export default function NightWalkerCharacterWalk({ onRoomFull }) {
     let lastMovingSent = false;
 
     const remotes = new Map();
+
+    const disconnect = () => {
+      const socket = ws;
+      ws = null;
+      leaveSecretAreaSocket(socket);
+    };
+
+    if (disconnectRef) {
+      disconnectRef.current = disconnect;
+    }
+
+    const onPageHide = () => disconnect();
+    window.addEventListener("pagehide", onPageHide);
 
     const connect = () => {
       ws = new WebSocket(getSecretAreaWsUrl());
@@ -414,10 +446,12 @@ export default function NightWalkerCharacterWalk({ onRoomFull }) {
 
     return () => {
       disposed = true;
+      window.removeEventListener("pagehide", onPageHide);
+      if (disconnectRef) disconnectRef.current = null;
       if (typeof mountEl._secretCleanup === "function") mountEl._secretCleanup();
-      if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+      disconnect();
     };
-  }, []);
+  }, [disconnectRef]);
 
   return (
     <div

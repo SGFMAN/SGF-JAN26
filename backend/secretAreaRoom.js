@@ -2,6 +2,7 @@ const { WebSocketServer } = require("ws");
 const crypto = require("crypto");
 
 const MAX_PLAYERS = 2;
+const PING_INTERVAL_MS = 15000;
 
 /** @type {Map<import('ws').WebSocket, { id: string, slot: number, x: number, z: number, ry: number, moving: boolean }>} */
 const players = new Map();
@@ -34,17 +35,71 @@ function spawnForSlot(slot) {
   return slot === 0 ? { x: -6, z: 0, ry: 0 } : { x: 6, z: 0, ry: 0 };
 }
 
+/** Drop closed/closing sockets so slot 0 frees when someone leaves. */
+function pruneStaleConnections() {
+  for (const [ws] of players.entries()) {
+    if (ws.readyState === 3 || ws.readyState === 2) {
+      players.delete(ws);
+    }
+  }
+}
+
+function nextAvailableSlot() {
+  const used = new Set(Array.from(players.values()).map((p) => p.slot));
+  if (!used.has(0)) return 0;
+  if (!used.has(1)) return 1;
+  return -1;
+}
+
+function removePlayer(ws, { notify = true } = {}) {
+  const p = players.get(ws);
+  if (!p) return;
+  players.delete(ws);
+  if (notify) {
+    broadcast({ type: "peer_left", playerId: p.id, slot: p.slot });
+  }
+}
+
 function attachSecretAreaWebSocket(httpServer) {
   const wss = new WebSocketServer({ server: httpServer, path: "/ws/secret-area" });
 
+  const pingTimer = setInterval(() => {
+    for (const [ws] of players.entries()) {
+      if (ws.isAlive === false) {
+        removePlayer(ws);
+        try {
+          ws.terminate();
+        } catch {
+          /* ignore */
+        }
+        continue;
+      }
+      ws.isAlive = false;
+      try {
+        ws.ping();
+      } catch {
+        removePlayer(ws);
+      }
+    }
+  }, PING_INTERVAL_MS);
+
+  wss.on("close", () => clearInterval(pingTimer));
+
   wss.on("connection", (ws) => {
-    if (players.size >= MAX_PLAYERS) {
+    pruneStaleConnections();
+
+    const slot = nextAvailableSlot();
+    if (slot < 0) {
       ws.send(JSON.stringify({ type: "full" }));
       ws.close();
       return;
     }
 
-    const slot = players.size;
+    ws.isAlive = true;
+    ws.on("pong", () => {
+      ws.isAlive = true;
+    });
+
     const spawn = spawnForSlot(slot);
     const player = {
       id: crypto.randomUUID(),
@@ -74,6 +129,17 @@ function attachSecretAreaWebSocket(httpServer) {
       } catch {
         return;
       }
+
+      if (msg.type === "leave") {
+        removePlayer(ws);
+        try {
+          ws.close(1000, "left");
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+
       if (msg.type !== "state" || !players.has(ws)) return;
       const p = players.get(ws);
       if (typeof msg.x === "number") p.x = msg.x;
@@ -89,12 +155,9 @@ function attachSecretAreaWebSocket(httpServer) {
       );
     });
 
-    ws.on("close", () => {
-      const p = players.get(ws);
-      if (!p) return;
-      players.delete(ws);
-      broadcast({ type: "peer_left", playerId: p.id, slot: p.slot });
-    });
+    const onGone = () => removePlayer(ws);
+    ws.on("close", onGone);
+    ws.on("error", onGone);
   });
 
   return wss;

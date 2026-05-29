@@ -26,7 +26,6 @@ import ApproveConcept from "./pages/ApproveConcept";
 import ColoursPortal from "./pages/ColoursPortal";
 import ThreeDVisPortal from "./pages/ThreeDVisPortal";
 import EmailGenerator from "./pages/EmailGenerator";
-import SecretGame from "./pages/SecretGame";
 import SecretArea from "./pages/SecretArea";
 import Maps from "./pages/Maps";
 import AppModeBanner from "./components/AppModeBanner";
@@ -85,7 +84,6 @@ export default function App() {
             <Route path="/sales-totals" element={<SalesTotals />} />
             <Route path="/sales-analytics" element={<SalesAnalytics />} />
             <Route path="/email-generator" element={<EmailGenerator />} />
-            <Route path="/inbox" element={<SecretGame />} />
             <Route path="/secret-area" element={<SecretArea />} />
             <Route path="/maps" element={<Maps />} />
             <Route path="/benbox" element={<Navigate to="/maps" replace />} />

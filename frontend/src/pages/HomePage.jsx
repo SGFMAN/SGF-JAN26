@@ -983,7 +983,7 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {/* Playground (secret game), Email Generator, Maps — Purple (Admin Only) */}
+          {/* Email Generator, Maps — Purple (Admin Only) */}
           {isAdmin && (
             <div
               style={{
@@ -996,28 +996,6 @@ export default function HomePage() {
                 border: "2px solid #000",
               }}
             >
-              <Link
-                to="/inbox"
-                style={{
-                  background: "transparent",
-                  color: "#404049",
-                  border: "none",
-                  borderRadius: "10px",
-                  padding: "8px 8px",
-                  fontSize: "0.95rem",
-                  fontWeight: 500,
-                  textAlign: "center",
-                  textDecoration: "none",
-                  letterSpacing: "0.5px",
-                  cursor: "pointer",
-                  transition: "background 0.18s, color 0.15s",
-                  marginBottom: "0px",
-                  lineHeight: "1.4",
-                  display: "block",
-                }}
-              >
-                Playground
-              </Link>
               <Link
                 to="/email-generator"
                 style={{

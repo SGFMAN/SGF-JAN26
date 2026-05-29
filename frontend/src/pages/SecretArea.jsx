@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import NightWalkerCharacterWalk from "../components/NightWalkerCharacterWalk";
 
@@ -10,6 +10,12 @@ export default function SecretArea() {
   const location = useLocation();
   const returnTo = location.state?.returnTo || "/projects";
   const [roomFull, setRoomFull] = useState(false);
+  const disconnectRef = useRef(null);
+
+  function handleBack() {
+    disconnectRef.current?.();
+    navigate(returnTo);
+  }
 
   if (roomFull) {
     return (
@@ -41,7 +47,7 @@ export default function SecretArea() {
         </p>
         <button
           type="button"
-          onClick={() => navigate(returnTo)}
+          onClick={handleBack}
           style={{
             padding: "28px 56px",
             fontSize: "1.75rem",
@@ -70,10 +76,13 @@ export default function SecretArea() {
         overflow: "hidden",
       }}
     >
-      <NightWalkerCharacterWalk onRoomFull={() => setRoomFull(true)} />
+      <NightWalkerCharacterWalk
+        disconnectRef={disconnectRef}
+        onRoomFull={() => setRoomFull(true)}
+      />
       <button
         type="button"
-        onClick={() => navigate(returnTo)}
+        onClick={handleBack}
         style={{
           position: "absolute",
           top: "24px",
