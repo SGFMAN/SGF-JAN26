@@ -4,22 +4,27 @@ import { createHumanoidRig, NIGHT_WALKER_HERO_COLORS } from "../utils/nightWalke
 import { getSecretAreaWsUrl } from "../utils/secretAreaWs";
 
 const WALK_BOUNDS = 52;
-const PLAYER_Y = 4.1;
+const CHARACTER_SCALE = 0.5;
+const PLAYER_Y = 4.1 * CHARACTER_SCALE;
 const MOVE_SPEED = 7.5;
 const TURN_SPEED = 2.8;
 const CAMERA_DISTANCE = 12;
-const CAMERA_HEIGHT = 7;
+const CAMERA_HEIGHT = 7 * CHARACTER_SCALE;
+const CAMERA_LOOK_Y = 2.3 * CHARACTER_SCALE;
 const STATE_SEND_INTERVAL_MS = 50;
 const PI2 = Math.PI * 2;
+const GROUND_GREEN = "#3a6b35";
+const GROUND_GREEN_DARK = "#2a4f26";
+const GROUND_CELL_SIZE = 4;
 
 const SLOT_COLORS = [
-  { ...NIGHT_WALKER_HERO_COLORS, withHeadLamp: true },
+  { ...NIGHT_WALKER_HERO_COLORS, withHeadLamp: false },
   {
     skinColor: "#e7be92",
     clothColor: "#43a047",
     darkClothColor: "#2e6b32",
     jointColor: "#d9ab80",
-    withHeadLamp: true,
+    withHeadLamp: false,
   },
 ];
 
@@ -75,10 +80,9 @@ function resetPose(armRig, legRig) {
   }
 }
 
-function addPlayerToScene(scene, slot, isLocal) {
-  const palette = { ...SLOT_COLORS[slot] };
-  if (!isLocal) palette.withHeadLamp = false;
-  const rig = createHumanoidRig(palette);
+function addPlayerToScene(scene, slot) {
+  const rig = createHumanoidRig(SLOT_COLORS[slot]);
+  rig.group.scale.setScalar(CHARACTER_SCALE);
   scene.add(rig.group);
   return {
     id: null,
@@ -86,7 +90,6 @@ function addPlayerToScene(scene, slot, isLocal) {
     group: rig.group,
     armRig: rig.armRig,
     legRig: rig.legRig,
-    headLampPivot: rig.headLampPivot,
     bodyMeshes: rig.bodyMeshes,
     materials: rig.materials,
     walkPhase: 0,
@@ -95,6 +98,38 @@ function addPlayerToScene(scene, slot, isLocal) {
     targetZ: 0,
     targetRy: 0,
   };
+}
+
+function buildCheckeredGround(scene) {
+  const groundExtent = WALK_BOUNDS * 2 + 24;
+  const half = groundExtent / 2;
+  const cols = Math.ceil(groundExtent / GROUND_CELL_SIZE);
+  const tileGeom = new THREE.PlaneGeometry(GROUND_CELL_SIZE, GROUND_CELL_SIZE);
+  const matLight = new THREE.MeshStandardMaterial({
+    color: GROUND_GREEN,
+    roughness: 0.95,
+    metalness: 0.04,
+  });
+  const matDark = new THREE.MeshStandardMaterial({
+    color: GROUND_GREEN_DARK,
+    roughness: 0.95,
+    metalness: 0.04,
+  });
+  const group = new THREE.Group();
+  for (let row = 0; row < cols; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const tile = new THREE.Mesh(tileGeom, (row + col) % 2 === 0 ? matLight : matDark);
+      tile.rotation.x = -Math.PI / 2;
+      tile.position.set(
+        -half + col * GROUND_CELL_SIZE + GROUND_CELL_SIZE / 2,
+        0,
+        -half + row * GROUND_CELL_SIZE + GROUND_CELL_SIZE / 2
+      );
+      group.add(tile);
+    }
+  }
+  scene.add(group);
+  return { group, tileGeom, matLight, matDark };
 }
 
 function disposePlayer(scene, player) {
@@ -180,13 +215,12 @@ export default function NightWalkerCharacterWalk({ onRoomFull }) {
     let scene = null;
     let renderer = null;
     let localPlayer = null;
-    let headLampTarget = null;
-    let headLampGroundDecal = null;
+    let groundTiles = null;
     let animateFn = null;
 
     function ensureRemote(playerData) {
       if (playerData.id === localPlayerId || remotes.has(playerData.id)) return;
-      const remote = addPlayerToScene(scene, playerData.slot, false);
+      const remote = addPlayerToScene(scene, playerData.slot);
       remote.id = playerData.id;
       remote.group.position.set(playerData.x, PLAYER_Y, playerData.z);
       remote.group.rotation.y = playerData.ry;
@@ -245,15 +279,9 @@ export default function NightWalkerCharacterWalk({ onRoomFull }) {
       moon.position.set(-38, 48, -52);
       scene.add(moon);
 
-      const groundSize = WALK_BOUNDS * 2 + 24;
-      const ground = new THREE.Mesh(
-        new THREE.PlaneGeometry(groundSize, groundSize),
-        new THREE.MeshStandardMaterial({ color: "#3a6b35", roughness: 0.95, metalness: 0.04 })
-      );
-      ground.rotation.x = -Math.PI / 2;
-      scene.add(ground);
+      groundTiles = buildCheckeredGround(scene);
 
-      localPlayer = addPlayerToScene(scene, localSlot, true);
+      localPlayer = addPlayerToScene(scene, localSlot);
       localPlayer.id = localPlayerId;
       const spawn = initialPlayers.find((p) => p.id === localPlayerId);
       const startX = spawn?.x ?? (localSlot === 0 ? -6 : 6);
@@ -265,36 +293,6 @@ export default function NightWalkerCharacterWalk({ onRoomFull }) {
       for (const p of initialPlayers) {
         if (p.id !== localPlayerId) ensureRemote(p);
       }
-
-      const headLampGroundY = 0.04;
-      headLampTarget = new THREE.Object3D();
-      scene.add(headLampTarget);
-      const headLampSpot = new THREE.SpotLight(0xfff0dd, 4.6, 120, 1.12, 0.78, 1.4);
-      headLampSpot.target = headLampTarget;
-      if (localPlayer.headLampPivot) localPlayer.headLampPivot.add(headLampSpot);
-
-      const spotCanvas = document.createElement("canvas");
-      spotCanvas.width = 256;
-      spotCanvas.height = 256;
-      const sctx = spotCanvas.getContext("2d");
-      const rg = sctx.createRadialGradient(128, 128, 0, 128, 128, 128);
-      rg.addColorStop(0, "rgba(255, 248, 228, 0.5)");
-      rg.addColorStop(0.52, "rgba(255, 236, 200, 0.2)");
-      rg.addColorStop(0.82, "rgba(255, 228, 185, 0.06)");
-      rg.addColorStop(1, "rgba(255, 220, 175, 0)");
-      sctx.fillStyle = rg;
-      sctx.fillRect(0, 0, 256, 256);
-      const headLampGroundTex = new THREE.CanvasTexture(spotCanvas);
-      headLampGroundTex.colorSpace = THREE.SRGBColorSpace;
-      const groundSpotMat = new THREE.MeshBasicMaterial({
-        map: headLampGroundTex,
-        transparent: true,
-        depthWrite: false,
-      });
-      headLampGroundDecal = new THREE.Mesh(new THREE.CircleGeometry(10, 64), groundSpotMat);
-      headLampGroundDecal.rotation.x = -Math.PI / 2;
-      headLampGroundDecal.renderOrder = 2;
-      scene.add(headLampGroundDecal);
 
       const keys = new Set();
       const onKeyDown = (e) => keys.add(e.key.toLowerCase());
@@ -319,9 +317,6 @@ export default function NightWalkerCharacterWalk({ onRoomFull }) {
       const lookTarget = new THREE.Vector3();
       const rotatedCameraOffset = new THREE.Vector3();
       const cameraQuat = new THREE.Quaternion();
-      const headLampGroundPt = new THREE.Vector3();
-      const headLampRight = new THREE.Vector3();
-      let headLampSwaySmoothed = 0;
 
       const lerpRemote = (remote, dt) => {
         const g = remote.group;
@@ -343,7 +338,7 @@ export default function NightWalkerCharacterWalk({ onRoomFull }) {
         rafId = window.requestAnimationFrame(animateFn);
         const dt = Math.min(clock.getDelta(), 0.033);
         const player = localPlayer.group;
-        const { armRig, legRig, headLampPivot } = localPlayer;
+        const { armRig, legRig } = localPlayer;
 
         const turnInput =
           (keys.has("arrowleft") ? 1 : 0) + (keys.has("arrowright") ? -1 : 0);
@@ -377,32 +372,11 @@ export default function NightWalkerCharacterWalk({ onRoomFull }) {
           lerpRemote(remote, dt);
         }
 
-        if (headLampPivot) {
-          const lampLead = 7.6;
-          const ryLamp = player.rotation.y;
-          const swayTarget = moving ? Math.sin(localPlayer.walkPhase) * 0.675 : 0;
-          headLampSwaySmoothed += (swayTarget - headLampSwaySmoothed) * Math.min(1, dt * 12);
-          headLampRight.set(Math.cos(ryLamp), 0, -Math.sin(ryLamp));
-          headLampGroundPt.set(
-            player.position.x + Math.sin(ryLamp) * lampLead + headLampRight.x * headLampSwaySmoothed,
-            headLampGroundY,
-            player.position.z + Math.cos(ryLamp) * lampLead + headLampRight.z * headLampSwaySmoothed
-          );
-          headLampTarget.position.copy(headLampGroundPt);
-          headLampPivot.lookAt(headLampGroundPt);
-          headLampPivot.rotateY(Math.PI);
-          headLampGroundDecal.position.set(
-            headLampGroundPt.x,
-            headLampGroundY + 0.028,
-            headLampGroundPt.z
-          );
-        }
-
         cameraQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), player.rotation.y);
         rotatedCameraOffset.copy(cameraOffset).applyQuaternion(cameraQuat);
         cameraTarget.copy(player.position).add(rotatedCameraOffset);
         camera.position.lerp(cameraTarget, 0.08);
-        lookTarget.copy(player.position).add(new THREE.Vector3(0, 2.3, 0));
+        lookTarget.copy(player.position).add(new THREE.Vector3(0, CAMERA_LOOK_Y, 0));
         camera.lookAt(lookTarget);
 
         renderer.render(scene, camera);
@@ -418,19 +392,17 @@ export default function NightWalkerCharacterWalk({ onRoomFull }) {
         scene.remove(moon);
         moon.geometry.dispose();
         moon.material.dispose();
-        scene.remove(ground);
-        ground.geometry.dispose();
-        ground.material.dispose();
+        if (groundTiles) {
+          scene.remove(groundTiles.group);
+          groundTiles.tileGeom.dispose();
+          groundTiles.matLight.dispose();
+          groundTiles.matDark.dispose();
+        }
         disposePlayer(scene, localPlayer);
         for (const remote of remotes.values()) {
           disposePlayer(scene, remote);
         }
         remotes.clear();
-        scene.remove(headLampTarget);
-        scene.remove(headLampGroundDecal);
-        headLampGroundDecal.geometry.dispose();
-        groundSpotMat.dispose();
-        headLampGroundTex.dispose();
         renderer.dispose();
         if (renderer.domElement.parentNode === mountEl) {
           mountEl.removeChild(renderer.domElement);
