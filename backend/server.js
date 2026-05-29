@@ -10285,10 +10285,15 @@ app.delete("/api/email-generator/learned-answers/:id", async (req, res) => {
   }
 });
 
+const http = require("http");
+const { attachSecretAreaWebSocket } = require("./secretAreaRoom");
+
 // Start server (listen immediately; migrations run in background)
 (async () => {
   try {
-    app.listen(PORT, "0.0.0.0", () => {
+    const httpServer = http.createServer(app);
+    attachSecretAreaWebSocket(httpServer);
+    httpServer.listen(PORT, "0.0.0.0", () => {
       console.log(`✅ SGF API listening on http://0.0.0.0:${PORT} (migrations running…)`);
     });
     const t0 = Date.now();

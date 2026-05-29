@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { isFullFivePercentDepositPaid } from "../utils/projectDeposit";
+import { portalProjectPath, projectPath } from "../utils/projectUrl";
 import SiteVisit from "./SiteVisit";
 
 const MONUMENT = "#323233";
@@ -9,6 +11,7 @@ const TILE_RED = "#d9534f";
 const TILE_GREEN = "#43a047";
 const TILE_ORANGE = "#f0ad4e";
 const SECTION_GREY = "#a1a1a3";
+const SECRET_PURPLE = "#B19CD9";
 const SURVEY_STATUS_OPTIONS = ["Not Booked", "Booked", "Complete"];
 const SOIL_STATUS_OPTIONS = ["Not Booked", "Booked", "Complete"];
 const API_URL = "";
@@ -298,6 +301,8 @@ const PLANNING_CATEGORIES = [
   "Asset Protection Bond Refund",
 ];
 
+const TRADE_CERTIFICATES_SECTION = "Trade Certificates";
+
 /** Left / right nav columns — same order as PLANNING_CATEGORIES. */
 const PLANNING_NAV_COLUMN_1 = PLANNING_CATEGORIES.slice(0, 13);
 const PLANNING_NAV_COLUMN_2 = PLANNING_CATEGORIES.slice(13);
@@ -390,13 +395,24 @@ function getDepositStatus(depositValue, projectCostValue) {
   };
 }
 
-export default function PlanningNew({ project, onUpdate }) {
+function resolvePlanningSection(initial) {
+  if (initial && PLANNING_CATEGORIES.includes(initial)) return initial;
+  return PLANNING_CATEGORIES[0];
+}
+
+export default function PlanningNew({ project, onUpdate, initialPlanningSection }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isPortalProjectPath = /^\/portal\/projects\/[^/]+$/.test(location.pathname);
+
   const drawingStates = getDrawingTileStates(project?.drawings_status);
   const surveyTileState = getSurveySoilTileState(project?.survey_status);
   const soilTileState = getSurveySoilTileState(project?.soil_status);
   const depositStatus = getDepositStatus(project?.deposit, project?.project_cost);
   /** Which planning subsection is shown in the main panel (matches PLANNING_CATEGORIES labels). */
-  const [planningSection, setPlanningSection] = useState(PLANNING_CATEGORIES[0]);
+  const [planningSection, setPlanningSection] = useState(() =>
+    resolvePlanningSection(initialPlanningSection)
+  );
   const [surveyStatusDraft, setSurveyStatusDraft] = useState(project?.survey_status || "Not Booked");
   const [soilStatusDraft, setSoilStatusDraft] = useState(project?.soil_status || "Not Booked");
   const [isSaving, setIsSaving] = useState(false);
@@ -421,6 +437,7 @@ export default function PlanningNew({ project, onUpdate }) {
   const jfReceivedFileInputRef = useRef(null);
   /** File name shown in Received modal only after a successful upload this time the modal is open. */
   const [jfReceivedSessionUploadName, setJfReceivedSessionUploadName] = useState("");
+  const [secretAreaModalOpen, setSecretAreaModalOpen] = useState(false);
 
   const [jfDocDraft, setJfDocDraft] = useState(() =>
     Object.fromEntries(
@@ -473,6 +490,45 @@ export default function PlanningNew({ project, onUpdate }) {
   useEffect(() => {
     if (!jfReceivedModalRowKey) setJfReceivedDropActive(false);
   }, [jfReceivedModalRowKey]);
+
+  useEffect(() => {
+    if (
+      initialPlanningSection &&
+      PLANNING_CATEGORIES.includes(initialPlanningSection)
+    ) {
+      setPlanningSection(initialPlanningSection);
+    }
+  }, [initialPlanningSection, project?.access_token]);
+
+  useEffect(() => {
+    if (planningSection !== TRADE_CERTIFICATES_SECTION) {
+      setSecretAreaModalOpen(false);
+    }
+  }, [planningSection]);
+
+  function getTradeCertificatesReturnPath() {
+    const token = project?.access_token;
+    if (!token) return isPortalProjectPath ? "/portal" : "/projects";
+    if (isPortalProjectPath) {
+      return portalProjectPath(token, {
+        view: "planning",
+        planningSection: TRADE_CERTIFICATES_SECTION,
+      });
+    }
+    return projectPath(token, {
+      view: "planning",
+      planningSection: TRADE_CERTIFICATES_SECTION,
+    });
+  }
+
+  useEffect(() => {
+    if (!secretAreaModalOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [secretAreaModalOpen]);
 
   useEffect(() => {
     setJfReceivedSessionUploadName("");
@@ -2215,6 +2271,105 @@ export default function PlanningNew({ project, onUpdate }) {
                   </div>
                 )}
             </div>
+
+            {planningSection === TRADE_CERTIFICATES_SECTION ? (
+              <button
+                type="button"
+                aria-label="Secret area"
+                onClick={() => setSecretAreaModalOpen(true)}
+                style={{
+                  position: "absolute",
+                  right: "16px",
+                  bottom: "16px",
+                  width: "28px",
+                  height: "28px",
+                  padding: 0,
+                  border: "none",
+                  borderRadius: "4px",
+                  background: WHITE,
+                  cursor: "pointer",
+                  zIndex: 2,
+                }}
+              />
+            ) : null}
+
+            {secretAreaModalOpen ? (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background: "rgba(0, 0, 0, 0.5)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 5,
+                  padding: "16px",
+                  borderRadius: "12px",
+                }}
+                onClick={() => setSecretAreaModalOpen(false)}
+              >
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="secret-area-title"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    position: "relative",
+                    background: WHITE,
+                    borderRadius: "12px",
+                    width: "min(400px, 100%)",
+                    padding: "28px 24px",
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
+                    textAlign: "center",
+                  }}
+                >
+                  <button
+                    type="button"
+                    aria-label="Go to secret area"
+                    onClick={() => {
+                      setSecretAreaModalOpen(false);
+                      navigate("/secret-area", {
+                        state: { returnTo: getTradeCertificatesReturnPath() },
+                      });
+                    }}
+                    style={{
+                      position: "absolute",
+                      top: "12px",
+                      left: "12px",
+                      width: "22px",
+                      height: "22px",
+                      padding: 0,
+                      border: "none",
+                      borderRadius: "4px",
+                      background: WHITE,
+                      cursor: "pointer",
+                    }}
+                  />
+                  <h3
+                    id="secret-area-title"
+                    style={{ margin: "0 0 20px 0", color: MONUMENT, fontSize: "1.25rem" }}
+                  >
+                    Secret Area Found!
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setSecretAreaModalOpen(false)}
+                    style={{
+                      padding: "10px 24px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: SECRET_PURPLE,
+                      color: WHITE,
+                      fontSize: "1rem",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    OK
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
       {planningSection === "Job File Documents" && jfReceivedModalRowKey && jfReceivedModalRow ? (
         <div

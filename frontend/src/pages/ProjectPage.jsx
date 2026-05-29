@@ -959,7 +959,13 @@ export default function ProjectPage() {
                 <PlanningOld project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
               )}
               {activeView === "planning" && (
-                <Planning project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
+                <Planning
+                  project={project}
+                  onUpdate={isPortalProjectPath ? () => {} : updateProject}
+                  initialPlanningSection={
+                    new URLSearchParams(location.search).get("planningSection") || undefined
+                  }
+                />
               )}
               {activeView === "admin" && <Admin project={project} onUpdate={updateProject} />}
               {activeView === "variations" && <Variations project={project} />}
