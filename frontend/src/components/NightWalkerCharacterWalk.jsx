@@ -3,13 +3,17 @@ import * as THREE from "three";
 import { createHumanoidRig, NIGHT_WALKER_HERO_COLORS } from "../utils/nightWalkerHumanoid";
 import { getSecretAreaWsUrl } from "../utils/secretAreaWs";
 
-/** Playable square arena (metres); walk clamp is ±half. */
+/** Playable square arena (metres). */
 const ARENA_SIZE_M = 50;
-const ARENA_HALF_M = ARENA_SIZE_M / 2;
-const WALK_BOUNDS = ARENA_HALF_M;
-const WALL_HEIGHT_M = 5;
+const GROUND_CELL_SIZE = 5;
+const GROUND_TILE_COUNT = ARENA_SIZE_M / GROUND_CELL_SIZE;
+const FLOOR_HALF_M = (GROUND_TILE_COUNT * GROUND_CELL_SIZE) / 2;
+const PLAYER_COLLISION_RADIUS = 0.55;
+const WALK_BOUNDS = FLOOR_HALF_M - PLAYER_COLLISION_RADIUS;
+const WALL_HEIGHT_M = 10;
 const WALL_THICKNESS_M = 0.65;
 const WALL_GREY = "#8a8a8e";
+const TERMINAL_DESK_SCALE = 2.5;
 const CHARACTER_SCALE = 0.5;
 const PLAYER_Y = 4.1 * CHARACTER_SCALE;
 const MOVE_SPEED = 7.5;
@@ -21,7 +25,13 @@ const STATE_SEND_INTERVAL_MS = 50;
 const PI2 = Math.PI * 2;
 const GROUND_GREEN = "#3a6b35";
 const GROUND_GREEN_DARK = "#2a4f26";
-const GROUND_CELL_SIZE = 4;
+
+/** Local XZ footprints (unscaled) for desk + tower + monitor. */
+const DESK_COLLISION_LOCAL = [
+  { cx: 0, cz: 0.02, hx: 0.78, hz: 0.46 },
+  { cx: 0.34, cz: -0.2, hx: 0.14, hz: 0.24 },
+  { cx: 0, cz: -0.12, hx: 0.32, hz: 0.14 },
+];
 
 const SLOT_COLORS = [
   { ...NIGHT_WALKER_HERO_COLORS, withHeadLamp: false },
@@ -86,6 +96,106 @@ function resetPose(armRig, legRig) {
   }
 }
 
+function localBoxToWorldAabb(gx, gz, rotY, scale, { cx, cz, hx, hz }) {
+  const cos = Math.cos(rotY);
+  const sin = Math.sin(rotY);
+  const shx = hx * scale;
+  const shz = hz * scale;
+  const scx = cx * scale;
+  const scz = cz * scale;
+  const corners = [
+    [scx - shx, scz - shz],
+    [scx + shx, scz - shz],
+    [scx - shx, scz + shz],
+    [scx + shx, scz + shz],
+  ];
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const [lx, lz] of corners) {
+    const wx = gx + lx * cos - lz * sin;
+    const wz = gz + lx * sin + lz * cos;
+    minX = Math.min(minX, wx);
+    maxX = Math.max(maxX, wx);
+    minZ = Math.min(minZ, wz);
+    maxZ = Math.max(maxZ, wz);
+  }
+  return {
+    x: (minX + maxX) / 2,
+    z: (minZ + maxZ) / 2,
+    hx: (maxX - minX) / 2,
+    hz: (maxZ - minZ) / 2,
+  };
+}
+
+function buildDeskWorldColliders(deskGroup) {
+  const scale = deskGroup.scale.x;
+  const { x: gx, z: gz } = deskGroup.position;
+  const rotY = deskGroup.rotation.y;
+  return DESK_COLLISION_LOCAL.map((box) => localBoxToWorldAabb(gx, gz, rotY, scale, box));
+}
+
+function circleHitsAabb(px, pz, radius, box) {
+  const closestX = Math.max(box.x - box.hx, Math.min(px, box.x + box.hx));
+  const closestZ = Math.max(box.z - box.hz, Math.min(pz, box.z + box.hz));
+  const dx = px - closestX;
+  const dz = pz - closestZ;
+  return dx * dx + dz * dz < radius * radius;
+}
+
+function remotePlayerList(remotePlayers) {
+  if (remotePlayers instanceof Map) {
+    return [...remotePlayers.values()];
+  }
+  return [...remotePlayers];
+}
+
+function isPositionBlocked(px, pz, radius, deskColliders, remotePlayers, selfGroup) {
+  for (const box of deskColliders) {
+    if (circleHitsAabb(px, pz, radius, box)) return true;
+  }
+  for (const remote of remotePlayerList(remotePlayers)) {
+    if (!remote?.group || remote.group === selfGroup) continue;
+    const dx = px - remote.group.position.x;
+    const dz = pz - remote.group.position.z;
+    const distSq = dx * dx + dz * dz;
+    if (distSq < 0.0001) continue;
+    const minDist = radius * 2;
+    if (distSq < minDist * minDist) return true;
+  }
+  return false;
+}
+
+function applyPlayerMove(player, dx, dz, walkBound, deskColliders, remotePlayers) {
+  if (dx === 0 && dz === 0) return;
+
+  const radius = PLAYER_COLLISION_RADIUS;
+  const ox = player.position.x;
+  const oz = player.position.z;
+  let nx = Math.max(-walkBound, Math.min(walkBound, ox + dx));
+  let nz = Math.max(-walkBound, Math.min(walkBound, oz + dz));
+
+  if (!isPositionBlocked(nx, nz, radius, deskColliders, remotePlayers, player)) {
+    player.position.x = nx;
+    player.position.z = nz;
+    return;
+  }
+
+  nx = Math.max(-walkBound, Math.min(walkBound, ox + dx));
+  nz = oz;
+  if (!isPositionBlocked(nx, nz, radius, deskColliders, remotePlayers, player)) {
+    player.position.x = nx;
+    return;
+  }
+
+  nx = ox;
+  nz = Math.max(-walkBound, Math.min(walkBound, oz + dz));
+  if (!isPositionBlocked(nx, nz, radius, deskColliders, remotePlayers, player)) {
+    player.position.z = nz;
+  }
+}
+
 function addPlayerToScene(scene, slot) {
   const rig = createHumanoidRig(SLOT_COLORS[slot]);
   rig.group.scale.setScalar(CHARACTER_SCALE);
@@ -107,8 +217,8 @@ function addPlayerToScene(scene, slot) {
 }
 
 function buildCheckeredGround(scene) {
-  const half = ARENA_HALF_M;
-  const cols = Math.ceil(ARENA_SIZE_M / GROUND_CELL_SIZE);
+  const half = FLOOR_HALF_M;
+  const cols = GROUND_TILE_COUNT;
   const tileGeom = new THREE.PlaneGeometry(GROUND_CELL_SIZE, GROUND_CELL_SIZE);
   const matLight = new THREE.MeshStandardMaterial({
     color: GROUND_GREEN,
@@ -146,24 +256,25 @@ function buildPerimeterWalls(scene) {
   const group = new THREE.Group();
   const h = WALL_HEIGHT_M;
   const t = WALL_THICKNESS_M;
-  const span = ARENA_SIZE_M + t;
+  const floorSpan = GROUND_TILE_COUNT * GROUND_CELL_SIZE;
+  const span = floorSpan + t;
   const geomAlongX = new THREE.BoxGeometry(span, h, t);
   const geomAlongZ = new THREE.BoxGeometry(t, h, span);
 
   const north = new THREE.Mesh(geomAlongX, wallMat);
-  north.position.set(0, h / 2, ARENA_HALF_M + t / 2);
+  north.position.set(0, h / 2, FLOOR_HALF_M + t / 2);
   group.add(north);
 
   const south = new THREE.Mesh(geomAlongX, wallMat);
-  south.position.set(0, h / 2, -ARENA_HALF_M - t / 2);
+  south.position.set(0, h / 2, -FLOOR_HALF_M - t / 2);
   group.add(south);
 
   const east = new THREE.Mesh(geomAlongZ, wallMat);
-  east.position.set(ARENA_HALF_M + t / 2, h / 2, 0);
+  east.position.set(FLOOR_HALF_M + t / 2, h / 2, 0);
   group.add(east);
 
   const west = new THREE.Mesh(geomAlongZ, wallMat);
-  west.position.set(-ARENA_HALF_M - t / 2, h / 2, 0);
+  west.position.set(-FLOOR_HALF_M - t / 2, h / 2, 0);
   group.add(west);
 
   scene.add(group);
@@ -186,7 +297,7 @@ function buildCornerTerminalDesk(scene) {
 
   const group = new THREE.Group();
   const cornerInset = 5;
-  group.position.set(ARENA_HALF_M - cornerInset, 0, ARENA_HALF_M - cornerInset);
+  group.position.set(FLOOR_HALF_M - cornerInset, 0, FLOOR_HALF_M - cornerInset);
   group.rotation.y = -Math.PI * 0.75;
 
   const woodMat = regMat({ color: "#6b5344", roughness: 0.82 });
@@ -238,17 +349,20 @@ function buildCornerTerminalDesk(scene) {
   group.add(monitor);
 
   const screen = new THREE.Mesh(regGeom(new THREE.BoxGeometry(monW * 0.88, monH * 0.82, 0.02)), screenMat);
-  screen.position.set(0, monY, monZ - monD / 2 - 0.012);
+  screen.position.set(0, monY, monZ + monD / 2 + 0.012);
   group.add(screen);
 
   const keyboard = new THREE.Mesh(regGeom(new THREE.BoxGeometry(0.52, 0.025, 0.18)), metalMat);
   keyboard.position.set(0.05, deskH + topT / 2 + 0.015, 0.22);
   group.add(keyboard);
 
-  const tower = new THREE.Mesh(regGeom(new THREE.BoxGeometry(0.22, 0.48, 0.42)), metalMat);
-  tower.position.set(0.52, deskH / 2 + 0.05, 0.28);
+  const towerH = 0.48;
+  const tower = new THREE.Mesh(regGeom(new THREE.BoxGeometry(0.22, towerH, 0.42)), metalMat);
+  // Right of desk centre, shifted toward front (keyboard side) to clear back corner legs.
+  tower.position.set(0.34, towerH / 2, -0.2);
   group.add(tower);
 
+  group.scale.setScalar(TERMINAL_DESK_SCALE);
   scene.add(group);
   return { group, geoms, materials };
 }
@@ -371,6 +485,7 @@ export default function NightWalkerCharacterWalk({ onRoomFull, disconnectRef }) 
     let groundTiles = null;
     let perimeterWalls = null;
     let cornerTerminal = null;
+    let deskColliders = [];
     let animateFn = null;
 
     function ensureRemote(playerData) {
@@ -437,6 +552,8 @@ export default function NightWalkerCharacterWalk({ onRoomFull, disconnectRef }) 
       groundTiles = buildCheckeredGround(scene);
       perimeterWalls = buildPerimeterWalls(scene);
       cornerTerminal = buildCornerTerminalDesk(scene);
+      cornerTerminal.group.updateMatrixWorld(true);
+      deskColliders = buildDeskWorldColliders(cornerTerminal.group);
 
       localPlayer = addPlayerToScene(scene, localSlot);
       localPlayer.id = localPlayerId;
@@ -509,9 +626,9 @@ export default function NightWalkerCharacterWalk({ onRoomFull, disconnectRef }) 
 
         if (moving) {
           forwardDir.set(Math.sin(player.rotation.y), 0, Math.cos(player.rotation.y));
-          player.position.addScaledVector(forwardDir, moveInput * MOVE_SPEED * dt);
-          player.position.x = Math.max(-WALK_BOUNDS, Math.min(WALK_BOUNDS, player.position.x));
-          player.position.z = Math.max(-WALK_BOUNDS, Math.min(WALK_BOUNDS, player.position.z));
+          const stepX = Math.sin(player.rotation.y) * moveInput * MOVE_SPEED * dt;
+          const stepZ = Math.cos(player.rotation.y) * moveInput * MOVE_SPEED * dt;
+          applyPlayerMove(player, stepX, stepZ, WALK_BOUNDS, deskColliders, remotes);
           localPlayer.walkPhase += dt * 9.5;
           applyWalkCycle(armRig, legRig, localPlayer.walkPhase);
         } else {
