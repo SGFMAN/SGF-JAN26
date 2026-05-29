@@ -2335,7 +2335,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                     style={{
                       position: "absolute",
                       top: "12px",
-                      left: "12px",
+                      right: "12px",
                       width: "22px",
                       height: "22px",
                       padding: 0,

@@ -3,7 +3,13 @@ import * as THREE from "three";
 import { createHumanoidRig, NIGHT_WALKER_HERO_COLORS } from "../utils/nightWalkerHumanoid";
 import { getSecretAreaWsUrl } from "../utils/secretAreaWs";
 
-const WALK_BOUNDS = 52;
+/** Playable square arena (metres); walk clamp is ±half. */
+const ARENA_SIZE_M = 50;
+const ARENA_HALF_M = ARENA_SIZE_M / 2;
+const WALK_BOUNDS = ARENA_HALF_M;
+const WALL_HEIGHT_M = 5;
+const WALL_THICKNESS_M = 0.65;
+const WALL_GREY = "#8a8a8e";
 const CHARACTER_SCALE = 0.5;
 const PLAYER_Y = 4.1 * CHARACTER_SCALE;
 const MOVE_SPEED = 7.5;
@@ -101,9 +107,8 @@ function addPlayerToScene(scene, slot) {
 }
 
 function buildCheckeredGround(scene) {
-  const groundExtent = WALK_BOUNDS * 2 + 24;
-  const half = groundExtent / 2;
-  const cols = Math.ceil(groundExtent / GROUND_CELL_SIZE);
+  const half = ARENA_HALF_M;
+  const cols = Math.ceil(ARENA_SIZE_M / GROUND_CELL_SIZE);
   const tileGeom = new THREE.PlaneGeometry(GROUND_CELL_SIZE, GROUND_CELL_SIZE);
   const matLight = new THREE.MeshStandardMaterial({
     color: GROUND_GREEN,
@@ -130,6 +135,122 @@ function buildCheckeredGround(scene) {
   }
   scene.add(group);
   return { group, tileGeom, matLight, matDark };
+}
+
+function buildPerimeterWalls(scene) {
+  const wallMat = new THREE.MeshStandardMaterial({
+    color: WALL_GREY,
+    roughness: 0.88,
+    metalness: 0.06,
+  });
+  const group = new THREE.Group();
+  const h = WALL_HEIGHT_M;
+  const t = WALL_THICKNESS_M;
+  const span = ARENA_SIZE_M + t;
+  const geomAlongX = new THREE.BoxGeometry(span, h, t);
+  const geomAlongZ = new THREE.BoxGeometry(t, h, span);
+
+  const north = new THREE.Mesh(geomAlongX, wallMat);
+  north.position.set(0, h / 2, ARENA_HALF_M + t / 2);
+  group.add(north);
+
+  const south = new THREE.Mesh(geomAlongX, wallMat);
+  south.position.set(0, h / 2, -ARENA_HALF_M - t / 2);
+  group.add(south);
+
+  const east = new THREE.Mesh(geomAlongZ, wallMat);
+  east.position.set(ARENA_HALF_M + t / 2, h / 2, 0);
+  group.add(east);
+
+  const west = new THREE.Mesh(geomAlongZ, wallMat);
+  west.position.set(-ARENA_HALF_M - t / 2, h / 2, 0);
+  group.add(west);
+
+  scene.add(group);
+  return { group, geomAlongX, geomAlongZ, wallMat };
+}
+
+/** Desk + terminal in the north-east corner (faces toward room centre). */
+function buildCornerTerminalDesk(scene) {
+  const geoms = [];
+  const materials = [];
+  const regGeom = (geometry) => {
+    geoms.push(geometry);
+    return geometry;
+  };
+  const regMat = (params) => {
+    const m = new THREE.MeshStandardMaterial(params);
+    materials.push(m);
+    return m;
+  };
+
+  const group = new THREE.Group();
+  const cornerInset = 5;
+  group.position.set(ARENA_HALF_M - cornerInset, 0, ARENA_HALF_M - cornerInset);
+  group.rotation.y = -Math.PI * 0.75;
+
+  const woodMat = regMat({ color: "#6b5344", roughness: 0.82 });
+  const metalMat = regMat({ color: "#3a3f48", roughness: 0.55, metalness: 0.35 });
+  const legMat = regMat({ color: "#2a2a30", roughness: 0.9 });
+  const bezelMat = regMat({ color: "#1e2228", roughness: 0.72 });
+  const screenMat = regMat({
+    color: "#061a10",
+    emissive: "#22ff88",
+    emissiveIntensity: 0.9,
+    roughness: 0.35,
+  });
+
+  const deskH = 0.76;
+  const topW = 1.5;
+  const topD = 0.85;
+  const topT = 0.07;
+
+  const top = new THREE.Mesh(regGeom(new THREE.BoxGeometry(topW, topT, topD)), woodMat);
+  top.position.y = deskH;
+  group.add(top);
+
+  const legH = deskH - topT / 2;
+  const legGeom = regGeom(new THREE.BoxGeometry(0.09, legH, 0.09));
+  const legInset = 0.12;
+  for (const [sx, sz] of [
+    [-1, -1],
+    [1, -1],
+    [-1, 1],
+    [1, 1],
+  ]) {
+    const leg = new THREE.Mesh(legGeom, legMat);
+    leg.position.set(sx * (topW / 2 - legInset), legH / 2, sz * (topD / 2 - legInset));
+    group.add(leg);
+  }
+
+  const monW = 0.58;
+  const monH = 0.4;
+  const monD = 0.05;
+  const monY = deskH + topT / 2 + monH / 2 + 0.08;
+  const monZ = -0.12;
+
+  const stand = new THREE.Mesh(regGeom(new THREE.BoxGeometry(0.12, 0.06, 0.18)), metalMat);
+  stand.position.set(0, deskH + topT / 2 + 0.03, monZ);
+  group.add(stand);
+
+  const monitor = new THREE.Mesh(regGeom(new THREE.BoxGeometry(monW, monH, monD)), bezelMat);
+  monitor.position.set(0, monY, monZ);
+  group.add(monitor);
+
+  const screen = new THREE.Mesh(regGeom(new THREE.BoxGeometry(monW * 0.88, monH * 0.82, 0.02)), screenMat);
+  screen.position.set(0, monY, monZ - monD / 2 - 0.012);
+  group.add(screen);
+
+  const keyboard = new THREE.Mesh(regGeom(new THREE.BoxGeometry(0.52, 0.025, 0.18)), metalMat);
+  keyboard.position.set(0.05, deskH + topT / 2 + 0.015, 0.22);
+  group.add(keyboard);
+
+  const tower = new THREE.Mesh(regGeom(new THREE.BoxGeometry(0.22, 0.48, 0.42)), metalMat);
+  tower.position.set(0.52, deskH / 2 + 0.05, 0.28);
+  group.add(tower);
+
+  scene.add(group);
+  return { group, geoms, materials };
 }
 
 function disposePlayer(scene, player) {
@@ -248,6 +369,8 @@ export default function NightWalkerCharacterWalk({ onRoomFull, disconnectRef }) 
     let renderer = null;
     let localPlayer = null;
     let groundTiles = null;
+    let perimeterWalls = null;
+    let cornerTerminal = null;
     let animateFn = null;
 
     function ensureRemote(playerData) {
@@ -281,7 +404,7 @@ export default function NightWalkerCharacterWalk({ onRoomFull, disconnectRef }) 
 
       scene = new THREE.Scene();
       scene.background = new THREE.Color("#061127");
-      scene.fog = new THREE.Fog("#0a1830", 40, 140);
+      scene.fog = new THREE.Fog("#0a1830", 28, 72);
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -312,6 +435,8 @@ export default function NightWalkerCharacterWalk({ onRoomFull, disconnectRef }) 
       scene.add(moon);
 
       groundTiles = buildCheckeredGround(scene);
+      perimeterWalls = buildPerimeterWalls(scene);
+      cornerTerminal = buildCornerTerminalDesk(scene);
 
       localPlayer = addPlayerToScene(scene, localSlot);
       localPlayer.id = localPlayerId;
@@ -429,6 +554,17 @@ export default function NightWalkerCharacterWalk({ onRoomFull, disconnectRef }) 
           groundTiles.tileGeom.dispose();
           groundTiles.matLight.dispose();
           groundTiles.matDark.dispose();
+        }
+        if (perimeterWalls) {
+          scene.remove(perimeterWalls.group);
+          perimeterWalls.geomAlongX.dispose();
+          perimeterWalls.geomAlongZ.dispose();
+          perimeterWalls.wallMat.dispose();
+        }
+        if (cornerTerminal) {
+          scene.remove(cornerTerminal.group);
+          cornerTerminal.geoms.forEach((g) => g.dispose());
+          cornerTerminal.materials.forEach((m) => m.dispose());
         }
         disposePlayer(scene, localPlayer);
         for (const remote of remotes.values()) {
