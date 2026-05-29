@@ -8,6 +8,7 @@ import {
 } from "../utils/streamNewProjectEmail";
 import { CLASSIFICATION_OPTIONS, CLASSIFICATION_ABBREV_MAP as CLASSIFICATION_MAP } from "../utils/classifications";
 import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
+import { getUserPrimaryPositionName } from "../utils/userPosition";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -305,10 +306,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
       const users = await response.json();
       const user = users.find((u) => u.name === salespersonName);
       if (!user) return { position: "", phone: "", email: "" };
-      const position =
-        user.positions && Array.isArray(user.positions) && user.positions.length > 0
-          ? user.positions[0].name
-          : "";
+      const position = getUserPrimaryPositionName(user);
       return {
         position,
         phone: user.phone || "",

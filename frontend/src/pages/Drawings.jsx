@@ -13,6 +13,7 @@ import {
   normalizeDraftspersonField,
   isDraftspersonAssigned,
 } from "../utils/draftspersonSentinel";
+import { getUserPrimaryPositionName } from "../utils/userPosition";
 import {
   resolveConceptApprovedFrom,
   resolveConceptApprovedToEmails,
@@ -212,13 +213,9 @@ export default function Drawings({
       const lower = stored.toLowerCase();
       const user = users.find((u) => (u.name || "").trim().toLowerCase() === lower);
       if (!user) return { name: stored, position: "" };
-      const position =
-        user.positions && Array.isArray(user.positions) && user.positions.length > 0
-          ? user.positions[0].name
-          : "";
       return {
         name: user.name || "",
-        position: position || "",
+        position: getUserPrimaryPositionName(user),
       };
     } catch (error) {
       console.error("Error fetching draftsperson details:", error);
@@ -234,12 +231,8 @@ export default function Drawings({
       const users = await response.json();
       const user = users.find((u) => u.name === salespersonName);
       if (!user) return { position: "", phone: "", email: "" };
-      const position =
-        user.positions && Array.isArray(user.positions) && user.positions.length > 0
-          ? user.positions[0].name
-          : "";
       return {
-        position: position || "",
+        position: getUserPrimaryPositionName(user),
         phone: user.phone || "",
         email: user.email || "",
       };

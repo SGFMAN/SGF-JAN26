@@ -4,6 +4,7 @@ import { DayPicker } from "react-day-picker";
 import { enAU } from "date-fns/locale";
 import "react-day-picker/style.css";
 import { isUserAdmin } from "../utils/auth";
+import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import logo from "../images/logo.png";
 
@@ -216,10 +217,7 @@ export default function SiteVisitPlanner() {
       const users = await response.json();
       const user = users.find((u) => u.name === salespersonName);
       if (!user) return { position: "", phone: "", email: "" };
-      const position =
-        user.positions && Array.isArray(user.positions) && user.positions.length > 0
-          ? user.positions[0].name
-          : "";
+      const position = getUserPrimaryPositionName(user);
       return {
         position,
         phone: user.phone || "",

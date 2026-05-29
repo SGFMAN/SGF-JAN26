@@ -6,6 +6,7 @@ import {
   pickNewJobClientTemplateName,
   findSalespersonUserInList,
 } from "../utils/streamNewProjectEmail";
+import { getUserPrimaryPositionName } from "../utils/userPosition";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -48,10 +49,7 @@ export default function NewProject_7_EmailClient({
       const users = await response.json();
       const user = users.find((u) => u.name === salespersonName);
       if (!user) return { position: "", phone: "", email: "" };
-      const position =
-        user.positions && Array.isArray(user.positions) && user.positions.length > 0
-          ? user.positions[0].name
-          : "";
+      const position = getUserPrimaryPositionName(user);
       return {
         position,
         phone: user.phone || "",

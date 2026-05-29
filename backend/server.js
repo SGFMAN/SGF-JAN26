@@ -3681,17 +3681,24 @@ function resolveRegionalSalespersonNameForDrawingsEmail(row) {
   return String(row?.salesperson ?? "").trim();
 }
 
-/** Same idea as Drawings.jsx `getSalespersonDetailsByName` (first position by name order). */
+/** Position for email tokens: primary position in Users, not alphabetical first (Admin). */
 async function fetchSalespersonDetailsByNameForDrawingsEmail(pool, salespersonName) {
   const name = String(salespersonName || "").trim();
   if (!name) return { position: "", phone: "", email: "" };
   try {
     const r = await pool.query(
       `SELECT u.email, u.phone,
-        (SELECT p.name FROM positions p
-         INNER JOIN user_positions up ON p.id = up.position_id
-         WHERE up.user_id = u.id
-         ORDER BY p.name ASC LIMIT 1) AS position_name
+        COALESCE(
+          (SELECT p.name FROM positions p WHERE p.id = u.primary_position_id),
+          (SELECT p.name FROM positions p
+           INNER JOIN user_positions up ON p.id = up.position_id
+           WHERE up.user_id = u.id AND TRIM(p.name) <> 'Admin'
+           ORDER BY p.name ASC LIMIT 1),
+          (SELECT p.name FROM positions p
+           INNER JOIN user_positions up ON p.id = up.position_id
+           WHERE up.user_id = u.id
+           ORDER BY p.name ASC LIMIT 1)
+        ) AS position_name
        FROM users u
        WHERE LOWER(TRIM(u.name)) = LOWER(TRIM($1::text))
        LIMIT 1`,

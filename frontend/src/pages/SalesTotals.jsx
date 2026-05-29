@@ -434,7 +434,16 @@ export default function SalesTotals() {
     return Math.round(n / yearProgressFraction);
   }
 
+  function projectedEndOfYearForCount(count) {
+    if (!calendarYearMeta || calendarYearMeta.mode === "future" || !(yearProgressFraction > 0)) {
+      return null;
+    }
+    const n = Number(count) || 0;
+    return Math.round(n / yearProgressFraction);
+  }
+
   const projectedYearEndValue = projectedEndOfYearForCost(grandTotal.totalCost);
+  const projectedYearEndSales = projectedEndOfYearForCount(grandTotal.totalSales);
 
   const projectedSgfVicValue = projectedEndOfYearForCost((streamTotals["SGF - VIC"] || { totalCost: 0 }).totalCost);
   const projectedSgfQldValue = projectedEndOfYearForCost((streamTotals["SGF - QLD"] || { totalCost: 0 }).totalCost);
@@ -1216,11 +1225,6 @@ export default function SalesTotals() {
                           <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 }}>
                             {projectedVicStateValue != null ? formatCurrency(projectedVicStateValue) : "—"}
                           </div>
-                          <div style={{ fontSize: "0.65rem", color: "#888", marginTop: "4px", lineHeight: 1.35 }}>
-                            {calendarYearMeta.mode === "complete"
-                              ? "Same as total (full year)."
-                              : "Run rate: total ÷ (days elapsed ÷ days in year)."}
-                          </div>
                         </>
                       )}
                     </div>
@@ -1330,11 +1334,6 @@ export default function SalesTotals() {
                           <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 }}>
                             {projectedQldStateValue != null ? formatCurrency(projectedQldStateValue) : "—"}
                           </div>
-                          <div style={{ fontSize: "0.65rem", color: "#888", marginTop: "4px", lineHeight: 1.35 }}>
-                            {calendarYearMeta.mode === "complete"
-                              ? "Same as total (full year)."
-                              : "Run rate: total ÷ (days elapsed ÷ days in year)."}
-                          </div>
                         </>
                       )}
                     </div>
@@ -1370,94 +1369,110 @@ export default function SalesTotals() {
                     GRAND TOTAL
                   </div>
                   <div
-                    style={
-                      calendarYearMeta
-                        ? {
-                            display: "grid",
-                            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-                            columnGap: "16px",
-                            rowGap: "12px",
-                            alignItems: "start",
-                          }
-                        : { display: "flex", flexDirection: "column", gap: "16px" }
-                    }
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                      columnGap: "16px",
+                      rowGap: "12px",
+                      alignItems: "start",
+                    }}
                   >
-                    <div>
-                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
-                        Total Sales
-                      </div>
-                      <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
-                        {grandTotal.totalSales}
+                    <div
+                      style={{
+                        paddingBottom: "4px",
+                        borderBottom: "1px solid #4a4d55",
+                        gridColumn: "1",
+                      }}
+                    >
+                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>Year</div>
+                      <div style={{ fontSize: "1.15rem", fontWeight: 600, color: WHITE, lineHeight: 1.35 }}>
+                        {selectedYear}
                       </div>
                     </div>
-                    {calendarYearMeta ? (
-                      <div
-                        style={{
-                          borderLeft: "1px solid #4a4d55",
-                          paddingLeft: "14px",
-                          minWidth: 0,
-                        }}
-                      >
-                        <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
-                          Year progress ({selectedYear})
-                        </div>
+                    <div
+                      style={{
+                        paddingBottom: "4px",
+                        borderBottom: "1px solid #4a4d55",
+                        paddingLeft: "14px",
+                        borderLeft: "1px solid #4a4d55",
+                        gridColumn: "2",
+                        minWidth: 0,
+                      }}
+                    >
+                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>Progress</div>
+                      {!calendarYearMeta ? (
+                        <div style={{ fontSize: "1.15rem", fontWeight: 600, color: WHITE, opacity: 0.85 }}>—</div>
+                      ) : calendarYearMeta.mode === "future" ? (
+                        <div style={{ fontSize: "1rem", fontWeight: 600, color: WHITE, opacity: 0.85 }}>Not started</div>
+                      ) : (
                         <div style={{ fontSize: "1.15rem", fontWeight: 600, color: WHITE, lineHeight: 1.35 }}>
-                          {calendarYearMeta.mode === "future" ? (
-                            <span style={{ opacity: 0.9, fontSize: "0.95rem" }}>Not started</span>
-                          ) : (
-                            <>
-                              {calendarYearMeta.percentThrough}%
-                              <span
-                                style={{
-                                  display: "block",
-                                  fontSize: "0.72rem",
-                                  fontWeight: 500,
-                                  color: "#a1a1a3",
-                                  marginTop: "3px",
-                                }}
-                              >
-                                Day {calendarYearMeta.daysElapsed} of {calendarYearMeta.daysInYear}
-                              </span>
-                            </>
-                          )}
+                          {calendarYearMeta.percentThrough}%
+                          <span
+                            style={{
+                              display: "block",
+                              fontSize: "0.72rem",
+                              fontWeight: 500,
+                              color: "#a1a1a3",
+                              marginTop: "3px",
+                            }}
+                          >
+                            Day {calendarYearMeta.daysElapsed} of {calendarYearMeta.daysInYear}
+                          </span>
                         </div>
-                      </div>
-                    ) : null}
+                      )}
+                    </div>
+
                     <div>
+                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>Total Sales</div>
+                      <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>{grandTotal.totalSales}</div>
+                    </div>
+                    <div
+                      style={{
+                        borderLeft: "1px solid #4a4d55",
+                        paddingLeft: "14px",
+                        minWidth: 0,
+                      }}
+                    >
                       <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
-                        Total Value
+                        Projected Sales
                       </div>
+                      {!calendarYearMeta || calendarYearMeta.mode === "future" ? (
+                        <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2, opacity: 0.85 }}>
+                          —
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 }}>
+                          {projectedYearEndSales != null ? projectedYearEndSales : "—"}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>Total Value</div>
                       <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
                         {formatCurrency(grandTotal.totalCost)}
                       </div>
                     </div>
-                    {calendarYearMeta ? (
-                      <div
-                        style={{
-                          borderLeft: "1px solid #4a4d55",
-                          paddingLeft: "14px",
-                          minWidth: 0,
-                        }}
-                      >
-                        <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
-                          Projected year-end value
-                        </div>
-                        {calendarYearMeta.mode !== "future" ? (
-                          <>
-                            <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 }}>
-                              {projectedYearEndValue != null ? formatCurrency(projectedYearEndValue) : "—"}
-                            </div>
-                            <div style={{ fontSize: "0.65rem", color: "#888", marginTop: "4px", lineHeight: 1.35 }}>
-                              {calendarYearMeta.mode === "complete"
-                                ? "Same as total (full year)."
-                                : "Run rate: total ÷ (days elapsed ÷ days in year)."}
-                            </div>
-                          </>
-                        ) : (
-                          <div style={{ fontSize: "1rem", fontWeight: 600, color: WHITE, opacity: 0.85 }}>—</div>
-                        )}
+                    <div
+                      style={{
+                        borderLeft: "1px solid #4a4d55",
+                        paddingLeft: "14px",
+                        minWidth: 0,
+                      }}
+                    >
+                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
+                        Projected Value
                       </div>
-                    ) : null}
+                      {!calendarYearMeta || calendarYearMeta.mode === "future" ? (
+                        <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2, opacity: 0.85 }}>
+                          —
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 }}>
+                          {projectedYearEndValue != null ? formatCurrency(projectedYearEndValue) : "—"}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

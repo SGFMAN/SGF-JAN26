@@ -4,6 +4,7 @@ import { projectPath } from "../utils/projectUrl";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { PROCESS_RULES, getRequirementStatus, getUnmetRequirements, getMetRequirements } from "../utils/ProcessRules";
 import { DRAFTSPERSON_UNASSIGNED } from "../utils/draftspersonSentinel";
+import { getUserPrimaryPositionName } from "../utils/userPosition";
 import {
   resolveNewProjectClientFrom,
   resolveNewProjectClientToEmails,
@@ -226,10 +227,7 @@ export default function Overview({ project }) {
       const users = await response.json();
       const user = users.find((u) => u.name === salespersonName);
       if (!user) return { position: "", phone: "", email: "" };
-      const position =
-        user.positions && Array.isArray(user.positions) && user.positions.length > 0
-          ? user.positions[0].name
-          : "";
+      const position = getUserPrimaryPositionName(user);
       return {
         position,
         phone: user.phone || "",

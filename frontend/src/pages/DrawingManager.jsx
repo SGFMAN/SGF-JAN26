@@ -18,6 +18,7 @@ import {
   normalizeDraftspersonField,
   isDraftspersonAssigned,
 } from "../utils/draftspersonSentinel";
+import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 import logo from "../images/logo.png";
 
@@ -126,10 +127,7 @@ export default function DrawingManager() {
       (u) => (u.name || "").trim().toLowerCase() === lower
     );
     if (!user) return { name: stored, position: "" };
-    const position =
-      user.positions && Array.isArray(user.positions) && user.positions.length > 0
-        ? user.positions[0].name || ""
-        : "";
+    const position = getUserPrimaryPositionName(user);
     return { name: user.name || "", position };
   }
 
