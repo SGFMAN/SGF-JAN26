@@ -1377,7 +1377,7 @@ function equipKneeCylinder(player) {
     regGeom(new THREE.SphereGeometry(KNEE_CYLINDER_TIP_RADIUS, 14, 12)),
     fleshMat
   );
-  tip.position.y = -KNEE_CYLINDER_HEIGHT / 2;
+  tip.position.y = KNEE_CYLINDER_HEIGHT / 2;
   tip.renderOrder = 2;
   mesh.add(tip);
 
