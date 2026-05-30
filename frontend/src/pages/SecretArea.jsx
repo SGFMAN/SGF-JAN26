@@ -2,6 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import NightWalkerCharacterWalk from "../components/NightWalkerCharacterWalk";
 import SecretLevelEditorOverlay from "../components/SecretLevelEditorOverlay";
+import {
+  isSecretAreaSessionUnlocked,
+  lockSecretAreaSession,
+} from "../utils/secretAreaProject";
 
 const MONUMENT = "#323233";
 const WHITE = "#fff";
@@ -17,6 +21,12 @@ export default function SecretArea() {
   const [doorwayFade, setDoorwayFade] = useState(0);
   const disconnectRef = useRef(null);
   const levelNavStartedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isSecretAreaSessionUnlocked()) {
+      navigate(returnTo, { replace: true });
+    }
+  }, [navigate, returnTo]);
 
   useEffect(() => {
     if (!location.state?.openLevelEditor) return;
@@ -62,6 +72,7 @@ export default function SecretArea() {
 
   function handleBack() {
     disconnectRef.current?.();
+    lockSecretAreaSession();
     navigate(returnTo);
   }
 

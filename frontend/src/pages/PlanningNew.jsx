@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { isFullFivePercentDepositPaid } from "../utils/projectDeposit";
 import { portalProjectPath, projectPath } from "../utils/projectUrl";
+import { isSecretAreaProject, unlockSecretAreaSession } from "../utils/secretAreaProject";
 import SiteVisit from "./SiteVisit";
 
 const MONUMENT = "#323233";
@@ -409,6 +410,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
   const surveyTileState = getSurveySoilTileState(project?.survey_status);
   const soilTileState = getSurveySoilTileState(project?.soil_status);
   const depositStatus = getDepositStatus(project?.deposit, project?.project_cost);
+  const secretAreaEligible = isSecretAreaProject(project);
   /** Which planning subsection is shown in the main panel (matches PLANNING_CATEGORIES labels). */
   const [planningSection, setPlanningSection] = useState(() =>
     resolvePlanningSection(initialPlanningSection)
@@ -501,10 +503,10 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
   }, [initialPlanningSection, project?.access_token]);
 
   useEffect(() => {
-    if (planningSection !== TRADE_CERTIFICATES_SECTION) {
+    if (planningSection !== TRADE_CERTIFICATES_SECTION || !secretAreaEligible) {
       setSecretAreaModalOpen(false);
     }
-  }, [planningSection]);
+  }, [planningSection, secretAreaEligible]);
 
   function getTradeCertificatesReturnPath() {
     const token = project?.access_token;
@@ -2272,7 +2274,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                 )}
             </div>
 
-            {planningSection === TRADE_CERTIFICATES_SECTION ? (
+            {planningSection === TRADE_CERTIFICATES_SECTION && secretAreaEligible ? (
               <button
                 type="button"
                 aria-label="Secret area"
@@ -2328,6 +2330,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                     aria-label="Go to secret area"
                     onClick={() => {
                       setSecretAreaModalOpen(false);
+                      unlockSecretAreaSession();
                       navigate("/secret-area", {
                         state: { returnTo: getTradeCertificatesReturnPath() },
                       });
