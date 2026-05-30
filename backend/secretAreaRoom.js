@@ -22,6 +22,7 @@ function publicPlayer(p) {
     trapElapsed: p.trapElapsed ?? 0,
     showKneeCylinder: !!p.showKneeCylinder,
     kneeCylinderGrowT: p.kneeCylinderGrowT ?? 0,
+    sillyStringPulse: p.sillyStringPulse ?? 0,
   };
 }
 
@@ -122,6 +123,7 @@ function attachSecretAreaWebSocket(httpServer) {
       trapElapsed: 0,
       showKneeCylinder: false,
       kneeCylinderGrowT: 0,
+      sillyStringPulse: 0,
     };
     players.set(ws, player);
 
@@ -181,6 +183,9 @@ function attachSecretAreaWebSocket(httpServer) {
         p.kneeCylinderGrowT = msg.kneeCylinderGrowT;
       } else {
         p.kneeCylinderGrowT = 0;
+      }
+      if (typeof msg.sillyStringPulse === "number" && msg.sillyStringPulse >= 0) {
+        p.sillyStringPulse = msg.sillyStringPulse;
       }
       broadcast(
         {
