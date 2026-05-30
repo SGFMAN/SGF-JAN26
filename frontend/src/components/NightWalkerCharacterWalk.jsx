@@ -1327,10 +1327,10 @@ function equipSpinCostume(player) {
   if (!player.fedora) player.fedora = buildMoonwalkFedora(player.head);
 }
 
-const KNEE_CYLINDER_Y = -1.25;
-const KNEE_CYLINDER_Z = 0.32;
+const KNEE_CYLINDER_Y = -0.95;
+const KNEE_CYLINDER_Z = 0.59;
 const KNEE_CYLINDER_HEIGHT = 1.84;
-const KNEE_CYLINDER_MESH_LIFT = 0.95;
+const KNEE_CYLINDER_MESH_LIFT = 1.18;
 const KNEE_CYLINDER_TILT_X = 0.82;
 
 function equipKneeCylinder(player) {
