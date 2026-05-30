@@ -1454,6 +1454,7 @@ const SILLY_STRING_SPAWN_INTERVAL = 0.034;
 const SILLY_STRING_PARTICLES_PER_SPAWN = 6;
 const SILLY_STRING_PARTICLE_LIFE = 1.05;
 const SILLY_STRING_SPEED = 7.5;
+const SILLY_STRING_STUCK_OPACITY = 0.95;
 const sillyStringParticles = [];
 const sillyStringOrigin = new THREE.Vector3();
 const sillyStringBody = new THREE.Vector3();
@@ -1469,6 +1470,67 @@ function getKneeCylinderNozzle(player, origin, dir) {
   if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1);
   else dir.normalize();
   return true;
+}
+
+function addSillyStringSplat(scene, x, y, z, radius = 0.04) {
+  if (!scene) return;
+  const geom = new THREE.SphereGeometry(radius, 7, 6);
+  const mat = new THREE.MeshBasicMaterial({
+    color: "#ffffff",
+    transparent: true,
+    opacity: SILLY_STRING_STUCK_OPACITY,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.position.set(x, y, z);
+  mesh.renderOrder = 5;
+  scene.add(mesh);
+  sillyStringParticles.push({
+    mesh,
+    geom,
+    mat,
+    velocity: new THREE.Vector3(),
+    stuck: true,
+    age: 0,
+    life: Infinity,
+  });
+}
+
+function stickSillyStringParticle(p, onStick) {
+  if (p.stuck) return;
+  p.stuck = true;
+  p.velocity.set(0, 0, 0);
+  p.life = Infinity;
+  p.mat.opacity = SILLY_STRING_STUCK_OPACITY;
+  onStick?.(p.mesh.position.x, p.mesh.position.y, p.mesh.position.z, p.mesh.geometry.parameters.radius);
+}
+
+function resolveSillyStringWallHit(pos, radius) {
+  const half = FLOOR_HALF_M;
+  const doorZ1 = DOOR_CENTER_Z - DOOR_HALF_WIDTH;
+  const doorZ2 = DOOR_CENTER_Z + DOOR_HALF_WIDTH;
+  let hit = false;
+  let { x, y, z } = pos;
+
+  if (z + radius >= half) {
+    z = half - radius;
+    hit = true;
+  } else if (z - radius <= -half) {
+    z = -half + radius;
+    hit = true;
+  } else if (x - radius <= -half) {
+    x = -half + radius;
+    hit = true;
+  } else if (x + radius >= half) {
+    const throughDoor = z >= doorZ1 && z <= doorZ2 && y < DOOR_HEIGHT;
+    if (!throughDoor) {
+      x = half - radius;
+      hit = true;
+    }
+  }
+
+  if (hit) pos.set(x, y, z);
+  return hit;
 }
 
 function spawnSillyStringBurst(scene, player) {
@@ -1504,20 +1566,30 @@ function spawnSillyStringBurst(scene, player) {
       geom,
       mat,
       velocity,
+      stuck: false,
       life: SILLY_STRING_PARTICLE_LIFE * (0.75 + Math.random() * 0.45),
       age: 0,
     });
   }
 }
 
-function updateSillyStrings(scene, dt) {
+function updateSillyStrings(scene, dt, onStick) {
   if (!scene) return;
   for (let i = sillyStringParticles.length - 1; i >= 0; i -= 1) {
     const p = sillyStringParticles[i];
+    if (p.stuck) continue;
+
     p.age += dt;
     p.mesh.position.addScaledVector(p.velocity, dt);
     p.velocity.y -= 3.2 * dt;
     p.velocity.multiplyScalar(1 - dt * 0.35);
+
+    const radius = p.mesh.geometry.parameters?.radius ?? 0.04;
+    if (resolveSillyStringWallHit(p.mesh.position, radius)) {
+      stickSillyStringParticle(p, onStick);
+      continue;
+    }
+
     p.mat.opacity = Math.max(0, 1 - p.age / p.life);
     if (p.age >= p.life) {
       scene.remove(p.mesh);
@@ -2216,6 +2288,17 @@ export default function NightWalkerCharacterWalk({
 
         if (!sceneStarted) return;
 
+        if (
+          msg.type === "silly_string_stick" &&
+          scene &&
+          typeof msg.x === "number" &&
+          typeof msg.y === "number" &&
+          typeof msg.z === "number"
+        ) {
+          addSillyStringSplat(scene, msg.x, msg.y, msg.z, msg.r ?? 0.04);
+          return;
+        }
+
         if (msg.type === "peer_joined" && msg.player && msg.player.id !== localPlayerId) {
           ensureRemote(msg.player);
         }
@@ -2349,6 +2432,11 @@ export default function NightWalkerCharacterWalk({
         return TRAP_TILE_FALL_DELAY + TRAP_PLAYER_FALL_DURATION + trapResetTimer;
       }
       return 0;
+    }
+
+    function sendSillyStringStick(x, y, z, r) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ type: "silly_string_stick", x, y, z, r }));
     }
 
     function sendState(x, z, ry, moving, dance = null, danceT = 0) {
@@ -2613,7 +2701,7 @@ export default function NightWalkerCharacterWalk({
         const { armRig, legRig } = localPlayer;
 
         updateKneeCylinderGrow(localPlayer, dt);
-        updateSillyStrings(scene, dt);
+        updateSillyStrings(scene, dt, sendSillyStringStick);
 
         const wantsTerminal = terminalViewActiveRef.current;
         const terminalCameraActive = wantsTerminal || terminalZoomT > 0.001;

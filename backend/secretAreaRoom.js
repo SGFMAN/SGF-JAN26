@@ -156,8 +156,27 @@ function attachSecretAreaWebSocket(httpServer) {
         return;
       }
 
-      if (msg.type !== "state" || !players.has(ws)) return;
+      if (!players.has(ws)) return;
       const p = players.get(ws);
+
+      if (msg.type === "silly_string_stick") {
+        if (typeof msg.x === "number" && typeof msg.y === "number" && typeof msg.z === "number") {
+          broadcast(
+            {
+              type: "silly_string_stick",
+              playerId: p.id,
+              x: msg.x,
+              y: msg.y,
+              z: msg.z,
+              r: typeof msg.r === "number" ? msg.r : 0.04,
+            },
+            ws
+          );
+        }
+        return;
+      }
+
+      if (msg.type !== "state") return;
       if (typeof msg.x === "number") p.x = msg.x;
       if (typeof msg.z === "number") p.z = msg.z;
       if (typeof msg.ry === "number") p.ry = msg.ry;
