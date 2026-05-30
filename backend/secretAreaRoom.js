@@ -21,6 +21,7 @@ function publicPlayer(p) {
     trapCol: p.trapCol ?? -1,
     trapElapsed: p.trapElapsed ?? 0,
     showKneeCylinder: !!p.showKneeCylinder,
+    kneeCylinderGrowT: p.kneeCylinderGrowT ?? 0,
   };
 }
 
@@ -120,6 +121,7 @@ function attachSecretAreaWebSocket(httpServer) {
       trapCol: -1,
       trapElapsed: 0,
       showKneeCylinder: false,
+      kneeCylinderGrowT: 0,
     };
     players.set(ws, player);
 
@@ -175,6 +177,11 @@ function attachSecretAreaWebSocket(httpServer) {
         p.trapElapsed = 0;
       }
       p.showKneeCylinder = !!msg.showKneeCylinder;
+      if (p.showKneeCylinder && typeof msg.kneeCylinderGrowT === "number") {
+        p.kneeCylinderGrowT = msg.kneeCylinderGrowT;
+      } else {
+        p.kneeCylinderGrowT = 0;
+      }
       broadcast(
         {
           type: "peer_state",

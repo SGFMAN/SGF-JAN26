@@ -710,6 +710,7 @@ function addPlayerToScene(scene, slot) {
     targetTrapElapsed: 0,
     lastTrapTile: null,
     targetShowKneeCylinder: false,
+    targetKneeCylinderGrowT: 0,
     targetX: 0,
     targetZ: 0,
     targetRy: 0,
@@ -1331,9 +1332,26 @@ const KNEE_CYLINDER_Y = -0.35;
 const KNEE_CYLINDER_Z = 0.59;
 const KNEE_CYLINDER_HEIGHT = 1.84;
 const KNEE_CYLINDER_MESH_LIFT = 1.64;
+const KNEE_CYLINDER_BASE_Y = KNEE_CYLINDER_MESH_LIFT;
+const KNEE_CYLINDER_TIP_Y = KNEE_CYLINDER_MESH_LIFT - KNEE_CYLINDER_HEIGHT;
 const KNEE_CYLINDER_RADIUS = 0.19;
 const KNEE_CYLINDER_TIP_RADIUS = 0.2;
 const KNEE_CYLINDER_TILT_X = 0.82;
+const KNEE_CYLINDER_GROW_DURATION = 0.6;
+
+function applyKneeCylinderGrow(kneeCylinder, progressT) {
+  const t = Math.min(1, Math.max(0, progressT));
+  const grow = easeOutCubic(t);
+  const length = KNEE_CYLINDER_HEIGHT * grow;
+
+  kneeCylinder.tip.visible = true;
+  kneeCylinder.tip.position.y = KNEE_CYLINDER_TIP_Y;
+
+  kneeCylinder.mesh.visible = grow > 0.02;
+  kneeCylinder.mesh.scale.y = Math.max(grow, 0.001);
+  kneeCylinder.mesh.position.y = KNEE_CYLINDER_BASE_Y - length / 2;
+  kneeCylinder.growT = t;
+}
 
 function equipKneeCylinder(player) {
   if (!player?.group || player.kneeCylinder) return;
@@ -1370,20 +1388,29 @@ function equipKneeCylinder(player) {
     )),
     fleshMat
   );
-  mesh.position.y = -KNEE_CYLINDER_HEIGHT / 2 + KNEE_CYLINDER_MESH_LIFT;
   mesh.renderOrder = 2;
 
   const tip = new THREE.Mesh(
     regGeom(new THREE.SphereGeometry(KNEE_CYLINDER_TIP_RADIUS, 14, 12)),
     fleshMat
   );
-  tip.position.y = KNEE_CYLINDER_HEIGHT / 2;
   tip.renderOrder = 2;
-  mesh.add(tip);
 
   pivot.add(mesh);
+  pivot.add(tip);
   player.group.add(pivot);
-  player.kneeCylinder = { pivot, mesh, tip, geoms, materials };
+
+  const kneeCylinder = {
+    pivot,
+    mesh,
+    tip,
+    geoms,
+    materials,
+    growT: 0,
+    growing: true,
+  };
+  applyKneeCylinderGrow(kneeCylinder, 0);
+  player.kneeCylinder = kneeCylinder;
 }
 
 function removeKneeCylinder(player) {
@@ -1394,18 +1421,31 @@ function removeKneeCylinder(player) {
   player.kneeCylinder = null;
 }
 
+function updateKneeCylinderGrow(player, dt) {
+  const kc = player?.kneeCylinder;
+  if (!kc?.growing) return;
+  applyKneeCylinderGrow(kc, kc.growT + dt / KNEE_CYLINDER_GROW_DURATION);
+  if (kc.growT >= 1) kc.growing = false;
+}
+
 function toggleKneeCylinder(player) {
   if (!player) return;
   if (player.kneeCylinder) removeKneeCylinder(player);
   else equipKneeCylinder(player);
 }
 
-function syncRemoteKneeCylinder(player, show) {
+function syncRemoteKneeCylinder(player, show, growT = 0) {
   if (!player) return;
-  const visible = !!show;
-  if (!!player.kneeCylinder === visible) return;
-  if (visible) equipKneeCylinder(player);
-  else removeKneeCylinder(player);
+  if (!show) {
+    if (player.kneeCylinder) removeKneeCylinder(player);
+    return;
+  }
+  if (!player.kneeCylinder) equipKneeCylinder(player);
+  const t = Math.min(1, Math.max(0, growT));
+  if (t > player.kneeCylinder.growT) {
+    applyKneeCylinderGrow(player.kneeCylinder, t);
+    if (t >= 1) player.kneeCylinder.growing = false;
+  }
 }
 
 function getGroundTileAt(x, z, tileGrid, half) {
@@ -2093,6 +2133,7 @@ export default function NightWalkerCharacterWalk({
             remote.targetTrapCol = msg.player.trapCol ?? -1;
             remote.targetTrapElapsed = msg.player.trapElapsed ?? 0;
             remote.targetShowKneeCylinder = !!msg.player.showKneeCylinder;
+            remote.targetKneeCylinderGrowT = msg.player.kneeCylinderGrowT ?? 0;
           } else {
             ensureRemote(msg.player);
           }
@@ -2170,13 +2211,18 @@ export default function NightWalkerCharacterWalk({
       remote.targetTrapCol = playerData.trapCol ?? -1;
       remote.targetTrapElapsed = playerData.trapElapsed ?? 0;
       remote.targetShowKneeCylinder = !!playerData.showKneeCylinder;
+      remote.targetKneeCylinderGrowT = playerData.kneeCylinderGrowT ?? 0;
       remote.dance = null;
       remote.danceT = 0;
       if (remote.targetDance) {
         syncRemoteDance(remote, remote.targetDance);
         remote.danceT = remote.targetDanceT;
       }
-      syncRemoteKneeCylinder(remote, remote.targetShowKneeCylinder);
+      syncRemoteKneeCylinder(
+        remote,
+        remote.targetShowKneeCylinder,
+        remote.targetKneeCylinderGrowT
+      );
       remotes.set(playerData.id, remote);
     }
 
@@ -2223,6 +2269,7 @@ export default function NightWalkerCharacterWalk({
           trapCol,
           trapElapsed,
           showKneeCylinder: !!localPlayer?.kneeCylinder,
+          kneeCylinderGrowT: localPlayer?.kneeCylinder?.growT ?? 0,
         })
       );
     }
@@ -2437,7 +2484,12 @@ export default function NightWalkerCharacterWalk({
         }
 
         applyRemoteTrapVisual(groundTiles, remote);
-        syncRemoteKneeCylinder(remote, remote.targetShowKneeCylinder);
+        syncRemoteKneeCylinder(
+          remote,
+          remote.targetShowKneeCylinder,
+          remote.targetKneeCylinderGrowT
+        );
+        updateKneeCylinderGrow(remote, dt);
       };
 
       animateFn = () => {
@@ -2446,6 +2498,8 @@ export default function NightWalkerCharacterWalk({
         updateDiscoFloor(groundTiles, clock.getElapsedTime());
         const player = localPlayer.group;
         const { armRig, legRig } = localPlayer;
+
+        updateKneeCylinderGrow(localPlayer, dt);
 
         const wantsTerminal = terminalViewActiveRef.current;
         const terminalCameraActive = wantsTerminal || terminalZoomT > 0.001;
