@@ -1327,9 +1327,10 @@ function equipSpinCostume(player) {
   if (!player.fedora) player.fedora = buildMoonwalkFedora(player.head);
 }
 
-const KNEE_CYLINDER_Y = -1.55;
+const KNEE_CYLINDER_Y = -1.25;
+const KNEE_CYLINDER_Z = 0.32;
 const KNEE_CYLINDER_HEIGHT = 1.84;
-const KNEE_CYLINDER_MESH_LIFT = 0.72;
+const KNEE_CYLINDER_MESH_LIFT = 0.95;
 const KNEE_CYLINDER_TILT_X = 0.82;
 
 function equipKneeCylinder(player) {
@@ -1347,7 +1348,7 @@ function equipKneeCylinder(player) {
   };
 
   const pivot = new THREE.Group();
-  pivot.position.set(0, KNEE_CYLINDER_Y, 0.05);
+  pivot.position.set(0, KNEE_CYLINDER_Y, KNEE_CYLINDER_Z);
   pivot.rotation.x = KNEE_CYLINDER_TILT_X;
 
   const mesh = new THREE.Mesh(
