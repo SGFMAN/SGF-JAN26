@@ -2269,6 +2269,7 @@ export default function NightWalkerCharacterWalk({
     let spinOrigin = { x: 0, z: 0, ry: 0 };
     let sillyStringPulse = 0;
     let sillyStringSpawnTimer = 0;
+    let trapPhase = "idle";
     let trapStandTimer = 0;
     let trapStandTileKey = null;
     let trapFallTimer = 0;
@@ -2614,6 +2615,9 @@ export default function NightWalkerCharacterWalk({
         updateKneeCylinderGrow(localPlayer, dt);
         updateSillyStrings(scene, dt);
 
+        const wantsTerminal = terminalViewActiveRef.current;
+        const terminalCameraActive = wantsTerminal || terminalZoomT > 0.001;
+
         const canSpraySillyString =
           !terminalCameraActive &&
           !doorwayTransitioning &&
@@ -2633,8 +2637,6 @@ export default function NightWalkerCharacterWalk({
           sillyStringSpawnTimer = 0;
         }
 
-        const wantsTerminal = terminalViewActiveRef.current;
-        const terminalCameraActive = wantsTerminal || terminalZoomT > 0.001;
         const trapActive = trapPhase !== "idle";
         const gameplayLocked =
           doorwayTransitioning || doorwayFadeT > 0 || moonwalkActive || spinActive || trapActive;
