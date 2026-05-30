@@ -1331,6 +1331,8 @@ const KNEE_CYLINDER_Y = -0.35;
 const KNEE_CYLINDER_Z = 0.59;
 const KNEE_CYLINDER_HEIGHT = 1.84;
 const KNEE_CYLINDER_MESH_LIFT = 1.64;
+const KNEE_CYLINDER_RADIUS = 0.19;
+const KNEE_CYLINDER_TIP_RADIUS = 0.2;
 const KNEE_CYLINDER_TILT_X = 0.82;
 
 function equipKneeCylinder(player) {
@@ -1347,25 +1349,41 @@ function equipKneeCylinder(player) {
     return m;
   };
 
+  const fleshMat = regMat({
+    color: FLESH_SKIN_COLOR,
+    emissive: FLESH_SKIN_EMISSIVE,
+    emissiveIntensity: FLESH_SKIN_EMISSIVE_INTENSITY,
+    roughness: FLESH_SKIN_ROUGHNESS,
+    metalness: 0.02,
+  });
+
   const pivot = new THREE.Group();
   pivot.position.set(0, KNEE_CYLINDER_Y, KNEE_CYLINDER_Z);
   pivot.rotation.x = KNEE_CYLINDER_TILT_X;
 
   const mesh = new THREE.Mesh(
-    regGeom(new THREE.CylinderGeometry(0.19, 0.19, KNEE_CYLINDER_HEIGHT, 14)),
-    regMat({
-      color: FLESH_SKIN_COLOR,
-      emissive: FLESH_SKIN_EMISSIVE,
-      emissiveIntensity: FLESH_SKIN_EMISSIVE_INTENSITY,
-      roughness: FLESH_SKIN_ROUGHNESS,
-      metalness: 0.02,
-    })
+    regGeom(new THREE.CylinderGeometry(
+      KNEE_CYLINDER_RADIUS,
+      KNEE_CYLINDER_RADIUS,
+      KNEE_CYLINDER_HEIGHT,
+      14
+    )),
+    fleshMat
   );
   mesh.position.y = -KNEE_CYLINDER_HEIGHT / 2 + KNEE_CYLINDER_MESH_LIFT;
   mesh.renderOrder = 2;
+
+  const tip = new THREE.Mesh(
+    regGeom(new THREE.SphereGeometry(KNEE_CYLINDER_TIP_RADIUS, 14, 12)),
+    fleshMat
+  );
+  tip.position.y = -KNEE_CYLINDER_HEIGHT / 2;
+  tip.renderOrder = 2;
+  mesh.add(tip);
+
   pivot.add(mesh);
   player.group.add(pivot);
-  player.kneeCylinder = { pivot, mesh, geoms, materials };
+  player.kneeCylinder = { pivot, mesh, tip, geoms, materials };
 }
 
 function removeKneeCylinder(player) {
