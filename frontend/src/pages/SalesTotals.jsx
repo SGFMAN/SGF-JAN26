@@ -1,33 +1,27 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import logo from "../images/logo.png";
+import { useEmailSendOverlay } from "../components/EmailSendOverlay";
+import SalesTotalsDashboard from "../components/SalesTotalsDashboard";
+import SalesMonthLists from "../components/SalesMonthLists";
+import { captureElementsToPdfBlob } from "../utils/captureElementPdf";
+import { filterProjectsForSalesMonth } from "../utils/salesMonths";
+import {
+  computeSalesTotalsData,
+  filterProjectsByYear,
+  formatSalesTotalsCurrency,
+  getCalendarYearProgressMeta,
+  getMonthsForPdfExport,
+  normalizeProjectYearToISO,
+} from "../utils/salesTotalsCompute";
+
+const SALES_TOTALS_EMAIL_FROM = "info@superiorgrannyflats.com.au";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
 const LIGHT_MONUMENT = "#42464d";
 const WHITE = "#fff";
 const API_URL = "";
-
-const STREAMS = [
-  "SGF - VIC",
-  "SGF - QLD",
-  "Dual Dwelling",
-  "ATA",
-  "Pumped On Property",
-  "Henderson",
-  "Create Cash Flow",
-  "Fresh Start Advisory",
-];
-
-// Green streams (for total calculation)
-const GREEN_STREAMS = [
-  "Dual Dwelling",
-  "ATA",
-  "Pumped On Property",
-  "Henderson",
-  "Create Cash Flow",
-  "Fresh Start Advisory",
-];
 
 // Stream color mapping (same as Sales page)
 const STREAM_COLORS = {
@@ -55,6 +49,20 @@ export default function SalesTotals() {
   const [stateJobsModalState, setStateJobsModalState] = useState(null);
   const todayISO = React.useMemo(() => new Date().toISOString().split("T")[0], []);
 
+  const pdfEmailBodyRef = useRef(null);
+  const pdfPageRefs = useRef([]);
+  const [pdfExportPages, setPdfExportPages] = useState(null);
+  const { runWithEmailOverlay } = useEmailSendOverlay();
+  const [pdfEmailModalOpen, setPdfEmailModalOpen] = useState(false);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [pdfSending, setPdfSending] = useState(false);
+  const [pdfEmailTo, setPdfEmailTo] = useState("");
+  const [pdfEmailFrom, setPdfEmailFrom] = useState(SALES_TOTALS_EMAIL_FROM);
+  const [pdfEmailSubject, setPdfEmailSubject] = useState("");
+  const [pdfEmailBody, setPdfEmailBody] = useState("");
+  const [pdfAttachmentBlob, setPdfAttachmentBlob] = useState(null);
+  const [pdfAttachmentFilename, setPdfAttachmentFilename] = useState("");
+
   useEffect(() => {
     if (!stateJobsModalState) return;
     const previousOverflow = document.body.style.overflow;
@@ -63,6 +71,22 @@ export default function SalesTotals() {
       document.body.style.overflow = previousOverflow;
     };
   }, [stateJobsModalState]);
+
+  useEffect(() => {
+    if (!pdfEmailModalOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [pdfEmailModalOpen]);
+
+  useEffect(() => {
+    if (!pdfEmailModalOpen || !pdfEmailBodyRef.current) return;
+    if (pdfEmailBodyRef.current.innerHTML !== pdfEmailBody) {
+      pdfEmailBodyRef.current.innerHTML = pdfEmailBody || "";
+    }
+  }, [pdfEmailModalOpen, pdfEmailBody]);
 
   useEffect(() => {
     if (!stateJobsModalState) return;
@@ -140,353 +164,21 @@ export default function SalesTotals() {
     return Array.from(years).sort((a, b) => b.localeCompare(a));
   }, [projects]);
 
-  // Filter projects by selected year (all months)
-  const yearFilteredProjects = React.useMemo(() => {
-    return projects.filter((project) => {
-      if (!project.year) return false;
-      const projectYear = project.year.toString().trim();
-      
-      // Check if it's YYYY-MM-DD format
-      if (projectYear.includes("-")) {
-        const parts = projectYear.split("-");
-        if (parts.length >= 1) {
-          const year = parts[0].trim();
-          return year === selectedYear;
-        }
-      }
-      // Check if it's MM/DD/YYYY format
-      else if (projectYear.includes("/")) {
-        const parts = projectYear.split("/");
-        if (parts.length === 3) {
-          const year = parts[2].trim();
-          return year === selectedYear;
-        }
-      }
-      // If it's just YYYY
-      else if (/^\d{4}$/.test(projectYear)) {
-        return projectYear === selectedYear;
-      }
-      
-      return false;
-    });
-  }, [projects, selectedYear]);
-
-  // Calculate totals for each stream - excluding Home Office / Studio
-  const streamTotals = React.useMemo(() => {
-    const totals = {};
-    
-    STREAMS.forEach((stream) => {
-      const streamProjects = yearFilteredProjects.filter((project) => {
-        // Exclude Home Office / Studio projects
-        if (project.classification === "Home Office / Studio") {
-          return false;
-        }
-        
-        const projectStream = (project.stream || "").trim();
-        const streamNormalized = stream.trim();
-        
-        // Handle stream name variations (same as Sales page)
-        if (streamNormalized === "Pumped On Property") {
-          return projectStream === "Pumped On Property" || 
-                 projectStream === "Pumped on Property" ||
-                 projectStream.toLowerCase() === "pumped on property";
-        }
-        if (streamNormalized === "Create Cash Flow") {
-          return projectStream === "Create Cash Flow" || 
-                 projectStream === "Creat Cash Flow" ||
-                 projectStream.toLowerCase() === "create cash flow";
-        }
-        // Exact match first
-        if (projectStream === streamNormalized) {
-          return true;
-        }
-        // Case-insensitive match as fallback
-        return projectStream.toLowerCase() === streamNormalized.toLowerCase();
-      });
-      
-      const salesCount = streamProjects.length;
-      const totalCost = streamProjects.reduce((sum, project) => {
-        if (project?.project_cost) {
-          const cost = parseInt(project.project_cost.toString().replace(/[^0-9]/g, "") || 0);
-          return sum + cost;
-        }
-        return sum;
-      }, 0);
-      
-      totals[stream] = {
-        salesCount,
-        totalCost,
-      };
-    });
-    
-    return totals;
-  }, [yearFilteredProjects]);
-
-  // Calculate green streams total
-  const greenStreamsTotal = React.useMemo(() => {
-    let totalSales = 0;
-    let totalCost = 0;
-    
-    GREEN_STREAMS.forEach((stream) => {
-      const totals = streamTotals[stream] || { salesCount: 0, totalCost: 0 };
-      totalSales += totals.salesCount;
-      totalCost += totals.totalCost;
-    });
-    
-    return { salesCount: totalSales, totalCost };
-  }, [streamTotals]);
-
-  // Calculate green streams VIC/QLD breakdown
-  const greenStreamsStateBreakdown = React.useMemo(() => {
-    const greenStreamProjects = yearFilteredProjects.filter((project) => {
-      // Exclude Home Office / Studio projects
-      if (project.classification === "Home Office / Studio") {
-        return false;
-      }
-      
-      const projectStream = (project.stream || "").trim();
-      return GREEN_STREAMS.some((stream) => {
-        const streamNormalized = stream.trim();
-        // Handle stream name variations
-        if (streamNormalized === "Pumped On Property") {
-          return projectStream === "Pumped On Property" || 
-                 projectStream === "Pumped on Property" ||
-                 projectStream.toLowerCase() === "pumped on property";
-        }
-        if (streamNormalized === "Create Cash Flow") {
-          return projectStream === "Create Cash Flow" || 
-                 projectStream === "Creat Cash Flow" ||
-                 projectStream.toLowerCase() === "create cash flow";
-        }
-        // Exact match first
-        if (projectStream === streamNormalized) {
-          return true;
-        }
-        // Case-insensitive match as fallback
-        return projectStream.toLowerCase() === streamNormalized.toLowerCase();
-      });
-    });
-    
-    const vicCount = greenStreamProjects.filter((project) => {
-      const state = (project.state || "").trim().toUpperCase();
-      return state === "VIC" || state === "VICTORIA";
-    }).length;
-    
-    const qldCount = greenStreamProjects.filter((project) => {
-      const state = (project.state || "").trim().toUpperCase();
-      return state === "QLD" || state === "QUEENSLAND";
-    }).length;
-    
-    return { vic: vicCount, qld: qldCount };
-  }, [yearFilteredProjects]);
-
-  // Calculate Home Office / Studio total
-  const homeOfficeStudioTotal = React.useMemo(() => {
-    const homeOfficeProjects = yearFilteredProjects.filter((project) => {
-      const classification = (project.classification || "").trim();
-      return classification === "Home Office / Studio";
-    });
-    
-    const salesCount = homeOfficeProjects.length;
-    const totalCost = homeOfficeProjects.reduce((sum, project) => {
-      if (project?.project_cost) {
-        const cost = parseInt(project.project_cost.toString().replace(/[^0-9]/g, "") || 0);
-        return sum + cost;
-      }
-      return sum;
-    }, 0);
-    
-    return { salesCount, totalCost };
-  }, [yearFilteredProjects]);
-
-  // Debug: Log stream matching
-  React.useEffect(() => {
-    const allStreams = new Set();
-    yearFilteredProjects.forEach((project) => {
-      if (project.stream) {
-        allStreams.add(project.stream);
-      }
-    });
-    console.log("All unique streams in filtered projects:", Array.from(allStreams));
-    console.log("Stream totals:", streamTotals);
-  }, [yearFilteredProjects, streamTotals]);
-
-  // Calculate state-based totals (VIC and QLD) - excluding Home Office / Studio
-  const stateTotals = React.useMemo(() => {
-    const vicProjects = yearFilteredProjects.filter((project) => {
-      // Exclude Home Office / Studio projects
-      if (project.classification === "Home Office / Studio") {
-        return false;
-      }
-      const state = (project.state || "").trim().toUpperCase();
-      return state === "VIC" || state === "VICTORIA";
-    });
-    
-    const qldProjects = yearFilteredProjects.filter((project) => {
-      // Exclude Home Office / Studio projects
-      if (project.classification === "Home Office / Studio") {
-        return false;
-      }
-      const state = (project.state || "").trim().toUpperCase();
-      return state === "QLD" || state === "QUEENSLAND";
-    });
-    
-    const vicSales = vicProjects.length;
-    const vicCost = vicProjects.reduce((sum, project) => {
-      if (project?.project_cost) {
-        const cost = parseInt(project.project_cost.toString().replace(/[^0-9]/g, "") || 0);
-        return sum + cost;
-      }
-      return sum;
-    }, 0);
-    const vicAverage = vicSales > 0 ? Math.round(vicCost / vicSales) : 0;
-    
-    const qldSales = qldProjects.length;
-    const qldCost = qldProjects.reduce((sum, project) => {
-      if (project?.project_cost) {
-        const cost = parseInt(project.project_cost.toString().replace(/[^0-9]/g, "") || 0);
-        return sum + cost;
-      }
-      return sum;
-    }, 0);
-    const qldAverage = qldSales > 0 ? Math.round(qldCost / qldSales) : 0;
-    
-    return {
-      VIC: { salesCount: vicSales, totalCost: vicCost, averagePrice: vicAverage },
-      QLD: { salesCount: qldSales, totalCost: qldCost, averagePrice: qldAverage },
-    };
-  }, [yearFilteredProjects]);
-
-  // Calculate grand totals
-  const grandTotal = React.useMemo(() => {
-    const totalSales = Object.values(streamTotals).reduce((sum, stream) => sum + stream.salesCount, 0);
-    const totalCost = Object.values(streamTotals).reduce((sum, stream) => sum + stream.totalCost, 0);
-    return { totalSales, totalCost };
-  }, [streamTotals]);
-
-  // Format number with commas
-  function formatCurrency(amount) {
-    if (!amount || amount === 0) return "$0";
-    return `$${amount.toLocaleString()}`;
-  }
-
-  const MS_PER_DAY = 86400000;
-
-  /**
-   * How far through the selected calendar year we are (Jan 1 .. today, inclusive of today),
-   * as a fraction and percentage. Uses actual days in year (365/366).
-   */
-  function getCalendarYearProgressMeta(yearStr) {
-    const yearNum = parseInt(String(yearStr).trim(), 10);
-    if (!Number.isFinite(yearNum)) return null;
-
-    const now = new Date();
-    const nowY = now.getFullYear();
-    const jan1 = new Date(yearNum, 0, 1);
-    jan1.setHours(0, 0, 0, 0);
-    const jan1NextYear = new Date(yearNum + 1, 0, 1);
-    jan1NextYear.setHours(0, 0, 0, 0);
-    const daysInYear = Math.round((jan1NextYear.getTime() - jan1.getTime()) / MS_PER_DAY);
-
-    if (yearNum < nowY) {
-      return {
-        daysInYear,
-        daysElapsed: daysInYear,
-        fraction: 1,
-        percentThrough: 100,
-        mode: "complete",
-      };
-    }
-    if (yearNum > nowY) {
-      return {
-        daysInYear,
-        daysElapsed: 0,
-        fraction: 0,
-        percentThrough: 0,
-        mode: "future",
-      };
-    }
-
-    const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const daysSinceJan1 = Math.floor((today0.getTime() - jan1.getTime()) / MS_PER_DAY);
-    const daysElapsed = Math.min(daysInYear, Math.max(1, daysSinceJan1 + 1));
-    const fraction = daysElapsed / daysInYear;
-    const percentThrough = Math.min(100, Math.round(fraction * 1000) / 10);
-    return {
-      daysInYear,
-      daysElapsed,
-      fraction,
-      percentThrough,
-      mode: "ytd",
-    };
-  }
+  const yearFilteredProjects = React.useMemo(
+    () => filterProjectsByYear(projects, selectedYear),
+    [projects, selectedYear]
+  );
 
   const calendarYearMeta = getCalendarYearProgressMeta(selectedYear);
-  const yearProgressFraction = calendarYearMeta
-    ? Math.max(calendarYearMeta.fraction, 1 / calendarYearMeta.daysInYear)
-    : 0;
 
-  function projectedEndOfYearForCost(totalCost) {
-    if (!calendarYearMeta || calendarYearMeta.mode === "future" || !(yearProgressFraction > 0)) {
-      return null;
-    }
-    const n = Number(totalCost) || 0;
-    return Math.round(n / yearProgressFraction);
-  }
+  const salesTotalsData = React.useMemo(
+    () => computeSalesTotalsData(yearFilteredProjects, calendarYearMeta),
+    [yearFilteredProjects, calendarYearMeta]
+  );
 
-  function projectedEndOfYearForCount(count) {
-    if (!calendarYearMeta || calendarYearMeta.mode === "future" || !(yearProgressFraction > 0)) {
-      return null;
-    }
-    const n = Number(count) || 0;
-    return Math.round(n / yearProgressFraction);
-  }
-
-  const projectedYearEndValue = projectedEndOfYearForCost(grandTotal.totalCost);
-  const projectedYearEndSales = projectedEndOfYearForCount(grandTotal.totalSales);
-
-  const projectedSgfVicValue = projectedEndOfYearForCost((streamTotals["SGF - VIC"] || { totalCost: 0 }).totalCost);
-  const projectedSgfQldValue = projectedEndOfYearForCost((streamTotals["SGF - QLD"] || { totalCost: 0 }).totalCost);
-  const projectedGreenStreamsValue = projectedEndOfYearForCost(greenStreamsTotal.totalCost);
-  const projectedVicStateValue = projectedEndOfYearForCost(stateTotals.VIC.totalCost);
-  const projectedQldStateValue = projectedEndOfYearForCost(stateTotals.QLD.totalCost);
+  const formatCurrency = formatSalesTotalsCurrency;
 
   const RANGE_START_ISO = "2026-01-01";
-
-  function normalizeProjectYearToISO(yearValue) {
-    if (!yearValue) return null;
-    const v = yearValue.toString().trim();
-    if (!v) return null;
-
-    // Already in YYYY-MM-DD
-    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-
-    // Legacy: YYYY only -> interpret as Jan 1st
-    if (/^\d{4}$/.test(v)) return `${v}-01-01`;
-
-    // Legacy: MM/DD/YYYY or DD/MM/YYYY
-    if (v.includes("/")) {
-      const parts = v.split("/").map((p) => p.trim());
-      if (parts.length === 3) {
-        const part1 = parts[0];
-        const part2 = parts[1];
-        const part3 = parts[2];
-
-        if (!/^\d{4}$/.test(part3)) return null;
-
-        // If part1 > 12 assume DD/MM/YYYY, else MM/DD/YYYY
-        const day = parseInt(part1, 10) > 12 ? part1 : part2;
-        const month = parseInt(part1, 10) > 12 ? part2 : part1;
-        const year = part3;
-
-        const dd = String(parseInt(day, 10)).padStart(2, "0");
-        const mm = String(parseInt(month, 10)).padStart(2, "0");
-        return `${year}-${mm}-${dd}`;
-      }
-    }
-
-    return null;
-  }
 
   function isHomeOfficeStudio(project) {
     return (project?.classification || "").trim() === "Home Office / Studio";
@@ -542,34 +234,117 @@ export default function SalesTotals() {
         ? qldJobs2026ToDate
         : [];
 
-  // Format stream name into 2 lines for consistent height
-  function formatStreamName(stream) {
-    const streamUpper = stream.toUpperCase();
-    switch (stream) {
-      case "SGF - VIC":
-        return { line1: "SGF - VIC", line2: " " };
-      case "SGF - QLD":
-        return { line1: "SGF - QLD", line2: " " };
-      case "Dual Dwelling":
-        return { line1: "DUAL", line2: "DWELLING" };
-      case "ATA":
-        return { line1: "ATA", line2: " " };
-      case "Pumped On Property":
-        return { line1: "PUMPED ON", line2: "PROPERTY" };
-      case "Henderson":
-        return { line1: "HENDERSON", line2: " " };
-      case "Create Cash Flow":
-        return { line1: "CREATE CASH", line2: "FLOW" };
-      case "Fresh Start Advisory":
-        return { line1: "FRESH START", line2: "ADVISORY" };
-      default:
-        // Fallback: split by space or use first part
-        const parts = streamUpper.split(" ");
-        if (parts.length >= 2) {
-          const mid = Math.ceil(parts.length / 2);
-          return { line1: parts.slice(0, mid).join(" "), line2: parts.slice(mid).join(" ") };
-        }
-        return { line1: streamUpper, line2: " " };
+  function closePdfEmailModal() {
+    setPdfEmailModalOpen(false);
+    setPdfAttachmentBlob(null);
+    setPdfAttachmentFilename("");
+  }
+
+  async function handleOpenPdfEmail() {
+    if (loading) {
+      alert("Please wait for sales totals to finish loading.");
+      return;
+    }
+    if (error) {
+      alert("Cannot export PDF while data failed to load.");
+      return;
+    }
+
+    const annualMeta = getCalendarYearProgressMeta(selectedYear);
+    const monthDefs = getMonthsForPdfExport(selectedYear);
+    const pages = [
+      {
+        key: "annual",
+        pageType: "totals",
+        title: "SALES TOTALS",
+        data: computeSalesTotalsData(yearFilteredProjects, annualMeta),
+      },
+      ...monthDefs.map((m) => ({
+        key: `month-${m.monthIndex}`,
+        pageType: "sales-list",
+        title: m.title,
+        monthProjects: filterProjectsForSalesMonth(projects, selectedYear, m.monthIndex, todayISO).filter(
+          (p) => (p.classification || "").trim() !== "Home Office / Studio"
+        ),
+      })),
+    ];
+
+    setPdfGenerating(true);
+    pdfPageRefs.current = [];
+    setPdfExportPages(pages);
+
+    try {
+      await new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      });
+
+      const elements = pages.map((_, i) => pdfPageRefs.current[i]).filter(Boolean);
+      if (elements.length !== pages.length) {
+        throw new Error("Could not render all PDF pages.");
+      }
+
+      const pdfBlob = await captureElementsToPdfBlob(elements);
+      const filename = `Sales-Totals-${selectedYear}.pdf`;
+      setPdfAttachmentBlob(pdfBlob);
+      setPdfAttachmentFilename(filename);
+      setPdfEmailFrom(SALES_TOTALS_EMAIL_FROM);
+      setPdfEmailSubject(`Sales Totals ${selectedYear}`);
+      setPdfEmailBody(`Please find attached the Sales Totals report for ${selectedYear}.`);
+      setPdfEmailTo("");
+      setPdfEmailModalOpen(true);
+    } catch (err) {
+      console.error("Sales totals PDF error:", err);
+      alert(err.message || "Failed to generate PDF.");
+    } finally {
+      setPdfExportPages(null);
+      setPdfGenerating(false);
+    }
+  }
+
+  async function handleSendPdfEmail() {
+    const toAddresses = pdfEmailTo
+      .split(",")
+      .map((a) => a.trim())
+      .filter((a) => a.length > 0);
+    if (toAddresses.length === 0) {
+      alert("Please enter at least one email address.");
+      return;
+    }
+    if (!pdfEmailFrom.trim()) {
+      alert("From address is required.");
+      return;
+    }
+    if (!pdfAttachmentBlob) {
+      alert("PDF attachment is missing. Close and try PDF again.");
+      return;
+    }
+    const bodyHtml = pdfEmailBodyRef.current?.innerHTML ?? pdfEmailBody;
+    const filename = pdfAttachmentFilename || `Sales-Totals-${selectedYear}.pdf`;
+
+    setPdfSending(true);
+    try {
+      await runWithEmailOverlay(async () => {
+        const form = new FormData();
+        form.append("to", toAddresses.join(","));
+        form.append("from", pdfEmailFrom.trim());
+        form.append("subject", pdfEmailSubject || "");
+        form.append("htmlBody", bodyHtml || "");
+        form.append("attachment", pdfAttachmentBlob, filename);
+
+        const res = await fetch(`${API_URL}/api/emails/send`, {
+          method: "POST",
+          body: form,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Send failed (${res.status})`);
+      });
+      alert("Email sent successfully.");
+      closePdfEmailModal();
+    } catch (err) {
+      console.error("Send sales totals PDF email error:", err);
+      alert(err.message || "Failed to send email.");
+    } finally {
+      setPdfSending(false);
     }
   }
 
@@ -701,6 +476,33 @@ export default function SalesTotals() {
               Analytics
             </Link>
           </div>
+
+          {/* PDF - Light Grey */}
+          <div style={{ background: "#e8e8ea", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+            <button
+              type="button"
+              onClick={handleOpenPdfEmail}
+              disabled={pdfGenerating || loading}
+              style={{
+                width: "100%",
+                background: "transparent",
+                color: "#404049",
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                letterSpacing: "0.5px",
+                cursor: pdfGenerating || loading ? "wait" : "pointer",
+                transition: "background 0.18s, color 0.15s",
+                lineHeight: "1.4",
+                opacity: pdfGenerating || loading ? 0.7 : 1,
+              }}
+            >
+              {pdfGenerating ? "Generating PDF…" : "PDF & Send"}
+            </button>
+          </div>
           
           <div style={{ flex: 1 }} />
           
@@ -752,734 +554,76 @@ export default function SalesTotals() {
             justifyContent: "space-between",
           }}
         >
-
           {loading && <p style={{ color: "#32323399" }}>Loading projects...</p>}
-          {error && (
-            <p style={{ color: "#cc3333" }}>
-              Error: {error}
-            </p>
-          )}
+          {error && <p style={{ color: "#cc3333" }}>Error: {error}</p>}
           {!loading && !error && (
-            <>
-              {/* Stream Totals Grid - 4 columns, 1 row */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr 1fr 1fr",
-                  gap: "16px",
-                }}
-              >
-                {/* Column 1: SGF - VIC */}
-                {(() => {
-                  const stream = "SGF - VIC";
-                  const totals = streamTotals[stream] || { salesCount: 0, totalCost: 0 };
-                  const colors = STREAM_COLORS[stream];
-                  const projected = projectedSgfVicValue;
-                  return (
-                    <div
-                      key={stream}
-                      style={{
-                        background: colors.lighter,
-                        borderRadius: "12px",
-                        padding: "16px",
-                        border: `2px solid ${colors.darker}`,
-                        boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                        display: "flex",
-                        flexDirection: "column",
-                      }}
-                    >
-                      <div
-                        style={{
-                          background: colors.darker,
-                          color: WHITE,
-                          padding: "10px 12px",
-                          borderRadius: "8px",
-                          marginBottom: "12px",
-                          textAlign: "center",
-                          fontWeight: 600,
-                          fontSize: "1.5rem",
-                          letterSpacing: "0.5px",
-                          display: "flex",
-                          flexDirection: "column",
-                          justifyContent: "center",
-                          minHeight: "40px",
-                          lineHeight: "1.2",
-                        }}
-                      >
-                        <div>{formatStreamName(stream).line1}</div>
-                        <div>{formatStreamName(stream).line2}</div>
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "8px",
-                          flex: 1,
-                          marginBottom: "12px",
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                            Sales Count
-                          </div>
-                          <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
-                            {totals.salesCount}
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ marginTop: "auto", borderTop: `1px solid ${colors.darker}`, paddingTop: "12px" }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "flex-end",
-                            gap: "10px",
-                          }}
-                        >
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                              Total Value
-                            </div>
-                            <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
-                              {formatCurrency(totals.totalCost)}
-                            </div>
-                          </div>
-                          <div style={{ textAlign: "right", flexShrink: 0 }}>
-                            <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                              Projected
-                            </div>
-                            <div style={{ fontSize: "1.15rem", fontWeight: 700, color: MONUMENT }}>
-                              {projected != null ? formatCurrency(projected) : "—"}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-                
-                {/* Column 2: SGF - QLD */}
-                {(() => {
-                  const stream = "SGF - QLD";
-                  const totals = streamTotals[stream] || { salesCount: 0, totalCost: 0 };
-                  const colors = STREAM_COLORS[stream];
-                  const projected = projectedSgfQldValue;
-                  return (
-                    <div
-                      key={stream}
-                      style={{
-                        background: colors.lighter,
-                        borderRadius: "12px",
-                        padding: "16px",
-                        border: `2px solid ${colors.darker}`,
-                        boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                        display: "flex",
-                        flexDirection: "column",
-                      }}
-                    >
-                      <div
-                        style={{
-                          background: colors.darker,
-                          color: WHITE,
-                          padding: "10px 12px",
-                          borderRadius: "8px",
-                          marginBottom: "12px",
-                          textAlign: "center",
-                          fontWeight: 600,
-                          fontSize: "1.5rem",
-                          letterSpacing: "0.5px",
-                          display: "flex",
-                          flexDirection: "column",
-                          justifyContent: "center",
-                          minHeight: "40px",
-                          lineHeight: "1.2",
-                        }}
-                      >
-                        <div>{formatStreamName(stream).line1}</div>
-                        <div>{formatStreamName(stream).line2}</div>
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "8px",
-                          flex: 1,
-                          marginBottom: "12px",
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                            Sales Count
-                          </div>
-                          <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
-                            {totals.salesCount}
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ marginTop: "auto", borderTop: `1px solid ${colors.darker}`, paddingTop: "12px" }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "flex-end",
-                            gap: "10px",
-                          }}
-                        >
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                              Total Value
-                            </div>
-                            <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
-                              {formatCurrency(totals.totalCost)}
-                            </div>
-                          </div>
-                          <div style={{ textAlign: "right", flexShrink: 0 }}>
-                            <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                              Projected
-                            </div>
-                            <div style={{ fontSize: "1.15rem", fontWeight: 700, color: MONUMENT }}>
-                              {projected != null ? formatCurrency(projected) : "—"}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-                
-                {/* Column 3: Green Streams Combined */}
-                <div
-                  style={{
-                    background: "#CEEAB0",
-                    borderRadius: "12px",
-                    padding: "16px",
-                    border: `2px solid #92D050`,
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                    display: "flex",
-                    flexDirection: "column",
-                  }}
-                >
-                  <div
-                    style={{
-                      background: "#92D050",
-                      color: WHITE,
-                      padding: "10px 12px",
-                      borderRadius: "8px",
-                      marginBottom: "12px",
-                      textAlign: "center",
-                      fontWeight: 600,
-                      fontSize: "1.5rem",
-                      letterSpacing: "0.5px",
-                      display: "flex",
-                      flexDirection: "column",
-                      justifyContent: "center",
-                      minHeight: "40px",
-                      lineHeight: "1.2",
-                    }}
-                  >
-                    <div>GREEN STREAMS</div>
-                    <div> </div>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "8px",
-                      flex: 1,
-                      marginBottom: "12px",
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", display: "flex", justifyContent: "space-between", gap: "8px" }}>
-                        <span style={{ flex: "1 1 auto", minWidth: 0 }}>Sales Count</span>
-                        <span style={{ flex: "0 0 auto", textAlign: "right", minWidth: "30px" }}>Sales</span>
-                        <span style={{ flex: "0 0 auto", textAlign: "right", minWidth: "80px" }}>VIC / QLD</span>
-                      </div>
-                      <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT, display: "flex", justifyContent: "space-between", gap: "8px" }}>
-                        <span style={{ flex: "1 1 auto", minWidth: 0 }}>{greenStreamsTotal.salesCount}</span>
-                        <span style={{ flex: "0 0 auto", textAlign: "right", minWidth: "30px" }}></span>
-                        <span style={{ flex: "0 0 auto", textAlign: "right", minWidth: "80px", fontSize: "1rem" }}>{greenStreamsStateBreakdown.vic} / {greenStreamsStateBreakdown.qld}</span>
-                      </div>
-                    </div>
-                    {GREEN_STREAMS.map((stream) => {
-                      const totals = streamTotals[stream] || { salesCount: 0, totalCost: 0 };
-                      return (
-                        <div
-                          key={stream}
-                          style={{
-                            fontSize: "0.9rem",
-                            color: MONUMENT,
-                            padding: "3px 0",
-                            lineHeight: "1.3",
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: "8px",
-                          }}
-                        >
-                          <span style={{ flex: "1 1 auto", minWidth: 0 }}>{stream}</span>
-                          <span style={{ flex: "0 0 auto", textAlign: "right", minWidth: "30px" }}>{totals.salesCount}</span>
-                          <span style={{ flex: "0 0 auto", textAlign: "right", minWidth: "80px" }}>{formatCurrency(totals.totalCost)}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div style={{ marginTop: "auto", borderTop: `1px solid #92D050`, paddingTop: "12px" }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "flex-end",
-                        gap: "10px",
-                      }}
-                    >
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                          Total Value
-                        </div>
-                        <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
-                          {formatCurrency(greenStreamsTotal.totalCost)}
-                        </div>
-                      </div>
-                      <div style={{ textAlign: "right", flexShrink: 0 }}>
-                        <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                          Projected
-                        </div>
-                        <div style={{ fontSize: "1.15rem", fontWeight: 700, color: MONUMENT }}>
-                          {projectedGreenStreamsValue != null ? formatCurrency(projectedGreenStreamsValue) : "—"}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Column 4: Home Office / Studio */}
-                <div
-                  style={{
-                    background: "#FFD4B3",
-                    borderRadius: "12px",
-                    padding: "16px",
-                    border: `2px solid #FF8C42`,
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                    display: "flex",
-                    flexDirection: "column",
-                  }}
-                >
-                  <div
-                    style={{
-                      background: "#FF8C42",
-                      color: WHITE,
-                      padding: "10px 12px",
-                      borderRadius: "8px",
-                      marginBottom: "12px",
-                      textAlign: "center",
-                      fontWeight: 600,
-                      fontSize: "1.5rem",
-                      letterSpacing: "0.5px",
-                      display: "flex",
-                      flexDirection: "column",
-                      justifyContent: "center",
-                      minHeight: "40px",
-                      lineHeight: "1.2",
-                    }}
-                  >
-                    <div>HOME OFFICE</div>
-                    <div> </div>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "8px",
-                      flex: 1,
-                      marginBottom: "12px",
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                        Sales Count
-                      </div>
-                      <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
-                        {homeOfficeStudioTotal.salesCount}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ marginTop: "auto", borderTop: `1px solid #FF8C42`, paddingTop: "12px" }}>
-                    <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>
-                      Total Value
-                    </div>
-                    <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
-                      {formatCurrency(homeOfficeStudioTotal.totalCost)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Grand Total Section - 3 Columns */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(3, 1fr)",
-                  gap: "16px",
-                  minWidth: 0,
-                }}
-              >
-                {/* Column 1: VIC Total */}
-                <div
-                  style={{
-                    background: MONUMENT,
-                    borderRadius: "12px",
-                    padding: "20px",
-                    border: `2px solid ${MONUMENT}`,
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                    cursor: "pointer",
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => openStateJobsModal("VIC")}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") openStateJobsModal("VIC");
-                  }}
-                >
-                  <div
-                    style={{
-                      background: "#4D93D9",
-                      color: WHITE,
-                      padding: "10px 12px",
-                      borderRadius: "8px",
-                      marginBottom: "16px",
-                      textAlign: "center",
-                      fontWeight: 600,
-                      fontSize: "0.85rem",
-                      letterSpacing: "0.5px",
-                    }}
-                  >
-                    VIC TOTAL
-                  </div>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-                      columnGap: "16px",
-                      rowGap: "12px",
-                      alignItems: "start",
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
-                        Total Sales
-                      </div>
-                      <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
-                        {stateTotals.VIC.salesCount}
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        borderLeft: "1px solid #4a4d55",
-                        paddingLeft: "14px",
-                        minWidth: 0,
-                      }}
-                    >
-                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>Average price</div>
-                      <div style={{ fontSize: "1.15rem", fontWeight: 600, color: WHITE, lineHeight: 1.35 }}>
-                        {formatCurrency(stateTotals.VIC.averagePrice)}
-                      </div>
-                      <span
-                        aria-hidden
-                        style={{
-                          display: "block",
-                          fontSize: "0.72rem",
-                          fontWeight: 500,
-                          color: "#a1a1a3",
-                          marginTop: "3px",
-                          lineHeight: 1.35,
-                          visibility: "hidden",
-                        }}
-                      >
-                        Day 000 of 000
-                      </span>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
-                        Total Value
-                      </div>
-                      <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
-                        {formatCurrency(stateTotals.VIC.totalCost)}
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        borderLeft: "1px solid #4a4d55",
-                        paddingLeft: "14px",
-                        minWidth: 0,
-                      }}
-                    >
-                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
-                        Projected year-end value
-                      </div>
-                      {!calendarYearMeta ? (
-                        <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 }}>—</div>
-                      ) : calendarYearMeta.mode === "future" ? (
-                        <div style={{ fontSize: "1rem", fontWeight: 600, color: WHITE, opacity: 0.85 }}>—</div>
-                      ) : (
-                        <>
-                          <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 }}>
-                            {projectedVicStateValue != null ? formatCurrency(projectedVicStateValue) : "—"}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Column 2: QLD Total */}
-                <div
-                  style={{
-                    background: MONUMENT,
-                    borderRadius: "12px",
-                    padding: "20px",
-                    border: `2px solid ${MONUMENT}`,
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                    alignSelf: "flex-start",
-                    cursor: "pointer",
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => openStateJobsModal("QLD")}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") openStateJobsModal("QLD");
-                  }}
-                >
-                  <div
-                    style={{
-                      background: "#D54358",
-                      color: WHITE,
-                      padding: "10px 12px",
-                      borderRadius: "8px",
-                      marginBottom: "16px",
-                      textAlign: "center",
-                      fontWeight: 600,
-                      fontSize: "0.85rem",
-                      letterSpacing: "0.5px",
-                    }}
-                  >
-                    QLD TOTAL
-                  </div>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-                      columnGap: "16px",
-                      rowGap: "12px",
-                      alignItems: "start",
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
-                        Total Sales
-                      </div>
-                      <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
-                        {stateTotals.QLD.salesCount}
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        borderLeft: "1px solid #4a4d55",
-                        paddingLeft: "14px",
-                        minWidth: 0,
-                      }}
-                    >
-                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>Average price</div>
-                      <div style={{ fontSize: "1.15rem", fontWeight: 600, color: WHITE, lineHeight: 1.35 }}>
-                        {formatCurrency(stateTotals.QLD.averagePrice)}
-                      </div>
-                      <span
-                        aria-hidden
-                        style={{
-                          display: "block",
-                          fontSize: "0.72rem",
-                          fontWeight: 500,
-                          color: "#a1a1a3",
-                          marginTop: "3px",
-                          lineHeight: 1.35,
-                          visibility: "hidden",
-                        }}
-                      >
-                        Day 000 of 000
-                      </span>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
-                        Total Value
-                      </div>
-                      <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
-                        {formatCurrency(stateTotals.QLD.totalCost)}
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        borderLeft: "1px solid #4a4d55",
-                        paddingLeft: "14px",
-                        minWidth: 0,
-                      }}
-                    >
-                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
-                        Projected year-end value
-                      </div>
-                      {!calendarYearMeta ? (
-                        <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 }}>—</div>
-                      ) : calendarYearMeta.mode === "future" ? (
-                        <div style={{ fontSize: "1rem", fontWeight: 600, color: WHITE, opacity: 0.85 }}>—</div>
-                      ) : (
-                        <>
-                          <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 }}>
-                            {projectedQldStateValue != null ? formatCurrency(projectedQldStateValue) : "—"}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Column 3: Grand Total */}
-                <div
-                  style={{
-                    background: MONUMENT,
-                    borderRadius: "12px",
-                    padding: "20px",
-                    border: `2px solid ${MONUMENT}`,
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                    alignSelf: "flex-start",
-                  }}
-                >
-                  <div
-                    style={{
-                      background:
-                        "linear-gradient(90deg, #4D93D9 0%, #2ca84a 28%, #e6c619 56%, #e85d04 100%)",
-                      color: WHITE,
-                      padding: "10px 12px",
-                      borderRadius: "8px",
-                      marginBottom: "16px",
-                      textAlign: "center",
-                      fontWeight: 600,
-                      fontSize: "0.85rem",
-                      letterSpacing: "0.5px",
-                      textShadow: "0 1px 2px rgba(0,0,0,0.35)",
-                    }}
-                  >
-                    GRAND TOTAL
-                  </div>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-                      columnGap: "16px",
-                      rowGap: "12px",
-                      alignItems: "start",
-                    }}
-                  >
-                    <div
-                      style={{
-                        paddingBottom: "4px",
-                        borderBottom: "1px solid #4a4d55",
-                        gridColumn: "1",
-                      }}
-                    >
-                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>Year</div>
-                      <div style={{ fontSize: "1.15rem", fontWeight: 600, color: WHITE, lineHeight: 1.35 }}>
-                        {selectedYear}
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        paddingBottom: "4px",
-                        borderBottom: "1px solid #4a4d55",
-                        paddingLeft: "14px",
-                        borderLeft: "1px solid #4a4d55",
-                        gridColumn: "2",
-                        minWidth: 0,
-                      }}
-                    >
-                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>Progress</div>
-                      {!calendarYearMeta ? (
-                        <div style={{ fontSize: "1.15rem", fontWeight: 600, color: WHITE, opacity: 0.85 }}>—</div>
-                      ) : calendarYearMeta.mode === "future" ? (
-                        <div style={{ fontSize: "1rem", fontWeight: 600, color: WHITE, opacity: 0.85 }}>Not started</div>
-                      ) : (
-                        <div style={{ fontSize: "1.15rem", fontWeight: 600, color: WHITE, lineHeight: 1.35 }}>
-                          {calendarYearMeta.percentThrough}%
-                          <span
-                            style={{
-                              display: "block",
-                              fontSize: "0.72rem",
-                              fontWeight: 500,
-                              color: "#a1a1a3",
-                              marginTop: "3px",
-                            }}
-                          >
-                            Day {calendarYearMeta.daysElapsed} of {calendarYearMeta.daysInYear}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>Total Sales</div>
-                      <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>{grandTotal.totalSales}</div>
-                    </div>
-                    <div
-                      style={{
-                        borderLeft: "1px solid #4a4d55",
-                        paddingLeft: "14px",
-                        minWidth: 0,
-                      }}
-                    >
-                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
-                        Projected Sales
-                      </div>
-                      {!calendarYearMeta || calendarYearMeta.mode === "future" ? (
-                        <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2, opacity: 0.85 }}>
-                          —
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 }}>
-                          {projectedYearEndSales != null ? projectedYearEndSales : "—"}
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>Total Value</div>
-                      <div style={{ fontSize: "1.5rem", fontWeight: 700, color: WHITE }}>
-                        {formatCurrency(grandTotal.totalCost)}
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        borderLeft: "1px solid #4a4d55",
-                        paddingLeft: "14px",
-                        minWidth: 0,
-                      }}
-                    >
-                      <div style={{ fontSize: "0.8rem", color: "#a1a1a3", marginBottom: "4px" }}>
-                        Projected Value
-                      </div>
-                      {!calendarYearMeta || calendarYearMeta.mode === "future" ? (
-                        <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2, opacity: 0.85 }}>
-                          —
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 }}>
-                          {projectedYearEndValue != null ? formatCurrency(projectedYearEndValue) : "—"}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
+            <SalesTotalsDashboard
+              data={salesTotalsData}
+              selectedYear={selectedYear}
+              streamColors={STREAM_COLORS}
+              onStateClick={openStateJobsModal}
+            />
           )}
         </div>
       </div>
+
+      {/* Hidden off-screen pages for PDF export (annual + each month YTD) */}
+      {pdfExportPages && (
+        <div
+          aria-hidden
+          style={{
+            position: "fixed",
+            left: "-12000px",
+            top: 0,
+            width: "1100px",
+            zIndex: -1,
+            pointerEvents: "none",
+          }}
+        >
+          {pdfExportPages.map((page, index) => (
+            <div
+              key={page.key}
+              ref={(el) => {
+                if (el) pdfPageRefs.current[index] = el;
+              }}
+              style={{
+                background: SECTION_GREY,
+                padding: "24px 32px",
+                marginBottom: "24px",
+                width: "1100px",
+                boxSizing: "border-box",
+              }}
+            >
+              {page.pageType === "totals" ? (
+                <>
+                  <h2
+                    style={{
+                      margin: "0 0 16px 0",
+                      fontSize: "1.6rem",
+                      fontWeight: 700,
+                      color: MONUMENT,
+                      letterSpacing: "0.5px",
+                    }}
+                  >
+                    {page.title}
+                    <span style={{ fontWeight: 500, fontSize: "1.1rem", marginLeft: "12px" }}>{selectedYear}</span>
+                  </h2>
+                  <SalesTotalsDashboard
+                    data={page.data}
+                    selectedYear={selectedYear}
+                    streamColors={STREAM_COLORS}
+                  />
+                </>
+              ) : (
+                <SalesMonthLists
+                  pageTitle={`${page.title} — ${selectedYear}`}
+                  monthFilteredProjects={page.monthProjects}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* State jobs modal (2026 to date) */}
       {stateJobsModalState && (
@@ -1587,6 +731,205 @@ export default function SalesTotals() {
                   </tbody>
                 </table>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PDF email modal */}
+      {pdfEmailModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 3000,
+            padding: "16px",
+            pointerEvents: "auto",
+          }}
+          onClick={closePdfEmailModal}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              width: "90%",
+              maxWidth: "800px",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.25)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Send Sales Totals PDF</h2>
+              <button
+                type="button"
+                onClick={closePdfEmailModal}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "1.5rem",
+                  cursor: "pointer",
+                  color: MONUMENT,
+                  padding: 0,
+                  width: 30,
+                  height: 30,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div
+                style={{
+                  fontSize: "0.9rem",
+                  color: MONUMENT,
+                  background: "#f5f5f5",
+                  borderRadius: "8px",
+                  padding: "10px 12px",
+                }}
+              >
+                Attachment: <strong>{pdfAttachmentFilename || `Sales-Totals-${selectedYear}.pdf`}</strong>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  To (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={pdfEmailTo}
+                  onChange={(e) => setPdfEmailTo(e.target.value)}
+                  placeholder="recipient@example.com"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  From
+                </label>
+                <input
+                  type="text"
+                  value={pdfEmailFrom}
+                  onChange={(e) => setPdfEmailFrom(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  Subject
+                </label>
+                <input
+                  type="text"
+                  value={pdfEmailSubject}
+                  onChange={(e) => setPdfEmailSubject(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  Body
+                </label>
+                <div
+                  ref={pdfEmailBodyRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onInput={(e) => setPdfEmailBody(e.currentTarget.innerHTML)}
+                  onBlur={(e) => setPdfEmailBody(e.currentTarget.innerHTML)}
+                  style={{
+                    width: "100%",
+                    minHeight: "220px",
+                    padding: "12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "0.95rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                    lineHeight: 1.6,
+                    outline: "none",
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
+                <button
+                  type="button"
+                  onClick={closePdfEmailModal}
+                  disabled={pdfSending}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    color: MONUMENT,
+                    background: "transparent",
+                    border: `1px solid ${SECTION_GREY}`,
+                    borderRadius: "8px",
+                    cursor: pdfSending ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSendPdfEmail}
+                  disabled={pdfSending}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    color: WHITE,
+                    background: MONUMENT,
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: pdfSending ? "not-allowed" : "pointer",
+                    opacity: pdfSending ? 0.85 : 1,
+                  }}
+                >
+                  {pdfSending ? "Sending…" : "Send Email"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

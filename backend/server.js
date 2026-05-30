@@ -3545,9 +3545,36 @@ async function addLogoToEmail(htmlBody, attachments = []) {
   }
 }
 
-// Send HTML email via SMTP
-app.post("/api/emails/send", async (req, res) => {
-  const { to, from, subject, htmlBody, projectId, attachments: rawAttachments } = req.body || {};
+// Multipart body for /api/emails/send (JSON is parsed by global middleware above)
+function parseEmailSendRequest(req, res, next) {
+  const contentType = (req.get("content-type") || "").toLowerCase();
+  if (contentType.includes("multipart/form-data")) {
+    return upload.single("attachment")(req, res, next);
+  }
+  next();
+}
+
+// Send HTML email via SMTP (JSON or multipart with optional attachment file)
+app.post("/api/emails/send", parseEmailSendRequest, async (req, res) => {
+  let to;
+  let from;
+  let subject;
+  let htmlBody;
+  let projectId;
+  let rawAttachments;
+
+  if (req.file) {
+    const toRaw = String(req.body?.to || "").trim();
+    to = toRaw
+      .split(",")
+      .map((a) => a.trim())
+      .filter((a) => a.length > 0);
+    from = String(req.body?.from || "").trim();
+    subject = String(req.body?.subject || "");
+    htmlBody = String(req.body?.htmlBody || "");
+  } else {
+    ({ to, from, subject, htmlBody, projectId, attachments: rawAttachments } = req.body || {});
+  }
 
   if (!to || (Array.isArray(to) && to.length === 0)) {
     return res.status(400).json({ error: "To address is required" });
@@ -3646,6 +3673,14 @@ app.post("/api/emails/send", async (req, res) => {
           // Skip malformed attachment entries
         }
       }
+    }
+
+    if (req.file?.buffer?.length) {
+      attachments.push({
+        filename: req.file.originalname || "attachment.pdf",
+        content: req.file.buffer,
+        contentType: req.file.mimetype || "application/pdf",
+      });
     }
 
     const mailOptions = {
