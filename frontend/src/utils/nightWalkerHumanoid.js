@@ -168,13 +168,17 @@ export function createHumanoidRig({ skinColor, clothColor, darkClothColor, joint
     head,
     headTopOffsetY,
     headLampPivot,
+    skinMat,
+    jointMat,
+    clothMat,
+    darkClothMat,
   };
 }
 
 /** Night Walker hero palette (head-lamp character). */
 export const NIGHT_WALKER_HERO_COLORS = {
-  skinColor: "#e7be92",
+  skinColor: "#f5e0cc",
   clothColor: "#4f6bff",
   darkClothColor: "#2f3e7a",
-  jointColor: "#d9ab80",
+  jointColor: "#edd4bc",
 };

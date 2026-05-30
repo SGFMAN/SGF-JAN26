@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { createHumanoidRig, NIGHT_WALKER_HERO_COLORS } from "../utils/nightWalkerHumanoid";
 import { getSecretAreaWsUrl } from "../utils/secretAreaWs";
+import mjFaceUrl from "../images/MJ1.jpg";
 
 /** Playable square arena (metres). */
 const ARENA_SIZE_M = 50;
@@ -15,6 +16,8 @@ const WALL_THICKNESS_M = 0.65;
 const WALL_GREY = "#8a8a8e";
 const WALL_LABEL_TEXT = "Michael's House of Dance";
 const WELCOME_SIGN_TEXT = "All Children Welcome";
+const WELCOME_SIGN_BASE_EMISSIVE = 1.08;
+const WELCOME_SIGN_FLASH_SPEED = 5.2;
 const TERMINAL_DESK_SCALE = 2.5;
 const TERMINAL_INTERACT_RADIUS = 4.2;
 const TERMINAL_ZOOM_DURATION = 0.9;
@@ -45,6 +48,13 @@ const MOONWALK_SIDE_DISTANCE = 13;
 const MOONWALK_SIDE_HEIGHT = 6.2;
 const CHARACTER_SCALE = 0.5;
 const MOONWALK_CAPTION_HEAD_Y = 7.4 * CHARACTER_SCALE;
+const TRAP_STAND_DURATION = 5;
+const TRAP_TILE_FALL_DELAY = 1;
+const TRAP_TILE_DROP_SPEED = 10;
+const TRAP_PLAYER_DROP_SPEED = 18;
+const TRAP_PLAYER_FALL_DURATION = 1;
+const TRAP_RESET_HOLD = 1.5;
+const TRAP_MESSAGE = "Keep On Movin...!";
 const PLAYER_Y = 4.1 * CHARACTER_SCALE;
 const MOVE_SPEED = 7.5;
 const TURN_SPEED = 2.8;
@@ -53,8 +63,19 @@ const CAMERA_HEIGHT = 7 * CHARACTER_SCALE;
 const CAMERA_LOOK_Y = 2.3 * CHARACTER_SCALE;
 const STATE_SEND_INTERVAL_MS = 50;
 const PI2 = Math.PI * 2;
-const GROUND_GREEN = "#3a6b35";
-const GROUND_GREEN_DARK = "#2a4f26";
+const DISCO_TILE_LIGHT = "#f0f0f0";
+const DISCO_TILE_DARK = "#0c0c0c";
+const DISCO_FLOOR_SPEED = 2.6;
+const DANCE_FLOOR_BORDER_TILES = 2;
+const DANCE_FLOOR_SIZE = 6;
+const discoFloorColor = new THREE.Color();
+const discoFloorBase = new THREE.Color();
+
+function isDanceFloorTile(row, col) {
+  const min = DANCE_FLOOR_BORDER_TILES;
+  const max = min + DANCE_FLOOR_SIZE - 1;
+  return row >= min && row <= max && col >= min && col <= max;
+}
 
 /** Local XZ footprints (unscaled) for desk + tower + monitor. */
 const DESK_COLLISION_LOCAL = [
@@ -63,13 +84,21 @@ const DESK_COLLISION_LOCAL = [
   { cx: 0, cz: -0.12, hx: 0.32, hz: 0.14 },
 ];
 
+const FLESH_SKIN_COLOR = "#f5e0cc";
+const FLESH_JOINT_COLOR = "#edd4bc";
+
+const MOONWALK_JACKET_RED = "#ff0a0a";
+const MOONWALK_JACKET_EMISSIVE = "#ff2222";
+const MOONWALK_PANTS_BLACK = "#0a0a0a";
+const MOONWALK_SOCK_WHITE = "#f5f5f5";
+
 const SLOT_COLORS = [
   { ...NIGHT_WALKER_HERO_COLORS, withHeadLamp: false },
   {
-    skinColor: "#e7be92",
+    skinColor: FLESH_SKIN_COLOR,
     clothColor: "#43a047",
     darkClothColor: "#2e6b32",
-    jointColor: "#d9ab80",
+    jointColor: FLESH_JOINT_COLOR,
     withHeadLamp: false,
   },
 ];
@@ -124,6 +153,21 @@ function applyMoonwalkCycle(armRig, legRig, walkPhase) {
     legRig.left.foot.rotation.x = legRig.left.baseFootX + footRock;
     legRig.right.foot.rotation.x = legRig.right.baseFootX - footRock;
   }
+}
+
+const MOONWALK_HEAD_TURN_RADIANS = Math.PI / 2;
+
+function resetMoonwalkHeadRotation(head) {
+  if (!head) return;
+  head.rotation.set(0, 0, 0);
+}
+
+function applyMoonwalkHeadTurn(head, moonwalkTimer) {
+  if (!head) return;
+  const turnT = easeOutCubic(Math.min(1, moonwalkTimer / MOONWALK_DURATION));
+  head.rotation.y = MOONWALK_HEAD_TURN_RADIANS * turnT;
+  head.rotation.x = 0;
+  head.rotation.z = 0;
 }
 
 function resetPose(armRig, legRig) {
@@ -434,6 +478,10 @@ function addPlayerToScene(scene, slot) {
     slot,
     group: rig.group,
     head: rig.head,
+    skinMat: rig.skinMat,
+    jointMat: rig.jointMat,
+    clothMat: rig.clothMat,
+    darkClothMat: rig.darkClothMat,
     armRig: rig.armRig,
     legRig: rig.legRig,
     bodyMeshes: rig.bodyMeshes,
@@ -441,6 +489,8 @@ function addPlayerToScene(scene, slot) {
     fedora: null,
     dreads: null,
     jacket: null,
+    moonwalkLegAccents: null,
+    moonwalkFace: null,
     walkPhase: 0,
     moving: false,
     targetX: 0,
@@ -478,7 +528,7 @@ function buildMoonwalkFedora(head) {
   band.position.y = 0.36;
   group.add(band);
 
-  group.position.set(0, 0.5, 0.02);
+  group.position.set(0, 0.28, 0.02);
   group.rotation.x = -0.1;
   head.add(group);
 
@@ -498,39 +548,55 @@ function buildMoonwalkDreads(head) {
     return m;
   };
 
+  const headRadius = 0.58;
+  const surfaceR = headRadius + 0.045;
+
   const group = new THREE.Group();
   const dreadMat = regMat({ color: "#0a0a0a", roughness: 0.94, metalness: 0.04 });
   const strandGeom = regGeom(new THREE.CylinderGeometry(0.042, 0.034, 1.05, 8));
   const longStrandGeom = regGeom(new THREE.CylinderGeometry(0.046, 0.03, 1.55, 8));
 
-  group.position.set(0, 0.4, -0.04);
+  group.position.set(0, 0.38, 0);
 
-  for (let i = 0; i < 16; i += 1) {
-    const angle = (i / 16) * PI2;
-    const ringR = 0.34 + (i % 4) * 0.045;
+  const isOnFaceArc = (angle) => {
+    let delta = angle - Math.PI / 2;
+    while (delta > Math.PI) delta -= PI2;
+    while (delta < -Math.PI) delta += PI2;
+    return Math.abs(delta) <= Math.PI / 4 + 0.04;
+  };
+
+  const addStrand = (angle, seed, { lenScale = 1, yShift = 0 } = {}) => {
+    const ringR = surfaceR + (seed % 4) * 0.014;
     const x = Math.cos(angle) * ringR;
     const z = Math.sin(angle) * ringR;
-    const long = i % 3 === 0 || i % 5 === 0;
-    const len = long ? 1.55 : 1.05 + (i % 3) * 0.12;
-    const strand = new THREE.Mesh(long ? longStrandGeom : strandGeom, dreadMat);
-    strand.scale.y = len / (long ? 1.55 : 1.05);
-    strand.position.set(x, -len * 0.42 + 0.08, z);
-    strand.rotation.x = 0.12 + (i % 4) * 0.05;
+    const long = lenScale >= 1 && (seed % 3 === 0 || seed % 5 === 0);
+    const baseLen = long ? 1.55 : 1.05 + (seed % 3) * 0.12;
+    const len = baseLen * lenScale;
+    const useLongGeom = long && lenScale >= 1;
+    const strand = new THREE.Mesh(useLongGeom ? longStrandGeom : strandGeom, dreadMat);
+    strand.scale.y = len / (useLongGeom ? 1.55 : 1.05);
+    strand.position.set(x, -len * 0.38 + 0.14 + yShift, z);
+    strand.rotation.x = 0.12 + (seed % 4) * 0.05;
     strand.rotation.z = Math.sin(angle) * 0.12;
+    strand.renderOrder = 3;
     group.add(strand);
+  };
+
+  for (let i = 0; i < 52; i += 1) {
+    const angle = (i / 52) * PI2;
+    if (isOnFaceArc(angle)) continue;
+    addStrand(angle, i);
   }
 
-  for (let i = 0; i < 7; i += 1) {
-    const x = -0.36 + i * 0.12;
-    const len = 1.35 + (i % 3) * 0.2;
-    const strand = new THREE.Mesh(longStrandGeom, dreadMat);
-    strand.scale.y = len / 1.55;
-    strand.position.set(x, -len * 0.44 + 0.06, -0.36);
-    strand.rotation.x = 0.28;
-    strand.rotation.z = (i - 3) * 0.04;
-    group.add(strand);
+  for (let i = 0; i < 22; i += 1) {
+    const angle = (i / 22) * PI2 + 0.1;
+    if (isOnFaceArc(angle)) continue;
+    addStrand(angle, i + 60, { yShift: -0.06 });
   }
 
+  addStrand(Math.PI / 2, 100, { lenScale: 0.5 });
+
+  group.renderOrder = 3;
   head.add(group);
   return { group, geoms, materials };
 }
@@ -549,14 +615,19 @@ function buildMoonwalkJacket(bodyGroup) {
   };
 
   const group = new THREE.Group();
-  const jacketMat = regMat({ color: "#c62828", roughness: 0.7, metalness: 0.1 });
-  const darkMat = regMat({ color: "#7f1010", roughness: 0.75 });
+  const jacketMat = regMat({
+    color: MOONWALK_JACKET_RED,
+    emissive: MOONWALK_JACKET_EMISSIVE,
+    emissiveIntensity: 0.42,
+    roughness: 0.38,
+    metalness: 0.06,
+  });
 
   const torso = new THREE.Mesh(regGeom(new THREE.CylinderGeometry(0.67, 0.84, 2.9, 20)), jacketMat);
   torso.position.y = 1.62;
   group.add(torso);
 
-  const hem = new THREE.Mesh(regGeom(new THREE.CylinderGeometry(0.84, 0.86, 0.12, 20)), darkMat);
+  const hem = new THREE.Mesh(regGeom(new THREE.CylinderGeometry(0.84, 0.86, 0.12, 20)), jacketMat);
   hem.position.y = 0.22;
   group.add(hem);
 
@@ -566,19 +637,300 @@ function buildMoonwalkJacket(bodyGroup) {
     sleeve.rotation.z = sx * 0.38;
     group.add(sleeve);
 
-    const cuff = new THREE.Mesh(regGeom(new THREE.CylinderGeometry(0.175, 0.175, 0.1, 12)), darkMat);
+    const cuff = new THREE.Mesh(regGeom(new THREE.CylinderGeometry(0.175, 0.175, 0.1, 12)), jacketMat);
     cuff.position.set(0.95 * sx, 2.12, 0.04);
     cuff.rotation.z = sx * 0.38;
     group.add(cuff);
   }
 
-  const collar = new THREE.Mesh(regGeom(new THREE.TorusGeometry(0.34, 0.055, 8, 18)), darkMat);
+  const collar = new THREE.Mesh(regGeom(new THREE.TorusGeometry(0.34, 0.055, 8, 18)), jacketMat);
   collar.rotation.x = Math.PI / 2;
   collar.position.set(0, 3.06, 0.04);
   group.add(collar);
 
   bodyGroup.add(group);
   return { group, geoms, materials };
+}
+
+let mjFaceTextureCache = null;
+let mjFaceTextureAnisotropy = 16;
+
+function getMjFaceTexture() {
+  if (!mjFaceTextureCache) {
+    mjFaceTextureCache = new THREE.TextureLoader().load(mjFaceUrl);
+    mjFaceTextureCache.colorSpace = THREE.SRGBColorSpace;
+    applySharpTextureSettings(mjFaceTextureCache, mjFaceTextureAnisotropy);
+  }
+  return mjFaceTextureCache;
+}
+
+function applySharpTextureSettings(texture, anisotropy = mjFaceTextureAnisotropy) {
+  texture.anisotropy = anisotropy;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+}
+
+function configureMjFaceTexture(renderer) {
+  mjFaceTextureAnisotropy = renderer.capabilities.getMaxAnisotropy?.() ?? 16;
+  if (mjFaceTextureCache) {
+    applySharpTextureSettings(mjFaceTextureCache, mjFaceTextureAnisotropy);
+  }
+}
+
+function createMoonwalkFaceTexture() {
+  const texture = getMjFaceTexture().clone();
+  texture.repeat.set(0.86, 0.88);
+  texture.offset.set(0.07, 0.06);
+  applySharpTextureSettings(texture, mjFaceTextureAnisotropy);
+  return texture;
+}
+
+const MOONWALK_FACE_ARC = Math.PI / 2;
+const MOONWALK_FACE_ARC_START = -Math.PI / 4;
+const MOONWALK_SKIN_COLOR = FLESH_SKIN_COLOR;
+const MOONWALK_JOINT_COLOR = FLESH_JOINT_COLOR;
+const MOONWALK_SKIN_EMISSIVE = "#d0a080";
+
+function applyMoonwalkSkinTone(player) {
+  if (!player?.skinMat || !player?.jointMat) return;
+
+  if (!player.moonwalkSkinSnapshot) {
+    player.moonwalkSkinSnapshot = [
+      {
+        mat: player.skinMat,
+        color: player.skinMat.color.clone(),
+        roughness: player.skinMat.roughness,
+        emissive: player.skinMat.emissive.clone(),
+        emissiveIntensity: player.skinMat.emissiveIntensity,
+      },
+      {
+        mat: player.jointMat,
+        color: player.jointMat.color.clone(),
+        roughness: player.jointMat.roughness,
+        emissive: player.jointMat.emissive.clone(),
+        emissiveIntensity: player.jointMat.emissiveIntensity,
+      },
+    ];
+  }
+
+  player.skinMat.color.set(MOONWALK_SKIN_COLOR);
+  player.skinMat.emissive.set(MOONWALK_SKIN_EMISSIVE);
+  player.skinMat.emissiveIntensity = 0.16;
+  player.skinMat.roughness = 0.58;
+
+  player.jointMat.color.set(MOONWALK_JOINT_COLOR);
+  player.jointMat.emissive.set("#c09878");
+  player.jointMat.emissiveIntensity = 0.1;
+  player.jointMat.roughness = 0.6;
+}
+
+function restoreMoonwalkSkinTone(player) {
+  if (!player.moonwalkSkinSnapshot) return;
+  for (const entry of player.moonwalkSkinSnapshot) {
+    entry.mat.color.copy(entry.color);
+    entry.mat.roughness = entry.roughness;
+    entry.mat.emissive.copy(entry.emissive);
+    entry.mat.emissiveIntensity = entry.emissiveIntensity;
+  }
+  player.moonwalkSkinSnapshot = null;
+}
+
+function applyMoonwalkClothTone(player) {
+  if (!player?.clothMat) return;
+
+  if (!player.moonwalkClothSnapshot) {
+    player.moonwalkClothSnapshot = {
+      color: player.clothMat.color.clone(),
+      emissive: player.clothMat.emissive.clone(),
+      emissiveIntensity: player.clothMat.emissiveIntensity,
+      roughness: player.clothMat.roughness,
+    };
+  }
+
+  player.clothMat.color.set(MOONWALK_JACKET_RED);
+  player.clothMat.emissive.set(MOONWALK_JACKET_EMISSIVE);
+  player.clothMat.emissiveIntensity = 0.35;
+  player.clothMat.roughness = 0.4;
+}
+
+function restoreMoonwalkClothTone(player) {
+  if (!player.moonwalkClothSnapshot || !player.clothMat) return;
+  player.clothMat.color.copy(player.moonwalkClothSnapshot.color);
+  player.clothMat.emissive.copy(player.moonwalkClothSnapshot.emissive);
+  player.clothMat.emissiveIntensity = player.moonwalkClothSnapshot.emissiveIntensity;
+  player.clothMat.roughness = player.moonwalkClothSnapshot.roughness;
+  player.moonwalkClothSnapshot = null;
+}
+
+function applyMoonwalkPantsTone(player) {
+  if (!player?.darkClothMat) return;
+
+  if (!player.moonwalkPantsSnapshot) {
+    player.moonwalkPantsSnapshot = {
+      color: player.darkClothMat.color.clone(),
+      emissive: player.darkClothMat.emissive.clone(),
+      emissiveIntensity: player.darkClothMat.emissiveIntensity,
+      roughness: player.darkClothMat.roughness,
+      metalness: player.darkClothMat.metalness,
+    };
+  }
+
+  player.darkClothMat.color.set(MOONWALK_PANTS_BLACK);
+  player.darkClothMat.emissive.set("#000000");
+  player.darkClothMat.emissiveIntensity = 0;
+  player.darkClothMat.roughness = 0.78;
+  player.darkClothMat.metalness = 0.06;
+}
+
+function restoreMoonwalkPantsTone(player) {
+  if (!player.moonwalkPantsSnapshot || !player.darkClothMat) return;
+  player.darkClothMat.color.copy(player.moonwalkPantsSnapshot.color);
+  player.darkClothMat.emissive.copy(player.moonwalkPantsSnapshot.emissive);
+  player.darkClothMat.emissiveIntensity = player.moonwalkPantsSnapshot.emissiveIntensity;
+  player.darkClothMat.roughness = player.moonwalkPantsSnapshot.roughness;
+  player.darkClothMat.metalness = player.moonwalkPantsSnapshot.metalness;
+  player.moonwalkPantsSnapshot = null;
+}
+
+function buildMoonwalkLegAccents(legRig) {
+  const geoms = [];
+  const materials = [];
+  const footSnapshots = [];
+  const regGeom = (geometry) => {
+    geoms.push(geometry);
+    return geometry;
+  };
+  const regMat = (params) => {
+    const m = new THREE.MeshStandardMaterial(params);
+    materials.push(m);
+    return m;
+  };
+
+  const socks = [];
+  const sockMat = regMat({ color: MOONWALK_SOCK_WHITE, roughness: 0.72, metalness: 0.04 });
+  const sockGeom = regGeom(new THREE.CylinderGeometry(0.19, 0.21, 0.3, 12));
+  const shoeMat = regMat({
+    color: "#050505",
+    metalness: 0.92,
+    roughness: 0.08,
+    emissive: "#888888",
+    emissiveIntensity: 0.35,
+  });
+
+  for (const side of ["left", "right"]) {
+    const rig = legRig[side];
+    if (!rig?.lowerLegPivot || !rig?.foot) continue;
+
+    const sock = new THREE.Mesh(sockGeom, sockMat);
+    sock.position.set(0, -1.5, 0.1);
+    sock.rotation.x = 0.18;
+    rig.lowerLegPivot.add(sock);
+    socks.push(sock);
+
+    footSnapshots.push({ foot: rig.foot, material: rig.foot.material });
+    rig.foot.material = shoeMat;
+  }
+
+  return { geoms, materials, footSnapshots, socks };
+}
+
+function removeMoonwalkLegAccents(player) {
+  if (!player?.moonwalkLegAccents) return;
+  for (const sock of player.moonwalkLegAccents.socks || []) {
+    sock.parent?.remove(sock);
+  }
+  for (const snap of player.moonwalkLegAccents.footSnapshots) {
+    snap.foot.material = snap.material;
+  }
+  player.moonwalkLegAccents.geoms.forEach((g) => g.dispose());
+  player.moonwalkLegAccents.materials.forEach((m) => m.dispose());
+  player.moonwalkLegAccents = null;
+  restoreMoonwalkPantsTone(player);
+}
+
+function buildMoonwalkFace(head) {
+  const geoms = [];
+  const materials = [];
+  const regGeom = (geometry) => {
+    geoms.push(geometry);
+    return geometry;
+  };
+  const regMat = (params) => {
+    const m = new THREE.MeshStandardMaterial(params);
+    materials.push(m);
+    return m;
+  };
+
+  const savedHead = {
+    map: head.material.map,
+    emissiveMap: head.material.emissiveMap,
+    emissive: head.material.emissive.clone(),
+    emissiveIntensity: head.material.emissiveIntensity,
+    color: head.material.color.clone(),
+    roughness: head.material.roughness,
+    metalness: head.material.metalness,
+    scale: head.scale.clone(),
+    visible: head.visible,
+  };
+
+  head.material.map = null;
+  head.material.emissiveMap = null;
+  head.material.needsUpdate = true;
+  head.visible = true;
+
+  const faceGeom = regGeom(
+    new THREE.CylinderGeometry(
+      0.592,
+      0.592,
+      0.9,
+      48,
+      3,
+      true,
+      MOONWALK_FACE_ARC_START,
+      MOONWALK_FACE_ARC
+    )
+  );
+
+  const textures = [];
+  const texture = createMoonwalkFaceTexture();
+  textures.push(texture);
+
+  const faceMat = new THREE.MeshBasicMaterial({
+    map: texture,
+    toneMapped: true,
+  });
+  materials.push(faceMat);
+
+  const faceMesh = new THREE.Mesh(faceGeom, faceMat);
+  faceMesh.scale.set(1.05, 1.07, 1.05);
+  faceMesh.renderOrder = 1;
+  head.add(faceMesh);
+
+  return { group: faceMesh, geoms, materials, textures, savedHead };
+}
+
+function removeMoonwalkFace(player) {
+  if (!player?.moonwalkFace) return;
+  if (player.moonwalkFace.group) {
+    player.head.remove(player.moonwalkFace.group);
+  }
+  player.moonwalkFace.geoms.forEach((g) => g.dispose());
+  player.moonwalkFace.materials.forEach((m) => m.dispose());
+  player.moonwalkFace.textures?.forEach((t) => t.dispose());
+
+  restoreMoonwalkSkinTone(player);
+
+  player.head.visible = player.moonwalkFace.savedHead.visible;
+  player.head.material.map = player.moonwalkFace.savedHead.map;
+  player.head.material.emissiveMap = player.moonwalkFace.savedHead.emissiveMap;
+  player.head.material.emissive.copy(player.moonwalkFace.savedHead.emissive);
+  player.head.material.emissiveIntensity = player.moonwalkFace.savedHead.emissiveIntensity;
+  player.head.material.metalness = player.moonwalkFace.savedHead.metalness;
+  player.head.material.needsUpdate = true;
+  player.head.scale.copy(player.moonwalkFace.savedHead.scale);
+  player.moonwalkFace = null;
 }
 
 function removeMoonwalkFedora(player) {
@@ -609,44 +961,114 @@ function removeMoonwalkCostume(player) {
   removeMoonwalkFedora(player);
   removeMoonwalkDreads(player);
   removeMoonwalkJacket(player);
+  removeMoonwalkFace(player);
+  removeMoonwalkLegAccents(player);
+  restoreMoonwalkClothTone(player);
 }
 
 function equipMoonwalkCostume(player) {
   if (!player?.head || !player?.group) return;
+  if (!player.moonwalkFace) player.moonwalkFace = buildMoonwalkFace(player.head);
+  applyMoonwalkSkinTone(player);
+  applyMoonwalkClothTone(player);
+  applyMoonwalkPantsTone(player);
+  if (!player.moonwalkLegAccents) {
+    player.moonwalkLegAccents = buildMoonwalkLegAccents(player.legRig);
+  }
   if (!player.jacket) player.jacket = buildMoonwalkJacket(player.group);
   if (!player.dreads) player.dreads = buildMoonwalkDreads(player.head);
   if (!player.fedora) player.fedora = buildMoonwalkFedora(player.head);
+}
+
+function getGroundTileAt(x, z, tileGrid, half) {
+  if (Math.abs(x) > half || Math.abs(z) > half) return null;
+  const col = Math.floor((x + half) / GROUND_CELL_SIZE);
+  const row = Math.floor((z + half) / GROUND_CELL_SIZE);
+  if (row < 0 || row >= GROUND_TILE_COUNT || col < 0 || col >= GROUND_TILE_COUNT) return null;
+  return tileGrid[row][col];
+}
+
+function resetTrapTile(tile) {
+  if (!tile) return;
+  tile.mesh.position.y = tile.baseY;
+}
+
+function updateDiscoFloor(groundTiles, timeSec) {
+  if (!groundTiles?.tileGrid) return;
+
+  const cols = GROUND_TILE_COUNT;
+  const beat = timeSec * DISCO_FLOOR_SPEED;
+
+  for (let row = 0; row < cols; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const tile = groundTiles.tileGrid[row][col];
+      if (!tile?.isDanceFloor || !tile?.mat) continue;
+
+      const waveA = Math.sin(beat + row * 0.9 + col * 0.65);
+      const waveB = Math.sin(beat * 0.75 - col * 0.8 + row * 0.45);
+      const glow = Math.max(0, waveA * 0.55 + waveB * 0.45);
+      const lit = glow > 0.12;
+
+      const hue = ((row * 0.17 + col * 0.11 + timeSec * 0.14) % 1 + 1) % 1;
+      discoFloorColor.setHSL(hue, 0.92, lit ? 0.52 : 0.08);
+      discoFloorBase.set(tile.isLight ? DISCO_TILE_LIGHT : DISCO_TILE_DARK);
+
+      tile.mat.emissive.copy(discoFloorColor);
+      tile.mat.emissiveIntensity = lit ? 0.18 + glow * 0.82 : 0.025;
+      tile.mat.color.copy(discoFloorBase);
+      if (lit) {
+        tile.mat.color.lerp(discoFloorColor, glow * 0.5);
+      }
+    }
+  }
 }
 
 function buildCheckeredGround(scene) {
   const half = FLOOR_HALF_M;
   const cols = GROUND_TILE_COUNT;
   const tileGeom = new THREE.PlaneGeometry(GROUND_CELL_SIZE, GROUND_CELL_SIZE);
-  const matLight = new THREE.MeshStandardMaterial({
-    color: GROUND_GREEN,
-    roughness: 0.95,
-    metalness: 0.04,
+  const borderMatLight = new THREE.MeshStandardMaterial({
+    color: DISCO_TILE_LIGHT,
+    roughness: 0.16,
+    metalness: 0.42,
   });
-  const matDark = new THREE.MeshStandardMaterial({
-    color: GROUND_GREEN_DARK,
-    roughness: 0.95,
-    metalness: 0.04,
+  const borderMatDark = new THREE.MeshStandardMaterial({
+    color: DISCO_TILE_DARK,
+    roughness: 0.1,
+    metalness: 0.52,
   });
+  const tileMaterials = [];
   const group = new THREE.Group();
+  const tileGrid = [];
   for (let row = 0; row < cols; row += 1) {
+    tileGrid[row] = [];
     for (let col = 0; col < cols; col += 1) {
-      const tile = new THREE.Mesh(tileGeom, (row + col) % 2 === 0 ? matLight : matDark);
+      const isLight = (row + col) % 2 === 0;
+      const isDanceFloor = isDanceFloorTile(row, col);
+      let mat;
+      if (isDanceFloor) {
+        mat = new THREE.MeshStandardMaterial({
+          color: isLight ? DISCO_TILE_LIGHT : DISCO_TILE_DARK,
+          roughness: 0.12,
+          metalness: 0.48,
+          emissive: "#000000",
+          emissiveIntensity: 0,
+        });
+        tileMaterials.push(mat);
+      } else {
+        mat = isLight ? borderMatLight : borderMatDark;
+      }
+      const tile = new THREE.Mesh(tileGeom, mat);
       tile.rotation.x = -Math.PI / 2;
-      tile.position.set(
-        -half + col * GROUND_CELL_SIZE + GROUND_CELL_SIZE / 2,
-        0,
-        -half + row * GROUND_CELL_SIZE + GROUND_CELL_SIZE / 2
-      );
+      const tileX = -half + col * GROUND_CELL_SIZE + GROUND_CELL_SIZE / 2;
+      const tileZ = -half + row * GROUND_CELL_SIZE + GROUND_CELL_SIZE / 2;
+      tile.position.set(tileX, 0, tileZ);
+      tileGrid[row][col] = { row, col, mesh: tile, mat, isLight, isDanceFloor, baseY: 0 };
       group.add(tile);
     }
   }
   scene.add(group);
-  return { group, tileGeom, matLight, matDark };
+  return { group, tileGeom, tileGrid, half, tileMaterials, borderMatLight, borderMatDark };
 }
 
 function buildNeonSign(text, width, height, { fontSize = 118, emissiveIntensity = 0.95, color = "pink" } = {}) {
@@ -692,22 +1114,24 @@ function buildNeonSign(text, width, height, { fontSize = 118, emissiveIntensity 
   ctx.lineWidth = 2;
   ctx.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
 
-  ctx.font = `900 ${fontSize}px Impact, "Arial Black", sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
+  if (text) {
+    ctx.font = `900 ${fontSize}px Impact, "Arial Black", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
 
-  ctx.shadowColor = palette.shadow;
-  ctx.shadowBlur = 52;
-  ctx.fillStyle = palette.outer;
-  ctx.fillText(text, cx, cy);
+    ctx.shadowColor = palette.shadow;
+    ctx.shadowBlur = 52;
+    ctx.fillStyle = palette.outer;
+    ctx.fillText(text, cx, cy);
 
-  ctx.shadowBlur = 24;
-  ctx.fillStyle = palette.mid;
-  ctx.fillText(text, cx, cy);
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = palette.mid;
+    ctx.fillText(text, cx, cy);
 
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = palette.core;
-  ctx.fillText(text, cx, cy);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = palette.core;
+    ctx.fillText(text, cx, cy);
+  }
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -776,8 +1200,8 @@ function buildPerimeterWalls(scene) {
   const signH = 2.35;
   const signY = 5.4;
   const signInset = 0.1;
-  const addLabel = (x, y, z, rotY, signW) => {
-    const label = buildNeonSign(WALL_LABEL_TEXT, signW, signH);
+  const addLabel = (x, y, z, rotY, signW, text = WALL_LABEL_TEXT) => {
+    const label = buildNeonSign(text, signW, signH);
     label.mesh.position.set(x, y, z);
     label.mesh.rotation.y = rotY;
     group.add(label.mesh);
@@ -787,12 +1211,12 @@ function buildPerimeterWalls(scene) {
   addLabel(0, signY, FLOOR_HALF_M - signInset, Math.PI, span - 2);
   addLabel(0, signY, -FLOOR_HALF_M + signInset, 0, span - 2);
   addLabel(-FLOOR_HALF_M + signInset, signY, 0, Math.PI / 2, span - 2);
-  addLabel(FLOOR_HALF_M - signInset, signY, doorZ0 + eastSouthLen / 2, -Math.PI / 2, eastSouthLen - 1.5);
-  addLabel(FLOOR_HALF_M - signInset, signY, doorZ2 + eastNorthLen / 2, -Math.PI / 2, eastNorthLen - 1.5);
+  addLabel(FLOOR_HALF_M - signInset, signY, doorZ0 + eastSouthLen / 2, -Math.PI / 2, eastSouthLen - 1.5, "");
+  addLabel(FLOOR_HALF_M - signInset, signY, doorZ2 + eastNorthLen / 2, -Math.PI / 2, eastNorthLen - 1.5, "");
 
   const welcome = buildNeonSign(WELCOME_SIGN_TEXT, 21, 2.4, {
     fontSize: 102,
-    emissiveIntensity: 1.08,
+    emissiveIntensity: WELCOME_SIGN_BASE_EMISSIVE,
     color: "yellow",
   });
   welcome.mesh.position.set(0, 2.9, -FLOOR_HALF_M + signInset);
@@ -810,6 +1234,7 @@ function buildPerimeterWalls(scene) {
     eastLintelGeom,
     wallMat,
     labels,
+    welcomeSign: welcome,
   };
 }
 
@@ -879,7 +1304,13 @@ function buildSlidingGlassDoor(scene) {
   };
 
   const approachPadGeom = regGeom(new THREE.PlaneGeometry(DOOR_WIDTH + 6, OUTSIDE_WALK_M));
-  const approachPadMat = regMat({ color: GROUND_GREEN_DARK, roughness: 0.95, metalness: 0.04 });
+  const approachPadMat = regMat({
+    color: DISCO_TILE_DARK,
+    roughness: 0.1,
+    metalness: 0.52,
+    emissive: "#1a1a2a",
+    emissiveIntensity: 0.04,
+  });
   const approachPad = new THREE.Mesh(approachPadGeom, approachPadMat);
   approachPad.rotation.x = -Math.PI / 2;
   approachPad.position.set(0, 0.02, -OUTSIDE_WALK_M / 2);
@@ -1095,9 +1526,9 @@ export default function NightWalkerCharacterWalk({
 }) {
   const mountRef = useRef(null);
   const mountWrapRef = useRef(null);
-  const [moonwalkCaption, setMoonwalkCaption] = useState(null);
-  const setMoonwalkCaptionRef = useRef(setMoonwalkCaption);
-  setMoonwalkCaptionRef.current = setMoonwalkCaption;
+  const [speechBubble, setSpeechBubble] = useState(null);
+  const setSpeechBubbleRef = useRef(setSpeechBubble);
+  setSpeechBubbleRef.current = setSpeechBubble;
   const onRoomFullRef = useRef(onRoomFull);
   const onTerminalOpenRef = useRef(onTerminalOpen);
   const onTerminalFrameRef = useRef(onTerminalFrame);
@@ -1210,6 +1641,14 @@ export default function NightWalkerCharacterWalk({
     let moonwalkActive = false;
     let moonwalkTimer = 0;
     let moonwalkOrigin = { x: 0, z: 0, ry: 0 };
+    let trapPhase = "idle";
+    let trapStandTimer = 0;
+    let trapStandTileKey = null;
+    let trapFallTimer = 0;
+    let trapPlayerFallTimer = 0;
+    let trapResetTimer = 0;
+    let trapActiveTile = null;
+    let playerSpawn = { x: 0, z: 0, ry: 0 };
     let animateFn = null;
     const terminalWorldPos = new THREE.Vector3();
     const screenWorldPos = new THREE.Vector3();
@@ -1223,8 +1662,8 @@ export default function NightWalkerCharacterWalk({
     const blendedLookAt = new THREE.Vector3();
     const moonwalkSideCamPos = new THREE.Vector3();
     const moonwalkSideLookAt = new THREE.Vector3();
-    const moonwalkHeadWorld = new THREE.Vector3();
-    let lastMoonwalkCaptionKey = "";
+    const speechBubbleHeadWorld = new THREE.Vector3();
+    let lastSpeechBubbleKey = "";
     let terminalZoomT = 0;
     /** @type {{ x: number, z: number, ry: number } | null} */
     let terminalPlayerFreeze = null;
@@ -1267,6 +1706,7 @@ export default function NightWalkerCharacterWalk({
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.setSize(mountEl.clientWidth, mountEl.clientHeight);
       mountEl.appendChild(renderer.domElement);
+      configureMjFaceTexture(renderer);
 
       const camera = new THREE.PerspectiveCamera(
         60,
@@ -1311,6 +1751,7 @@ export default function NightWalkerCharacterWalk({
       }
       localPlayer.group.position.set(startX, PLAYER_Y, startZ);
       localPlayer.group.rotation.y = startRy;
+      playerSpawn = { x: startX, z: startZ, ry: startRy };
       if (spawnAtTerminalRef.current) {
         sendState(startX, startZ, startRy, false);
       }
@@ -1329,7 +1770,14 @@ export default function NightWalkerCharacterWalk({
       const keys = new Set();
       const onKeyDown = (e) => {
         const k = e.key.toLowerCase();
-        if (k === "m" && !moonwalkActive && !terminalViewActiveRef.current && !doorwayTransitioning && localPlayer) {
+        if (
+          k === "m" &&
+          trapPhase === "idle" &&
+          !moonwalkActive &&
+          !terminalViewActiveRef.current &&
+          !doorwayTransitioning &&
+          localPlayer
+        ) {
           e.preventDefault();
           moonwalkOrigin = {
             x: localPlayer.group.position.x,
@@ -1341,7 +1789,14 @@ export default function NightWalkerCharacterWalk({
           equipMoonwalkCostume(localPlayer);
           return;
         }
-        if (k === " " && !terminalViewActiveRef.current && !doorwayTransitioning && !moonwalkActive && localPlayer) {
+        if (
+          k === " " &&
+          trapPhase === "idle" &&
+          !terminalViewActiveRef.current &&
+          !doorwayTransitioning &&
+          !moonwalkActive &&
+          localPlayer
+        ) {
           const px = localPlayer.group.position.x;
           const pz = localPlayer.group.position.z;
 
@@ -1411,12 +1866,14 @@ export default function NightWalkerCharacterWalk({
       animateFn = () => {
         rafId = window.requestAnimationFrame(animateFn);
         const dt = Math.min(clock.getDelta(), 0.033);
+        updateDiscoFloor(groundTiles, clock.getElapsedTime());
         const player = localPlayer.group;
         const { armRig, legRig } = localPlayer;
 
         const wantsTerminal = terminalViewActiveRef.current;
         const terminalCameraActive = wantsTerminal || terminalZoomT > 0.001;
-        const gameplayLocked = doorwayTransitioning || doorwayFadeT > 0 || moonwalkActive;
+        const trapActive = trapPhase !== "idle";
+        const gameplayLocked = doorwayTransitioning || doorwayFadeT > 0 || moonwalkActive || trapActive;
 
         const turnInput = terminalCameraActive || gameplayLocked
           ? 0
@@ -1477,8 +1934,9 @@ export default function NightWalkerCharacterWalk({
 
         cameraQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), playerRy);
         rotatedCameraOffset.copy(cameraOffset).applyQuaternion(cameraQuat);
-        gameplayCamPos.set(playerX, PLAYER_Y, playerZ).add(rotatedCameraOffset);
-        gameplayLookAt.set(playerX, PLAYER_Y + CAMERA_LOOK_Y, playerZ);
+        const playerCamY = player.position.y;
+        gameplayCamPos.set(playerX, playerCamY, playerZ).add(rotatedCameraOffset);
+        gameplayLookAt.set(playerX, playerCamY + CAMERA_LOOK_Y, playerZ);
 
         if (!terminalCameraActive) {
           if (terminalPlayerFreeze) {
@@ -1486,6 +1944,67 @@ export default function NightWalkerCharacterWalk({
             sendState(player.position.x, player.position.z, player.rotation.y, false);
           }
           resolveLocalPlayerOverlaps(player, doorOpenT, obstacleColliders, remotes);
+
+          if (trapPhase === "idle" && !moonwalkActive && groundTiles?.tileGrid) {
+            const tile = getGroundTileAt(
+              player.position.x,
+              player.position.z,
+              groundTiles.tileGrid,
+              groundTiles.half
+            );
+            const tileKey = tile ? `${tile.row}:${tile.col}` : null;
+            if (!tile?.isDanceFloor) {
+              trapStandTimer = 0;
+              trapStandTileKey = tileKey;
+            } else if (!moving && tileKey) {
+              if (tileKey === trapStandTileKey) {
+                trapStandTimer += dt;
+              } else {
+                trapStandTileKey = tileKey;
+                trapStandTimer = 0;
+              }
+              if (trapStandTimer >= TRAP_STAND_DURATION) {
+                trapPhase = "tileFalling";
+                trapFallTimer = 0;
+                trapActiveTile = tile;
+                trapStandTimer = 0;
+                trapStandTileKey = null;
+              }
+            } else {
+              trapStandTimer = 0;
+              trapStandTileKey = tileKey;
+            }
+          } else if (trapPhase === "tileFalling" && trapActiveTile) {
+            trapFallTimer += dt;
+            trapActiveTile.mesh.position.y -= TRAP_TILE_DROP_SPEED * dt;
+            if (trapFallTimer >= TRAP_TILE_FALL_DELAY) {
+              trapPhase = "playerFalling";
+              trapPlayerFallTimer = 0;
+              lastSpeechBubbleKey = "trap-pending";
+            }
+          } else if (trapPhase === "playerFalling") {
+            trapPlayerFallTimer += dt;
+            player.position.y -= TRAP_PLAYER_DROP_SPEED * dt;
+            if (trapPlayerFallTimer >= TRAP_PLAYER_FALL_DURATION) {
+              trapPhase = "resetting";
+              trapResetTimer = 0;
+              resetTrapTile(trapActiveTile);
+              player.position.set(playerSpawn.x, PLAYER_Y, playerSpawn.z);
+              player.rotation.y = playerSpawn.ry;
+              sendState(playerSpawn.x, playerSpawn.z, playerSpawn.ry, false);
+            }
+          } else if (trapPhase === "resetting") {
+            trapResetTimer += dt;
+            if (trapResetTimer >= TRAP_RESET_HOLD) {
+              trapPhase = "idle";
+              trapActiveTile = null;
+              trapFallTimer = 0;
+              trapPlayerFallTimer = 0;
+              trapResetTimer = 0;
+              lastSpeechBubbleKey = "";
+              setSpeechBubbleRef.current(null);
+            }
+          }
 
           if (moonwalkActive) {
             moonwalkTimer += dt;
@@ -1509,8 +2028,9 @@ export default function NightWalkerCharacterWalk({
               moonwalkActive = false;
               moonwalkTimer = 0;
               lastMovingSent = false;
-              lastMoonwalkCaptionKey = "";
-              setMoonwalkCaptionRef.current(null);
+              lastSpeechBubbleKey = "";
+              setSpeechBubbleRef.current(null);
+              resetMoonwalkHeadRotation(localPlayer.head);
               removeMoonwalkCostume(localPlayer);
               resetPose(armRig, legRig);
               sendState(player.position.x, player.position.z, player.rotation.y, false);
@@ -1547,8 +2067,8 @@ export default function NightWalkerCharacterWalk({
 
             cameraQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), camRy);
             rotatedCameraOffset.copy(cameraOffset).applyQuaternion(cameraQuat);
-            gameplayCamPos.set(camX, PLAYER_Y, camZ).add(rotatedCameraOffset);
-            gameplayLookAt.set(camX, PLAYER_Y + CAMERA_LOOK_Y, camZ);
+            gameplayCamPos.set(camX, playerCamY, camZ).add(rotatedCameraOffset);
+            gameplayLookAt.set(camX, playerCamY + CAMERA_LOOK_Y, camZ);
 
             const sideOffset = new THREE.Vector3(MOONWALK_SIDE_DISTANCE, MOONWALK_SIDE_HEIGHT, 0);
             sideOffset.applyQuaternion(cameraQuat);
@@ -1570,6 +2090,8 @@ export default function NightWalkerCharacterWalk({
               camera.position.lerp(gameplayCamPos, 0.08);
               camera.lookAt(gameplayLookAt);
             }
+
+            applyMoonwalkHeadTurn(localPlayer.head, moonwalkTimer);
           } else {
             camera.position.lerp(gameplayCamPos, 0.08);
             camera.lookAt(gameplayLookAt);
@@ -1618,28 +2140,39 @@ export default function NightWalkerCharacterWalk({
           }
         }
 
+        if (perimeterWalls?.welcomeSign?.mat) {
+          const flashOn = Math.sin(performance.now() * 0.001 * WELCOME_SIGN_FLASH_SPEED) > 0;
+          perimeterWalls.welcomeSign.mat.emissiveIntensity = flashOn
+            ? WELCOME_SIGN_BASE_EMISSIVE
+            : WELCOME_SIGN_BASE_EMISSIVE * 0.16;
+        }
+
         renderer.render(scene, camera);
 
-        if (moonwalkActive && !terminalCameraActive) {
+        const showHeadBubble =
+          !terminalCameraActive &&
+          (moonwalkActive || trapPhase === "playerFalling" || trapPhase === "resetting");
+        if (showHeadBubble) {
           player.updateMatrixWorld(true);
-          moonwalkHeadWorld.set(0, MOONWALK_CAPTION_HEAD_Y, 0);
-          player.localToWorld(moonwalkHeadWorld);
+          speechBubbleHeadWorld.set(0, MOONWALK_CAPTION_HEAD_Y, 0);
+          player.localToWorld(speechBubbleHeadWorld);
           const w = mountEl.clientWidth;
           const h = mountEl.clientHeight;
-          const pt = projectWorldPoint(moonwalkHeadWorld, camera, w, h);
+          const pt = projectWorldPoint(speechBubbleHeadWorld, camera, w, h);
+          const bubbleText = moonwalkActive ? "He he!" : TRAP_MESSAGE;
           if (pt) {
-            const key = `${Math.round(pt.left)}:${Math.round(pt.top)}`;
-            if (key !== lastMoonwalkCaptionKey) {
-              lastMoonwalkCaptionKey = key;
-              setMoonwalkCaptionRef.current(pt);
+            const key = `${bubbleText}:${Math.round(pt.left)}:${Math.round(pt.top)}`;
+            if (key !== lastSpeechBubbleKey) {
+              lastSpeechBubbleKey = key;
+              setSpeechBubbleRef.current({ left: pt.left, top: pt.top, text: bubbleText });
             }
-          } else if (lastMoonwalkCaptionKey !== "hidden") {
-            lastMoonwalkCaptionKey = "hidden";
-            setMoonwalkCaptionRef.current(null);
+          } else if (lastSpeechBubbleKey !== "hidden") {
+            lastSpeechBubbleKey = "hidden";
+            setSpeechBubbleRef.current(null);
           }
-        } else if (lastMoonwalkCaptionKey !== "") {
-          lastMoonwalkCaptionKey = "";
-          setMoonwalkCaptionRef.current(null);
+        } else if (lastSpeechBubbleKey !== "") {
+          lastSpeechBubbleKey = "";
+          setSpeechBubbleRef.current(null);
         }
       };
       animateFn();
@@ -1656,8 +2189,9 @@ export default function NightWalkerCharacterWalk({
         if (groundTiles) {
           scene.remove(groundTiles.group);
           groundTiles.tileGeom.dispose();
-          groundTiles.matLight.dispose();
-          groundTiles.matDark.dispose();
+          groundTiles.tileMaterials?.forEach((mat) => mat.dispose());
+          groundTiles.borderMatLight?.dispose();
+          groundTiles.borderMatDark?.dispose();
         }
         if (perimeterWalls) {
           scene.remove(perimeterWalls.group);
@@ -1734,13 +2268,13 @@ export default function NightWalkerCharacterWalk({
           cursor: "default",
         }}
       />
-      {moonwalkCaption ? (
+      {speechBubble?.left != null && speechBubble?.top != null ? (
         <div
           aria-hidden
           style={{
             position: "absolute",
-            left: moonwalkCaption.left,
-            top: moonwalkCaption.top,
+            left: speechBubble.left,
+            top: speechBubble.top,
             transform: "translate(-50%, calc(-100% - 52px))",
             zIndex: 20,
             pointerEvents: "none",
@@ -1761,7 +2295,7 @@ export default function NightWalkerCharacterWalk({
               whiteSpace: "nowrap",
             }}
           >
-            He he!
+            {speechBubble.text}
             <span
               style={{
                 position: "absolute",
