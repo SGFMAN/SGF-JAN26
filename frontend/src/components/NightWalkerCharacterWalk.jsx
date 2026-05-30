@@ -2323,6 +2323,7 @@ function leaveSecretAreaSocket(socket) {
  *   onRoomFull?: () => void,
  *   disconnectRef?: React.MutableRefObject<(() => void) | null>,
  *   terminalViewActive?: boolean,
+ *   pModeEnabled?: boolean,
  *   onTerminalOpen?: () => void,
  *   onTerminalFrame?: (frame: { progress: number, rect: { left: number, top: number, width: number, height: number } | null }) => void,
  *   onDoorwayFade?: (opacity: number) => void,
@@ -2335,6 +2336,7 @@ export default function NightWalkerCharacterWalk({
   onRoomFull,
   disconnectRef,
   terminalViewActive = false,
+  pModeEnabled = false,
   onTerminalOpen,
   onTerminalFrame,
   onDoorwayFade,
@@ -2354,6 +2356,7 @@ export default function NightWalkerCharacterWalk({
   const onDoorwayFadeRef = useRef(onDoorwayFade);
   const onDoorwayEnteredRef = useRef(onDoorwayEntered);
   const terminalViewActiveRef = useRef(terminalViewActive);
+  const pModeEnabledRef = useRef(pModeEnabled);
   const spawnAtTerminalRef = useRef(spawnAtTerminal);
   const snapTerminalZoomRef = useRef(snapTerminalZoom);
   onRoomFullRef.current = onRoomFull;
@@ -2362,6 +2365,7 @@ export default function NightWalkerCharacterWalk({
   onDoorwayFadeRef.current = onDoorwayFade;
   onDoorwayEnteredRef.current = onDoorwayEntered;
   terminalViewActiveRef.current = terminalViewActive;
+  pModeEnabledRef.current = pModeEnabled;
   spawnAtTerminalRef.current = spawnAtTerminal;
   snapTerminalZoomRef.current = snapTerminalZoom;
 
@@ -2737,7 +2741,7 @@ export default function NightWalkerCharacterWalk({
           sendState(spinOrigin.x, spinOrigin.z, spinOrigin.ry, false, "spin", 0);
           return;
         }
-        if (k === "p" && localPlayer && !terminalViewActiveRef.current) {
+        if (k === "p" && localPlayer && !terminalViewActiveRef.current && pModeEnabledRef.current) {
           e.preventDefault();
           toggleKneeCylinder(localPlayer);
           const g = localPlayer.group;
@@ -2855,10 +2859,20 @@ export default function NightWalkerCharacterWalk({
         updateKneeCylinderGrow(localPlayer, dt);
         updateSillyStrings(scene, dt, sendSillyStringStick);
 
+        if (!pModeEnabledRef.current && localPlayer?.kneeCylinder) {
+          removeKneeCylinder(localPlayer);
+          const now = performance.now();
+          if (now - lastStateSend >= STATE_SEND_INTERVAL_MS) {
+            lastStateSend = now;
+            sendState(player.position.x, player.position.z, player.rotation.y, lastMovingSent);
+          }
+        }
+
         const wantsTerminal = terminalViewActiveRef.current;
         const terminalCameraActive = wantsTerminal || terminalZoomT > 0.001;
 
         const canSpraySillyString =
+          pModeEnabledRef.current &&
           !terminalCameraActive &&
           !doorwayTransitioning &&
           trapPhase === "idle" &&
