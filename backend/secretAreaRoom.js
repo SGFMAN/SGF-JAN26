@@ -4,7 +4,7 @@ const crypto = require("crypto");
 const MAX_PLAYERS = 2;
 const PING_INTERVAL_MS = 15000;
 
-/** @type {Map<import('ws').WebSocket, { id: string, slot: number, x: number, z: number, ry: number, moving: boolean }>} */
+/** @type {Map<import('ws').WebSocket, { id: string, slot: number, x: number, z: number, ry: number, moving: boolean, dance: string | null, danceT: number, trapRow: number, trapCol: number, trapElapsed: number, showKneeCylinder: boolean }>} */
 const players = new Map();
 
 function publicPlayer(p) {
@@ -15,6 +15,12 @@ function publicPlayer(p) {
     z: p.z,
     ry: p.ry,
     moving: p.moving,
+    dance: p.dance ?? null,
+    danceT: p.danceT ?? 0,
+    trapRow: p.trapRow ?? -1,
+    trapCol: p.trapCol ?? -1,
+    trapElapsed: p.trapElapsed ?? 0,
+    showKneeCylinder: !!p.showKneeCylinder,
   };
 }
 
@@ -108,6 +114,12 @@ function attachSecretAreaWebSocket(httpServer) {
       z: spawn.z,
       ry: spawn.ry,
       moving: false,
+      dance: null,
+      danceT: 0,
+      trapRow: -1,
+      trapCol: -1,
+      trapElapsed: 0,
+      showKneeCylinder: false,
     };
     players.set(ws, player);
 
@@ -146,6 +158,23 @@ function attachSecretAreaWebSocket(httpServer) {
       if (typeof msg.z === "number") p.z = msg.z;
       if (typeof msg.ry === "number") p.ry = msg.ry;
       p.moving = !!msg.moving;
+      if (msg.dance === "moonwalk" || msg.dance === "spin") {
+        p.dance = msg.dance;
+        p.danceT = typeof msg.danceT === "number" ? msg.danceT : 0;
+      } else {
+        p.dance = null;
+        p.danceT = 0;
+      }
+      if (typeof msg.trapRow === "number") p.trapRow = msg.trapRow;
+      if (typeof msg.trapCol === "number") p.trapCol = msg.trapCol;
+      if (typeof msg.trapElapsed === "number" && msg.trapElapsed > 0) {
+        p.trapElapsed = msg.trapElapsed;
+      } else {
+        p.trapRow = -1;
+        p.trapCol = -1;
+        p.trapElapsed = 0;
+      }
+      p.showKneeCylinder = !!msg.showKneeCylinder;
       broadcast(
         {
           type: "peer_state",

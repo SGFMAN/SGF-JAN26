@@ -93,8 +93,11 @@ const DESK_COLLISION_LOCAL = [
   { cx: 0, cz: -0.12, hx: 0.32, hz: 0.14 },
 ];
 
-const FLESH_SKIN_COLOR = "#f5e0cc";
-const FLESH_JOINT_COLOR = "#edd4bc";
+const FLESH_SKIN_COLOR = "#ffc4b0";
+const FLESH_JOINT_COLOR = "#e89888";
+const FLESH_SKIN_EMISSIVE = "#ff9078";
+const FLESH_SKIN_ROUGHNESS = 0.46;
+const FLESH_SKIN_EMISSIVE_INTENSITY = 0.14;
 
 const MOONWALK_JACKET_RED = "#ff0a0a";
 const MOONWALK_JACKET_EMISSIVE = "#ff2222";
@@ -286,6 +289,66 @@ function resetSpinLegs(legRig) {
   legRig.right.lowerLegPivot.rotation.x = legRig.right.baseLowerPivotX;
   legRig.left.foot.rotation.x = legRig.left.baseFootX;
   legRig.right.foot.rotation.x = legRig.right.baseFootX;
+}
+
+function syncRemoteDance(player, dance) {
+  if (player.dance === dance) return;
+  if (player.dance) {
+    removeMoonwalkCostume(player);
+    resetMoonwalkHeadRotation(player.head);
+    resetSpinLegs(player.legRig);
+    player.spinFedoraGrabbed = false;
+  }
+  player.dance = dance || null;
+  player.danceT = 0;
+  if (dance === "moonwalk") {
+    equipMoonwalkCostume(player);
+  } else if (dance === "spin") {
+    equipSpinCostume(player);
+  }
+}
+
+function applyRemoteSpinPose(player, spinTimer) {
+  const { armRig, legRig } = player;
+
+  if (spinTimer < SPIN_ARM_PREP_DURATION) {
+    const armProgress = spinTimer / SPIN_ARM_PREP_DURATION;
+    applySpinPose(armRig, legRig, armProgress, player);
+    return;
+  }
+
+  const rotateElapsed = spinTimer - SPIN_ARM_PREP_DURATION;
+  if (rotateElapsed < SPIN_FEDORA_GRAB_DURATION) {
+    applySpinRightArmReach(armRig, 1);
+    applySpinLeftArm(armRig, 1);
+    updateSpinFedoraGrab(player, rotateElapsed / SPIN_FEDORA_GRAB_DURATION);
+  } else {
+    if (!player.spinFedoraGrabbed) {
+      attachSpinFedoraToHand(player);
+    }
+    const sweepProgress = Math.min(
+      1,
+      (rotateElapsed - SPIN_FEDORA_GRAB_DURATION) / SPIN_SWEEP_DURATION
+    );
+    applySpinRightArmSweep(armRig, sweepProgress);
+    applySpinLeftArm(armRig, 1);
+    if (player.fedora?.mode === "held") {
+      lerpHeldFedoraTransform(player.fedora, 1);
+    }
+  }
+  applySpinLegs(legRig, 1);
+}
+
+function applyRemoteDancePose(player) {
+  if (player.dance === "moonwalk") {
+    player.walkPhase = player.danceT * 11;
+    applyMoonwalkCycle(player.armRig, player.legRig, player.walkPhase);
+    applyMoonwalkHeadTurn(player.head, player.danceT);
+    return;
+  }
+  if (player.dance === "spin") {
+    applyRemoteSpinPose(player, player.danceT);
+  }
 }
 
 function applySpinPose(armRig, legRig, spinProgress, player) {
@@ -633,8 +696,20 @@ function addPlayerToScene(scene, slot) {
     jacket: null,
     moonwalkLegAccents: null,
     moonwalkFace: null,
+    kneeCylinder: null,
     walkPhase: 0,
     moving: false,
+    dance: null,
+    danceT: 0,
+    targetDance: null,
+    targetDanceT: 0,
+    isRemote: false,
+    spinFedoraGrabbed: false,
+    targetTrapRow: -1,
+    targetTrapCol: -1,
+    targetTrapElapsed: 0,
+    lastTrapTile: null,
+    targetShowKneeCylinder: false,
     targetX: 0,
     targetZ: 0,
     targetRy: 0,
@@ -710,7 +785,7 @@ function attachSpinFedoraToHand(player) {
     heldTo: { x: 0.04 * side, y: -1.06, z: 0.12, rx: 0.52, ry: -0.22 * side, rz: -1.02 * side },
   };
   player.spinFedoraGrabbed = true;
-  playSpinAudio();
+  if (!player.isRemote) playSpinAudio();
 }
 
 function lerpHeldFedoraTransform(fedora, t) {
@@ -948,7 +1023,7 @@ const MOONWALK_FACE_ARC = Math.PI / 2;
 const MOONWALK_FACE_ARC_START = -Math.PI / 4;
 const MOONWALK_SKIN_COLOR = FLESH_SKIN_COLOR;
 const MOONWALK_JOINT_COLOR = FLESH_JOINT_COLOR;
-const MOONWALK_SKIN_EMISSIVE = "#d0a080";
+const MOONWALK_SKIN_EMISSIVE = FLESH_SKIN_EMISSIVE;
 
 function applyMoonwalkSkinTone(player) {
   if (!player?.skinMat || !player?.jointMat) return;
@@ -974,13 +1049,13 @@ function applyMoonwalkSkinTone(player) {
 
   player.skinMat.color.set(MOONWALK_SKIN_COLOR);
   player.skinMat.emissive.set(MOONWALK_SKIN_EMISSIVE);
-  player.skinMat.emissiveIntensity = 0.16;
-  player.skinMat.roughness = 0.58;
+  player.skinMat.emissiveIntensity = 0.2;
+  player.skinMat.roughness = FLESH_SKIN_ROUGHNESS;
 
   player.jointMat.color.set(MOONWALK_JOINT_COLOR);
-  player.jointMat.emissive.set("#c09878");
-  player.jointMat.emissiveIntensity = 0.1;
-  player.jointMat.roughness = 0.6;
+  player.jointMat.emissive.set("#e87868");
+  player.jointMat.emissiveIntensity = 0.12;
+  player.jointMat.roughness = 0.52;
 }
 
 function restoreMoonwalkSkinTone(player) {
@@ -1252,6 +1327,68 @@ function equipSpinCostume(player) {
   if (!player.fedora) player.fedora = buildMoonwalkFedora(player.head);
 }
 
+const KNEE_CYLINDER_Y = -1.55;
+const KNEE_CYLINDER_HEIGHT = 1.84;
+const KNEE_CYLINDER_MESH_LIFT = 0.72;
+const KNEE_CYLINDER_TILT_X = 0.82;
+
+function equipKneeCylinder(player) {
+  if (!player?.group || player.kneeCylinder) return;
+  const geoms = [];
+  const materials = [];
+  const regGeom = (geometry) => {
+    geoms.push(geometry);
+    return geometry;
+  };
+  const regMat = (params) => {
+    const m = new THREE.MeshStandardMaterial(params);
+    materials.push(m);
+    return m;
+  };
+
+  const pivot = new THREE.Group();
+  pivot.position.set(0, KNEE_CYLINDER_Y, 0.05);
+  pivot.rotation.x = KNEE_CYLINDER_TILT_X;
+
+  const mesh = new THREE.Mesh(
+    regGeom(new THREE.CylinderGeometry(0.19, 0.19, KNEE_CYLINDER_HEIGHT, 14)),
+    regMat({
+      color: FLESH_SKIN_COLOR,
+      emissive: FLESH_SKIN_EMISSIVE,
+      emissiveIntensity: FLESH_SKIN_EMISSIVE_INTENSITY,
+      roughness: FLESH_SKIN_ROUGHNESS,
+      metalness: 0.02,
+    })
+  );
+  mesh.position.y = -KNEE_CYLINDER_HEIGHT / 2 + KNEE_CYLINDER_MESH_LIFT;
+  mesh.renderOrder = 2;
+  pivot.add(mesh);
+  player.group.add(pivot);
+  player.kneeCylinder = { pivot, mesh, geoms, materials };
+}
+
+function removeKneeCylinder(player) {
+  if (!player?.kneeCylinder) return;
+  player.group.remove(player.kneeCylinder.pivot);
+  player.kneeCylinder.geoms.forEach((g) => g.dispose());
+  player.kneeCylinder.materials.forEach((m) => m.dispose());
+  player.kneeCylinder = null;
+}
+
+function toggleKneeCylinder(player) {
+  if (!player) return;
+  if (player.kneeCylinder) removeKneeCylinder(player);
+  else equipKneeCylinder(player);
+}
+
+function syncRemoteKneeCylinder(player, show) {
+  if (!player) return;
+  const visible = !!show;
+  if (!!player.kneeCylinder === visible) return;
+  if (visible) equipKneeCylinder(player);
+  else removeKneeCylinder(player);
+}
+
 function getGroundTileAt(x, z, tileGrid, half) {
   if (Math.abs(x) > half || Math.abs(z) > half) return null;
   const col = Math.floor((x + half) / GROUND_CELL_SIZE);
@@ -1263,6 +1400,50 @@ function getGroundTileAt(x, z, tileGrid, half) {
 function resetTrapTile(tile) {
   if (!tile) return;
   tile.mesh.position.y = tile.baseY;
+}
+
+function clearRemoteTrapVisual(remote) {
+  if (remote?.lastTrapTile) {
+    resetTrapTile(remote.lastTrapTile);
+    remote.lastTrapTile = null;
+  }
+}
+
+function applyRemoteTrapVisual(groundTiles, remote) {
+  const row = remote.targetTrapRow;
+  const col = remote.targetTrapCol;
+  const elapsed = remote.targetTrapElapsed;
+  const { group } = remote;
+
+  if (!groundTiles?.tileGrid || row < 0 || col < 0 || elapsed <= 0) {
+    clearRemoteTrapVisual(remote);
+    group.position.y = PLAYER_Y;
+    return;
+  }
+
+  const tile = groundTiles.tileGrid[row]?.[col];
+  if (!tile) return;
+
+  remote.lastTrapTile = tile;
+  const tileFallEnd = TRAP_TILE_FALL_DELAY;
+  const playerFallEnd = tileFallEnd + TRAP_PLAYER_FALL_DURATION;
+
+  if (elapsed < tileFallEnd) {
+    tile.mesh.position.y = tile.baseY - TRAP_TILE_DROP_SPEED * elapsed;
+  } else if (elapsed < playerFallEnd) {
+    tile.mesh.position.y = tile.baseY - TRAP_TILE_DROP_SPEED * tileFallEnd;
+  } else {
+    resetTrapTile(tile);
+    remote.lastTrapTile = null;
+  }
+
+  if (elapsed < tileFallEnd) {
+    group.position.y = PLAYER_Y;
+  } else if (elapsed < playerFallEnd) {
+    group.position.y = PLAYER_Y - TRAP_PLAYER_DROP_SPEED * (elapsed - tileFallEnd);
+  } else {
+    group.position.y = PLAYER_Y;
+  }
 }
 
 function updateDiscoFloor(groundTiles, timeSec) {
@@ -1685,6 +1866,9 @@ function buildCornerTerminalDesk(scene) {
 }
 
 function disposePlayer(scene, player) {
+  removeKneeCylinder(player);
+  removeMoonwalkCostume(player);
+  restoreMoonwalkSkinTone(player);
   scene.remove(player.group);
   player.bodyMeshes.forEach((mesh) => mesh.geometry.dispose());
   player.materials.forEach((m) => m.dispose());
@@ -1884,6 +2068,12 @@ export default function NightWalkerCharacterWalk({
             remote.targetZ = msg.player.z;
             remote.targetRy = msg.player.ry;
             remote.moving = !!msg.player.moving;
+            remote.targetDance = msg.player.dance ?? null;
+            remote.targetDanceT = msg.player.danceT ?? 0;
+            remote.targetTrapRow = msg.player.trapRow ?? -1;
+            remote.targetTrapCol = msg.player.trapCol ?? -1;
+            remote.targetTrapElapsed = msg.player.trapElapsed ?? 0;
+            remote.targetShowKneeCylinder = !!msg.player.showKneeCylinder;
           } else {
             ensureRemote(msg.player);
           }
@@ -1948,25 +2138,74 @@ export default function NightWalkerCharacterWalk({
       if (playerData.id === localPlayerId || remotes.has(playerData.id)) return;
       const remote = addPlayerToScene(scene, playerData.slot);
       remote.id = playerData.id;
+      remote.isRemote = true;
       remote.group.position.set(playerData.x, PLAYER_Y, playerData.z);
       remote.group.rotation.y = playerData.ry;
       remote.targetX = playerData.x;
       remote.targetZ = playerData.z;
       remote.targetRy = playerData.ry;
       remote.moving = !!playerData.moving;
+      remote.targetDance = playerData.dance ?? null;
+      remote.targetDanceT = playerData.danceT ?? 0;
+      remote.targetTrapRow = playerData.trapRow ?? -1;
+      remote.targetTrapCol = playerData.trapCol ?? -1;
+      remote.targetTrapElapsed = playerData.trapElapsed ?? 0;
+      remote.targetShowKneeCylinder = !!playerData.showKneeCylinder;
+      remote.dance = null;
+      remote.danceT = 0;
+      if (remote.targetDance) {
+        syncRemoteDance(remote, remote.targetDance);
+        remote.danceT = remote.targetDanceT;
+      }
+      syncRemoteKneeCylinder(remote, remote.targetShowKneeCylinder);
       remotes.set(playerData.id, remote);
     }
 
     function removeRemote(playerId) {
       const remote = remotes.get(playerId);
       if (!remote) return;
+      clearRemoteTrapVisual(remote);
       disposePlayer(scene, remote);
       remotes.delete(playerId);
     }
 
-    function sendState(x, z, ry, moving) {
+    function getLocalTrapElapsed() {
+      if (trapPhase === "idle") return 0;
+      if (trapPhase === "tileFalling") return trapFallTimer;
+      if (trapPhase === "playerFalling") {
+        return TRAP_TILE_FALL_DELAY + trapPlayerFallTimer;
+      }
+      if (trapPhase === "resetting") {
+        return TRAP_TILE_FALL_DELAY + TRAP_PLAYER_FALL_DURATION + trapResetTimer;
+      }
+      return 0;
+    }
+
+    function sendState(x, z, ry, moving, dance = null, danceT = 0) {
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      ws.send(JSON.stringify({ type: "state", x, z, ry, moving }));
+      let trapRow = -1;
+      let trapCol = -1;
+      let trapElapsed = 0;
+      if (trapPhase !== "idle" && trapActiveTile) {
+        trapRow = trapActiveTile.row;
+        trapCol = trapActiveTile.col;
+        trapElapsed = getLocalTrapElapsed();
+      }
+      ws.send(
+        JSON.stringify({
+          type: "state",
+          x,
+          z,
+          ry,
+          moving,
+          dance,
+          danceT,
+          trapRow,
+          trapCol,
+          trapElapsed,
+          showKneeCylinder: !!localPlayer?.kneeCylinder,
+        })
+      );
     }
 
     function startScene(initialPlayers) {
@@ -2015,6 +2254,7 @@ export default function NightWalkerCharacterWalk({
 
       localPlayer = addPlayerToScene(scene, localSlot);
       localPlayer.id = localPlayerId;
+      localPlayer.isRemote = false;
       const spawn = initialPlayers.find((p) => p.id === localPlayerId);
       let startX = spawn?.x ?? (localSlot === 0 ? -6 : 6);
       let startZ = spawn?.z ?? 0;
@@ -2064,6 +2304,7 @@ export default function NightWalkerCharacterWalk({
           moonwalkTimer = 0;
           equipMoonwalkCostume(localPlayer);
           playMoonwalkAudio();
+          sendState(moonwalkOrigin.x, moonwalkOrigin.z, moonwalkOrigin.ry, true, "moonwalk", 0);
           return;
         }
         if (
@@ -2084,6 +2325,14 @@ export default function NightWalkerCharacterWalk({
           spinActive = true;
           spinTimer = 0;
           equipSpinCostume(localPlayer);
+          sendState(spinOrigin.x, spinOrigin.z, spinOrigin.ry, false, "spin", 0);
+          return;
+        }
+        if (k === "p" && localPlayer && !terminalViewActiveRef.current) {
+          e.preventDefault();
+          toggleKneeCylinder(localPlayer);
+          const g = localPlayer.group;
+          sendState(g.position.x, g.position.z, g.rotation.y, lastMovingSent);
           return;
         }
         if (
@@ -2153,12 +2402,23 @@ export default function NightWalkerCharacterWalk({
         while (ryDiff > Math.PI) ryDiff -= PI2;
         while (ryDiff < -Math.PI) ryDiff += PI2;
         g.rotation.y += ryDiff * Math.min(1, dt * 14);
-        if (remote.moving) {
+
+        if (remote.targetDance !== remote.dance) {
+          syncRemoteDance(remote, remote.targetDance);
+        }
+        remote.danceT = remote.targetDanceT;
+
+        if (remote.dance === "moonwalk" || remote.dance === "spin") {
+          applyRemoteDancePose(remote);
+        } else if (remote.moving) {
           remote.walkPhase += dt * 9.5;
           applyWalkCycle(remote.armRig, remote.legRig, remote.walkPhase);
         } else {
           resetPose(remote.armRig, remote.legRig);
         }
+
+        applyRemoteTrapVisual(groundTiles, remote);
+        syncRemoteKneeCylinder(remote, remote.targetShowKneeCylinder);
       };
 
       animateFn = () => {
@@ -2268,6 +2528,7 @@ export default function NightWalkerCharacterWalk({
                 trapActiveTile = tile;
                 trapStandTimer = 0;
                 trapStandTileKey = null;
+                sendState(player.position.x, player.position.z, player.rotation.y, false);
               }
             } else {
               trapStandTimer = 0;
@@ -2320,7 +2581,14 @@ export default function NightWalkerCharacterWalk({
             if (now - lastStateSend >= STATE_SEND_INTERVAL_MS) {
               lastStateSend = now;
               lastMovingSent = true;
-              sendState(player.position.x, player.position.z, player.rotation.y, true);
+              sendState(
+                player.position.x,
+                player.position.z,
+                player.rotation.y,
+                true,
+                "moonwalk",
+                moonwalkTimer
+              );
             }
 
             if (moonwalkTimer >= MOONWALK_DURATION) {
@@ -2379,7 +2647,14 @@ export default function NightWalkerCharacterWalk({
             if (spinNow - lastStateSend >= STATE_SEND_INTERVAL_MS) {
               lastStateSend = spinNow;
               lastMovingSent = false;
-              sendState(player.position.x, player.position.z, player.rotation.y, false);
+              sendState(
+                player.position.x,
+                player.position.z,
+                player.rotation.y,
+                false,
+                "spin",
+                spinTimer
+              );
             }
 
             if (spinTimer >= SPIN_DURATION) {

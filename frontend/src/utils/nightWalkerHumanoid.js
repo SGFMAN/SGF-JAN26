@@ -14,10 +14,22 @@ export function createHumanoidRig({ skinColor, clothColor, darkClothColor, joint
     return m;
   };
 
-  const skinMat = regMat({ color: skinColor, roughness: 0.78 });
+  const skinMat = regMat({
+    color: skinColor,
+    emissive: skinColor,
+    emissiveIntensity: 0.12,
+    roughness: 0.46,
+    metalness: 0.02,
+  });
   const clothMat = regMat({ color: clothColor, roughness: 0.7 });
   const darkClothMat = regMat({ color: darkClothColor, roughness: 0.72 });
-  const jointMat = regMat({ color: jointColor, roughness: 0.82 });
+  const jointMat = regMat({
+    color: jointColor,
+    emissive: jointColor,
+    emissiveIntensity: 0.08,
+    roughness: 0.52,
+    metalness: 0.02,
+  });
 
   const addBodyMesh = (mesh, parent = group) => {
     bodyMeshes.push(mesh);
@@ -194,8 +206,8 @@ export function createHumanoidRig({ skinColor, clothColor, darkClothColor, joint
 
 /** Night Walker hero palette (head-lamp character). */
 export const NIGHT_WALKER_HERO_COLORS = {
-  skinColor: "#f5e0cc",
+  skinColor: "#ffc4b0",
   clothColor: "#4f6bff",
   darkClothColor: "#2f3e7a",
-  jointColor: "#edd4bc",
+  jointColor: "#e89888",
 };
