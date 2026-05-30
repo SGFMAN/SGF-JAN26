@@ -1455,6 +1455,17 @@ const SILLY_STRING_PARTICLES_PER_SPAWN = 6;
 const SILLY_STRING_PARTICLE_LIFE = 1.05;
 const SILLY_STRING_SPEED = 7.5;
 const SILLY_STRING_STUCK_OPACITY = 0.95;
+const SCREEN_SPLAT_DRIP_SEC = 10;
+const SCREEN_SPLAT_FADE_SEC = 1;
+const SCREEN_SPLAT_BALL_MIN_PX = 14;
+const SCREEN_SPLAT_BALL_MAX_PX = 72;
+const SCREEN_SPLAT_IMPACT_BURST = 4;
+const SCREEN_SPLAT_SPREAD_X = 0.78;
+const SCREEN_SPLAT_SPREAD_Y = 0.42;
+const SCREEN_SPLAT_GRAVITY = 165;
+const SCREEN_SPLAT_INITIAL_VY = 26;
+const SCREEN_SPLAT_IMPACT_GROW_SEC = 0.14;
+const SPIN_FACE_CAMERA_ANGLE = 0.62;
 const sillyStringParticles = [];
 const sillyStringOrigin = new THREE.Vector3();
 const sillyStringBody = new THREE.Vector3();
@@ -1618,6 +1629,126 @@ function syncRemoteSillyString(scene, player, targetPulse) {
     spawnSillyStringBurst(scene, player);
     spawned += 1;
   }
+}
+
+function isSpinPlayerFacingCamera(playerRy, spinOriginRy) {
+  let diff = playerRy - spinOriginRy;
+  while (diff > Math.PI) diff -= PI2;
+  while (diff < -Math.PI) diff += PI2;
+  return Math.abs(Math.abs(diff) - Math.PI) < SPIN_FACE_CAMERA_ANGLE;
+}
+
+function getScreenSplatOpacity(age) {
+  if (age <= SCREEN_SPLAT_DRIP_SEC) return 0.96;
+  const fadeT = Math.min(1, (age - SCREEN_SPLAT_DRIP_SEC) / SCREEN_SPLAT_FADE_SEC);
+  return 0.96 * (1 - fadeT);
+}
+
+function randomScreenSplatRadius() {
+  const roll = Math.random();
+  if (roll < 0.34) {
+    return SCREEN_SPLAT_BALL_MIN_PX + Math.random() * 14;
+  }
+  if (roll < 0.72) {
+    return 30 + Math.random() * 20;
+  }
+  return 52 + Math.random() * (SCREEN_SPLAT_BALL_MAX_PX - 52);
+}
+
+function spawnScreenSillyStringHit(splats, screenX, screenY, width, height) {
+  const anchorX = width * 0.5 + (screenX - width * 0.5) * 0.35;
+  const anchorY = height * 0.38 + (screenY - height * 0.38) * 0.35;
+  const spreadX = width * SCREEN_SPLAT_SPREAD_X;
+  const spreadY = height * SCREEN_SPLAT_SPREAD_Y;
+
+  for (let i = 0; i < SCREEN_SPLAT_IMPACT_BURST; i += 1) {
+    const radius = randomScreenSplatRadius();
+    const x = anchorX + (Math.random() - 0.5) * spreadX;
+    const y = anchorY + (Math.random() - 0.5) * spreadY;
+    splats.push({
+      x: Math.max(radius, Math.min(width - radius, x)),
+      y: Math.max(radius * 0.6, Math.min(height - radius, y)),
+      vx: (Math.random() - 0.5) * 28,
+      vy: SCREEN_SPLAT_INITIAL_VY + Math.random() * 22,
+      radius,
+      tailLength: radius * (1.4 + Math.random() * 0.8),
+      tailWidth: radius * (0.5 + Math.random() * 0.28),
+      age: 0,
+      impactT: 0,
+    });
+  }
+}
+
+function updateScreenSillyStringSplats(splats, dt) {
+  const maxLife = SCREEN_SPLAT_DRIP_SEC + SCREEN_SPLAT_FADE_SEC;
+  for (let i = splats.length - 1; i >= 0; i -= 1) {
+    const s = splats[i];
+    s.age += dt;
+    s.impactT = Math.min(1, s.impactT + dt / SCREEN_SPLAT_IMPACT_GROW_SEC);
+    s.vy += SCREEN_SPLAT_GRAVITY * dt;
+    s.vx *= 1 - dt * 0.35;
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    s.tailLength = Math.min(s.tailLength + s.vy * dt * 0.32, s.radius * 9);
+    if (s.age >= maxLife) splats.splice(i, 1);
+  }
+}
+
+function drawScreenSillyStringSplats(ctx, width, height, splats) {
+  if (!ctx) return;
+  ctx.clearRect(0, 0, width, height);
+  for (const s of splats) {
+    const opacity = getScreenSplatOpacity(s.age);
+    if (opacity <= 0.01) continue;
+
+    const grow = easeOutCubic(Math.min(1, s.impactT));
+    const r = s.radius * (0.55 + grow * 0.45);
+    const x = s.x;
+    const y = s.y;
+    const tailLen = s.tailLength;
+    const tailW = s.tailWidth;
+    const topY = y - r - tailLen;
+
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.fillStyle = "#ffffff";
+
+    ctx.beginPath();
+    ctx.moveTo(x, topY);
+    ctx.bezierCurveTo(
+      x - tailW * 0.52,
+      y - r - tailLen * 0.48,
+      x - r * 0.62,
+      y - r * 0.92,
+      x - r * 0.38,
+      y - r * 0.18
+    );
+    ctx.bezierCurveTo(x - r * 0.12, y + r * 0.08, x + r * 0.12, y + r * 0.08, x + r * 0.38, y - r * 0.18);
+    ctx.bezierCurveTo(
+      x + r * 0.62,
+      y - r * 0.92,
+      x + tailW * 0.52,
+      y - r - tailLen * 0.48,
+      x,
+      topY
+    );
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, PI2);
+    ctx.fill();
+
+    ctx.globalAlpha = opacity * 0.38;
+    ctx.beginPath();
+    ctx.arc(x - r * 0.26, y - r * 0.24, r * 0.34, 0, PI2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function clearScreenSillyStringSplats(splats) {
+  splats.length = 0;
 }
 
 function getGroundTileAt(x, z, tileGrid, half) {
@@ -2213,6 +2344,7 @@ export default function NightWalkerCharacterWalk({
 }) {
   const mountRef = useRef(null);
   const mountWrapRef = useRef(null);
+  const screenSplatsCanvasRef = useRef(null);
   const [speechBubble, setSpeechBubble] = useState(null);
   const setSpeechBubbleRef = useRef(setSpeechBubble);
   setSpeechBubbleRef.current = setSpeechBubble;
@@ -2352,6 +2484,23 @@ export default function NightWalkerCharacterWalk({
     let spinOrigin = { x: 0, z: 0, ry: 0 };
     let sillyStringPulse = 0;
     let sillyStringSpawnTimer = 0;
+    const screenSplats = [];
+    const screenSplatsCanvas = screenSplatsCanvasRef.current;
+    const screenSplatsCtx = screenSplatsCanvas?.getContext("2d");
+
+    function syncScreenSplatsCanvasSize() {
+      if (!screenSplatsCanvas || !mountEl) return;
+      const w = mountEl.clientWidth;
+      const h = mountEl.clientHeight;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      screenSplatsCanvas.width = Math.max(1, Math.floor(w * dpr));
+      screenSplatsCanvas.height = Math.max(1, Math.floor(h * dpr));
+      screenSplatsCanvas.style.width = `${w}px`;
+      screenSplatsCanvas.style.height = `${h}px`;
+      if (screenSplatsCtx) screenSplatsCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    syncScreenSplatsCanvasSize();
     let trapPhase = "idle";
     let trapStandTimer = 0;
     let trapStandTileKey = null;
@@ -2600,13 +2749,15 @@ export default function NightWalkerCharacterWalk({
           trapPhase === "idle" &&
           !terminalViewActiveRef.current &&
           !doorwayTransitioning &&
-          !moonwalkActive &&
-          !spinActive &&
           localPlayer
         ) {
           if (localPlayer.kneeCylinder?.growT >= 1) {
             e.preventDefault();
             keys.add(k);
+            return;
+          }
+
+          if (moonwalkActive || spinActive) {
             return;
           }
 
@@ -2649,6 +2800,7 @@ export default function NightWalkerCharacterWalk({
         renderer.setSize(w, h);
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
+        syncScreenSplatsCanvasSize();
       };
       window.addEventListener("resize", resize);
 
@@ -2710,20 +2862,8 @@ export default function NightWalkerCharacterWalk({
           !terminalCameraActive &&
           !doorwayTransitioning &&
           trapPhase === "idle" &&
-          !moonwalkActive &&
-          !spinActive &&
           localPlayer?.kneeCylinder?.growT >= 1 &&
           keys.has(" ");
-        if (canSpraySillyString) {
-          sillyStringSpawnTimer -= dt;
-          if (sillyStringSpawnTimer <= 0) {
-            spawnSillyStringBurst(scene, localPlayer);
-            sillyStringPulse += 1;
-            sillyStringSpawnTimer = SILLY_STRING_SPAWN_INTERVAL;
-          }
-        } else {
-          sillyStringSpawnTimer = 0;
-        }
 
         const trapActive = trapPhase !== "idle";
         const gameplayLocked =
@@ -3090,6 +3230,40 @@ export default function NightWalkerCharacterWalk({
             : WELCOME_SIGN_BASE_EMISSIVE * 0.16;
         }
 
+        if (canSpraySillyString) {
+          sillyStringSpawnTimer -= dt;
+          if (sillyStringSpawnTimer <= 0) {
+            const facingCamera =
+              spinActive && isSpinPlayerFacingCamera(player.rotation.y, spinOrigin.ry);
+            if (facingCamera) {
+              const w = mountEl.clientWidth;
+              const h = mountEl.clientHeight;
+              if (getKneeCylinderNozzle(localPlayer, sillyStringOrigin, sillyStringDir)) {
+                const pt = projectWorldPoint(sillyStringOrigin, camera, w, h);
+                if (pt) {
+                  spawnScreenSillyStringHit(screenSplats, pt.left, pt.top, w, h);
+                } else {
+                  spawnScreenSillyStringHit(screenSplats, w * 0.5, h * 0.42, w, h);
+                }
+              }
+            } else {
+              spawnSillyStringBurst(scene, localPlayer);
+            }
+            sillyStringPulse += 1;
+            sillyStringSpawnTimer = SILLY_STRING_SPAWN_INTERVAL;
+          }
+        } else {
+          sillyStringSpawnTimer = 0;
+        }
+
+        updateScreenSillyStringSplats(screenSplats, dt);
+        drawScreenSillyStringSplats(
+          screenSplatsCtx,
+          mountEl.clientWidth,
+          mountEl.clientHeight,
+          screenSplats
+        );
+
         renderer.render(scene, camera);
 
         const showHeadBubble =
@@ -3128,6 +3302,10 @@ export default function NightWalkerCharacterWalk({
         stopMoonwalkAudio();
         stopSpinAudio();
         clearSillyStrings(scene);
+        clearScreenSillyStringSplats(screenSplats);
+        if (screenSplatsCtx) {
+          screenSplatsCtx.clearRect(0, 0, mountEl.clientWidth, mountEl.clientHeight);
+        }
         window.cancelAnimationFrame(rafId);
         window.removeEventListener("keydown", onKeyDown);
         window.removeEventListener("keyup", onKeyUp);
@@ -3217,6 +3395,18 @@ export default function NightWalkerCharacterWalk({
           inset: 0,
           outline: "none",
           cursor: "default",
+        }}
+      />
+      <canvas
+        ref={screenSplatsCanvasRef}
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          pointerEvents: "none",
+          zIndex: 30,
         }}
       />
       {speechBubble?.left != null && speechBubble?.top != null ? (
