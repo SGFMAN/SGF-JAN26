@@ -431,7 +431,7 @@ function applyPlayerMove(player, dx, dz, doorOpenT, obstacleColliders, remotePla
   }
 
   for (const remote of others) {
-    if (!remote?.group || remote.group === selfGroup) continue;
+    if (!remote?.group || remote.group === player) continue;
     const slid = slideMoveFromCircle(
       px,
       pz,
