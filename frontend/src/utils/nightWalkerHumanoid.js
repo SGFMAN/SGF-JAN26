@@ -83,16 +83,24 @@ export function createHumanoidRig({ skinColor, clothColor, darkClothColor, joint
     group.add(armPivot);
 
     addBodyMesh(new THREE.Mesh(new THREE.SphereGeometry(0.26, 18, 16), clothMat), armPivot);
+
+    const upperArmLen = 1.1;
+    const elbowDrop = 1.19;
+    const upperArmOutwardZ = Math.atan2(elbowLocalX, elbowDrop);
+
+    const upperArmPivot = new THREE.Group();
+    armPivot.add(upperArmPivot);
+    upperArmPivot.rotation.z = upperArmOutwardZ;
+
     const upperArm = addBodyMesh(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.22, 1.1, 14), clothMat),
-      armPivot
+      new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.22, upperArmLen, 14), clothMat),
+      upperArmPivot
     );
-    upperArm.position.set(elbowLocalX * 0.5, -0.64, 0);
-    upperArm.rotation.z = side * 0.22;
+    upperArm.position.set(0, -upperArmLen * 0.5, 0);
 
     const forearmPivot = new THREE.Group();
-    forearmPivot.position.set(elbowLocalX, -1.29, 0);
-    armPivot.add(forearmPivot);
+    forearmPivot.position.set(0, -upperArmLen, 0);
+    upperArmPivot.add(forearmPivot);
 
     addBodyMesh(new THREE.Mesh(new THREE.SphereGeometry(0.23, 16, 14), clothMat), forearmPivot);
     addBodyMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.2, 1.0, 14), clothMat), forearmPivot).position.set(
@@ -106,7 +114,16 @@ export function createHumanoidRig({ skinColor, clothColor, darkClothColor, joint
     hand.position.set(0.06 * side, -1.39, 0.02);
     hand.rotation.z = Math.PI / 2;
 
-    const rig = { side, armPivot, forearmPivot, upperArm, hand, baseHandX: hand.rotation.x };
+    const rig = {
+      side,
+      armPivot,
+      upperArmPivot,
+      forearmPivot,
+      upperArm,
+      hand,
+      baseHandX: hand.rotation.x,
+      baseUpperArmZ: upperArmOutwardZ,
+    };
     if (side > 0) armRig.right = rig;
     else armRig.left = rig;
   };
