@@ -696,7 +696,6 @@ function addPlayerToScene(scene, slot) {
     jacket: null,
     moonwalkLegAccents: null,
     moonwalkFace: null,
-    kneeCylinder: null,
     walkPhase: 0,
     moving: false,
     dance: null,
@@ -709,10 +708,6 @@ function addPlayerToScene(scene, slot) {
     targetTrapCol: -1,
     targetTrapElapsed: 0,
     lastTrapTile: null,
-    targetShowKneeCylinder: false,
-    targetKneeCylinderGrowT: 0,
-    lastSillyStringPulse: 0,
-    targetSillyStringPulse: 0,
     targetX: 0,
     targetZ: 0,
     targetRy: 0,
@@ -1330,427 +1325,6 @@ function equipSpinCostume(player) {
   if (!player.fedora) player.fedora = buildMoonwalkFedora(player.head);
 }
 
-const KNEE_CYLINDER_Y = -0.35;
-const KNEE_CYLINDER_Z = 0.59;
-const KNEE_CYLINDER_HEIGHT = 1.84;
-const KNEE_CYLINDER_MESH_LIFT = 1.64;
-const KNEE_CYLINDER_BODY_Y = KNEE_CYLINDER_MESH_LIFT - KNEE_CYLINDER_HEIGHT;
-const KNEE_CYLINDER_TIP_Y = KNEE_CYLINDER_MESH_LIFT;
-const KNEE_CYLINDER_RADIUS = 0.19;
-const KNEE_CYLINDER_TIP_RADIUS = 0.2;
-const KNEE_CYLINDER_TILT_X = 0.82;
-const KNEE_CYLINDER_GROW_DURATION = 0.6;
-
-function applyKneeCylinderGrow(kneeCylinder, progressT) {
-  const t = Math.min(1, Math.max(0, progressT));
-  const grow = easeOutCubic(t);
-  const length = KNEE_CYLINDER_HEIGHT * grow;
-
-  kneeCylinder.tip.visible = true;
-  kneeCylinder.tip.position.y = KNEE_CYLINDER_TIP_Y;
-
-  kneeCylinder.mesh.visible = grow > 0.02;
-  kneeCylinder.mesh.scale.y = Math.max(grow, 0.001);
-  kneeCylinder.mesh.position.y = KNEE_CYLINDER_BODY_Y + length / 2;
-  kneeCylinder.growT = t;
-}
-
-function equipKneeCylinder(player) {
-  if (!player?.group || player.kneeCylinder) return;
-  const geoms = [];
-  const materials = [];
-  const regGeom = (geometry) => {
-    geoms.push(geometry);
-    return geometry;
-  };
-  const regMat = (params) => {
-    const m = new THREE.MeshStandardMaterial(params);
-    materials.push(m);
-    return m;
-  };
-
-  const fleshMat = regMat({
-    color: FLESH_SKIN_COLOR,
-    emissive: FLESH_SKIN_EMISSIVE,
-    emissiveIntensity: FLESH_SKIN_EMISSIVE_INTENSITY,
-    roughness: FLESH_SKIN_ROUGHNESS,
-    metalness: 0.02,
-  });
-
-  const pivot = new THREE.Group();
-  pivot.position.set(0, KNEE_CYLINDER_Y, KNEE_CYLINDER_Z);
-  pivot.rotation.x = KNEE_CYLINDER_TILT_X;
-
-  const mesh = new THREE.Mesh(
-    regGeom(new THREE.CylinderGeometry(
-      KNEE_CYLINDER_RADIUS,
-      KNEE_CYLINDER_RADIUS,
-      KNEE_CYLINDER_HEIGHT,
-      14
-    )),
-    fleshMat
-  );
-  mesh.renderOrder = 2;
-
-  const tip = new THREE.Mesh(
-    regGeom(new THREE.SphereGeometry(KNEE_CYLINDER_TIP_RADIUS, 14, 12)),
-    fleshMat
-  );
-  tip.renderOrder = 2;
-
-  pivot.add(mesh);
-  pivot.add(tip);
-  player.group.add(pivot);
-
-  const kneeCylinder = {
-    pivot,
-    mesh,
-    tip,
-    geoms,
-    materials,
-    growT: 0,
-    growing: true,
-  };
-  applyKneeCylinderGrow(kneeCylinder, 0);
-  player.kneeCylinder = kneeCylinder;
-}
-
-function removeKneeCylinder(player) {
-  if (!player?.kneeCylinder) return;
-  player.group.remove(player.kneeCylinder.pivot);
-  player.kneeCylinder.geoms.forEach((g) => g.dispose());
-  player.kneeCylinder.materials.forEach((m) => m.dispose());
-  player.kneeCylinder = null;
-}
-
-function updateKneeCylinderGrow(player, dt) {
-  const kc = player?.kneeCylinder;
-  if (!kc?.growing) return;
-  applyKneeCylinderGrow(kc, kc.growT + dt / KNEE_CYLINDER_GROW_DURATION);
-  if (kc.growT >= 1) kc.growing = false;
-}
-
-function toggleKneeCylinder(player) {
-  if (!player) return;
-  if (player.kneeCylinder) removeKneeCylinder(player);
-  else equipKneeCylinder(player);
-}
-
-function syncRemoteKneeCylinder(player, show, growT = 0) {
-  if (!player) return;
-  if (!show) {
-    if (player.kneeCylinder) removeKneeCylinder(player);
-    return;
-  }
-  if (!player.kneeCylinder) equipKneeCylinder(player);
-  const t = Math.min(1, Math.max(0, growT));
-  if (t > player.kneeCylinder.growT) {
-    applyKneeCylinderGrow(player.kneeCylinder, t);
-    if (t >= 1) player.kneeCylinder.growing = false;
-  }
-}
-
-const SILLY_STRING_SPAWN_INTERVAL = 0.034;
-const SILLY_STRING_PARTICLES_PER_SPAWN = 6;
-const SILLY_STRING_PARTICLE_LIFE = 1.05;
-const SILLY_STRING_SPEED = 7.5;
-const SILLY_STRING_STUCK_OPACITY = 0.95;
-const SCREEN_SPLAT_DRIP_SEC = 10;
-const SCREEN_SPLAT_FADE_SEC = 1;
-const SCREEN_SPLAT_BALL_MIN_PX = 14;
-const SCREEN_SPLAT_BALL_MAX_PX = 72;
-const SCREEN_SPLAT_IMPACT_BURST = 4;
-const SCREEN_SPLAT_SPREAD_X = 0.78;
-const SCREEN_SPLAT_SPREAD_Y = 0.42;
-const SCREEN_SPLAT_GRAVITY = 165;
-const SCREEN_SPLAT_INITIAL_VY = 26;
-const SCREEN_SPLAT_IMPACT_GROW_SEC = 0.14;
-const SPIN_FACE_CAMERA_ANGLE = 0.62;
-const sillyStringParticles = [];
-const sillyStringOrigin = new THREE.Vector3();
-const sillyStringBody = new THREE.Vector3();
-const sillyStringDir = new THREE.Vector3();
-const sillyStringSide = new THREE.Vector3();
-
-function getKneeCylinderNozzle(player, origin, dir) {
-  const kc = player?.kneeCylinder;
-  if (!kc?.tip || (kc.growT ?? 0) < 1) return false;
-  kc.tip.getWorldPosition(origin);
-  kc.pivot.localToWorld(sillyStringBody.set(0, KNEE_CYLINDER_BODY_Y, 0), sillyStringBody);
-  dir.copy(origin).sub(sillyStringBody);
-  if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1);
-  else dir.normalize();
-  return true;
-}
-
-function addSillyStringSplat(scene, x, y, z, radius = 0.04) {
-  if (!scene) return;
-  const geom = new THREE.SphereGeometry(radius, 7, 6);
-  const mat = new THREE.MeshBasicMaterial({
-    color: "#ffffff",
-    transparent: true,
-    opacity: SILLY_STRING_STUCK_OPACITY,
-    depthWrite: false,
-  });
-  const mesh = new THREE.Mesh(geom, mat);
-  mesh.position.set(x, y, z);
-  mesh.renderOrder = 5;
-  scene.add(mesh);
-  sillyStringParticles.push({
-    mesh,
-    geom,
-    mat,
-    velocity: new THREE.Vector3(),
-    stuck: true,
-    age: 0,
-    life: Infinity,
-  });
-}
-
-function stickSillyStringParticle(p, onStick) {
-  if (p.stuck) return;
-  p.stuck = true;
-  p.velocity.set(0, 0, 0);
-  p.life = Infinity;
-  p.mat.opacity = SILLY_STRING_STUCK_OPACITY;
-  onStick?.(p.mesh.position.x, p.mesh.position.y, p.mesh.position.z, p.mesh.geometry.parameters.radius);
-}
-
-function resolveSillyStringWallHit(pos, radius) {
-  const half = FLOOR_HALF_M;
-  const doorZ1 = DOOR_CENTER_Z - DOOR_HALF_WIDTH;
-  const doorZ2 = DOOR_CENTER_Z + DOOR_HALF_WIDTH;
-  let hit = false;
-  let { x, y, z } = pos;
-
-  if (z + radius >= half) {
-    z = half - radius;
-    hit = true;
-  } else if (z - radius <= -half) {
-    z = -half + radius;
-    hit = true;
-  } else if (x - radius <= -half) {
-    x = -half + radius;
-    hit = true;
-  } else if (x + radius >= half) {
-    const throughDoor = z >= doorZ1 && z <= doorZ2 && y < DOOR_HEIGHT;
-    if (!throughDoor) {
-      x = half - radius;
-      hit = true;
-    }
-  }
-
-  if (hit) pos.set(x, y, z);
-  return hit;
-}
-
-function spawnSillyStringBurst(scene, player) {
-  if (!scene || !getKneeCylinderNozzle(player, sillyStringOrigin, sillyStringDir)) return;
-
-  sillyStringSide.crossVectors(sillyStringDir, new THREE.Vector3(0, 1, 0));
-  if (sillyStringSide.lengthSq() < 1e-4) sillyStringSide.set(1, 0, 0);
-  else sillyStringSide.normalize();
-
-  for (let i = 0; i < SILLY_STRING_PARTICLES_PER_SPAWN; i += 1) {
-    const radius = 0.035 + Math.random() * 0.04;
-    const geom = new THREE.SphereGeometry(radius, 7, 6);
-    const mat = new THREE.MeshBasicMaterial({
-      color: "#ffffff",
-      transparent: true,
-      opacity: 0.95,
-      depthWrite: false,
-    });
-    const mesh = new THREE.Mesh(geom, mat);
-    mesh.position.copy(sillyStringOrigin);
-    mesh.renderOrder = 5;
-    scene.add(mesh);
-
-    const speed = SILLY_STRING_SPEED + Math.random() * 3.5;
-    const velocity = sillyStringDir
-      .clone()
-      .multiplyScalar(speed)
-      .add(sillyStringSide.clone().multiplyScalar((Math.random() - 0.5) * 2.4))
-      .add(new THREE.Vector3(0, (Math.random() - 0.15) * 2.2, 0));
-
-    sillyStringParticles.push({
-      mesh,
-      geom,
-      mat,
-      velocity,
-      stuck: false,
-      life: SILLY_STRING_PARTICLE_LIFE * (0.75 + Math.random() * 0.45),
-      age: 0,
-    });
-  }
-}
-
-function updateSillyStrings(scene, dt, onStick) {
-  if (!scene) return;
-  for (let i = sillyStringParticles.length - 1; i >= 0; i -= 1) {
-    const p = sillyStringParticles[i];
-    if (p.stuck) continue;
-
-    p.age += dt;
-    p.mesh.position.addScaledVector(p.velocity, dt);
-    p.velocity.y -= 3.2 * dt;
-    p.velocity.multiplyScalar(1 - dt * 0.35);
-
-    const radius = p.mesh.geometry.parameters?.radius ?? 0.04;
-    if (resolveSillyStringWallHit(p.mesh.position, radius)) {
-      stickSillyStringParticle(p, onStick);
-      continue;
-    }
-
-    p.mat.opacity = Math.max(0, 1 - p.age / p.life);
-    if (p.age >= p.life) {
-      scene.remove(p.mesh);
-      p.geom.dispose();
-      p.mat.dispose();
-      sillyStringParticles.splice(i, 1);
-    }
-  }
-}
-
-function clearSillyStrings(scene) {
-  if (!scene) return;
-  for (const p of sillyStringParticles) {
-    scene.remove(p.mesh);
-    p.geom.dispose();
-    p.mat.dispose();
-  }
-  sillyStringParticles.length = 0;
-}
-
-function syncRemoteSillyString(scene, player, targetPulse) {
-  if (!player || targetPulse <= player.lastSillyStringPulse) return;
-  let spawned = 0;
-  while (player.lastSillyStringPulse < targetPulse && spawned < 8) {
-    player.lastSillyStringPulse += 1;
-    spawnSillyStringBurst(scene, player);
-    spawned += 1;
-  }
-}
-
-function isSpinPlayerFacingCamera(playerRy, spinOriginRy) {
-  let diff = playerRy - spinOriginRy;
-  while (diff > Math.PI) diff -= PI2;
-  while (diff < -Math.PI) diff += PI2;
-  return Math.abs(Math.abs(diff) - Math.PI) < SPIN_FACE_CAMERA_ANGLE;
-}
-
-function getScreenSplatOpacity(age) {
-  if (age <= SCREEN_SPLAT_DRIP_SEC) return 0.96;
-  const fadeT = Math.min(1, (age - SCREEN_SPLAT_DRIP_SEC) / SCREEN_SPLAT_FADE_SEC);
-  return 0.96 * (1 - fadeT);
-}
-
-function randomScreenSplatRadius() {
-  const roll = Math.random();
-  if (roll < 0.34) {
-    return SCREEN_SPLAT_BALL_MIN_PX + Math.random() * 14;
-  }
-  if (roll < 0.72) {
-    return 30 + Math.random() * 20;
-  }
-  return 52 + Math.random() * (SCREEN_SPLAT_BALL_MAX_PX - 52);
-}
-
-function spawnScreenSillyStringHit(splats, screenX, screenY, width, height) {
-  const anchorX = width * 0.5 + (screenX - width * 0.5) * 0.35;
-  const anchorY = height * 0.38 + (screenY - height * 0.38) * 0.35;
-  const spreadX = width * SCREEN_SPLAT_SPREAD_X;
-  const spreadY = height * SCREEN_SPLAT_SPREAD_Y;
-
-  for (let i = 0; i < SCREEN_SPLAT_IMPACT_BURST; i += 1) {
-    const radius = randomScreenSplatRadius();
-    const x = anchorX + (Math.random() - 0.5) * spreadX;
-    const y = anchorY + (Math.random() - 0.5) * spreadY;
-    splats.push({
-      x: Math.max(radius, Math.min(width - radius, x)),
-      y: Math.max(radius * 0.6, Math.min(height - radius, y)),
-      vx: (Math.random() - 0.5) * 28,
-      vy: SCREEN_SPLAT_INITIAL_VY + Math.random() * 22,
-      radius,
-      tailLength: radius * (1.4 + Math.random() * 0.8),
-      tailWidth: radius * (0.5 + Math.random() * 0.28),
-      age: 0,
-      impactT: 0,
-    });
-  }
-}
-
-function updateScreenSillyStringSplats(splats, dt) {
-  const maxLife = SCREEN_SPLAT_DRIP_SEC + SCREEN_SPLAT_FADE_SEC;
-  for (let i = splats.length - 1; i >= 0; i -= 1) {
-    const s = splats[i];
-    s.age += dt;
-    s.impactT = Math.min(1, s.impactT + dt / SCREEN_SPLAT_IMPACT_GROW_SEC);
-    s.vy += SCREEN_SPLAT_GRAVITY * dt;
-    s.vx *= 1 - dt * 0.35;
-    s.x += s.vx * dt;
-    s.y += s.vy * dt;
-    s.tailLength = Math.min(s.tailLength + s.vy * dt * 0.32, s.radius * 9);
-    if (s.age >= maxLife) splats.splice(i, 1);
-  }
-}
-
-function drawScreenSillyStringSplats(ctx, width, height, splats) {
-  if (!ctx) return;
-  ctx.clearRect(0, 0, width, height);
-  for (const s of splats) {
-    const opacity = getScreenSplatOpacity(s.age);
-    if (opacity <= 0.01) continue;
-
-    const grow = easeOutCubic(Math.min(1, s.impactT));
-    const r = s.radius * (0.55 + grow * 0.45);
-    const x = s.x;
-    const y = s.y;
-    const tailLen = s.tailLength;
-    const tailW = s.tailWidth;
-    const topY = y - r - tailLen;
-
-    ctx.save();
-    ctx.globalAlpha = opacity;
-    ctx.fillStyle = "#ffffff";
-
-    ctx.beginPath();
-    ctx.moveTo(x, topY);
-    ctx.bezierCurveTo(
-      x - tailW * 0.52,
-      y - r - tailLen * 0.48,
-      x - r * 0.62,
-      y - r * 0.92,
-      x - r * 0.38,
-      y - r * 0.18
-    );
-    ctx.bezierCurveTo(x - r * 0.12, y + r * 0.08, x + r * 0.12, y + r * 0.08, x + r * 0.38, y - r * 0.18);
-    ctx.bezierCurveTo(
-      x + r * 0.62,
-      y - r * 0.92,
-      x + tailW * 0.52,
-      y - r - tailLen * 0.48,
-      x,
-      topY
-    );
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, PI2);
-    ctx.fill();
-
-    ctx.globalAlpha = opacity * 0.38;
-    ctx.beginPath();
-    ctx.arc(x - r * 0.26, y - r * 0.24, r * 0.34, 0, PI2);
-    ctx.fill();
-    ctx.restore();
-  }
-}
-
-function clearScreenSillyStringSplats(splats) {
-  splats.length = 0;
-}
-
 function getGroundTileAt(x, z, tileGrid, half) {
   if (Math.abs(x) > half || Math.abs(z) > half) return null;
   const col = Math.floor((x + half) / GROUND_CELL_SIZE);
@@ -2228,7 +1802,6 @@ function buildCornerTerminalDesk(scene) {
 }
 
 function disposePlayer(scene, player) {
-  removeKneeCylinder(player);
   removeMoonwalkCostume(player);
   restoreMoonwalkSkinTone(player);
   scene.remove(player.group);
@@ -2323,7 +1896,6 @@ function leaveSecretAreaSocket(socket) {
  *   onRoomFull?: () => void,
  *   disconnectRef?: React.MutableRefObject<(() => void) | null>,
  *   terminalViewActive?: boolean,
- *   pModeEnabled?: boolean,
  *   onTerminalOpen?: () => void,
  *   onTerminalFrame?: (frame: { progress: number, rect: { left: number, top: number, width: number, height: number } | null }) => void,
  *   onDoorwayFade?: (opacity: number) => void,
@@ -2336,7 +1908,6 @@ export default function NightWalkerCharacterWalk({
   onRoomFull,
   disconnectRef,
   terminalViewActive = false,
-  pModeEnabled = false,
   onTerminalOpen,
   onTerminalFrame,
   onDoorwayFade,
@@ -2346,7 +1917,6 @@ export default function NightWalkerCharacterWalk({
 }) {
   const mountRef = useRef(null);
   const mountWrapRef = useRef(null);
-  const screenSplatsCanvasRef = useRef(null);
   const [speechBubble, setSpeechBubble] = useState(null);
   const setSpeechBubbleRef = useRef(setSpeechBubble);
   setSpeechBubbleRef.current = setSpeechBubble;
@@ -2356,7 +1926,6 @@ export default function NightWalkerCharacterWalk({
   const onDoorwayFadeRef = useRef(onDoorwayFade);
   const onDoorwayEnteredRef = useRef(onDoorwayEntered);
   const terminalViewActiveRef = useRef(terminalViewActive);
-  const pModeEnabledRef = useRef(pModeEnabled);
   const spawnAtTerminalRef = useRef(spawnAtTerminal);
   const snapTerminalZoomRef = useRef(snapTerminalZoom);
   onRoomFullRef.current = onRoomFull;
@@ -2365,7 +1934,6 @@ export default function NightWalkerCharacterWalk({
   onDoorwayFadeRef.current = onDoorwayFade;
   onDoorwayEnteredRef.current = onDoorwayEntered;
   terminalViewActiveRef.current = terminalViewActive;
-  pModeEnabledRef.current = pModeEnabled;
   spawnAtTerminalRef.current = spawnAtTerminal;
   snapTerminalZoomRef.current = snapTerminalZoom;
 
@@ -2424,17 +1992,6 @@ export default function NightWalkerCharacterWalk({
 
         if (!sceneStarted) return;
 
-        if (
-          msg.type === "silly_string_stick" &&
-          scene &&
-          typeof msg.x === "number" &&
-          typeof msg.y === "number" &&
-          typeof msg.z === "number"
-        ) {
-          addSillyStringSplat(scene, msg.x, msg.y, msg.z, msg.r ?? 0.04);
-          return;
-        }
-
         if (msg.type === "peer_joined" && msg.player && msg.player.id !== localPlayerId) {
           ensureRemote(msg.player);
         }
@@ -2451,9 +2008,6 @@ export default function NightWalkerCharacterWalk({
             remote.targetTrapRow = msg.player.trapRow ?? -1;
             remote.targetTrapCol = msg.player.trapCol ?? -1;
             remote.targetTrapElapsed = msg.player.trapElapsed ?? 0;
-            remote.targetShowKneeCylinder = !!msg.player.showKneeCylinder;
-            remote.targetKneeCylinderGrowT = msg.player.kneeCylinderGrowT ?? 0;
-            remote.targetSillyStringPulse = msg.player.sillyStringPulse ?? 0;
           } else {
             ensureRemote(msg.player);
           }
@@ -2486,25 +2040,6 @@ export default function NightWalkerCharacterWalk({
     let spinActive = false;
     let spinTimer = 0;
     let spinOrigin = { x: 0, z: 0, ry: 0 };
-    let sillyStringPulse = 0;
-    let sillyStringSpawnTimer = 0;
-    const screenSplats = [];
-    const screenSplatsCanvas = screenSplatsCanvasRef.current;
-    const screenSplatsCtx = screenSplatsCanvas?.getContext("2d");
-
-    function syncScreenSplatsCanvasSize() {
-      if (!screenSplatsCanvas || !mountEl) return;
-      const w = mountEl.clientWidth;
-      const h = mountEl.clientHeight;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      screenSplatsCanvas.width = Math.max(1, Math.floor(w * dpr));
-      screenSplatsCanvas.height = Math.max(1, Math.floor(h * dpr));
-      screenSplatsCanvas.style.width = `${w}px`;
-      screenSplatsCanvas.style.height = `${h}px`;
-      if (screenSplatsCtx) screenSplatsCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
-
-    syncScreenSplatsCanvasSize();
     let trapPhase = "idle";
     let trapStandTimer = 0;
     let trapStandTileKey = null;
@@ -2549,21 +2084,12 @@ export default function NightWalkerCharacterWalk({
       remote.targetTrapRow = playerData.trapRow ?? -1;
       remote.targetTrapCol = playerData.trapCol ?? -1;
       remote.targetTrapElapsed = playerData.trapElapsed ?? 0;
-      remote.targetShowKneeCylinder = !!playerData.showKneeCylinder;
-      remote.targetKneeCylinderGrowT = playerData.kneeCylinderGrowT ?? 0;
-      remote.targetSillyStringPulse = playerData.sillyStringPulse ?? 0;
-      remote.lastSillyStringPulse = playerData.sillyStringPulse ?? 0;
       remote.dance = null;
       remote.danceT = 0;
       if (remote.targetDance) {
         syncRemoteDance(remote, remote.targetDance);
         remote.danceT = remote.targetDanceT;
       }
-      syncRemoteKneeCylinder(
-        remote,
-        remote.targetShowKneeCylinder,
-        remote.targetKneeCylinderGrowT
-      );
       remotes.set(playerData.id, remote);
     }
 
@@ -2585,11 +2111,6 @@ export default function NightWalkerCharacterWalk({
         return TRAP_TILE_FALL_DELAY + TRAP_PLAYER_FALL_DURATION + trapResetTimer;
       }
       return 0;
-    }
-
-    function sendSillyStringStick(x, y, z, r) {
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      ws.send(JSON.stringify({ type: "silly_string_stick", x, y, z, r }));
     }
 
     function sendState(x, z, ry, moving, dance = null, danceT = 0) {
@@ -2614,9 +2135,6 @@ export default function NightWalkerCharacterWalk({
           trapRow,
           trapCol,
           trapElapsed,
-          showKneeCylinder: !!localPlayer?.kneeCylinder,
-          kneeCylinderGrowT: localPlayer?.kneeCylinder?.growT ?? 0,
-          sillyStringPulse,
         })
       );
     }
@@ -2741,30 +2259,15 @@ export default function NightWalkerCharacterWalk({
           sendState(spinOrigin.x, spinOrigin.z, spinOrigin.ry, false, "spin", 0);
           return;
         }
-        if (k === "p" && localPlayer && !terminalViewActiveRef.current && pModeEnabledRef.current) {
-          e.preventDefault();
-          toggleKneeCylinder(localPlayer);
-          const g = localPlayer.group;
-          sendState(g.position.x, g.position.z, g.rotation.y, lastMovingSent);
-          return;
-        }
         if (
           k === " " &&
           trapPhase === "idle" &&
           !terminalViewActiveRef.current &&
           !doorwayTransitioning &&
+          !moonwalkActive &&
+          !spinActive &&
           localPlayer
         ) {
-          if (localPlayer.kneeCylinder?.growT >= 1) {
-            e.preventDefault();
-            keys.add(k);
-            return;
-          }
-
-          if (moonwalkActive || spinActive) {
-            return;
-          }
-
           const px = localPlayer.group.position.x;
           const pz = localPlayer.group.position.z;
 
@@ -2804,7 +2307,6 @@ export default function NightWalkerCharacterWalk({
         renderer.setSize(w, h);
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
-        syncScreenSplatsCanvasSize();
       };
       window.addEventListener("resize", resize);
 
@@ -2840,13 +2342,6 @@ export default function NightWalkerCharacterWalk({
         }
 
         applyRemoteTrapVisual(groundTiles, remote);
-        syncRemoteKneeCylinder(
-          remote,
-          remote.targetShowKneeCylinder,
-          remote.targetKneeCylinderGrowT
-        );
-        updateKneeCylinderGrow(remote, dt);
-        syncRemoteSillyString(scene, remote, remote.targetSillyStringPulse);
       };
 
       animateFn = () => {
@@ -2856,28 +2351,8 @@ export default function NightWalkerCharacterWalk({
         const player = localPlayer.group;
         const { armRig, legRig } = localPlayer;
 
-        updateKneeCylinderGrow(localPlayer, dt);
-        updateSillyStrings(scene, dt, sendSillyStringStick);
-
-        if (!pModeEnabledRef.current && localPlayer?.kneeCylinder) {
-          removeKneeCylinder(localPlayer);
-          const now = performance.now();
-          if (now - lastStateSend >= STATE_SEND_INTERVAL_MS) {
-            lastStateSend = now;
-            sendState(player.position.x, player.position.z, player.rotation.y, lastMovingSent);
-          }
-        }
-
         const wantsTerminal = terminalViewActiveRef.current;
         const terminalCameraActive = wantsTerminal || terminalZoomT > 0.001;
-
-        const canSpraySillyString =
-          pModeEnabledRef.current &&
-          !terminalCameraActive &&
-          !doorwayTransitioning &&
-          trapPhase === "idle" &&
-          localPlayer?.kneeCylinder?.growT >= 1 &&
-          keys.has(" ");
 
         const trapActive = trapPhase !== "idle";
         const gameplayLocked =
@@ -3244,40 +2719,6 @@ export default function NightWalkerCharacterWalk({
             : WELCOME_SIGN_BASE_EMISSIVE * 0.16;
         }
 
-        if (canSpraySillyString) {
-          sillyStringSpawnTimer -= dt;
-          if (sillyStringSpawnTimer <= 0) {
-            const facingCamera =
-              spinActive && isSpinPlayerFacingCamera(player.rotation.y, spinOrigin.ry);
-            if (facingCamera) {
-              const w = mountEl.clientWidth;
-              const h = mountEl.clientHeight;
-              if (getKneeCylinderNozzle(localPlayer, sillyStringOrigin, sillyStringDir)) {
-                const pt = projectWorldPoint(sillyStringOrigin, camera, w, h);
-                if (pt) {
-                  spawnScreenSillyStringHit(screenSplats, pt.left, pt.top, w, h);
-                } else {
-                  spawnScreenSillyStringHit(screenSplats, w * 0.5, h * 0.42, w, h);
-                }
-              }
-            } else {
-              spawnSillyStringBurst(scene, localPlayer);
-            }
-            sillyStringPulse += 1;
-            sillyStringSpawnTimer = SILLY_STRING_SPAWN_INTERVAL;
-          }
-        } else {
-          sillyStringSpawnTimer = 0;
-        }
-
-        updateScreenSillyStringSplats(screenSplats, dt);
-        drawScreenSillyStringSplats(
-          screenSplatsCtx,
-          mountEl.clientWidth,
-          mountEl.clientHeight,
-          screenSplats
-        );
-
         renderer.render(scene, camera);
 
         const showHeadBubble =
@@ -3315,11 +2756,6 @@ export default function NightWalkerCharacterWalk({
       mountEl._secretCleanup = () => {
         stopMoonwalkAudio();
         stopSpinAudio();
-        clearSillyStrings(scene);
-        clearScreenSillyStringSplats(screenSplats);
-        if (screenSplatsCtx) {
-          screenSplatsCtx.clearRect(0, 0, mountEl.clientWidth, mountEl.clientHeight);
-        }
         window.cancelAnimationFrame(rafId);
         window.removeEventListener("keydown", onKeyDown);
         window.removeEventListener("keyup", onKeyUp);
@@ -3409,18 +2845,6 @@ export default function NightWalkerCharacterWalk({
           inset: 0,
           outline: "none",
           cursor: "default",
-        }}
-      />
-      <canvas
-        ref={screenSplatsCanvasRef}
-        aria-hidden
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          pointerEvents: "none",
-          zIndex: 30,
         }}
       />
       {speechBubble?.left != null && speechBubble?.top != null ? (

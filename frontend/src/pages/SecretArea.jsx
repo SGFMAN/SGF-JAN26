@@ -16,8 +16,6 @@ export default function SecretArea() {
   const returnTo = location.state?.returnTo || "/projects";
   const [roomFull, setRoomFull] = useState(false);
   const [terminalView, setTerminalView] = useState(false);
-  const [terminalPage, setTerminalPage] = useState("menu");
-  const [pModeEnabled, setPModeEnabled] = useState(false);
   const [levelEditorOpen, setLevelEditorOpen] = useState(() => Boolean(location.state?.openLevelEditor));
   const [terminalFrame, setTerminalFrame] = useState({ progress: 0, rect: null });
   const [doorwayFade, setDoorwayFade] = useState(0);
@@ -64,7 +62,6 @@ export default function SecretArea() {
 
   const closeTerminal = useCallback(() => {
     setTerminalView(false);
-    setTerminalPage("menu");
     setLevelEditorOpen(false);
     setTerminalFrame({ progress: 0, rect: null });
   }, []);
@@ -145,7 +142,6 @@ export default function SecretArea() {
         disconnectRef={disconnectRef}
         onRoomFull={() => setRoomFull(true)}
         terminalViewActive={terminalView}
-        pModeEnabled={pModeEnabled}
         onTerminalOpen={() => setTerminalView(true)}
         onTerminalFrame={handleTerminalFrame}
         onDoorwayFade={setDoorwayFade}
@@ -171,11 +167,6 @@ export default function SecretArea() {
           screenGreen={SCREEN_GREEN}
           bezel={BEZEL}
           progress={terminalFrame.progress}
-          page={terminalPage}
-          pModeEnabled={pModeEnabled}
-          onPModeChange={setPModeEnabled}
-          onOpenSettings={() => setTerminalPage("settings")}
-          onBackToMenu={() => setTerminalPage("menu")}
           onLevelEditor={() => setLevelEditorOpen(true)}
           onExit={closeTerminal}
         />
@@ -214,20 +205,7 @@ export default function SecretArea() {
   );
 }
 
-function TerminalZoomOverlay({
-  frame,
-  screenBg,
-  screenGreen,
-  bezel,
-  progress,
-  page,
-  pModeEnabled,
-  onPModeChange,
-  onOpenSettings,
-  onBackToMenu,
-  onLevelEditor,
-  onExit,
-}) {
+function TerminalZoomOverlay({ frame, screenBg, screenGreen, bezel, progress, onLevelEditor, onExit }) {
   return (
     <div
       role="dialog"
@@ -262,7 +240,6 @@ function TerminalZoomOverlay({
           pointerEvents: progress > 0.85 ? "auto" : "none",
           opacity: Math.min(1, Math.max(0, (progress - 0.55) / 0.35)),
           overflow: "hidden",
-          padding: "clamp(12px, 2vh, 24px)",
         }}
       >
         <div
@@ -274,81 +251,21 @@ function TerminalZoomOverlay({
         >
           SGF TERMINAL
         </div>
-
-        {page === "settings" ? (
-          <>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: "clamp(0.85rem, 2vw, 1.05rem)",
-                fontWeight: 700,
-                letterSpacing: "0.14em",
-              }}
-            >
-              SETTINGS
-            </h2>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "clamp(10px, 1.6vh, 16px)",
-                width: "min(300px, 78%)",
-              }}
-            >
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "12px",
-                  padding: "14px 16px",
-                  border: `2px solid ${screenGreen}`,
-                  borderRadius: "6px",
-                  fontSize: "clamp(0.75rem, 1.8vw, 0.95rem)",
-                  fontWeight: 700,
-                  letterSpacing: "0.06em",
-                  cursor: "pointer",
-                }}
-              >
-                <span>P-Mode</span>
-                <span style={{ opacity: 0.85 }}>{pModeEnabled ? "ON" : "OFF"}</span>
-                <input
-                  type="checkbox"
-                  checked={pModeEnabled}
-                  onChange={(e) => onPModeChange(e.target.checked)}
-                  style={{
-                    width: "18px",
-                    height: "18px",
-                    accentColor: screenGreen,
-                    cursor: "pointer",
-                  }}
-                />
-              </label>
-              <button type="button" onClick={onBackToMenu} style={terminalMenuButtonStyle}>
-                Back
-              </button>
-            </div>
-          </>
-        ) : (
-          <nav
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "clamp(6px, 1.2vh, 12px)",
-              width: "min(280px, 72%)",
-            }}
-          >
-            <button type="button" onClick={onLevelEditor} style={terminalMenuButtonStyle}>
-              Level Editor
-            </button>
-            <button type="button" onClick={onOpenSettings} style={terminalMenuButtonStyle}>
-              Settings
-            </button>
-            <button type="button" onClick={onExit} style={terminalMenuButtonStyle}>
-              Exit
-            </button>
-          </nav>
-        )}
+        <nav
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "clamp(6px, 1.2vh, 12px)",
+            width: "min(280px, 72%)",
+          }}
+        >
+          <button type="button" onClick={onLevelEditor} style={terminalMenuButtonStyle}>
+            Level Editor
+          </button>
+          <button type="button" onClick={onExit} style={terminalMenuButtonStyle}>
+            Exit
+          </button>
+        </nav>
       </div>
     </div>
   );

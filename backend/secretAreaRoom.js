@@ -4,7 +4,7 @@ const crypto = require("crypto");
 const MAX_PLAYERS = 2;
 const PING_INTERVAL_MS = 15000;
 
-/** @type {Map<import('ws').WebSocket, { id: string, slot: number, x: number, z: number, ry: number, moving: boolean, dance: string | null, danceT: number, trapRow: number, trapCol: number, trapElapsed: number, showKneeCylinder: boolean }>} */
+/** @type {Map<import('ws').WebSocket, { id: string, slot: number, x: number, z: number, ry: number, moving: boolean, dance: string | null, danceT: number, trapRow: number, trapCol: number, trapElapsed: number }>} */
 const players = new Map();
 
 function publicPlayer(p) {
@@ -20,9 +20,6 @@ function publicPlayer(p) {
     trapRow: p.trapRow ?? -1,
     trapCol: p.trapCol ?? -1,
     trapElapsed: p.trapElapsed ?? 0,
-    showKneeCylinder: !!p.showKneeCylinder,
-    kneeCylinderGrowT: p.kneeCylinderGrowT ?? 0,
-    sillyStringPulse: p.sillyStringPulse ?? 0,
   };
 }
 
@@ -121,9 +118,6 @@ function attachSecretAreaWebSocket(httpServer) {
       trapRow: -1,
       trapCol: -1,
       trapElapsed: 0,
-      showKneeCylinder: false,
-      kneeCylinderGrowT: 0,
-      sillyStringPulse: 0,
     };
     players.set(ws, player);
 
@@ -159,23 +153,6 @@ function attachSecretAreaWebSocket(httpServer) {
       if (!players.has(ws)) return;
       const p = players.get(ws);
 
-      if (msg.type === "silly_string_stick") {
-        if (typeof msg.x === "number" && typeof msg.y === "number" && typeof msg.z === "number") {
-          broadcast(
-            {
-              type: "silly_string_stick",
-              playerId: p.id,
-              x: msg.x,
-              y: msg.y,
-              z: msg.z,
-              r: typeof msg.r === "number" ? msg.r : 0.04,
-            },
-            ws
-          );
-        }
-        return;
-      }
-
       if (msg.type !== "state") return;
       if (typeof msg.x === "number") p.x = msg.x;
       if (typeof msg.z === "number") p.z = msg.z;
@@ -196,15 +173,6 @@ function attachSecretAreaWebSocket(httpServer) {
         p.trapRow = -1;
         p.trapCol = -1;
         p.trapElapsed = 0;
-      }
-      p.showKneeCylinder = !!msg.showKneeCylinder;
-      if (p.showKneeCylinder && typeof msg.kneeCylinderGrowT === "number") {
-        p.kneeCylinderGrowT = msg.kneeCylinderGrowT;
-      } else {
-        p.kneeCylinderGrowT = 0;
-      }
-      if (typeof msg.sillyStringPulse === "number" && msg.sillyStringPulse >= 0) {
-        p.sillyStringPulse = msg.sillyStringPulse;
       }
       broadcast(
         {
