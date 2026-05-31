@@ -1,4 +1,4 @@
-export const SECRET_AREA_PROJECT_NAME = "15-19 Station Street, DRYSDALE, VIC";
+export const SECRET_AREA_PROJECT_NAME = "12 Mumm St, Waurn Ponds, VIC";
 export const SECRET_AREA_SESSION_KEY = "sgf_secret_area_unlocked";
 
 function normalizeProjectName(value) {
