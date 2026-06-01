@@ -158,7 +158,7 @@ function attachSecretAreaWebSocket(httpServer) {
       if (typeof msg.z === "number") p.z = msg.z;
       if (typeof msg.ry === "number") p.ry = msg.ry;
       p.moving = !!msg.moving;
-      if (msg.dance === "moonwalk" || msg.dance === "spin") {
+      if (msg.dance === "moonwalk" || msg.dance === "spin" || msg.dance === "lean") {
         p.dance = msg.dance;
         p.danceT = typeof msg.danceT === "number" ? msg.danceT : 0;
       } else {

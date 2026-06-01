@@ -50,12 +50,20 @@ const SPIN_ROTATE_DURATION = 1.6;
 const SPIN_SWEEP_DURATION = SPIN_ROTATE_DURATION - SPIN_FEDORA_GRAB_DURATION;
 const SPIN_DURATION = SPIN_ARM_PREP_DURATION + SPIN_ROTATE_DURATION;
 const SPIN_CAPTION = "Shamone!";
+const LEAN_ANGLE = Math.PI / 4;
+const LEAN_FORWARD_SEC = 4;
+const LEAN_HOLD_SEC = 1;
+const LEAN_BACK_SEC = 4;
+const LEAN_DURATION = LEAN_FORWARD_SEC + LEAN_HOLD_SEC + LEAN_BACK_SEC;
 const MOONWALK_CAMERA_PAN_OUT = 0.45;
 const MOONWALK_SPEED = 4.8;
 const MOONWALK_CAMERA_PAN_IN = 0.55;
 const MOONWALK_SIDE_DISTANCE = 13;
 const MOONWALK_SIDE_HEIGHT = 6.2;
 const CHARACTER_SCALE = 0.5;
+/** Unscaled rig-local Y of the ankle (lower leg meets foot). */
+const ANKLE_LOCAL_Y = -3.55;
+const ANKLE_PIVOT_OFFSET_Y = ANKLE_LOCAL_Y * CHARACTER_SCALE;
 const MOONWALK_CAPTION_HEAD_Y = 7.4 * CHARACTER_SCALE;
 const TRAP_STAND_DURATION = 10;
 const TRAP_TILE_FALL_DELAY = 1;
@@ -291,6 +299,75 @@ function resetSpinLegs(legRig) {
   legRig.right.foot.rotation.x = legRig.right.baseFootX;
 }
 
+function getLeanAngleForTimer(t) {
+  const forwardEnd = LEAN_FORWARD_SEC;
+  const holdEnd = forwardEnd + LEAN_HOLD_SEC;
+  if (t <= forwardEnd) {
+    return LEAN_ANGLE * easeOutCubic(t / forwardEnd);
+  }
+  if (t <= holdEnd) {
+    return LEAN_ANGLE;
+  }
+  const backT = Math.min(1, (t - holdEnd) / LEAN_BACK_SEC);
+  return LEAN_ANGLE * (1 - easeOutCubic(backT));
+}
+
+function getLeanCameraBlend(t) {
+  if (t <= LEAN_FORWARD_SEC) {
+    return easeOutCubic(t / LEAN_FORWARD_SEC);
+  }
+  if (t <= LEAN_FORWARD_SEC + LEAN_HOLD_SEC) {
+    return 1;
+  }
+  const backElapsed = t - LEAN_FORWARD_SEC - LEAN_HOLD_SEC;
+  return easeOutCubic(1 - Math.min(1, backElapsed / LEAN_BACK_SEC));
+}
+
+function applyLeanRotation(player, angle) {
+  if (!player?.leanPivot) return;
+  player.leanPivot.rotation.x = angle;
+}
+
+function resetLeanRotation(player) {
+  if (!player?.leanPivot) return;
+  player.leanPivot.rotation.x = 0;
+  releaseFeetFromLean(player);
+}
+
+function ensureFeetGroup(player) {
+  if (!player.feetGroup) {
+    player.feetGroup = new THREE.Group();
+    player.group.add(player.feetGroup);
+  }
+  return player.feetGroup;
+}
+
+function fixFeetForLean(player) {
+  if (player?.feetFixedForLean || !player?.legRig) return;
+  const feetGroup = ensureFeetGroup(player);
+  for (const side of ["left", "right"]) {
+    const foot = player.legRig[side]?.foot;
+    if (!foot || foot.parent === feetGroup) continue;
+    feetGroup.attach(foot);
+  }
+  player.feetFixedForLean = true;
+}
+
+function releaseFeetFromLean(player) {
+  if (!player?.feetFixedForLean || !player?.legRig) return;
+  for (const side of ["left", "right"]) {
+    const foot = player.legRig[side]?.foot;
+    const lowerLegPivot = player.legRig[side]?.lowerLegPivot;
+    if (!foot || !lowerLegPivot || foot.parent === lowerLegPivot) continue;
+    lowerLegPivot.attach(foot);
+  }
+  player.feetFixedForLean = false;
+}
+
+function startLeanPose(player) {
+  fixFeetForLean(player);
+}
+
 function syncRemoteDance(player, dance) {
   if (player.dance === dance) return;
   if (player.dance) {
@@ -298,6 +375,7 @@ function syncRemoteDance(player, dance) {
     resetMoonwalkHeadRotation(player.head);
     resetSpinLegs(player.legRig);
     player.spinFedoraGrabbed = false;
+    resetLeanRotation(player);
   }
   player.dance = dance || null;
   player.danceT = 0;
@@ -305,6 +383,9 @@ function syncRemoteDance(player, dance) {
     equipMoonwalkCostume(player);
   } else if (dance === "spin") {
     equipSpinCostume(player);
+  } else if (dance === "lean") {
+    equipMoonwalkCostume(player);
+    startLeanPose(player);
   }
 }
 
@@ -344,6 +425,12 @@ function applyRemoteDancePose(player) {
     player.walkPhase = player.danceT * 11;
     applyMoonwalkCycle(player.armRig, player.legRig, player.walkPhase);
     applyMoonwalkHeadTurn(player.head, player.danceT);
+    return;
+  }
+  if (player.dance === "lean") {
+    resetPose(player.armRig, player.legRig);
+    startLeanPose(player);
+    applyLeanRotation(player, getLeanAngleForTimer(player.danceT));
     return;
   }
   if (player.dance === "spin") {
@@ -677,11 +764,23 @@ function resolveLocalPlayerOverlaps(player, doorOpenT, obstacleColliders, remote
 function addPlayerToScene(scene, slot) {
   const rig = createHumanoidRig(SLOT_COLORS[slot]);
   rig.group.scale.setScalar(CHARACTER_SCALE);
-  scene.add(rig.group);
+
+  const leanPivot = new THREE.Group();
+  leanPivot.position.y = ANKLE_PIVOT_OFFSET_Y;
+  rig.group.position.y = -ANKLE_LOCAL_Y * CHARACTER_SCALE;
+  leanPivot.add(rig.group);
+
+  const outerGroup = new THREE.Group();
+  outerGroup.rotation.order = "YXZ";
+  outerGroup.add(leanPivot);
+  scene.add(outerGroup);
+
   return {
     id: null,
     slot,
-    group: rig.group,
+    group: outerGroup,
+    leanPivot,
+    bodyRoot: rig.group,
     head: rig.head,
     skinMat: rig.skinMat,
     jointMat: rig.jointMat,
@@ -1281,7 +1380,7 @@ function removeMoonwalkDreads(player) {
 
 function removeMoonwalkJacket(player) {
   if (!player?.jacket) return;
-  player.group.remove(player.jacket.group);
+  (player.bodyRoot || player.group).remove(player.jacket.group);
   player.jacket.geoms.forEach((g) => g.dispose());
   player.jacket.materials.forEach((m) => m.dispose());
   player.jacket = null;
@@ -1305,7 +1404,7 @@ function equipMoonwalkCostume(player) {
   if (!player.moonwalkLegAccents) {
     player.moonwalkLegAccents = buildMoonwalkLegAccents(player.legRig);
   }
-  if (!player.jacket) player.jacket = buildMoonwalkJacket(player.group);
+  if (!player.jacket) player.jacket = buildMoonwalkJacket(player.bodyRoot || player.group);
   if (!player.dreads) player.dreads = buildMoonwalkDreads(player.head);
   if (!player.fedora) player.fedora = buildMoonwalkFedora(player.head);
 }
@@ -1320,7 +1419,7 @@ function equipSpinCostume(player) {
   if (!player.moonwalkLegAccents) {
     player.moonwalkLegAccents = buildMoonwalkLegAccents(player.legRig);
   }
-  if (!player.jacket) player.jacket = buildMoonwalkJacket(player.group);
+  if (!player.jacket) player.jacket = buildMoonwalkJacket(player.bodyRoot || player.group);
   if (!player.dreads) player.dreads = buildMoonwalkDreads(player.head);
   if (!player.fedora) player.fedora = buildMoonwalkFedora(player.head);
 }
@@ -1802,6 +1901,7 @@ function buildCornerTerminalDesk(scene) {
 }
 
 function disposePlayer(scene, player) {
+  releaseFeetFromLean(player);
   removeMoonwalkCostume(player);
   restoreMoonwalkSkinTone(player);
   scene.remove(player.group);
@@ -2040,6 +2140,9 @@ export default function NightWalkerCharacterWalk({
     let spinActive = false;
     let spinTimer = 0;
     let spinOrigin = { x: 0, z: 0, ry: 0 };
+    let leanActive = false;
+    let leanTimer = 0;
+    let leanOrigin = { x: 0, z: 0, ry: 0 };
     let trapPhase = "idle";
     let trapStandTimer = 0;
     let trapStandTileKey = null;
@@ -2221,6 +2324,7 @@ export default function NightWalkerCharacterWalk({
           trapPhase === "idle" &&
           !moonwalkActive &&
           !spinActive &&
+          !leanActive &&
           !terminalViewActiveRef.current &&
           !doorwayTransitioning &&
           localPlayer
@@ -2243,6 +2347,7 @@ export default function NightWalkerCharacterWalk({
           trapPhase === "idle" &&
           !moonwalkActive &&
           !spinActive &&
+          !leanActive &&
           !terminalViewActiveRef.current &&
           !doorwayTransitioning &&
           localPlayer
@@ -2260,12 +2365,37 @@ export default function NightWalkerCharacterWalk({
           return;
         }
         if (
+          k === "l" &&
+          trapPhase === "idle" &&
+          !moonwalkActive &&
+          !spinActive &&
+          !leanActive &&
+          !terminalViewActiveRef.current &&
+          !doorwayTransitioning &&
+          localPlayer
+        ) {
+          e.preventDefault();
+          leanOrigin = {
+            x: localPlayer.group.position.x,
+            z: localPlayer.group.position.z,
+            ry: localPlayer.group.rotation.y,
+          };
+          leanActive = true;
+          leanTimer = 0;
+          equipMoonwalkCostume(localPlayer);
+          resetPose(localPlayer.armRig, localPlayer.legRig);
+          startLeanPose(localPlayer);
+          sendState(leanOrigin.x, leanOrigin.z, leanOrigin.ry, false, "lean", 0);
+          return;
+        }
+        if (
           k === " " &&
           trapPhase === "idle" &&
           !terminalViewActiveRef.current &&
           !doorwayTransitioning &&
           !moonwalkActive &&
           !spinActive &&
+          !leanActive &&
           localPlayer
         ) {
           const px = localPlayer.group.position.x;
@@ -2332,7 +2462,7 @@ export default function NightWalkerCharacterWalk({
         }
         remote.danceT = remote.targetDanceT;
 
-        if (remote.dance === "moonwalk" || remote.dance === "spin") {
+        if (remote.dance === "moonwalk" || remote.dance === "spin" || remote.dance === "lean") {
           applyRemoteDancePose(remote);
         } else if (remote.moving) {
           remote.walkPhase += dt * 9.5;
@@ -2342,6 +2472,9 @@ export default function NightWalkerCharacterWalk({
         }
 
         applyRemoteTrapVisual(groundTiles, remote);
+        if (remote.dance === "lean") {
+          applyLeanRotation(remote, getLeanAngleForTimer(remote.danceT));
+        }
       };
 
       animateFn = () => {
@@ -2356,7 +2489,7 @@ export default function NightWalkerCharacterWalk({
 
         const trapActive = trapPhase !== "idle";
         const gameplayLocked =
-          doorwayTransitioning || doorwayFadeT > 0 || moonwalkActive || spinActive || trapActive;
+          doorwayTransitioning || doorwayFadeT > 0 || moonwalkActive || spinActive || leanActive || trapActive;
 
         const turnInput = terminalCameraActive || gameplayLocked
           ? 0
@@ -2428,7 +2561,7 @@ export default function NightWalkerCharacterWalk({
           }
           resolveLocalPlayerOverlaps(player, doorOpenT, obstacleColliders, remotes);
 
-          if (trapPhase === "idle" && !moonwalkActive && !spinActive && groundTiles?.tileGrid) {
+          if (trapPhase === "idle" && !moonwalkActive && !spinActive && !leanActive && groundTiles?.tileGrid) {
             const tile = getGroundTileAt(
               player.position.x,
               player.position.z,
@@ -2595,18 +2728,50 @@ export default function NightWalkerCharacterWalk({
               resetPose(armRig, legRig);
               sendState(player.position.x, player.position.z, player.rotation.y, false);
             }
+          } else if (leanActive) {
+            leanTimer += dt;
+            player.position.x = leanOrigin.x;
+            player.position.z = leanOrigin.z;
+            player.rotation.y = leanOrigin.ry;
+            resetPose(armRig, legRig);
+            startLeanPose(localPlayer);
+            applyLeanRotation(localPlayer, getLeanAngleForTimer(leanTimer));
+
+            const leanNow = performance.now();
+            if (leanNow - lastStateSend >= STATE_SEND_INTERVAL_MS) {
+              lastStateSend = leanNow;
+              lastMovingSent = false;
+              sendState(
+                player.position.x,
+                player.position.z,
+                player.rotation.y,
+                false,
+                "lean",
+                leanTimer
+              );
+            }
+
+            if (leanTimer >= LEAN_DURATION) {
+              leanActive = false;
+              leanTimer = 0;
+              lastMovingSent = false;
+              resetLeanRotation(localPlayer);
+              removeMoonwalkCostume(localPlayer);
+              resetPose(armRig, legRig);
+              sendState(player.position.x, player.position.z, player.rotation.y, false);
+            }
           } else if (turnInput !== 0) {
             player.rotation.y += turnInput * TURN_SPEED * dt;
           }
 
-          if (!moonwalkActive && !spinActive && moving) {
+          if (!moonwalkActive && !spinActive && !leanActive && moving) {
             const stepX = Math.sin(player.rotation.y) * moveInput * MOVE_SPEED * dt;
             const stepZ = Math.cos(player.rotation.y) * moveInput * MOVE_SPEED * dt;
             applyPlayerMove(player, stepX, stepZ, doorOpenT, obstacleColliders, remotes);
             resolveLocalPlayerOverlaps(player, doorOpenT, obstacleColliders, remotes);
             localPlayer.walkPhase += dt * 9.5;
             applyWalkCycle(armRig, legRig, localPlayer.walkPhase);
-          } else if (!moonwalkActive && !spinActive) {
+          } else if (!moonwalkActive && !spinActive && !leanActive) {
             resetPose(armRig, legRig);
           }
 
@@ -2614,6 +2779,7 @@ export default function NightWalkerCharacterWalk({
           if (
             !moonwalkActive &&
             !spinActive &&
+            !leanActive &&
             (moving !== lastMovingSent || now - lastStateSend >= STATE_SEND_INTERVAL_MS)
           ) {
             lastStateSend = now;
@@ -2653,6 +2819,32 @@ export default function NightWalkerCharacterWalk({
             }
 
             applyMoonwalkHeadTurn(localPlayer.head, moonwalkTimer);
+          } else if (leanActive) {
+            const camRy = leanOrigin.ry;
+            const camX = leanOrigin.x;
+            const camZ = leanOrigin.z;
+
+            cameraQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), camRy);
+            rotatedCameraOffset.copy(cameraOffset).applyQuaternion(cameraQuat);
+            gameplayCamPos.set(camX, playerCamY, camZ).add(rotatedCameraOffset);
+            gameplayLookAt.set(camX, playerCamY + CAMERA_LOOK_Y, camZ);
+
+            const sideOffset = new THREE.Vector3(MOONWALK_SIDE_DISTANCE, MOONWALK_SIDE_HEIGHT, 0);
+            sideOffset.applyQuaternion(cameraQuat);
+            moonwalkSideCamPos.set(camX, PLAYER_Y, camZ).add(sideOffset);
+            moonwalkSideLookAt.copy(gameplayLookAt);
+
+            const leanCamBlend = getLeanCameraBlend(leanTimer);
+
+            if (leanCamBlend > 0.001) {
+              blendedCamPos.copy(gameplayCamPos).lerp(moonwalkSideCamPos, leanCamBlend);
+              blendedLookAt.copy(gameplayLookAt).lerp(moonwalkSideLookAt, leanCamBlend);
+              camera.position.lerp(blendedCamPos, 0.14);
+              camera.lookAt(blendedLookAt);
+            } else {
+              camera.position.lerp(gameplayCamPos, 0.08);
+              camera.lookAt(gameplayLookAt);
+            }
           } else if (spinActive) {
             const camRy = spinOrigin.ry;
             const camX = spinOrigin.x;
