@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import L from "leaflet";
-import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+import { GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import iconUrl from "leaflet/dist/images/marker-icon.png";
 import iconRetinaUrl from "leaflet/dist/images/marker-icon-2x.png";
@@ -22,6 +22,13 @@ const SEARCH_ZOOM = 18;
 const STATE_PIN_COLOURS = {
   VIC: "#1f6feb",
   QLD: "#d1242f",
+};
+
+const PARCEL_STYLE = {
+  color: "#FFD700",
+  weight: 3,
+  fillColor: "#FFD700",
+  fillOpacity: 0.08,
 };
 
 const ESRI_IMAGERY_TEMPLATE =
@@ -61,12 +68,12 @@ function markerIconForProjectState(stateRaw) {
   return icon;
 }
 
-function MapFlyTo({ position, zoom }) {
+function MapFlyTo({ position, zoom, enabled }) {
   const map = useMap();
   useEffect(() => {
-    if (!position) return;
+    if (!enabled || !position) return;
     map.flyTo(position, zoom, { duration: 1.35, easeLinearity: 0.25 });
-  }, [position, zoom, map]);
+  }, [position, zoom, map, enabled]);
   return null;
 }
 
@@ -101,6 +108,25 @@ function bulkSelectionLabel(selection) {
   return "ALL";
 }
 
+function inferStateFromNominatimHit(hit) {
+  const addr = hit?.address || {};
+  const raw = String(addr.state || addr.region || "").trim().toUpperCase();
+  if (raw.includes("QUEENSLAND") || raw === "QLD") return "QLD";
+  if (raw.includes("VICTORIA") || raw === "VIC") return "VIC";
+  return "VIC";
+}
+
+function boundsFromGeoJsonFeature(feature) {
+  if (!feature?.geometry) return null;
+  try {
+    const layer = L.geoJSON(feature);
+    const bounds = layer.getBounds();
+    return bounds.isValid() ? bounds : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function Maps() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -108,6 +134,9 @@ export default function Maps() {
   const [marker, setMarker] = useState(null);
   const [flyTarget, setFlyTarget] = useState(null);
   const [resultLabel, setResultLabel] = useState("");
+  const [parcelFeature, setParcelFeature] = useState(null);
+  const [parcelBounds, setParcelBounds] = useState(null);
+  const [parcelNotice, setParcelNotice] = useState("");
   const [bulkPins, setBulkPins] = useState([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0, ok: 0, failed: 0 });
@@ -124,6 +153,9 @@ export default function Maps() {
     }
     setLoading(true);
     setError(null);
+    setParcelFeature(null);
+    setParcelBounds(null);
+    setParcelNotice("");
     try {
       const params = new URLSearchParams({
         q,
@@ -158,12 +190,63 @@ export default function Maps() {
       const pos = [lat, lon];
       const label = hit.display_name || q;
       setMarker(pos);
-      setFlyTarget(pos);
       setResultLabel(label);
+
+      const searchState = inferStateFromNominatimHit(hit);
+      console.log("[Maps] searched coordinates:", { lat, lng: lon, state: searchState });
+
+      const parcelUrl = `/api/maps/parcel?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lon)}&state=${encodeURIComponent(searchState)}`;
+      console.log("[Maps] parcel request URL:", parcelUrl);
+
+      try {
+        const parcelRes = await fetch(parcelUrl);
+        const parcelData = await parcelRes.json().catch(() => ({}));
+
+        if (parcelRes.ok && parcelData.ok && parcelData.geometry) {
+          console.log("[Maps] parcel geometry returned:", true, "source:", parcelData.source);
+          const feature = {
+            type: "Feature",
+            geometry: parcelData.geometry,
+            properties: parcelData.properties || {},
+          };
+          setParcelFeature(feature);
+          setParcelNotice("");
+          const bounds = boundsFromGeoJsonFeature(feature);
+          if (bounds) {
+            setParcelBounds(bounds);
+            setFlyTarget(null);
+          } else {
+            setParcelBounds(null);
+            setFlyTarget(pos);
+          }
+        } else {
+          console.log(
+            "[Maps] parcel geometry returned:",
+            false,
+            "source:",
+            parcelData.source || "none",
+            "status:",
+            parcelRes.status
+          );
+          setParcelFeature(null);
+          setParcelBounds(null);
+          setParcelNotice("Title boundary not available.");
+          setFlyTarget(pos);
+        }
+      } catch (parcelErr) {
+        console.error("[Maps] parcel fetch failed:", parcelErr);
+        setParcelFeature(null);
+        setParcelBounds(null);
+        setParcelNotice("Title boundary not available.");
+        setFlyTarget(pos);
+      }
     } catch (e) {
       setMarker(null);
       setFlyTarget(null);
       setResultLabel("");
+      setParcelFeature(null);
+      setParcelBounds(null);
+      setParcelNotice("");
       setError(e.message || "Search failed.");
     } finally {
       setLoading(false);
@@ -499,6 +582,21 @@ export default function Maps() {
             </div>
           )}
 
+          {parcelNotice && !error && (
+            <div
+              style={{
+                padding: "8px 14px",
+                borderRadius: "10px",
+                background: "#fff8e1",
+                border: "1px solid #ffe082",
+                color: "#6d5a00",
+                fontSize: "0.9rem",
+              }}
+            >
+              {parcelNotice}
+            </div>
+          )}
+
           <div
             style={{
               flex: "1 1 auto",
@@ -524,6 +622,13 @@ export default function Maps() {
                 maxNativeZoom={19}
                 maxZoom={20}
               />
+              {parcelFeature && (
+                <GeoJSON
+                  key={JSON.stringify(parcelFeature.geometry?.coordinates)}
+                  data={parcelFeature}
+                  style={PARCEL_STYLE}
+                />
+              )}
               {marker && (
                 <Marker position={marker}>
                   {resultLabel ? <Popup>{resultLabel}</Popup> : null}
@@ -538,8 +643,8 @@ export default function Maps() {
                   </Popup>
                 </Marker>
               ))}
-              <MapFlyTo position={flyTarget} zoom={SEARCH_ZOOM} />
-              <MapFitBounds bounds={bulkBounds} />
+              <MapFlyTo position={flyTarget} zoom={SEARCH_ZOOM} enabled={!parcelBounds && !bulkBounds} />
+              <MapFitBounds bounds={parcelBounds || bulkBounds} />
             </MapContainer>
           </div>
 
@@ -556,7 +661,8 @@ export default function Maps() {
 
           <p style={{ margin: 0, fontSize: "0.8rem", color: "#555", lineHeight: 1.45 }}>
             Satellite imagery: Esri World Imagery. Address search: OpenStreetMap Nominatim (please use
-            sparingly). Default view: greater Melbourne, Victoria.
+            sparingly). VIC title boundaries: Vicmap Property parcels. Default view: greater Melbourne,
+            Victoria.
           </p>
         </div>
       </div>

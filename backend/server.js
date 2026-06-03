@@ -2438,6 +2438,169 @@ async function geocodeWithNominatim(q) {
   return { lat, lng, display_name: hit.display_name || "" };
 }
 
+// --- Cadastral parcel lookup (Maps page) ---
+// VIC: Vicmap Property parcel polygons (official Victorian Government open data, no API key required).
+// QLD: TODO — wire QSpatial cadastre when needed.
+const VICMAP_PARCEL_QUERY_URL =
+  "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Parcel/FeatureServer/0/query";
+
+function normalizeParcelState(raw) {
+  const s = String(raw || "")
+    .trim()
+    .toUpperCase();
+  if (s === "VIC" || s === "VICTORIA") return "VIC";
+  if (s === "QLD" || s === "QUEENSLAND") return "QLD";
+  return s;
+}
+
+function parseParcelLatLng(query) {
+  const lat = Number.parseFloat(query.lat);
+  const lng = Number.parseFloat(query.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return { error: "lat and lng query parameters are required and must be valid numbers" };
+  }
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return { error: "lat/lng out of valid range" };
+  }
+  return { lat, lng };
+}
+
+function shouldUseDevParcelMock() {
+  if (process.env.MAPS_PARCEL_MOCK === "1") return true;
+  if (process.env.MAPS_PARCEL_MOCK === "0") return false;
+  return process.env.NODE_ENV !== "production";
+}
+
+/** Dev-only mock parcel (~25 m square) for frontend testing when live cadastre is unreachable. */
+function buildMockVicParcelGeometry(lat, lng) {
+  const dLat = 0.00011;
+  const cosLat = Math.cos((lat * Math.PI) / 180) || 1;
+  const dLng = dLat / cosLat;
+  return {
+    type: "Polygon",
+    coordinates: [
+      [
+        [lng - dLng, lat - dLat],
+        [lng + dLng, lat - dLat],
+        [lng + dLng, lat + dLat],
+        [lng - dLng, lat + dLat],
+        [lng - dLng, lat - dLat],
+      ],
+    ],
+  };
+}
+
+async function queryVicmapParcelByPoint(lat, lng) {
+  const geometry = JSON.stringify({
+    x: lng,
+    y: lat,
+    spatialReference: { wkid: 4326 },
+  });
+  const params = new URLSearchParams({
+    f: "geojson",
+    geometry,
+    geometryType: "esriGeometryPoint",
+    inSR: "4326",
+    spatialRel: "esriSpatialRelIntersects",
+    returnGeometry: "true",
+    outFields: "parcel_pfi,parcel_lot_number,parcel_plan_number,parcel_id,parcel_lga_code",
+    outSR: "4326",
+    resultRecordCount: "1",
+  });
+  const url = `${VICMAP_PARCEL_QUERY_URL}?${params.toString()}`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  try {
+    const resp = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      console.error("[maps/parcel] Vicmap query HTTP", resp.status, resp.statusText);
+      return null;
+    }
+    const geo = await resp.json().catch(() => null);
+    const feature = geo?.features?.[0];
+    if (!feature?.geometry) return null;
+    return {
+      geometry: feature.geometry,
+      properties: feature.properties || {},
+    };
+  } catch (e) {
+    console.error("[maps/parcel] Vicmap query failed:", e.message || e);
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+app.get("/api/maps/parcel", async (req, res) => {
+  const parsed = parseParcelLatLng(req.query);
+  if (parsed.error) {
+    return res.status(400).json({ ok: false, error: parsed.error });
+  }
+  const { lat, lng } = parsed;
+  const state = normalizeParcelState(req.query.state);
+
+  if (state === "QLD") {
+    // TODO: QSpatial cadastral parcel lookup for Queensland.
+    return res.status(501).json({
+      ok: false,
+      error: "QLD parcel lookup is not implemented yet",
+      state: "QLD",
+    });
+  }
+
+  if (state !== "VIC") {
+    return res.status(400).json({
+      ok: false,
+      error: "Unsupported state. Use VIC or QLD.",
+      state,
+    });
+  }
+
+  try {
+    let hit = await queryVicmapParcelByPoint(lat, lng);
+    let source = "VIC_CADASTRE";
+
+    if (!hit && shouldUseDevParcelMock()) {
+      console.warn("[maps/parcel] Using dev mock parcel boundary (set MAPS_PARCEL_MOCK=0 to disable)");
+      hit = {
+        geometry: buildMockVicParcelGeometry(lat, lng),
+        properties: {
+          mock: true,
+          note: "Dev mock boundary — not official cadastral data",
+        },
+      };
+      source = "VIC_CADASTRE_MOCK";
+    }
+
+    if (!hit) {
+      return res.status(404).json({
+        ok: false,
+        error: "No parcel boundary found at this location",
+        state: "VIC",
+      });
+    }
+
+    return res.json({
+      ok: true,
+      source,
+      geometry: hit.geometry,
+      properties: hit.properties,
+    });
+  } catch (e) {
+    console.error("[maps/parcel] VIC parcel lookup error:", e);
+    return res.status(502).json({
+      ok: false,
+      error: e.message || "Cadastre service unavailable",
+      state: "VIC",
+    });
+  }
+});
+
 // Geocode one project and persist project_lat/project_lng (only if missing unless force=true)
 app.post("/api/projects/:id/geocode", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
