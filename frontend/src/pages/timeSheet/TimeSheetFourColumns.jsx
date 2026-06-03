@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { PAY_PERIOD_WEEKDAY_ORDER } from "../../utils/timeSheetPayCycle";
 import {
   createDefaultDayEntries,
@@ -7,6 +7,9 @@ import {
   formatWorkHoursMinutes,
   loadUserTemplate,
   saveUserTemplate,
+  loadPayCycleSheet,
+  savePayCycleSheet,
+  getUserTemplateEntries,
   stepBreakMinutes,
   stepOvertimeMinutes,
   stepWorkMinutes,
@@ -89,6 +92,7 @@ export default function TimeSheetFourColumns({
   showDates = false,
   periodDays = [],
   persistTemplate = false,
+  cycleKey = "",
 }) {
   const [dayEntries, setDayEntries] = useState(createDefaultDayEntries);
   const [constructionProjects, setConstructionProjects] = useState([]);
@@ -96,7 +100,7 @@ export default function TimeSheetFourColumns({
   const week1PanelRef = useRef(null);
   const week2PanelRef = useRef(null);
   const weekPanelRefs = useRef([]);
-  const skipTemplateSaveRef = useRef(false);
+  const skipAutoSaveRef = useRef(false);
 
   const isTemplate = !showDates;
   const hasUser = Boolean(selectedUserId);
@@ -108,18 +112,41 @@ export default function TimeSheetFourColumns({
   weekPanelRefs.current = [week1PanelRef.current, week2PanelRef.current];
   const cellGap = useUniformCellGap(weekPanelRefs, [dayEntries, showDates, days.length]);
 
+  const userSelectPlaceholder = loadingUsers
+    ? "Loading..."
+    : users.length === 0
+      ? "No users"
+      : "Select a user";
+
+  const longestUserLabel = useMemo(() => {
+    const labels = [userSelectPlaceholder, ...users.map((u) => u.name || "")];
+    return labels.reduce((longest, label) => (label.length > longest.length ? label : longest), "");
+  }, [users, userSelectPlaceholder]);
+
+  const measureUserLabelRef = useRef(null);
+  const [userSelectWidth, setUserSelectWidth] = useState(undefined);
+
+  useLayoutEffect(() => {
+    const el = measureUserLabelRef.current;
+    if (!el) return;
+    el.textContent = longestUserLabel;
+    setUserSelectWidth(el.offsetWidth + 44);
+  }, [longestUserLabel]);
+
   useEffect(() => {
     if (!selectedUserId) {
       setDayEntries(createDefaultDayEntries());
       return;
     }
-    skipTemplateSaveRef.current = true;
+    skipAutoSaveRef.current = true;
     if (persistTemplate) {
       setDayEntries(loadUserTemplate(selectedUserId) ?? createDefaultDayEntries());
+    } else if (showDates && cycleKey) {
+      setDayEntries(loadPayCycleSheet(selectedUserId, cycleKey) ?? createDefaultDayEntries());
     } else {
       setDayEntries(createDefaultDayEntries());
     }
-  }, [selectedUserId, persistTemplate]);
+  }, [selectedUserId, persistTemplate, showDates, cycleKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,13 +172,27 @@ export default function TimeSheetFourColumns({
   }, []);
 
   useEffect(() => {
-    if (!persistTemplate || !selectedUserId) return;
-    if (skipTemplateSaveRef.current) {
-      skipTemplateSaveRef.current = false;
+    if (!selectedUserId) return;
+    if (skipAutoSaveRef.current) {
+      skipAutoSaveRef.current = false;
       return;
     }
-    saveUserTemplate(selectedUserId, dayEntries);
-  }, [dayEntries, persistTemplate, selectedUserId]);
+    if (persistTemplate) {
+      saveUserTemplate(selectedUserId, dayEntries);
+    } else if (showDates && cycleKey) {
+      savePayCycleSheet(selectedUserId, cycleKey, dayEntries);
+    }
+  }, [dayEntries, persistTemplate, showDates, cycleKey, selectedUserId]);
+
+  function handleUseTemplate() {
+    if (!hasUser) return;
+    const template = getUserTemplateEntries(selectedUserId);
+    if (!template) {
+      alert("No template saved for this user.");
+      return;
+    }
+    setDayEntries(template.map((entry) => ({ ...entry })));
+  }
 
   function updateDayEntry(index, updater) {
     if (!hasUser) return;
@@ -389,33 +430,78 @@ export default function TimeSheetFourColumns({
         boxSizing: "border-box",
       }}
     >
-      <div style={{ width: "220px", flexShrink: 0 }}>
-        <h2 style={{ fontSize: "1.05rem", marginTop: 0, marginBottom: "12px", fontWeight: 600 }}>User</h2>
-        <select
-          value={selectedUserId}
-          onChange={onUserChange}
-          disabled={loadingUsers}
+      <div
+        style={{
+          display: "inline-flex",
+          gap: "12px",
+          alignItems: "flex-end",
+          flexShrink: 0,
+          alignSelf: "flex-start",
+        }}
+      >
+        <span
+          ref={measureUserLabelRef}
+          aria-hidden="true"
           style={{
-            width: "100%",
-            padding: "10px 12px",
-            borderRadius: "8px",
-            border: "none",
+            position: "absolute",
+            visibility: "hidden",
+            whiteSpace: "nowrap",
             fontSize: "0.95rem",
-            color: MONUMENT,
-            background: WHITE,
-            boxSizing: "border-box",
-            cursor: "pointer",
+            fontWeight: 400,
+            fontFamily: "inherit",
+            pointerEvents: "none",
           }}
-        >
-          <option value="">
-            {loadingUsers ? "Loading..." : users.length === 0 ? "No users" : "Select a user"}
-          </option>
-          {users.map((user) => (
-            <option key={user.id} value={user.id}>
-              {user.name}
-            </option>
-          ))}
-        </select>
+        />
+        <div>
+          <h2 style={{ fontSize: "1.05rem", marginTop: 0, marginBottom: "12px", fontWeight: 600 }}>User</h2>
+          <select
+            value={selectedUserId}
+            onChange={onUserChange}
+            disabled={loadingUsers}
+            style={{
+              width: userSelectWidth ? `${userSelectWidth}px` : "max-content",
+              minWidth: "120px",
+              padding: "10px 12px",
+              borderRadius: "8px",
+              border: "none",
+              fontSize: "0.95rem",
+              color: MONUMENT,
+              background: WHITE,
+              boxSizing: "border-box",
+              cursor: "pointer",
+              display: "block",
+            }}
+          >
+            <option value="">{userSelectPlaceholder}</option>
+            {users.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        {!isTemplate && (
+          <button
+            type="button"
+            onClick={handleUseTemplate}
+            disabled={!hasUser}
+            style={{
+              flexShrink: 0,
+              width: "max-content",
+              padding: "10px 12px",
+              borderRadius: "8px",
+              border: "none",
+              fontSize: "0.9rem",
+              fontWeight: 600,
+              color: WHITE,
+              background: hasUser ? MONUMENT : "#32323355",
+              cursor: hasUser ? "pointer" : "not-allowed",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Use Template
+          </button>
+        )}
       </div>
 
       <div

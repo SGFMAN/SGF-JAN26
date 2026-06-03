@@ -95,6 +95,7 @@ export default function TimeSheet() {
         {...userColumnProps}
         showDates
         periodDays={currentPeriodDays}
+        cycleKey={currentCycleWednesday.toISOString().slice(0, 10)}
       />
     );
   }

@@ -117,3 +117,40 @@ export function saveUserTemplate(userId, entries) {
     console.error("saveUserTemplate:", e);
   }
 }
+
+const PAY_CYCLE_STORAGE_KEY = "sgf_time_sheet_pay_cycles_v1";
+
+function payCycleStorageKey(userId, cycleKey) {
+  return `${templateStorageKey(userId)}:${cycleKey}`;
+}
+
+export function loadPayCycleSheet(userId, cycleKey) {
+  if (!userId || !cycleKey) return null;
+  try {
+    const raw = localStorage.getItem(PAY_CYCLE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const entries = parsed?.[payCycleStorageKey(userId, cycleKey)];
+    if (!Array.isArray(entries) || entries.length !== PAY_PERIOD_DAY_COUNT) return null;
+    return entries.map(normalizeTemplateEntry);
+  } catch {
+    return null;
+  }
+}
+
+export function savePayCycleSheet(userId, cycleKey, entries) {
+  if (!userId || !cycleKey) return;
+  try {
+    const raw = localStorage.getItem(PAY_CYCLE_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    parsed[payCycleStorageKey(userId, cycleKey)] = entries.map(normalizeTemplateEntry);
+    localStorage.setItem(PAY_CYCLE_STORAGE_KEY, JSON.stringify(parsed));
+  } catch (e) {
+    console.error("savePayCycleSheet:", e);
+  }
+}
+
+/** Copy saved user template entries for applying to the current pay cycle. */
+export function getUserTemplateEntries(userId) {
+  return loadUserTemplate(userId);
+}
