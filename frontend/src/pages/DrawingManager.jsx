@@ -3,6 +3,7 @@ import {
   isDesignPhaseStatus,
   isHotlistStatus,
   isCancelledStatus,
+  isOnHoldFlag,
 } from "../utils/projectStatus";
 import { Link } from "react-router-dom";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
@@ -20,6 +21,7 @@ import {
 } from "../utils/draftspersonSentinel";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
+import { isLatestRevisionWorkingDrawingsApproved } from "../utils/drawingsStatusRules";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -27,6 +29,41 @@ const SECTION_GREY = "#a1a1a3";
 const LIGHT_MONUMENT = "#42464d";
 const WHITE = "#fff";
 const API_URL = "";
+
+const DRAWING_MANAGER_STATUS_SECTIONS = [
+  "Not Assigned",
+  "Concept Stage",
+  "Working Drawing Stage",
+];
+
+function sortProjectsAlphabetically(projectsList) {
+  return [...projectsList].sort((a, b) => {
+    const suburbA = (a.suburb || "").toLowerCase();
+    const suburbB = (b.suburb || "").toLowerCase();
+    if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
+    return (a.street || "").toLowerCase().localeCompare((b.street || "").toLowerCase());
+  });
+}
+
+function getDrawingManagerStatusBucket(project) {
+  const status = (project?.drawings_status || "").trim();
+  if (status === "Concept Stage") return "Concept Stage";
+  if (status === "Working Drawing Stage") return "Working Drawing Stage";
+  return "Not Assigned";
+}
+
+function groupProjectsByDrawingStatus(projectsList) {
+  const groups = Object.fromEntries(
+    DRAWING_MANAGER_STATUS_SECTIONS.map((title) => [title, []])
+  );
+  for (const project of projectsList) {
+    groups[getDrawingManagerStatusBucket(project)].push(project);
+  }
+  for (const title of DRAWING_MANAGER_STATUS_SECTIONS) {
+    groups[title] = sortProjectsAlphabetically(groups[title]);
+  }
+  return groups;
+}
 
 /** Escape text for inclusion in HTML email fragments. */
 function escapeHtmlForEmailList(s) {
@@ -293,6 +330,12 @@ export default function DrawingManager() {
     return depositNum < fullDepositAmount || fullDepositAmount === 0;
   }
 
+  function shouldShowInDrawingManagerList(project) {
+    const status = (project?.drawings_status || "").trim();
+    if (status === "Drawings Complete") return false;
+    return !isLatestRevisionWorkingDrawingsApproved(project);
+  }
+
   async function fetchProjects() {
     try {
       setLoading(true);
@@ -302,41 +345,15 @@ export default function DrawingManager() {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
       const data = await response.json();
-      // Design pipeline by status; on_hold is separate (sash only). Exclude Home Office/Studio.
+      // Design pipeline by status. Exclude Home Office/Studio, Drawings Complete, and working-drawings-approved (see shouldShowInDrawingManagerList).
       const designPhaseProjects = data.filter((project) => {
         if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
         if (!isDesignPhaseStatus(project.status)) return false;
         if (project.classification === "Home Office / Studio") return false;
         return true;
       });
-      // Sort by concept/working drawings status first, then alphabetically by suburb, then street
-      const sortedProjects = designPhaseProjects.sort((a, b) => {
-        // Get approval status for both projects
-        const conceptA = isConceptApproved(a);
-        const workingA = isWorkingDrawingsApproved(a);
-        const conceptB = isConceptApproved(b);
-        const workingB = isWorkingDrawingsApproved(b);
-        
-        // Calculate priority: 0 = neither, 1 = concept only, 2 = both
-        const priorityA = (!conceptA && !workingA) ? 0 : (conceptA && !workingA) ? 1 : 2;
-        const priorityB = (!conceptB && !workingB) ? 0 : (conceptB && !workingB) ? 1 : 2;
-        
-        // Sort by priority first
-        if (priorityA !== priorityB) {
-          return priorityA - priorityB;
-        }
-        
-        // If same priority, sort alphabetically by suburb, then street
-        const suburbA = (a.suburb || "").toLowerCase();
-        const suburbB = (b.suburb || "").toLowerCase();
-        if (suburbA !== suburbB) {
-          return suburbA.localeCompare(suburbB);
-        }
-        const streetA = (a.street || "").toLowerCase();
-        const streetB = (b.street || "").toLowerCase();
-        return streetA.localeCompare(streetB);
-      });
-      setProjects(sortedProjects);
+      const visibleProjects = designPhaseProjects.filter(shouldShowInDrawingManagerList);
+      setProjects(sortProjectsAlphabetically(visibleProjects));
     } catch (err) {
       setError(err.message);
       console.error("Error fetching projects:", err);
@@ -345,33 +362,7 @@ export default function DrawingManager() {
     }
   }
 
-  // Helper function to check if concept is approved
-  function isConceptApproved(project) {
-    if (!project.drawings_history) return false;
-    try {
-      const history = typeof project.drawings_history === 'string' 
-        ? JSON.parse(project.drawings_history) 
-        : project.drawings_history;
-      return Array.isArray(history) && history.some(entry => entry.conceptApproved === true);
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // Helper function to check if working drawings are approved
-  function isWorkingDrawingsApproved(project) {
-    if (!project.drawings_history) return false;
-    try {
-      const history = typeof project.drawings_history === 'string' 
-        ? JSON.parse(project.drawings_history) 
-        : project.drawings_history;
-      return Array.isArray(history) && history.some(entry => entry.workingDrawingsApproved === true);
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /** Same filter + sort order as the on-screen grid (for Email List). */
+  /** Same filter + sort order as the on-screen lists (for Email List). */
   function getDrawingManagerListProjectsForEmail() {
     let filteredProjects =
       stateFilter !== "All"
@@ -380,22 +371,13 @@ export default function DrawingManager() {
             return projectState === stateFilter.toUpperCase();
           })
         : projects;
+    const grouped = groupProjectsByDrawingStatus(filteredProjects);
     if (sortColumn) {
-      return sortProjects(filteredProjects, sortColumn, sortDirection);
+      return DRAWING_MANAGER_STATUS_SECTIONS.flatMap((title) =>
+        sortProjects(grouped[title], sortColumn, sortDirection)
+      );
     }
-    return [...filteredProjects].sort((a, b) => {
-      const conceptA = isConceptApproved(a);
-      const workingA = isWorkingDrawingsApproved(a);
-      const conceptB = isConceptApproved(b);
-      const workingB = isWorkingDrawingsApproved(b);
-      const priorityA = !conceptA && !workingA ? 0 : conceptA && !workingA ? 1 : 2;
-      const priorityB = !conceptB && !workingB ? 0 : conceptB && !workingB ? 1 : 2;
-      if (priorityA !== priorityB) return priorityA - priorityB;
-      const suburbA = (a.suburb || "").toLowerCase();
-      const suburbB = (b.suburb || "").toLowerCase();
-      if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
-      return (a.street || "").toLowerCase().localeCompare((b.street || "").toLowerCase());
-    });
+    return DRAWING_MANAGER_STATUS_SECTIONS.flatMap((title) => grouped[title]);
   }
 
   function getHolderDisplayForEmailList(project) {
@@ -419,14 +401,10 @@ export default function DrawingManager() {
    * Many clients support tables + inline CSS; Outlook may simplify some styles.
    */
   function buildEmailListHtml(projectRows) {
-    const GREEN = "#33cc33";
-    const RED = "#cc3333";
     const DEPOSIT_ORANGE = "#ff8800";
-    /** Matches common email width; preview uses same max width so layout matches sent mail. */
     const EMAIL_W = 960;
-    const PROJECT_W = 288; // Keep project column at the same width as before (48% of old 600px table)
-    const OTHER_W = 96;
-    /** Uniform data row height (table cells, email-client safe — no flex). */
+    const PROJECT_W = 320;
+    const OTHER_W = 128;
     const ROW_H = 46;
     const BORDER = "#d0d4d8";
     const parts = [];
@@ -439,284 +417,108 @@ export default function DrawingManager() {
     parts.push(
       `<div style="color:#666;font-size:11px;line-height:1.2;margin:0 0 10px 0;">Total: ${projectRows.length} projects</div>`
     );
-    parts.push(
-      `<table role="presentation" cellpadding="0" cellspacing="0" width="${EMAIL_W}" style="width:100%;max-width:${EMAIL_W}px;border-collapse:collapse;table-layout:fixed;border:1px solid ${BORDER};background:${WHITE};">`
-    );
 
+    const grouped = groupProjectsByDrawingStatus(projectRows);
     const th = (label, widthPx, align = "center") =>
       `<td width="${widthPx}" style="width:${widthPx}px;min-width:${widthPx}px;max-width:${widthPx}px;border:1px solid ${BORDER};padding:5px 4px;background:${MONUMENT};color:${WHITE};font-weight:600;font-size:10px;line-height:1.2;text-align:${align};vertical-align:middle;mso-line-height-rule:exactly;white-space:nowrap;">${label}</td>`;
-
-    parts.push("<tr>");
-    parts.push(
-      `<td width="${PROJECT_W}" style="width:${PROJECT_W}px;min-width:${PROJECT_W}px;max-width:${PROJECT_W}px;border:1px solid ${BORDER};padding:5px 6px;background:${MONUMENT};color:${WHITE};font-weight:600;font-size:10px;line-height:1.2;text-align:left;vertical-align:middle;">Project</td>`
-    );
-    parts.push(th("Concept", OTHER_W));
-    parts.push(th("Working Drawings", OTHER_W));
-    parts.push(th("Draftsperson", OTHER_W));
-    parts.push(th("Drawings With", OTHER_W));
-    parts.push(th("Windows", OTHER_W));
-    parts.push(th("Energy", OTHER_W));
-    parts.push(th("Building Permit", OTHER_W));
-    parts.push("</tr>");
-
     const tdBase = `border:1px solid ${BORDER};height:${ROW_H}px;padding:4px 5px;vertical-align:middle;font-size:11px;line-height:1.25;mso-line-height-rule:exactly;`;
 
-    projectRows.forEach((project) => {
-      const suburb = project.suburb || "";
-      const street = project.street || "";
-      const projectName =
-        suburb && street ? `${suburb} - ${street}` : suburb || street || "Unknown Project";
-      const conceptApproved = isConceptApproved(project);
-      const workingApproved = isWorkingDrawingsApproved(project);
-      const draftspersonName = getDraftspersonName(project.draftsperson) || "None";
-      const holder = getHolderDisplayForEmailList(project);
-      const needsDeposit = isPartialDeposit(project);
-      const windowsStatus =
-        project.window_status && String(project.window_status).trim()
-          ? String(project.window_status)
-          : "Not Ordered";
-      const energyStatus =
-        project.energy_report_status && String(project.energy_report_status).trim()
-          ? String(project.energy_report_status)
-          : "Not Submitted";
-      const buildingPermitStatus =
-        project.building_permit_status && String(project.building_permit_status).trim()
-          ? String(project.building_permit_status)
-          : "Not Submitted";
-
+    const renderSectionTable = (sectionTitle, sectionProjects) => {
+      parts.push(
+        `<div style="font-weight:700;font-size:13px;line-height:1.2;margin:16px 0 8px 0;">${escapeHtmlForEmailList(sectionTitle)} (${sectionProjects.length})</div>`
+      );
+      if (sectionProjects.length === 0) {
+        parts.push(`<div style="color:#666;font-size:11px;margin:0 0 8px 0;">No projects</div>`);
+        return;
+      }
+      parts.push(
+        `<table role="presentation" cellpadding="0" cellspacing="0" width="${EMAIL_W}" style="width:100%;max-width:${EMAIL_W}px;border-collapse:collapse;table-layout:fixed;border:1px solid ${BORDER};background:${WHITE};margin-bottom:8px;">`
+      );
       parts.push("<tr>");
       parts.push(
-        `<td style="${tdBase}text-align:left;background:${WHITE};">` +
-          `<span style="word-break:break-word;">${escapeHtmlForEmailList(projectName)}</span>` +
-          (needsDeposit
-            ? `<br/><span style="display:inline-block;margin-top:2px;padding:2px 5px;background:${DEPOSIT_ORANGE};color:${WHITE};border-radius:2px;font-size:9px;font-weight:700;line-height:1.1;">NEEDS DEPOSIT</span>`
-            : "") +
-          `</td>`
+        `<td width="${PROJECT_W}" style="width:${PROJECT_W}px;min-width:${PROJECT_W}px;max-width:${PROJECT_W}px;border:1px solid ${BORDER};padding:5px 6px;background:${MONUMENT};color:${WHITE};font-weight:600;font-size:10px;line-height:1.2;text-align:left;vertical-align:middle;">Project</td>`
       );
-
-      const cBg = conceptApproved ? GREEN : RED;
-      parts.push(
-        `<td style="${tdBase}text-align:center;background:${cBg};color:${WHITE};font-weight:600;font-size:10px;">Concept</td>`
-      );
-
-      const wBg = workingApproved ? GREEN : RED;
-      parts.push(
-        `<td style="${tdBase}text-align:center;background:${wBg};color:${WHITE};font-weight:600;font-size:10px;line-height:1.15;">Working<br/>Drawings</td>`
-      );
-
-      parts.push(
-        `<td style="${tdBase}text-align:center;background:${WHITE};word-break:break-word;">${escapeHtmlForEmailList(
-          draftspersonName
-        )}</td>`
-      );
-
-      const holderDaysHtml = holder.days
-        ? ` <span style="color:#666;font-size:10px;">- ${escapeHtmlForEmailList(holder.days)}</span>`
-        : "";
-      parts.push(
-        `<td style="${tdBase}text-align:center;background:${WHITE};">${escapeHtmlForEmailList(
-          holder.text
-        )}${holderDaysHtml}</td>`
-      );
-
-      parts.push(
-        `<td style="${tdBase}text-align:center;background:${WHITE};font-size:9px;line-height:1.15;white-space:nowrap;">${escapeHtmlForEmailList(
-          windowsStatus
-        )}</td>`
-      );
-      parts.push(
-        `<td style="${tdBase}text-align:center;background:${WHITE};font-size:9px;line-height:1.15;white-space:nowrap;">${escapeHtmlForEmailList(
-          energyStatus
-        )}</td>`
-      );
-      parts.push(
-        `<td style="${tdBase}text-align:center;background:${WHITE};font-size:9px;line-height:1.15;white-space:nowrap;">${escapeHtmlForEmailList(
-          buildingPermitStatus
-        )}</td>`
-      );
+      parts.push(th("Draftsperson", OTHER_W));
+      parts.push(th("Drawings With", OTHER_W));
+      parts.push(th("Windows", OTHER_W));
+      parts.push(th("Energy", OTHER_W));
+      parts.push(th("Building Permit", OTHER_W));
       parts.push("</tr>");
-    });
 
-    parts.push("</table></div>");
+      sectionProjects.forEach((project) => {
+        const suburb = project.suburb || "";
+        const street = project.street || "";
+        const projectName =
+          suburb && street ? `${suburb} - ${street}` : suburb || street || "Unknown Project";
+        const draftspersonName = getDraftspersonName(project.draftsperson) || "None";
+        const holder = getHolderDisplayForEmailList(project);
+        const needsDeposit = isPartialDeposit(project);
+        const onHold = isOnHoldFlag(project);
+        const windowsStatus =
+          project.window_status && String(project.window_status).trim()
+            ? String(project.window_status)
+            : "Not Ordered";
+        const energyStatus =
+          project.energy_report_status && String(project.energy_report_status).trim()
+            ? String(project.energy_report_status)
+            : "Not Submitted";
+        const buildingPermitStatus =
+          project.building_permit_status && String(project.building_permit_status).trim()
+            ? String(project.building_permit_status)
+            : "Not Submitted";
+
+        parts.push("<tr>");
+        parts.push(
+          `<td style="${tdBase}text-align:left;background:${WHITE};">` +
+            `<span style="word-break:break-word;">${escapeHtmlForEmailList(projectName)}</span>` +
+            (onHold
+              ? `<br/><span style="display:inline-block;margin-top:2px;padding:2px 5px;background:#0066cc;color:${WHITE};border-radius:2px;font-size:9px;font-weight:700;line-height:1.1;">ON HOLD</span>`
+              : "") +
+            (needsDeposit
+              ? `<br/><span style="display:inline-block;margin-top:2px;padding:2px 5px;background:${DEPOSIT_ORANGE};color:${WHITE};border-radius:2px;font-size:9px;font-weight:700;line-height:1.1;">NEEDS DEPOSIT</span>`
+              : "") +
+            `</td>`
+        );
+        parts.push(
+          `<td style="${tdBase}text-align:center;background:${WHITE};word-break:break-word;">${escapeHtmlForEmailList(
+            draftspersonName
+          )}</td>`
+        );
+        const holderDaysHtml = holder.days
+          ? ` <span style="color:#666;font-size:10px;">- ${escapeHtmlForEmailList(holder.days)}</span>`
+          : "";
+        parts.push(
+          `<td style="${tdBase}text-align:center;background:${WHITE};">${escapeHtmlForEmailList(
+            holder.text
+          )}${holderDaysHtml}</td>`
+        );
+        parts.push(
+          `<td style="${tdBase}text-align:center;background:${WHITE};font-size:9px;line-height:1.15;white-space:nowrap;">${escapeHtmlForEmailList(
+            windowsStatus
+          )}</td>`
+        );
+        parts.push(
+          `<td style="${tdBase}text-align:center;background:${WHITE};font-size:9px;line-height:1.15;white-space:nowrap;">${escapeHtmlForEmailList(
+            energyStatus
+          )}</td>`
+        );
+        parts.push(
+          `<td style="${tdBase}text-align:center;background:${WHITE};font-size:9px;line-height:1.15;white-space:nowrap;">${escapeHtmlForEmailList(
+            buildingPermitStatus
+          )}</td>`
+        );
+        parts.push("</tr>");
+      });
+
+      parts.push("</table>");
+    };
+
+    for (const sectionTitle of DRAWING_MANAGER_STATUS_SECTIONS) {
+      renderSectionTable(sectionTitle, grouped[sectionTitle]);
+    }
+
+    parts.push("</div>");
     return parts.join("");
-  }
-
-  // Toggle concept approval
-  async function handleToggleConcept(project) {
-    if (!project.id) return;
-    
-    const currentlyApproved = isConceptApproved(project);
-    let drawingsHistory = [];
-    
-    try {
-      const historyValue = project.drawings_history;
-      if (historyValue) {
-        drawingsHistory = typeof historyValue === 'string' 
-          ? JSON.parse(historyValue) 
-          : historyValue;
-      }
-    } catch (e) {
-      console.error("Error parsing drawings_history:", e);
-      drawingsHistory = [];
-    }
-
-    const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "";
-    let newDrawingsStatus = project.drawings_status || "Not Assigned";
-
-    if (currentlyApproved) {
-      // Unapprove: remove conceptApproved flag from all entries
-      drawingsHistory = drawingsHistory.map(entry => ({
-        ...entry,
-        conceptApproved: false
-      }));
-      newDrawingsStatus = "Concept Stage";
-    } else {
-      // Approve: mark the last entry as concept approved
-      if (drawingsHistory.length > 0) {
-        const lastIndex = drawingsHistory.length - 1;
-        drawingsHistory[lastIndex] = {
-          ...drawingsHistory[lastIndex],
-          conceptApproved: true
-        };
-      } else {
-        // If no history, create a new entry
-        drawingsHistory.push({
-          name: "Concept Drawings",
-          date: new Date().toISOString().split('T')[0],
-          conceptApproved: true
-        });
-      }
-      newDrawingsStatus = "Working Drawing Stage";
-    }
-
-    // Optimistically update local state immediately
-    setProjects(prevProjects =>
-      prevProjects.map(p =>
-        p.id === project.id
-          ? {
-              ...p,
-              drawings_status: newDrawingsStatus,
-              drawings_history: JSON.stringify(drawingsHistory),
-            }
-          : p
-      )
-    );
-
-    try {
-      const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: projectName,
-          status: project.status || null,
-          drawings_status: newDrawingsStatus,
-          drawings_history: JSON.stringify(drawingsHistory),
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to update concept approval");
-      }
-
-      // Success - local state already updated, no need to refetch
-      console.log("Concept approval updated successfully");
-    } catch (error) {
-      console.error("Error toggling concept approval:", error);
-      alert("Failed to update concept approval");
-      // Revert on error by refetching
-      await fetchProjects();
-    }
-  }
-
-  // Toggle working drawings approval
-  async function handleToggleWorkingDrawings(project) {
-    if (!project.id) return;
-    
-    const currentlyApproved = isWorkingDrawingsApproved(project);
-    let drawingsHistory = [];
-    
-    try {
-      const historyValue = project.drawings_history;
-      if (historyValue) {
-        drawingsHistory = typeof historyValue === 'string' 
-          ? JSON.parse(historyValue) 
-          : historyValue;
-      }
-    } catch (e) {
-      console.error("Error parsing drawings_history:", e);
-      drawingsHistory = [];
-    }
-
-    const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "";
-    let newDrawingsStatus = project.drawings_status || "Not Assigned";
-
-    if (currentlyApproved) {
-      // Unapprove: remove workingDrawingsApproved flag from all entries
-      drawingsHistory = drawingsHistory.map(entry => ({
-        ...entry,
-        workingDrawingsApproved: false
-      }));
-      newDrawingsStatus = "Working Drawing Stage";
-    } else {
-      // Approve: mark the last entry as working drawings approved
-      if (drawingsHistory.length > 0) {
-        const lastIndex = drawingsHistory.length - 1;
-        drawingsHistory[lastIndex] = {
-          ...drawingsHistory[lastIndex],
-          workingDrawingsApproved: true
-        };
-      } else {
-        // If no history, create a new entry
-        drawingsHistory.push({
-          name: "Working Drawings",
-          date: new Date().toISOString().split('T')[0],
-          workingDrawingsApproved: true
-        });
-      }
-      newDrawingsStatus = "Drawings Complete";
-    }
-
-    // Optimistically update local state immediately
-    setProjects(prevProjects =>
-      prevProjects.map(p =>
-        p.id === project.id
-          ? {
-              ...p,
-              drawings_status: newDrawingsStatus,
-              drawings_history: JSON.stringify(drawingsHistory),
-            }
-          : p
-      )
-    );
-
-    try {
-      const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: projectName,
-          status: project.status || null,
-          drawings_status: newDrawingsStatus,
-          drawings_history: JSON.stringify(drawingsHistory),
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to update working drawings approval");
-      }
-
-      // Success - local state already updated, no need to refetch
-      console.log("Working drawings approval updated successfully");
-    } catch (error) {
-      console.error("Error toggling working drawings approval:", error);
-      alert("Failed to update working drawings approval");
-      // Revert on error by refetching
-      await fetchProjects();
-    }
   }
 
   // Toggle who has the project
@@ -901,14 +703,6 @@ export default function DrawingManager() {
           compareA = (a.suburb || "").toLowerCase();
           compareB = (b.suburb || "").toLowerCase();
           break;
-        case "concept":
-          compareA = isConceptApproved(a) ? 1 : 0;
-          compareB = isConceptApproved(b) ? 1 : 0;
-          break;
-        case "working":
-          compareA = isWorkingDrawingsApproved(a) ? 1 : 0;
-          compareB = isWorkingDrawingsApproved(b) ? 1 : 0;
-          break;
         case "draftsperson":
           compareA = getDraftspersonFirstName(a);
           compareB = getDraftspersonFirstName(b);
@@ -949,6 +743,282 @@ export default function DrawingManager() {
       setSortColumn(column);
       setSortDirection("asc");
     }
+  }
+
+  function getHolderDisplay(project) {
+    const holder = project.drawings_holder || "design team";
+    let displayText = "Design Team";
+    if (holder === "sales team") displayText = "Sales Team";
+    if (holder === "client") displayText = "Client";
+
+    let daysText = "";
+    if (project.drawings_holder_date) {
+      const holderDate = new Date(project.drawings_holder_date);
+      const today = new Date();
+      const diffTime = Math.abs(today - holderDate);
+      const daysNum = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      daysText = `${daysNum} day${daysNum !== 1 ? "s" : ""}`;
+    }
+
+    return { text: displayText, days: daysText, holder };
+  }
+
+  function getGroupedProjectsForDisplay() {
+    const filtered =
+      stateFilter !== "All"
+        ? projects.filter((project) => {
+            const projectState = (project.state || "").toUpperCase();
+            return projectState === stateFilter.toUpperCase();
+          })
+        : projects;
+    const grouped = groupProjectsByDrawingStatus(filtered);
+    if (!sortColumn) return grouped;
+    return Object.fromEntries(
+      DRAWING_MANAGER_STATUS_SECTIONS.map((title) => [
+        title,
+        sortProjects(grouped[title], sortColumn, sortDirection),
+      ])
+    );
+  }
+
+  const columnHeaderStyle = {
+    padding: "8px 12px",
+    background: MONUMENT,
+    color: WHITE,
+    borderRadius: "8px",
+    fontWeight: 600,
+    fontSize: "0.85rem",
+    position: "sticky",
+    top: "0",
+    zIndex: 10,
+    userSelect: "none",
+    transition: "opacity 0.2s",
+  };
+
+  function renderSortableColumnHeader(column, label, textAlign = "left") {
+    return (
+      <div
+        onClick={() => handleSort(column)}
+        style={{
+          ...columnHeaderStyle,
+          textAlign,
+          cursor: "pointer",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.opacity = "0.8";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.opacity = "1";
+        }}
+      >
+        {label} {sortColumn === column && (sortDirection === "asc" ? "↑" : "↓")}
+      </div>
+    );
+  }
+
+  function renderDrawingManagerProjectRow(project) {
+    const suburb = project.suburb || "";
+    const street = project.street || "";
+    const projectName =
+      suburb && street ? `${suburb} - ${street}` : suburb || street || "Unknown Project";
+    const holderDisplay = getHolderDisplay(project);
+
+    return (
+      <React.Fragment key={project.id}>
+        <Link
+          to={projectPath(project)}
+          style={{
+            padding: "8px 12px",
+            background: WHITE,
+            borderRadius: "8px",
+            textDecoration: "none",
+            color: MONUMENT,
+            fontSize: "0.85rem",
+            fontWeight: 500,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "8px",
+            transition: "box-shadow 0.2s",
+            boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.boxShadow = "0 4px 8px rgba(0,0,0,0.15)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.1)";
+          }}
+        >
+          <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {projectName}
+          </span>
+          {(isOnHoldFlag(project) || isPartialDeposit(project)) && (
+            <span style={{ display: "flex", gap: "6px", flexShrink: 0, alignItems: "center" }}>
+              {isOnHoldFlag(project) && (
+                <span
+                  style={{
+                    padding: "4px 8px",
+                    background: "#0066cc",
+                    color: WHITE,
+                    borderRadius: "4px",
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  ON HOLD
+                </span>
+              )}
+              {isPartialDeposit(project) && (
+                <span
+                  style={{
+                    padding: "4px 8px",
+                    background: "#ff8800",
+                    color: WHITE,
+                    borderRadius: "4px",
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  NEEDS DEPOSIT
+                </span>
+              )}
+            </span>
+          )}
+        </Link>
+
+        <select
+          value={normalizeDraftspersonField(project.draftsperson)}
+          onChange={(e) => handleDraftspersonChange(project, e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            padding: "8px 12px",
+            background: WHITE,
+            color: MONUMENT,
+            borderRadius: "8px",
+            fontSize: "0.85rem",
+            fontWeight: 500,
+            border: "none",
+            cursor: "pointer",
+            boxSizing: "border-box",
+          }}
+        >
+          <option value={DRAFTSPERSON_UNASSIGNED}>None</option>
+          {draftspersonUsers.map((dp) => (
+            <option key={dp.id} value={dp.name || ""}>
+              {dp.name}
+            </option>
+          ))}
+        </select>
+
+        <div
+          onClick={() => handleToggleHolder(project)}
+          style={{
+            padding: "8px 12px",
+            background: WHITE,
+            color: MONUMENT,
+            borderRadius: "8px",
+            fontSize: "0.85rem",
+            fontWeight: 500,
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            textAlign: "center",
+            cursor: "pointer",
+            transition: "background 0.2s",
+            gap: "4px",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "#f0f0f0";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = WHITE;
+          }}
+        >
+          <span>{holderDisplay.text}</span>
+          {holderDisplay.days && <span style={{ color: "#666" }}>- {holderDisplay.days}</span>}
+        </div>
+
+        <div
+          style={{
+            padding: "8px 12px",
+            background: WHITE,
+            borderRadius: "8px",
+            fontSize: "0.85rem",
+            fontWeight: 500,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 2px 4px rgba(0,0,0,0.06)",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => openNotesModalForProject(project)}
+            style={{
+              padding: "6px 12px",
+              fontSize: "0.78rem",
+              fontWeight: 600,
+              color: MONUMENT,
+              background: "#f0f0f0",
+              border: `1px solid ${SECTION_GREY}`,
+              borderRadius: "6px",
+              cursor: "pointer",
+              lineHeight: 1.2,
+              width: "100%",
+              maxWidth: "100px",
+            }}
+            title="Notes for this job"
+          >
+            {project.drawing_manager_notes && String(project.drawing_manager_notes).trim()
+              ? "Notes ✓"
+              : "Notes"}
+          </button>
+        </div>
+
+        <div
+          style={{
+            padding: "8px 12px",
+            background: WHITE,
+            borderRadius: "8px",
+            fontSize: "0.85rem",
+            fontWeight: 500,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => openReminderEmailModal(project)}
+            style={{
+              width: "100%",
+              maxWidth: "96px",
+              padding: "6px 10px",
+              background: "#4D93D9",
+              color: WHITE,
+              border: "none",
+              borderRadius: "6px",
+              fontSize: "0.8rem",
+              fontWeight: 600,
+              cursor: "pointer",
+              transition: "background 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#3d7bc9";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "#4D93D9";
+            }}
+          >
+            Email
+          </button>
+        </div>
+      </React.Fragment>
+    );
   }
 
   return (
@@ -1389,499 +1459,53 @@ export default function DrawingManager() {
           {!loading && !error && (
             <>
               {(() => {
-                // Filter projects by state if specified
-                let filteredProjects = stateFilter !== "All" 
-                  ? projects.filter(project => {
-                      const projectState = (project.state || "").toUpperCase();
-                      return projectState === stateFilter.toUpperCase();
-                    })
-                  : projects;
-                
-                // Apply sorting if a column is selected, otherwise use default concept/working drawings sort
-                if (sortColumn) {
-                  filteredProjects = sortProjects(filteredProjects, sortColumn, sortDirection);
-                } else {
-                  // Default sort: by concept/working drawings status, then alphabetically
-                  filteredProjects = filteredProjects.sort((a, b) => {
-                    // Get approval status for both projects
-                    const conceptA = isConceptApproved(a);
-                    const workingA = isWorkingDrawingsApproved(a);
-                    const conceptB = isConceptApproved(b);
-                    const workingB = isWorkingDrawingsApproved(b);
-                    
-                    // Calculate priority: 0 = neither, 1 = concept only, 2 = both
-                    const priorityA = (!conceptA && !workingA) ? 0 : (conceptA && !workingA) ? 1 : 2;
-                    const priorityB = (!conceptB && !workingB) ? 0 : (conceptB && !workingB) ? 1 : 2;
-                    
-                    // Sort by priority first
-                    if (priorityA !== priorityB) {
-                      return priorityA - priorityB;
-                    }
-                    
-                    // If same priority, sort alphabetically by suburb, then street
-                    const suburbA = (a.suburb || "").toLowerCase();
-                    const suburbB = (b.suburb || "").toLowerCase();
-                    if (suburbA !== suburbB) {
-                      return suburbA.localeCompare(suburbB);
-                    }
-                    const streetA = (a.street || "").toLowerCase();
-                    const streetB = (b.street || "").toLowerCase();
-                    return streetA.localeCompare(streetB);
-                  });
+                const groupedProjects = getGroupedProjectsForDisplay();
+                const totalCount = DRAWING_MANAGER_STATUS_SECTIONS.reduce(
+                  (sum, title) => sum + groupedProjects[title].length,
+                  0
+                );
+
+                if (totalCount === 0) {
+                  return <p style={{ color: "#32323399" }}>No Design Phase projects found.</p>;
                 }
-                
-                if (filteredProjects.length === 0) {
-                  return (
-                    <p style={{ color: "#32323399" }}>No Design Phase projects found.</p>
-                  );
-                }
-                
-                // Helper function to get holder display text and days
-                function getHolderDisplay(project) {
-                  const holder = project.drawings_holder || "design team";
-                  let displayText = "Design Team";
-                  if (holder === "sales team") displayText = "Sales Team";
-                  if (holder === "client") displayText = "Client";
-                  
-                  // Calculate days
-                  let daysText = "";
-                  let daysNum = 0;
-                  if (project.drawings_holder_date) {
-                    const holderDate = new Date(project.drawings_holder_date);
-                    const today = new Date();
-                    const diffTime = Math.abs(today - holderDate);
-                    daysNum = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                    daysText = `${daysNum} day${daysNum !== 1 ? 's' : ''}`;
-                  }
-                  
-                  return { text: displayText, days: daysText, daysNum: daysNum, holder: holder };
-                }
-                
+
                 return (
-                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1.5fr 1fr 0.65fr 0.8fr", gap: "12px" }}>
-                    {/* Header Row */}
-                    <div
-                      onClick={() => handleSort("project")}
-                      style={{
-                        padding: "8px 12px",
-                        background: MONUMENT,
-                        color: WHITE,
-                        borderRadius: "8px",
-                        fontWeight: 600,
-                        fontSize: "0.85rem",
-                        position: "sticky",
-                        top: "0",
-                        zIndex: 10,
-                        cursor: "pointer",
-                        userSelect: "none",
-                        transition: "opacity 0.2s",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.opacity = "0.8";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.opacity = "1";
-                      }}
-                    >
-                      Project {sortColumn === "project" && (sortDirection === "asc" ? "↑" : "↓")}
-                    </div>
-                    <div
-                      onClick={() => handleSort("concept")}
-                      style={{
-                        padding: "8px 12px",
-                        background: MONUMENT,
-                        color: WHITE,
-                        borderRadius: "8px",
-                        fontWeight: 600,
-                        fontSize: "0.85rem",
-                        textAlign: "center",
-                        position: "sticky",
-                        top: "0",
-                        zIndex: 10,
-                        cursor: "pointer",
-                        userSelect: "none",
-                        transition: "opacity 0.2s",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.opacity = "0.8";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.opacity = "1";
-                      }}
-                    >
-                      Concept {sortColumn === "concept" && (sortDirection === "asc" ? "↑" : "↓")}
-                    </div>
-                    <div
-                      onClick={() => handleSort("working")}
-                      style={{
-                        padding: "8px 12px",
-                        background: MONUMENT,
-                        color: WHITE,
-                        borderRadius: "8px",
-                        fontWeight: 600,
-                        fontSize: "0.85rem",
-                        textAlign: "center",
-                        position: "sticky",
-                        top: "0",
-                        zIndex: 10,
-                        cursor: "pointer",
-                        userSelect: "none",
-                        transition: "opacity 0.2s",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.opacity = "0.8";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.opacity = "1";
-                      }}
-                    >
-                      Working Drawings {sortColumn === "working" && (sortDirection === "asc" ? "↑" : "↓")}
-                    </div>
-                    <div
-                      onClick={() => handleSort("draftsperson")}
-                      style={{
-                        padding: "8px 12px",
-                        background: MONUMENT,
-                        color: WHITE,
-                        borderRadius: "8px",
-                        fontWeight: 600,
-                        fontSize: "0.85rem",
-                        textAlign: "center",
-                        position: "sticky",
-                        top: "0",
-                        zIndex: 10,
-                        cursor: "pointer",
-                        userSelect: "none",
-                        transition: "opacity 0.2s",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.opacity = "0.8";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.opacity = "1";
-                      }}
-                    >
-                      Draftsperson {sortColumn === "draftsperson" && (sortDirection === "asc" ? "↑" : "↓")}
-                    </div>
-                    <div
-                      onClick={() => handleSort("drawingsWith")}
-                      style={{
-                        padding: "8px 12px",
-                        background: MONUMENT,
-                        color: WHITE,
-                        borderRadius: "8px",
-                        fontWeight: 600,
-                        fontSize: "0.85rem",
-                        textAlign: "center",
-                        position: "sticky",
-                        top: "0",
-                        zIndex: 10,
-                        cursor: "pointer",
-                        userSelect: "none",
-                        transition: "opacity 0.2s",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.opacity = "0.8";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.opacity = "1";
-                      }}
-                    >
-                      Drawings With {sortColumn === "drawingsWith" && (sortDirection === "asc" ? "↑" : "↓")}
-                    </div>
-                    <div
-                      style={{
-                        padding: "8px 12px",
-                        background: MONUMENT,
-                        color: WHITE,
-                        borderRadius: "8px",
-                        fontWeight: 600,
-                        fontSize: "0.85rem",
-                        textAlign: "center",
-                        position: "sticky",
-                        top: "0",
-                        zIndex: 10,
-                      }}
-                    >
-                      Notes
-                    </div>
-                    <div
-                      style={{
-                        padding: "8px 12px",
-                        background: MONUMENT,
-                        color: WHITE,
-                        borderRadius: "8px",
-                        fontWeight: 600,
-                        fontSize: "0.85rem",
-                        textAlign: "center",
-                        position: "sticky",
-                        top: "0",
-                        zIndex: 10,
-                      }}
-                    >
-                      Email
-                    </div>
-                    
-                    {/* Project Rows */}
-                    {filteredProjects.map((project) => {
-                      const suburb = project.suburb || "";
-                      const street = project.street || "";
-                      const projectName = suburb && street 
-                        ? `${suburb} - ${street}`
-                        : suburb || street || "Unknown Project";
-                      const conceptApproved = isConceptApproved(project);
-                      const workingDrawingsApproved = isWorkingDrawingsApproved(project);
-                      const holderDisplay = getHolderDisplay(project);
-                      const draftspersonName = getDraftspersonName(project.draftsperson);
-                      
+                  <div style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
+                    {DRAWING_MANAGER_STATUS_SECTIONS.map((sectionTitle) => {
+                      const sectionProjects = groupedProjects[sectionTitle];
                       return (
-                        <>
-                          {/* Column 1: Project Name */}
-                          <Link
-                            key={`${project.id}-name`}
-                            to={projectPath(project)}
+                        <section key={sectionTitle}>
+                          <h3
                             style={{
-                              padding: "8px 12px",
-                              background: WHITE,
-                              borderRadius: "8px",
-                              textDecoration: "none",
+                              margin: "0 0 12px 0",
+                              fontSize: "1rem",
+                              fontWeight: 700,
                               color: MONUMENT,
-                              fontSize: "0.85rem",
-                              fontWeight: 500,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                              gap: "8px",
-                              transition: "box-shadow 0.2s",
-                              boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.boxShadow = "0 4px 8px rgba(0,0,0,0.15)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.1)";
                             }}
                           >
-                            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {projectName}
-                            </span>
-                            {isPartialDeposit(project) && (
-                              <span
-                                style={{
-                                  padding: "4px 8px",
-                                  background: "#ff8800",
-                                  color: WHITE,
-                                  borderRadius: "4px",
-                                  fontSize: "0.75rem",
-                                  fontWeight: 600,
-                                  flexShrink: 0,
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                NEEDS DEPOSIT
-                              </span>
-                            )}
-                          </Link>
-                          
-                          {/* Column 2: Concept Rectangle */}
-                          <div
-                            key={`${project.id}-concept`}
-                            onClick={() => handleToggleConcept(project)}
-                            style={{
-                              padding: "8px 12px",
-                              background: conceptApproved ? "#33cc33" : "#cc3333",
-                              color: WHITE,
-                              borderRadius: "8px",
-                              fontSize: "0.85rem",
-                              fontWeight: 500,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              textAlign: "center",
-                              cursor: "pointer",
-                              transition: "opacity 0.2s",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.opacity = "0.8";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.opacity = "1";
-                            }}
-                          >
-                            Concept
-                          </div>
-                          
-                          {/* Column 3: Working Drawings Rectangle */}
-                          <div
-                            key={`${project.id}-working`}
-                            onClick={() => handleToggleWorkingDrawings(project)}
-                            style={{
-                              padding: "8px 12px",
-                              background: workingDrawingsApproved ? "#33cc33" : "#cc3333",
-                              color: WHITE,
-                              borderRadius: "8px",
-                              fontSize: "0.85rem",
-                              fontWeight: 500,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              textAlign: "center",
-                              cursor: "pointer",
-                              transition: "opacity 0.2s",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.opacity = "0.8";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.opacity = "1";
-                            }}
-                          >
-                            Working Drawings
-                          </div>
-                          
-                          {/* Column 4: Draftsperson */}
-                          <select
-                            key={`${project.id}-draftsperson`}
-                            value={normalizeDraftspersonField(project.draftsperson)}
-                            onChange={(e) => handleDraftspersonChange(project, e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            style={{
-                              padding: "8px 12px",
-                              background: WHITE,
-                              color: MONUMENT,
-                              borderRadius: "8px",
-                              fontSize: "0.85rem",
-                              fontWeight: 500,
-                              border: "none",
-                              cursor: "pointer",
-                              boxSizing: "border-box",
-                            }}
-                          >
-                            <option value={DRAFTSPERSON_UNASSIGNED}>None</option>
-                            {draftspersonUsers.map((dp) => (
-                              <option key={dp.id} value={dp.name || ""}>
-                                {dp.name}
-                              </option>
-                            ))}
-                          </select>
-                          
-                          {/* Column 5: Drawings With */}
-                          <div
-                            key={`${project.id}-holder`}
-                            onClick={() => handleToggleHolder(project)}
-                            style={{
-                              padding: "8px 12px",
-                              background: WHITE,
-                              color: MONUMENT,
-                              borderRadius: "8px",
-                              fontSize: "0.85rem",
-                              fontWeight: 500,
-                              display: "flex",
-                              flexDirection: "row",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              textAlign: "center",
-                              cursor: "pointer",
-                              transition: "background 0.2s",
-                              gap: "4px",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#f0f0f0";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = WHITE;
-                            }}
-                          >
-                            <span>{holderDisplay.text}</span>
-                            {holderDisplay.days && (
-                              <span style={{ color: "#666" }}>
-                                - {holderDisplay.days}
-                              </span>
-                            )}
-                          </div>
-                          
-                          {/* Column 6: Notes (per project) */}
-                          <div
-                            key={`${project.id}-dm-notes`}
-                            style={{
-                              padding: "8px 12px",
-                              background: WHITE,
-                              borderRadius: "8px",
-                              fontSize: "0.85rem",
-                              fontWeight: 500,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              boxShadow: "0 2px 4px rgba(0,0,0,0.06)",
-                            }}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => openNotesModalForProject(project)}
+                            {sectionTitle} ({sectionProjects.length})
+                          </h3>
+                          {sectionProjects.length === 0 ? (
+                            <p style={{ color: "#32323399", margin: 0, fontSize: "0.9rem" }}>
+                              No projects
+                            </p>
+                          ) : (
+                            <div
                               style={{
-                                padding: "6px 12px",
-                                fontSize: "0.78rem",
-                                fontWeight: 600,
-                                color: MONUMENT,
-                                background: "#f0f0f0",
-                                border: `1px solid ${SECTION_GREY}`,
-                                borderRadius: "6px",
-                                cursor: "pointer",
-                                lineHeight: 1.2,
-                                width: "100%",
-                                maxWidth: "100px",
-                              }}
-                              title="Notes for this job"
-                            >
-                              {project.drawing_manager_notes &&
-                              String(project.drawing_manager_notes).trim()
-                                ? "Notes ✓"
-                                : "Notes"}
-                            </button>
-                          </div>
-                          
-                          {/* Column 7: Reminder Email */}
-                          <div
-                            key={`${project.id}-email`}
-                            style={{
-                              padding: "8px 12px",
-                              background: WHITE,
-                              borderRadius: "8px",
-                              fontSize: "0.85rem",
-                              fontWeight: 500,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => openReminderEmailModal(project)}
-                              style={{
-                                width: "100%",
-                                maxWidth: "96px",
-                                padding: "6px 10px",
-                                background: "#4D93D9",
-                                color: WHITE,
-                                border: "none",
-                                borderRadius: "6px",
-                                fontSize: "0.8rem",
-                                fontWeight: 600,
-                                cursor: "pointer",
-                                transition: "background 0.2s",
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = "#3d7bc9";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = "#4D93D9";
+                                display: "grid",
+                                gridTemplateColumns: "2fr 1.5fr 1fr 0.65fr 0.8fr",
+                                gap: "12px",
                               }}
                             >
-                              Email
-                            </button>
-                          </div>
-                        </>
+                              {renderSortableColumnHeader("project", "Project", "left")}
+                              {renderSortableColumnHeader("draftsperson", "Draftsperson", "center")}
+                              {renderSortableColumnHeader("drawingsWith", "Drawings With", "center")}
+                              <div style={{ ...columnHeaderStyle, textAlign: "center" }}>Notes</div>
+                              <div style={{ ...columnHeaderStyle, textAlign: "center" }}>Email</div>
+                              {sectionProjects.map((project) => renderDrawingManagerProjectRow(project))}
+                            </div>
+                          )}
+                        </section>
                       );
                     })}
                   </div>

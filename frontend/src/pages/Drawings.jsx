@@ -30,6 +30,13 @@ import {
 } from "../utils/drawingNotifyFrom";
 import { buildJobFolderNameSegment, folderYearFromProjectYear } from "../utils/projectFolderPath";
 import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
+import {
+  applyConceptApprovalRules,
+  applyDrawingUploadKindRules,
+  applyWorkingDrawingsApprovalRules,
+  newDrawingHistoryEntryFields,
+  parseDrawingsHistory,
+} from "../utils/drawingsStatusRules";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -360,29 +367,16 @@ export default function Drawings({
 
   async function applyConceptApproval() {
     if (!project?.id) return;
-    
-    // Get current drawings history
-    let drawingsHistory = [];
-    try {
-      const historyValue = project?.drawings_history;
-      if (historyValue) {
-        drawingsHistory = typeof historyValue === 'string' ? JSON.parse(historyValue) : historyValue;
-      }
-    } catch (e) {
-      console.error("Error parsing drawings_history:", e);
-    }
+
+    const drawingsHistory = parseDrawingsHistory(project?.drawings_history);
 
     if (drawingsHistory.length === 0) {
       alert("No drawings have been uploaded yet.");
       return;
     }
 
-    // Mark the last entry as concept approved
-    const lastIndex = drawingsHistory.length - 1;
-    drawingsHistory[lastIndex] = {
-      ...drawingsHistory[lastIndex],
-      conceptApproved: true
-    };
+    const { history: updatedHistory, drawingsStatus: nextStatus } =
+      applyConceptApprovalRules(drawingsHistory);
 
     // Save updated history and status
     const projectName = project?.street && project?.suburb 
@@ -442,9 +436,9 @@ export default function Drawings({
           window_ordered_date: project?.window_ordered_date || null,
           window_order_pdf_location: project?.window_order_pdf_location || null,
           window_order_number: project?.window_order_number || null,
-          drawings_status: "Working Drawing Stage",
+          drawings_status: nextStatus,
           drawings_pdf_location: project?.drawings_pdf_location || null,
-          drawings_history: JSON.stringify(drawingsHistory),
+          drawings_history: JSON.stringify(updatedHistory),
           colours_status: project?.colours_status || null,
           planning_status: project?.planning_status || null,
           energy_report_status: project?.energy_report_status || null,
@@ -457,8 +451,8 @@ export default function Drawings({
         throw new Error("Failed to update drawings status");
       }
 
-      setDrawingsStatus("Working Drawing Stage");
-      valuesRef.current.drawingsStatus = "Working Drawing Stage";
+      setDrawingsStatus(nextStatus);
+      valuesRef.current.drawingsStatus = nextStatus;
       
       // Refresh project so table gets updated drawings_history (green highlight for concept approved)
       if (onUpdate) {
@@ -479,29 +473,16 @@ export default function Drawings({
 
   async function applyWorkingDrawingsApproval() {
     if (!project?.id) return;
-    
-    // Get current drawings history
-    let drawingsHistory = [];
-    try {
-      const historyValue = project?.drawings_history;
-      if (historyValue) {
-        drawingsHistory = typeof historyValue === 'string' ? JSON.parse(historyValue) : historyValue;
-      }
-    } catch (e) {
-      console.error("Error parsing drawings_history:", e);
-    }
+
+    const drawingsHistory = parseDrawingsHistory(project?.drawings_history);
 
     if (drawingsHistory.length === 0) {
       alert("No drawings have been uploaded yet.");
       return;
     }
 
-    // Mark the last entry as working drawings approved
-    const lastIndex = drawingsHistory.length - 1;
-    drawingsHistory[lastIndex] = {
-      ...drawingsHistory[lastIndex],
-      workingDrawingsApproved: true
-    };
+    const { history: updatedHistory, drawingsStatus: nextStatus } =
+      applyWorkingDrawingsApprovalRules(drawingsHistory);
 
     // Save updated history and status
     const projectName = project?.street && project?.suburb 
@@ -561,9 +542,9 @@ export default function Drawings({
           window_ordered_date: project?.window_ordered_date || null,
           window_order_pdf_location: project?.window_order_pdf_location || null,
           window_order_number: project?.window_order_number || null,
-          drawings_status: "Drawings Complete",
+          drawings_status: nextStatus,
           drawings_pdf_location: project?.drawings_pdf_location || null,
-          drawings_history: JSON.stringify(drawingsHistory),
+          drawings_history: JSON.stringify(updatedHistory),
           colours_status: project?.colours_status || null,
           planning_status: project?.planning_status || null,
           energy_report_status: project?.energy_report_status || null,
@@ -576,8 +557,8 @@ export default function Drawings({
         throw new Error("Failed to update drawings status");
       }
 
-      setDrawingsStatus("Drawings Complete");
-      valuesRef.current.drawingsStatus = "Drawings Complete";
+      setDrawingsStatus(nextStatus);
+      valuesRef.current.drawingsStatus = nextStatus;
 
       // Refresh project so the drawings table re-renders (blue highlight)
       if (onUpdate) {
@@ -942,7 +923,8 @@ export default function Drawings({
         revision: revisionNumber,
         notes: "", // Initialize with empty notes
         markup_pdf_location: null, // Initialize with no markup
-        sent_to_client_date: null // Set when user clicks Send to Client for this revision
+        sent_to_client_date: null, // Set when user clicks Send to Client for this revision
+        ...newDrawingHistoryEntryFields(),
       };
       drawingsHistory.push(newEntry);
 
@@ -1912,6 +1894,127 @@ export default function Drawings({
     }
   }
 
+  async function saveNewDrawingUploadFields() {
+    if (!notesForRevision?.isNewDrawing) return true;
+    if (isSendingDraftingEmail) return false;
+
+    if (!newDrawingUploadKind) {
+      alert("Please select whether these drawings are concept drawings or working drawings.");
+      return false;
+    }
+
+    setIsSendingDraftingEmail(true);
+    try {
+      let drawingsHistory = parseDrawingsHistory(project?.drawings_history);
+      const { history: historyWithRules, drawingsStatus: nextDrawingsStatus } =
+        applyDrawingUploadKindRules(drawingsHistory, newDrawingUploadKind);
+
+      if (
+        notesForRevision.index < 0 ||
+        notesForRevision.index >= historyWithRules.length
+      ) {
+        throw new Error("Invalid revision index for new drawing upload.");
+      }
+
+      historyWithRules[notesForRevision.index] = {
+        ...historyWithRules[notesForRevision.index],
+        notes: notesText || "",
+      };
+
+      const projectName =
+        project?.street && project?.suburb
+          ? `${project.street}, ${project.suburb}`.trim()
+          : project?.name || "";
+
+      const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: projectName,
+          status: project?.status || null,
+          stream: project?.stream || null,
+          suburb: project?.suburb || null,
+          street: project?.street || null,
+          state: project?.state || null,
+          deposit: project?.deposit || null,
+          project_cost: project?.project_cost || null,
+          client_name: project?.client_name || null,
+          email: project?.email || null,
+          phone: project?.phone || null,
+          client1_name: project?.client1_name || null,
+          client1_email: project?.client1_email || null,
+          client1_phone: project?.client1_phone || null,
+          client1_active: project?.client1_active || null,
+          client2_name: project?.client2_name || null,
+          client2_email: project?.client2_email || null,
+          client2_phone: project?.client2_phone || null,
+          client2_active: project?.client2_active || null,
+          client3_name: project?.client3_name || null,
+          client3_email: project?.client3_email || null,
+          client3_phone: project?.client3_phone || null,
+          client3_active: project?.client3_active || null,
+          site_visit_status: project?.site_visit_status || null,
+          site_visit_date: project?.site_visit_date || null,
+          site_visit_time: project?.site_visit_time || null,
+          contract_status: project?.contract_status || null,
+          contract_sent_date: project?.contract_sent_date || null,
+          contract_complete_date: project?.contract_complete_date || null,
+          supporting_documents_status: project?.supporting_documents_status || null,
+          supporting_documents_sent_date: project?.supporting_documents_sent_date || null,
+          supporting_documents_complete_date: project?.supporting_documents_complete_date || null,
+          water_declaration_status: project?.water_declaration_status || null,
+          water_declaration_sent_date: project?.water_declaration_sent_date || null,
+          water_declaration_complete_date: project?.water_declaration_complete_date || null,
+          notes: project?.notes || null,
+          window_status: project?.window_status || null,
+          window_colour: project?.window_colour || null,
+          window_reveal: project?.window_reveal || null,
+          window_reveal_other: project?.window_reveal_other || null,
+          window_glazing: project?.window_glazing || null,
+          window_bal_rating: project?.window_bal_rating || null,
+          window_date_required: project?.window_date_required || null,
+          window_ordered_date: project?.window_ordered_date || null,
+          window_order_pdf_location: project?.window_order_pdf_location || null,
+          window_order_number: project?.window_order_number || null,
+          drawings_status: nextDrawingsStatus,
+          draftsperson: normalizeDraftspersonField(valuesRef.current.draftsperson),
+          drawings_pdf_location: project?.drawings_pdf_location || null,
+          drawings_history: JSON.stringify(historyWithRules),
+          drawings_viewed_date: project?.drawings_viewed_date || null,
+          colours_status: project?.colours_status || null,
+          planning_status: project?.planning_status || null,
+          energy_report_status: project?.energy_report_status || null,
+          footing_certification_status: project?.footing_certification_status || null,
+          building_permit_status: project?.building_permit_status || null,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(errorData.error || "Failed to save drawing upload status");
+      }
+
+      setDrawingsStatus(nextDrawingsStatus);
+      valuesRef.current.drawingsStatus = nextDrawingsStatus;
+
+      if (markupFile) {
+        await saveMarkupPath(markupFile, notesForRevision.index);
+      }
+
+      if (onUpdate) {
+        onUpdate(true);
+      }
+
+      return true;
+    } catch (error) {
+      console.error("Error saving new drawing upload:", error);
+      alert(error.message || "Failed to save notes.");
+      return false;
+    } finally {
+      setIsSendingDraftingEmail(false);
+    }
+  }
+
   async function handleSendDrawingsWithNotes() {
     if (!project || !project.id) {
       alert("Error: Project ID is missing");
@@ -1922,34 +2025,8 @@ export default function Drawings({
 
     /** New uploads: persist status + notes + markup first, then show preview like other drafts. */
     if (notesForRevision?.isNewDrawing) {
-      if (isSendingDraftingEmail) return;
-
-      if (!newDrawingUploadKind) {
-        alert("Please select whether these drawings are concept drawings or working drawings.");
-        return;
-      }
-
-      const nextDrawingsStatus =
-        newDrawingUploadKind === "concept" ? "Concept Stage" : "Working Drawing Stage";
-
-      setIsSendingDraftingEmail(true);
-      try {
-        setDrawingsStatus(nextDrawingsStatus);
-        valuesRef.current.drawingsStatus = nextDrawingsStatus;
-        await saveField("drawings_status", nextDrawingsStatus);
-
-        await saveNotesForRevision(notesForRevision.index, notesText);
-
-        if (markupFile) {
-          await saveMarkupPath(markupFile, notesForRevision.index);
-        }
-      } catch (error) {
-        console.error("Error saving before drafting email preview:", error);
-        alert(error.message || "Failed to save notes before preview.");
-        return;
-      } finally {
-        setIsSendingDraftingEmail(false);
-      }
+      const saved = await saveNewDrawingUploadFields();
+      if (!saved) return;
       // Fall through to shared template preview below (with isNewDrawing heading)
     }
 
@@ -2065,6 +2142,19 @@ export default function Drawings({
     }
   }
 
+  async function handleSkipEmailFromNotes() {
+    if (!project || !project.id) {
+      alert("Error: Project ID is missing");
+      return;
+    }
+    if (!notesForRevision?.isNewDrawing) return;
+
+    const saved = await saveNewDrawingUploadFields();
+    if (!saved) return;
+
+    handleCloseNotesModal();
+  }
+
   async function saveDrawingsHolder(holder) {
     if (!project?.id) return;
     
@@ -2166,6 +2256,22 @@ export default function Drawings({
     setEmailPreviewType(null);
   }
 
+  async function finishEmailPreviewFlow() {
+    if (emailPreviewType === "sales") {
+      await saveDrawingsHolder("design team");
+      setShowSalesNotesModal(false);
+      setSalesNotesForRevision(null);
+      setSalesNotesText("");
+    }
+
+    closeEmailPreviewModal();
+    setShowNotesModal(false);
+    setNotesForRevision(null);
+    setNotesText("");
+    setMarkupFile(null);
+    setNewDrawingUploadKind("");
+  }
+
   async function handleSendFromPreview() {
     const isApprovalEmail =
       emailPreviewType === "concept_approval" || emailPreviewType === "working_approval";
@@ -2259,23 +2365,7 @@ export default function Drawings({
         alert("Drawings email sent successfully!");
       });
 
-      // Update drawings holder based on email type
-      if (emailPreviewType === "sales") {
-        // Sales notes sent - design team now has the drawings
-        await saveDrawingsHolder("design team");
-        setShowSalesNotesModal(false);
-        setSalesNotesForRevision(null);
-        setSalesNotesText("");
-      }
-      // Drafting notes don't change the holder (design team keeps them)
-
-      // Close modals after sending
-      closeEmailPreviewModal();
-      setShowNotesModal(false);
-      setNotesForRevision(null);
-      setNotesText("");
-      setMarkupFile(null);
-      setNewDrawingUploadKind("");
+      await finishEmailPreviewFlow();
     } catch (error) {
       console.error("Error sending drawings email:", error);
       alert(`Failed to send drawings email: ${error.message}`);
@@ -3966,6 +4056,34 @@ export default function Drawings({
                   >
                     {notesForRevision.isNewDrawing ? "Save and Send Drawings" : "Update Notes"}
                   </button>
+                  {notesForRevision.isNewDrawing && (
+                    <button
+                      onClick={handleSkipEmailFromNotes}
+                      disabled={!newDrawingUploadKind || isSendingDraftingEmail}
+                      style={{
+                        background: !newDrawingUploadKind || isSendingDraftingEmail ? "#e8e8e9" : WHITE,
+                        color: MONUMENT,
+                        border: `1px solid ${SECTION_GREY}`,
+                        borderRadius: "8px",
+                        padding: "10px 20px",
+                        fontSize: "0.9rem",
+                        fontWeight: 500,
+                        cursor:
+                          !newDrawingUploadKind || isSendingDraftingEmail ? "not-allowed" : "pointer",
+                        transition: "background 0.2s",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!newDrawingUploadKind || isSendingDraftingEmail) return;
+                        e.currentTarget.style.background = "#f5f5f5";
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!newDrawingUploadKind || isSendingDraftingEmail) return;
+                        e.currentTarget.style.background = WHITE;
+                      }}
+                    >
+                      Skip Email
+                    </button>
+                  )}
                   <button
                     onClick={handleCloseNotesModal}
                     disabled={notesForRevision.isNewDrawing && isSendingDraftingEmail}

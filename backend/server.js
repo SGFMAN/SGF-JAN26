@@ -33,6 +33,7 @@ const {
   markPlanningJfScrubDone,
 } = require("./schemaStartup");
 const { buildProjectsListQuery } = require("./projectQueries");
+const { applyConceptApprovalRules, parseDrawingsHistory } = require("./drawingsStatusRules");
 const app = express();
 
 /** False until migrations finish; API returns 503 until then (server listens immediately). */
@@ -9032,27 +9033,14 @@ app.post("/api/projects/:id/approve-concept", async (req, res) => {
     const project = projectResult.rows[0];
 
     // Get current drawings history
-    let drawingsHistory = [];
-    try {
-      const historyValue = project.drawings_history;
-      if (historyValue) {
-        drawingsHistory = typeof historyValue === 'string' ? JSON.parse(historyValue) : historyValue;
-      }
-    } catch (e) {
-      console.error("Error parsing drawings_history:", e);
-      return res.status(400).json({ error: "Invalid drawings history data" });
-    }
+    let drawingsHistory = parseDrawingsHistory(project.drawings_history);
 
     if (drawingsHistory.length === 0) {
       return res.status(400).json({ error: "No drawings have been uploaded yet" });
     }
 
-    // Mark the last entry as concept approved
-    const lastIndex = drawingsHistory.length - 1;
-    drawingsHistory[lastIndex] = {
-      ...drawingsHistory[lastIndex],
-      conceptApproved: true
-    };
+    const { history: updatedHistory, drawingsStatus: nextStatus } =
+      applyConceptApprovalRules(drawingsHistory);
 
     // Update project with approved concept
     const projectName = project?.street && project?.suburb 
@@ -9066,7 +9054,7 @@ app.post("/api/projects/:id/approve-concept", async (req, res) => {
            updated_at = NOW()
        WHERE id = $3
        RETURNING id, name, drawings_status, drawings_history`,
-      [JSON.stringify(drawingsHistory), "Concept Stage", id]
+      [JSON.stringify(updatedHistory), nextStatus, id]
     );
 
     if (updateResult.rowCount === 0) {

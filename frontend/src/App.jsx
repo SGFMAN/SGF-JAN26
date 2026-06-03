@@ -30,6 +30,7 @@ import SecretArea from "./pages/SecretArea";
 import SecretLevelEditor from "./pages/SecretLevelEditor";
 import SecretLevel from "./pages/SecretLevel";
 import Maps from "./pages/Maps";
+import TimeSheet from "./pages/TimeSheet";
 import AppModeBanner from "./components/AppModeBanner";
 import { EmailSendOverlayProvider } from "./components/EmailSendOverlay";
 import PortalProjects from "./pages/PortalProjects";
@@ -92,6 +93,7 @@ export default function App() {
             <Route path="/secret-area/level-editor" element={<SecretLevelEditor />} />
             <Route path="/secret-area/level" element={<SecretLevel />} />
             <Route path="/maps" element={<Maps />} />
+            <Route path="/time-sheet" element={<TimeSheet />} />
             <Route path="/benbox" element={<Navigate to="/maps" replace />} />
             <Route path="/faq" element={<Navigate to="/maps" replace />} />
             <Route path="/approve-concept/:projectId" element={<ApproveConcept />} />
