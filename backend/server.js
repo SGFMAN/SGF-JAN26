@@ -2447,7 +2447,7 @@ const VICMAP_ADDRESS_QUERY_URL =
   "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Address/FeatureServer/0/query";
 const VICMAP_PROPERTY_QUERY_URL =
   "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Property/FeatureServer/0/query";
-const VICMAP_FETCH_TIMEOUT_MS = 20000;
+const VICMAP_FETCH_TIMEOUT_MS = 120000;
 
 function normalizeParcelState(raw) {
   const s = String(raw || "")
@@ -2501,9 +2501,10 @@ function buildVicmapAddressWhere({ address, houseNumber, road, locality }) {
     .trim()
     .toUpperCase()
     .replace(/\s+/g, " ");
+  // num_road_address LIKE returns HTTP 400 on Vicmap; ezi_address LIKE is reliable.
   if (house && roadName) {
-    const numRoad = `${house} ${roadName}`.trim();
-    clauses.push(`num_road_address LIKE '${escapeArcGisSqlString(numRoad)}%'`);
+    const eziNeedle = `${house} ${roadName}`.trim();
+    clauses.push(`ezi_address LIKE '%${escapeArcGisSqlString(eziNeedle)}%'`);
   } else if (address) {
     const head = address.split(",")[0].trim().toUpperCase();
     if (head) clauses.push(`ezi_address LIKE '%${escapeArcGisSqlString(head)}%'`);
@@ -2511,6 +2512,31 @@ function buildVicmapAddressWhere({ address, houseNumber, road, locality }) {
 
   if (clauses.length === 0) return null;
   return clauses.join(" AND ");
+}
+
+function buildVicmapAddressWhereAttempts(addressBits) {
+  const attempts = [];
+  const primary = buildVicmapAddressWhere(addressBits);
+  if (primary) attempts.push(primary);
+
+  const house = String(addressBits.houseNumber || "").trim();
+  const roadName = String(addressBits.road || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
+  if (house && roadName) {
+    attempts.push(`ezi_address LIKE '%${escapeArcGisSqlString(`${house} ${roadName}`)}%'`);
+  }
+
+  const address = String(addressBits.address || "").trim();
+  if (address) {
+    const head = address.split(",")[0].trim().toUpperCase();
+    if (head) {
+      attempts.push(`ezi_address LIKE '%${escapeArcGisSqlString(head.toUpperCase())}%'`);
+    }
+  }
+
+  return [...new Set(attempts)];
 }
 
 function shouldUseDevParcelMock() {
@@ -2675,32 +2701,36 @@ async function fetchVicmapGeoJson(queryUrl, params) {
 }
 
 async function queryVicmapAddressMatch(addressBits, nearLat, nearLng) {
-  const where = buildVicmapAddressWhere(addressBits);
-  if (!where) return null;
+  const whereAttempts = buildVicmapAddressWhereAttempts(addressBits);
+  if (!whereAttempts.length) return null;
 
-  const geo = await fetchVicmapGeoJson(VICMAP_ADDRESS_QUERY_URL, {
-    f: "geojson",
-    where,
-    outFields: "ezi_address,property_pfi,pfi,num_road_address,locality_name,is_primary",
-    returnGeometry: "true",
-    outSR: "4326",
-    resultRecordCount: "10",
-  });
-  const features = Array.isArray(geo?.features) ? geo.features : [];
-  if (!features.length) return null;
+  for (const where of whereAttempts) {
+    const geo = await fetchVicmapGeoJson(VICMAP_ADDRESS_QUERY_URL, {
+      f: "geojson",
+      where,
+      outFields: "ezi_address,property_pfi,pfi,num_road_address,locality_name,is_primary",
+      returnGeometry: "true",
+      outSR: "4326",
+      resultRecordCount: "10",
+    });
+    const features = Array.isArray(geo?.features) ? geo.features : [];
+    if (!features.length) continue;
 
-  const picked = pickBestVicmapAddressFeature(features, nearLat, nearLng);
-  const coords = picked?.geometry?.coordinates;
-  if (!Array.isArray(coords) || coords.length < 2) return null;
+    const picked = pickBestVicmapAddressFeature(features, nearLat, nearLng);
+    const coords = picked?.geometry?.coordinates;
+    if (!Array.isArray(coords) || coords.length < 2) continue;
 
-  const [lng, lat] = coords;
-  return {
-    lat,
-    lng,
-    property_pfi: picked.properties?.property_pfi,
-    ezi_address: picked.properties?.ezi_address,
-    properties: picked.properties || {},
-  };
+    const [lng, lat] = coords;
+    return {
+      lat,
+      lng,
+      property_pfi: picked.properties?.property_pfi,
+      ezi_address: picked.properties?.ezi_address,
+      properties: picked.properties || {},
+    };
+  }
+
+  return null;
 }
 
 async function queryVicmapPropertyByPfi(propertyPfi) {
@@ -2724,7 +2754,7 @@ async function queryVicmapPropertyByPfi(propertyPfi) {
 }
 
 async function queryVicmapParcelByPoint(lat, lng) {
-  const geo = await fetchVicmapGeoJson(VICMAP_PARCEL_QUERY_URL, {
+  const pointParams = {
     f: "geojson",
     geometry: `${lng},${lat}`,
     geometryType: "esriGeometryPoint",
@@ -2736,8 +2766,27 @@ async function queryVicmapParcelByPoint(lat, lng) {
     outFields: "parcel_pfi,parcel_lot_number,parcel_plan_number,parcel_id,parcel_lga_code",
     outSR: "4326",
     resultRecordCount: "10",
-  });
-  const features = Array.isArray(geo?.features) ? geo.features : [];
+  };
+  let geo = await fetchVicmapGeoJson(VICMAP_PARCEL_QUERY_URL, pointParams);
+  let features = Array.isArray(geo?.features) ? geo.features : [];
+
+  if (!features.length) {
+    const delta = 0.001;
+    const envelope = [lng - delta, lat - delta, lng + delta, lat + delta].join(",");
+    geo = await fetchVicmapGeoJson(VICMAP_PARCEL_QUERY_URL, {
+      f: "geojson",
+      geometry: envelope,
+      geometryType: "esriGeometryEnvelope",
+      inSR: "4326",
+      spatialRel: "esriSpatialRelIntersects",
+      returnGeometry: "true",
+      outFields: "parcel_pfi,parcel_lot_number,parcel_plan_number,parcel_id,parcel_lga_code",
+      outSR: "4326",
+      resultRecordCount: "10",
+    });
+    features = Array.isArray(geo?.features) ? geo.features : [];
+  }
+
   const feature = pickBestVicmapFeature(features, lat, lng);
   if (!feature?.geometry) return null;
   return {

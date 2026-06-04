@@ -227,6 +227,7 @@ export default function Maps() {
       const parcelParams = parcelQueryParamsFromNominatimHit(hit, lat, lon, searchState);
       const parcelUrl = `/api/maps/parcel?${parcelParams.toString()}`;
       console.log("[Maps] parcel request URL:", parcelUrl);
+      setParcelNotice("Looking up title boundary…");
 
       try {
         const parcelRes = await fetch(parcelUrl, { headers: getApiHeaders() });

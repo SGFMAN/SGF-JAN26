@@ -13,6 +13,7 @@ export default defineConfig({
       "/api": {
         target: "http://localhost:3001",
         changeOrigin: true,
+        timeout: 180000,
       },
       "/health": {
         target: "http://localhost:3001",
