@@ -1,4 +1,11 @@
-export const SECRET_AREA_PROJECT_NAME = "12 Mumm St, Waurn Ponds, VIC";
+/** Project that unlocks the secret area from Planning → Trade Certificates. */
+export const SECRET_AREA_PROJECT_ALIASES = [
+  "18 Kipling Avenue, Mooroolbark, VIC",
+  "MOOROOLBARK - 18 Kipling Avenue",
+];
+
+/** @deprecated Use SECRET_AREA_PROJECT_ALIASES — kept for any external references */
+export const SECRET_AREA_PROJECT_NAME = SECRET_AREA_PROJECT_ALIASES[0];
 export const SECRET_AREA_SESSION_KEY = "sgf_secret_area_unlocked";
 
 function normalizeProjectName(value) {
@@ -18,9 +25,13 @@ export function getProjectDisplayName(project) {
 }
 
 export function isSecretAreaProject(project) {
-  const target = normalizeProjectName(SECRET_AREA_PROJECT_NAME);
+  const targets = SECRET_AREA_PROJECT_ALIASES.map((a) => normalizeProjectName(a));
   const candidates = [getProjectDisplayName(project), project?.name];
-  return candidates.some((c) => normalizeProjectName(c) === target);
+  if (candidates.some((c) => targets.includes(normalizeProjectName(c)))) {
+    return true;
+  }
+  const blob = normalizeProjectName(candidates.filter(Boolean).join(" "));
+  return blob.includes("18") && blob.includes("KIPLING") && blob.includes("MOOROOLBARK");
 }
 
 export function unlockSecretAreaSession() {

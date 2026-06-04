@@ -7,6 +7,15 @@ const DRAWINGS_STATUS = {
   COMPLETE: "Drawings Complete",
 };
 
+const DRAWINGS_HOLDER_DESIGN_TEAM = "design team";
+
+function getDrawingsHolderResetOnApproval() {
+  return {
+    drawings_holder: DRAWINGS_HOLDER_DESIGN_TEAM,
+    drawings_holder_date: new Date().toISOString().split("T")[0],
+  };
+}
+
 function parseDrawingsHistory(historyValue) {
   if (!historyValue) return [];
   try {
@@ -35,6 +44,18 @@ function applyConceptApprovalRules(drawingsHistory) {
       workingDrawingsApproved: false,
     }),
     drawingsStatus: DRAWINGS_STATUS.WORKING_STAGE,
+    ...getDrawingsHolderResetOnApproval(),
+  };
+}
+
+function applyWorkingDrawingsApprovalRules(drawingsHistory) {
+  return {
+    history: updateLatestRevisionFlags(drawingsHistory, {
+      conceptApproved: true,
+      workingDrawingsApproved: true,
+    }),
+    drawingsStatus: DRAWINGS_STATUS.COMPLETE,
+    ...getDrawingsHolderResetOnApproval(),
   };
 }
 
@@ -42,4 +63,6 @@ module.exports = {
   DRAWINGS_STATUS,
   parseDrawingsHistory,
   applyConceptApprovalRules,
+  applyWorkingDrawingsApprovalRules,
+  getDrawingsHolderResetOnApproval,
 };

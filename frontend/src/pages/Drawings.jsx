@@ -375,7 +375,7 @@ export default function Drawings({
       return;
     }
 
-    const { history: updatedHistory, drawingsStatus: nextStatus } =
+    const { history: updatedHistory, drawingsStatus: nextStatus, drawings_holder, drawings_holder_date } =
       applyConceptApprovalRules(drawingsHistory);
 
     // Save updated history and status
@@ -439,6 +439,8 @@ export default function Drawings({
           drawings_status: nextStatus,
           drawings_pdf_location: project?.drawings_pdf_location || null,
           drawings_history: JSON.stringify(updatedHistory),
+          drawings_holder,
+          drawings_holder_date,
           colours_status: project?.colours_status || null,
           planning_status: project?.planning_status || null,
           energy_report_status: project?.energy_report_status || null,
@@ -453,7 +455,8 @@ export default function Drawings({
 
       setDrawingsStatus(nextStatus);
       valuesRef.current.drawingsStatus = nextStatus;
-      
+      setDrawingsHolder(drawings_holder);
+
       // Refresh project so table gets updated drawings_history (green highlight for concept approved)
       if (onUpdate) {
         onUpdate();
@@ -481,7 +484,7 @@ export default function Drawings({
       return;
     }
 
-    const { history: updatedHistory, drawingsStatus: nextStatus } =
+    const { history: updatedHistory, drawingsStatus: nextStatus, drawings_holder, drawings_holder_date } =
       applyWorkingDrawingsApprovalRules(drawingsHistory);
 
     // Save updated history and status
@@ -545,6 +548,8 @@ export default function Drawings({
           drawings_status: nextStatus,
           drawings_pdf_location: project?.drawings_pdf_location || null,
           drawings_history: JSON.stringify(updatedHistory),
+          drawings_holder,
+          drawings_holder_date,
           colours_status: project?.colours_status || null,
           planning_status: project?.planning_status || null,
           energy_report_status: project?.energy_report_status || null,
@@ -559,6 +564,7 @@ export default function Drawings({
 
       setDrawingsStatus(nextStatus);
       valuesRef.current.drawingsStatus = nextStatus;
+      setDrawingsHolder(drawings_holder);
 
       // Refresh project so the drawings table re-renders (blue highlight)
       if (onUpdate) {

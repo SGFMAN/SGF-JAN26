@@ -9107,22 +9107,20 @@ app.post("/api/projects/:id/approve-concept", async (req, res) => {
       return res.status(400).json({ error: "No drawings have been uploaded yet" });
     }
 
-    const { history: updatedHistory, drawingsStatus: nextStatus } =
+    const { history: updatedHistory, drawingsStatus: nextStatus, drawings_holder, drawings_holder_date } =
       applyConceptApprovalRules(drawingsHistory);
 
     // Update project with approved concept
-    const projectName = project?.street && project?.suburb 
-      ? `${project.street}, ${project.suburb}`.trim() 
-      : project?.name || "";
-
     const updateResult = await pool.query(
       `UPDATE projects 
        SET drawings_history = $1, 
            drawings_status = $2,
+           drawings_holder = $3,
+           drawings_holder_date = $4,
            updated_at = NOW()
-       WHERE id = $3
-       RETURNING id, name, drawings_status, drawings_history`,
-      [JSON.stringify(updatedHistory), nextStatus, id]
+       WHERE id = $5
+       RETURNING id, name, drawings_status, drawings_history, drawings_holder, drawings_holder_date`,
+      [JSON.stringify(updatedHistory), nextStatus, drawings_holder, drawings_holder_date, id]
     );
 
     if (updateResult.rowCount === 0) {
