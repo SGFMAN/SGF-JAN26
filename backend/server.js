@@ -2660,6 +2660,22 @@ function pickBestVicmapAddressFeature(features, nearLat, nearLng) {
 function pickBestVicmapFeature(features, lat, lng) {
   if (!Array.isArray(features) || features.length === 0) return null;
 
+  const containing = features.filter((f) => geometryContainsPoint(f?.geometry, lat, lng));
+  if (containing.length === 1) return containing[0];
+  if (containing.length > 1) {
+    // Nested/overlapping parcels at one point — prefer the smallest lot (usually the dwelling parcel).
+    let best = containing[0];
+    let bestArea = ringSignedArea(best?.geometry?.coordinates?.[0] || []);
+    for (let i = 1; i < containing.length; i++) {
+      const area = ringSignedArea(containing[i]?.geometry?.coordinates?.[0] || []);
+      if (area < bestArea) {
+        bestArea = area;
+        best = containing[i];
+      }
+    }
+    return best;
+  }
+
   let best = null;
   let bestDist = Infinity;
   for (const feature of features) {
@@ -2670,6 +2686,25 @@ function pickBestVicmapFeature(features, lat, lng) {
     }
   }
   return best;
+}
+
+function ringSignedArea(ring) {
+  if (!Array.isArray(ring) || ring.length < 3) return Infinity;
+  let area = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    area += (ring[j][0] + ring[i][0]) * (ring[j][1] - ring[i][1]);
+  }
+  return Math.abs(area / 2);
+}
+
+function dedupeParcelFeatures(features) {
+  const seen = new Map();
+  for (const feature of features || []) {
+    const pfi = feature?.properties?.parcel_pfi;
+    if (!pfi || seen.has(pfi)) continue;
+    seen.set(pfi, feature);
+  }
+  return [...seen.values()];
 }
 
 async function fetchVicmapGeoJson(queryUrl, params) {
@@ -2754,38 +2789,38 @@ async function queryVicmapPropertyByPfi(propertyPfi) {
 }
 
 async function queryVicmapParcelByPoint(lat, lng) {
-  const pointParams = {
+  const outFields = "parcel_pfi,parcel_lot_number,parcel_plan_number,parcel_id,parcel_lga_code";
+  const baseParams = {
     f: "geojson",
-    geometry: `${lng},${lat}`,
-    geometryType: "esriGeometryPoint",
     inSR: "4326",
     spatialRel: "esriSpatialRelIntersects",
-    distance: "50",
-    units: "esriSRUnit_Meter",
     returnGeometry: "true",
-    outFields: "parcel_pfi,parcel_lot_number,parcel_plan_number,parcel_id,parcel_lga_code",
+    outFields,
     outSR: "4326",
-    resultRecordCount: "10",
+    resultRecordCount: "25",
   };
-  let geo = await fetchVicmapGeoJson(VICMAP_PARCEL_QUERY_URL, pointParams);
-  let features = Array.isArray(geo?.features) ? geo.features : [];
 
-  if (!features.length) {
-    const delta = 0.001;
-    const envelope = [lng - delta, lat - delta, lng + delta, lat + delta].join(",");
-    geo = await fetchVicmapGeoJson(VICMAP_PARCEL_QUERY_URL, {
-      f: "geojson",
+  const delta = 0.0004;
+  const envelope = [lng - delta, lat - delta, lng + delta, lat + delta].join(",");
+  const [envGeo, distGeo] = await Promise.all([
+    fetchVicmapGeoJson(VICMAP_PARCEL_QUERY_URL, {
+      ...baseParams,
       geometry: envelope,
       geometryType: "esriGeometryEnvelope",
-      inSR: "4326",
-      spatialRel: "esriSpatialRelIntersects",
-      returnGeometry: "true",
-      outFields: "parcel_pfi,parcel_lot_number,parcel_plan_number,parcel_id,parcel_lga_code",
-      outSR: "4326",
-      resultRecordCount: "10",
-    });
-    features = Array.isArray(geo?.features) ? geo.features : [];
-  }
+    }),
+    fetchVicmapGeoJson(VICMAP_PARCEL_QUERY_URL, {
+      ...baseParams,
+      geometry: `${lng},${lat}`,
+      geometryType: "esriGeometryPoint",
+      distance: "50",
+      units: "esriSRUnit_Meter",
+    }),
+  ]);
+
+  const features = dedupeParcelFeatures([
+    ...(envGeo?.features || []),
+    ...(distGeo?.features || []),
+  ]);
 
   const feature = pickBestVicmapFeature(features, lat, lng);
   if (!feature?.geometry) return null;
@@ -2796,27 +2831,36 @@ async function queryVicmapParcelByPoint(lat, lng) {
 }
 
 async function queryVicmapBoundaryForSearch({ lat, lng, addressBits }) {
+  // Search pin (Nominatim) is on the correct site — pick the parcel polygon that contains it.
+  const parcelHit = await queryVicmapParcelByPoint(lat, lng);
+  if (parcelHit) {
+    const containsPin = geometryContainsPoint(parcelHit.geometry, lat, lng);
+    if (!containsPin) {
+      console.warn("[maps/parcel] Pin not inside selected parcel — nearest boundary used", {
+        lat,
+        lng,
+        parcel_pfi: parcelHit.properties?.parcel_pfi,
+      });
+    }
+    return {
+      ...parcelHit,
+      source: "VIC_CADASTRE",
+      containsPin,
+    };
+  }
+
+  // Last resort: Vicmap property polygon only when it actually contains the search pin.
   const addressMatch = await queryVicmapAddressMatch(addressBits, lat, lng);
   if (addressMatch?.property_pfi) {
     const propertyHit = await queryVicmapPropertyByPfi(addressMatch.property_pfi);
-    if (propertyHit) {
+    if (propertyHit?.geometry && geometryContainsPoint(propertyHit.geometry, lat, lng)) {
       return {
         ...propertyHit,
         source: "VIC_PROPERTY",
         matchedAddress: addressMatch.ezi_address,
+        containsPin: true,
       };
     }
-  }
-
-  const parcelLat = addressMatch?.lat ?? lat;
-  const parcelLng = addressMatch?.lng ?? lng;
-  const parcelHit = await queryVicmapParcelByPoint(parcelLat, parcelLng);
-  if (parcelHit) {
-    return {
-      ...parcelHit,
-      source: "VIC_CADASTRE",
-      matchedAddress: addressMatch?.ezi_address || null,
-    };
   }
 
   return null;
