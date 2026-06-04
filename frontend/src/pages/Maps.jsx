@@ -117,22 +117,12 @@ function inferStateFromNominatimHit(hit) {
   return "VIC";
 }
 
-function parcelQueryParamsFromNominatimHit(hit, lat, lon, searchState) {
-  const params = new URLSearchParams({
+function parcelQueryParamsForPin(lat, lon, searchState) {
+  return new URLSearchParams({
     lat: String(lat),
     lng: String(lon),
     state: searchState,
   });
-  const addr = hit?.address || {};
-  const displayName = String(hit?.display_name || "").trim();
-  if (displayName) params.set("address", displayName);
-  if (addr.house_number) params.set("house_number", addr.house_number);
-  const road = addr.road || addr.pedestrian || addr.footway || addr.path || "";
-  if (road) params.set("road", road);
-  const locality = addr.suburb || addr.city || addr.town || addr.village || addr.municipality || "";
-  if (locality) params.set("locality", locality);
-  if (addr.postcode) params.set("postcode", addr.postcode);
-  return params;
 }
 
 function boundsFromGeoJsonFeature(feature) {
@@ -222,19 +212,30 @@ export default function Maps() {
       }
 
       const searchState = inferStateFromNominatimHit(hit);
-      console.log("[Maps] searched coordinates:", { lat, lng: lon, state: searchState });
+      // Pin: Leaflet [lat, lng]. Parcel API uses the same WGS84 pin (lat=N/S, lng=E/W).
+      console.log("[Maps] search pin:", { lat, lng: lon, state: searchState, leaflet: [lat, lon] });
 
-      const parcelParams = parcelQueryParamsFromNominatimHit(hit, lat, lon, searchState);
+      const parcelParams = parcelQueryParamsForPin(lat, lon, searchState);
       const parcelUrl = `/api/maps/parcel?${parcelParams.toString()}`;
-      console.log("[Maps] parcel request URL:", parcelUrl);
+      console.log("[Maps] parcel request:", parcelUrl);
       setParcelNotice("Looking up title boundary…");
 
       try {
         const parcelRes = await fetch(parcelUrl, { headers: getApiHeaders() });
         const parcelData = await parcelRes.json().catch(() => ({}));
 
-        if (parcelRes.ok && parcelData.ok && parcelData.geometry) {
-          console.log("[Maps] parcel geometry returned:", true, "source:", parcelData.source);
+        const hasBoundary =
+          parcelRes.ok &&
+          parcelData.ok &&
+          parcelData.geometry &&
+          parcelData.containsPin === true;
+
+        if (hasBoundary) {
+          console.log("[Maps] title boundary:", {
+            source: parcelData.source,
+            containsPin: parcelData.containsPin,
+            parcel_pfi: parcelData.properties?.parcel_pfi,
+          });
           const feature = {
             type: "Feature",
             geometry: parcelData.geometry,
@@ -251,14 +252,11 @@ export default function Maps() {
             setFlyTarget(pos);
           }
         } else {
-          console.log(
-            "[Maps] parcel geometry returned:",
-            false,
-            "source:",
-            parcelData.source || "none",
-            "status:",
-            parcelRes.status
-          );
+          console.log("[Maps] title boundary not available:", {
+            status: parcelRes.status,
+            containsPin: parcelData.containsPin,
+            error: parcelData.error,
+          });
           setParcelFeature(null);
           setParcelBounds(null);
           setParcelNotice("Title boundary not available.");
@@ -692,8 +690,8 @@ export default function Maps() {
 
           <p style={{ margin: 0, fontSize: "0.8rem", color: "#555", lineHeight: 1.45 }}>
             Satellite imagery: Esri World Imagery. Address search: OpenStreetMap Nominatim (please use
-            sparingly). VIC title boundaries: Vicmap Property parcels. Default view: greater Melbourne,
-            Victoria.
+            sparingly). VIC title boundaries: Vicmap cadastral parcels at the search pin (EPSG:4326).
+            Default view: greater Melbourne, Victoria.
           </p>
         </div>
       </div>

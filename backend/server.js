@@ -18,6 +18,11 @@ const { PDFDocument: PdfLibDocument } = require("pdf-lib");
 const sharp = require("sharp");
 const crypto = require("crypto");
 const {
+  normalizeParcelState,
+  parseParcelLatLng,
+  lookupParcelBoundary,
+} = require("./mapsParcelLookup");
+const {
   ensureProjectAccessTokens,
   isLegacyNumericProjectId,
   resolveProjectIdFromAccessToken,
@@ -2439,432 +2444,7 @@ async function geocodeWithNominatim(q) {
 }
 
 // --- Cadastral parcel lookup (Maps page) ---
-// VIC: Vicmap Property / Address / Parcel (official Victorian Government open data, no API key).
-// QLD: TODO — wire QSpatial cadastre when needed.
-const VICMAP_PARCEL_QUERY_URL =
-  "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Parcel/FeatureServer/0/query";
-const VICMAP_ADDRESS_QUERY_URL =
-  "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Address/FeatureServer/0/query";
-const VICMAP_PROPERTY_QUERY_URL =
-  "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Property/FeatureServer/0/query";
-const VICMAP_FETCH_TIMEOUT_MS = 120000;
-
-function normalizeParcelState(raw) {
-  const s = String(raw || "")
-    .trim()
-    .toUpperCase();
-  if (s === "VIC" || s === "VICTORIA") return "VIC";
-  if (s === "QLD" || s === "QUEENSLAND") return "QLD";
-  return s;
-}
-
-function parseParcelLatLng(query) {
-  const lat = Number.parseFloat(query.lat);
-  const lng = Number.parseFloat(query.lng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return { error: "lat and lng query parameters are required and must be valid numbers" };
-  }
-  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-    return { error: "lat/lng out of valid range" };
-  }
-  return { lat, lng };
-}
-
-function parseParcelAddressQuery(query) {
-  return {
-    address: String(query.address || "").trim(),
-    houseNumber: String(query.house_number || query.houseNumber || "").trim(),
-    road: String(query.road || "").trim(),
-    locality: String(query.locality || query.suburb || "").trim(),
-    postcode: String(query.postcode || "").trim(),
-  };
-}
-
-function escapeArcGisSqlString(value) {
-  return String(value || "").replace(/'/g, "''");
-}
-
-function normalizeVicLocalityName(raw) {
-  return String(raw || "")
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, " ");
-}
-
-function buildVicmapAddressWhere({ address, houseNumber, road, locality }) {
-  const clauses = [];
-  const loc = normalizeVicLocalityName(locality);
-  if (loc) clauses.push(`locality_name = '${escapeArcGisSqlString(loc)}'`);
-
-  const house = String(houseNumber || "").trim();
-  const roadName = String(road || "")
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, " ");
-  // num_road_address LIKE returns HTTP 400 on Vicmap; ezi_address LIKE is reliable.
-  if (house && roadName) {
-    const eziNeedle = `${house} ${roadName}`.trim();
-    clauses.push(`ezi_address LIKE '%${escapeArcGisSqlString(eziNeedle)}%'`);
-  } else if (address) {
-    const head = address.split(",")[0].trim().toUpperCase();
-    if (head) clauses.push(`ezi_address LIKE '%${escapeArcGisSqlString(head)}%'`);
-  }
-
-  if (clauses.length === 0) return null;
-  return clauses.join(" AND ");
-}
-
-function buildVicmapAddressWhereAttempts(addressBits) {
-  const attempts = [];
-  const primary = buildVicmapAddressWhere(addressBits);
-  if (primary) attempts.push(primary);
-
-  const house = String(addressBits.houseNumber || "").trim();
-  const roadName = String(addressBits.road || "")
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, " ");
-  if (house && roadName) {
-    attempts.push(`ezi_address LIKE '%${escapeArcGisSqlString(`${house} ${roadName}`)}%'`);
-  }
-
-  const address = String(addressBits.address || "").trim();
-  if (address) {
-    const head = address.split(",")[0].trim().toUpperCase();
-    if (head) {
-      attempts.push(`ezi_address LIKE '%${escapeArcGisSqlString(head.toUpperCase())}%'`);
-    }
-  }
-
-  return [...new Set(attempts)];
-}
-
-function shouldUseDevParcelMock() {
-  return process.env.MAPS_PARCEL_MOCK === "1";
-}
-
-/** Dev-only mock parcel (~25 m square) for frontend testing when live cadastre is unreachable. */
-function buildMockVicParcelGeometry(lat, lng) {
-  const dLat = 0.00011;
-  const cosLat = Math.cos((lat * Math.PI) / 180) || 1;
-  const dLng = dLat / cosLat;
-  return {
-    type: "Polygon",
-    coordinates: [
-      [
-        [lng - dLng, lat - dLat],
-        [lng + dLng, lat - dLat],
-        [lng + dLng, lat + dLat],
-        [lng - dLng, lat + dLat],
-        [lng - dLng, lat - dLat],
-      ],
-    ],
-  };
-}
-
-function pointInRing(lng, lat, ring) {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i][0];
-    const yi = ring[i][1];
-    const xj = ring[j][0];
-    const yj = ring[j][1];
-    const intersect =
-      yi > lat !== yj > lat &&
-      lng < ((xj - xi) * (lat - yi)) / (yj - yi + 0.0) + xi;
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-
-function geometryContainsPoint(geometry, lat, lng) {
-  if (!geometry) return false;
-  if (geometry.type === "Polygon") {
-    const rings = geometry.coordinates;
-    if (!Array.isArray(rings?.[0])) return false;
-    return pointInRing(lng, lat, rings[0]);
-  }
-  if (geometry.type === "MultiPolygon") {
-    return geometry.coordinates.some(
-      (poly) => Array.isArray(poly?.[0]) && pointInRing(lng, lat, poly[0])
-    );
-  }
-  return false;
-}
-
-function distancePointToSegment(lng, lat, x1, y1, x2, y2) {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  if (dx === 0 && dy === 0) {
-    const dLng = lng - x1;
-    const dLat = lat - y1;
-    return dLng * dLng + dLat * dLat;
-  }
-  const t = Math.max(0, Math.min(1, ((lng - x1) * dx + (lat - y1) * dy) / (dx * dx + dy * dy)));
-  const projLng = x1 + t * dx;
-  const projLat = y1 + t * dy;
-  const dLng = lng - projLng;
-  const dLat = lat - projLat;
-  return dLng * dLng + dLat * dLat;
-}
-
-function distancePointToRing(lng, lat, ring) {
-  let min = Infinity;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [x1, y1] = ring[j];
-    const [x2, y2] = ring[i];
-    min = Math.min(min, distancePointToSegment(lng, lat, x1, y1, x2, y2));
-  }
-  return min;
-}
-
-function distancePointToGeometry(geometry, lat, lng) {
-  if (!geometry) return Infinity;
-  if (geometryContainsPoint(geometry, lat, lng)) return 0;
-  if (geometry.type === "Polygon") {
-    return distancePointToRing(lng, lat, geometry.coordinates?.[0] || []);
-  }
-  if (geometry.type === "MultiPolygon") {
-    let min = Infinity;
-    for (const poly of geometry.coordinates || []) {
-      min = Math.min(min, distancePointToRing(lng, lat, poly?.[0] || []));
-    }
-    return min;
-  }
-  return Infinity;
-}
-
-function pickBestVicmapAddressFeature(features, nearLat, nearLng) {
-  if (!Array.isArray(features) || features.length === 0) return null;
-  const primary = features.filter((f) => String(f.properties?.is_primary).toUpperCase() === "Y");
-  const pool = primary.length ? primary : features;
-  if (!Number.isFinite(nearLat) || !Number.isFinite(nearLng)) return pool[0];
-
-  let best = pool[0];
-  let bestDist = Infinity;
-  for (const feature of pool) {
-    const coords = feature?.geometry?.coordinates;
-    if (!Array.isArray(coords) || coords.length < 2) continue;
-    const [lng, lat] = coords;
-    const dLat = lat - nearLat;
-    const dLng = lng - nearLng;
-    const dist = dLat * dLat + dLng * dLng;
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = feature;
-    }
-  }
-  return best;
-}
-
-function pickBestVicmapFeature(features, lat, lng) {
-  if (!Array.isArray(features) || features.length === 0) return null;
-
-  const containing = features.filter((f) => geometryContainsPoint(f?.geometry, lat, lng));
-  if (containing.length === 1) return containing[0];
-  if (containing.length > 1) {
-    // Nested/overlapping parcels at one point — prefer the smallest lot (usually the dwelling parcel).
-    let best = containing[0];
-    let bestArea = ringSignedArea(best?.geometry?.coordinates?.[0] || []);
-    for (let i = 1; i < containing.length; i++) {
-      const area = ringSignedArea(containing[i]?.geometry?.coordinates?.[0] || []);
-      if (area < bestArea) {
-        bestArea = area;
-        best = containing[i];
-      }
-    }
-    return best;
-  }
-
-  let best = null;
-  let bestDist = Infinity;
-  for (const feature of features) {
-    const dist = distancePointToGeometry(feature?.geometry, lat, lng);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = feature;
-    }
-  }
-  return best;
-}
-
-function ringSignedArea(ring) {
-  if (!Array.isArray(ring) || ring.length < 3) return Infinity;
-  let area = 0;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    area += (ring[j][0] + ring[i][0]) * (ring[j][1] - ring[i][1]);
-  }
-  return Math.abs(area / 2);
-}
-
-function dedupeParcelFeatures(features) {
-  const seen = new Map();
-  for (const feature of features || []) {
-    const pfi = feature?.properties?.parcel_pfi;
-    if (!pfi || seen.has(pfi)) continue;
-    seen.set(pfi, feature);
-  }
-  return [...seen.values()];
-}
-
-async function fetchVicmapGeoJson(queryUrl, params) {
-  const url = `${queryUrl}?${new URLSearchParams(params).toString()}`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), VICMAP_FETCH_TIMEOUT_MS);
-  try {
-    const resp = await fetch(url, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
-    });
-    if (!resp.ok) {
-      console.error("[maps/parcel] Vicmap query HTTP", resp.status, resp.statusText);
-      return null;
-    }
-    const geo = await resp.json().catch(() => null);
-    if (geo?.error) {
-      console.error("[maps/parcel] Vicmap query error:", geo.error);
-      return null;
-    }
-    return geo;
-  } catch (e) {
-    console.error("[maps/parcel] Vicmap query failed:", e.message || e);
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function queryVicmapAddressMatch(addressBits, nearLat, nearLng) {
-  const whereAttempts = buildVicmapAddressWhereAttempts(addressBits);
-  if (!whereAttempts.length) return null;
-
-  for (const where of whereAttempts) {
-    const geo = await fetchVicmapGeoJson(VICMAP_ADDRESS_QUERY_URL, {
-      f: "geojson",
-      where,
-      outFields: "ezi_address,property_pfi,pfi,num_road_address,locality_name,is_primary",
-      returnGeometry: "true",
-      outSR: "4326",
-      resultRecordCount: "10",
-    });
-    const features = Array.isArray(geo?.features) ? geo.features : [];
-    if (!features.length) continue;
-
-    const picked = pickBestVicmapAddressFeature(features, nearLat, nearLng);
-    const coords = picked?.geometry?.coordinates;
-    if (!Array.isArray(coords) || coords.length < 2) continue;
-
-    const [lng, lat] = coords;
-    return {
-      lat,
-      lng,
-      property_pfi: picked.properties?.property_pfi,
-      ezi_address: picked.properties?.ezi_address,
-      properties: picked.properties || {},
-    };
-  }
-
-  return null;
-}
-
-async function queryVicmapPropertyByPfi(propertyPfi) {
-  const pfi = String(propertyPfi || "").trim();
-  if (!pfi) return null;
-
-  const geo = await fetchVicmapGeoJson(VICMAP_PROPERTY_QUERY_URL, {
-    f: "geojson",
-    where: `prop_pfi = '${escapeArcGisSqlString(pfi)}'`,
-    outFields: "prop_pfi,prop_propnum,prop_property_type",
-    returnGeometry: "true",
-    outSR: "4326",
-    resultRecordCount: "1",
-  });
-  const feature = geo?.features?.[0];
-  if (!feature?.geometry) return null;
-  return {
-    geometry: feature.geometry,
-    properties: feature.properties || {},
-  };
-}
-
-async function queryVicmapParcelByPoint(lat, lng) {
-  const outFields = "parcel_pfi,parcel_lot_number,parcel_plan_number,parcel_id,parcel_lga_code";
-  const baseParams = {
-    f: "geojson",
-    inSR: "4326",
-    spatialRel: "esriSpatialRelIntersects",
-    returnGeometry: "true",
-    outFields,
-    outSR: "4326",
-    resultRecordCount: "25",
-  };
-
-  const delta = 0.0004;
-  const envelope = [lng - delta, lat - delta, lng + delta, lat + delta].join(",");
-  const [envGeo, distGeo] = await Promise.all([
-    fetchVicmapGeoJson(VICMAP_PARCEL_QUERY_URL, {
-      ...baseParams,
-      geometry: envelope,
-      geometryType: "esriGeometryEnvelope",
-    }),
-    fetchVicmapGeoJson(VICMAP_PARCEL_QUERY_URL, {
-      ...baseParams,
-      geometry: `${lng},${lat}`,
-      geometryType: "esriGeometryPoint",
-      distance: "50",
-      units: "esriSRUnit_Meter",
-    }),
-  ]);
-
-  const features = dedupeParcelFeatures([
-    ...(envGeo?.features || []),
-    ...(distGeo?.features || []),
-  ]);
-
-  const feature = pickBestVicmapFeature(features, lat, lng);
-  if (!feature?.geometry) return null;
-  return {
-    geometry: feature.geometry,
-    properties: feature.properties || {},
-  };
-}
-
-async function queryVicmapBoundaryForSearch({ lat, lng, addressBits }) {
-  // Search pin (Nominatim) is on the correct site — pick the parcel polygon that contains it.
-  const parcelHit = await queryVicmapParcelByPoint(lat, lng);
-  if (parcelHit) {
-    const containsPin = geometryContainsPoint(parcelHit.geometry, lat, lng);
-    if (!containsPin) {
-      console.warn("[maps/parcel] Pin not inside selected parcel — nearest boundary used", {
-        lat,
-        lng,
-        parcel_pfi: parcelHit.properties?.parcel_pfi,
-      });
-    }
-    return {
-      ...parcelHit,
-      source: "VIC_CADASTRE",
-      containsPin,
-    };
-  }
-
-  // Last resort: Vicmap property polygon only when it actually contains the search pin.
-  const addressMatch = await queryVicmapAddressMatch(addressBits, lat, lng);
-  if (addressMatch?.property_pfi) {
-    const propertyHit = await queryVicmapPropertyByPfi(addressMatch.property_pfi);
-    if (propertyHit?.geometry && geometryContainsPoint(propertyHit.geometry, lat, lng)) {
-      return {
-        ...propertyHit,
-        source: "VIC_PROPERTY",
-        matchedAddress: addressMatch.ezi_address,
-        containsPin: true,
-      };
-    }
-  }
-
-  return null;
-}
+// VIC: Vicmap Parcel via mapsParcelLookup.js. QLD: TODO.
 
 app.get("/api/maps/parcel", async (req, res) => {
   const isAdmin = await isAdminRequest(req);
@@ -2879,59 +2459,40 @@ app.get("/api/maps/parcel", async (req, res) => {
   const { lat, lng } = parsed;
   const state = normalizeParcelState(req.query.state);
 
-  if (state === "QLD") {
-    // TODO: QSpatial cadastral parcel lookup for Queensland.
-    return res.status(501).json({
-      ok: false,
-      error: "QLD parcel lookup is not implemented yet",
-      state: "QLD",
-    });
-  }
-
-  if (state !== "VIC") {
-    return res.status(400).json({
-      ok: false,
-      error: "Unsupported state. Use VIC or QLD.",
-      state,
-    });
-  }
-
   try {
-    const addressBits = parseParcelAddressQuery(req.query);
-    let hit = await queryVicmapBoundaryForSearch({ lat, lng, addressBits });
-    let source = hit?.source || "VIC_CADASTRE";
-    const matchedAddress = hit?.matchedAddress || null;
-    if (hit) {
-      hit = {
-        geometry: hit.geometry,
-        properties: hit.properties,
-      };
+    const result = await lookupParcelBoundary({ state, lat, lng });
+
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        ok: false,
+        error: result.error,
+        state,
+      });
     }
 
-    if (!hit && shouldUseDevParcelMock()) {
-      console.warn("[maps/parcel] Using dev mock parcel boundary (set MAPS_PARCEL_MOCK=0 to disable)");
-      hit = {
-        geometry: buildMockVicParcelGeometry(lat, lng),
-        properties: {
-          mock: true,
-          note: "Dev mock boundary — not official cadastral data",
-        },
-      };
-      source = "VIC_CADASTRE_MOCK";
-    }
-
-    if (!hit) {
+    if (result.notFound || !result.hit) {
       return res.status(404).json({
         ok: false,
-        error: "No parcel boundary found at this location",
-        state: "VIC",
+        error: "Title boundary not available.",
+        state,
+        containsPin: false,
+      });
+    }
+
+    const { hit } = result;
+    if (!hit.containsPin) {
+      return res.status(404).json({
+        ok: false,
+        error: "Title boundary not available.",
+        state,
+        containsPin: false,
       });
     }
 
     return res.json({
       ok: true,
-      source,
-      matchedAddress,
+      source: hit.source,
+      containsPin: true,
       geometry: hit.geometry,
       properties: hit.properties,
     });
@@ -2940,7 +2501,7 @@ app.get("/api/maps/parcel", async (req, res) => {
     return res.status(502).json({
       ok: false,
       error: e.message || "Cadastre service unavailable",
-      state: "VIC",
+      state,
     });
   }
 });
