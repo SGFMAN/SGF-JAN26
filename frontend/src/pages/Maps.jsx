@@ -117,6 +117,24 @@ function inferStateFromNominatimHit(hit) {
   return "VIC";
 }
 
+function parcelQueryParamsFromNominatimHit(hit, lat, lon, searchState) {
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lng: String(lon),
+    state: searchState,
+  });
+  const addr = hit?.address || {};
+  const displayName = String(hit?.display_name || "").trim();
+  if (displayName) params.set("address", displayName);
+  if (addr.house_number) params.set("house_number", addr.house_number);
+  const road = addr.road || addr.pedestrian || addr.footway || addr.path || "";
+  if (road) params.set("road", road);
+  const locality = addr.suburb || addr.city || addr.town || addr.village || addr.municipality || "";
+  if (locality) params.set("locality", locality);
+  if (addr.postcode) params.set("postcode", addr.postcode);
+  return params;
+}
+
 function boundsFromGeoJsonFeature(feature) {
   if (!feature?.geometry) return null;
   try {
@@ -206,7 +224,8 @@ export default function Maps() {
       const searchState = inferStateFromNominatimHit(hit);
       console.log("[Maps] searched coordinates:", { lat, lng: lon, state: searchState });
 
-      const parcelUrl = `/api/maps/parcel?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lon)}&state=${encodeURIComponent(searchState)}`;
+      const parcelParams = parcelQueryParamsFromNominatimHit(hit, lat, lon, searchState);
+      const parcelUrl = `/api/maps/parcel?${parcelParams.toString()}`;
       console.log("[Maps] parcel request URL:", parcelUrl);
 
       try {

@@ -2439,10 +2439,15 @@ async function geocodeWithNominatim(q) {
 }
 
 // --- Cadastral parcel lookup (Maps page) ---
-// VIC: Vicmap Property parcel polygons (official Victorian Government open data, no API key required).
+// VIC: Vicmap Property / Address / Parcel (official Victorian Government open data, no API key).
 // QLD: TODO — wire QSpatial cadastre when needed.
 const VICMAP_PARCEL_QUERY_URL =
   "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Parcel/FeatureServer/0/query";
+const VICMAP_ADDRESS_QUERY_URL =
+  "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Address/FeatureServer/0/query";
+const VICMAP_PROPERTY_QUERY_URL =
+  "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Property/FeatureServer/0/query";
+const VICMAP_FETCH_TIMEOUT_MS = 20000;
 
 function normalizeParcelState(raw) {
   const s = String(raw || "")
@@ -2463,6 +2468,49 @@ function parseParcelLatLng(query) {
     return { error: "lat/lng out of valid range" };
   }
   return { lat, lng };
+}
+
+function parseParcelAddressQuery(query) {
+  return {
+    address: String(query.address || "").trim(),
+    houseNumber: String(query.house_number || query.houseNumber || "").trim(),
+    road: String(query.road || "").trim(),
+    locality: String(query.locality || query.suburb || "").trim(),
+    postcode: String(query.postcode || "").trim(),
+  };
+}
+
+function escapeArcGisSqlString(value) {
+  return String(value || "").replace(/'/g, "''");
+}
+
+function normalizeVicLocalityName(raw) {
+  return String(raw || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
+}
+
+function buildVicmapAddressWhere({ address, houseNumber, road, locality }) {
+  const clauses = [];
+  const loc = normalizeVicLocalityName(locality);
+  if (loc) clauses.push(`locality_name = '${escapeArcGisSqlString(loc)}'`);
+
+  const house = String(houseNumber || "").trim();
+  const roadName = String(road || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
+  if (house && roadName) {
+    const numRoad = `${house} ${roadName}`.trim();
+    clauses.push(`num_road_address LIKE '${escapeArcGisSqlString(numRoad)}%'`);
+  } else if (address) {
+    const head = address.split(",")[0].trim().toUpperCase();
+    if (head) clauses.push(`ezi_address LIKE '%${escapeArcGisSqlString(head)}%'`);
+  }
+
+  if (clauses.length === 0) return null;
+  return clauses.join(" AND ");
 }
 
 function shouldUseDevParcelMock() {
@@ -2518,72 +2566,90 @@ function geometryContainsPoint(geometry, lat, lng) {
   return false;
 }
 
-function ringCentroid(ring) {
-  let sumLng = 0;
-  let sumLat = 0;
-  let n = 0;
-  for (const pt of ring) {
-    if (!Array.isArray(pt) || pt.length < 2) continue;
-    sumLng += pt[0];
-    sumLat += pt[1];
-    n += 1;
+function distancePointToSegment(lng, lat, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  if (dx === 0 && dy === 0) {
+    const dLng = lng - x1;
+    const dLat = lat - y1;
+    return dLng * dLng + dLat * dLat;
   }
-  if (!n) return null;
-  return { lng: sumLng / n, lat: sumLat / n };
+  const t = Math.max(0, Math.min(1, ((lng - x1) * dx + (lat - y1) * dy) / (dx * dx + dy * dy)));
+  const projLng = x1 + t * dx;
+  const projLat = y1 + t * dy;
+  const dLng = lng - projLng;
+  const dLat = lat - projLat;
+  return dLng * dLng + dLat * dLat;
 }
 
-function geometryCentroid(geometry) {
-  if (!geometry) return null;
-  if (geometry.type === "Polygon") return ringCentroid(geometry.coordinates?.[0]);
+function distancePointToRing(lng, lat, ring) {
+  let min = Infinity;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [x1, y1] = ring[j];
+    const [x2, y2] = ring[i];
+    min = Math.min(min, distancePointToSegment(lng, lat, x1, y1, x2, y2));
+  }
+  return min;
+}
+
+function distancePointToGeometry(geometry, lat, lng) {
+  if (!geometry) return Infinity;
+  if (geometryContainsPoint(geometry, lat, lng)) return 0;
+  if (geometry.type === "Polygon") {
+    return distancePointToRing(lng, lat, geometry.coordinates?.[0] || []);
+  }
   if (geometry.type === "MultiPolygon") {
+    let min = Infinity;
     for (const poly of geometry.coordinates || []) {
-      const c = ringCentroid(poly?.[0]);
-      if (c) return c;
+      min = Math.min(min, distancePointToRing(lng, lat, poly?.[0] || []));
     }
+    return min;
   }
-  return null;
+  return Infinity;
 }
 
-function pickBestVicmapFeature(features, lat, lng) {
+function pickBestVicmapAddressFeature(features, nearLat, nearLng) {
   if (!Array.isArray(features) || features.length === 0) return null;
-  const containing = features.find((f) => geometryContainsPoint(f?.geometry, lat, lng));
-  if (containing) return containing;
+  const primary = features.filter((f) => String(f.properties?.is_primary).toUpperCase() === "Y");
+  const pool = primary.length ? primary : features;
+  if (!Number.isFinite(nearLat) || !Number.isFinite(nearLng)) return pool[0];
 
-  let best = null;
+  let best = pool[0];
   let bestDist = Infinity;
-  for (const feature of features) {
-    const c = geometryCentroid(feature?.geometry);
-    if (!c) continue;
-    const dLat = c.lat - lat;
-    const dLng = c.lng - lng;
+  for (const feature of pool) {
+    const coords = feature?.geometry?.coordinates;
+    if (!Array.isArray(coords) || coords.length < 2) continue;
+    const [lng, lat] = coords;
+    const dLat = lat - nearLat;
+    const dLng = lng - nearLng;
     const dist = dLat * dLat + dLng * dLng;
     if (dist < bestDist) {
       bestDist = dist;
       best = feature;
     }
   }
-  return best || features[0];
+  return best;
 }
 
-async function queryVicmapParcelByPoint(lat, lng) {
-  // Point queries return HTTP 400 on this layer; envelope queries need ~0.001° minimum.
-  const delta = 0.001;
-  const envelope = [lng - delta, lat - delta, lng + delta, lat + delta].join(",");
-  const params = new URLSearchParams({
-    f: "geojson",
-    geometry: envelope,
-    geometryType: "esriGeometryEnvelope",
-    inSR: "4326",
-    spatialRel: "esriSpatialRelIntersects",
-    returnGeometry: "true",
-    outFields: "parcel_pfi,parcel_lot_number,parcel_plan_number,parcel_id,parcel_lga_code",
-    outSR: "4326",
-    resultRecordCount: "5",
-  });
-  const url = `${VICMAP_PARCEL_QUERY_URL}?${params.toString()}`;
+function pickBestVicmapFeature(features, lat, lng) {
+  if (!Array.isArray(features) || features.length === 0) return null;
 
+  let best = null;
+  let bestDist = Infinity;
+  for (const feature of features) {
+    const dist = distancePointToGeometry(feature?.geometry, lat, lng);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = feature;
+    }
+  }
+  return best;
+}
+
+async function fetchVicmapGeoJson(queryUrl, params) {
+  const url = `${queryUrl}?${new URLSearchParams(params).toString()}`;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
+  const timeout = setTimeout(() => controller.abort(), VICMAP_FETCH_TIMEOUT_MS);
   try {
     const resp = await fetch(url, {
       method: "GET",
@@ -2599,19 +2665,112 @@ async function queryVicmapParcelByPoint(lat, lng) {
       console.error("[maps/parcel] Vicmap query error:", geo.error);
       return null;
     }
-    const features = Array.isArray(geo?.features) ? geo.features : [];
-    const feature = pickBestVicmapFeature(features, lat, lng);
-    if (!feature?.geometry) return null;
-    return {
-      geometry: feature.geometry,
-      properties: feature.properties || {},
-    };
+    return geo;
   } catch (e) {
     console.error("[maps/parcel] Vicmap query failed:", e.message || e);
     return null;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function queryVicmapAddressMatch(addressBits, nearLat, nearLng) {
+  const where = buildVicmapAddressWhere(addressBits);
+  if (!where) return null;
+
+  const geo = await fetchVicmapGeoJson(VICMAP_ADDRESS_QUERY_URL, {
+    f: "geojson",
+    where,
+    outFields: "ezi_address,property_pfi,pfi,num_road_address,locality_name,is_primary",
+    returnGeometry: "true",
+    outSR: "4326",
+    resultRecordCount: "10",
+  });
+  const features = Array.isArray(geo?.features) ? geo.features : [];
+  if (!features.length) return null;
+
+  const picked = pickBestVicmapAddressFeature(features, nearLat, nearLng);
+  const coords = picked?.geometry?.coordinates;
+  if (!Array.isArray(coords) || coords.length < 2) return null;
+
+  const [lng, lat] = coords;
+  return {
+    lat,
+    lng,
+    property_pfi: picked.properties?.property_pfi,
+    ezi_address: picked.properties?.ezi_address,
+    properties: picked.properties || {},
+  };
+}
+
+async function queryVicmapPropertyByPfi(propertyPfi) {
+  const pfi = String(propertyPfi || "").trim();
+  if (!pfi) return null;
+
+  const geo = await fetchVicmapGeoJson(VICMAP_PROPERTY_QUERY_URL, {
+    f: "geojson",
+    where: `prop_pfi = '${escapeArcGisSqlString(pfi)}'`,
+    outFields: "prop_pfi,prop_propnum,prop_property_type",
+    returnGeometry: "true",
+    outSR: "4326",
+    resultRecordCount: "1",
+  });
+  const feature = geo?.features?.[0];
+  if (!feature?.geometry) return null;
+  return {
+    geometry: feature.geometry,
+    properties: feature.properties || {},
+  };
+}
+
+async function queryVicmapParcelByPoint(lat, lng) {
+  const geo = await fetchVicmapGeoJson(VICMAP_PARCEL_QUERY_URL, {
+    f: "geojson",
+    geometry: `${lng},${lat}`,
+    geometryType: "esriGeometryPoint",
+    inSR: "4326",
+    spatialRel: "esriSpatialRelIntersects",
+    distance: "50",
+    units: "esriSRUnit_Meter",
+    returnGeometry: "true",
+    outFields: "parcel_pfi,parcel_lot_number,parcel_plan_number,parcel_id,parcel_lga_code",
+    outSR: "4326",
+    resultRecordCount: "10",
+  });
+  const features = Array.isArray(geo?.features) ? geo.features : [];
+  const feature = pickBestVicmapFeature(features, lat, lng);
+  if (!feature?.geometry) return null;
+  return {
+    geometry: feature.geometry,
+    properties: feature.properties || {},
+  };
+}
+
+async function queryVicmapBoundaryForSearch({ lat, lng, addressBits }) {
+  const addressMatch = await queryVicmapAddressMatch(addressBits, lat, lng);
+  if (addressMatch?.property_pfi) {
+    const propertyHit = await queryVicmapPropertyByPfi(addressMatch.property_pfi);
+    if (propertyHit) {
+      return {
+        ...propertyHit,
+        source: "VIC_PROPERTY",
+        matchedAddress: addressMatch.ezi_address,
+      };
+    }
+  }
+
+  const parcelLat = addressMatch?.lat ?? lat;
+  const parcelLng = addressMatch?.lng ?? lng;
+  const parcelHit = await queryVicmapParcelByPoint(parcelLat, parcelLng);
+  if (parcelHit) {
+    return {
+      ...parcelHit,
+      source: "VIC_CADASTRE",
+      matchedAddress: addressMatch?.ezi_address || null,
+    };
+  }
+
+  return null;
 }
 
 app.get("/api/maps/parcel", async (req, res) => {
@@ -2645,8 +2804,16 @@ app.get("/api/maps/parcel", async (req, res) => {
   }
 
   try {
-    let hit = await queryVicmapParcelByPoint(lat, lng);
-    let source = "VIC_CADASTRE";
+    const addressBits = parseParcelAddressQuery(req.query);
+    let hit = await queryVicmapBoundaryForSearch({ lat, lng, addressBits });
+    let source = hit?.source || "VIC_CADASTRE";
+    const matchedAddress = hit?.matchedAddress || null;
+    if (hit) {
+      hit = {
+        geometry: hit.geometry,
+        properties: hit.properties,
+      };
+    }
 
     if (!hit && shouldUseDevParcelMock()) {
       console.warn("[maps/parcel] Using dev mock parcel boundary (set MAPS_PARCEL_MOCK=0 to disable)");
@@ -2671,6 +2838,7 @@ app.get("/api/maps/parcel", async (req, res) => {
     return res.json({
       ok: true,
       source,
+      matchedAddress,
       geometry: hit.geometry,
       properties: hit.properties,
     });
