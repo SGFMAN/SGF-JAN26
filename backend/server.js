@@ -2466,9 +2466,7 @@ function parseParcelLatLng(query) {
 }
 
 function shouldUseDevParcelMock() {
-  if (process.env.MAPS_PARCEL_MOCK === "1") return true;
-  if (process.env.MAPS_PARCEL_MOCK === "0") return false;
-  return process.env.NODE_ENV !== "production";
+  return process.env.MAPS_PARCEL_MOCK === "1";
 }
 
 /** Dev-only mock parcel (~25 m square) for frontend testing when live cadastre is unreachable. */
@@ -2490,22 +2488,97 @@ function buildMockVicParcelGeometry(lat, lng) {
   };
 }
 
+function pointInRing(lng, lat, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0];
+    const yi = ring[i][1];
+    const xj = ring[j][0];
+    const yj = ring[j][1];
+    const intersect =
+      yi > lat !== yj > lat &&
+      lng < ((xj - xi) * (lat - yi)) / (yj - yi + 0.0) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function geometryContainsPoint(geometry, lat, lng) {
+  if (!geometry) return false;
+  if (geometry.type === "Polygon") {
+    const rings = geometry.coordinates;
+    if (!Array.isArray(rings?.[0])) return false;
+    return pointInRing(lng, lat, rings[0]);
+  }
+  if (geometry.type === "MultiPolygon") {
+    return geometry.coordinates.some(
+      (poly) => Array.isArray(poly?.[0]) && pointInRing(lng, lat, poly[0])
+    );
+  }
+  return false;
+}
+
+function ringCentroid(ring) {
+  let sumLng = 0;
+  let sumLat = 0;
+  let n = 0;
+  for (const pt of ring) {
+    if (!Array.isArray(pt) || pt.length < 2) continue;
+    sumLng += pt[0];
+    sumLat += pt[1];
+    n += 1;
+  }
+  if (!n) return null;
+  return { lng: sumLng / n, lat: sumLat / n };
+}
+
+function geometryCentroid(geometry) {
+  if (!geometry) return null;
+  if (geometry.type === "Polygon") return ringCentroid(geometry.coordinates?.[0]);
+  if (geometry.type === "MultiPolygon") {
+    for (const poly of geometry.coordinates || []) {
+      const c = ringCentroid(poly?.[0]);
+      if (c) return c;
+    }
+  }
+  return null;
+}
+
+function pickBestVicmapFeature(features, lat, lng) {
+  if (!Array.isArray(features) || features.length === 0) return null;
+  const containing = features.find((f) => geometryContainsPoint(f?.geometry, lat, lng));
+  if (containing) return containing;
+
+  let best = null;
+  let bestDist = Infinity;
+  for (const feature of features) {
+    const c = geometryCentroid(feature?.geometry);
+    if (!c) continue;
+    const dLat = c.lat - lat;
+    const dLng = c.lng - lng;
+    const dist = dLat * dLat + dLng * dLng;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = feature;
+    }
+  }
+  return best || features[0];
+}
+
 async function queryVicmapParcelByPoint(lat, lng) {
-  const geometry = JSON.stringify({
-    x: lng,
-    y: lat,
-    spatialReference: { wkid: 4326 },
-  });
+  // Point queries return HTTP 400 on this layer; envelope queries need ~0.001° minimum.
+  const delta = 0.001;
+  const envelope = [lng - delta, lat - delta, lng + delta, lat + delta].join(",");
   const params = new URLSearchParams({
     f: "geojson",
-    geometry,
-    geometryType: "esriGeometryPoint",
+    geometry: envelope,
+    geometryType: "esriGeometryEnvelope",
     inSR: "4326",
     spatialRel: "esriSpatialRelIntersects",
     returnGeometry: "true",
     outFields: "parcel_pfi,parcel_lot_number,parcel_plan_number,parcel_id,parcel_lga_code",
     outSR: "4326",
-    resultRecordCount: "1",
+    resultRecordCount: "5",
   });
   const url = `${VICMAP_PARCEL_QUERY_URL}?${params.toString()}`;
 
@@ -2522,7 +2595,12 @@ async function queryVicmapParcelByPoint(lat, lng) {
       return null;
     }
     const geo = await resp.json().catch(() => null);
-    const feature = geo?.features?.[0];
+    if (geo?.error) {
+      console.error("[maps/parcel] Vicmap query error:", geo.error);
+      return null;
+    }
+    const features = Array.isArray(geo?.features) ? geo.features : [];
+    const feature = pickBestVicmapFeature(features, lat, lng);
     if (!feature?.geometry) return null;
     return {
       geometry: feature.geometry,
@@ -2537,6 +2615,11 @@ async function queryVicmapParcelByPoint(lat, lng) {
 }
 
 app.get("/api/maps/parcel", async (req, res) => {
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) {
+    return res.status(403).json({ ok: false, error: "Admin access required" });
+  }
+
   const parsed = parseParcelLatLng(req.query);
   if (parsed.error) {
     return res.status(400).json({ ok: false, error: parsed.error });

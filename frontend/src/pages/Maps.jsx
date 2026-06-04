@@ -7,6 +7,7 @@ import iconUrl from "leaflet/dist/images/marker-icon.png";
 import iconRetinaUrl from "leaflet/dist/images/marker-icon-2x.png";
 import shadowUrl from "leaflet/dist/images/marker-shadow.png";
 import logo from "../images/logo.png";
+import { getApiHeaders, isUserAdmin } from "../utils/auth";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -144,6 +145,11 @@ export default function Maps() {
   const [bulkPhase, setBulkPhase] = useState("");
   const [bulkCurrent, setBulkCurrent] = useState("");
   const [bulkSelection, setBulkSelection] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    (async () => setIsAdmin(await isUserAdmin()))();
+  }, []);
 
   const onSearch = useCallback(async () => {
     const q = query.trim();
@@ -192,6 +198,11 @@ export default function Maps() {
       setMarker(pos);
       setResultLabel(label);
 
+      if (!isAdmin) {
+        setFlyTarget(pos);
+        return;
+      }
+
       const searchState = inferStateFromNominatimHit(hit);
       console.log("[Maps] searched coordinates:", { lat, lng: lon, state: searchState });
 
@@ -199,7 +210,7 @@ export default function Maps() {
       console.log("[Maps] parcel request URL:", parcelUrl);
 
       try {
-        const parcelRes = await fetch(parcelUrl);
+        const parcelRes = await fetch(parcelUrl, { headers: getApiHeaders() });
         const parcelData = await parcelRes.json().catch(() => ({}));
 
         if (parcelRes.ok && parcelData.ok && parcelData.geometry) {
@@ -251,7 +262,7 @@ export default function Maps() {
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [query, isAdmin]);
 
   const onLoadBulkProjects = useCallback(async (selection) => {
     setBulkLoading(true);
@@ -582,7 +593,7 @@ export default function Maps() {
             </div>
           )}
 
-          {parcelNotice && !error && (
+          {isAdmin && parcelNotice && !error && (
             <div
               style={{
                 padding: "8px 14px",
@@ -622,7 +633,7 @@ export default function Maps() {
                 maxNativeZoom={19}
                 maxZoom={20}
               />
-              {parcelFeature && (
+              {isAdmin && parcelFeature && (
                 <GeoJSON
                   key={JSON.stringify(parcelFeature.geometry?.coordinates)}
                   data={parcelFeature}
