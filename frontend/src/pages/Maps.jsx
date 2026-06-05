@@ -117,12 +117,16 @@ function inferStateFromNominatimHit(hit) {
   return "VIC";
 }
 
-function parcelQueryParamsForPin(lat, lon, searchState) {
-  return new URLSearchParams({
+function parcelQueryParamsForPin(lat, lon, searchState, address) {
+  const params = new URLSearchParams({
     lat: String(lat),
     lng: String(lon),
     state: searchState,
   });
+  if (address) {
+    params.set("address", address);
+  }
+  return params;
 }
 
 function boundsFromGeoJsonFeature(feature) {
@@ -215,36 +219,68 @@ export default function Maps() {
       // Pin: Leaflet [lat, lng]. Parcel API uses the same WGS84 pin (lat=N/S, lng=E/W).
       console.log("[Maps] search pin:", { lat, lng: lon, state: searchState, leaflet: [lat, lon] });
 
-      const parcelParams = parcelQueryParamsForPin(lat, lon, searchState);
-      const parcelUrl = `/api/maps/parcel?${parcelParams.toString()}`;
-      console.log("[Maps] parcel request:", parcelUrl);
+      const parcelParams = parcelQueryParamsForPin(lat, lon, searchState, label);
+      const parcelUrl = `/api/property-boundary?${parcelParams.toString()}`;
+      console.log("[Maps] property boundary request:", parcelUrl);
       setParcelNotice("Looking up title boundary…");
 
       try {
         const parcelRes = await fetch(parcelUrl, { headers: getApiHeaders() });
         const parcelData = await parcelRes.json().catch(() => ({}));
 
-        const hasBoundary =
-          parcelRes.ok &&
-          parcelData.ok &&
-          parcelData.geometry &&
-          parcelData.containsPin === true;
+        const hasGeometry =
+          parcelRes.ok && parcelData.ok && parcelData.geometry;
 
-        if (hasBoundary) {
-          console.log("[Maps] title boundary:", {
+        if (hasGeometry) {
+          const containsPin = parcelData.containsPin === true;
+          const approximate = parcelData.approximate === true;
+          const matchMethod = parcelData.matchMethod || null;
+
+          console.log("[Maps] property boundary result:", {
+            searchedAddress: label,
+            markerLat: lat,
+            markerLng: lon,
+            matchMethod,
+            containsPin,
+            approximate,
+            parcelPfi: parcelData.parcelPfi,
+            parcelId: parcelData.parcelId,
+            parcelSpi: parcelData.parcelSpi,
+            distanceToBoundaryMetres: parcelData.distanceToBoundaryMetres,
             source: parcelData.source,
-            containsPin: parcelData.containsPin,
-            parcel_pfi: parcelData.properties?.parcel_pfi,
           });
+
+          if (!containsPin && !approximate) {
+            console.warn("[Maps] boundary rejected — does not contain pin and not marked approximate");
+            setParcelFeature(null);
+            setParcelBounds(null);
+            setParcelNotice("Title boundary not available.");
+            setFlyTarget(pos);
+            return;
+          }
+
           const feature = {
             type: "Feature",
             geometry: parcelData.geometry,
-            properties: parcelData.properties || {},
+            properties: {
+              ...(parcelData.properties || {}),
+              parcel_spi: parcelData.parcelSpi || null,
+            },
           };
           setParcelFeature(feature);
-          setParcelNotice("");
+
+          if (approximate && parcelData.warning) {
+            const dist =
+              parcelData.distanceToBoundaryMetres != null
+                ? ` (${parcelData.distanceToBoundaryMetres} m from pin)`
+                : "";
+            setParcelNotice(`${parcelData.warning}${dist}`);
+          } else {
+            setParcelNotice("");
+          }
+
           const bounds = boundsFromGeoJsonFeature(feature);
-          if (bounds) {
+          if (bounds && (containsPin || approximate)) {
             setParcelBounds(bounds);
             setFlyTarget(null);
           } else {
@@ -253,8 +289,12 @@ export default function Maps() {
           }
         } else {
           console.log("[Maps] title boundary not available:", {
+            searchedAddress: label,
+            markerLat: lat,
+            markerLng: lon,
             status: parcelRes.status,
             containsPin: parcelData.containsPin,
+            matchMethod: parcelData.matchMethod,
             error: parcelData.error,
           });
           setParcelFeature(null);
@@ -263,7 +303,7 @@ export default function Maps() {
           setFlyTarget(pos);
         }
       } catch (parcelErr) {
-        console.error("[Maps] parcel fetch failed:", parcelErr);
+        console.error("[Maps] property boundary fetch failed:", parcelErr);
         setParcelFeature(null);
         setParcelBounds(null);
         setParcelNotice("Title boundary not available.");
@@ -690,8 +730,8 @@ export default function Maps() {
 
           <p style={{ margin: 0, fontSize: "0.8rem", color: "#555", lineHeight: 1.45 }}>
             Satellite imagery: Esri World Imagery. Address search: OpenStreetMap Nominatim (please use
-            sparingly). VIC title boundaries: Vicmap cadastral parcels at the search pin (EPSG:4326).
-            Default view: greater Melbourne, Victoria.
+            sparingly). VIC title boundaries: Vicmap cadastral parcels matched to the blue search pin
+            (contains-point first; nearest-edge fallback marked approximate). Default view: greater Melbourne, Victoria.
           </p>
         </div>
       </div>

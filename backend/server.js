@@ -21,6 +21,7 @@ const {
   normalizeParcelState,
   parseParcelLatLng,
   lookupParcelBoundary,
+  formatPropertyBoundaryResponse,
 } = require("./mapsParcelLookup");
 const {
   ensureProjectAccessTokens,
@@ -2459,10 +2460,10 @@ async function geocodeWithNominatim(q) {
   return { lat, lng, display_name: hit.display_name || "" };
 }
 
-// --- Cadastral parcel lookup (Maps page) ---
+// --- Cadastral parcel / property boundary lookup (Maps page) ---
 // VIC: Vicmap Parcel via mapsParcelLookup.js. QLD: TODO.
 
-app.get("/api/maps/parcel", async (req, res) => {
+async function handlePropertyBoundaryRequest(req, res) {
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) {
     return res.status(403).json({ ok: false, error: "Admin access required" });
@@ -2474,9 +2475,11 @@ app.get("/api/maps/parcel", async (req, res) => {
   }
   const { lat, lng } = parsed;
   const state = normalizeParcelState(req.query.state);
+  const address =
+    req.query.address != null ? String(req.query.address).trim() : "";
 
   try {
-    const result = await lookupParcelBoundary({ state, lat, lng });
+    const result = await lookupParcelBoundary({ state, lat, lng, address });
 
     if (result.error) {
       return res.status(result.status || 400).json({
@@ -2492,35 +2495,23 @@ app.get("/api/maps/parcel", async (req, res) => {
         error: "Title boundary not available.",
         state,
         containsPin: false,
+        approximate: false,
       });
     }
 
-    const { hit } = result;
-    if (!hit.containsPin) {
-      return res.status(404).json({
-        ok: false,
-        error: "Title boundary not available.",
-        state,
-        containsPin: false,
-      });
-    }
-
-    return res.json({
-      ok: true,
-      source: hit.source,
-      containsPin: true,
-      geometry: hit.geometry,
-      properties: hit.properties,
-    });
+    return res.json(formatPropertyBoundaryResponse(result.hit));
   } catch (e) {
-    console.error("[maps/parcel] VIC parcel lookup error:", e);
+    console.error("[property-boundary] lookup error:", e);
     return res.status(502).json({
       ok: false,
       error: e.message || "Cadastre service unavailable",
       state,
     });
   }
-});
+}
+
+app.get("/api/property-boundary", handlePropertyBoundaryRequest);
+app.get("/api/maps/parcel", handlePropertyBoundaryRequest);
 
 // Geocode one project and persist project_lat/project_lng (only if missing unless force=true)
 app.post("/api/projects/:id/geocode", async (req, res) => {
