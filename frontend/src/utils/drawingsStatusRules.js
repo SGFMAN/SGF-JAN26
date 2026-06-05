@@ -74,7 +74,7 @@ export function applyConceptUploadRules(drawingsHistory) {
 export function applyWorkingUploadRules(drawingsHistory) {
   return {
     history: updateLatestRevisionFlags(drawingsHistory, {
-      conceptApproved: true,
+      conceptApproved: false,
       workingDrawingsApproved: false,
     }),
     drawingsStatus: DRAWINGS_STATUS.WORKING_STAGE,
