@@ -21,8 +21,8 @@ function styleForEasementFeature(feature) {
   return EASEMENT_LINE_STYLE;
 }
 
-export default function EasementsLayer({ easementsGeoJson, visible = false }) {
-  if (!visible || !easementsGeoJson?.features?.length) return null;
+export default function EasementsLayer({ easementsGeoJson }) {
+  if (!easementsGeoJson?.features?.length) return null;
 
   return (
     <GeoJSON

@@ -16,6 +16,8 @@ const FETCH_TIMEOUT_MS = 20000;
 const LOOKUP_BUDGET_MS = 35000;
 const MAX_EASEMENT_FEATURES = 50;
 
+const { clipEasementFeaturesToBoundary } = require("./mapsEasementClip");
+
 const EASEMENT_WARNING =
   "Easement data is indicative only. Confirm against title and plan documents.";
 
@@ -151,13 +153,15 @@ function buildSpatialStrategies({ lat, lng, boundaryGeometry, envelope }) {
   if (boundaryGeometry?.type) {
     const esriGeom = geoJsonPolygonToEsriGeometry(boundaryGeometry);
     if (esriGeom) {
-      strategies.push({
-        mode: "boundary_intersects",
-        confidence: "high",
-        spatialRel: "esriSpatialRelIntersects",
-        geometry: esriGeom,
-        geometryType: "esriGeometryPolygon",
-      });
+      return [
+        {
+          mode: "boundary_intersects",
+          confidence: "high",
+          spatialRel: "esriSpatialRelIntersects",
+          geometry: esriGeom,
+          geometryType: "esriGeometryPolygon",
+        },
+      ];
     }
   }
 
@@ -401,6 +405,14 @@ async function lookupPropertyEasements({
 
   log.queryMode = usedStrategy?.mode || strategies[0]?.mode || null;
   log.confidence = usedStrategy?.confidence || strategies[0]?.confidence || null;
+
+  const countBeforeClip = features.length;
+  if (boundaryGeometry && features.length > 0) {
+    features = clipEasementFeaturesToBoundary(features, boundaryGeometry);
+    log.clippedToBoundary = true;
+    log.countBeforeClip = countBeforeClip;
+    log.countAfterClip = features.length;
+  }
 
   const easementsGeoJson =
     features.length > 0

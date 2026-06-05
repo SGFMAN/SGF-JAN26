@@ -16,6 +16,7 @@
   "license": "ISC",
   "dependencies": {
     "@omsimos/pdf-raster": "^0.1.1",
+    "@turf/turf": "^7.3.5",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",

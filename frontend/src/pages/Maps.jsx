@@ -183,12 +183,7 @@ export default function Maps() {
   const [planningOverlayGeoJson, setPlanningOverlayGeoJson] = useState(null);
   const [planningLayerVisibility, setPlanningLayerVisibility] = useState({});
   const [planningLoading, setPlanningLoading] = useState(false);
-  const [easementsInfo, setEasementsInfo] = useState(null);
   const [easementsGeoJson, setEasementsGeoJson] = useState(null);
-  const [easementsLoading, setEasementsLoading] = useState(false);
-  const [easementsError, setEasementsError] = useState(null);
-  const [showEasements, setShowEasements] = useState(false);
-  const [activeSearchState, setActiveSearchState] = useState(null);
   const [bulkPins, setBulkPins] = useState([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0, ok: 0, failed: 0 });
@@ -273,24 +268,16 @@ export default function Maps() {
   const fetchEasementsForSite = useCallback(
     async (lat, lng, searchState, boundaryGeometry, parcelId) => {
       if (searchState !== "VIC") {
-        setEasementsInfo(null);
         setEasementsGeoJson(null);
-        setEasementsError(null);
-        setShowEasements(false);
         return;
       }
 
       const admin = await isUserAdmin();
       if (!admin) {
-        setEasementsInfo(null);
         setEasementsGeoJson(null);
-        setEasementsError(null);
-        setShowEasements(false);
         return;
       }
 
-      setEasementsLoading(true);
-      setEasementsError(null);
       try {
         const envelope = envelopeParamFromGeometry(boundaryGeometry);
         const res = await fetch("/api/property-easements", {
@@ -307,24 +294,13 @@ export default function Maps() {
         });
         const data = await res.json().catch(() => ({}));
         if (res.ok && data.ok) {
-          setEasementsInfo(data);
           setEasementsGeoJson(data.easementsGeoJson || null);
-          setEasementsError(null);
-          setShowEasements((data.count || 0) > 0);
         } else {
-          setEasementsInfo(null);
           setEasementsGeoJson(null);
-          setShowEasements(false);
-          setEasementsError(data.error || "Easements lookup failed.");
         }
       } catch (err) {
         console.error("[Maps] property-easements fetch failed:", err);
-        setEasementsInfo(null);
         setEasementsGeoJson(null);
-        setShowEasements(false);
-        setEasementsError(err.message || "Easements lookup failed.");
-      } finally {
-        setEasementsLoading(false);
       }
     },
     []
@@ -348,11 +324,7 @@ export default function Maps() {
     setPlanningZoneGeoJson(null);
     setPlanningOverlayGeoJson(null);
     setPlanningLayerVisibility({});
-    setEasementsInfo(null);
     setEasementsGeoJson(null);
-    setEasementsError(null);
-    setShowEasements(false);
-    setActiveSearchState(null);
     try {
       const params = new URLSearchParams({
         q,
@@ -396,7 +368,6 @@ export default function Maps() {
       setActiveSearchQuery(q);
 
       const searchState = inferStateFromNominatimHit(hit);
-      setActiveSearchState(searchState);
 
       if (!isAdmin) {
         return;
@@ -894,96 +865,6 @@ export default function Maps() {
             </div>
           )}
 
-          {isAdmin && activeSearchState === "VIC" && marker && !error && (
-            <div
-              style={{
-                padding: "12px 14px",
-                borderRadius: "10px",
-                background: "#ede9fe",
-                border: "1px solid #c4b5fd",
-                color: MONUMENT,
-                fontSize: "0.9rem",
-              }}
-            >
-              <div style={{ marginBottom: "8px" }}>
-                <strong style={{ fontSize: "0.95rem" }}>Easements (Vicmap)</strong>
-              </div>
-              <div
-                style={{
-                  fontSize: "0.82rem",
-                  color: "#5b21b6",
-                  marginBottom: "10px",
-                  lineHeight: 1.45,
-                }}
-              >
-                Easement data is indicative only. Confirm against title and plan documents.
-              </div>
-              {parcelLoading && !parcelFeature ? (
-                <div style={{ fontSize: "0.85rem", color: "#666" }}>
-                  Waiting for title boundary…
-                </div>
-              ) : easementsLoading ? (
-                <div style={{ fontSize: "0.85rem", color: "#666" }}>Loading easements…</div>
-              ) : easementsError ? (
-                <div style={{ fontSize: "0.85rem", color: "#842029" }}>{easementsError}</div>
-              ) : easementsInfo ? (
-                <>
-                  {easementsInfo.count > 0 ? (
-                    <>
-                      <div style={{ marginBottom: "8px", lineHeight: 1.5 }}>
-                        <span style={{ color: "#555" }}>Found: </span>
-                        {easementsInfo.count} mapped easement
-                        {easementsInfo.count === 1 ? "" : "s"}
-                        {easementsInfo.confidence === "approximate"
-                          ? " (near title — expanded search)"
-                          : easementsInfo.confidence === "point"
-                            ? " (near pin — no boundary)"
-                            : " (intersecting title boundary)"}
-                      </div>
-                      <label
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "8px",
-                          fontSize: "0.85rem",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={showEasements}
-                          onChange={(e) => setShowEasements(e.target.checked)}
-                        />
-                        Show easements on map
-                      </label>
-                    </>
-                  ) : (
-                    <>
-                      <div style={{ fontSize: "0.85rem", color: "#666", marginBottom: "8px" }}>
-                        {easementsInfo.message || "No mapped easements found."}
-                      </div>
-                      <label
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "8px",
-                          fontSize: "0.85rem",
-                          color: "#888",
-                          cursor: "not-allowed",
-                        }}
-                      >
-                        <input type="checkbox" checked={false} disabled />
-                        Show easements on map
-                      </label>
-                    </>
-                  )}
-                </>
-              ) : (
-                <div style={{ fontSize: "0.85rem", color: "#666" }}>Easements will load for this site…</div>
-              )}
-            </div>
-          )}
-
           {isAdmin && (planningLoading || planningInfo) && !error && (
             <div
               style={{
@@ -1124,7 +1005,7 @@ export default function Maps() {
                 </Marker>
               ))}
               {isAdmin && (
-                <EasementsLayer easementsGeoJson={easementsGeoJson} visible={showEasements} />
+                <EasementsLayer easementsGeoJson={easementsGeoJson} />
               )}
               <MapFlyTo position={flyTarget} zoom={SEARCH_ZOOM} enabled={!parcelBounds && !bulkBounds} />
               <MapFitBounds bounds={parcelBounds || bulkBounds} />
@@ -1147,7 +1028,7 @@ export default function Maps() {
             Address search: OpenStreetMap Nominatim (please use sparingly). VIC title boundaries: Vicmap
             cadastral parcels matched to the blue search pin (contains-point first; nearest-edge fallback
             marked approximate). Planning: Vicmap zone (green) and overlays (purple / light blue) — toggle each layer in the planning panel.
-            Easements: Vicmap Property (purple lines/polygons) — toggle in the easements panel; indicative only. Default view: greater Melbourne, Victoria.
+            Easements: Vicmap Property (purple lines) shown automatically on the map. Default view: greater Melbourne, Victoria.
           </p>
         </div>
       </div>
