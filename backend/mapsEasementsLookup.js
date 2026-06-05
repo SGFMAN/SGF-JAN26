@@ -421,7 +421,7 @@ async function lookupPropertyEasements({
       easementsGeoJson,
       count: features.length,
       source: "VIC_VICMAP_PROPERTY_EASEMENTS",
-      confidence: primarySpatial.confidence,
+      confidence: usedStrategy?.confidence || strategies[0]?.confidence || "point",
       warning: EASEMENT_WARNING,
       message: features.length === 0 ? "No mapped easements found." : null,
       parcelId: parcelId || null,

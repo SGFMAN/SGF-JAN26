@@ -186,7 +186,9 @@ export default function Maps() {
   const [easementsInfo, setEasementsInfo] = useState(null);
   const [easementsGeoJson, setEasementsGeoJson] = useState(null);
   const [easementsLoading, setEasementsLoading] = useState(false);
+  const [easementsError, setEasementsError] = useState(null);
   const [showEasements, setShowEasements] = useState(false);
+  const [activeSearchState, setActiveSearchState] = useState(null);
   const [bulkPins, setBulkPins] = useState([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0, ok: 0, failed: 0 });
@@ -270,22 +272,30 @@ export default function Maps() {
 
   const fetchEasementsForSite = useCallback(
     async (lat, lng, searchState, boundaryGeometry, parcelId) => {
-      if (!isAdmin || searchState !== "VIC") {
+      if (searchState !== "VIC") {
         setEasementsInfo(null);
         setEasementsGeoJson(null);
+        setEasementsError(null);
+        setShowEasements(false);
+        return;
+      }
+
+      const admin = await isUserAdmin();
+      if (!admin) {
+        setEasementsInfo(null);
+        setEasementsGeoJson(null);
+        setEasementsError(null);
         setShowEasements(false);
         return;
       }
 
       setEasementsLoading(true);
+      setEasementsError(null);
       try {
         const envelope = envelopeParamFromGeometry(boundaryGeometry);
         const res = await fetch("/api/property-easements", {
           method: "POST",
-          headers: {
-            ...getApiHeaders(),
-            "Content-Type": "application/json",
-          },
+          headers: getApiHeaders(),
           body: JSON.stringify({
             lat,
             lng,
@@ -299,22 +309,25 @@ export default function Maps() {
         if (res.ok && data.ok) {
           setEasementsInfo(data);
           setEasementsGeoJson(data.easementsGeoJson || null);
+          setEasementsError(null);
           setShowEasements((data.count || 0) > 0);
         } else {
           setEasementsInfo(null);
           setEasementsGeoJson(null);
           setShowEasements(false);
+          setEasementsError(data.error || "Easements lookup failed.");
         }
       } catch (err) {
         console.error("[Maps] property-easements fetch failed:", err);
         setEasementsInfo(null);
         setEasementsGeoJson(null);
         setShowEasements(false);
+        setEasementsError(err.message || "Easements lookup failed.");
       } finally {
         setEasementsLoading(false);
       }
     },
-    [isAdmin]
+    []
   );
 
   const runSearch = useCallback(async (searchQueryOverride) => {
@@ -337,7 +350,9 @@ export default function Maps() {
     setPlanningLayerVisibility({});
     setEasementsInfo(null);
     setEasementsGeoJson(null);
+    setEasementsError(null);
     setShowEasements(false);
+    setActiveSearchState(null);
     try {
       const params = new URLSearchParams({
         q,
@@ -380,11 +395,12 @@ export default function Maps() {
       addRecentMapSearch({ query: q, label });
       setActiveSearchQuery(q);
 
+      const searchState = inferStateFromNominatimHit(hit);
+      setActiveSearchState(searchState);
+
       if (!isAdmin) {
         return;
       }
-
-      const searchState = inferStateFromNominatimHit(hit);
 
       const savedFeature = getSavedBoundaryForRecentQuery(q);
       if (savedFeature) {
@@ -458,6 +474,9 @@ export default function Maps() {
             setParcelNotice("Title boundary not available.");
             setFlyTarget(pos);
             void fetchPlanningForSite(lat, lon, searchState, null);
+            window.setTimeout(() => {
+              void fetchEasementsForSite(lat, lon, searchState, null, null);
+            }, 300);
             return;
           }
 
@@ -524,17 +543,15 @@ export default function Maps() {
         clearTimeout(boundaryTimeout);
         setParcelLoading(false);
         void fetchPlanningForSite(lat, lon, searchState, planningBoundaryGeometry);
-        if (planningBoundaryGeometry) {
-          window.setTimeout(() => {
-            void fetchEasementsForSite(
-              lat,
-              lon,
-              searchState,
-              planningBoundaryGeometry,
-              parcelIdForEasements
-            );
-          }, 900);
-        }
+        window.setTimeout(() => {
+          void fetchEasementsForSite(
+            lat,
+            lon,
+            searchState,
+            planningBoundaryGeometry,
+            parcelIdForEasements
+          );
+        }, planningBoundaryGeometry ? 900 : 300);
       }
     } catch (e) {
       setMarker(null);
@@ -877,7 +894,7 @@ export default function Maps() {
             </div>
           )}
 
-          {isAdmin && (easementsLoading || easementsInfo) && !error && (
+          {isAdmin && activeSearchState === "VIC" && marker && !error && (
             <div
               style={{
                 padding: "12px 14px",
@@ -888,23 +905,29 @@ export default function Maps() {
                 fontSize: "0.9rem",
               }}
             >
-              {easementsLoading ? (
-                <div>Loading easements…</div>
-              ) : (
+              <div style={{ marginBottom: "8px" }}>
+                <strong style={{ fontSize: "0.95rem" }}>Easements (Vicmap)</strong>
+              </div>
+              <div
+                style={{
+                  fontSize: "0.82rem",
+                  color: "#5b21b6",
+                  marginBottom: "10px",
+                  lineHeight: 1.45,
+                }}
+              >
+                Easement data is indicative only. Confirm against title and plan documents.
+              </div>
+              {parcelLoading && !parcelFeature ? (
+                <div style={{ fontSize: "0.85rem", color: "#666" }}>
+                  Waiting for title boundary…
+                </div>
+              ) : easementsLoading ? (
+                <div style={{ fontSize: "0.85rem", color: "#666" }}>Loading easements…</div>
+              ) : easementsError ? (
+                <div style={{ fontSize: "0.85rem", color: "#842029" }}>{easementsError}</div>
+              ) : easementsInfo ? (
                 <>
-                  <div style={{ marginBottom: "8px" }}>
-                    <strong style={{ fontSize: "0.95rem" }}>Easements (Vicmap)</strong>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "0.82rem",
-                      color: "#5b21b6",
-                      marginBottom: "10px",
-                      lineHeight: 1.45,
-                    }}
-                  >
-                    {easementsInfo.warning}
-                  </div>
                   {easementsInfo.count > 0 ? (
                     <>
                       <div style={{ marginBottom: "8px", lineHeight: 1.5 }}>
@@ -935,11 +958,28 @@ export default function Maps() {
                       </label>
                     </>
                   ) : (
-                    <div style={{ fontSize: "0.85rem", color: "#666" }}>
-                      {easementsInfo.message || "No mapped easements found."}
-                    </div>
+                    <>
+                      <div style={{ fontSize: "0.85rem", color: "#666", marginBottom: "8px" }}>
+                        {easementsInfo.message || "No mapped easements found."}
+                      </div>
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          fontSize: "0.85rem",
+                          color: "#888",
+                          cursor: "not-allowed",
+                        }}
+                      >
+                        <input type="checkbox" checked={false} disabled />
+                        Show easements on map
+                      </label>
+                    </>
                   )}
                 </>
+              ) : (
+                <div style={{ fontSize: "0.85rem", color: "#666" }}>Easements will load for this site…</div>
               )}
             </div>
           )}
