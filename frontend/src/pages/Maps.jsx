@@ -142,6 +142,7 @@ function boundsFromGeoJsonFeature(feature) {
 
 export default function Maps() {
   const [query, setQuery] = useState("");
+  const [parcelLoading, setParcelLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [marker, setMarker] = useState(null);
@@ -209,23 +210,30 @@ export default function Maps() {
       const label = hit.display_name || q;
       setMarker(pos);
       setResultLabel(label);
+      setFlyTarget(pos);
+      setLoading(false);
 
       if (!isAdmin) {
-        setFlyTarget(pos);
         return;
       }
 
       const searchState = inferStateFromNominatimHit(hit);
-      // Pin: Leaflet [lat, lng]. Parcel API uses the same WGS84 pin (lat=N/S, lng=E/W).
       console.log("[Maps] search pin:", { lat, lng: lon, state: searchState, leaflet: [lat, lon] });
 
       const parcelParams = parcelQueryParamsForPin(lat, lon, searchState, label);
       const parcelUrl = `/api/property-boundary?${parcelParams.toString()}`;
       console.log("[Maps] property boundary request:", parcelUrl);
+      setParcelLoading(true);
       setParcelNotice("Looking up title boundary…");
 
+      const boundaryController = new AbortController();
+      const boundaryTimeout = setTimeout(() => boundaryController.abort(), 25000);
+
       try {
-        const parcelRes = await fetch(parcelUrl, { headers: getApiHeaders() });
+        const parcelRes = await fetch(parcelUrl, {
+          headers: getApiHeaders(),
+          signal: boundaryController.signal,
+        });
         const parcelData = await parcelRes.json().catch(() => ({}));
 
         const hasGeometry =
@@ -295,19 +303,30 @@ export default function Maps() {
             status: parcelRes.status,
             containsPin: parcelData.containsPin,
             matchMethod: parcelData.matchMethod,
+            timedOut: parcelData.timedOut,
             error: parcelData.error,
           });
           setParcelFeature(null);
           setParcelBounds(null);
-          setParcelNotice("Title boundary not available.");
-          setFlyTarget(pos);
+          setParcelNotice(
+            parcelData.timedOut || parcelRes.status === 504
+              ? "Title boundary lookup timed out — try again. The pin is still shown."
+              : parcelData.error || "Title boundary not available."
+          );
         }
       } catch (parcelErr) {
+        const aborted = parcelErr?.name === "AbortError";
         console.error("[Maps] property boundary fetch failed:", parcelErr);
         setParcelFeature(null);
         setParcelBounds(null);
-        setParcelNotice("Title boundary not available.");
-        setFlyTarget(pos);
+        setParcelNotice(
+          aborted
+            ? "Title boundary lookup timed out — try again. The pin is still shown."
+            : "Title boundary not available."
+        );
+      } finally {
+        clearTimeout(boundaryTimeout);
+        setParcelLoading(false);
       }
     } catch (e) {
       setMarker(null);
@@ -571,7 +590,7 @@ export default function Maps() {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onKeyDown}
               placeholder="Search address (e.g. 123 Collins St, Melbourne VIC)"
-              disabled={loading}
+              disabled={loading || parcelLoading}
               aria-busy={loading}
               style={{
                 flex: "1 1 220px",
@@ -588,7 +607,7 @@ export default function Maps() {
             <button
               type="button"
               onClick={onSearch}
-              disabled={loading}
+              disabled={loading || parcelLoading}
               style={{
                 padding: "12px 22px",
                 fontSize: "1rem",
@@ -602,7 +621,7 @@ export default function Maps() {
                 whiteSpace: "nowrap",
               }}
             >
-              {loading ? "Searching…" : "Search"}
+              {loading ? "Searching…" : parcelLoading ? "Loading boundary…" : "Search"}
             </button>
             {[
               { key: "VIC", label: "VIC Projects" },
@@ -651,7 +670,7 @@ export default function Maps() {
             </div>
           )}
 
-          {isAdmin && parcelNotice && !error && (
+          {isAdmin && (parcelNotice || parcelLoading) && !error && (
             <div
               style={{
                 padding: "8px 14px",
@@ -662,7 +681,9 @@ export default function Maps() {
                 fontSize: "0.9rem",
               }}
             >
-              {parcelNotice}
+              {parcelLoading && !parcelNotice
+                ? "Looking up title boundary…"
+                : parcelNotice}
             </div>
           )}
 

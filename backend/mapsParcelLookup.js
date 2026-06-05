@@ -9,12 +9,13 @@
 const VICMAP_PARCEL_QUERY_URL =
   "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Parcel/FeatureServer/0/query";
 
-const VICMAP_FETCH_TIMEOUT_MS = 90000;
+const VICMAP_FETCH_TIMEOUT_MS = 15000;
+/** Hard cap for entire lookup (two-phase Vicmap calls usually finish in under 2 s). */
+const LOOKUP_BUDGET_MS = 20000;
 const VICMAP_POINT_BUFFER_METRES = 50;
-/** Smallest envelope first (~33 m at 0.0003°) to limit neighbour lots in dense areas. */
-const VICMAP_ENVELOPE_DELTAS = [0.0003, 0.0005, 0.0008, 0.001, 0.002];
-const VICMAP_PAGE_SIZE = 50;
-const VICMAP_MAX_PAGES = 3;
+/** Tight envelopes for fallback only when point queries return nothing. */
+const VICMAP_ENVELOPE_DELTAS = [0.0002, 0.0003];
+const VICMAP_PAGE_SIZE = 20;
 const PARCEL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const PARCEL_MISS_CACHE_TTL_MS = 5 * 60 * 1000;
 const PARCEL_CACHE_MAX = 500;
@@ -280,10 +281,45 @@ function selectParcelForPin(features, lat, lng) {
   };
 }
 
-async function fetchVicmapPage(params) {
+async function fetchVicmapJson(params, timeoutMs) {
   const url = `${VICMAP_PARCEL_QUERY_URL}?${new URLSearchParams(params).toString()}`;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), VICMAP_FETCH_TIMEOUT_MS);
+  const limit = Math.max(3000, Math.min(VICMAP_FETCH_TIMEOUT_MS, timeoutMs || VICMAP_FETCH_TIMEOUT_MS));
+  const timeout = setTimeout(() => controller.abort(), limit);
+  const fetchStarted = Date.now();
+  try {
+    const resp = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    const durationMs = Date.now() - fetchStarted;
+    if (!resp.ok) {
+      return { data: null, durationMs, status: resp.status, error: resp.statusText };
+    }
+    const data = await resp.json().catch(() => null);
+    if (data?.error) {
+      return { data: null, durationMs, status: 200, error: data.error.message || String(data.error) };
+    }
+    return { data, durationMs, status: 200, error: null };
+  } catch (e) {
+    const aborted = e?.name === "AbortError";
+    return {
+      data: null,
+      durationMs: Date.now() - fetchStarted,
+      status: aborted ? 408 : 0,
+      error: aborted ? "Vicmap request timed out" : e.message || String(e),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchVicmapGeoJson(params, timeoutMs) {
+  const url = `${VICMAP_PARCEL_QUERY_URL}?${new URLSearchParams(params).toString()}`;
+  const controller = new AbortController();
+  const limit = Math.max(3000, Math.min(VICMAP_FETCH_TIMEOUT_MS, timeoutMs || VICMAP_FETCH_TIMEOUT_MS));
+  const timeout = setTimeout(() => controller.abort(), limit);
   const fetchStarted = Date.now();
   try {
     const resp = await fetch(url, {
@@ -297,53 +333,120 @@ async function fetchVicmapPage(params) {
     }
     const geo = await resp.json().catch(() => null);
     if (geo?.error) {
-      return { geo: null, durationMs, status: 200, error: geo.error };
+      return { geo: null, durationMs, status: 200, error: geo.error.message || String(geo.error) };
     }
     return { geo, durationMs, status: 200, error: null };
   } catch (e) {
+    const aborted = e?.name === "AbortError";
     return {
       geo: null,
       durationMs: Date.now() - fetchStarted,
-      status: 0,
-      error: e.message || String(e),
+      status: aborted ? 408 : 0,
+      error: aborted ? "Vicmap request timed out" : e.message || String(e),
     };
   } finally {
     clearTimeout(timeout);
   }
 }
 
-async function fetchAllParcelFeaturesInQuery(baseParams, log) {
-  let offset = 0;
-  let allFeatures = [];
+function lookupBudgetRemaining(deadlineMs) {
+  return Math.max(0, deadlineMs - Date.now());
+}
 
-  for (let page = 0; page < VICMAP_MAX_PAGES; page++) {
-    const { geo, durationMs, status, error } = await fetchVicmapPage({
-      ...baseParams,
-      resultRecordCount: String(VICMAP_PAGE_SIZE),
-      resultOffset: String(offset),
-    });
-
-    log.apiCalls = (log.apiCalls || 0) + 1;
-    log.lastApiDurationMs = durationMs;
-    log.lastApiStatus = status;
-    if (error) {
-      log.lastApiError = error;
-      break;
-    }
-
-    const batch = geo?.features || [];
-    allFeatures = dedupeParcelFeatures([...allFeatures, ...batch]);
-
-    const exceeded = geo?.properties?.exceededTransferLimit === true;
-    if (batch.length === 0 || (!exceeded && batch.length < VICMAP_PAGE_SIZE)) {
-      log.pagesFetched = (log.pagesFetched || 0) + page + 1;
-      break;
-    }
-    offset += batch.length;
-    log.pagesFetched = page + 1;
+async function fetchSpatialObjectIds(spatial, log, deadlineMs) {
+  const remaining = lookupBudgetRemaining(deadlineMs);
+  if (remaining < 2500) {
+    log.lastApiError = "lookup_budget_exceeded";
+    return [];
   }
 
-  return allFeatures;
+  const params = {
+    f: "json",
+    inSR: "4326",
+    outSR: "4326",
+    spatialRel: spatial.spatialRel,
+    geometry: spatial.geometry,
+    geometryType: spatial.geometryType,
+    returnIdsOnly: "true",
+  };
+  if (spatial.distance != null) {
+    params.distance = String(spatial.distance);
+    params.units = spatial.units || "esriSRUnit_Meter";
+  }
+
+  const { data, durationMs, status, error } = await fetchVicmapJson(params, remaining);
+  log.apiCalls = (log.apiCalls || 0) + 1;
+  log.lastApiDurationMs = durationMs;
+  log.lastApiStatus = status;
+  if (error) {
+    log.lastApiError = error;
+    return [];
+  }
+
+  return Array.isArray(data?.objectIds) ? data.objectIds : [];
+}
+
+async function fetchEnvelopeObjectIds(envelope, log, deadlineMs) {
+  return fetchSpatialObjectIds(
+    {
+      spatialRel: "esriSpatialRelIntersects",
+      geometry: envelope,
+      geometryType: "esriGeometryEnvelope",
+    },
+    log,
+    deadlineMs
+  );
+}
+
+async function fetchFeaturesByObjectIds(objectIds, outFields, log, deadlineMs) {
+  if (!objectIds?.length) return [];
+
+  const remaining = lookupBudgetRemaining(deadlineMs);
+  if (remaining < 2500) {
+    log.lastApiError = "lookup_budget_exceeded";
+    return [];
+  }
+
+  const where = `OBJECTID IN (${objectIds.join(",")})`;
+  const params = {
+    f: "geojson",
+    outSR: "4326",
+    returnGeometry: "true",
+    outFields,
+    where,
+    resultRecordCount: String(Math.min(objectIds.length, VICMAP_PAGE_SIZE)),
+  };
+
+  const { geo, durationMs, status, error } = await fetchVicmapGeoJson(params, remaining);
+  log.apiCalls = (log.apiCalls || 0) + 1;
+  log.lastApiDurationMs = durationMs;
+  log.lastApiStatus = status;
+  if (error) {
+    log.lastApiError = error;
+    return [];
+  }
+
+  return dedupeParcelFeatures(geo?.features || []);
+}
+
+async function fetchCandidatesForObjectIds(objectIds, outFields, log, deadlineMs) {
+  if (!objectIds?.length) return [];
+  log.objectIdsReturned = objectIds.length;
+  const ids = objectIds.slice(0, VICMAP_PAGE_SIZE);
+  log.objectIdsFetched = ids.length;
+  log.queryPhase = "objectIds_then_geometry";
+  return fetchFeaturesByObjectIds(ids, outFields, log, deadlineMs);
+}
+
+async function fetchEnvelopeCandidates(envelope, outFields, log, deadlineMs) {
+  const objectIds = await fetchEnvelopeObjectIds(envelope, log, deadlineMs);
+  if (objectIds.length === 0 || objectIds.length > VICMAP_PAGE_SIZE) {
+    if (objectIds.length > VICMAP_PAGE_SIZE) {
+      log.skippedTooManyIds = objectIds.length;
+    }
+    return [];
+  }
+  return fetchCandidatesForObjectIds(objectIds, outFields, log, deadlineMs);
 }
 
 function buildParcelHitFromSelection(selection, lat, lng, log) {
@@ -384,33 +487,54 @@ function buildParcelHitFromSelection(selection, lat, lng, log) {
 async function queryVicParcelForPin(lat, lng, log) {
   const outFields =
     "parcel_pfi,parcel_lot_number,parcel_plan_number,parcel_id,parcel_lga_code";
-  const base = {
-    f: "geojson",
-    inSR: "4326",
-    outSR: "4326",
-    spatialRel: "esriSpatialRelIntersects",
-    returnGeometry: "true",
-    outFields,
-  };
+  const point = `${lng},${lat}`;
 
   log.apiUrl = VICMAP_PARCEL_QUERY_URL;
   log.apiCalls = 0;
+  log.lookupBudgetMs = LOOKUP_BUDGET_MS;
+  const deadlineMs = Date.now() + LOOKUP_BUDGET_MS;
   let allCandidates = [];
 
-  for (const delta of VICMAP_ENVELOPE_DELTAS) {
-    const envelope = [lng - delta, lat - delta, lng + delta, lat + delta].join(",");
-    log.queryMode = "envelope";
-    log.envelopeDelta = delta;
-    log.envelope = envelope;
+  const pointStrategies = [
+    {
+      queryMode: "point_within",
+      spatialRel: "esriSpatialRelWithin",
+      geometry: point,
+      geometryType: "esriGeometryPoint",
+    },
+    {
+      queryMode: "point_intersects",
+      spatialRel: "esriSpatialRelIntersects",
+      geometry: point,
+      geometryType: "esriGeometryPoint",
+    },
+    {
+      queryMode: "point_buffer_30m",
+      spatialRel: "esriSpatialRelIntersects",
+      geometry: point,
+      geometryType: "esriGeometryPoint",
+      distance: 30,
+      units: "esriSRUnit_Meter",
+    },
+  ];
 
-    const batch = await fetchAllParcelFeaturesInQuery(
-      {
-        ...base,
-        geometry: envelope,
-        geometryType: "esriGeometryEnvelope",
-      },
-      log
-    );
+  for (const strategy of pointStrategies) {
+    if (lookupBudgetRemaining(deadlineMs) < 2500) {
+      log.queryMode = "budget_exhausted";
+      break;
+    }
+
+    log.queryMode = strategy.queryMode;
+    const objectIds = await fetchSpatialObjectIds(strategy, log, deadlineMs);
+    if (objectIds.length === 0) continue;
+    if (objectIds.length > VICMAP_PAGE_SIZE) {
+      log.skippedTooManyIds = objectIds.length;
+      continue;
+    }
+
+    const batch = await fetchCandidatesForObjectIds(objectIds, outFields, log, deadlineMs);
+    if (batch.length === 0) continue;
+
     allCandidates = dedupeParcelFeatures([...allCandidates, ...batch]);
     log.candidateCount = allCandidates.length;
 
@@ -421,29 +545,44 @@ async function queryVicParcelForPin(lat, lng, log) {
     }
   }
 
-  log.queryMode = "point_buffer";
-  log.envelope = undefined;
-  log.envelopeDelta = undefined;
+  if (allCandidates.length === 0) {
+    for (const delta of VICMAP_ENVELOPE_DELTAS) {
+      if (lookupBudgetRemaining(deadlineMs) < 2500) {
+        log.queryMode = "budget_exhausted";
+        break;
+      }
 
-  const bufferBatch = await fetchAllParcelFeaturesInQuery(
-    {
-      ...base,
-      geometry: `${lng},${lat}`,
-      geometryType: "esriGeometryPoint",
-      distance: String(VICMAP_POINT_BUFFER_METRES),
-      units: "esriSRUnit_Meter",
-    },
-    log
-  );
-  allCandidates = dedupeParcelFeatures([...allCandidates, ...bufferBatch]);
-  log.candidateCount = allCandidates.length;
+      const envelope = [lng - delta, lat - delta, lng + delta, lat + delta].join(",");
+      log.queryMode = "envelope_ids_then_geometry";
+      log.envelopeDelta = delta;
+      log.envelope = envelope;
+
+      const batch = await fetchEnvelopeCandidates(envelope, outFields, log, deadlineMs);
+      if (batch.length === 0) continue;
+
+      allCandidates = dedupeParcelFeatures([...allCandidates, ...batch]);
+      log.candidateCount = allCandidates.length;
+
+      const selection = selectParcelForPin(allCandidates, lat, lng);
+      if (selection?.matchMethod === "contains") {
+        log.featuresScanned = allCandidates.length;
+        return buildParcelHitFromSelection(selection, lat, lng, log);
+      }
+      break;
+    }
+  }
+
   log.featuresScanned = allCandidates.length;
+  log.candidateCount = allCandidates.length;
 
   const selection = selectParcelForPin(allCandidates, lat, lng);
   if (!selection) {
     log.selectedParcelPfi = null;
     log.containsPin = false;
     log.matchMethod = null;
+    if (log.lastApiError && allCandidates.length === 0) {
+      log.vicmapUnavailable = true;
+    }
     return null;
   }
 

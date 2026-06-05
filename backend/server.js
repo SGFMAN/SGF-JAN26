@@ -2490,12 +2490,20 @@ async function handlePropertyBoundaryRequest(req, res) {
     }
 
     if (result.notFound || !result.hit) {
-      return res.status(404).json({
+      const log = result.log || {};
+      const timedOut =
+        log.vicmapUnavailable === true ||
+        String(log.lastApiError || "").toLowerCase().includes("timed out") ||
+        String(log.lastApiError || "").includes("budget_exceeded");
+      return res.status(timedOut ? 504 : 404).json({
         ok: false,
-        error: "Title boundary not available.",
+        error: timedOut
+          ? "Cadastre lookup timed out — try again. The pin is still shown."
+          : "Title boundary not available.",
         state,
         containsPin: false,
         approximate: false,
+        timedOut,
       });
     }
 
