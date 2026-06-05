@@ -3,6 +3,7 @@ import {
   parseEmailGeneralJson,
   isGeneralNewProjectConfigEmpty,
   normalizeNewProjectBranchFromRaw,
+  normalizeDepositBalanceBranch,
   coerceNewProjectTeamEmailToArray,
   emailGeneralJsonForPersist,
 } from "../utils/emailGeneralSettings";
@@ -189,6 +190,24 @@ const NEW_PROJECT_SECTIONS = [
 function defaultNewProjectSectionOpen() {
   const open = { vic: {}, qld: {} };
   for (const s of NEW_PROJECT_SECTIONS) {
+    open.vic[s.title] = false;
+    open.qld[s.title] = false;
+  }
+  return open;
+}
+
+const DEPOSIT_BALANCE_SECTIONS = [
+  { title: "Email to Client", fromKey: "clientFromEmail" },
+  { title: "Email to Team", fromKey: "teamFromEmail", toKey: "teamToEmail" },
+];
+
+function defaultDepositBalanceState() {
+  return normalizeDepositBalanceBranch({});
+}
+
+function defaultDepositBalanceSectionOpen() {
+  const open = { vic: {}, qld: {} };
+  for (const s of DEPOSIT_BALANCE_SECTIONS) {
     open.vic[s.title] = false;
     open.qld[s.title] = false;
   }
@@ -594,6 +613,7 @@ const EMAIL_NAV_GENERAL = "general";
 const GLOBAL_EMAIL_SECTIONS = [
   { key: "colours", label: "Colours" },
   { key: "hotList", label: "Hot List" },
+  { key: "depositBalance", label: "Deposit Balance" },
   { key: "windows", label: "Windows" },
   { key: "newProject", label: "New Project" },
 ];
@@ -611,6 +631,7 @@ export default function StreamSettings() {
 
   const [smtpSlotEmails, setSmtpSlotEmails] = useState([]);
   const [newProjectSectionOpen, setNewProjectSectionOpen] = useState(defaultNewProjectSectionOpen);
+  const [depositBalanceSectionOpen, setDepositBalanceSectionOpen] = useState(defaultDepositBalanceSectionOpen);
   const [drawingSectionOpen, setDrawingSectionOpen] = useState(defaultDrawingSectionOpen);
   const [hotListSoldSectionOpen, setHotListSoldSectionOpen] = useState(false);
   const [windowsOrderingSectionOpen, setWindowsOrderingSectionOpen] = useState(false);
@@ -621,6 +642,9 @@ export default function StreamSettings() {
   useEffect(() => {
     if (emailNavScope === EMAIL_NAV_GENERAL && globalEmailSection === "newProject") {
       setNewProjectSectionOpen(defaultNewProjectSectionOpen());
+    }
+    if (emailNavScope === EMAIL_NAV_GENERAL && globalEmailSection === "depositBalance") {
+      setDepositBalanceSectionOpen(defaultDepositBalanceSectionOpen());
     }
     if (emailNavScope !== "stream") return;
     if (activeSection === "drawings") {
@@ -776,6 +800,34 @@ export default function StreamSettings() {
     void persistEmailGeneral(emailGeneralRef.current);
   }
 
+  function updateDepositBalanceField(region, fieldKey, value) {
+    const branchKey = region === "qld" ? "qld" : "vic";
+    setEmailGeneral((prev) => {
+      const dbRoot =
+        prev.depositBalance && typeof prev.depositBalance === "object"
+          ? prev.depositBalance
+          : { vic: defaultDepositBalanceState(), qld: defaultDepositBalanceState() };
+      const mergedBranch = {
+        ...defaultDepositBalanceState(),
+        ...(dbRoot[branchKey] && typeof dbRoot[branchKey] === "object" ? dbRoot[branchKey] : {}),
+        [fieldKey]: value == null ? "" : String(value).trim(),
+      };
+      const next = {
+        ...prev,
+        depositBalance: {
+          ...dbRoot,
+          [branchKey]: mergedBranch,
+        },
+      };
+      emailGeneralRef.current = next;
+      return next;
+    });
+  }
+
+  function flushPersistDepositBalanceEmail() {
+    void persistEmailGeneral(emailGeneralRef.current);
+  }
+
   function updateGeneralNewProjectField(region, fieldKey, value) {
     let v = value;
     if (fieldKey === "clientEmailTo") {
@@ -849,6 +901,18 @@ export default function StreamSettings() {
     ...defaultNewProjectState(),
     ...(npRoot.qld && typeof npRoot.qld === "object" ? npRoot.qld : {}),
   };
+  const dbRoot =
+    emailGeneral.depositBalance && typeof emailGeneral.depositBalance === "object"
+      ? emailGeneral.depositBalance
+      : { vic: defaultDepositBalanceState(), qld: defaultDepositBalanceState() };
+  const vicGenDb = {
+    ...defaultDepositBalanceState(),
+    ...(dbRoot.vic && typeof dbRoot.vic === "object" ? dbRoot.vic : {}),
+  };
+  const qldGenDb = {
+    ...defaultDepositBalanceState(),
+    ...(dbRoot.qld && typeof dbRoot.qld === "object" ? dbRoot.qld : {}),
+  };
   const drawingsVicRow = streamSettingsMap[vicKey]?.drawings || defaultDrawingsState();
   const drawingsQldRow = streamSettingsMap[qldKey]?.drawings || defaultDrawingsState();
 
@@ -858,12 +922,16 @@ export default function StreamSettings() {
       style={{
         width: "100%",
         height: "100%",
+        minWidth: 0,
+        minHeight: 0,
+        flex: 1,
         display: "grid",
         gridTemplateColumns: "260px 220px minmax(0, 1fr)",
         alignItems: "flex-start",
         padding: "16px",
         gap: "16px",
         boxSizing: "border-box",
+        overflow: "auto",
       }}
     >
       <div
@@ -1167,6 +1235,136 @@ export default function StreamSettings() {
                     </div>
                   </div>
                 ) : null}
+                </div>
+              </div>
+            </div>
+          ) : globalEmailSection === "depositBalance" ? (
+            <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}>
+              <div style={{ ...columnPanelStyle, minHeight: "100%" }}>
+                <h4 style={{ ...columnTitleStyle, marginBottom: "10px" }}>Deposit Balance</h4>
+                <p style={{ margin: "0 0 12px", fontSize: "0.86rem", color: "#32323399", lineHeight: 1.45 }}>
+                  VIC vs QLD follows the project&apos;s state when sending deposit balance emails. Client emails go to
+                  the active contacts ticked in Client Info (no To field here).
+                </p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "12px" }}>
+                  {[
+                    { title: "VIC", region: "vic", data: vicGenDb },
+                    { title: "QLD", region: "qld", data: qldGenDb },
+                  ].map(({ title, region, data }) => {
+                    const columnKey = region;
+                    return (
+                      <div key={title} style={{ ...columnPanelStyle, minHeight: 0 }}>
+                        <h5 style={{ margin: "0 0 8px 0", fontSize: "0.9rem", fontWeight: 700, color: MONUMENT }}>{title}</h5>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                          {DEPOSIT_BALANCE_SECTIONS.map((section) => {
+                            const sectionExpanded = !!depositBalanceSectionOpen[columnKey]?.[section.title];
+                            return (
+                              <div
+                                key={section.title}
+                                style={{
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: sectionExpanded ? "10px" : "0",
+                                  ...NEW_PROJECT_SECTION_BLUE,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    gap: "8px",
+                                    padding: "2px 0 8px 0",
+                                    borderBottom: sectionExpanded ? "1px solid #4d93d955" : "none",
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    disabled={saving}
+                                    onClick={() => {
+                                      setDepositBalanceSectionOpen((prev) => {
+                                        const currentlyOpen = !!prev[columnKey]?.[section.title];
+                                        const nextColumnState = {};
+                                        for (const s of DEPOSIT_BALANCE_SECTIONS) {
+                                          nextColumnState[s.title] = false;
+                                        }
+                                        if (!currentlyOpen) {
+                                          nextColumnState[section.title] = true;
+                                        }
+                                        return {
+                                          ...prev,
+                                          [columnKey]: nextColumnState,
+                                        };
+                                      });
+                                    }}
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "space-between",
+                                      gap: "8px",
+                                      flex: 1,
+                                      minWidth: 0,
+                                      margin: 0,
+                                      padding: 0,
+                                      border: "none",
+                                      background: "transparent",
+                                      cursor: saving ? "wait" : "pointer",
+                                      textAlign: "left",
+                                      fontFamily: "inherit",
+                                    }}
+                                  >
+                                    <span
+                                      style={{
+                                        fontSize: "0.82rem",
+                                        fontWeight: 700,
+                                        color: "#1e4d7a",
+                                        letterSpacing: "0.02em",
+                                      }}
+                                    >
+                                      {section.title}
+                                    </span>
+                                    <span aria-hidden style={{ fontSize: "0.75rem", color: "#1e4d7a", flexShrink: 0 }}>
+                                      {sectionExpanded ? "▾" : "▸"}
+                                    </span>
+                                  </button>
+                                </div>
+                                {sectionExpanded ? (
+                                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                      <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>From</span>
+                                      <DrawingNotifySmtpSelect
+                                        smtpOptions={smtpSlotEmails}
+                                        value={data[section.fromKey] || ""}
+                                        disabled={saving}
+                                        onValueChange={(next) =>
+                                          updateDepositBalanceField(region, section.fromKey, next)
+                                        }
+                                        onCommit={flushPersistDepositBalanceEmail}
+                                      />
+                                    </div>
+                                    {section.toKey ? (
+                                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                        <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>To</span>
+                                        <DrawingNotifySmtpSelect
+                                          smtpOptions={smtpSlotEmails}
+                                          value={data[section.toKey] || ""}
+                                          disabled={saving}
+                                          onValueChange={(next) =>
+                                            updateDepositBalanceField(region, section.toKey, next)
+                                          }
+                                          onCommit={flushPersistDepositBalanceEmail}
+                                        />
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>

@@ -20,6 +20,12 @@ const EMPTY_WINDOWS = {
   qldToEmail3: "",
 };
 
+const EMPTY_DEPOSIT_BALANCE_BRANCH = {
+  clientFromEmail: "",
+  teamFromEmail: "",
+  teamToEmail: "",
+};
+
 const NEW_PROJECT_CLIENT_TO_TOKEN = "{Contact1}";
 
 function uniqueTrimmedEmails(list) {
@@ -116,6 +122,27 @@ function emptyNewProjectBranch() {
   return normalizeNewProjectBranchFromRaw({});
 }
 
+function emptyDepositBalanceBranch() {
+  return normalizeDepositBalanceBranch({});
+}
+
+export function normalizeDepositBalanceBranch(raw) {
+  const trim = (v) => (v == null ? "" : String(v).trim());
+  const b = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  return {
+    clientFromEmail: trim(b.clientFromEmail),
+    teamFromEmail: trim(b.teamFromEmail),
+    teamToEmail: trim(b.teamToEmail),
+  };
+}
+
+/** Deposit Balance email fields for this project (VIC vs QLD from project state). */
+export function getGeneralDepositBalanceBranch(settings, project) {
+  const eg = parseEmailGeneralJson(settings?.email_general_json);
+  const key = generalEmailStateCode(project) === "QLD" ? "qld" : "vic";
+  return normalizeDepositBalanceBranch(eg.depositBalance?.[key]);
+}
+
 /** True when both VIC and QLD branches have no configured addresses (migration not done / fresh). */
 export function isGeneralNewProjectConfigEmpty(parsedGeneral) {
   const np = parsedGeneral?.newProject;
@@ -160,6 +187,7 @@ export function parseEmailGeneralJson(raw) {
     hotList: { ...EMPTY_HOTLIST },
     windows: { ...EMPTY_WINDOWS },
     newProject: { vic: emptyNewProjectBranch(), qld: emptyNewProjectBranch() },
+    depositBalance: { vic: emptyDepositBalanceBranch(), qld: emptyDepositBalanceBranch() },
   };
   if (raw == null || raw === "") return base;
   let o = raw;
@@ -174,6 +202,10 @@ export function parseEmailGeneralJson(raw) {
   const hl = o.hotList && typeof o.hotList === "object" && !Array.isArray(o.hotList) ? o.hotList : {};
   const wd = o.windows && typeof o.windows === "object" && !Array.isArray(o.windows) ? o.windows : {};
   const npRoot = o.newProject && typeof o.newProject === "object" && !Array.isArray(o.newProject) ? o.newProject : {};
+  const dbRoot =
+    o.depositBalance && typeof o.depositBalance === "object" && !Array.isArray(o.depositBalance)
+      ? o.depositBalance
+      : {};
   const vicFrom = T(hl.soldFromEmail);
   const vicTo = T(hl.soldToEmail);
   const qldFrom = T(hl.qldSoldFromEmail);
@@ -208,6 +240,10 @@ export function parseEmailGeneralJson(raw) {
       vic: normalizeNewProjectBranchFromRaw(npRoot.vic),
       qld: normalizeNewProjectBranchFromRaw(npRoot.qld),
     },
+    depositBalance: {
+      vic: normalizeDepositBalanceBranch(dbRoot.vic),
+      qld: normalizeDepositBalanceBranch(dbRoot.qld),
+    },
   };
 }
 
@@ -225,4 +261,36 @@ export function resolveHotlistSoldToEmail(settings, project) {
   if (code === "QLD") return hl.qldSoldToEmail || "";
   if (code === "VIC") return hl.soldToEmail || "";
   return "";
+}
+
+/** Active Client Info contacts (client1–3 ticked) with non-empty email. */
+export function resolveActiveClientContactToEmails(project) {
+  if (!project || typeof project !== "object") return [];
+  const seen = new Set();
+  const out = [];
+  const add = (active, email) => {
+    if (String(active || "").toLowerCase() !== "true") return;
+    const e = email == null ? "" : String(email).trim();
+    if (!e) return;
+    const k = e.toLowerCase();
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push(e);
+  };
+  add(project.client1_active, project.client1_email);
+  add(project.client2_active, project.client2_email);
+  add(project.client3_active, project.client3_email);
+  return out;
+}
+
+export function resolveDepositBalanceClientFrom(settings, project) {
+  return getGeneralDepositBalanceBranch(settings, project).clientFromEmail || "";
+}
+
+export function resolveDepositBalanceTeamFrom(settings, project) {
+  return getGeneralDepositBalanceBranch(settings, project).teamFromEmail || "";
+}
+
+export function resolveDepositBalanceTeamTo(settings, project) {
+  return getGeneralDepositBalanceBranch(settings, project).teamToEmail || "";
 }

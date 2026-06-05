@@ -726,7 +726,19 @@ function parseEmailGeneralJsonColumn(raw) {
   }
   if (!o || typeof o !== "object" || Array.isArray(o)) return empty;
   const hl = o.hotList && typeof o.hotList === "object" && !Array.isArray(o.hotList) ? o.hotList : {};
+  const dbRoot =
+    o.depositBalance && typeof o.depositBalance === "object" && !Array.isArray(o.depositBalance)
+      ? o.depositBalance
+      : {};
   const trim = (v) => (v == null ? "" : String(v).trim());
+  const normalizeDepositBalanceBranch = (raw) => {
+    const b = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    return {
+      clientFromEmail: trim(b.clientFromEmail),
+      teamFromEmail: trim(b.teamFromEmail),
+      teamToEmail: trim(b.teamToEmail),
+    };
+  };
   return {
     ...o,
     hotList: {
@@ -734,6 +746,10 @@ function parseEmailGeneralJsonColumn(raw) {
       soldToEmail: trim(hl.soldToEmail),
       qldSoldFromEmail: trim(hl.qldSoldFromEmail),
       qldSoldToEmail: trim(hl.qldSoldToEmail),
+    },
+    depositBalance: {
+      vic: normalizeDepositBalanceBranch(dbRoot.vic),
+      qld: normalizeDepositBalanceBranch(dbRoot.qld),
     },
   };
 }

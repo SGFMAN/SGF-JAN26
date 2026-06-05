@@ -43,7 +43,21 @@ export default function SettingsPage() {
       case "colourSettings":
         return <ColourSettings />;
       case "streamSettings":
-        return <StreamSettings />;
+        return (
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              minWidth: 0,
+              minHeight: 0,
+              alignSelf: "stretch",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <StreamSettings />
+          </div>
+        );
       default:
         return (
           <div>
@@ -198,8 +212,10 @@ export default function SettingsPage() {
             height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            alignItems: selected === "streamSettings" ? "stretch" : "center",
+            justifyContent: selected === "streamSettings" ? "flex-start" : "center",
+            overflow: selected === "streamSettings" ? "hidden" : "visible",
+            minWidth: 0,
             color: MONUMENT,
             fontSize: "1.22rem",
             fontWeight: 500,

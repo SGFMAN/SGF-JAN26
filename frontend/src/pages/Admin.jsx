@@ -1,11 +1,92 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import {
-  resolveNewProjectClientFrom,
-  resolveNewProjectClientToEmails,
-  findSalespersonUserInList,
-} from "../utils/streamNewProjectEmail";
+  generalEmailStateCode,
+  resolveActiveClientContactToEmails,
+  resolveDepositBalanceClientFrom,
+  resolveDepositBalanceTeamFrom,
+  resolveDepositBalanceTeamTo,
+} from "../utils/emailGeneralSettings";
 import { fullFivePercentDeposit, isFullFivePercentDepositPaid } from "../utils/projectDeposit";
+
+const DEPOSIT_EMAIL_STEP_CLIENT = 1;
+const DEPOSIT_EMAIL_STEP_INTERNAL = 2;
+const DEPOSIT_TEMPLATE_CLIENT = "Deposit Balance Paid - Client";
+const DEPOSIT_TEMPLATE_INTERNAL = "Deposit Balance Paid - Internal";
+
+function findEmailTemplateByName(templates, name) {
+  const key = String(name || "").trim().toLowerCase();
+  return templates.find((t) => t.name && String(t.name).trim().toLowerCase() === key) || null;
+}
+
+function replaceDepositBalanceTokens(text, project) {
+  if (text == null || !project) return text == null ? "" : String(text);
+  let replaced = String(text);
+  const projectName = project.name || "";
+  replaced = replaced.replace(/{ProjectName}/g, projectName);
+
+  const contact1 =
+    project.client1_active === "true" && project.client1_email
+      ? String(project.client1_email).trim()
+      : "";
+  const contact2 =
+    project.client2_active === "true" && project.client2_email
+      ? String(project.client2_email).trim()
+      : "";
+  const contact3 =
+    project.client3_active === "true" && project.client3_email
+      ? String(project.client3_email).trim()
+      : "";
+  replaced = replaced.replace(/{Contact1}/g, contact1);
+  replaced = replaced.replace(/{Contact2}/g, contact2);
+  replaced = replaced.replace(/{Contact3}/g, contact3);
+
+  const clientFullName = project.client_name || "";
+  const clientFirstName = clientFullName.trim().split(/\s+/)[0] || clientFullName;
+  replaced = replaced.replace(/{ClientName}/g, clientFirstName);
+  replaced = replaced.replace(/{Salesperson}/g, project.salesperson || "");
+
+  let projectCostDisplay = "";
+  if (project.project_cost != null && project.project_cost !== "") {
+    const costNum =
+      typeof project.project_cost === "string"
+        ? parseFloat(project.project_cost.replace(/[$,\s]/g, ""))
+        : Number(project.project_cost);
+    if (!isNaN(costNum)) projectCostDisplay = `$${costNum.toLocaleString()}`;
+  }
+  replaced = replaced.replace(/{ProjectCost}/g, projectCostDisplay);
+
+  let depositPaid = "$0";
+  let depositNum = 0;
+  if (project.deposit != null && project.deposit !== "") {
+    depositNum =
+      typeof project.deposit === "string"
+        ? parseFloat(project.deposit.replace(/[$,\s]/g, ""))
+        : Number(project.deposit);
+    if (!isNaN(depositNum) && depositNum > 0) {
+      depositPaid = `$${depositNum.toLocaleString()}`;
+    }
+  }
+  replaced = replaced.replace(/{DepositPaid}/g, depositPaid);
+
+  let depositStatus = "$0 only";
+  if (depositNum > 0) {
+    const projectCostNum =
+      typeof project.project_cost === "string"
+        ? parseFloat(project.project_cost.replace(/[$,\s]/g, ""))
+        : Number(project.project_cost || 0);
+    if (!isNaN(projectCostNum) && projectCostNum > 0) {
+      const fullDepositAmount = Math.floor(projectCostNum / 20);
+      depositStatus =
+        depositNum === fullDepositAmount ? "Full Deposit Paid" : `${depositPaid} only`;
+    } else {
+      depositStatus = `${depositPaid} only`;
+    }
+  }
+  replaced = replaced.replace(/{DepositStatus}/g, depositStatus);
+
+  return replaced;
+}
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -42,11 +123,14 @@ export default function Admin({ project, onUpdate }) {
   const [salesTeamUsers, setSalesTeamUsers] = useState([]);
   const [loadingSalesUsers, setLoadingSalesUsers] = useState(false);
   const [showDepositBalanceEmailModal, setShowDepositBalanceEmailModal] = useState(false);
+  const [depositEmailStep, setDepositEmailStep] = useState(DEPOSIT_EMAIL_STEP_CLIENT);
   const [depositEmailTo, setDepositEmailTo] = useState("");
   const [depositEmailFrom, setDepositEmailFrom] = useState("");
   const [depositEmailSubject, setDepositEmailSubject] = useState("");
   const [depositEmailBody, setDepositEmailBody] = useState("");
   const [depositEmailPreparing, setDepositEmailPreparing] = useState(false);
+  const [depositEmailSending, setDepositEmailSending] = useState(false);
+  const depositInternalDraftRef = useRef({ to: "", from: "", subject: "", body: "" });
   const depositEmailBodyRef = useRef(null);
   const saveFieldRef = useRef(() => Promise.resolve());
   
@@ -262,44 +346,126 @@ export default function Admin({ project, onUpdate }) {
     setCustomDeposit(formattedDeposit);
     valuesRef.current.deposit = formattedDeposit;
     await saveField("deposit", formattedDeposit);
+    setDepositEmailStep(DEPOSIT_EMAIL_STEP_CLIENT);
     setShowDepositBalanceEmailModal(true);
-    prepareDepositBalanceEmail();
+    prepareDepositBalanceEmails();
   }
 
-  async function prepareDepositBalanceEmail() {
+  function closeDepositBalanceEmailModal() {
+    setShowDepositBalanceEmailModal(false);
+    setDepositEmailStep(DEPOSIT_EMAIL_STEP_CLIENT);
+    setDepositEmailTo("");
+    setDepositEmailFrom("");
+    setDepositEmailSubject("");
+    setDepositEmailBody("");
+    depositInternalDraftRef.current = { to: "", from: "", subject: "", body: "" };
+  }
+
+  function loadDepositEmailStepIntoForm(step, clientDraft, internalDraft) {
+    const draft = step === DEPOSIT_EMAIL_STEP_CLIENT ? clientDraft : internalDraft;
+    setDepositEmailTo(draft.to);
+    setDepositEmailFrom(draft.from);
+    setDepositEmailSubject(draft.subject);
+    setDepositEmailBody(draft.body);
+  }
+
+  async function prepareDepositBalanceEmails() {
     setDepositEmailPreparing(true);
     try {
-      const [res, settingsRes, usersRes] = await Promise.all([
+      const [templatesRes, settingsRes] = await Promise.all([
         fetch(`${API_URL}/api/email-templates`),
         fetch(`${API_URL}/api/settings`),
-        fetch(`${API_URL}/api/users`),
       ]);
-      if (!res.ok) throw new Error("Failed to fetch templates");
-      const templates = await res.json();
+      if (!templatesRes.ok) throw new Error("Failed to fetch templates");
+      const templates = await templatesRes.json();
       const settings = settingsRes.ok ? await settingsRes.json() : {};
-      const users = usersRes.ok ? await usersRes.json() : [];
-      const salespersonUser = findSalespersonUserInList(users, project?.salesperson);
-      const template = templates.find(
-        (t) => t.name && t.name.trim().toLowerCase() === "deposit balance paid"
-      );
-      if (!template) {
-        alert('Template "Deposit Balance Paid" not found. Create it in Settings → Email Templates.');
-        setShowDepositBalanceEmailModal(false);
-        setDepositEmailPreparing(false);
+
+      const stateCode = generalEmailStateCode(project);
+      if (!stateCode) {
+        alert(
+          "Set State to VIC or QLD on this project. Deposit Balance email settings use that state (not the stream)."
+        );
+        closeDepositBalanceEmailModal();
         return;
       }
-      const projectName = project?.name || "";
-      const replaceProjectName = (text) =>
-        text != null ? String(text).replace(/{ProjectName}/g, projectName) : "";
-      const toAddresses = resolveNewProjectClientToEmails(settings, project).join(", ");
-      const fromAddress = resolveNewProjectClientFrom(settings, project, salespersonUser);
-      setDepositEmailTo(toAddresses);
-      setDepositEmailFrom(fromAddress);
-      setDepositEmailSubject(replaceProjectName(template.subject || ""));
-      setDepositEmailBody(replaceProjectName(template.body || ""));
+
+      const clientTemplate = findEmailTemplateByName(templates, DEPOSIT_TEMPLATE_CLIENT);
+      if (!clientTemplate) {
+        alert(
+          `Template "${DEPOSIT_TEMPLATE_CLIENT}" not found. Create it in Settings → Email Templates.`
+        );
+        closeDepositBalanceEmailModal();
+        return;
+      }
+
+      const internalTemplate = findEmailTemplateByName(templates, DEPOSIT_TEMPLATE_INTERNAL);
+      if (!internalTemplate) {
+        alert(
+          `Template "${DEPOSIT_TEMPLATE_INTERNAL}" not found. Create it in Settings → Email Templates.`
+        );
+        closeDepositBalanceEmailModal();
+        return;
+      }
+
+      const clientToList = resolveActiveClientContactToEmails(project);
+      const clientFrom = resolveDepositBalanceClientFrom(settings, project).trim();
+      const teamFrom = resolveDepositBalanceTeamFrom(settings, project).trim();
+      const teamTo = resolveDepositBalanceTeamTo(settings, project).trim();
+
+      if (clientToList.length === 0) {
+        alert(
+          "No client recipients. Tick at least one contact with an email in Client Info."
+        );
+        closeDepositBalanceEmailModal();
+        return;
+      }
+      if (!clientFrom) {
+        alert(
+          `Set From for ${stateCode} under Settings → Email Settings → General → Deposit Balance → Email to Client (${stateCode} column).`
+        );
+        closeDepositBalanceEmailModal();
+        return;
+      }
+      if (!teamTo) {
+        alert(
+          `Set To for ${stateCode} under Settings → Email Settings → General → Deposit Balance → Email to Team (${stateCode} column).`
+        );
+        closeDepositBalanceEmailModal();
+        return;
+      }
+      if (!teamFrom) {
+        alert(
+          `Set From for ${stateCode} under Settings → Email Settings → General → Deposit Balance → Email to Team (${stateCode} column).`
+        );
+        closeDepositBalanceEmailModal();
+        return;
+      }
+
+      const projectForTokens = {
+        ...project,
+        deposit: valuesRef.current.deposit || project?.deposit,
+        project_cost: valuesRef.current.projectCost || project?.project_cost,
+      };
+
+      const clientDraft = {
+        to: clientToList.join(", "),
+        from: clientFrom,
+        subject: replaceDepositBalanceTokens(clientTemplate.subject || "", projectForTokens),
+        body: replaceDepositBalanceTokens(clientTemplate.body || "", projectForTokens),
+      };
+      const internalDraft = {
+        to: teamTo,
+        from: teamFrom,
+        subject: replaceDepositBalanceTokens(internalTemplate.subject || "", projectForTokens),
+        body: replaceDepositBalanceTokens(internalTemplate.body || "", projectForTokens),
+      };
+
+      depositInternalDraftRef.current = internalDraft;
+      loadDepositEmailStepIntoForm(DEPOSIT_EMAIL_STEP_CLIENT, clientDraft, internalDraft);
     } catch (err) {
-      console.error("Error preparing deposit balance email:", err);
-      alert("Failed to prepare email: " + (err.message || err));
+      console.error("Error preparing deposit balance emails:", err);
+      alert("Failed to prepare emails: " + (err.message || err));
+      closeDepositBalanceEmailModal();
     } finally {
       setDepositEmailPreparing(false);
     }
@@ -311,39 +477,63 @@ export default function Admin({ project, onUpdate }) {
         depositEmailBodyRef.current.innerHTML = depositEmailBody;
       }
     }
-  }, [showDepositBalanceEmailModal, depositEmailBody]);
+  }, [showDepositBalanceEmailModal, depositEmailStep, depositEmailBody, depositEmailPreparing]);
+
+  async function sendDepositBalanceEmailDraft({ to, from, subject, body }) {
+    const toAddresses = String(to || "")
+      .split(/[,;]+/)
+      .map((a) => a.trim())
+      .filter((a) => a.length > 0);
+    if (toAddresses.length === 0) {
+      throw new Error("Please enter at least one email address");
+    }
+    if (!from || !String(from).trim()) {
+      throw new Error("From address is required");
+    }
+    await runWithEmailOverlay(async () => {
+      const res = await fetch(`${API_URL}/api/emails/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: toAddresses,
+          from: String(from).trim(),
+          subject,
+          htmlBody: body,
+          projectId: project?.id || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Send failed");
+    });
+  }
 
   async function handleSendDepositBalanceEmail() {
-    const toAddresses = depositEmailTo.split(",").map((a) => a.trim()).filter((a) => a.length > 0);
-    if (toAddresses.length === 0) {
-      alert("Please enter at least one email address");
-      return;
-    }
-    if (!depositEmailFrom || !depositEmailFrom.trim()) {
-      alert("From address is required");
-      return;
-    }
+    if (depositEmailSending) return;
+    setDepositEmailSending(true);
     try {
-      await runWithEmailOverlay(async () => {
-        const res = await fetch(`${API_URL}/api/emails/send`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            to: toAddresses,
-            from: depositEmailFrom,
-            subject: depositEmailSubject,
-            htmlBody: depositEmailBody,
-            projectId: project?.id || undefined,
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || "Send failed");
-        alert(data.message || "Email sent successfully!");
+      await sendDepositBalanceEmailDraft({
+        to: depositEmailTo,
+        from: depositEmailFrom,
+        subject: depositEmailSubject,
+        body: depositEmailBody,
       });
-      setShowDepositBalanceEmailModal(false);
+
+      if (depositEmailStep === DEPOSIT_EMAIL_STEP_CLIENT) {
+        setDepositEmailStep(DEPOSIT_EMAIL_STEP_INTERNAL);
+        loadDepositEmailStepIntoForm(
+          DEPOSIT_EMAIL_STEP_INTERNAL,
+          null,
+          depositInternalDraftRef.current
+        );
+      } else {
+        alert("Both deposit balance emails sent successfully.");
+        closeDepositBalanceEmailModal();
+      }
     } catch (err) {
       console.error("Send deposit balance email error:", err);
       alert(err.message || "Failed to send email.");
+    } finally {
+      setDepositEmailSending(false);
     }
   }
 
@@ -604,10 +794,21 @@ export default function Admin({ project, onUpdate }) {
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Preview & Send Email (Deposit Balance Paid)</h2>
+              <div>
+                <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>
+                  {depositEmailStep === DEPOSIT_EMAIL_STEP_CLIENT
+                    ? "Deposit Balance Paid — Email 1 of 2 (Client)"
+                    : "Deposit Balance Paid — Email 2 of 2 (Internal Team)"}
+                </h2>
+                {depositEmailStep === DEPOSIT_EMAIL_STEP_INTERNAL ? (
+                  <p style={{ margin: "8px 0 0", fontSize: "0.88rem", color: "#32323399" }}>
+                    The client email was sent. Review and send the internal team email.
+                  </p>
+                ) : null}
+              </div>
               <button
                 type="button"
-                onClick={() => setShowDepositBalanceEmailModal(false)}
+                onClick={closeDepositBalanceEmailModal}
                 style={{
                   background: "transparent",
                   border: "none",
@@ -708,7 +909,8 @@ export default function Admin({ project, onUpdate }) {
                 <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
                   <button
                     type="button"
-                    onClick={() => setShowDepositBalanceEmailModal(false)}
+                    onClick={closeDepositBalanceEmailModal}
+                    disabled={depositEmailSending}
                     style={{
                       padding: "10px 20px",
                       fontSize: "1rem",
@@ -717,7 +919,7 @@ export default function Admin({ project, onUpdate }) {
                       background: "transparent",
                       border: `1px solid ${SECTION_GREY}`,
                       borderRadius: "8px",
-                      cursor: "pointer",
+                      cursor: depositEmailSending ? "wait" : "pointer",
                     }}
                   >
                     Cancel
@@ -725,6 +927,7 @@ export default function Admin({ project, onUpdate }) {
                   <button
                     type="button"
                     onClick={handleSendDepositBalanceEmail}
+                    disabled={depositEmailSending}
                     style={{
                       padding: "10px 20px",
                       fontSize: "1rem",
@@ -733,10 +936,14 @@ export default function Admin({ project, onUpdate }) {
                       background: MONUMENT,
                       border: "none",
                       borderRadius: "8px",
-                      cursor: "pointer",
+                      cursor: depositEmailSending ? "wait" : "pointer",
                     }}
                   >
-                    Send Email
+                    {depositEmailSending
+                      ? "Sending…"
+                      : depositEmailStep === DEPOSIT_EMAIL_STEP_CLIENT
+                        ? "Send & Continue"
+                        : "Send Email"}
                   </button>
                 </div>
               </div>
