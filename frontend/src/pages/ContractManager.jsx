@@ -99,6 +99,13 @@ export default function ContractManager() {
   const WATER_AUTHORITY_OPTIONS = ["Not Required", "Barwon Water", "Greater Western Water", "South East Water"];
   const WATER_DECLARATION_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
 
+  function getDrawingsStatusColor(status) {
+    const value = status || "Not Assigned";
+    if (value === "Drawings Complete") return "#33cc33";
+    if (value === "Concept Stage" || value === "Working Drawing Stage") return "#ff9900";
+    return "#cc3333";
+  }
+
   // Get status color
   function getStatusColor(status, fieldName = "") {
     if (status === "Not Required") {
@@ -660,7 +667,7 @@ export default function ContractManager() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 0.5fr",
+                  gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 0.5fr",
                   gap: "16px",
                   padding: "12px 16px",
                   background: MONUMENT,
@@ -675,6 +682,7 @@ export default function ContractManager() {
                 }}
               >
                 <div>Project</div>
+                <div>Drawings Status</div>
                 <div>Contract</div>
                 <div>Supporting Docs</div>
                 <div>Water Authority</div>
@@ -685,6 +693,7 @@ export default function ContractManager() {
                     {/* Project Rows */}
                     {filteredProjects.map((project) => {
                 const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "Unknown Project";
+                const drawingsStatus = getEffectiveValue(project, "drawings_status", "Not Assigned");
                 const contractStatus = getEffectiveValue(project, "contract_status", "Not Sent");
                 const supportingDocsStatus = getEffectiveValue(project, "supporting_documents_status", "Not Sent");
                 const waterAuthority = getEffectiveValue(project, "water_authority", "Not Required");
@@ -724,7 +733,7 @@ export default function ContractManager() {
                     key={project.id}
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 0.5fr",
+                      gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 0.5fr",
                       gap: "16px",
                       padding: "12px 16px",
                       background: WHITE,
@@ -744,6 +753,21 @@ export default function ContractManager() {
                     >
                       {projectName}
                     </Link>
+                    <div
+                      style={{
+                        width: "100%",
+                        padding: "8px 10px",
+                        borderRadius: "6px",
+                        fontSize: "0.9rem",
+                        color: WHITE,
+                        background: getDrawingsStatusColor(drawingsStatus),
+                        fontWeight: 500,
+                        boxSizing: "border-box",
+                        textAlign: "center",
+                      }}
+                    >
+                      {drawingsStatus}
+                    </div>
                     <select
                       value={contractStatus}
                       onChange={(e) => handleStatusChange(project.id, "contract_status", e.target.value)}
