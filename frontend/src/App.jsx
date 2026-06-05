@@ -95,6 +95,7 @@ export default function App() {
             <Route path="/secret-area/level" element={<SecretLevel />} />
             <Route path="/maps" element={<Maps />} />
             <Route path="/maps/recent" element={<MapsRecent />} />
+            <Route path="/maps/sold-projects" element={<Maps />} />
             <Route path="/time-sheet" element={<TimeSheet />} />
             <Route path="/benbox" element={<Navigate to="/maps" replace />} />
             <Route path="/faq" element={<Navigate to="/maps" replace />} />

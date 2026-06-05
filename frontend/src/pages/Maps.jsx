@@ -9,7 +9,12 @@ import shadowUrl from "leaflet/dist/images/marker-shadow.png";
 import logo from "../images/logo.png";
 import { MapBasemapSelector, MapBasemapTileLayer } from "../components/MapBasemapControls";
 import DraggableParcelBoundary from "../components/DraggableParcelBoundary";
-import PlanningOverlaysLayer from "../components/PlanningOverlaysLayer";
+import PlanningOverlaysLayer, {
+  buildInitialPlanningLayerVisibility,
+  overlayLayerKey,
+  PLANNING_VISIBILITY_ZONE,
+} from "../components/PlanningOverlaysLayer";
+import EasementsLayer from "../components/EasementsLayer";
 import {
   BASEMAP_ESRI_IMAGERY,
   BASEMAP_VICMAP_AERIAL,
@@ -174,9 +179,14 @@ export default function Maps() {
   const [parcelNotice, setParcelNotice] = useState("");
   const [activeSearchQuery, setActiveSearchQuery] = useState("");
   const [planningInfo, setPlanningInfo] = useState(null);
+  const [planningZoneGeoJson, setPlanningZoneGeoJson] = useState(null);
   const [planningOverlayGeoJson, setPlanningOverlayGeoJson] = useState(null);
+  const [planningLayerVisibility, setPlanningLayerVisibility] = useState({});
   const [planningLoading, setPlanningLoading] = useState(false);
-  const [showPlanningOverlays, setShowPlanningOverlays] = useState(true);
+  const [easementsInfo, setEasementsInfo] = useState(null);
+  const [easementsGeoJson, setEasementsGeoJson] = useState(null);
+  const [easementsLoading, setEasementsLoading] = useState(false);
+  const [showEasements, setShowEasements] = useState(false);
   const [bulkPins, setBulkPins] = useState([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0, ok: 0, failed: 0 });
@@ -214,7 +224,9 @@ export default function Maps() {
     async (lat, lng, searchState, boundaryGeometry) => {
       if (!isAdmin || searchState !== "VIC") {
         setPlanningInfo(null);
+        setPlanningZoneGeoJson(null);
         setPlanningOverlayGeoJson(null);
+        setPlanningLayerVisibility({});
         return;
       }
 
@@ -234,18 +246,72 @@ export default function Maps() {
         const data = await res.json().catch(() => ({}));
         if (res.ok && data.ok) {
           setPlanningInfo(data);
+          setPlanningZoneGeoJson(data.zoneGeoJson || null);
           setPlanningOverlayGeoJson(data.overlayGeoJson || null);
-          setShowPlanningOverlays(true);
+          setPlanningLayerVisibility(buildInitialPlanningLayerVisibility(data));
         } else {
           setPlanningInfo(null);
+          setPlanningZoneGeoJson(null);
           setPlanningOverlayGeoJson(null);
+          setPlanningLayerVisibility({});
         }
       } catch (err) {
         console.error("[Maps] planning-info fetch failed:", err);
         setPlanningInfo(null);
+        setPlanningZoneGeoJson(null);
         setPlanningOverlayGeoJson(null);
+        setPlanningLayerVisibility({});
       } finally {
         setPlanningLoading(false);
+      }
+    },
+    [isAdmin]
+  );
+
+  const fetchEasementsForSite = useCallback(
+    async (lat, lng, searchState, boundaryGeometry, parcelId) => {
+      if (!isAdmin || searchState !== "VIC") {
+        setEasementsInfo(null);
+        setEasementsGeoJson(null);
+        setShowEasements(false);
+        return;
+      }
+
+      setEasementsLoading(true);
+      try {
+        const envelope = envelopeParamFromGeometry(boundaryGeometry);
+        const res = await fetch("/api/property-easements", {
+          method: "POST",
+          headers: {
+            ...getApiHeaders(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            lat,
+            lng,
+            state: "VIC",
+            parcelId: parcelId || null,
+            envelope: envelope || null,
+            boundary: boundaryGeometry || null,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) {
+          setEasementsInfo(data);
+          setEasementsGeoJson(data.easementsGeoJson || null);
+          setShowEasements((data.count || 0) > 0);
+        } else {
+          setEasementsInfo(null);
+          setEasementsGeoJson(null);
+          setShowEasements(false);
+        }
+      } catch (err) {
+        console.error("[Maps] property-easements fetch failed:", err);
+        setEasementsInfo(null);
+        setEasementsGeoJson(null);
+        setShowEasements(false);
+      } finally {
+        setEasementsLoading(false);
       }
     },
     [isAdmin]
@@ -266,7 +332,12 @@ export default function Maps() {
     setParcelBounds(null);
     setParcelNotice("");
     setPlanningInfo(null);
+    setPlanningZoneGeoJson(null);
     setPlanningOverlayGeoJson(null);
+    setPlanningLayerVisibility({});
+    setEasementsInfo(null);
+    setEasementsGeoJson(null);
+    setShowEasements(false);
     try {
       const params = new URLSearchParams({
         q,
@@ -328,6 +399,13 @@ export default function Maps() {
           setFlyTarget(pos);
         }
         void fetchPlanningForSite(lat, lon, searchState, savedFeature.geometry);
+        void fetchEasementsForSite(
+          lat,
+          lon,
+          searchState,
+          savedFeature.geometry,
+          savedFeature.properties?.parcel_pfi || savedFeature.properties?.parcelId || null
+        );
         return;
       }
 
@@ -342,6 +420,7 @@ export default function Maps() {
       const boundaryController = new AbortController();
       const boundaryTimeout = setTimeout(() => boundaryController.abort(), 25000);
       let planningBoundaryGeometry = null;
+      let parcelIdForEasements = null;
 
       try {
         const parcelRes = await fetch(parcelUrl, {
@@ -392,6 +471,7 @@ export default function Maps() {
           };
           setParcelFeature(feature);
           planningBoundaryGeometry = feature.geometry;
+          parcelIdForEasements = parcelData.parcelId || parcelData.parcelPfi || null;
 
           if (approximate && parcelData.warning) {
             const dist =
@@ -444,6 +524,17 @@ export default function Maps() {
         clearTimeout(boundaryTimeout);
         setParcelLoading(false);
         void fetchPlanningForSite(lat, lon, searchState, planningBoundaryGeometry);
+        if (planningBoundaryGeometry) {
+          window.setTimeout(() => {
+            void fetchEasementsForSite(
+              lat,
+              lon,
+              searchState,
+              planningBoundaryGeometry,
+              parcelIdForEasements
+            );
+          }, 900);
+        }
       }
     } catch (e) {
       setMarker(null);
@@ -457,7 +548,7 @@ export default function Maps() {
     } finally {
       setLoading(false);
     }
-  }, [query, isAdmin, fetchPlanningForSite]);
+  }, [query, isAdmin, fetchPlanningForSite, fetchEasementsForSite]);
 
   const onSearch = useCallback(() => {
     void runSearch();
@@ -478,10 +569,24 @@ export default function Maps() {
       }
       if (marker?.length === 2) {
         void fetchPlanningForSite(marker[0], marker[1], "VIC", feature.geometry);
+        void fetchEasementsForSite(
+          marker[0],
+          marker[1],
+          "VIC",
+          feature.geometry,
+          feature.properties?.parcel_pfi || feature.properties?.parcelId || null
+        );
       }
     },
-    [activeSearchQuery, marker, fetchPlanningForSite]
+    [activeSearchQuery, marker, fetchPlanningForSite, fetchEasementsForSite]
   );
+
+  const togglePlanningLayer = useCallback((layerKey) => {
+    setPlanningLayerVisibility((prev) => ({
+      ...prev,
+      [layerKey]: !prev[layerKey],
+    }));
+  }, []);
 
   const onLoadBulkProjects = useCallback(async (selection) => {
     setBulkLoading(true);
@@ -661,7 +766,12 @@ export default function Maps() {
           flexWrap: "wrap",
         }}
       >
-        <MapsSidebar activeView="map" />
+        <MapsSidebar
+          activeView={location.pathname === "/maps/sold-projects" ? "sold" : "map"}
+          onLoadBulkProjects={onLoadBulkProjects}
+          bulkLoading={bulkLoading}
+          bulkSelection={bulkSelection}
+        />
 
         <div
           className="content-section"
@@ -732,35 +842,6 @@ export default function Maps() {
             >
               {loading ? "Searching…" : parcelLoading ? "Loading boundary…" : "Search"}
             </button>
-            {[
-              { key: "VIC", label: "VIC Projects" },
-              { key: "QLD", label: "QLD Projects" },
-              { key: "ALL", label: "ALL Projects" },
-            ].map(({ key: selKey, label }) => {
-              const busy = bulkLoading && bulkSelection === selKey;
-              return (
-                <button
-                  key={selKey}
-                  type="button"
-                  onClick={() => onLoadBulkProjects(selKey)}
-                  disabled={bulkLoading}
-                  style={{
-                    padding: "12px 22px",
-                    fontSize: "1rem",
-                    fontWeight: 600,
-                    borderRadius: "10px",
-                    border: `1px solid ${EXPLORER_BORDER}`,
-                    background: bulkLoading ? "#e0e0e0" : WHITE,
-                    color: MONUMENT,
-                    cursor: bulkLoading ? "not-allowed" : "pointer",
-                    letterSpacing: "0.3px",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {busy ? `Loading ${bulkSelectionLabel(selKey)}…` : label}
-                </button>
-              );
-            })}
           </div>
 
           {error && (
@@ -796,6 +877,73 @@ export default function Maps() {
             </div>
           )}
 
+          {isAdmin && (easementsLoading || easementsInfo) && !error && (
+            <div
+              style={{
+                padding: "12px 14px",
+                borderRadius: "10px",
+                background: "#ede9fe",
+                border: "1px solid #c4b5fd",
+                color: MONUMENT,
+                fontSize: "0.9rem",
+              }}
+            >
+              {easementsLoading ? (
+                <div>Loading easements…</div>
+              ) : (
+                <>
+                  <div style={{ marginBottom: "8px" }}>
+                    <strong style={{ fontSize: "0.95rem" }}>Easements (Vicmap)</strong>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "0.82rem",
+                      color: "#5b21b6",
+                      marginBottom: "10px",
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    {easementsInfo.warning}
+                  </div>
+                  {easementsInfo.count > 0 ? (
+                    <>
+                      <div style={{ marginBottom: "8px", lineHeight: 1.5 }}>
+                        <span style={{ color: "#555" }}>Found: </span>
+                        {easementsInfo.count} mapped easement
+                        {easementsInfo.count === 1 ? "" : "s"}
+                        {easementsInfo.confidence === "approximate"
+                          ? " (near title — expanded search)"
+                          : easementsInfo.confidence === "point"
+                            ? " (near pin — no boundary)"
+                            : " (intersecting title boundary)"}
+                      </div>
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          fontSize: "0.85rem",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={showEasements}
+                          onChange={(e) => setShowEasements(e.target.checked)}
+                        />
+                        Show easements on map
+                      </label>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: "0.85rem", color: "#666" }}>
+                      {easementsInfo.message || "No mapped easements found."}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           {isAdmin && (planningLoading || planningInfo) && !error && (
             <div
               style={{
@@ -811,38 +959,71 @@ export default function Maps() {
                 <div>Loading planning information…</div>
               ) : (
                 <>
-                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+                  <div style={{ marginBottom: "8px" }}>
                     <strong style={{ fontSize: "0.95rem" }}>Planning (Vicmap)</strong>
-                    {planningOverlayGeoJson?.features?.length > 0 && (
-                      <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.85rem", cursor: "pointer" }}>
+                  </div>
+                  <div style={{ lineHeight: 1.5, marginBottom: "10px" }}>
+                    <span style={{ color: "#555" }}>Council: </span>
+                    {planningInfo.council || "—"}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    <span style={{ color: "#555", fontSize: "0.85rem" }}>Show on map:</span>
+                    {planningInfo.planningZone && (
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: "8px",
+                          fontSize: "0.85rem",
+                          cursor: "pointer",
+                        }}
+                      >
                         <input
                           type="checkbox"
-                          checked={showPlanningOverlays}
-                          onChange={(e) => setShowPlanningOverlays(e.target.checked)}
+                          checked={planningLayerVisibility[PLANNING_VISIBILITY_ZONE] === true}
+                          onChange={() => togglePlanningLayer(PLANNING_VISIBILITY_ZONE)}
+                          style={{ marginTop: "3px", flexShrink: 0 }}
                         />
-                        Show overlays on map
+                        <span>
+                          <span style={{ color: "#166534", fontWeight: 600 }}>Zone: </span>
+                          {planningInfo.planningZone.code}
+                          {planningInfo.planningZone.description
+                            ? ` — ${planningInfo.planningZone.description}`
+                            : ""}
+                        </span>
                       </label>
                     )}
-                  </div>
-                  <div style={{ lineHeight: 1.5 }}>
-                    <div>
-                      <span style={{ color: "#555" }}>Council: </span>
-                      {planningInfo.council || "—"}
-                    </div>
-                    <div>
-                      <span style={{ color: "#555" }}>Zone: </span>
-                      {planningInfo.planningZone?.code
-                        ? `${planningInfo.planningZone.code}${planningInfo.planningZone.description ? ` — ${planningInfo.planningZone.description}` : ""}`
-                        : "—"}
-                    </div>
-                    <div style={{ marginTop: "6px" }}>
-                      <span style={{ color: "#555" }}>Overlays: </span>
-                      {planningInfo.overlays?.length
-                        ? planningInfo.overlays
-                            .map((o) => (o.code && o.description ? `${o.code} — ${o.description}` : o.code || o.description))
-                            .join("; ")
-                        : "None"}
-                    </div>
+                    {(planningInfo.overlays || []).map((overlay) => {
+                      const key = overlayLayerKey(overlay);
+                      if (!key) return null;
+                      return (
+                        <label
+                          key={key}
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: "8px",
+                            fontSize: "0.85rem",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={planningLayerVisibility[key] === true}
+                            onChange={() => togglePlanningLayer(key)}
+                            style={{ marginTop: "3px", flexShrink: 0 }}
+                          />
+                          <span>
+                            {overlay.code && overlay.description
+                              ? `${overlay.code} — ${overlay.description}`
+                              : overlay.code || overlay.description}
+                          </span>
+                        </label>
+                      );
+                    })}
+                    {!planningInfo.planningZone && !(planningInfo.overlays || []).length && (
+                      <span style={{ fontSize: "0.85rem", color: "#666" }}>No zone or overlays</span>
+                    )}
                   </div>
                 </>
               )}
@@ -883,8 +1064,9 @@ export default function Maps() {
               )}
               {isAdmin && (
                 <PlanningOverlaysLayer
+                  zoneGeoJson={planningZoneGeoJson}
                   overlayGeoJson={planningOverlayGeoJson}
-                  visible={showPlanningOverlays}
+                  layerVisibility={planningLayerVisibility}
                 />
               )}
               {marker && (
@@ -901,6 +1083,9 @@ export default function Maps() {
                   </Popup>
                 </Marker>
               ))}
+              {isAdmin && (
+                <EasementsLayer easementsGeoJson={easementsGeoJson} visible={showEasements} />
+              )}
               <MapFlyTo position={flyTarget} zoom={SEARCH_ZOOM} enabled={!parcelBounds && !bulkBounds} />
               <MapFitBounds bounds={parcelBounds || bulkBounds} />
             </MapContainer>
@@ -921,7 +1106,8 @@ export default function Maps() {
             Imagery: Vicmap Aerial (default for VIC), Esri World Imagery, or Nearmap when configured.
             Address search: OpenStreetMap Nominatim (please use sparingly). VIC title boundaries: Vicmap
             cadastral parcels matched to the blue search pin (contains-point first; nearest-edge fallback
-            marked approximate). Planning: Vicmap Planning zones and overlays (purple on map). Default view: greater Melbourne, Victoria.
+            marked approximate). Planning: Vicmap zone (green) and overlays (purple / light blue) — toggle each layer in the planning panel.
+            Easements: Vicmap Property (purple lines/polygons) — toggle in the easements panel; indicative only. Default view: greater Melbourne, Victoria.
           </p>
         </div>
       </div>

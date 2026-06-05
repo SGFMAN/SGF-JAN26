@@ -240,7 +240,7 @@ async function lookupPlanningInfo({ state, lat, lng, envelope }) {
     zoneFeatures = await fetchFeaturesByObjectIds(
       LAYER_PLAN_ZONE,
       zoneIds.slice(0, 1),
-      false,
+      true,
       log,
       deadlineMs
     );
@@ -294,6 +294,24 @@ async function lookupPlanningInfo({ state, lat, lng, envelope }) {
         }
       : null;
 
+  const zoneGeoJson =
+    zoneFeatures[0]?.geometry
+      ? {
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              geometry: zoneFeatures[0].geometry,
+              properties: {
+                zone_code: zoneFeatures[0].properties?.zone_code || null,
+                zone_description: zoneFeatures[0].properties?.zone_description || null,
+                scheme_code: zoneFeatures[0].properties?.scheme_code || null,
+              },
+            },
+          ],
+        }
+      : null;
+
   log.zoneCount = zone ? 1 : 0;
   log.overlayCount = overlays.length;
   log.durationMs = Date.now() - started;
@@ -313,6 +331,7 @@ async function lookupPlanningInfo({ state, lat, lng, envelope }) {
       overlays,
       overlayCodes: overlays.map((o) => o.code).filter(Boolean),
       overlayGeoJson,
+      zoneGeoJson,
       source: "VIC_VICMAP_PLANNING",
     },
     log,
@@ -327,6 +346,7 @@ function formatPlanningInfoResponse(hit) {
     overlays: hit.overlays,
     overlayCodes: hit.overlayCodes,
     overlayGeoJson: hit.overlayGeoJson,
+    zoneGeoJson: hit.zoneGeoJson,
     source: hit.source,
   };
 }

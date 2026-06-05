@@ -31,6 +31,15 @@ const {
   formatPlanningInfoResponse,
 } = require("./mapsPlanningLookup");
 const {
+  normalizeEasementsState,
+  parseEasementsLatLng,
+  parseEnvelope: parseEasementsEnvelope,
+  parseBoundaryGeometry,
+  normalizeBoundaryInput,
+  lookupPropertyEasements,
+  formatPropertyEasementsResponse,
+} = require("./mapsEasementsLookup");
+const {
   ensureProjectAccessTokens,
   isLegacyNumericProjectId,
   resolveProjectIdFromAccessToken,
@@ -2579,6 +2588,73 @@ async function handlePlanningInfoRequest(req, res) {
 }
 
 app.get("/api/planning-info", handlePlanningInfoRequest);
+
+// --- Victorian property easements (Vicmap Property Easements FeatureServer) ---
+async function handlePropertyEasementsRequest(req, res) {
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) {
+    return res.status(403).json({ ok: false, error: "Admin access required" });
+  }
+
+  const input =
+    req.method === "POST" && req.body && typeof req.body === "object" ? req.body : req.query;
+
+  const parsed = parseEasementsLatLng(input);
+  if (parsed.error) {
+    return res.status(400).json({ ok: false, error: parsed.error });
+  }
+  const { lat, lng } = parsed;
+  const state = normalizeEasementsState(input.state);
+
+  const envelopeParsed = parseEasementsEnvelope(input);
+  if (envelopeParsed?.error) {
+    return res.status(400).json({ ok: false, error: envelopeParsed.error });
+  }
+  const envelope = typeof envelopeParsed === "string" ? envelopeParsed : null;
+
+  const boundaryParsed = normalizeBoundaryInput(input.boundary ?? input.boundaryGeometry);
+  if (boundaryParsed?.error) {
+    return res.status(400).json({ ok: false, error: boundaryParsed.error });
+  }
+  const boundaryGeometry =
+    boundaryParsed && typeof boundaryParsed === "object" && boundaryParsed.type
+      ? boundaryParsed
+      : null;
+
+  const parcelId =
+    input.parcelId != null ? String(input.parcelId).trim() || null : null;
+
+  try {
+    const result = await lookupPropertyEasements({
+      state,
+      lat,
+      lng,
+      envelope,
+      boundaryGeometry,
+      parcelId,
+    });
+
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        ok: false,
+        error: result.error,
+        state,
+      });
+    }
+
+    return res.json(formatPropertyEasementsResponse(result.hit));
+  } catch (e) {
+    console.error("[property-easements] lookup error:", e);
+    return res.status(502).json({
+      ok: false,
+      error: e.message || "Easements service unavailable",
+      state,
+    });
+  }
+}
+
+app.get("/api/property-easements", handlePropertyEasementsRequest);
+app.post("/api/property-easements", handlePropertyEasementsRequest);
 
 // --- Map basemap config & Nearmap tile proxy (keeps API key server-side) ---
 const NEARMAP_API_KEY = String(
