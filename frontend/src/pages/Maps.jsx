@@ -1,13 +1,31 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import L from "leaflet";
-import { GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+import { MapContainer, Marker, Popup, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import iconUrl from "leaflet/dist/images/marker-icon.png";
 import iconRetinaUrl from "leaflet/dist/images/marker-icon-2x.png";
 import shadowUrl from "leaflet/dist/images/marker-shadow.png";
 import logo from "../images/logo.png";
+import { MapBasemapSelector, MapBasemapTileLayer } from "../components/MapBasemapControls";
+import DraggableParcelBoundary from "../components/DraggableParcelBoundary";
+import PlanningOverlaysLayer from "../components/PlanningOverlaysLayer";
+import {
+  BASEMAP_ESRI_IMAGERY,
+  BASEMAP_VICMAP_AERIAL,
+  basemapIdForPropertyState,
+  DEFAULT_BASEMAP_ID,
+  fetchMapBasemapConfig,
+  MAP_MAX_ZOOM,
+  resolveBasemapId,
+} from "../utils/mapBasemaps";
+import MapsSidebar from "../components/MapsSidebar";
 import { getApiHeaders, isUserAdmin } from "../utils/auth";
+import {
+  addRecentMapSearch,
+  getSavedBoundaryForRecentQuery,
+  saveBoundaryForRecentQuery,
+} from "../utils/mapsRecentSearches";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -24,16 +42,6 @@ const STATE_PIN_COLOURS = {
   VIC: "#1f6feb",
   QLD: "#d1242f",
 };
-
-const PARCEL_STYLE = {
-  color: "#FFD700",
-  weight: 3,
-  fillColor: "#FFD700",
-  fillOpacity: 0.08,
-};
-
-const ESRI_IMAGERY_TEMPLATE =
-  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 
 const NOMINATIM_SEARCH =
   "https://nominatim.openstreetmap.org/search";
@@ -140,6 +148,19 @@ function boundsFromGeoJsonFeature(feature) {
   }
 }
 
+/** WGS84 envelope west,south,east,north for planning overlay queries. */
+function envelopeParamFromGeometry(geometry) {
+  if (!geometry) return null;
+  try {
+    const layer = L.geoJSON({ type: "Feature", geometry });
+    const bounds = layer.getBounds();
+    if (!bounds?.isValid()) return null;
+    return [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()].join(",");
+  } catch {
+    return null;
+  }
+}
+
 export default function Maps() {
   const [query, setQuery] = useState("");
   const [parcelLoading, setParcelLoading] = useState(false);
@@ -151,6 +172,11 @@ export default function Maps() {
   const [parcelFeature, setParcelFeature] = useState(null);
   const [parcelBounds, setParcelBounds] = useState(null);
   const [parcelNotice, setParcelNotice] = useState("");
+  const [activeSearchQuery, setActiveSearchQuery] = useState("");
+  const [planningInfo, setPlanningInfo] = useState(null);
+  const [planningOverlayGeoJson, setPlanningOverlayGeoJson] = useState(null);
+  const [planningLoading, setPlanningLoading] = useState(false);
+  const [showPlanningOverlays, setShowPlanningOverlays] = useState(true);
   const [bulkPins, setBulkPins] = useState([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0, ok: 0, failed: 0 });
@@ -159,22 +185,88 @@ export default function Maps() {
   const [bulkCurrent, setBulkCurrent] = useState("");
   const [bulkSelection, setBulkSelection] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [basemapConfig, setBasemapConfig] = useState({
+    nearmapEnabled: false,
+    defaultBasemapId: DEFAULT_BASEMAP_ID,
+  });
+  const [basemapId, setBasemapId] = useState(DEFAULT_BASEMAP_ID);
+  const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     (async () => setIsAdmin(await isUserAdmin()))();
   }, []);
 
-  const onSearch = useCallback(async () => {
-    const q = query.trim();
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const config = await fetchMapBasemapConfig();
+      if (cancelled) return;
+      setBasemapConfig(config);
+      setBasemapId((prev) => resolveBasemapId(prev, config));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const fetchPlanningForSite = useCallback(
+    async (lat, lng, searchState, boundaryGeometry) => {
+      if (!isAdmin || searchState !== "VIC") {
+        setPlanningInfo(null);
+        setPlanningOverlayGeoJson(null);
+        return;
+      }
+
+      setPlanningLoading(true);
+      try {
+        const params = new URLSearchParams({
+          lat: String(lat),
+          lng: String(lng),
+          state: "VIC",
+        });
+        const envelope = envelopeParamFromGeometry(boundaryGeometry);
+        if (envelope) params.set("envelope", envelope);
+
+        const res = await fetch(`/api/planning-info?${params.toString()}`, {
+          headers: getApiHeaders(),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) {
+          setPlanningInfo(data);
+          setPlanningOverlayGeoJson(data.overlayGeoJson || null);
+          setShowPlanningOverlays(true);
+        } else {
+          setPlanningInfo(null);
+          setPlanningOverlayGeoJson(null);
+        }
+      } catch (err) {
+        console.error("[Maps] planning-info fetch failed:", err);
+        setPlanningInfo(null);
+        setPlanningOverlayGeoJson(null);
+      } finally {
+        setPlanningLoading(false);
+      }
+    },
+    [isAdmin]
+  );
+
+  const runSearch = useCallback(async (searchQueryOverride) => {
+    const q = (searchQueryOverride != null ? String(searchQueryOverride) : query).trim();
     if (!q) {
       setError("Enter an address to search.");
       return;
+    }
+    if (searchQueryOverride != null) {
+      setQuery(q);
     }
     setLoading(true);
     setError(null);
     setParcelFeature(null);
     setParcelBounds(null);
     setParcelNotice("");
+    setPlanningInfo(null);
+    setPlanningOverlayGeoJson(null);
     try {
       const params = new URLSearchParams({
         q,
@@ -197,6 +289,7 @@ export default function Maps() {
         setMarker(null);
         setFlyTarget(null);
         setResultLabel("");
+        setActiveSearchQuery("");
         setError("No results found for that address. Try a different spelling or add suburb / state.");
         return;
       }
@@ -212,12 +305,32 @@ export default function Maps() {
       setResultLabel(label);
       setFlyTarget(pos);
       setLoading(false);
+      setBasemapId(basemapIdForPropertyState(inferStateFromNominatimHit(hit)));
+      addRecentMapSearch({ query: q, label });
+      setActiveSearchQuery(q);
 
       if (!isAdmin) {
         return;
       }
 
       const searchState = inferStateFromNominatimHit(hit);
+
+      const savedFeature = getSavedBoundaryForRecentQuery(q);
+      if (savedFeature) {
+        setParcelFeature(savedFeature);
+        setParcelNotice("");
+        const bounds = boundsFromGeoJsonFeature(savedFeature);
+        if (bounds) {
+          setParcelBounds(bounds);
+          setFlyTarget(null);
+        } else {
+          setParcelBounds(null);
+          setFlyTarget(pos);
+        }
+        void fetchPlanningForSite(lat, lon, searchState, savedFeature.geometry);
+        return;
+      }
+
       console.log("[Maps] search pin:", { lat, lng: lon, state: searchState, leaflet: [lat, lon] });
 
       const parcelParams = parcelQueryParamsForPin(lat, lon, searchState, label);
@@ -228,6 +341,7 @@ export default function Maps() {
 
       const boundaryController = new AbortController();
       const boundaryTimeout = setTimeout(() => boundaryController.abort(), 25000);
+      let planningBoundaryGeometry = null;
 
       try {
         const parcelRes = await fetch(parcelUrl, {
@@ -264,6 +378,7 @@ export default function Maps() {
             setParcelBounds(null);
             setParcelNotice("Title boundary not available.");
             setFlyTarget(pos);
+            void fetchPlanningForSite(lat, lon, searchState, null);
             return;
           }
 
@@ -276,6 +391,7 @@ export default function Maps() {
             },
           };
           setParcelFeature(feature);
+          planningBoundaryGeometry = feature.geometry;
 
           if (approximate && parcelData.warning) {
             const dist =
@@ -327,6 +443,7 @@ export default function Maps() {
       } finally {
         clearTimeout(boundaryTimeout);
         setParcelLoading(false);
+        void fetchPlanningForSite(lat, lon, searchState, planningBoundaryGeometry);
       }
     } catch (e) {
       setMarker(null);
@@ -335,15 +452,45 @@ export default function Maps() {
       setParcelFeature(null);
       setParcelBounds(null);
       setParcelNotice("");
+      setActiveSearchQuery("");
       setError(e.message || "Search failed.");
     } finally {
       setLoading(false);
     }
-  }, [query, isAdmin]);
+  }, [query, isAdmin, fetchPlanningForSite]);
+
+  const onSearch = useCallback(() => {
+    void runSearch();
+  }, [runSearch]);
+
+  useEffect(() => {
+    const searchQuery = location.state?.searchQuery;
+    if (!searchQuery) return;
+    navigate("/maps", { replace: true, state: {} });
+    void runSearch(String(searchQuery));
+  }, [location.state?.searchQuery, navigate, runSearch]);
+
+  const onParcelFeatureChange = useCallback(
+    (feature) => {
+      setParcelFeature(feature);
+      if (activeSearchQuery) {
+        saveBoundaryForRecentQuery(activeSearchQuery, feature);
+      }
+      if (marker?.length === 2) {
+        void fetchPlanningForSite(marker[0], marker[1], "VIC", feature.geometry);
+      }
+    },
+    [activeSearchQuery, marker, fetchPlanningForSite]
+  );
 
   const onLoadBulkProjects = useCallback(async (selection) => {
     setBulkLoading(true);
     setBulkSelection(selection);
+    if (selection === "VIC") {
+      setBasemapId(BASEMAP_VICMAP_AERIAL);
+    } else if (selection === "QLD") {
+      setBasemapId(BASEMAP_ESRI_IMAGERY);
+    }
     setError(null);
     setBulkPins([]);
     setBulkBounds(null);
@@ -514,45 +661,7 @@ export default function Maps() {
           flexWrap: "wrap",
         }}
       >
-        <div
-          className="sidebar-menu"
-          style={{
-            background: SECTION_GREY,
-            borderRadius: "16px",
-            width: "200px",
-            minWidth: "200px",
-            minHeight: "520px",
-            boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
-            padding: "32px 12px",
-            boxSizing: "border-box",
-            flexShrink: 0,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "stretch",
-            gap: "18px",
-            color: MONUMENT,
-          }}
-        >
-          <div style={{ flex: 1 }} />
-          <Link
-            to="/projects"
-            style={{
-              background: WHITE,
-              color: MONUMENT,
-              border: "none",
-              borderRadius: "10px",
-              padding: "13px 8px",
-              fontSize: "1.05rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              display: "block",
-            }}
-          >
-            ← Back to Main
-          </Link>
-        </div>
+        <MapsSidebar activeView="map" />
 
         <div
           className="content-section"
@@ -687,6 +796,59 @@ export default function Maps() {
             </div>
           )}
 
+          {isAdmin && (planningLoading || planningInfo) && !error && (
+            <div
+              style={{
+                padding: "12px 14px",
+                borderRadius: "10px",
+                background: "#f3e8ff",
+                border: "1px solid #d8b4fe",
+                color: MONUMENT,
+                fontSize: "0.9rem",
+              }}
+            >
+              {planningLoading ? (
+                <div>Loading planning information…</div>
+              ) : (
+                <>
+                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+                    <strong style={{ fontSize: "0.95rem" }}>Planning (Vicmap)</strong>
+                    {planningOverlayGeoJson?.features?.length > 0 && (
+                      <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.85rem", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={showPlanningOverlays}
+                          onChange={(e) => setShowPlanningOverlays(e.target.checked)}
+                        />
+                        Show overlays on map
+                      </label>
+                    )}
+                  </div>
+                  <div style={{ lineHeight: 1.5 }}>
+                    <div>
+                      <span style={{ color: "#555" }}>Council: </span>
+                      {planningInfo.council || "—"}
+                    </div>
+                    <div>
+                      <span style={{ color: "#555" }}>Zone: </span>
+                      {planningInfo.planningZone?.code
+                        ? `${planningInfo.planningZone.code}${planningInfo.planningZone.description ? ` — ${planningInfo.planningZone.description}` : ""}`
+                        : "—"}
+                    </div>
+                    <div style={{ marginTop: "6px" }}>
+                      <span style={{ color: "#555" }}>Overlays: </span>
+                      {planningInfo.overlays?.length
+                        ? planningInfo.overlays
+                            .map((o) => (o.code && o.description ? `${o.code} — ${o.description}` : o.code || o.description))
+                            .join("; ")
+                        : "None"}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           <div
             style={{
               flex: "1 1 auto",
@@ -699,24 +861,30 @@ export default function Maps() {
               background: "#1a1a1a",
             }}
           >
+            <MapBasemapSelector
+              basemapId={basemapId}
+              onBasemapIdChange={setBasemapId}
+              basemapConfig={basemapConfig}
+            />
             <MapContainer
               center={DEFAULT_CENTER}
               zoom={DEFAULT_ZOOM}
+              maxZoom={MAP_MAX_ZOOM}
               scrollWheelZoom
               style={{ height: "100%", width: "100%", borderRadius: "14px" }}
               zoomControl
             >
-              <TileLayer
-                attribution='&copy; <a href="https://www.esri.com/">Esri</a>, Maxar, Earthstar Geographics &amp; contributors | Geocoding &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                url={ESRI_IMAGERY_TEMPLATE}
-                maxNativeZoom={19}
-                maxZoom={20}
-              />
+              <MapBasemapTileLayer basemapId={basemapId} />
               {isAdmin && parcelFeature && (
-                <GeoJSON
-                  key={JSON.stringify(parcelFeature.geometry?.coordinates)}
-                  data={parcelFeature}
-                  style={PARCEL_STYLE}
+                <DraggableParcelBoundary
+                  feature={parcelFeature}
+                  onFeatureChange={onParcelFeatureChange}
+                />
+              )}
+              {isAdmin && (
+                <PlanningOverlaysLayer
+                  overlayGeoJson={planningOverlayGeoJson}
+                  visible={showPlanningOverlays}
                 />
               )}
               {marker && (
@@ -750,9 +918,10 @@ export default function Maps() {
           )}
 
           <p style={{ margin: 0, fontSize: "0.8rem", color: "#555", lineHeight: 1.45 }}>
-            Satellite imagery: Esri World Imagery. Address search: OpenStreetMap Nominatim (please use
-            sparingly). VIC title boundaries: Vicmap cadastral parcels matched to the blue search pin
-            (contains-point first; nearest-edge fallback marked approximate). Default view: greater Melbourne, Victoria.
+            Imagery: Vicmap Aerial (default for VIC), Esri World Imagery, or Nearmap when configured.
+            Address search: OpenStreetMap Nominatim (please use sparingly). VIC title boundaries: Vicmap
+            cadastral parcels matched to the blue search pin (contains-point first; nearest-edge fallback
+            marked approximate). Planning: Vicmap Planning zones and overlays (purple on map). Default view: greater Melbourne, Victoria.
           </p>
         </div>
       </div>

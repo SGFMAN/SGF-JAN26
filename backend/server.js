@@ -24,6 +24,13 @@ const {
   formatPropertyBoundaryResponse,
 } = require("./mapsParcelLookup");
 const {
+  normalizePlanningState,
+  parsePlanningLatLng,
+  parseEnvelope,
+  lookupPlanningInfo,
+  formatPlanningInfoResponse,
+} = require("./mapsPlanningLookup");
+const {
   ensureProjectAccessTokens,
   isLegacyNumericProjectId,
   resolveProjectIdFromAccessToken,
@@ -2520,6 +2527,103 @@ async function handlePropertyBoundaryRequest(req, res) {
 
 app.get("/api/property-boundary", handlePropertyBoundaryRequest);
 app.get("/api/maps/parcel", handlePropertyBoundaryRequest);
+
+// --- Victorian planning scheme info (Vicmap Planning FeatureServer) ---
+async function handlePlanningInfoRequest(req, res) {
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) {
+    return res.status(403).json({ ok: false, error: "Admin access required" });
+  }
+
+  const parsed = parsePlanningLatLng(req.query);
+  if (parsed.error) {
+    return res.status(400).json({ ok: false, error: parsed.error });
+  }
+  const { lat, lng } = parsed;
+  const state = normalizePlanningState(req.query.state);
+
+  const envelopeParsed = parseEnvelope(req.query);
+  if (envelopeParsed?.error) {
+    return res.status(400).json({ ok: false, error: envelopeParsed.error });
+  }
+  const envelope = typeof envelopeParsed === "string" ? envelopeParsed : null;
+
+  try {
+    const result = await lookupPlanningInfo({ state, lat, lng, envelope });
+
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        ok: false,
+        error: result.error,
+        state,
+      });
+    }
+
+    if (!result.hit) {
+      return res.status(404).json({
+        ok: false,
+        error: "Planning information not available.",
+        state,
+      });
+    }
+
+    return res.json(formatPlanningInfoResponse(result.hit));
+  } catch (e) {
+    console.error("[planning-info] lookup error:", e);
+    return res.status(502).json({
+      ok: false,
+      error: e.message || "Planning service unavailable",
+      state,
+    });
+  }
+}
+
+app.get("/api/planning-info", handlePlanningInfoRequest);
+
+// --- Map basemap config & Nearmap tile proxy (keeps API key server-side) ---
+const NEARMAP_API_KEY = String(
+  process.env.NEARMAP_API_KEY || process.env.REACT_APP_NEARMAP_API_KEY || ""
+).trim();
+
+app.get("/api/maps/basemap-config", (_req, res) => {
+  res.json({
+    nearmapEnabled: Boolean(NEARMAP_API_KEY),
+    defaultBasemapId: "vicmap-aerial",
+  });
+});
+
+app.get("/api/maps/nearmap-tiles/:z/:x/:y.jpg", async (req, res) => {
+  if (!NEARMAP_API_KEY) {
+    return res.status(404).json({ error: "Nearmap not configured" });
+  }
+  const z = Number.parseInt(req.params.z, 10);
+  const x = Number.parseInt(req.params.x, 10);
+  const y = Number.parseInt(req.params.y, 10);
+  if (!Number.isFinite(z) || !Number.isFinite(x) || !Number.isFinite(y)) {
+    return res.status(400).json({ error: "Invalid tile coordinates" });
+  }
+  if (z < 0 || z > 24) {
+    return res.status(400).json({ error: "Invalid zoom" });
+  }
+
+  const upstream = `https://api.nearmap.com/tiles/v3/Vert/${z}/${x}/${y}.jpg?apikey=${encodeURIComponent(NEARMAP_API_KEY)}`;
+  try {
+    const upstreamRes = await fetch(upstream, {
+      headers: { Accept: "image/*" },
+    });
+    if (!upstreamRes.ok) {
+      return res.status(upstreamRes.status).end();
+    }
+    const contentType = upstreamRes.headers.get("content-type") || "image/jpeg";
+    res.set("Content-Type", contentType);
+    res.set("Cache-Control", "public, max-age=86400");
+    const body = Buffer.from(await upstreamRes.arrayBuffer());
+    return res.send(body);
+  } catch (e) {
+    console.error("[nearmap-tiles] proxy error:", e.message || e);
+    return res.status(502).json({ error: "Nearmap tile proxy failed" });
+  }
+});
 
 // Geocode one project and persist project_lat/project_lng (only if missing unless force=true)
 app.post("/api/projects/:id/geocode", async (req, res) => {

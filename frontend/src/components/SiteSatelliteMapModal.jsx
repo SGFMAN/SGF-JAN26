@@ -1,17 +1,22 @@
 import React, { useCallback, useEffect, useState } from "react";
 import L from "leaflet";
-import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+import { MapContainer, Marker, Popup, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import iconUrl from "leaflet/dist/images/marker-icon.png";
 import iconRetinaUrl from "leaflet/dist/images/marker-icon-2x.png";
 import shadowUrl from "leaflet/dist/images/marker-shadow.png";
+import { MapBasemapSelector, MapBasemapTileLayer } from "./MapBasemapControls";
+import {
+  basemapIdForPropertyState,
+  DEFAULT_BASEMAP_ID,
+  fetchMapBasemapConfig,
+  MAP_MAX_ZOOM,
+  resolveBasemapId,
+} from "../utils/mapBasemaps";
 
 const DEFAULT_CENTER = [-37.8136, 144.9631];
 const DEFAULT_ZOOM = 11;
 const RESULT_ZOOM = 18;
-
-const ESRI_IMAGERY_TEMPLATE =
-  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 
 const NOMINATIM_SEARCH = "https://nominatim.openstreetmap.org/search";
 
@@ -52,12 +57,39 @@ function MapResizeOnOpen({ isActive }) {
   return null;
 }
 
+function inferStateFromNominatimHit(hit) {
+  const addr = hit?.address || {};
+  const raw = String(addr.state || addr.region || "").trim().toUpperCase();
+  if (raw.includes("QUEENSLAND") || raw === "QLD") return "QLD";
+  if (raw.includes("VICTORIA") || raw === "VIC") return "VIC";
+  return "VIC";
+}
+
 export default function SiteSatelliteMapModal({ open, onClose, addressQuery }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [markerPos, setMarkerPos] = useState(null);
   const [popupLabel, setPopupLabel] = useState("");
   const [flyTarget, setFlyTarget] = useState(null);
+  const [basemapConfig, setBasemapConfig] = useState({
+    nearmapEnabled: false,
+    defaultBasemapId: DEFAULT_BASEMAP_ID,
+  });
+  const [basemapId, setBasemapId] = useState(DEFAULT_BASEMAP_ID);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      const config = await fetchMapBasemapConfig();
+      if (cancelled) return;
+      setBasemapConfig(config);
+      setBasemapId((prev) => resolveBasemapId(prev, config));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   const fetchGeocode = useCallback(async (q) => {
     const query = q.trim();
@@ -103,6 +135,7 @@ export default function SiteSatelliteMapModal({ open, onClose, addressQuery }) {
       setMarkerPos(pos);
       setFlyTarget(pos);
       setPopupLabel(hit.display_name || query);
+      setBasemapId(basemapIdForPropertyState(inferStateFromNominatimHit(hit)));
     } catch (e) {
       setError(e.message || "Lookup failed.");
     } finally {
@@ -253,19 +286,20 @@ export default function SiteSatelliteMapModal({ open, onClose, addressQuery }) {
             background: "#1a1a1a",
           }}
         >
+          <MapBasemapSelector
+            basemapId={basemapId}
+            onBasemapIdChange={setBasemapId}
+            basemapConfig={basemapConfig}
+          />
           <MapContainer
             center={DEFAULT_CENTER}
             zoom={DEFAULT_ZOOM}
+            maxZoom={MAP_MAX_ZOOM}
             scrollWheelZoom
             style={{ height: "100%", width: "100%", minHeight: "min(480px, 55vh)" }}
             zoomControl
           >
-            <TileLayer
-              attribution='&copy; <a href="https://www.esri.com/">Esri</a>, Maxar | &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url={ESRI_IMAGERY_TEMPLATE}
-              maxNativeZoom={19}
-              maxZoom={20}
-            />
+            <MapBasemapTileLayer basemapId={basemapId} />
             <MapResizeOnOpen isActive={open} />
             {markerPos && (
               <Marker position={markerPos} icon={siteMarkerIcon}>
@@ -295,7 +329,7 @@ export default function SiteSatelliteMapModal({ open, onClose, addressQuery }) {
         </div>
 
         <p style={{ margin: "0 16px 14px 16px", fontSize: "0.75rem", color: "#555", lineHeight: 1.4 }}>
-          Esri World Imagery · OpenStreetMap Nominatim
+          Vicmap Aerial · Esri World Imagery · Nearmap (when configured) · OpenStreetMap Nominatim
         </p>
       </div>
     </div>
