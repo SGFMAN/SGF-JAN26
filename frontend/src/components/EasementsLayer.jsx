@@ -1,16 +1,16 @@
 import { GeoJSON } from "react-leaflet";
 
 const EASEMENT_LINE_STYLE = {
-  color: "#c026d3",
-  weight: 4,
+  color: "#dc2626",
+  weight: 1,
   opacity: 1,
 };
 
 const EASEMENT_POLYGON_STYLE = {
-  color: "#a21caf",
-  weight: 3,
-  fillColor: "#e879f9",
-  fillOpacity: 0.35,
+  color: "#b91c1c",
+  weight: 1,
+  fillColor: "#fca5a5",
+  fillOpacity: 0.28,
 };
 
 function styleForEasementFeature(feature) {

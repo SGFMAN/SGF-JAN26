@@ -781,8 +781,7 @@ export default function Maps() {
           <div
             style={{
               display: "flex",
-              flexWrap: "wrap",
-              alignItems: "stretch",
+              flexDirection: "column",
               gap: "10px",
               background: EXPLORER_BG,
               borderRadius: "12px",
@@ -791,45 +790,174 @@ export default function Maps() {
               boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8)",
             }}
           >
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={onKeyDown}
-              placeholder="Search address (e.g. 123 Collins St, Melbourne VIC)"
-              disabled={loading || parcelLoading}
-              aria-busy={loading}
+            <div
               style={{
-                flex: "1 1 220px",
+                display: "flex",
+                flexWrap: "nowrap",
+                alignItems: "stretch",
+                gap: "10px",
                 minWidth: 0,
-                padding: "12px 14px",
-                fontSize: "1rem",
-                borderRadius: "10px",
-                border: `1px solid ${EXPLORER_BORDER}`,
-                background: WHITE,
-                color: MONUMENT,
-                boxSizing: "border-box",
-              }}
-            />
-            <button
-              type="button"
-              onClick={onSearch}
-              disabled={loading || parcelLoading}
-              style={{
-                padding: "12px 22px",
-                fontSize: "1rem",
-                fontWeight: 600,
-                borderRadius: "10px",
-                border: `1px solid ${EXPLORER_BORDER}`,
-                background: loading ? "#e0e0e0" : WHITE,
-                color: MONUMENT,
-                cursor: loading ? "not-allowed" : "pointer",
-                letterSpacing: "0.3px",
-                whiteSpace: "nowrap",
               }}
             >
-              {loading ? "Searching…" : parcelLoading ? "Loading boundary…" : "Search"}
-            </button>
+              <div
+                style={{
+                  flex: "0 1 380px",
+                  maxWidth: "420px",
+                  minWidth: "280px",
+                  display: "flex",
+                  gap: "8px",
+                }}
+              >
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={onKeyDown}
+                  placeholder="Search address (e.g. 123 Collins St, Melbourne VIC)"
+                  disabled={loading || parcelLoading}
+                  aria-busy={loading}
+                  style={{
+                    flex: "1 1 0",
+                    minWidth: 0,
+                    padding: "10px 12px",
+                    fontSize: "0.9rem",
+                    borderRadius: "10px",
+                    border: `1px solid ${EXPLORER_BORDER}`,
+                    background: WHITE,
+                    color: MONUMENT,
+                    boxSizing: "border-box",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={onSearch}
+                  disabled={loading || parcelLoading}
+                  style={{
+                    flexShrink: 0,
+                    padding: "10px 14px",
+                    fontSize: "0.9rem",
+                    fontWeight: 600,
+                    borderRadius: "10px",
+                    border: `1px solid ${EXPLORER_BORDER}`,
+                    background: loading ? "#e0e0e0" : WHITE,
+                    color: MONUMENT,
+                    cursor: loading ? "not-allowed" : "pointer",
+                    letterSpacing: "0.3px",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {loading ? "Searching…" : parcelLoading ? "Loading…" : "Search"}
+                </button>
+              </div>
+
+              {isAdmin && (planningLoading || planningInfo) && !error && (
+                <div
+                  style={{
+                    flex: "1 1 0",
+                    minWidth: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "6px",
+                    padding: "8px 12px",
+                    borderRadius: "10px",
+                    background: "#f3e8ff",
+                    border: "1px solid #d8b4fe",
+                    fontSize: "0.8rem",
+                    color: MONUMENT,
+                    maxHeight: "140px",
+                    overflowY: "auto",
+                  }}
+                >
+                  {planningLoading ? (
+                    <span>Loading planning…</span>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", lineHeight: 1.4 }}>
+                        <strong style={{ fontSize: "0.82rem" }}>Planning</strong>
+                        <span style={{ color: "#555" }}>
+                          Council: {planningInfo.council || "—"}
+                        </span>
+                      </div>
+                      <ul
+                        style={{
+                          margin: 0,
+                          padding: 0,
+                          listStyle: "none",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "4px",
+                        }}
+                      >
+                        {planningInfo.planningZone && (
+                          <li>
+                            <label
+                              style={{
+                                display: "flex",
+                                alignItems: "flex-start",
+                                gap: "8px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={planningLayerVisibility[PLANNING_VISIBILITY_ZONE] === true}
+                                onChange={() => togglePlanningLayer(PLANNING_VISIBILITY_ZONE)}
+                                style={{ marginTop: "2px", flexShrink: 0 }}
+                              />
+                              <span>
+                                <span style={{ color: "#166534", fontWeight: 600 }}>Zone: </span>
+                                {planningInfo.planningZone.code}
+                                {planningInfo.planningZone.description
+                                  ? ` — ${planningInfo.planningZone.description}`
+                                  : ""}
+                              </span>
+                            </label>
+                          </li>
+                        )}
+                        {(planningInfo.overlays || []).map((overlay) => {
+                          const key = overlayLayerKey(overlay);
+                          if (!key) return null;
+                          const label =
+                            overlay.code && overlay.description
+                              ? `${overlay.code} — ${overlay.description}`
+                              : overlay.code || overlay.description;
+                          return (
+                            <li key={key}>
+                              <label
+                                style={{
+                                  display: "flex",
+                                  alignItems: "flex-start",
+                                  gap: "8px",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={planningLayerVisibility[key] === true}
+                                  onChange={() => togglePlanningLayer(key)}
+                                  style={{ marginTop: "2px", flexShrink: 0 }}
+                                />
+                                <span>{label}</span>
+                              </label>
+                            </li>
+                          );
+                        })}
+                        {!planningInfo.planningZone && !(planningInfo.overlays || []).length && (
+                          <li style={{ color: "#666" }}>No zone or overlays</li>
+                        )}
+                      </ul>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <MapBasemapSelector
+              basemapId={basemapId}
+              onBasemapIdChange={setBasemapId}
+              basemapConfig={basemapConfig}
+              placement="inline"
+            />
           </div>
 
           {error && (
@@ -865,92 +993,6 @@ export default function Maps() {
             </div>
           )}
 
-          {isAdmin && (planningLoading || planningInfo) && !error && (
-            <div
-              style={{
-                padding: "12px 14px",
-                borderRadius: "10px",
-                background: "#f3e8ff",
-                border: "1px solid #d8b4fe",
-                color: MONUMENT,
-                fontSize: "0.9rem",
-              }}
-            >
-              {planningLoading ? (
-                <div>Loading planning information…</div>
-              ) : (
-                <>
-                  <div style={{ marginBottom: "8px" }}>
-                    <strong style={{ fontSize: "0.95rem" }}>Planning (Vicmap)</strong>
-                  </div>
-                  <div style={{ lineHeight: 1.5, marginBottom: "10px" }}>
-                    <span style={{ color: "#555" }}>Council: </span>
-                    {planningInfo.council || "—"}
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                    <span style={{ color: "#555", fontSize: "0.85rem" }}>Show on map:</span>
-                    {planningInfo.planningZone && (
-                      <label
-                        style={{
-                          display: "flex",
-                          alignItems: "flex-start",
-                          gap: "8px",
-                          fontSize: "0.85rem",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={planningLayerVisibility[PLANNING_VISIBILITY_ZONE] === true}
-                          onChange={() => togglePlanningLayer(PLANNING_VISIBILITY_ZONE)}
-                          style={{ marginTop: "3px", flexShrink: 0 }}
-                        />
-                        <span>
-                          <span style={{ color: "#166534", fontWeight: 600 }}>Zone: </span>
-                          {planningInfo.planningZone.code}
-                          {planningInfo.planningZone.description
-                            ? ` — ${planningInfo.planningZone.description}`
-                            : ""}
-                        </span>
-                      </label>
-                    )}
-                    {(planningInfo.overlays || []).map((overlay) => {
-                      const key = overlayLayerKey(overlay);
-                      if (!key) return null;
-                      return (
-                        <label
-                          key={key}
-                          style={{
-                            display: "flex",
-                            alignItems: "flex-start",
-                            gap: "8px",
-                            fontSize: "0.85rem",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={planningLayerVisibility[key] === true}
-                            onChange={() => togglePlanningLayer(key)}
-                            style={{ marginTop: "3px", flexShrink: 0 }}
-                          />
-                          <span>
-                            {overlay.code && overlay.description
-                              ? `${overlay.code} — ${overlay.description}`
-                              : overlay.code || overlay.description}
-                          </span>
-                        </label>
-                      );
-                    })}
-                    {!planningInfo.planningZone && !(planningInfo.overlays || []).length && (
-                      <span style={{ fontSize: "0.85rem", color: "#666" }}>No zone or overlays</span>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
           <div
             style={{
               flex: "1 1 auto",
@@ -963,11 +1005,6 @@ export default function Maps() {
               background: "#1a1a1a",
             }}
           >
-            <MapBasemapSelector
-              basemapId={basemapId}
-              onBasemapIdChange={setBasemapId}
-              basemapConfig={basemapConfig}
-            />
             <MapContainer
               center={DEFAULT_CENTER}
               zoom={DEFAULT_ZOOM}
@@ -1028,7 +1065,7 @@ export default function Maps() {
             Address search: OpenStreetMap Nominatim (please use sparingly). VIC title boundaries: Vicmap
             cadastral parcels matched to the blue search pin (contains-point first; nearest-edge fallback
             marked approximate). Planning: Vicmap zone (green) and overlays (purple / light blue) — toggle each layer in the planning panel.
-            Easements: Vicmap Property (purple lines) shown automatically on the map. Default view: greater Melbourne, Victoria.
+            Easements: Vicmap Property (red lines) shown automatically on the map. Default view: greater Melbourne, Victoria.
           </p>
         </div>
       </div>

@@ -27,29 +27,40 @@ export function MapBasemapTileLayer({ basemapId }) {
 }
 
 /**
- * Basemap dropdown — position:absolute overlay for use inside a `position:relative` map shell.
+ * Basemap dropdown — `overlay` on the map, or `inline` in a toolbar row.
  */
-export function MapBasemapSelector({ basemapId, onBasemapIdChange, basemapConfig, style }) {
+export function MapBasemapSelector({
+  basemapId,
+  onBasemapIdChange,
+  basemapConfig,
+  placement = "overlay",
+  style,
+}) {
   const options = listBasemapOptions(basemapConfig);
   const resolvedId = resolveBasemapId(basemapId, basemapConfig);
+  const isInline = placement === "inline";
 
   return (
     <div
       style={{
-        position: "absolute",
-        top: "10px",
-        right: "10px",
-        zIndex: 1000,
         display: "flex",
         alignItems: "center",
         gap: "8px",
-        padding: "8px 10px",
-        borderRadius: "10px",
-        background: CONTROL_BG,
-        border: `1px solid ${CONTROL_BORDER}`,
-        boxShadow: "0 2px 10px rgba(0,0,0,0.18)",
+        padding: isInline ? "0" : "8px 10px",
+        borderRadius: isInline ? 0 : "10px",
+        background: isInline ? "transparent" : CONTROL_BG,
+        border: isInline ? "none" : `1px solid ${CONTROL_BORDER}`,
+        boxShadow: isInline ? "none" : "0 2px 10px rgba(0,0,0,0.18)",
         fontSize: "0.85rem",
         color: CONTROL_TEXT,
+        ...(isInline
+          ? {}
+          : {
+              position: "absolute",
+              top: "10px",
+              right: "10px",
+              zIndex: 1000,
+            }),
         ...style,
       }}
     >
