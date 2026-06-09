@@ -3,6 +3,7 @@ import L from "leaflet";
 import { useMap } from "react-leaflet";
 import {
   BOUNDARY_HANDLE_COLOR,
+  bindDebouncedMapViewSync,
   createMoveHandleMarker,
   handleLatLngForBounds,
   updateMoveHandleMarker,
@@ -127,7 +128,7 @@ export default function DraggableParcelBoundary({
 
     let handle = null;
     let boundaryGroup = null;
-    let onViewChange = null;
+    let unbindViewSync = null;
 
     try {
       boundaryGroup = L.layerGroup();
@@ -212,18 +213,13 @@ export default function DraggableParcelBoundary({
       });
       setBoundaryCursor(boundaryGroup, movableRef.current ? "grab" : "");
 
-      onViewChange = () => syncHandlePosition();
-      map.on("zoomend", onViewChange);
-      map.on("moveend", onViewChange);
+      unbindViewSync = bindDebouncedMapViewSync(map, syncHandlePosition);
     } catch (err) {
       console.error("[DraggableParcelBoundary] setup failed:", err);
     }
 
     return () => {
-      if (onViewChange) {
-        map.off("zoomend", onViewChange);
-        map.off("moveend", onViewChange);
-      }
+      unbindViewSync?.();
       dragHandlersRef.current.forEach((handler, layer) => {
         layer.off("mousedown", handler);
       });

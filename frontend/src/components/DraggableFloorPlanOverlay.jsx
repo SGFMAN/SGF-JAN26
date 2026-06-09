@@ -9,6 +9,7 @@ import {
 } from "../utils/floorPlanMap";
 import {
   UNIT_HANDLE_COLOR,
+  bindDebouncedMapViewSync,
   createMoveHandleMarker,
   handleLatLngForBounds,
   updateMoveHandleMarker,
@@ -38,6 +39,7 @@ export default function DraggableFloorPlanOverlay({
   const movableRef = useRef(movable);
   const initialCenterRef = useRef(initialCenter);
   const dragHandlerRef = useRef(null);
+  const unbindViewSyncRef = useRef(null);
 
   onCenterChangeRef.current = onCenterChange;
   onToggleRef.current = onToggleMovable;
@@ -150,6 +152,8 @@ export default function DraggableFloorPlanOverlay({
         overlayRef.current = overlay;
         handleRef.current = handle;
 
+        unbindViewSyncRef.current?.();
+        unbindViewSyncRef.current = bindDebouncedMapViewSync(map, syncHandlePosition);
         onCenterChangeRef.current?.({ lat: startCenter.lat, lng: startCenter.lng });
       } catch (err) {
         console.error("[DraggableFloorPlanOverlay]", err);
@@ -158,6 +162,8 @@ export default function DraggableFloorPlanOverlay({
 
     return () => {
       cancelled = true;
+      unbindViewSyncRef.current?.();
+      unbindViewSyncRef.current = null;
       if (overlayRef.current && dragHandlerRef.current) {
         overlayRef.current.off("mousedown", dragHandlerRef.current);
       }
@@ -189,16 +195,6 @@ export default function DraggableFloorPlanOverlay({
       );
     }
   }, [movable]);
-
-  useEffect(() => {
-    const onViewChange = () => syncHandlePosition();
-    map.on("zoomend", onViewChange);
-    map.on("moveend", onViewChange);
-    return () => {
-      map.off("zoomend", onViewChange);
-      map.off("moveend", onViewChange);
-    };
-  }, [map]);
 
   return null;
 }

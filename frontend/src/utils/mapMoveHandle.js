@@ -77,3 +77,27 @@ export function northEastFromBounds(bounds) {
   if (!bounds) return null;
   return bounds.getNorthEast();
 }
+
+/** Debounced sync on pan/zoom — avoids crashes from sync during Leaflet animations. */
+export function bindDebouncedMapViewSync(map, callback) {
+  if (!map || typeof callback !== "function") return () => {};
+  let rafId = null;
+  const run = () => {
+    if (rafId != null) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(() => {
+      rafId = null;
+      try {
+        callback();
+      } catch (err) {
+        console.warn("[mapMoveHandle] view sync:", err);
+      }
+    });
+  };
+  map.on("zoomend", run);
+  map.on("moveend", run);
+  return () => {
+    if (rafId != null) cancelAnimationFrame(rafId);
+    map.off("zoomend", run);
+    map.off("moveend", run);
+  };
+}

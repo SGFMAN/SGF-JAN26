@@ -9,6 +9,7 @@ import shadowUrl from "leaflet/dist/images/marker-shadow.png";
 import logo from "../images/logo.png";
 import { MapBasemapSelector, MapBasemapTileLayer } from "../components/MapBasemapControls";
 import DraggableParcelBoundary from "../components/DraggableParcelBoundary";
+import MapSectionErrorBoundary from "../components/MapSectionErrorBoundary";
 import PlanningOverlaysLayer, {
   buildInitialPlanningLayerVisibility,
   overlayLayerKey,
@@ -23,7 +24,7 @@ import {
   basemapIdForPropertyState,
   DEFAULT_BASEMAP_ID,
   fetchMapBasemapConfig,
-  MAP_MAX_ZOOM,
+  getBasemapMaxZoom,
   resolveBasemapId,
 } from "../utils/mapBasemaps";
 import MapsSidebar from "../components/MapsSidebar";
@@ -84,26 +85,63 @@ function markerIconForProjectState(stateRaw) {
   return icon;
 }
 
-function MapFlyTo({ position, zoom, enabled }) {
+function MapFlyTo({ position, zoom, enabled, flyKey }) {
   const map = useMap();
+  const lastFlyRef = useRef(null);
+  const posKey = position ? `${position[0]},${position[1]}` : null;
+
   useEffect(() => {
-    if (!enabled || !position) return;
-    map.flyTo(position, zoom, { duration: 1.35, easeLinearity: 0.25 });
-  }, [position, zoom, map, enabled]);
+    if (!enabled || !position || !posKey) return;
+    const token = `${flyKey || ""}:${posKey}:${zoom}`;
+    if (lastFlyRef.current === token) return;
+    lastFlyRef.current = token;
+    try {
+      const cappedZoom = Math.min(zoom, map.getMaxZoom());
+      map.flyTo(position, cappedZoom, { duration: 1.35, easeLinearity: 0.25 });
+    } catch {
+      // ignore fly errors
+    }
+  }, [enabled, posKey, zoom, flyKey, map, position]);
+
   return null;
 }
 
-function MapFitBounds({ bounds }) {
+function MapFitBounds({ bounds, fitKey, maxZoom }) {
   const map = useMap();
+  const lastFitRef = useRef(null);
   const boundsKey = bounds ? JSON.stringify(bounds) : null;
+
   useEffect(() => {
-    if (!bounds) return;
+    if (!bounds || !boundsKey) {
+      if (!boundsKey) lastFitRef.current = null;
+      return;
+    }
+    const token = `${fitKey || ""}:${boundsKey}`;
+    if (lastFitRef.current === token) return;
+    lastFitRef.current = token;
     try {
-      map.fitBounds(bounds, { padding: [22, 22], animate: true, duration: 1.25 });
+      map.fitBounds(bounds, {
+        padding: [22, 22],
+        animate: false,
+        maxZoom: maxZoom ?? map.getMaxZoom(),
+      });
     } catch {
       // ignore fit errors
     }
-  }, [bounds, boundsKey, map]);
+  }, [boundsKey, fitKey, maxZoom, map, bounds]);
+
+  return null;
+}
+
+function MapMaxZoomSync({ maxZoom }) {
+  const map = useMap();
+  useEffect(() => {
+    if (maxZoom == null) return;
+    map.setMaxZoom(maxZoom);
+    if (map.getZoom() > maxZoom) {
+      map.setZoom(maxZoom);
+    }
+  }, [maxZoom, map]);
   return null;
 }
 
@@ -776,6 +814,9 @@ export default function Maps() {
     }
   }, []);
 
+  const resolvedBasemapId = resolveBasemapId(basemapId, basemapConfig);
+  const mapMaxZoom = getBasemapMaxZoom(resolvedBasemapId);
+
   function onKeyDown(e) {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -1091,28 +1132,47 @@ export default function Maps() {
             <MapContainer
               center={DEFAULT_CENTER}
               zoom={DEFAULT_ZOOM}
-              maxZoom={MAP_MAX_ZOOM}
+              maxZoom={mapMaxZoom}
               scrollWheelZoom
               style={{ height: "100%", width: "100%", borderRadius: "14px" }}
               zoomControl
             >
-              <MapBasemapTileLayer basemapId={basemapId} />
-              {isAdmin && parcelFeature && (
-                <DraggableParcelBoundary
-                  key={activeSearchQuery || "boundary"}
-                  feature={parcelFeature}
-                  onFeatureChange={onParcelFeatureChange}
-                  movable={movableTarget === "boundary"}
-                  onToggleMovable={toggleBoundaryMovable}
-                />
-              )}
-              {isAdmin && (
-                <PlanningOverlaysLayer
-                  zoneGeoJson={planningZoneGeoJson}
-                  overlayGeoJson={planningOverlayGeoJson}
-                  layerVisibility={planningLayerVisibility}
-                />
-              )}
+              <MapBasemapTileLayer basemapId={resolvedBasemapId} />
+              <MapMaxZoomSync maxZoom={mapMaxZoom} />
+              <MapSectionErrorBoundary resetKey={activeSearchQuery || "idle"}>
+                {isAdmin && parcelFeature && (
+                  <DraggableParcelBoundary
+                    key={activeSearchQuery || "boundary"}
+                    feature={parcelFeature}
+                    onFeatureChange={onParcelFeatureChange}
+                    movable={movableTarget === "boundary"}
+                    onToggleMovable={toggleBoundaryMovable}
+                  />
+                )}
+                {isAdmin && (
+                  <PlanningOverlaysLayer
+                    zoneGeoJson={planningZoneGeoJson}
+                    overlayGeoJson={planningOverlayGeoJson}
+                    layerVisibility={planningLayerVisibility}
+                  />
+                )}
+                {isAdmin && (
+                  <EasementsLayer
+                    key={activeSearchQuery || "easements"}
+                    easementsGeoJson={easementsGeoJson}
+                  />
+                )}
+                {isAdmin && placedUnit && onMapView && (
+                  <DraggableFloorPlanOverlay
+                    key={`${placedUnit.plan.id}-${unitPlacementKey}`}
+                    plan={placedUnit.plan}
+                    initialCenter={placedUnit.center}
+                    onCenterChange={handleUnitCenterChange}
+                    movable={movableTarget === "unit"}
+                    onToggleMovable={toggleUnitMovable}
+                  />
+                )}
+              </MapSectionErrorBoundary>
               {marker && (
                 <Marker position={marker}>
                   {resultLabel ? <Popup>{resultLabel}</Popup> : null}
@@ -1127,24 +1187,17 @@ export default function Maps() {
                   </Popup>
                 </Marker>
               ))}
-              {isAdmin && (
-                <EasementsLayer
-                  key={activeSearchQuery || "easements"}
-                  easementsGeoJson={easementsGeoJson}
-                />
-              )}
-              {isAdmin && placedUnit && onMapView && (
-                <DraggableFloorPlanOverlay
-                  key={`${placedUnit.plan.id}-${unitPlacementKey}`}
-                  plan={placedUnit.plan}
-                  initialCenter={placedUnit.center}
-                  onCenterChange={handleUnitCenterChange}
-                  movable={movableTarget === "unit"}
-                  onToggleMovable={toggleUnitMovable}
-                />
-              )}
-              <MapFlyTo position={flyTarget} zoom={SEARCH_ZOOM} enabled={!parcelBounds && !bulkBounds} />
-              <MapFitBounds bounds={parcelBounds || bulkBounds} />
+              <MapFlyTo
+                position={flyTarget}
+                zoom={SEARCH_ZOOM}
+                enabled={!parcelBounds && !bulkBounds}
+                flyKey={activeSearchQuery}
+              />
+              <MapFitBounds
+                bounds={parcelBounds || bulkBounds}
+                fitKey={activeSearchQuery || (bulkBounds ? "bulk" : "")}
+                maxZoom={mapMaxZoom}
+              />
             </MapContainer>
             {isAdmin && placedUnit && onMapView && (
               <div
