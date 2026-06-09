@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { getApiHeaders, getLoggedInUserId, getPasswordType } from "../utils/auth";
+import FloorPlanCropModal from "./FloorPlanCropModal";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -117,6 +118,7 @@ export default function FloorPlansModal({ onClose }) {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState(null);
+  const [cropFile, setCropFile] = useState(null);
 
   const loadFloorPlans = useCallback(async () => {
     setLoading(true);
@@ -198,6 +200,31 @@ export default function FloorPlansModal({ onClose }) {
     reader.readAsDataURL(file);
   }
 
+  async function uploadFloorPlan(imageFile) {
+    const body = new FormData();
+    body.append("name", form.name.trim());
+    body.append("category", form.category);
+    body.append("size_sqm", String(Number.parseFloat(form.sizeSqm)));
+    if (imageFile) body.append("image", imageFile);
+
+    const url = editingPlan
+      ? `/api/maps/floor-plans/${editingPlan.id}`
+      : "/api/maps/floor-plans";
+    const res = await fetch(url, {
+      method: editingPlan ? "PUT" : "POST",
+      headers: authHeadersForUpload(),
+      body,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || "Failed to save floor plan");
+    }
+    closeFormModal();
+    setCropFile(null);
+    await loadFloorPlans();
+    if (data.floorPlan?.id) setSelectedId(data.floorPlan.id);
+  }
+
   async function handleSaveForm() {
     if (!form.name.trim()) {
       alert("Please enter a floor plan name.");
@@ -213,33 +240,32 @@ export default function FloorPlansModal({ onClose }) {
       return;
     }
 
+    if (form.imageFile) {
+      setCropFile(form.imageFile);
+      return;
+    }
+
     setSaving(true);
     try {
-      const body = new FormData();
-      body.append("name", form.name.trim());
-      body.append("category", form.category);
-      body.append("size_sqm", String(size));
-      if (form.imageFile) body.append("image", form.imageFile);
-
-      const url = editingPlan
-        ? `/api/maps/floor-plans/${editingPlan.id}`
-        : "/api/maps/floor-plans";
-      const res = await fetch(url, {
-        method: editingPlan ? "PUT" : "POST",
-        headers: authHeadersForUpload(),
-        body,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error || "Failed to save floor plan");
-      }
-      closeFormModal();
-      await loadFloorPlans();
-      if (data.floorPlan?.id) setSelectedId(data.floorPlan.id);
+      await uploadFloorPlan(null);
     } catch (err) {
       alert(err.message || "Failed to save floor plan");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleCropConfirm(jpegBlob) {
+    const safeName = form.name.trim().replace(/[^\w\s-]+/g, "").replace(/\s+/g, "-") || "floor-plan";
+    const imageFile = new File([jpegBlob], `${safeName}.jpg`, { type: "image/jpeg" });
+    setSaving(true);
+    try {
+      await uploadFloorPlan(imageFile);
+    } catch (err) {
+      alert(err.message || "Failed to save floor plan");
+    } finally {
+      setSaving(false);
+      setCropFile(null);
     }
   }
 
@@ -496,12 +522,20 @@ export default function FloorPlansModal({ onClose }) {
               <button type="button" onClick={closeFormModal} disabled={saving} style={btnSecondary}>
                 Cancel
               </button>
-              <button type="button" onClick={() => void handleSaveForm()} disabled={saving} style={btnPrimary}>
-                {saving ? "Saving…" : "Save"}
+              <button type="button" onClick={() => void handleSaveForm()} disabled={saving || !!cropFile} style={btnPrimary}>
+                {saving ? "Saving…" : cropFile ? "Outline plan…" : "Save"}
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {cropFile && (
+        <FloorPlanCropModal
+          file={cropFile}
+          onConfirm={(blob) => void handleCropConfirm(blob)}
+          onCancel={() => setCropFile(null)}
+        />
       )}
 
       {showDeleteModal && selectedPlan && (
