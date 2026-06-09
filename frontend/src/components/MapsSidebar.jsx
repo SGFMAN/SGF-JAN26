@@ -60,6 +60,8 @@ export default function MapsSidebar({
   onLoadBulkProjects,
   bulkLoading = false,
   bulkSelection = null,
+  onAddUnit,
+  showAddUnit = false,
 }) {
   const showBulkActions = typeof onLoadBulkProjects === "function";
   const onSoldMenu = activeView === "sold";
@@ -91,10 +93,10 @@ export default function MapsSidebar({
         Recent
       </Link>
 
-      {!onSoldMenu && (
-        <Link to="/maps/sold-projects" style={navLinkStyle(false)}>
-          Sold Projects
-        </Link>
+      {showAddUnit && typeof onAddUnit === "function" && (
+        <button type="button" onClick={onAddUnit} style={sidebarButtonStyle(false)}>
+          Add Unit
+        </button>
       )}
 
       {onSoldMenu && (
@@ -119,6 +121,13 @@ export default function MapsSidebar({
       )}
 
       <div style={{ flex: 1 }} />
+
+      {!onSoldMenu && (
+        <Link to="/maps/sold-projects" style={navLinkStyle(false)}>
+          Sold Projects
+        </Link>
+      )}
+
       <Link
         to="/projects"
         style={{

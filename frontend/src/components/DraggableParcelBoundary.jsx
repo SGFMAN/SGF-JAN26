@@ -1,15 +1,13 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import { useMap } from "react-leaflet";
-
-const PARCEL_YELLOW = "#FFD700";
-
-const YELLOW_STYLE = {
-  color: PARCEL_YELLOW,
-  weight: 1,
-  fillColor: PARCEL_YELLOW,
-  fillOpacity: 0.07,
-};
+import {
+  BOUNDARY_HANDLE_COLOR,
+  createMoveHandleMarker,
+  handleLatLngForBounds,
+  updateMoveHandleMarker,
+} from "../utils/mapMoveHandle";
+import { PARCEL_BOUNDARY_STYLE } from "../utils/parcelBoundaryStyle";
 
 function isLatLng(value) {
   return value instanceof L.LatLng;
@@ -30,6 +28,7 @@ function translateLatLngs(latlngs, dLat, dLng) {
 }
 
 function forEachPathLayer(group, fn) {
+  if (!group) return;
   group.eachLayer((layer) => {
     if (layer instanceof L.Polygon || layer instanceof L.Polyline) {
       fn(layer);
@@ -43,6 +42,19 @@ function translateLayerGroup(group, dLat, dLng) {
   forEachPathLayer(group, (layer) => {
     layer.setLatLngs(translateLatLngs(layer.getLatLngs(), dLat, dLng));
   });
+}
+
+function boundsFromLayerGroup(group) {
+  if (!group) return null;
+  try {
+    const bounds = L.latLngBounds([]);
+    forEachPathLayer(group, (layer) => {
+      bounds.extend(layer.getBounds());
+    });
+    return bounds.isValid() ? bounds : null;
+  } catch {
+    return null;
+  }
 }
 
 function ringToCoordinates(ring) {
@@ -82,82 +94,159 @@ function geometryFromLayerGroup(group) {
   };
 }
 
-function applyGrabCursor(group) {
+function setBoundaryCursor(group, cursor) {
   forEachPathLayer(group, (layer) => {
     const el = layer.getElement?.();
-    if (el) el.style.cursor = "grab";
+    if (el) el.style.cursor = cursor;
   });
 }
 
-/** Title boundary — hover shows grab hand; drag to reposition. */
-export default function DraggableParcelBoundary({ feature, onFeatureChange }) {
+/** Title boundary with corner handle to toggle dragging. */
+export default function DraggableParcelBoundary({
+  feature,
+  onFeatureChange,
+  movable = false,
+  onToggleMovable,
+}) {
   const map = useMap();
   const boundaryRef = useRef(null);
+  const handleRef = useRef(null);
   const featureRef = useRef(feature);
+  const movableRef = useRef(movable);
+  const onToggleRef = useRef(onToggleMovable);
+  const onFeatureChangeRef = useRef(onFeatureChange);
+  const dragHandlersRef = useRef(new Map());
+
   featureRef.current = feature;
+  movableRef.current = movable;
+  onToggleRef.current = onToggleMovable;
+  onFeatureChangeRef.current = onFeatureChange;
 
   useEffect(() => {
     if (!feature?.geometry) return undefined;
 
-    const boundaryGroup = L.layerGroup();
+    let handle = null;
+    let boundaryGroup = null;
+    let onViewChange = null;
 
-    const beginDrag = (startEvent) => {
-      L.DomEvent.stopPropagation(startEvent);
-      L.DomEvent.preventDefault(startEvent);
-      map.dragging.disable();
-      map.getContainer().style.cursor = "grabbing";
+    try {
+      boundaryGroup = L.layerGroup();
+      L.geoJSON(feature, {
+        style: PARCEL_BOUNDARY_STYLE,
+        interactive: true,
+      }).eachLayer((layer) => boundaryGroup.addLayer(layer));
+
+      boundaryGroup.addTo(map);
+      boundaryRef.current = boundaryGroup;
+
+      const bounds = boundsFromLayerGroup(boundaryGroup);
+      handle = createMoveHandleMarker(
+        bounds ? handleLatLngForBounds(map, bounds) : map.getCenter(),
+        {
+          color: BOUNDARY_HANDLE_COLOR,
+          filled: movableRef.current,
+          title: movableRef.current
+            ? "Boundary move enabled (click to lock)"
+            : "Click to enable boundary move",
+          onToggle: () => onToggleRef.current?.(),
+        }
+      );
+      if (handle) {
+        handle.addTo(map);
+        handleRef.current = handle;
+      }
+
+      const syncHandlePosition = () => {
+        if (!boundaryRef.current || !handleRef.current) return;
+        try {
+          const nextBounds = boundsFromLayerGroup(boundaryRef.current);
+          if (!nextBounds) return;
+          const latlng = handleLatLngForBounds(map, nextBounds);
+          if (latlng) handleRef.current.setLatLng(latlng);
+        } catch (err) {
+          console.warn("[DraggableParcelBoundary] sync handle:", err);
+        }
+      };
+
+      const beginDrag = (startEvent) => {
+        if (!movableRef.current) return;
+        L.DomEvent.stopPropagation(startEvent);
+        L.DomEvent.preventDefault(startEvent);
+        map.dragging.disable();
+        map.getContainer().style.cursor = "grabbing";
+        setBoundaryCursor(boundaryGroup, "grabbing");
+
+        let last = startEvent.latlng;
+
+        const onMove = (ev) => {
+          const dLat = ev.latlng.lat - last.lat;
+          const dLng = ev.latlng.lng - last.lng;
+          last = ev.latlng;
+          translateLayerGroup(boundaryGroup, dLat, dLng);
+          syncHandlePosition();
+        };
+
+        const onUp = () => {
+          map.off("mousemove", onMove);
+          map.off("mouseup", onUp);
+          map.dragging.enable();
+          map.getContainer().style.cursor = "";
+          setBoundaryCursor(boundaryGroup, movableRef.current ? "grab" : "");
+
+          const geometry = geometryFromLayerGroup(boundaryGroup);
+          if (!geometry) return;
+          onFeatureChangeRef.current?.({
+            ...featureRef.current,
+            geometry,
+          });
+        };
+
+        map.on("mousemove", onMove);
+        map.on("mouseup", onUp);
+      };
+
+      dragHandlersRef.current.clear();
       forEachPathLayer(boundaryGroup, (layer) => {
-        const el = layer.getElement?.();
-        if (el) el.style.cursor = "grabbing";
-      });
-
-      let last = startEvent.latlng;
-
-      const onMove = (ev) => {
-        const dLat = ev.latlng.lat - last.lat;
-        const dLng = ev.latlng.lng - last.lng;
-        last = ev.latlng;
-        translateLayerGroup(boundaryGroup, dLat, dLng);
-      };
-
-      const onUp = () => {
-        map.off("mousemove", onMove);
-        map.off("mouseup", onUp);
-        map.dragging.enable();
-        map.getContainer().style.cursor = "";
-        applyGrabCursor(boundaryGroup);
-
-        const geometry = geometryFromLayerGroup(boundaryGroup);
-        if (!geometry) return;
-        onFeatureChange({
-          ...featureRef.current,
-          geometry,
-        });
-      };
-
-      map.on("mousemove", onMove);
-      map.on("mouseup", onUp);
-    };
-
-    L.geoJSON(feature, {
-      style: YELLOW_STYLE,
-      interactive: true,
-      onEachFeature: (_feat, layer) => {
         layer.on("mousedown", beginDrag);
-      },
-    }).eachLayer((layer) => boundaryGroup.addLayer(layer));
+        dragHandlersRef.current.set(layer, beginDrag);
+      });
+      setBoundaryCursor(boundaryGroup, movableRef.current ? "grab" : "");
 
-    boundaryRef.current = boundaryGroup;
-    boundaryGroup.addTo(map);
-    applyGrabCursor(boundaryGroup);
+      onViewChange = () => syncHandlePosition();
+      map.on("zoomend", onViewChange);
+      map.on("moveend", onViewChange);
+    } catch (err) {
+      console.error("[DraggableParcelBoundary] setup failed:", err);
+    }
 
     return () => {
-      map.removeLayer(boundaryGroup);
+      if (onViewChange) {
+        map.off("zoomend", onViewChange);
+        map.off("moveend", onViewChange);
+      }
+      dragHandlersRef.current.forEach((handler, layer) => {
+        layer.off("mousedown", handler);
+      });
+      dragHandlersRef.current.clear();
+      if (handle) map.removeLayer(handle);
+      if (boundaryGroup) map.removeLayer(boundaryGroup);
+      handleRef.current = null;
       boundaryRef.current = null;
     };
-  }, [feature?.geometry, map, onFeatureChange]);
+  }, [feature?.geometry, map]);
+
+  useEffect(() => {
+    updateMoveHandleMarker(handleRef.current, {
+      color: BOUNDARY_HANDLE_COLOR,
+      filled: movable,
+    });
+    setBoundaryCursor(boundaryRef.current, movable ? "grab" : "");
+    if (handleRef.current) {
+      handleRef.current.setTitle(
+        movable ? "Boundary move enabled (click to lock)" : "Click to enable boundary move"
+      );
+    }
+  }, [movable]);
 
   return null;
 }
-
-export { YELLOW_STYLE as PARCEL_BOUNDARY_STYLE };

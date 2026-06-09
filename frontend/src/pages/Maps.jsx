@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import L from "leaflet";
 import { MapContainer, Marker, Popup, useMap } from "react-leaflet";
@@ -15,6 +15,8 @@ import PlanningOverlaysLayer, {
   PLANNING_VISIBILITY_ZONE,
 } from "../components/PlanningOverlaysLayer";
 import EasementsLayer from "../components/EasementsLayer";
+import DraggableFloorPlanOverlay from "../components/DraggableFloorPlanOverlay";
+import FloorPlanPickerModal from "../components/FloorPlanPickerModal";
 import {
   BASEMAP_ESRI_IMAGERY,
   BASEMAP_VICMAP_AERIAL,
@@ -93,6 +95,7 @@ function MapFlyTo({ position, zoom, enabled }) {
 
 function MapFitBounds({ bounds }) {
   const map = useMap();
+  const boundsKey = bounds ? JSON.stringify(bounds) : null;
   useEffect(() => {
     if (!bounds) return;
     try {
@@ -100,7 +103,7 @@ function MapFitBounds({ bounds }) {
     } catch {
       // ignore fit errors
     }
-  }, [bounds, map]);
+  }, [bounds, boundsKey, map]);
   return null;
 }
 
@@ -147,7 +150,25 @@ function boundsFromGeoJsonFeature(feature) {
   try {
     const layer = L.geoJSON(feature);
     const bounds = layer.getBounds();
-    return bounds.isValid() ? bounds : null;
+    if (!bounds.isValid()) return null;
+    return [
+      [bounds.getSouth(), bounds.getWest()],
+      [bounds.getNorth(), bounds.getEast()],
+    ];
+  } catch {
+    return null;
+  }
+}
+
+function fitBoundsFromLatLngs(points) {
+  if (!points?.length) return null;
+  try {
+    const bounds = L.latLngBounds(points);
+    if (!bounds.isValid()) return null;
+    return [
+      [bounds.getSouth(), bounds.getWest()],
+      [bounds.getNorth(), bounds.getEast()],
+    ];
   } catch {
     return null;
   }
@@ -197,12 +218,68 @@ export default function Maps() {
     defaultBasemapId: DEFAULT_BASEMAP_ID,
   });
   const [basemapId, setBasemapId] = useState(DEFAULT_BASEMAP_ID);
+  const [showFloorPlanPicker, setShowFloorPlanPicker] = useState(false);
+  const [placedUnit, setPlacedUnit] = useState(null);
+  const [unitPlacementKey, setUnitPlacementKey] = useState(0);
+  const [movableTarget, setMovableTarget] = useState(null);
+  const hadParcelRef = useRef(false);
   const location = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => {
     (async () => setIsAdmin(await isUserAdmin()))();
   }, []);
+
+  const onMapView = location.pathname === "/maps" || location.pathname === "/maps/";
+
+  function handleAddUnit() {
+    if (!isAdmin) {
+      alert("Admin access is required to place floor plans on the map.");
+      return;
+    }
+    setShowFloorPlanPicker(true);
+  }
+
+  function handleSelectFloorPlan(plan) {
+    setShowFloorPlanPicker(false);
+    if (!plan?.scale?.metersPerPixel) {
+      alert("This floor plan has no scale calibration. Set scale in Maps Settings first.");
+      return;
+    }
+    const initialCenter = marker ? { lat: marker[0], lng: marker[1] } : null;
+    setUnitPlacementKey((n) => n + 1);
+    setPlacedUnit({ plan, center: initialCenter });
+    setMovableTarget("unit");
+  }
+
+  function handleUnitCenterChange(center) {
+    setPlacedUnit((prev) => (prev ? { ...prev, center } : null));
+  }
+
+  function handleRemoveUnit() {
+    setPlacedUnit(null);
+    setMovableTarget(parcelFeature ? "boundary" : null);
+  }
+
+  function toggleBoundaryMovable() {
+    setMovableTarget((prev) => (prev === "boundary" ? null : "boundary"));
+  }
+
+  function toggleUnitMovable() {
+    setMovableTarget((prev) => (prev === "unit" ? null : "unit"));
+  }
+
+  useEffect(() => {
+    const hasParcel = Boolean(parcelFeature);
+    if (hasParcel && !hadParcelRef.current && !placedUnit) {
+      setMovableTarget("boundary");
+    }
+    if (!hasParcel) {
+      hadParcelRef.current = false;
+    } else {
+      hadParcelRef.current = true;
+    }
+  }, [parcelFeature, placedUnit]);
 
   useEffect(() => {
     let cancelled = false;
@@ -219,7 +296,8 @@ export default function Maps() {
 
   const fetchPlanningForSite = useCallback(
     async (lat, lng, searchState, boundaryGeometry) => {
-      if (!isAdmin || searchState !== "VIC") {
+      const admin = await isUserAdmin();
+      if (!admin || searchState !== "VIC") {
         setPlanningInfo(null);
         setPlanningZoneGeoJson(null);
         setPlanningOverlayGeoJson(null);
@@ -262,7 +340,7 @@ export default function Maps() {
         setPlanningLoading(false);
       }
     },
-    [isAdmin]
+    []
   );
 
   const fetchEasementsForSite = useCallback(
@@ -325,6 +403,8 @@ export default function Maps() {
     setPlanningOverlayGeoJson(null);
     setPlanningLayerVisibility({});
     setEasementsGeoJson(null);
+    setPlacedUnit(null);
+    setMovableTarget(null);
     try {
       const params = new URLSearchParams({
         q,
@@ -369,7 +449,8 @@ export default function Maps() {
 
       const searchState = inferStateFromNominatimHit(hit);
 
-      if (!isAdmin) {
+      const admin = await isUserAdmin();
+      if (!admin) {
         return;
       }
 
@@ -536,7 +617,7 @@ export default function Maps() {
     } finally {
       setLoading(false);
     }
-  }, [query, isAdmin, fetchPlanningForSite, fetchEasementsForSite]);
+  }, [query, fetchPlanningForSite, fetchEasementsForSite]);
 
   const onSearch = useCallback(() => {
     void runSearch();
@@ -684,7 +765,7 @@ export default function Maps() {
       setBulkPhase("Done");
 
       if (points.length >= 2) {
-        setBulkBounds(L.latLngBounds(points));
+        setBulkBounds(fitBoundsFromLatLngs(points));
       } else if (points.length === 1) {
         setFlyTarget([points[0].lat, points[0].lng]);
       }
@@ -759,6 +840,8 @@ export default function Maps() {
           onLoadBulkProjects={onLoadBulkProjects}
           bulkLoading={bulkLoading}
           bulkSelection={bulkSelection}
+          showAddUnit={isAdmin && onMapView}
+          onAddUnit={handleAddUnit}
         />
 
         <div
@@ -1016,8 +1099,11 @@ export default function Maps() {
               <MapBasemapTileLayer basemapId={basemapId} />
               {isAdmin && parcelFeature && (
                 <DraggableParcelBoundary
+                  key={activeSearchQuery || "boundary"}
                   feature={parcelFeature}
                   onFeatureChange={onParcelFeatureChange}
+                  movable={movableTarget === "boundary"}
+                  onToggleMovable={toggleBoundaryMovable}
                 />
               )}
               {isAdmin && (
@@ -1042,11 +1128,63 @@ export default function Maps() {
                 </Marker>
               ))}
               {isAdmin && (
-                <EasementsLayer easementsGeoJson={easementsGeoJson} />
+                <EasementsLayer
+                  key={activeSearchQuery || "easements"}
+                  easementsGeoJson={easementsGeoJson}
+                />
+              )}
+              {isAdmin && placedUnit && onMapView && (
+                <DraggableFloorPlanOverlay
+                  key={`${placedUnit.plan.id}-${unitPlacementKey}`}
+                  plan={placedUnit.plan}
+                  initialCenter={placedUnit.center}
+                  onCenterChange={handleUnitCenterChange}
+                  movable={movableTarget === "unit"}
+                  onToggleMovable={toggleUnitMovable}
+                />
               )}
               <MapFlyTo position={flyTarget} zoom={SEARCH_ZOOM} enabled={!parcelBounds && !bulkBounds} />
               <MapFitBounds bounds={parcelBounds || bulkBounds} />
             </MapContainer>
+            {isAdmin && placedUnit && onMapView && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "12px",
+                  right: "12px",
+                  zIndex: 1000,
+                  background: "rgba(255,255,255,0.95)",
+                  border: `1px solid ${EXPLORER_BORDER}`,
+                  borderRadius: "10px",
+                  padding: "10px 12px",
+                  fontSize: "0.85rem",
+                  color: MONUMENT,
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+                  maxWidth: "220px",
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: "4px" }}>{placedUnit.plan.name}</div>
+                <div style={{ color: "#666", marginBottom: "8px", lineHeight: 1.4 }}>
+                  Click the blue corner square to enable dragging (filled = move enabled). Yellow square
+                  controls the title boundary — only one can move at a time.
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRemoveUnit}
+                  style={{
+                    background: WHITE,
+                    border: `1px solid ${EXPLORER_BORDER}`,
+                    borderRadius: "6px",
+                    padding: "6px 10px",
+                    cursor: "pointer",
+                    fontSize: "0.82rem",
+                    color: MONUMENT,
+                  }}
+                >
+                  Remove unit
+                </button>
+              </div>
+            )}
           </div>
 
           {bulkProgress.total > 0 && bulkSelection != null && (
@@ -1069,6 +1207,13 @@ export default function Maps() {
           </p>
         </div>
       </div>
+
+      {showFloorPlanPicker && (
+        <FloorPlanPickerModal
+          onSelect={handleSelectFloorPlan}
+          onClose={() => setShowFloorPlanPicker(false)}
+        />
+      )}
     </div>
   );
 }
