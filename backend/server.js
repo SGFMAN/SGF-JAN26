@@ -40,6 +40,14 @@ const {
   formatPropertyEasementsResponse,
 } = require("./mapsEasementsLookup");
 const {
+  parseFloorPlanFields,
+  listFloorPlans,
+  createFloorPlan,
+  updateFloorPlan,
+  deleteFloorPlan,
+  getFloorPlanImagePath,
+} = require("./mapFloorPlans");
+const {
   ensureProjectAccessTokens,
   isLegacyNumericProjectId,
   resolveProjectIdFromAccessToken,
@@ -1586,6 +1594,17 @@ async function ensureSchema() {
     }
   }
   await migrateLegacySmtpIntoNumberedSlots();
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS map_floor_plans (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL CHECK (category IN ('Affordable', 'Superior')),
+      size_sqm NUMERIC(10, 2) NOT NULL,
+      image_filename TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
   await ensureProjectAccessTokens(pool);
   await markSchemaUpToDate(pool);
   console.log(`Schema ${SCHEMA_VERSION} applied`);
@@ -2655,6 +2674,88 @@ async function handlePropertyEasementsRequest(req, res) {
 
 app.get("/api/property-easements", handlePropertyEasementsRequest);
 app.post("/api/property-easements", handlePropertyEasementsRequest);
+
+// --- Maps floor plans (settings) ---
+app.get("/api/maps/floor-plans", async (req, res) => {
+  if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
+  try {
+    const plans = await listFloorPlans(pool);
+    return res.json({ ok: true, floorPlans: plans });
+  } catch (e) {
+    console.error("[floor-plans] list error:", e);
+    return res.status(500).json({ ok: false, error: e.message || "Failed to list floor plans" });
+  }
+});
+
+app.get("/api/maps/floor-plans/:id/image", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) return res.status(403).json({ error: "Admin access required" });
+  try {
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid floor plan id" });
+    const filePath = await getFloorPlanImagePath(pool, id);
+    if (!filePath) return res.status(404).json({ error: "File not found" });
+    if (path.extname(filePath).toLowerCase() === ".pdf") {
+      res.type("application/pdf");
+    }
+    return res.sendFile(filePath);
+  } catch (e) {
+    console.error("[floor-plans] image error:", e);
+    return res.status(500).json({ error: e.message || "Failed to load image" });
+  }
+});
+
+app.post("/api/maps/floor-plans", upload.single("image"), async (req, res) => {
+  if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
+  try {
+    const parsed = parseFloorPlanFields(req.body || {});
+    if (parsed.error) return res.status(400).json({ ok: false, error: parsed.error });
+    const plan = await createFloorPlan(pool, parsed, req.file || null);
+    return res.status(201).json({ ok: true, floorPlan: plan });
+  } catch (e) {
+    console.error("[floor-plans] create error:", e);
+    return res.status(500).json({ ok: false, error: e.message || "Failed to create floor plan" });
+  }
+});
+
+app.put("/api/maps/floor-plans/:id", upload.single("image"), async (req, res) => {
+  if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
+  try {
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "Invalid floor plan id" });
+    const parsed = parseFloorPlanFields(req.body || {});
+    if (parsed.error) return res.status(400).json({ ok: false, error: parsed.error });
+    const result = await updateFloorPlan(pool, id, parsed, req.file || null);
+    if (result.notFound) return res.status(404).json({ ok: false, error: "Floor plan not found" });
+    return res.json({ ok: true, floorPlan: result.plan });
+  } catch (e) {
+    console.error("[floor-plans] update error:", e);
+    return res.status(500).json({ ok: false, error: e.message || "Failed to update floor plan" });
+  }
+});
+
+app.delete("/api/maps/floor-plans/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
+  try {
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "Invalid floor plan id" });
+    const result = await deleteFloorPlan(pool, id);
+    if (result.notFound) return res.status(404).json({ ok: false, error: "Floor plan not found" });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("[floor-plans] delete error:", e);
+    return res.status(500).json({ ok: false, error: e.message || "Failed to delete floor plan" });
+  }
+});
 
 // --- Map basemap config & Nearmap tile proxy (keeps API key server-side) ---
 const NEARMAP_API_KEY = String(

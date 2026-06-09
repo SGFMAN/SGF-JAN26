@@ -7,6 +7,7 @@ import EmailSettings from "./EmailSettings";
 import AccountSettings from "./AccountSettings";
 import ColourSettings from "./ColourSettings";
 import StreamSettings from "./StreamSettings";
+import MapsSettings from "./MapsSettings";
 import logo from "../images/logo.png";
 
 const MONUMENT = "#323233";
@@ -21,6 +22,7 @@ const menuOptions = [
   { key: "streamSettings", label: "Email Settings" },
   { key: "emailTemplates", label: "Email Templates" },
   { key: "file", label: "File Settings" },
+  { key: "maps", label: "Maps" },
   { key: "emailSettings", label: "SMTP Settings" },
   { key: "users", label: "Users" },
 ];
@@ -42,6 +44,8 @@ export default function SettingsPage() {
         return <AccountSettings />;
       case "colourSettings":
         return <ColourSettings />;
+      case "maps":
+        return <MapsSettings />;
       case "streamSettings":
         return (
           <div
@@ -212,9 +216,9 @@ export default function SettingsPage() {
             height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             display: "flex",
-            alignItems: selected === "streamSettings" ? "stretch" : "center",
-            justifyContent: selected === "streamSettings" ? "flex-start" : "center",
-            overflow: selected === "streamSettings" ? "hidden" : "visible",
+            alignItems: selected === "streamSettings" || selected === "maps" ? "stretch" : "center",
+            justifyContent: selected === "streamSettings" || selected === "maps" ? "flex-start" : "center",
+            overflow: selected === "streamSettings" || selected === "maps" ? "hidden" : "visible",
             minWidth: 0,
             color: MONUMENT,
             fontSize: "1.22rem",

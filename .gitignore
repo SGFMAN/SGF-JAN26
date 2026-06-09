@@ -7,3 +7,4 @@ build/
 *.log
 backend/Z/
 backend/temp-sitevisit-uploads/
+backend/data/floor-plans/
