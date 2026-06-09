@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { getApiHeaders, getLoggedInUserId, getPasswordType } from "../utils/auth";
 import FloorPlanCropModal from "./FloorPlanCropModal";
+import FloorPlanScaleModal from "./FloorPlanScaleModal";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -119,6 +120,7 @@ export default function FloorPlansModal({ onClose }) {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState(null);
   const [cropFile, setCropFile] = useState(null);
+  const [scaleSession, setScaleSession] = useState(null);
 
   const loadFloorPlans = useCallback(async () => {
     setLoading(true);
@@ -200,12 +202,19 @@ export default function FloorPlansModal({ onClose }) {
     reader.readAsDataURL(file);
   }
 
-  async function uploadFloorPlan(imageFile) {
+  async function uploadFloorPlan(imageFile, scale) {
     const body = new FormData();
     body.append("name", form.name.trim());
     body.append("category", form.category);
     body.append("size_sqm", String(Number.parseFloat(form.sizeSqm)));
     if (imageFile) body.append("image", imageFile);
+    if (scale) {
+      body.append("scale_line_x1", String(scale.scaleLineX1));
+      body.append("scale_line_y1", String(scale.scaleLineY1));
+      body.append("scale_line_x2", String(scale.scaleLineX2));
+      body.append("scale_line_y2", String(scale.scaleLineY2));
+      body.append("scale_line_meters", String(scale.scaleLineMeters));
+    }
 
     const url = editingPlan
       ? `/api/maps/floor-plans/${editingPlan.id}`
@@ -221,6 +230,7 @@ export default function FloorPlansModal({ onClose }) {
     }
     closeFormModal();
     setCropFile(null);
+    setScaleSession(null);
     await loadFloorPlans();
     if (data.floorPlan?.id) setSelectedId(data.floorPlan.id);
   }
@@ -255,17 +265,23 @@ export default function FloorPlansModal({ onClose }) {
     }
   }
 
-  async function handleCropConfirm(jpegBlob) {
+  async function handleCropConfirm({ blob, cropCorners }) {
+    setCropFile(null);
+    setScaleSession({ blob, cropCorners });
+  }
+
+  async function handleScaleConfirm(scale) {
+    if (!scaleSession) return;
     const safeName = form.name.trim().replace(/[^\w\s-]+/g, "").replace(/\s+/g, "-") || "floor-plan";
-    const imageFile = new File([jpegBlob], `${safeName}.jpg`, { type: "image/jpeg" });
+    const imageFile = new File([scaleSession.blob], `${safeName}.jpg`, { type: "image/jpeg" });
     setSaving(true);
     try {
-      await uploadFloorPlan(imageFile);
+      await uploadFloorPlan(imageFile, scale);
     } catch (err) {
       alert(err.message || "Failed to save floor plan");
+      throw err;
     } finally {
       setSaving(false);
-      setCropFile(null);
     }
   }
 
@@ -419,6 +435,14 @@ export default function FloorPlansModal({ onClose }) {
                       <span style={{ color: "#666" }}>Size: </span>
                       {selectedPlan.sizeSqm} m²
                     </div>
+                    {selectedPlan.scale && (
+                      <div>
+                        <span style={{ color: "#666" }}>Scale: </span>
+                        {selectedPlan.scale.meters} m over{" "}
+                        {selectedPlan.scale.pixelDistance.toFixed(1)} px (
+                        {selectedPlan.scale.metersPerPixel.toFixed(4)} m/px)
+                      </div>
+                    )}
                   </div>
                 </>
               ) : (
@@ -522,8 +546,8 @@ export default function FloorPlansModal({ onClose }) {
               <button type="button" onClick={closeFormModal} disabled={saving} style={btnSecondary}>
                 Cancel
               </button>
-              <button type="button" onClick={() => void handleSaveForm()} disabled={saving || !!cropFile} style={btnPrimary}>
-                {saving ? "Saving…" : cropFile ? "Outline plan…" : "Save"}
+              <button type="button" onClick={() => void handleSaveForm()} disabled={saving || !!cropFile || !!scaleSession} style={btnPrimary}>
+                {saving ? "Saving…" : cropFile ? "Outline plan…" : scaleSession ? "Set scale…" : "Save"}
               </button>
             </div>
           </div>
@@ -533,8 +557,17 @@ export default function FloorPlansModal({ onClose }) {
       {cropFile && (
         <FloorPlanCropModal
           file={cropFile}
-          onConfirm={(blob) => void handleCropConfirm(blob)}
+          onConfirm={(result) => handleCropConfirm(result)}
           onCancel={() => setCropFile(null)}
+        />
+      )}
+
+      {scaleSession && (
+        <FloorPlanScaleModal
+          imageBlob={scaleSession.blob}
+          snapCorners={scaleSession.cropCorners}
+          onConfirm={(scale) => handleScaleConfirm(scale)}
+          onCancel={() => setScaleSession(null)}
         />
       )}
 

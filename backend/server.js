@@ -1605,6 +1605,13 @@ async function ensureSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await addMissingColumns(pool, "map_floor_plans", [
+    "scale_line_x1",
+    "scale_line_y1",
+    "scale_line_x2",
+    "scale_line_y2",
+  ], "DOUBLE PRECISION");
+  await addMissingColumns(pool, "map_floor_plans", ["scale_line_meters"], "NUMERIC(10, 3)");
   await ensureProjectAccessTokens(pool);
   await markSchemaUpToDate(pool);
   console.log(`Schema ${SCHEMA_VERSION} applied`);
@@ -2713,7 +2720,7 @@ app.post("/api/maps/floor-plans", upload.single("image"), async (req, res) => {
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
   try {
-    const parsed = parseFloorPlanFields(req.body || {});
+    const parsed = parseFloorPlanFields(req.body || {}, { requireScale: Boolean(req.file) });
     if (parsed.error) return res.status(400).json({ ok: false, error: parsed.error });
     const plan = await createFloorPlan(pool, parsed, req.file || null);
     return res.status(201).json({ ok: true, floorPlan: plan });
@@ -2730,7 +2737,7 @@ app.put("/api/maps/floor-plans/:id", upload.single("image"), async (req, res) =>
   try {
     const id = Number.parseInt(req.params.id, 10);
     if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "Invalid floor plan id" });
-    const parsed = parseFloorPlanFields(req.body || {});
+    const parsed = parseFloorPlanFields(req.body || {}, { requireScale: Boolean(req.file) });
     if (parsed.error) return res.status(400).json({ ok: false, error: parsed.error });
     const result = await updateFloorPlan(pool, id, parsed, req.file || null);
     if (result.notFound) return res.status(404).json({ ok: false, error: "Floor plan not found" });

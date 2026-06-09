@@ -3,12 +3,21 @@ import pdfjsWorker from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
-const MAX_CANVAS_WIDTH = 1200;
 const PDF_RENDER_SCALE = 1.5;
 
 export function isPdfFile(file) {
   if (!file) return false;
   return file.type === "application/pdf" || String(file.name || "").toLowerCase().endsWith(".pdf");
+}
+
+function cloneCanvas(source) {
+  const canvas = document.createElement("canvas");
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Could not create canvas");
+  ctx.drawImage(source, 0, 0);
+  return canvas;
 }
 
 function loadImageElement(src) {
@@ -35,7 +44,7 @@ async function renderPdfFirstPageToCanvas(file) {
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     await page.render({ canvasContext: ctx, viewport }).promise;
-    return canvas;
+    return cloneCanvas(canvas);
   } finally {
     await doc.destroy().catch(() => {});
   }
@@ -51,50 +60,35 @@ async function loadImageFileToCanvas(file) {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Could not create canvas");
     ctx.drawImage(img, 0, 0);
-    return canvas;
+    return cloneCanvas(canvas);
   } finally {
     URL.revokeObjectURL(url);
   }
 }
 
-/** Scale source canvas to fit max width; returns { canvas, scale }. */
-function fitCanvas(source) {
-  const scale = source.width > MAX_CANVAS_WIDTH ? MAX_CANVAS_WIDTH / source.width : 1;
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(source.width * scale));
-  canvas.height = Math.max(1, Math.round(source.height * scale));
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Could not create canvas");
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
-  return { canvas, scale: 1 / scale };
+/** @returns {Promise<HTMLCanvasElement>} full-resolution source canvas */
+export async function loadFloorPlanSourceCanvas(file) {
+  return isPdfFile(file) ? renderPdfFirstPageToCanvas(file) : loadImageFileToCanvas(file);
+}
+
+/** Fit image into viewport; returns scale to map source -> screen pixels. */
+export function fitScale(sourceWidth, sourceHeight, viewportWidth, viewportHeight) {
+  if (!sourceWidth || !sourceHeight || !viewportWidth || !viewportHeight) return 1;
+  return Math.min(viewportWidth / sourceWidth, viewportHeight / sourceHeight, 1);
+}
+
+/** @returns {{ minX: number, minY: number, cropCorners: { x: number, y: number }[] }} */
+export function sourcePointsToCropSpace(points) {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const minX = Math.max(0, Math.floor(Math.min(...xs)));
+  const minY = Math.max(0, Math.floor(Math.min(...ys)));
+  const cropCorners = points.map((p) => ({ x: p.x - minX, y: p.y - minY }));
+  return { minX, minY, cropCorners };
 }
 
 /**
- * Load uploaded file into a display canvas (scaled) and full-resolution source canvas.
- * @returns {{ displayCanvas: HTMLCanvasElement, sourceCanvas: HTMLCanvasElement, scale: number }}
- */
-export async function loadFloorPlanSourceCanvases(file) {
-  const rawCanvas = isPdfFile(file)
-    ? await renderPdfFirstPageToCanvas(file)
-    : await loadImageFileToCanvas(file);
-
-  const { canvas: displayCanvas, scale } = fitCanvas(rawCanvas);
-  return {
-    displayCanvas,
-    sourceCanvas: rawCanvas,
-    scale,
-  };
-}
-
-/** @param {{ x: number, y: number }[]} displayPoints @param {number} scale display -> source multiplier */
-export function displayPointsToSource(displayPoints, scale) {
-  return displayPoints.map((p) => ({ x: p.x * scale, y: p.y * scale }));
-}
-
-/**
- * Crop polygon region from source canvas and return JPEG blob.
+ * Crop polygon region from source canvas and return JPEG blob plus crop-space corners.
  * @param {HTMLCanvasElement} sourceCanvas
  * @param {{ x: number, y: number }[]} points source-space coordinates
  */
@@ -103,10 +97,9 @@ export function cropPolygonToJpegBlob(sourceCanvas, points, quality = 0.92) {
     return Promise.reject(new Error("Draw at least 3 corners"));
   }
 
+  const { minX, minY, cropCorners } = sourcePointsToCropSpace(points);
   const xs = points.map((p) => p.x);
   const ys = points.map((p) => p.y);
-  const minX = Math.max(0, Math.floor(Math.min(...xs)));
-  const minY = Math.max(0, Math.floor(Math.min(...ys)));
   const maxX = Math.min(sourceCanvas.width, Math.ceil(Math.max(...xs)));
   const maxY = Math.min(sourceCanvas.height, Math.ceil(Math.max(...ys)));
   const w = Math.max(1, maxX - minX);
@@ -130,14 +123,24 @@ export function cropPolygonToJpegBlob(sourceCanvas, points, quality = 0.92) {
   });
   ctx.closePath();
   ctx.clip();
-  ctx.drawImage(sourceCanvas, -minX, -minY);
+  ctx.drawImage(
+    sourceCanvas,
+    0,
+    0,
+    sourceCanvas.width,
+    sourceCanvas.height,
+    -minX,
+    -minY,
+    sourceCanvas.width,
+    sourceCanvas.height
+  );
   ctx.restore();
 
   return new Promise((resolve, reject) => {
     out.toBlob(
       (blob) => {
         if (!blob) reject(new Error("Failed to export JPEG"));
-        else resolve(blob);
+        else resolve({ blob, cropCorners });
       },
       "image/jpeg",
       quality
