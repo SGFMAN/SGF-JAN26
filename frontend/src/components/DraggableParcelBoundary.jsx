@@ -117,11 +117,14 @@ export default function DraggableParcelBoundary({
   const onToggleRef = useRef(onToggleMovable);
   const onFeatureChangeRef = useRef(onFeatureChange);
   const dragHandlersRef = useRef(new Map());
+  const geometryKeyRef = useRef(null);
 
   featureRef.current = feature;
   movableRef.current = movable;
   onToggleRef.current = onToggleMovable;
   onFeatureChangeRef.current = onFeatureChange;
+
+  const geometryKey = feature?.geometry ? JSON.stringify(feature.geometry) : null;
 
   useEffect(() => {
     if (!feature?.geometry) return undefined;
@@ -138,7 +141,21 @@ export default function DraggableParcelBoundary({
       }).eachLayer((layer) => boundaryGroup.addLayer(layer));
 
       boundaryGroup.addTo(map);
+      boundaryGroup.bringToFront?.();
       boundaryRef.current = boundaryGroup;
+      geometryKeyRef.current = geometryKey;
+
+      const syncHandlePosition = () => {
+        if (!boundaryRef.current || !handleRef.current) return;
+        try {
+          const nextBounds = boundsFromLayerGroup(boundaryRef.current);
+          if (!nextBounds) return;
+          const latlng = handleLatLngForBounds(map, nextBounds);
+          if (latlng) handleRef.current.setLatLng(latlng);
+        } catch (err) {
+          console.warn("[DraggableParcelBoundary] sync handle:", err);
+        }
+      };
 
       const bounds = boundsFromLayerGroup(boundaryGroup);
       handle = createMoveHandleMarker(
@@ -156,18 +173,6 @@ export default function DraggableParcelBoundary({
         handle.addTo(map);
         handleRef.current = handle;
       }
-
-      const syncHandlePosition = () => {
-        if (!boundaryRef.current || !handleRef.current) return;
-        try {
-          const nextBounds = boundsFromLayerGroup(boundaryRef.current);
-          if (!nextBounds) return;
-          const latlng = handleLatLngForBounds(map, nextBounds);
-          if (latlng) handleRef.current.setLatLng(latlng);
-        } catch (err) {
-          console.warn("[DraggableParcelBoundary] sync handle:", err);
-        }
-      };
 
       const beginDrag = (startEvent) => {
         if (!movableRef.current) return;
@@ -212,7 +217,6 @@ export default function DraggableParcelBoundary({
         dragHandlersRef.current.set(layer, beginDrag);
       });
       setBoundaryCursor(boundaryGroup, movableRef.current ? "grab" : "");
-
       unbindViewSync = bindDebouncedMapViewSync(map, syncHandlePosition);
     } catch (err) {
       console.error("[DraggableParcelBoundary] setup failed:", err);
@@ -229,7 +233,7 @@ export default function DraggableParcelBoundary({
       handleRef.current = null;
       boundaryRef.current = null;
     };
-  }, [feature?.geometry, map]);
+  }, [geometryKey, feature, map]);
 
   useEffect(() => {
     updateMoveHandleMarker(handleRef.current, {

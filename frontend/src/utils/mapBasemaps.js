@@ -6,8 +6,8 @@ export const BASEMAP_NEARMAP = "nearmap";
 
 export const DEFAULT_BASEMAP_ID = BASEMAP_VICMAP_AERIAL;
 
-/** Leaflet map max zoom — capped to Vicmap native max (tiles 404 above z20). */
-export const MAP_MAX_ZOOM = 20;
+/** Leaflet map max zoom (wheel zoom). Tiles upscale beyond each layer's maxNativeZoom. */
+export const MAP_MAX_ZOOM = 23;
 
 const ESRI_IMAGERY_URL =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
@@ -26,7 +26,7 @@ const BASEMAP_DEFS = {
       '&copy; <a href="https://www.land.vic.gov.au/maps-and-spatial/data-services/vicmap-basemaps">State of Victoria</a> (Vicmap Basemaps)',
     url: VICMAP_AERIAL_WMTS_URL,
     maxNativeZoom: 20,
-    maxZoom: 20,
+    maxZoom: MAP_MAX_ZOOM,
   },
   [BASEMAP_ESRI_IMAGERY]: {
     id: BASEMAP_ESRI_IMAGERY,
@@ -34,8 +34,8 @@ const BASEMAP_DEFS = {
     attribution:
       '&copy; <a href="https://www.esri.com/">Esri</a>, Maxar, Earthstar Geographics &amp; contributors',
     url: ESRI_IMAGERY_URL,
-    maxNativeZoom: 19,
-    maxZoom: 19,
+    maxNativeZoom: 22,
+    maxZoom: MAP_MAX_ZOOM,
   },
   [BASEMAP_NEARMAP]: {
     id: BASEMAP_NEARMAP,
@@ -43,7 +43,7 @@ const BASEMAP_DEFS = {
     attribution: '&copy; <a href="https://www.nearmap.com/">Nearmap</a>',
     url: NEARMAP_TILE_PROXY_PATH,
     maxNativeZoom: 21,
-    maxZoom: 21,
+    maxZoom: MAP_MAX_ZOOM,
     requiresNearmapKey: true,
   },
 };
@@ -83,12 +83,6 @@ export function resolveBasemapId(basemapId, config = {}) {
   const allowed = new Set(options.map((o) => o.id));
   if (basemapId && allowed.has(basemapId)) return basemapId;
   return config.defaultBasemapId || DEFAULT_BASEMAP_ID;
-}
-
-/** @param {string} basemapId */
-export function getBasemapMaxZoom(basemapId) {
-  const def = BASEMAP_DEFS[basemapId] || BASEMAP_DEFS[DEFAULT_BASEMAP_ID];
-  return def.maxZoom ?? MAP_MAX_ZOOM;
 }
 
 /** @param {string} basemapId */
