@@ -5,6 +5,7 @@ import FloorPlanCornerLevels from "./FloorPlanCornerLevels";
 import {
   boundsFromCenter,
   fetchFloorPlanImageBlob,
+  floorPlanCornerPoints,
   floorPlanDimensionsMeters,
   loadImageSizeFromBlob,
 } from "../utils/floorPlanMap";
@@ -90,7 +91,7 @@ export default function DraggableFloorPlanOverlay({
   siteGeometry = null,
 }) {
   const map = useMap();
-  const [overlayBounds, setOverlayBounds] = useState(null);
+  const [cornerPoints, setCornerPoints] = useState(null);
   const overlayRef = useRef(null);
   const handleRef = useRef(null);
   const objectUrlRef = useRef(null);
@@ -118,7 +119,7 @@ export default function DraggableFloorPlanOverlay({
       const key = `${sw.lat.toFixed(5)},${sw.lng.toFixed(5)},${ne.lat.toFixed(5)},${ne.lng.toFixed(5)}`;
       if (key === lastBoundsKeyRef.current) return;
       lastBoundsKeyRef.current = key;
-      setOverlayBounds(bounds);
+      setCornerPoints(floorPlanCornerPoints(bounds));
     } catch (err) {
       console.warn("[DraggableFloorPlanOverlay] sync bounds:", err);
     }
@@ -280,16 +281,16 @@ export default function DraggableFloorPlanOverlay({
         objectUrlRef.current = null;
       }
       lastBoundsKeyRef.current = "";
-      setOverlayBounds(null);
+      setCornerPoints(null);
     };
   }, [plan?.id, plan?.scale?.metersPerPixel, plan?.name, map]);
 
   return (
     <FloorPlanCornerLevels
-      bounds={overlayBounds}
+      cornerPoints={cornerPoints}
       siteGeometry={siteGeometry}
       lookupState={lookupState}
-      enabled={Boolean(overlayBounds)}
+      enabled={Boolean(cornerPoints?.length)}
     />
   );
 }

@@ -54,12 +54,35 @@ export function floorPlanCornerPoints(bounds) {
   if (!bounds) return [];
   const sw = bounds.getSouthWest();
   const ne = bounds.getNorthEast();
+  return cornersFromLatLngBox(sw.lat, sw.lng, ne.lat, ne.lng);
+}
+
+/** @returns {{ id: string, lat: number, lng: number }[]} */
+export function cornersFromLatLngBox(south, west, north, east) {
   return [
-    { id: "sw", lat: sw.lat, lng: sw.lng },
-    { id: "se", lat: sw.lat, lng: ne.lng },
-    { id: "ne", lat: ne.lat, lng: ne.lng },
-    { id: "nw", lat: ne.lat, lng: sw.lng },
+    { id: "sw", lat: south, lng: west },
+    { id: "se", lat: south, lng: east },
+    { id: "ne", lat: north, lng: east },
+    { id: "nw", lat: north, lng: west },
   ];
+}
+
+export function elevationPointsKey(points) {
+  if (!points?.length) return "";
+  return points
+    .map((point) => `${point.id}:${Number(point.lat).toFixed(5)},${Number(point.lng).toFixed(5)}`)
+    .join("|");
+}
+
+export function isVictoriaLatLng(lat, lng) {
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat <= -33.5 &&
+    lat >= -39.5 &&
+    lng >= 140.5 &&
+    lng <= 150.5
+  );
 }
 
 export async function fetchAhdElevations(points, state = "VIC", externalSignal = null) {

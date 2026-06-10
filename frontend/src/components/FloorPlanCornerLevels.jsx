@@ -2,9 +2,10 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import { useMap } from "react-leaflet";
 import {
+  elevationPointsKey,
   fetchAhdElevationsBatched,
-  floorPlanCornerPoints,
   formatFallLabel,
+  isVictoriaLatLng,
   sampleSiteElevationPoints,
   siteHighPointAhd,
 } from "../utils/floorPlanMap";
@@ -17,13 +18,6 @@ const CORNER_ANCHORS = {
 };
 
 const FETCH_DEBOUNCE_MS = 300;
-
-function boundsKey(bounds) {
-  if (!bounds) return "";
-  const sw = bounds.getSouthWest();
-  const ne = bounds.getNorthEast();
-  return `${sw.lat.toFixed(5)},${sw.lng.toFixed(5)},${ne.lat.toFixed(5)},${ne.lng.toFixed(5)}`;
-}
 
 function escapeAttr(text) {
   return String(text)
@@ -48,6 +42,18 @@ function cornerLabelHtml(text, tooltip = "") {
     pointer-events: auto;
     cursor: help;
   ">${text}</div>`;
+}
+
+function bindMarkerTooltip(marker, tooltip) {
+  if (!marker || !tooltip) return;
+  marker.unbindTooltip?.();
+  marker.bindTooltip(tooltip, {
+    permanent: false,
+    direction: "top",
+    offset: [0, -8],
+    opacity: 0.95,
+    className: "floor-plan-level-tooltip",
+  });
 }
 
 function createCornerMarker(point) {
@@ -80,6 +86,7 @@ function setCornerMarkerText(marker, text, tooltip = "") {
       iconAnchor: [anchor.x, anchor.y],
     })
   );
+  bindMarkerTooltip(marker, tooltip);
 }
 
 function removeCornerLayer(map, layerRef, markersRef) {
@@ -104,6 +111,10 @@ function readAhdM(row) {
   return Number.isFinite(value) ? value : NaN;
 }
 
+function countElevationHits(rows) {
+  return rows.filter((row) => Number.isFinite(readAhdM(row))).length;
+}
+
 function unavailableReason(row, siteMax) {
   if (siteMax == null) {
     return "Could not determine site high point from Vicmap elevation data";
@@ -113,7 +124,7 @@ function unavailableReason(row, siteMax) {
 }
 
 function applyCornerLabels(markers, unitPoints, unitRows, siteMax) {
-  const unitById = new Map(unitRows.map((row) => [row.id, row]));
+  const unitById = new Map(unitRows.map((row) => [String(row.id), row]));
 
   for (let index = 0; index < markers.length; index += 1) {
     const marker = markers[index];
@@ -121,7 +132,7 @@ function applyCornerLabels(markers, unitPoints, unitRows, siteMax) {
     if (!marker || !point) continue;
 
     try {
-      const row = unitById.get(point.id);
+      const row = unitById.get(String(point.id));
       const ahdM = readAhdM(row);
 
       if (siteMax == null || !Number.isFinite(ahdM)) {
@@ -151,13 +162,20 @@ function markAllCorners(markers, text, tooltip) {
   }
 }
 
-function allRowsMissingElevation(rows) {
-  return rows.length > 0 && rows.every((row) => !Number.isFinite(readAhdM(row)));
+function splitElevationRows(rows, siteIds) {
+  const siteRows = rows.filter((row) => siteIds.has(String(row.id)));
+  const unitRows = rows.filter((row) => !siteIds.has(String(row.id)));
+  return { siteRows, unitRows };
+}
+
+function outOfRangeMessage(unitPoints) {
+  const sample = unitPoints[0];
+  return `Corner coordinates outside Victoria (${sample.lat.toFixed(5)}, ${sample.lng.toFixed(5)})`;
 }
 
 /** Fall labels at floor plan corners — 0 at site high point, 0.25 m steps below. */
 export default function FloorPlanCornerLevels({
-  bounds,
+  cornerPoints,
   siteGeometry = null,
   lookupState = "VIC",
   enabled = true,
@@ -185,8 +203,10 @@ export default function FloorPlanCornerLevels({
 
   useEffect(() => {
     const mapInstance = mapRef.current;
+    const unitPoints = Array.isArray(cornerPoints) ? cornerPoints : [];
+    const key = elevationPointsKey(unitPoints);
 
-    if (!enabled || !bounds || lookupState !== "VIC") {
+    if (!enabled || unitPoints.length === 0 || lookupState !== "VIC") {
       window.clearTimeout(fetchTimerRef.current);
       fetchAbortRef.current?.abort();
       removeCornerLayer(mapInstance, layerRef, markersRef);
@@ -194,10 +214,6 @@ export default function FloorPlanCornerLevels({
       activeFetchKeyRef.current = "";
       return undefined;
     }
-
-    const key = boundsKey(bounds);
-    const unitPoints = floorPlanCornerPoints(bounds);
-    if (unitPoints.length === 0) return undefined;
 
     if (!layerRef.current) {
       const group = L.layerGroup();
@@ -211,6 +227,11 @@ export default function FloorPlanCornerLevels({
     } else {
       syncMarkerPositions(markersRef.current, unitPoints);
       layerRef.current.bringToFront?.();
+    }
+
+    if (unitPoints.some((point) => !isVictoriaLatLng(point.lat, point.lng))) {
+      markAllCorners(markersRef.current, "—", outOfRangeMessage(unitPoints));
+      return undefined;
     }
 
     window.clearTimeout(fetchTimerRef.current);
@@ -231,38 +252,32 @@ export default function FloorPlanCornerLevels({
       (async () => {
         try {
           const sitePoints = sampleSiteElevationPoints(siteGeometryRef.current, 8);
+          const siteIds = new Set(sitePoints.map((point) => String(point.id)));
+          const allPoints = [...sitePoints, ...unitPoints];
 
-          const unitRows = await fetchAhdElevationsBatched(
-            unitPoints,
+          const rows = await fetchAhdElevationsBatched(
+            allPoints,
             lookupState,
-            4,
+            24,
             controller.signal
           );
 
           if (controller.signal.aborted || activeFetchKeyRef.current !== key) return;
 
-          let siteRows = [];
-          if (sitePoints.length > 0) {
-            siteRows = await fetchAhdElevationsBatched(
-              sitePoints,
-              lookupState,
-              8,
-              controller.signal
-            );
-          }
-
-          if (controller.signal.aborted || activeFetchKeyRef.current !== key) return;
+          const { siteRows, unitRows } = splitElevationRows(rows, siteIds);
+          const hits = countElevationHits(rows);
 
           let siteMax = siteHighPointAhd(siteRows);
           if (siteMax == null) {
             siteMax = siteHighPointAhd(unitRows);
           }
 
-          if (siteMax == null && allRowsMissingElevation([...siteRows, ...unitRows])) {
+          if (hits === 0) {
+            const sample = unitPoints[0];
             markAllCorners(
               markers,
               "—",
-              "No Vicmap elevation data found for this location (Victoria only)"
+              `No Vicmap elevation returned for (${sample.lat.toFixed(5)}, ${sample.lng.toFixed(5)}). Check backend is running on port 3001.`
             );
             return;
           }
@@ -290,7 +305,7 @@ export default function FloorPlanCornerLevels({
     return () => {
       window.clearTimeout(fetchTimerRef.current);
     };
-  }, [boundsKey(bounds), enabled, lookupState]);
+  }, [elevationPointsKey(cornerPoints), enabled, lookupState]);
 
   return null;
 }

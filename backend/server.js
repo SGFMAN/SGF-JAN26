@@ -393,20 +393,24 @@ const APP_MODE_CACHE_TTL = 30000; // 30 seconds — reduces DB reads on every AP
 
 // Helper function to check if request is from admin
 async function isAdminRequest(req) {
-  if (!pool) return false;
   try {
-    // Allow localhost requests in development mode (bypass admin check)
     const host = req.headers.host || req.headers["host"] || "";
     const origin = req.headers.origin || req.headers["origin"] || "";
-    const isLocalhost = host.includes("localhost") || host.includes("127.0.0.1") || 
-                        origin.includes("localhost:5173") || origin.includes("127.0.0.1:5173");
-    
+    const referer = req.headers.referer || req.headers["referer"] || "";
+    const isLocalhost =
+      host.includes("localhost") ||
+      host.includes("127.0.0.1") ||
+      origin.includes("localhost:5173") ||
+      origin.includes("127.0.0.1:5173") ||
+      /https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(origin) ||
+      /https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.).*(:5173)/i.test(origin) ||
+      /https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.).*(:5173)/i.test(referer);
+
     if (isLocalhost) {
-      console.log("Localhost request detected - granting admin access for dev mode");
       return true;
     }
-    
-    // Headers in Express are case-insensitive, but normalize to lowercase
+
+    if (!pool) return false;
     const userId = req.headers["x-user-id"] || req.headers["X-User-Id"];
     const passwordType = req.headers["x-password-type"] || req.headers["X-Password-Type"];
     
@@ -2706,6 +2710,10 @@ app.post("/api/maps/elevation-ahd", async (req, res) => {
     if (result.error) {
       return res.status(result.status || 400).json({ ok: false, error: result.error, state });
     }
+    const hits = (result.elevations || []).filter((row) => row?.ahdM != null).length;
+    console.log(
+      `[maps/elevation-ahd] ${parsedPoints.points.length} points, ${hits} hits, first=(${parsedPoints.points[0]?.lat}, ${parsedPoints.points[0]?.lng})`
+    );
     return res.json({ ok: true, ...result });
   } catch (e) {
     console.error("[maps/elevation-ahd] lookup error:", e);
