@@ -41,6 +41,7 @@ const {
 } = require("./mapsEasementsLookup");
 const {
   lookupAhdElevations,
+  lookupMonumentBox,
   normalizeElevationState,
   parsePointsInput,
 } = require("./mapsElevationLookup");
@@ -2727,6 +2728,40 @@ app.post("/api/maps/elevation-ahd", async (req, res) => {
     return res.status(502).json({
       ok: false,
       error: e.message || "Elevation service unavailable",
+      state,
+    });
+  }
+});
+
+// --- Vicmap monument box around site boundary (NW/NE/SE/SW) ---
+app.post("/api/maps/elevation-monument-box", async (req, res) => {
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) {
+    return res.status(403).json({ ok: false, error: "Admin access required" });
+  }
+
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const state = normalizeElevationState(body.state);
+  const geometry = body.geometry;
+
+  if (!geometry || typeof geometry !== "object") {
+    return res.status(400).json({ ok: false, error: "geometry is required" });
+  }
+
+  try {
+    const result = await lookupMonumentBox({ state, geometry });
+    if (result.error) {
+      return res.status(result.status || 400).json({ ok: false, error: result.error, state });
+    }
+    console.log(
+      `[maps/elevation-monument-box] monuments found, encapsulates=${result.encapsulatesSite}, missing=${result.missing?.join(",") || "none"}`
+    );
+    return res.json({ ok: true, ...result });
+  } catch (e) {
+    console.error("[maps/elevation-monument-box] lookup error:", e);
+    return res.status(502).json({
+      ok: false,
+      error: e.message || "Monument box service unavailable",
       state,
     });
   }

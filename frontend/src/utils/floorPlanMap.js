@@ -240,21 +240,37 @@ export async function fetchAhdElevationsBatched(
   return rows;
 }
 
-/** Site interpolation lookup — includes the four-monument bilinear patch when used. */
-export async function fetchAhdInterpolationContext(
-  points,
-  state = "VIC",
-  externalSignal = null
-) {
-  const data = await fetchAhdElevations(points, state, externalSignal, "interpolate");
-  return {
-    elevations: data.elevations || [],
-    surroundQuad: data.surroundQuad ?? data.displayQuad ?? null,
-    displayQuad: data.displayQuad ?? data.surroundQuad ?? null,
-    interpolationMethod: data.interpolationMethod ?? null,
-    idwContributors: data.idwContributors ?? null,
-    groundSurveyCount: data.groundSurveyCount ?? null,
-  };
+/** Monument box around site — four monuments outside NW/NE/SE/SW boundary extremes. */
+export async function fetchMonumentBox(geometry, state = "VIC", externalSignal = null) {
+  if (externalSignal?.aborted) {
+    throw new DOMException("Aborted", "AbortError");
+  }
+
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 90000);
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal) {
+    externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+  }
+
+  try {
+    const res = await fetch("/api/maps/elevation-monument-box", {
+      method: "POST",
+      headers: getApiHeaders(),
+      body: JSON.stringify({ state, geometry }),
+      signal: controller.signal,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || `Failed to load monument box (${res.status})`);
+    }
+    return data;
+  } finally {
+    window.clearTimeout(timer);
+    if (externalSignal) {
+      externalSignal.removeEventListener("abort", onExternalAbort);
+    }
+  }
 }
 
 export function siteHighPointAhd(elevationRows) {

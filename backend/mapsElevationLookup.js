@@ -842,8 +842,201 @@ async function mapWithConcurrency(items, limit, fn) {
   return results;
 }
 
+function parseBoundaryRingFromGeometry(geometry) {
+  if (!geometry || typeof geometry !== "object") return [];
+
+  const ringFromCoords = (coords) => {
+    if (!Array.isArray(coords)) return [];
+    const ring = [];
+    for (const coord of coords) {
+      if (!Array.isArray(coord) || coord.length < 2) continue;
+      const lng = Number(coord[0]);
+      const lat = Number(coord[1]);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) ring.push({ lat, lng });
+    }
+    return ring;
+  };
+
+  if (geometry.type === "Polygon") {
+    return ringFromCoords(geometry.coordinates?.[0]);
+  }
+  if (geometry.type === "MultiPolygon") {
+    let best = [];
+    for (const poly of geometry.coordinates || []) {
+      const ring = ringFromCoords(poly?.[0]);
+      if (ring.length > best.length) best = ring;
+    }
+    return best;
+  }
+  return [];
+}
+
+/** Most extreme boundary vertex in each compass direction. */
+function pickExtremeSiteCorner(ring, cornerId) {
+  if (!ring.length) return null;
+
+  let best = ring[0];
+  let bestScore = cornerScore(ring[0], cornerId);
+
+  for (let i = 1; i < ring.length; i += 1) {
+    const score = cornerScore(ring[i], cornerId);
+    if (score > bestScore) {
+      bestScore = score;
+      best = ring[i];
+    }
+  }
+  return { lat: best.lat, lng: best.lng };
+}
+
+function cornerScore(point, cornerId) {
+  if (cornerId === "nw") return point.lat - point.lng;
+  if (cornerId === "ne") return point.lat + point.lng;
+  if (cornerId === "se") return -point.lat + point.lng;
+  if (cornerId === "sw") return -point.lat - point.lng;
+  return 0;
+}
+
+function monumentOutsideCorner(monuments, corner, cornerId) {
+  let best = null;
+  let bestDist = Infinity;
+
+  for (const monument of monuments) {
+    let outside = false;
+    if (cornerId === "nw") {
+      outside = monument.lat > corner.lat && monument.lng < corner.lng;
+    } else if (cornerId === "ne") {
+      outside = monument.lat > corner.lat && monument.lng > corner.lng;
+    } else if (cornerId === "se") {
+      outside = monument.lat < corner.lat && monument.lng > corner.lng;
+    } else if (cornerId === "sw") {
+      outside = monument.lat < corner.lat && monument.lng < corner.lng;
+    }
+    if (!outside) continue;
+
+    const distM = haversineM(corner.lat, corner.lng, monument.lat, monument.lng);
+    if (distM < bestDist) {
+      bestDist = distM;
+      best = monument;
+    }
+  }
+
+  if (!best) return null;
+  return {
+    lat: best.lat,
+    lng: best.lng,
+    ahdM: roundAhd(best.alt),
+    distM: Math.round(bestDist),
+  };
+}
+
+function siteInsideMonumentBox(siteRing, monuments) {
+  const corners = ["nw", "ne", "se", "sw"];
+  if (corners.some((id) => !monuments[id])) return false;
+
+  const lats = corners.map((id) => monuments[id].lat);
+  const lngs = corners.map((id) => monuments[id].lng);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+
+  for (const point of siteRing) {
+    if (point.lat <= minLat || point.lat >= maxLat) return false;
+    if (point.lng <= minLng || point.lng >= maxLng) return false;
+  }
+  return true;
+}
+
+function monumentBoxSummary(siteCorners, monuments, siteRing) {
+  const missing = ["nw", "ne", "se", "sw"].filter((id) => !monuments[id]);
+  return {
+    siteCorners,
+    monuments: {
+      nw: monuments.nw,
+      ne: monuments.ne,
+      se: monuments.se,
+      sw: monuments.sw,
+    },
+    missing,
+    encapsulatesSite: missing.length === 0 && siteInsideMonumentBox(siteRing, monuments),
+  };
+}
+
+async function fetchMonumentsNearSite(siteRing) {
+  const bounds = siteBounds(siteRing);
+  const centroid = bboxCenter(bounds);
+  const anchors = [
+    centroid,
+    { lat: bounds.minLat, lng: bounds.minLng },
+    { lat: bounds.minLat, lng: bounds.maxLng },
+    { lat: bounds.maxLat, lng: bounds.minLng },
+    { lat: bounds.maxLat, lng: bounds.maxLng },
+  ];
+
+  const merged = [];
+  const errors = [];
+  for (const anchor of anchors) {
+    const { points, errors: chunkErrors } = await fetchGroundSurveyPoints(anchor.lat, anchor.lng);
+    merged.push(...points);
+    errors.push(...chunkErrors);
+  }
+
+  return {
+    points: dedupeGroundPoints(merged),
+    errors: [...new Set(errors.filter(Boolean))],
+  };
+}
+
+/**
+ * Pick four Vicmap monuments outside the site's extreme NW/NE/SE/SW boundary points.
+ */
+async function lookupMonumentBox({ state, geometry }) {
+  const normalizedState = normalizeElevationState(state);
+  if (normalizedState !== "VIC") {
+    return {
+      error: "Monument box lookup is currently available for Victoria (VIC) only",
+      status: 400,
+    };
+  }
+
+  const siteRing = parseBoundaryRingFromGeometry(geometry);
+  if (siteRing.length < 3) {
+    return { error: "geometry must be a Polygon or MultiPolygon with at least 3 vertices", status: 400 };
+  }
+
+  const { points: groundPoints, errors } = await fetchMonumentsNearSite(siteRing);
+  if (!groundPoints.length) {
+    return {
+      error: errors[0] || "No Vicmap survey monuments found near this site",
+      status: 404,
+    };
+  }
+
+  const siteCorners = {
+    nw: pickExtremeSiteCorner(siteRing, "nw"),
+    ne: pickExtremeSiteCorner(siteRing, "ne"),
+    se: pickExtremeSiteCorner(siteRing, "se"),
+    sw: pickExtremeSiteCorner(siteRing, "sw"),
+  };
+
+  const monuments = {
+    nw: monumentOutsideCorner(groundPoints, siteCorners.nw, "nw"),
+    ne: monumentOutsideCorner(groundPoints, siteCorners.ne, "ne"),
+    se: monumentOutsideCorner(groundPoints, siteCorners.se, "se"),
+    sw: monumentOutsideCorner(groundPoints, siteCorners.sw, "sw"),
+  };
+
+  return {
+    state: normalizedState,
+    datum: "AHD",
+    groundSurveyCount: groundPoints.length,
+    ...monumentBoxSummary(siteCorners, monuments, siteRing),
+  };
+}
+
 module.exports = {
   normalizeElevationState,
   parsePointsInput,
   lookupAhdElevations,
+  lookupMonumentBox,
 };
