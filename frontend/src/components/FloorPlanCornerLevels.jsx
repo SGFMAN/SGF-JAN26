@@ -72,6 +72,13 @@ function setCornerMarkerText(marker, text) {
   );
 }
 
+function setMarkerTooltip(marker, title) {
+  if (!marker || !title) return;
+  if (marker.options) marker.options.title = title;
+  const el = marker.getElement?.();
+  if (el) el.title = title;
+}
+
 function removeCornerLayer(map, layerRef, markersRef) {
   if (layerRef.current) {
     map.removeLayer(layerRef.current);
@@ -108,14 +115,15 @@ function applyCornerLabels(markers, unitPoints, unitRows, siteMax) {
 
       if (siteMax == null || !Number.isFinite(ahdM)) {
         setCornerMarkerText(marker, "—");
-        marker.setTitle("Level unavailable");
+        setMarkerTooltip(marker, "Level unavailable");
         continue;
       }
 
       const fallM = siteMax - ahdM;
       const label = formatFallLabel(fallM);
       setCornerMarkerText(marker, label);
-      marker.setTitle(
+      setMarkerTooltip(
+        marker,
         `Fall ${label} m from site high point` +
           ` (site ${siteMax.toFixed(2)} m AHD, corner ${ahdM.toFixed(2)} m AHD` +
           `${row?.approximate ? ", approximate" : ""})`
@@ -123,7 +131,7 @@ function applyCornerLabels(markers, unitPoints, unitRows, siteMax) {
     } catch (err) {
       console.warn("[FloorPlanCornerLevels] marker update:", point?.id, err);
       setCornerMarkerText(marker, "—");
-      marker.setTitle("Level unavailable");
+      setMarkerTooltip(marker, "Level unavailable");
     }
   }
 }
@@ -218,7 +226,7 @@ export default function FloorPlanCornerLevels({
           console.warn("[FloorPlanCornerLevels]", err);
           for (const marker of markers) {
             setCornerMarkerText(marker, "—");
-            marker.setTitle(err.message || "Could not load site levels");
+            setMarkerTooltip(marker, err.message || "Could not load site levels");
           }
         }
       })();
