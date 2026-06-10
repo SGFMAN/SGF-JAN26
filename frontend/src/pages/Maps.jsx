@@ -11,7 +11,7 @@ import { MapBasemapSelector, MapBasemapTileLayer } from "../components/MapBasema
 import DraggableParcelBoundary from "../components/DraggableParcelBoundary";
 import SiteBoundaryLevels from "../components/SiteBoundaryLevels";
 import PlanningOverlaysLayer, {
-  buildInitialPlanningLayerVisibility,
+  mergePlanningLayerVisibility,
   overlayLayerKey,
   PLANNING_VISIBILITY_ZONE,
 } from "../components/PlanningOverlaysLayer";
@@ -374,7 +374,7 @@ export default function Maps() {
           setPlanningInfo(data);
           setPlanningZoneGeoJson(data.zoneGeoJson || null);
           setPlanningOverlayGeoJson(data.overlayGeoJson || null);
-          setPlanningLayerVisibility(buildInitialPlanningLayerVisibility(data));
+          setPlanningLayerVisibility((prev) => mergePlanningLayerVisibility(prev, data));
         } else {
           setPlanningInfo(null);
           setPlanningZoneGeoJson(null);

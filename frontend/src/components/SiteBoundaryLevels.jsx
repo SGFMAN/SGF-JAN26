@@ -127,48 +127,6 @@ function addVertexPin(group, lat, lng) {
   group.addLayer(pin);
 }
 
-function addSurveySourceLayers(group, boundaryLat, boundaryLng, row) {
-  const surveyLat = Number(row?.surveyLat);
-  const surveyLng = Number(row?.surveyLng);
-  const surveyDistM = Number(row?.surveyDistM);
-  if (!Number.isFinite(surveyLat) || !Number.isFinite(surveyLng)) return;
-
-  addVertexPin(group, boundaryLat, boundaryLng);
-
-  if (!Number.isFinite(surveyDistM) || surveyDistM <= 1) return;
-
-  const line = L.polyline(
-    [
-      [boundaryLat, boundaryLng],
-      [surveyLat, surveyLng],
-    ],
-    {
-      color: "#b45309",
-      weight: 2,
-      opacity: 0.85,
-      dashArray: "6 5",
-      interactive: false,
-    }
-  );
-  group.addLayer(line);
-
-  const surveyMarker = L.circleMarker([surveyLat, surveyLng], {
-    radius: 6,
-    color: "#c2410c",
-    weight: 2,
-    fillColor: "#fdba74",
-    fillOpacity: 0.95,
-    interactive: true,
-    zIndexOffset: 2640,
-  });
-  const surveyLabel = formatAhdLabel(readAhdM(row));
-  surveyMarker.bindTooltip(
-    `Vicmap survey monument\n${surveyLabel} m AHD\n${surveyLat.toFixed(5)}, ${surveyLng.toFixed(5)}`,
-    { direction: "top", offset: [0, -6], opacity: 0.95 }
-  );
-  group.addLayer(surveyMarker);
-}
-
 function buildSurveyTooltip(point, row, label) {
   const dist = row?.surveyDistM;
   const count = row?.surveyCount;
@@ -176,7 +134,11 @@ function buildSurveyTooltip(point, row, label) {
   const source = row?.source || "vicmap";
 
   let methodNote = "Interpolated from nearby Vicmap survey monuments.";
-  if (source === "vicmap_idw_flat") {
+  if (source === "vicmap_surround_bilinear") {
+    methodNote =
+      `Bilinear patch from 4 surrounding Vicmap monuments (corner range ${rangeM ?? "?"} m). ` +
+      "Relative falls across the site follow this gradient.";
+  } else if (source === "vicmap_idw_flat") {
     methodNote = `Locally flat patch (surveys within ${rangeM ?? "?"} m) — averaged ${count ?? "?"} nearby monuments.`;
   } else if (source === "vicmap_idw") {
     methodNote = `IDW interpolation from ${count ?? "?"} monuments within 450 m (range ${rangeM ?? "?"} m).`;
@@ -187,18 +149,13 @@ function buildSurveyTooltip(point, row, label) {
   const distNote =
     dist != null
       ? dist <= 12
-        ? `Nearest monument ${dist} m away.`
-        : `Nearest monument ${dist} m away — estimate only.`
-      : "";
-
-  const surveyCoords =
-    row?.surveyLat != null && row?.surveyLng != null
-      ? `\nNearest monument: ${Number(row.surveyLat).toFixed(5)}, ${Number(row.surveyLng).toFixed(5)}`
-      : "";
+        ? `Nearest Vicmap monument ${dist} m away.`
+        : `Nearest Vicmap monument ${dist} m away — will not match a site survey.`
+      : "May not match site survey data.";
 
   return (
     `${point.id} boundary vertex: ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}\n` +
-    `Estimated level: ${label} m AHD${surveyCoords}\n` +
+    `Vicmap estimate: ${label} m AHD\n` +
     `${methodNote}\n${distNote}`
   );
 }
@@ -231,7 +188,7 @@ function applyBoundaryLabels(group, markers, boundaryPoints, rows) {
       buildSurveyTooltip(point, row, label),
       borderColor
     );
-    addSurveySourceLayers(group, point.lat, point.lng, row);
+    addVertexPin(group, point.lat, point.lng);
   }
 }
 

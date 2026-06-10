@@ -55,7 +55,7 @@ export function overlayLayerKey(overlay) {
   return String(overlay?.code || overlay?.description || "").trim();
 }
 
-/** Default all zone + overlay layers hidden when planning data loads. */
+/** Zone hidden by default; overlays visible when planning data loads. */
 export function buildInitialPlanningLayerVisibility(planningData) {
   const visibility = {};
   if (planningData?.planningZone || planningData?.zoneGeoJson?.features?.length) {
@@ -63,9 +63,20 @@ export function buildInitialPlanningLayerVisibility(planningData) {
   }
   for (const overlay of planningData?.overlays || []) {
     const key = overlayLayerKey(overlay);
-    if (key) visibility[key] = false;
+    if (key) visibility[key] = true;
   }
   return visibility;
+}
+
+export function mergePlanningLayerVisibility(previous, planningData) {
+  const next = buildInitialPlanningLayerVisibility(planningData);
+  if (!previous || typeof previous !== "object") return next;
+  for (const key of Object.keys(next)) {
+    if (Object.prototype.hasOwnProperty.call(previous, key)) {
+      next[key] = previous[key];
+    }
+  }
+  return next;
 }
 
 function bindPlanningTooltip(layer, code, description) {

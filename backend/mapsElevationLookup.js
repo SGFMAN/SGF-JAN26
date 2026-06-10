@@ -1,6 +1,6 @@
 /**
  * Victorian AHD elevation via Vicmap Elevation FeatureServer (DEECA).
- * Interpolates between nearby ground survey points so unit corners get distinct levels.
+ * Interpolate mode: four surrounding survey monuments + bilinear patch over the site.
  */
 
 const VICMAP_ELEVATION_METRO =
@@ -21,8 +21,7 @@ const GROUND_RESULT_COUNT = 50;
 const IDW_MAX_CONTRIBUTORS = 10;
 const IDW_MAX_RADIUS_M = 450;
 const IDW_MIN_DISTANCE_M = 2;
-/** When contributing surveys agree within this range, treat patch as flat. */
-const FLAT_PATCH_RANGE_M = 0.35;
+const SURROUND_QUADRANT_TRY = 8;
 
 function normalizeElevationState(raw) {
   const s = String(raw || "")
@@ -69,6 +68,278 @@ function haversineM(lat1, lng1, lat2, lng2) {
 
 function roundAhd(value) {
   return Math.round(value * 100) / 100;
+}
+
+function toLocalEN(lat, lng, originLat, originLng) {
+  const metersPerDegLat = 111320;
+  const metersPerDegLng = metersPerDegLat * Math.cos((originLat * Math.PI) / 180);
+  return {
+    e: (lng - originLng) * metersPerDegLng,
+    n: (lat - originLat) * metersPerDegLat,
+  };
+}
+
+function cross2d(ax, ay, bx, by) {
+  return ax * by - ay * bx;
+}
+
+function centroidOfPoints(points) {
+  let latSum = 0;
+  let lngSum = 0;
+  for (const point of points) {
+    latSum += point.lat;
+    lngSum += point.lng;
+  }
+  return { lat: latSum / points.length, lng: lngSum / points.length };
+}
+
+function sitePolygonFromPoints(points) {
+  const siteRows = points.filter((point) => String(point.id).startsWith("site-"));
+  return siteRows.length >= 3 ? siteRows : points;
+}
+
+function pointInPolygon(lat, lng, ring) {
+  if (!ring || ring.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    const yi = ring[i].lat;
+    const xi = ring[i].lng;
+    const yj = ring[j].lat;
+    const xj = ring[j].lng;
+    const intersects =
+      yi > lat !== yj > lat &&
+      lng < ((xj - xi) * (lat - yi)) / (yj - yi + 0.0) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+/** 0=SW, 1=SE, 2=NE, 3=NW relative to centroid. */
+function quadrantIndex(dLat, dLng) {
+  if (dLat <= 0 && dLng <= 0) return 0;
+  if (dLat <= 0 && dLng > 0) return 1;
+  if (dLat > 0 && dLng > 0) return 2;
+  return 3;
+}
+
+function monumentsByQuadrant(centroid, monuments, siteRing) {
+  const lists = [[], [], [], []];
+  for (const monument of monuments) {
+    const dLat = monument.lat - centroid.lat;
+    const dLng = monument.lng - centroid.lng;
+    const q = quadrantIndex(dLat, dLng);
+    const outsideSite = !pointInPolygon(monument.lat, monument.lng, siteRing);
+    lists[q].push({
+      ...monument,
+      outsideSite,
+      distM: haversineM(centroid.lat, centroid.lng, monument.lat, monument.lng),
+    });
+  }
+
+  const quadrantDirs = [
+    { dLat: -1, dLng: -1 },
+    { dLat: -1, dLng: 1 },
+    { dLat: 1, dLng: 1 },
+    { dLat: 1, dLng: -1 },
+  ];
+
+  for (let q = 0; q < 4; q += 1) {
+    if (lists[q].length > 0) continue;
+    let best = null;
+    let bestScore = -Infinity;
+    for (const monument of monuments) {
+      const dLat = monument.lat - centroid.lat;
+      const dLng = monument.lng - centroid.lng;
+      const { dLat: dirLat, dLng: dirLng } = quadrantDirs[q];
+      const score = dLat * dirLat + dLng * dirLng;
+      if (score > bestScore) {
+        bestScore = score;
+        best = monument;
+      }
+    }
+    if (best) {
+      lists[q].push({
+        ...best,
+        outsideSite: !pointInPolygon(best.lat, best.lng, siteRing),
+        distM: haversineM(centroid.lat, centroid.lng, best.lat, best.lng),
+      });
+    }
+  }
+
+  for (const list of lists) {
+    list.sort((a, b) => {
+      if (a.outsideSite !== b.outsideSite) return a.outsideSite ? -1 : 1;
+      return a.distM - b.distM;
+    });
+  }
+  return lists;
+}
+
+function quadAltitudesSane(quad, maxCornerSpreadM = 15) {
+  const alts = [quad.sw.alt, quad.se.alt, quad.ne.alt, quad.nw.alt];
+  const spread = Math.max(...alts) - Math.min(...alts);
+  return spread <= maxCornerSpreadM;
+}
+
+function quadFromIndices(lists, indices) {
+  const sw = lists[0][indices[0]];
+  const se = lists[1][indices[1]];
+  const ne = lists[2][indices[2]];
+  const nw = lists[3][indices[3]];
+  if (!sw || !se || !ne || !nw) return null;
+  return { sw, se, ne, nw };
+}
+
+function siteEncapsulatedByQuad(sitePoints, quad) {
+  const origin = quad.sw;
+  const sw = { e: 0, n: 0 };
+  const se = toLocalEN(quad.se.lat, quad.se.lng, origin.lat, origin.lng);
+  const ne = toLocalEN(quad.ne.lat, quad.ne.lng, origin.lat, origin.lng);
+  const nw = toLocalEN(quad.nw.lat, quad.nw.lng, origin.lat, origin.lng);
+
+  for (const point of sitePoints) {
+    const p = toLocalEN(point.lat, point.lng, origin.lat, origin.lng);
+    const st = inverseBilinearST(p, sw, se, ne, nw);
+    if (!st) return false;
+    const [s, t] = st;
+    if (s < -0.02 || s > 1.02 || t < -0.02 || t > 1.02) return false;
+  }
+  return true;
+}
+
+function filterGroundOutliers(monuments, maxDeltaM = 12) {
+  if (monuments.length < 4) return monuments;
+  const sorted = monuments.map((point) => point.alt).sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const filtered = monuments.filter((point) => Math.abs(point.alt - median) <= maxDeltaM);
+  return filtered.length >= 4 ? filtered : monuments;
+}
+
+function pickSurroundingQuad(sitePoints, monuments) {
+  if (!sitePoints.length || !monuments.length) return null;
+
+  const centroid = centroidOfPoints(sitePoints);
+  const lists = monumentsByQuadrant(centroid, monuments, sitePoints);
+  if (lists.some((list) => list.length === 0)) return null;
+
+  const limits = lists.map((list) => Math.min(SURROUND_QUADRANT_TRY, list.length));
+
+  function acceptQuad(quad) {
+    return quad && quadAltitudesSane(quad) && siteEncapsulatedByQuad(sitePoints, quad);
+  }
+
+  for (let depth = 0; depth < Math.max(...limits); depth += 1) {
+    const quad = quadFromIndices(lists, [depth, depth, depth, depth]);
+    if (acceptQuad(quad)) return quad;
+  }
+
+  for (let i0 = 0; i0 < limits[0]; i0 += 1) {
+    for (let i1 = 0; i1 < limits[1]; i1 += 1) {
+      for (let i2 = 0; i2 < limits[2]; i2 += 1) {
+        for (let i3 = 0; i3 < limits[3]; i3 += 1) {
+          const quad = quadFromIndices(lists, [i0, i1, i2, i3]);
+          if (acceptQuad(quad)) return quad;
+        }
+      }
+    }
+  }
+
+  const outer = quadFromIndices(
+    lists,
+    lists.map((list) => list.length - 1)
+  );
+  if (acceptQuad(outer)) return outer;
+
+  const fallback = quadFromIndices(lists, [0, 0, 0, 0]);
+  return quadAltitudesSane(fallback) ? fallback : null;
+}
+
+/** Inverse bilinear: SW=a, SE=b, NE=c, NW=d in local EN metres. */
+function inverseBilinearST(p, a, b, c, d) {
+  const e = { e: p.e - a.e, n: p.n - a.n };
+  const f = { e: b.e - a.e, n: b.n - a.n };
+  const g = { e: d.e - a.e, n: d.n - a.n };
+  const h = { e: a.e - b.e + c.e - d.e, n: a.n - b.n + c.n - d.n };
+
+  const k2 = cross2d(h.e, h.n, g.e, g.n);
+  const k1 = cross2d(e.e, e.n, h.e, h.n) + cross2d(f.e, f.n, g.e, g.n);
+  const k0 = cross2d(e.e, e.n, f.e, f.n);
+
+  let s;
+  let t;
+
+  if (Math.abs(k2) < 1e-12) {
+    if (Math.abs(k1) < 1e-12) return null;
+    t = -k0 / k1;
+    if (t < 0 || t > 1) return null;
+    const denom = (1 - t) * f.e + t * (c.e - d.e + f.e);
+    if (Math.abs(denom) < 1e-12) return null;
+    s = (e.e - t * (d.e - a.e)) / denom;
+  } else {
+    const w = k1 * k1 - 4 * k0 * k2;
+    if (w < 0) return null;
+    const sqrtW = Math.sqrt(w);
+    const t1 = (-k1 + sqrtW) / (2 * k2);
+    const t2 = (-k1 - sqrtW) / (2 * k2);
+    t = t1 >= 0 && t1 <= 1 ? t1 : t2;
+    if (t < 0 || t > 1) return null;
+    const denom = (1 - t) * f.e + t * h.e;
+    if (Math.abs(denom) < 1e-12) return null;
+    s = (e.e - (1 - t) * g.e - t * (d.e - a.e)) / denom;
+  }
+
+  if (!Number.isFinite(s) || !Number.isFinite(t)) return null;
+  return [s, t];
+}
+
+function bilinearElevationAt(lat, lng, quad) {
+  const origin = quad.sw;
+  const sw = { e: 0, n: 0 };
+  const se = toLocalEN(quad.se.lat, quad.se.lng, origin.lat, origin.lng);
+  const ne = toLocalEN(quad.ne.lat, quad.ne.lng, origin.lat, origin.lng);
+  const nw = toLocalEN(quad.nw.lat, quad.nw.lng, origin.lat, origin.lng);
+  const p = toLocalEN(lat, lng, origin.lat, origin.lng);
+
+  const st = inverseBilinearST(p, sw, se, ne, nw);
+  if (!st) return null;
+
+  const [s, t] = st;
+  const sClamped = Math.max(0, Math.min(1, s));
+  const tClamped = Math.max(0, Math.min(1, t));
+  const z =
+    (1 - sClamped) * (1 - tClamped) * quad.sw.alt +
+    sClamped * (1 - tClamped) * quad.se.alt +
+    sClamped * tClamped * quad.ne.alt +
+    (1 - sClamped) * tClamped * quad.nw.alt;
+
+  const nearestDistM = Math.min(
+    haversineM(lat, lng, quad.sw.lat, quad.sw.lng),
+    haversineM(lat, lng, quad.se.lat, quad.se.lng),
+    haversineM(lat, lng, quad.ne.lat, quad.ne.lng),
+    haversineM(lat, lng, quad.nw.lat, quad.nw.lng)
+  );
+
+  return {
+    ahdM: roundAhd(z),
+    approximate: nearestDistM > 12,
+    source: "vicmap_surround_bilinear",
+    surveyDistM: Math.round(nearestDistM),
+    surveyCount: 4,
+    surveyRangeM: roundAhd(
+      Math.max(quad.sw.alt, quad.se.alt, quad.ne.alt, quad.nw.alt) -
+        Math.min(quad.sw.alt, quad.se.alt, quad.ne.alt, quad.nw.alt)
+    ),
+  };
+}
+
+function surroundQuadSummary(quad) {
+  if (!quad) return null;
+  return {
+    sw: { lat: quad.sw.lat, lng: quad.sw.lng, ahdM: roundAhd(quad.sw.alt) },
+    se: { lat: quad.se.lat, lng: quad.se.lng, ahdM: roundAhd(quad.se.alt) },
+    ne: { lat: quad.ne.lat, lng: quad.ne.lng, ahdM: roundAhd(quad.ne.alt) },
+    nw: { lat: quad.nw.lat, lng: quad.nw.lng, ahdM: roundAhd(quad.nw.alt) },
+  };
 }
 
 async function fetchArcGisJson(url, timeoutMs = FETCH_TIMEOUT_MS) {
@@ -251,7 +522,7 @@ function lookupIdwAtPoint(lat, lng, groundPoints) {
   if (ranked.length === 1) {
     ahdM = roundAhd(nearest.alt);
     source = "vicmap_nearest_survey";
-  } else if (rangeM <= FLAT_PATCH_RANGE_M) {
+  } else if (rangeM <= 0.35) {
     ahdM = roundAhd(alts.reduce((sum, alt) => sum + alt, 0) / alts.length);
     source = "vicmap_idw_flat";
   } else {
@@ -328,7 +599,66 @@ async function lookupAhdElevations({ state, points, mode: rawMode }) {
     return groundCache.get(key);
   }
 
-  const lookupFn = mode === "survey" ? lookupSurveyAtPoint : lookupIdwAtPoint;
+  if (mode === "interpolate") {
+    const siteRing = sitePolygonFromPoints(points);
+    const centroid = centroidOfPoints(siteRing);
+    const { points: groundPoints, errors } = await groundNear(centroid.lat, centroid.lng);
+
+    if (!groundPoints.length) {
+      return {
+        state: normalizedState,
+        datum: "AHD",
+        mode,
+        elevations: points.map((point) => ({
+          id: point.id,
+          lat: point.lat,
+          lng: point.lng,
+          ahdM: null,
+          approximate: false,
+          source: null,
+          error: errors[0] || "No Vicmap elevation data within search radius",
+        })),
+        source: "VIC_VICMAP_ELEVATION",
+      };
+    }
+
+    const filteredGround = filterGroundOutliers(groundPoints);
+    const surroundQuad = pickSurroundingQuad(siteRing, filteredGround);
+    const useSurround = surroundQuad != null;
+
+    const results = points.map((point) => {
+      try {
+        let hit = null;
+        if (useSurround) {
+          hit = bilinearElevationAt(point.lat, point.lng, surroundQuad);
+        }
+        if (!hit) {
+          hit = lookupIdwAtPoint(point.lat, point.lng, groundPoints);
+        }
+        return elevationHitToRow(point, hit);
+      } catch (err) {
+        return {
+          id: point.id,
+          lat: point.lat,
+          lng: point.lng,
+          ahdM: null,
+          approximate: false,
+          source: null,
+          error: err.message || String(err),
+        };
+      }
+    });
+
+    return {
+      state: normalizedState,
+      datum: "AHD",
+      mode,
+      elevations: results,
+      source: "VIC_VICMAP_ELEVATION",
+      surroundQuad: surroundQuadSummary(surroundQuad),
+      groundSurveyCount: groundPoints.length,
+    };
+  }
 
   const results = await mapWithConcurrency(points, LOOKUP_CONCURRENCY, async (point) => {
     try {
@@ -345,7 +675,7 @@ async function lookupAhdElevations({ state, points, mode: rawMode }) {
         };
       }
 
-      const hit = lookupFn(point.lat, point.lng, groundPoints);
+      const hit = lookupSurveyAtPoint(point.lat, point.lng, groundPoints);
       return elevationHitToRow(point, hit);
     } catch (err) {
       return {

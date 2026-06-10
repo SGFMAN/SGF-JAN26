@@ -12,8 +12,8 @@ const VICMAP_PLANNING_BASE =
 const LAYER_PLAN_ZONE = 3;
 const LAYER_PLAN_OVERLAY = 2;
 
-const FETCH_TIMEOUT_MS = 20000;
-const LOOKUP_BUDGET_MS = 35000;
+const FETCH_TIMEOUT_MS = 45000;
+const LOOKUP_BUDGET_MS = 90000;
 const MAX_OVERLAY_FEATURES = 30;
 
 function normalizePlanningState(raw) {
@@ -224,55 +224,83 @@ async function lookupPlanningInfo({ state, lat, lng, envelope }) {
   const point = `${lng},${lat}`;
 
   log.queryMode = "point_zone";
-  const zoneIds = await fetchSpatialObjectIds(
-    LAYER_PLAN_ZONE,
-    {
-      spatialRel: "esriSpatialRelWithin",
-      geometry: point,
-      geometryType: "esriGeometryPoint",
-    },
-    log,
-    deadlineMs
-  );
 
-  let zoneFeatures = [];
-  if (zoneIds.length > 0) {
-    zoneFeatures = await fetchFeaturesByObjectIds(
+  async function loadZoneFeatures(zoneLog) {
+    const zoneIds = await fetchSpatialObjectIds(
+      LAYER_PLAN_ZONE,
+      {
+        spatialRel: "esriSpatialRelWithin",
+        geometry: point,
+        geometryType: "esriGeometryPoint",
+      },
+      zoneLog,
+      deadlineMs
+    );
+    if (!zoneIds.length) return [];
+    return fetchFeaturesByObjectIds(
       LAYER_PLAN_ZONE,
       zoneIds.slice(0, 1),
       true,
-      log,
+      zoneLog,
       deadlineMs
     );
   }
 
-  const overlaySpatial = envelope
-    ? {
-        spatialRel: "esriSpatialRelIntersects",
-        geometry: envelope,
-        geometryType: "esriGeometryEnvelope",
-      }
-    : {
-        spatialRel: "esriSpatialRelIntersects",
-        geometry: point,
-        geometryType: "esriGeometryPoint",
-      };
+  async function loadOverlayFeatures(overlayLog) {
+    const pointSpatial = {
+      spatialRel: "esriSpatialRelIntersects",
+      geometry: point,
+      geometryType: "esriGeometryPoint",
+    };
 
-  log.overlayQueryMode = envelope ? "envelope" : "point";
-  const overlayIds = await fetchSpatialObjectIds(
-    LAYER_PLAN_OVERLAY,
-    overlaySpatial,
-    log,
-    deadlineMs
-  );
+    let overlayIds = [];
+    if (envelope) {
+      overlayLog.overlayQueryMode = "envelope";
+      overlayIds = await fetchSpatialObjectIds(
+        LAYER_PLAN_OVERLAY,
+        {
+          spatialRel: "esriSpatialRelIntersects",
+          geometry: envelope,
+          geometryType: "esriGeometryEnvelope",
+        },
+        overlayLog,
+        deadlineMs
+      );
+    }
 
-  const overlayFeaturesRaw = await fetchFeaturesByObjectIds(
-    LAYER_PLAN_OVERLAY,
-    overlayIds,
-    true,
-    log,
-    deadlineMs
-  );
+    if (!overlayIds.length) {
+      overlayLog.overlayQueryMode = envelope ? "envelope_then_point" : "point";
+      overlayIds = await fetchSpatialObjectIds(
+        LAYER_PLAN_OVERLAY,
+        pointSpatial,
+        overlayLog,
+        deadlineMs
+      );
+    }
+
+    if (!overlayIds.length) return [];
+    return fetchFeaturesByObjectIds(
+      LAYER_PLAN_OVERLAY,
+      overlayIds,
+      true,
+      overlayLog,
+      deadlineMs
+    );
+  }
+
+  const zoneLog = { apiCalls: 0 };
+  const overlayLog = { apiCalls: 0 };
+
+  const [zoneFeatures, overlayFeaturesRaw] = await Promise.all([
+    loadZoneFeatures(zoneLog),
+    loadOverlayFeatures(overlayLog),
+  ]);
+
+  log.apiCalls = (zoneLog.apiCalls || 0) + (overlayLog.apiCalls || 0);
+  log.lastApiDurationMs = Math.max(zoneLog.lastApiDurationMs || 0, overlayLog.lastApiDurationMs || 0);
+  log.lastApiStatus = overlayLog.lastApiStatus || zoneLog.lastApiStatus;
+  log.lastApiError = overlayLog.lastApiError || zoneLog.lastApiError;
+  log.overlayQueryMode = overlayLog.overlayQueryMode;
 
   const zone = zoneFeatures[0] ? mapZoneFeature(zoneFeatures[0]) : null;
   const overlays = dedupeOverlays(overlayFeaturesRaw.map(mapOverlayFeature));
