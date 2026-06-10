@@ -10,7 +10,9 @@ const VICMAP_ELEVATION_STATEWIDE =
   "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Elevation_STATEWIDE_10_to_20_metre/FeatureServer";
 
 const METRO_GROUND_LAYER = 0;
+const METRO_CONTOUR_LAYER = 1;
 const STATEWIDE_GROUND_LAYER = 4;
+const STATEWIDE_CONTOUR_LAYER = 6;
 
 const FETCH_TIMEOUT_MS = 22000;
 const MAX_POINTS = 64;
@@ -18,6 +20,9 @@ const LOOKUP_CONCURRENCY = 4;
 const METRO_GROUND_RADIUS_M = 600;
 const STATEWIDE_GROUND_RADIUS_M = 1200;
 const GROUND_RESULT_COUNT = 80;
+const MONUMENT_RESULT_COUNT = 2000;
+const MONUMENT_ENVELOPE_PAD_M = 3500;
+const MONUMENT_CORNER_RADII_M = [400, 800, 1600, 3200, 6400, 10000, 15000];
 const IDW_MAX_CONTRIBUTORS = 10;
 const IDW_MAX_RADIUS_M = 450;
 const IDW_MIN_DISTANCE_M = 2;
@@ -70,6 +75,48 @@ function haversineM(lat1, lng1, lat2, lng2) {
 function roundAhd(value) {
   return Math.round(value * 100) / 100;
 }
+
+function latLngToWebMercator(lat, lng) {
+  const x = (lng * 20037508.34) / 180;
+  const y =
+    (Math.log(Math.tan(((90 + lat) * Math.PI) / 360)) / (Math.PI / 180) * 20037508.34) / 180;
+  return { x, y };
+}
+
+function webMercatorToLatLng(x, y) {
+  const lng = (x / 20037508.34) * 180;
+  const lat =
+    (180 / Math.PI) * (2 * Math.atan(Math.exp((y / 20037508.34) * Math.PI)) - Math.PI / 2);
+  return { lat, lng };
+}
+
+function latLngFromArcGisGeometry(geometry) {
+  if (!geometry) return null;
+  const x = Number(geometry.x ?? geometry?.paths?.[0]?.[0]?.[0]);
+  const y = Number(geometry.y ?? geometry?.paths?.[0]?.[0]?.[1]);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  if (Math.abs(x) > 180 || Math.abs(y) > 90) {
+    return webMercatorToLatLng(x, y);
+  }
+  return { lat: y, lng: x };
+}
+
+const ELEVATION_MONUMENT_LAYERS = [
+  { baseUrl: VICMAP_ELEVATION_METRO, layerId: METRO_GROUND_LAYER, kind: "point", label: "metro_ground" },
+  { baseUrl: VICMAP_ELEVATION_METRO, layerId: METRO_CONTOUR_LAYER, kind: "contour", label: "metro_contour" },
+  {
+    baseUrl: VICMAP_ELEVATION_STATEWIDE,
+    layerId: STATEWIDE_GROUND_LAYER,
+    kind: "point",
+    label: "statewide_ground",
+  },
+  {
+    baseUrl: VICMAP_ELEVATION_STATEWIDE,
+    layerId: STATEWIDE_CONTOUR_LAYER,
+    kind: "contour",
+    label: "statewide_contour",
+  },
+];
 
 function toLocalEN(lat, lng, originLat, originLng) {
   const metersPerDegLat = 111320;
@@ -504,12 +551,110 @@ function parseGroundFeatures(features) {
   const rows = [];
   for (const feature of features || []) {
     const alt = Number(feature.attributes?.altitude);
-    const lng = Number(feature.geometry?.x);
-    const lat = Number(feature.geometry?.y);
-    if (!Number.isFinite(alt) || !Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-    rows.push({ lat, lng, alt });
+    if (!Number.isFinite(alt)) continue;
+    const latLng = latLngFromArcGisGeometry(feature.geometry);
+    if (!latLng) continue;
+    rows.push({ lat: latLng.lat, lng: latLng.lng, alt });
   }
   return rows;
+}
+
+function parseContourFeatures(features) {
+  const rows = [];
+  for (const feature of features || []) {
+    const alt = Number(feature.attributes?.altitude);
+    if (!Number.isFinite(alt)) continue;
+    for (const path of feature.geometry?.paths || []) {
+      if (!Array.isArray(path)) continue;
+      for (const coord of path) {
+        if (!Array.isArray(coord) || coord.length < 2) continue;
+        const x = Number(coord[0]);
+        const y = Number(coord[1]);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        const { lat, lng } = webMercatorToLatLng(x, y);
+        rows.push({ lat, lng, alt });
+      }
+    }
+  }
+  return rows;
+}
+
+function buildPointQueryUrl3857(baseUrl, layerId, lat, lng, radiusM, resultCount = MONUMENT_RESULT_COUNT) {
+  const { x, y } = latLngToWebMercator(lat, lng);
+  const params = new URLSearchParams({
+    geometry: `${x},${y}`,
+    geometryType: "esriGeometryPoint",
+    inSR: "3857",
+    outSR: "3857",
+    spatialRel: "esriSpatialRelIntersects",
+    distance: String(radiusM),
+    units: "esriSRUnit_Meter",
+    outFields: "altitude",
+    returnGeometry: "true",
+    resultRecordCount: String(resultCount),
+    f: "json",
+  });
+  return `${baseUrl}/${layerId}/query?${params.toString()}`;
+}
+
+function buildEnvelopeQueryUrl3857(baseUrl, layerId, bounds, padM, resultCount = MONUMENT_RESULT_COUNT) {
+  const centerLat = (bounds.minLat + bounds.maxLat) / 2;
+  const padLat = padM / 111320;
+  const padLng = padM / (111320 * Math.cos((centerLat * Math.PI) / 180));
+  const sw = latLngToWebMercator(bounds.minLat - padLat, bounds.minLng - padLng);
+  const ne = latLngToWebMercator(bounds.maxLat + padLat, bounds.maxLng + padLng);
+  const geometry = JSON.stringify({
+    xmin: Math.min(sw.x, ne.x),
+    ymin: Math.min(sw.y, ne.y),
+    xmax: Math.max(sw.x, ne.x),
+    ymax: Math.max(sw.y, ne.y),
+  });
+  const params = new URLSearchParams({
+    geometry,
+    geometryType: "esriGeometryEnvelope",
+    inSR: "3857",
+    outSR: "3857",
+    spatialRel: "esriSpatialRelIntersects",
+    outFields: "altitude",
+    returnGeometry: "true",
+    resultRecordCount: String(resultCount),
+    f: "json",
+  });
+  return `${baseUrl}/${layerId}/query?${params.toString()}`;
+}
+
+async function fetchElevationLayerPoints(layer, lat, lng, radiusM) {
+  const { data, error } = await fetchArcGisJson(
+    buildPointQueryUrl3857(layer.baseUrl, layer.layerId, lat, lng, radiusM)
+  );
+  if (error || !data?.features?.length) return [];
+  return layer.kind === "contour"
+    ? parseContourFeatures(data.features)
+    : parseGroundFeatures(data.features);
+}
+
+async function fetchElevationLayerEnvelope(layer, bounds, padM) {
+  const { data, error } = await fetchArcGisJson(
+    buildEnvelopeQueryUrl3857(layer.baseUrl, layer.layerId, bounds, padM)
+  );
+  if (error || !data?.features?.length) return [];
+  return layer.kind === "contour"
+    ? parseContourFeatures(data.features)
+    : parseGroundFeatures(data.features);
+}
+
+async function fetchAllElevationMonumentsAt(lat, lng, radiusM) {
+  const chunks = await Promise.all(
+    ELEVATION_MONUMENT_LAYERS.map((layer) => fetchElevationLayerPoints(layer, lat, lng, radiusM))
+  );
+  return dedupeGroundPoints(chunks.flat());
+}
+
+async function fetchAllElevationMonumentsInEnvelope(bounds, padM) {
+  const chunks = await Promise.all(
+    ELEVATION_MONUMENT_LAYERS.map((layer) => fetchElevationLayerEnvelope(layer, bounds, padM))
+  );
+  return dedupeGroundPoints(chunks.flat());
 }
 
 function dedupeGroundPoints(points) {
@@ -929,6 +1074,17 @@ function monumentOutsideCorner(monuments, corner, cornerId) {
   };
 }
 
+async function findMonumentOutsideCorner(corner, cornerId) {
+  for (const radiusM of MONUMENT_CORNER_RADII_M) {
+    const pool = await fetchAllElevationMonumentsAt(corner.lat, corner.lng, radiusM);
+    const hit = monumentOutsideCorner(pool, corner, cornerId);
+    if (hit) {
+      return { ...hit, searchRadiusM: radiusM };
+    }
+  }
+  return null;
+}
+
 function siteInsideMonumentBox(siteRing, monuments) {
   const corners = ["nw", "ne", "se", "sw"];
   if (corners.some((id) => !monuments[id])) return false;
@@ -964,31 +1120,18 @@ function monumentBoxSummary(siteCorners, monuments, siteRing) {
 
 async function fetchMonumentsNearSite(siteRing) {
   const bounds = siteBounds(siteRing);
-  const centroid = bboxCenter(bounds);
-  const anchors = [
-    centroid,
-    { lat: bounds.minLat, lng: bounds.minLng },
-    { lat: bounds.minLat, lng: bounds.maxLng },
-    { lat: bounds.maxLat, lng: bounds.minLng },
-    { lat: bounds.maxLat, lng: bounds.maxLng },
-  ];
-
-  const merged = [];
-  const errors = [];
-  for (const anchor of anchors) {
-    const { points, errors: chunkErrors } = await fetchGroundSurveyPoints(anchor.lat, anchor.lng);
-    merged.push(...points);
-    errors.push(...chunkErrors);
-  }
+  const merged = await fetchAllElevationMonumentsInEnvelope(bounds, MONUMENT_ENVELOPE_PAD_M);
+  const errors = merged.length ? [] : ["No Vicmap elevation monuments in search area"];
 
   return {
-    points: dedupeGroundPoints(merged),
-    errors: [...new Set(errors.filter(Boolean))],
+    points: merged,
+    errors,
   };
 }
 
 /**
  * Pick four Vicmap monuments outside the site's extreme NW/NE/SE/SW boundary points.
+ * Uses metro + statewide ground points and contour vertices (Web Mercator queries).
  */
 async function lookupMonumentBox({ state, geometry }) {
   const normalizedState = normalizeElevationState(state);
@@ -1004,14 +1147,6 @@ async function lookupMonumentBox({ state, geometry }) {
     return { error: "geometry must be a Polygon or MultiPolygon with at least 3 vertices", status: 400 };
   }
 
-  const { points: groundPoints, errors } = await fetchMonumentsNearSite(siteRing);
-  if (!groundPoints.length) {
-    return {
-      error: errors[0] || "No Vicmap survey monuments found near this site",
-      status: 404,
-    };
-  }
-
   const siteCorners = {
     nw: pickExtremeSiteCorner(siteRing, "nw"),
     ne: pickExtremeSiteCorner(siteRing, "ne"),
@@ -1019,17 +1154,33 @@ async function lookupMonumentBox({ state, geometry }) {
     sw: pickExtremeSiteCorner(siteRing, "sw"),
   };
 
+  const { points: pool, errors } = await fetchMonumentsNearSite(siteRing);
+
   const monuments = {
-    nw: monumentOutsideCorner(groundPoints, siteCorners.nw, "nw"),
-    ne: monumentOutsideCorner(groundPoints, siteCorners.ne, "ne"),
-    se: monumentOutsideCorner(groundPoints, siteCorners.se, "se"),
-    sw: monumentOutsideCorner(groundPoints, siteCorners.sw, "sw"),
+    nw: monumentOutsideCorner(pool, siteCorners.nw, "nw"),
+    ne: monumentOutsideCorner(pool, siteCorners.ne, "ne"),
+    se: monumentOutsideCorner(pool, siteCorners.se, "se"),
+    sw: monumentOutsideCorner(pool, siteCorners.sw, "sw"),
   };
+
+  for (const cornerId of ["nw", "ne", "se", "sw"]) {
+    if (monuments[cornerId]) continue;
+    monuments[cornerId] = await findMonumentOutsideCorner(siteCorners[cornerId], cornerId);
+  }
+
+  const foundCount = ["nw", "ne", "se", "sw"].filter((id) => monuments[id]).length;
+  if (foundCount === 0) {
+    return {
+      error: errors[0] || "No Vicmap elevation monuments found near this site",
+      status: 404,
+    };
+  }
 
   return {
     state: normalizedState,
     datum: "AHD",
-    groundSurveyCount: groundPoints.length,
+    dataSources: ELEVATION_MONUMENT_LAYERS.map((layer) => layer.label),
+    groundSurveyCount: pool.length,
     ...monumentBoxSummary(siteCorners, monuments, siteRing),
   };
 }

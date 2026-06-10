@@ -152,7 +152,8 @@ function renderMonumentBox(group, monuments, encapsulatesSite, missing) {
       `Monument ${style.label}\n` +
       `${monument.lat.toFixed(6)}, ${monument.lng.toFixed(6)}\n` +
       `${formatAhdLabel(monument.ahdM)} m AHD\n` +
-      `${monument.distM ?? "?"} m from site ${style.label} corner`;
+      `${monument.distM ?? "?"} m from site ${style.label} corner` +
+      (monument.searchRadiusM ? `\nFound within ${monument.searchRadiusM} m search` : "");
 
     group.addLayer(
       L.circleMarker([monument.lat, monument.lng], {
