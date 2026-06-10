@@ -20,6 +20,14 @@ const MONUMENT_STYLES = {
   nw: { label: "NW", color: "#d97706", fill: "#fdba74" },
 };
 
+const METHOD_LABELS = {
+  bilinear: "Bilinear (4 monuments)",
+  idw: "IDW from nearby monuments",
+  idw_flat: "Averaged nearby monuments",
+  nearest: "Nearest monument",
+  none: "No monuments found",
+};
+
 function escapeAttr(text) {
   return String(text)
     .replace(/&/g, "&amp;")
@@ -27,10 +35,13 @@ function escapeAttr(text) {
     .replace(/</g, "&lt;");
 }
 
-function monumentLabelHtml(cornerId, ahdM, tooltip = "") {
+function monumentLabelHtml(cornerId, ahdM, subtitle = "", tooltip = "") {
   const style = MONUMENT_STYLES[cornerId] || { label: cornerId.toUpperCase(), color: "#9333ea", fill: "#e9d5ff" };
   const titleAttr = tooltip ? ` title="${escapeAttr(tooltip)}"` : "";
   const ahdLabel = formatAhdLabel(ahdM);
+  const subtitleLine = subtitle
+    ? `<div style="font: 600 9px/1.1 system-ui, sans-serif; opacity:0.85; margin-top:2px;">${subtitle}</div>`
+    : "";
   return `<div data-monument-label${titleAttr} style="
     text-align: center;
     background: rgba(255,255,255,0.98);
@@ -46,6 +57,29 @@ function monumentLabelHtml(cornerId, ahdM, tooltip = "") {
   ">
     <div style="font-size:10px; letter-spacing:0.04em; opacity:0.9;">MON ${style.label}</div>
     <div style="font-size:13px; margin-top:1px;">${ahdLabel}</div>
+    ${subtitleLine}
+  </div>`;
+}
+
+function idwLabelHtml(index, ahdM, distM, tooltip = "") {
+  const titleAttr = tooltip ? ` title="${escapeAttr(tooltip)}"` : "";
+  const ahdLabel = formatAhdLabel(ahdM);
+  return `<div data-monument-label${titleAttr} style="
+    text-align: center;
+    background: rgba(255,255,255,0.97);
+    border: 2px solid #64748b;
+    border-radius: 5px;
+    padding: 3px 6px;
+    font: 700 10px/1.2 system-ui, sans-serif;
+    color: #475569;
+    white-space: nowrap;
+    box-shadow: 0 1px 5px rgba(0,0,0,0.2);
+    pointer-events: auto;
+    cursor: help;
+  ">
+    <div style="font-size:9px; opacity:0.85;">IDW #${index + 1}</div>
+    <div style="font-size:12px;">${ahdLabel}</div>
+    <div style="font-size:9px; opacity:0.75;">${distM} m</div>
   </div>`;
 }
 
@@ -68,12 +102,20 @@ function removeLayer(map, layerRef) {
   }
 }
 
-function monumentTooltip(cornerId, monument, groundSurveyCount) {
+function monumentKey(lat, lng) {
+  return `${Number(lat).toFixed(6)},${Number(lng).toFixed(6)}`;
+}
+
+function quadMonumentTooltip(cornerId, monument, method, groundSurveyCount, usedForInterpolation) {
   const style = MONUMENT_STYLES[cornerId] || { label: cornerId.toUpperCase() };
+  const role = usedForInterpolation
+    ? `${style.label} corner — used for bilinear interpolation`
+    : `${style.label} corner — nearest in quadrant (bilinear unavailable)`;
   return (
-    `Vicmap survey monument (${style.label} of bilinear patch)\n` +
+    `${role}\n` +
     `${monument.lat.toFixed(6)}, ${monument.lng.toFixed(6)}\n` +
     `${formatAhdLabel(monument.ahdM)} m AHD\n` +
+    `Method: ${METHOD_LABELS[method] || method}\n` +
     `${groundSurveyCount ?? "?"} monuments searched nearby`
   );
 }
@@ -94,14 +136,19 @@ function renderSiteBoundary(group, siteGeometry) {
   group.addLayer(boundary);
 }
 
-function renderSurroundQuad(group, surroundQuad, groundSurveyCount) {
+function renderQuadMonuments(group, quad, method, groundSurveyCount, usedForInterpolation) {
   const positions = [];
+  const drawnKeys = new Set();
 
   for (const cornerId of QUAD_ORDER) {
-    const monument = surroundQuad[cornerId];
+    const monument = quad[cornerId];
     if (!monument || !Number.isFinite(monument.lat) || !Number.isFinite(monument.lng)) continue;
 
     positions.push([monument.lat, monument.lng]);
+    drawnKeys.add(monumentKey(monument.lat, monument.lng));
+
+    const subtitle = usedForInterpolation ? "bilinear" : "candidate";
+    const tooltip = quadMonumentTooltip(cornerId, monument, method, groundSurveyCount, usedForInterpolation);
 
     const pin = L.circleMarker([monument.lat, monument.lng], {
       radius: 7,
@@ -117,43 +164,86 @@ function renderSurroundQuad(group, surroundQuad, groundSurveyCount) {
     const marker = L.marker([monument.lat, monument.lng], {
       icon: L.divIcon({
         className: "elevation-monument-wrap",
-        html: monumentLabelHtml(cornerId, monument.ahdM, monumentTooltip(cornerId, monument, groundSurveyCount)),
-        iconSize: [64, 40],
-        iconAnchor: [32, 46],
+        html: monumentLabelHtml(cornerId, monument.ahdM, subtitle, tooltip),
+        iconSize: [64, 46],
+        iconAnchor: [32, 50],
       }),
       interactive: true,
       keyboard: false,
       zIndexOffset: 2900,
       bubblingMouseEvents: false,
     });
-    bindMarkerTooltip(marker, monumentTooltip(cornerId, monument, groundSurveyCount));
+    bindMarkerTooltip(marker, tooltip);
     group.addLayer(marker);
   }
 
   if (positions.length === 4) {
     const ring = [...positions, positions[0]];
     const quadLine = L.polyline(ring, {
-      color: "#9333ea",
+      color: usedForInterpolation ? "#9333ea" : "#ea580c",
       weight: 2,
-      opacity: 0.85,
-      dashArray: "8 6",
+      opacity: usedForInterpolation ? 0.85 : 0.7,
+      dashArray: usedForInterpolation ? "8 6" : "4 6",
       interactive: false,
     });
     group.addLayer(quadLine);
 
     const quadFill = L.polygon(positions, {
-      color: "#9333ea",
+      color: usedForInterpolation ? "#9333ea" : "#ea580c",
       weight: 1,
-      opacity: 0.5,
-      fillColor: "#c084fc",
-      fillOpacity: 0.12,
+      opacity: 0.45,
+      fillColor: usedForInterpolation ? "#c084fc" : "#fdba74",
+      fillOpacity: usedForInterpolation ? 0.12 : 0.06,
       interactive: false,
     });
     group.addLayer(quadFill);
   }
+
+  return drawnKeys;
 }
 
-/** Debug: the four Vicmap monuments used for bilinear AHD interpolation over the site. */
+function renderIdwContributors(group, contributors, method, skipKeys) {
+  if (!Array.isArray(contributors) || contributors.length === 0) return;
+
+  contributors.forEach((monument, index) => {
+    const key = monumentKey(monument.lat, monument.lng);
+    if (skipKeys.has(key)) return;
+
+    const tooltip =
+      `IDW contributor #${index + 1}\n` +
+      `${monument.lat.toFixed(6)}, ${monument.lng.toFixed(6)}\n` +
+      `${formatAhdLabel(monument.ahdM)} m AHD · ${monument.distM ?? "?"} m from site centre\n` +
+      `Method: ${METHOD_LABELS[method] || method}`;
+
+    const pin = L.circleMarker([monument.lat, monument.lng], {
+      radius: 5,
+      color: "#64748b",
+      weight: 2,
+      fillColor: "#cbd5e1",
+      fillOpacity: 0.95,
+      interactive: false,
+      zIndexOffset: 2800,
+    });
+    group.addLayer(pin);
+
+    const marker = L.marker([monument.lat, monument.lng], {
+      icon: L.divIcon({
+        className: "elevation-monument-wrap",
+        html: idwLabelHtml(index, monument.ahdM, monument.distM ?? "?", tooltip),
+        iconSize: [52, 44],
+        iconAnchor: [26, 48],
+      }),
+      interactive: true,
+      keyboard: false,
+      zIndexOffset: 2880,
+      bubblingMouseEvents: false,
+    });
+    bindMarkerTooltip(marker, tooltip);
+    group.addLayer(marker);
+  });
+}
+
+/** Debug: Vicmap monuments used (or nearest candidates) for site AHD interpolation. */
 export default function ElevationInterpolationMonuments({
   siteGeometry = null,
   lookupState = "VIC",
@@ -210,8 +300,7 @@ export default function ElevationInterpolationMonuments({
     const delay = lastFetchedKeyRef.current === "" ? 0 : FETCH_DEBOUNCE_MS;
 
     fetchTimerRef.current = window.setTimeout(() => {
-      const groupInstance = layerRef.current;
-      if (!groupInstance) return;
+      if (!layerRef.current) return;
 
       fetchAbortRef.current?.abort();
       const controller = new AbortController();
@@ -221,11 +310,12 @@ export default function ElevationInterpolationMonuments({
 
       (async () => {
         try {
-          const { surroundQuad, groundSurveyCount } = await fetchAhdInterpolationContext(
-            sitePoints,
-            lookupState,
-            controller.signal
-          );
+          const {
+            displayQuad,
+            interpolationMethod,
+            idwContributors,
+            groundSurveyCount,
+          } = await fetchAhdInterpolationContext(sitePoints, lookupState, controller.signal);
 
           if (controller.signal.aborted || activeFetchKeyRef.current !== siteKey) return;
 
@@ -233,30 +323,37 @@ export default function ElevationInterpolationMonuments({
           const nextGroup = L.layerGroup();
           renderSiteBoundary(nextGroup, siteGeometry);
 
-          if (surroundQuad) {
-            renderSurroundQuad(nextGroup, surroundQuad, groundSurveyCount);
-            if (surroundQuad.encapsulatesSite === false) {
-              console.warn(
-                "[ElevationInterpolationMonuments] surround quad does not encapsulate site boundary"
-              );
-            }
-          } else {
+          const method = interpolationMethod || "none";
+          const usedForInterpolation = method === "bilinear";
+          let drawnKeys = new Set();
+
+          if (displayQuad) {
+            drawnKeys = renderQuadMonuments(
+              nextGroup,
+              displayQuad,
+              method,
+              groundSurveyCount,
+              usedForInterpolation
+            ) || new Set();
+          }
+
+          if (!usedForInterpolation && idwContributors?.length) {
+            renderIdwContributors(nextGroup, idwContributors, method, drawnKeys);
+          }
+
+          if (!displayQuad && !idwContributors?.length) {
             const sample = sitePoints[0];
             const marker = L.marker([sample.lat, sample.lng], {
               icon: L.divIcon({
                 className: "elevation-monument-wrap",
-                html: monumentLabelHtml("sw", NaN, "No bilinear quad — IDW/nearest used"),
-                iconSize: [64, 40],
-                iconAnchor: [32, 20],
+                html: monumentLabelHtml("sw", NaN, "no data", "No Vicmap monuments found"),
+                iconSize: [64, 46],
+                iconAnchor: [32, 23],
               }),
               interactive: true,
               zIndexOffset: 2900,
             });
-            bindMarkerTooltip(
-              marker,
-              "Could not form a four-monument bilinear patch around this site.\n" +
-                "Elevations may use IDW or nearest monument instead."
-            );
+            bindMarkerTooltip(marker, "No Vicmap survey monuments found within search radius.");
             nextGroup.addLayer(marker);
           }
 

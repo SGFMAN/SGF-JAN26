@@ -249,7 +249,10 @@ export async function fetchAhdInterpolationContext(
   const data = await fetchAhdElevations(points, state, externalSignal, "interpolate");
   return {
     elevations: data.elevations || [],
-    surroundQuad: data.surroundQuad ?? null,
+    surroundQuad: data.surroundQuad ?? data.displayQuad ?? null,
+    displayQuad: data.displayQuad ?? data.surroundQuad ?? null,
+    interpolationMethod: data.interpolationMethod ?? null,
+    idwContributors: data.idwContributors ?? null,
     groundSurveyCount: data.groundSurveyCount ?? null,
   };
 }

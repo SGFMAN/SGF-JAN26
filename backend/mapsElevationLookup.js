@@ -307,6 +307,57 @@ function pickSurroundingQuad(sitePoints, monuments) {
   return bestQuad;
 }
 
+/** Nearest monument per quadrant — always shown on map even when bilinear is unavailable. */
+function pickNearestQuadPerQuadrant(sitePoints, monuments) {
+  if (!sitePoints.length || !monuments.length) return null;
+  const bounds = siteBounds(sitePoints);
+  const lists = monumentsByQuadrant(bounds, monuments);
+  if (lists.some((list) => list.length === 0)) return null;
+  return quadFromIndices(lists, [0, 0, 0, 0]);
+}
+
+function idwContributorsSummary(lat, lng, groundPoints) {
+  return rankGroundPoints(lat, lng, groundPoints).map((point) => ({
+    lat: point.lat,
+    lng: point.lng,
+    ahdM: roundAhd(point.alt),
+    distM: Math.round(point.distM),
+  }));
+}
+
+function resolveInterpolationMonuments(siteRing, filteredGround, surroundQuad) {
+  const bounds = siteBounds(siteRing);
+  const centroid = bboxCenter(bounds);
+  const testPoints = siteEncapsulationTestPoints(siteRing);
+
+  if (surroundQuad) {
+    return {
+      interpolationMethod: "bilinear",
+      quad: surroundQuadSummary(surroundQuad, siteRing),
+      idwContributors: null,
+    };
+  }
+
+  const nearestQuad = pickNearestQuadPerQuadrant(siteRing, filteredGround);
+  const ranked = rankGroundPoints(centroid.lat, centroid.lng, filteredGround);
+  let interpolationMethod = "idw";
+  if (ranked.length === 0) {
+    interpolationMethod = "none";
+  } else if (ranked.length === 1) {
+    interpolationMethod = "nearest";
+  } else {
+    const alts = ranked.map((point) => point.alt);
+    const rangeM = Math.max(...alts) - Math.min(...alts);
+    if (rangeM <= 0.35) interpolationMethod = "idw_flat";
+  }
+
+  return {
+    interpolationMethod,
+    quad: nearestQuad ? surroundQuadSummary(nearestQuad, siteRing) : null,
+    idwContributors: ranked.length ? idwContributorsSummary(centroid.lat, centroid.lng, filteredGround) : [],
+  };
+}
+
 /** Inverse bilinear: SW=a, SE=b, NE=c, NW=d in local EN metres. */
 function inverseBilinearST(p, a, b, c, d) {
   const e = { e: p.e - a.e, n: p.n - a.n };
@@ -696,6 +747,7 @@ async function lookupAhdElevations({ state, points, mode: rawMode }) {
     const filteredGround = filterGroundOutliers(groundPoints);
     const surroundQuad = pickSurroundingQuad(siteRing, filteredGround);
     const useSurround = surroundQuad != null;
+    const monumentContext = resolveInterpolationMonuments(siteRing, filteredGround, surroundQuad);
 
     const results = points.map((point) => {
       try {
@@ -727,6 +779,9 @@ async function lookupAhdElevations({ state, points, mode: rawMode }) {
       elevations: results,
       source: "VIC_VICMAP_ELEVATION",
       surroundQuad: surroundQuadSummary(surroundQuad, siteRing),
+      interpolationMethod: monumentContext.interpolationMethod,
+      displayQuad: monumentContext.quad,
+      idwContributors: monumentContext.idwContributors,
       groundSurveyCount: groundPoints.length,
     };
   }
