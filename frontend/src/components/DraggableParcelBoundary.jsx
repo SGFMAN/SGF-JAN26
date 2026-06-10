@@ -92,8 +92,26 @@ function setBoundaryCursor(group, cursor) {
 function setBoundaryPointerEvents(group, enabled) {
   forEachPathLayer(group, (layer) => {
     const el = layer.getElement?.();
-    if (el) el.style.pointerEvents = enabled ? "auto" : "none";
+    if (el) {
+      el.style.pointerEvents = enabled ? "auto" : "none";
+      if (enabled) el.style.zIndex = "900";
+    }
   });
+}
+
+function boundaryGroupContainsLatLng(group, map, latlng) {
+  if (!group || !map || !latlng) return false;
+  let inside = false;
+  forEachPathLayer(group, (layer) => {
+    if (inside || !(layer instanceof L.Polygon)) return;
+    try {
+      const point = map.latLngToLayerPoint(latlng);
+      if (layer._containsPoint(point)) inside = true;
+    } catch {
+      // ignore hit-test errors
+    }
+  });
+  return inside;
 }
 
 /** Title boundary with corner handle to toggle dragging. */
@@ -111,6 +129,8 @@ export default function DraggableParcelBoundary({
   const onToggleRef = useRef(onToggleMovable);
   const onFeatureChangeRef = useRef(onFeatureChange);
   const dragHandlersRef = useRef(new Map());
+  const mapDragHandlerRef = useRef(null);
+  const draggingRef = useRef(false);
 
   featureRef.current = feature;
   onToggleRef.current = onToggleMovable;
@@ -200,7 +220,8 @@ export default function DraggableParcelBoundary({
         }
 
         const beginDrag = (startEvent) => {
-          if (!movableRef.current) return;
+          if (!movableRef.current || draggingRef.current || !startEvent.latlng) return;
+          draggingRef.current = true;
           L.DomEvent.stop(startEvent);
           mapInstance.dragging.disable();
           mapInstance.getContainer().style.cursor = "grabbing";
@@ -219,6 +240,7 @@ export default function DraggableParcelBoundary({
           const onUp = () => {
             mapInstance.off("mousemove", onMove);
             mapInstance.off("mouseup", onUp);
+            draggingRef.current = false;
             if (!movableRef.current) {
               mapInstance.dragging.enable();
             }
@@ -237,11 +259,19 @@ export default function DraggableParcelBoundary({
           mapInstance.on("mouseup", onUp);
         };
 
+        const onMapMouseDown = (event) => {
+          if (!movableRef.current || draggingRef.current) return;
+          if (!boundaryGroupContainsLatLng(boundaryGroup, mapInstance, event.latlng)) return;
+          beginDrag(event);
+        };
+
         dragHandlersRef.current.clear();
         forEachPathLayer(boundaryGroup, (layer) => {
           layer.on("mousedown", beginDrag);
           dragHandlersRef.current.set(layer, beginDrag);
         });
+        mapInstance.on("mousedown", onMapMouseDown);
+        mapDragHandlerRef.current = onMapMouseDown;
         setBoundaryCursor(boundaryGroup, movableRef.current ? "grab" : "");
         setBoundaryPointerEvents(boundaryGroup, movableRef.current);
         unbindViewSync = bindDebouncedMapViewSync(mapInstance, syncHandlePosition);
@@ -256,6 +286,10 @@ export default function DraggableParcelBoundary({
       cancelled = true;
       cancelAnimationFrame(frameId);
       unbindViewSync?.();
+      if (mapDragHandlerRef.current) {
+        mapInstance.off("mousedown", mapDragHandlerRef.current);
+        mapDragHandlerRef.current = null;
+      }
       dragHandlersRef.current.forEach((handler, layer) => {
         layer.off("mousedown", handler);
       });

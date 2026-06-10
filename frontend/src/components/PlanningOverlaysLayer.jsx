@@ -82,11 +82,20 @@ function featureCollection(data) {
   return { type: "FeatureCollection", features: data.features };
 }
 
+function setLayerGroupPointerEvents(group, enabled) {
+  if (!group) return;
+  group.eachLayer((layer) => {
+    const el = layer.getElement?.();
+    if (el) el.style.pointerEvents = enabled ? "auto" : "none";
+  });
+}
+
 /** Planning zone/overlays rendered imperatively — avoids react-leaflet GeoJSON render crashes. */
 export default function PlanningOverlaysLayer({
   zoneGeoJson,
   overlayGeoJson,
   layerVisibility = {},
+  blockPointerEvents = false,
 }) {
   const map = useMap();
   const zoneLayerRef = useRef(null);
@@ -125,6 +134,7 @@ export default function PlanningOverlaysLayer({
               },
             });
             layer.addTo(map);
+            setLayerGroupPointerEvents(layer, !blockPointerEvents);
             zoneLayerRef.current = layer;
           }
         } catch (err) {
@@ -154,6 +164,7 @@ export default function PlanningOverlaysLayer({
             }
           );
           layer.addTo(map);
+          setLayerGroupPointerEvents(layer, !blockPointerEvents);
           overlayLayerRef.current = layer;
         } catch (err) {
           console.error("[PlanningOverlaysLayer] overlay render failed:", err);
@@ -173,7 +184,7 @@ export default function PlanningOverlaysLayer({
         overlayLayerRef.current = null;
       }
     };
-  }, [zoneGeoJson, overlayGeoJson, layerVisibility, map]);
+  }, [zoneGeoJson, overlayGeoJson, layerVisibility, blockPointerEvents, map]);
 
   return null;
 }

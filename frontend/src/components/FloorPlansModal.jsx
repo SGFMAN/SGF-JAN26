@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { getApiHeaders, getLoggedInUserId, getPasswordType } from "../utils/auth";
 import FloorPlanCropModal from "./FloorPlanCropModal";
 import FloorPlanScaleModal from "./FloorPlanScaleModal";
+import ModalBackdrop from "./ModalBackdrop";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -54,19 +55,6 @@ function authHeadersForUpload() {
   return {
     "X-User-Id": getLoggedInUserId() || "",
     "X-Password-Type": getPasswordType() || "global",
-  };
-}
-
-function modalOverlay(onClose) {
-  return {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0, 0, 0, 0.5)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 2000,
-    onClick: onClose,
   };
 }
 
@@ -308,7 +296,7 @@ export default function FloorPlansModal({ onClose }) {
 
   return (
     <>
-      <div style={modalOverlay(onClose)}>
+      <ModalBackdrop onClose={onClose} zIndex={2000}>
         <div
           style={modalCard({
             width: "min(920px, 94vw)",
@@ -483,10 +471,10 @@ export default function FloorPlansModal({ onClose }) {
             </button>
           </div>
         </div>
-      </div>
+      </ModalBackdrop>
 
       {showFormModal && (
-        <div style={{ ...modalOverlay(closeFormModal), zIndex: 2100 }}>
+        <ModalBackdrop onClose={closeFormModal} zIndex={2100}>
           <div style={modalCard({ width: "min(480px, 92vw)" })}>
             <h3 style={{ margin: "0 0 16px", color: MONUMENT, fontSize: "1.2rem" }}>
               {editingPlan ? "Edit Floor Plan" : "Add Floor Plan"}
@@ -551,7 +539,7 @@ export default function FloorPlansModal({ onClose }) {
               </button>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
 
       {cropFile && (
@@ -572,8 +560,9 @@ export default function FloorPlansModal({ onClose }) {
       )}
 
       {showDeleteModal && selectedPlan && (
-        <div
-          style={{ ...modalOverlay(() => !deleting && setShowDeleteModal(false)), zIndex: 2100 }}
+        <ModalBackdrop
+          onClose={() => !deleting && setShowDeleteModal(false)}
+          zIndex={2100}
         >
           <div style={modalCard({ width: "min(440px, 92vw)" })}>
             <h3 style={{ margin: "0 0 12px", color: MONUMENT, fontSize: "1.2rem" }}>Delete Floor Plan</h3>
@@ -599,7 +588,7 @@ export default function FloorPlansModal({ onClose }) {
               </button>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
     </>
   );

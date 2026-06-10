@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { fitScale } from "../utils/floorPlanCrop";
+import ModalBackdrop from "./ModalBackdrop";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -331,18 +332,7 @@ export default function FloorPlanScaleModal({ imageBlob, snapCorners = [], onCon
       : 0;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.55)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 2300,
-      }}
-      onClick={onCancel}
-    >
+    <ModalBackdrop onClose={onCancel} zIndex={2300} style={{ background: "rgba(0,0,0,0.55)" }}>
       <div
         style={{
           background: WHITE,
@@ -517,6 +507,6 @@ export default function FloorPlanScaleModal({ imageBlob, snapCorners = [], onCon
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

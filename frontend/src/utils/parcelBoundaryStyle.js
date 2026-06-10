@@ -1,5 +1,6 @@
 export const PARCEL_BOUNDARY_STYLE = {
   color: "#FFD700",
   weight: 2,
-  fill: false,
+  fillColor: "#FFD700",
+  fillOpacity: 0,
 };

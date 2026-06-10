@@ -1170,13 +1170,14 @@ export default function Maps() {
                   zoneGeoJson={planningZoneGeoJson}
                   overlayGeoJson={planningOverlayGeoJson}
                   layerVisibility={planningLayerVisibility}
+                  blockPointerEvents={movableTarget != null}
                 />
               )}
               {easementsGeoJson && (
                 <EasementsLayer
                   key={activeSearchQuery || "easements"}
                   easementsGeoJson={easementsGeoJson}
-                  blockPointerEvents={movableTarget === "unit"}
+                  blockPointerEvents={movableTarget != null}
                 />
               )}
               {isAdmin && placedUnit && onMapView && (

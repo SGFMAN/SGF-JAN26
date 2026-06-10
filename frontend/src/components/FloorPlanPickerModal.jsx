@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { getApiHeaders } from "../utils/auth";
 import { fetchFloorPlanImageBlob } from "../utils/floorPlanMap";
+import ModalBackdrop from "./ModalBackdrop";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -98,18 +99,7 @@ export default function FloorPlanPickerModal({ onSelect, onClose }) {
   const canSelect = selectedPlan?.scale?.metersPerPixel;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.5)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 2100,
-      }}
-      onClick={onClose}
-    >
+    <ModalBackdrop onClose={onClose} zIndex={2100}>
       <div
         style={{
           background: WHITE,
@@ -304,6 +294,6 @@ export default function FloorPlanPickerModal({ onSelect, onClose }) {
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

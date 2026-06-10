@@ -4,6 +4,7 @@ import {
   fitScale,
   loadFloorPlanSourceCanvas,
 } from "../utils/floorPlanCrop";
+import ModalBackdrop from "./ModalBackdrop";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -293,18 +294,7 @@ export default function FloorPlanCropModal({ file, onConfirm, onCancel }) {
   const zoomPercent = Math.round(viewRef.current.zoom * 100);
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.55)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 2200,
-      }}
-      onClick={onCancel}
-    >
+    <ModalBackdrop onClose={onCancel} zIndex={2200} style={{ background: "rgba(0,0,0,0.55)" }}>
       <div
         style={{
           background: WHITE,
@@ -456,6 +446,6 @@ export default function FloorPlanCropModal({ file, onConfirm, onCancel }) {
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }
