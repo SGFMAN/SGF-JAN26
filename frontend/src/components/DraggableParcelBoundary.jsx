@@ -141,17 +141,15 @@ export default function DraggableParcelBoundary({
       updateMoveHandleMarker(handleRef.current, {
         color: BOUNDARY_HANDLE_COLOR,
         filled,
+        title: filled
+          ? "Boundary move enabled (click to lock)"
+          : "Click to enable boundary move",
       });
       setBoundaryCursor(boundaryRef.current, filled ? "grab" : "");
       setBoundaryPointerEvents(boundaryRef.current, filled);
       if (filled) {
         boundaryRef.current?.bringToFront?.();
         handleRef.current?.bringToFront?.();
-      }
-      if (handleRef.current) {
-        handleRef.current.setTitle(
-          filled ? "Boundary move enabled (click to lock)" : "Click to enable boundary move"
-        );
       }
     } catch (err) {
       console.warn("[DraggableParcelBoundary] apply movable visuals:", err);

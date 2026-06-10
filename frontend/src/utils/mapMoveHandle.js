@@ -127,10 +127,18 @@ export function createMoveHandleMarker(latlng, { color, filled, onToggle, title 
   return marker;
 }
 
-export function updateMoveHandleMarker(marker, { color, filled }) {
+export function setMarkerTooltip(marker, title) {
+  if (!marker || title == null) return;
+  if (marker.options) marker.options.title = title;
+  const el = marker.getElement?.();
+  if (el) el.title = title;
+}
+
+export function updateMoveHandleMarker(marker, { color, filled, title }) {
   if (!marker) return;
   try {
     marker.setIcon(createMoveHandleIcon(color, filled));
+    if (title) setMarkerTooltip(marker, title);
   } catch (err) {
     console.warn("[mapMoveHandle] update handle:", err);
   }

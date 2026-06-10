@@ -168,7 +168,9 @@ export async function fetchAhdElevationsBatched(
 export function siteHighPointAhd(elevationRows) {
   let max = null;
   for (const row of elevationRows) {
-    const value = Number(row?.ahdM);
+    const raw = row?.ahdM;
+    if (raw == null || raw === "") continue;
+    const value = Number(raw);
     if (!Number.isFinite(value)) continue;
     if (max == null || value > max) max = value;
   }

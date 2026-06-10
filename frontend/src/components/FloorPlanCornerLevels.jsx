@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import { useMap } from "react-leaflet";
+import { setMarkerTooltip } from "../utils/mapMoveHandle";
 import {
   fetchAhdElevationsBatched,
   floorPlanCornerPoints,
@@ -72,13 +73,6 @@ function setCornerMarkerText(marker, text) {
   );
 }
 
-function setMarkerTooltip(marker, title) {
-  if (!marker || !title) return;
-  if (marker.options) marker.options.title = title;
-  const el = marker.getElement?.();
-  if (el) el.title = title;
-}
-
 function removeCornerLayer(map, layerRef, markersRef) {
   if (layerRef.current) {
     map.removeLayer(layerRef.current);
@@ -136,6 +130,13 @@ function applyCornerLabels(markers, unitPoints, unitRows, siteMax) {
   }
 }
 
+function markAllCorners(markers, text, tooltip) {
+  for (const marker of markers) {
+    setCornerMarkerText(marker, text);
+    setMarkerTooltip(marker, tooltip);
+  }
+}
+
 /** Fall labels at floor plan corners — 0 at site high point, 0.25 m steps below. */
 export default function FloorPlanCornerLevels({
   bounds,
@@ -150,11 +151,16 @@ export default function FloorPlanCornerLevels({
   const layerRef = useRef(null);
   const markersRef = useRef([]);
   const lastFetchedKeyRef = useRef("");
+  const fetchTimerRef = useRef(null);
+  const fetchAbortRef = useRef(null);
+  const activeFetchKeyRef = useRef("");
   const siteGeometryRef = useRef(siteGeometry);
   siteGeometryRef.current = siteGeometry;
 
   useEffect(() => {
     return () => {
+      window.clearTimeout(fetchTimerRef.current);
+      fetchAbortRef.current?.abort();
       removeCornerLayer(mapRef.current, layerRef, markersRef);
     };
   }, []);
@@ -163,8 +169,11 @@ export default function FloorPlanCornerLevels({
     const mapInstance = mapRef.current;
 
     if (!enabled || !bounds || lookupState !== "VIC") {
+      window.clearTimeout(fetchTimerRef.current);
+      fetchAbortRef.current?.abort();
       removeCornerLayer(mapInstance, layerRef, markersRef);
       lastFetchedKeyRef.current = "";
+      activeFetchKeyRef.current = "";
       return undefined;
     }
 
@@ -186,18 +195,22 @@ export default function FloorPlanCornerLevels({
       layerRef.current.bringToFront?.();
     }
 
-    const markers = markersRef.current;
-    const controller = new AbortController();
+    window.clearTimeout(fetchTimerRef.current);
     const delay = lastFetchedKeyRef.current === "" ? 0 : FETCH_DEBOUNCE_MS;
 
-    const debounceTimer = window.setTimeout(() => {
+    fetchTimerRef.current = window.setTimeout(() => {
+      const markers = markersRef.current;
+      if (!markers.length) return;
+
+      fetchAbortRef.current?.abort();
+      const controller = new AbortController();
+      fetchAbortRef.current = controller;
+      activeFetchKeyRef.current = key;
       lastFetchedKeyRef.current = key;
 
-      (async () => {
-        for (const marker of markers) {
-          setCornerMarkerText(marker, "…");
-        }
+      markAllCorners(markers, "…", "Loading site levels…");
 
+      (async () => {
         try {
           const sitePoints = sampleSiteElevationPoints(siteGeometryRef.current, 8);
           const allPoints = [...sitePoints, ...unitPoints];
@@ -208,7 +221,7 @@ export default function FloorPlanCornerLevels({
             controller.signal
           );
 
-          if (controller.signal.aborted) return;
+          if (controller.signal.aborted || activeFetchKeyRef.current !== key) return;
 
           const siteIds = new Set(sitePoints.map((p) => p.id));
           const siteRows = rows.filter((row) => siteIds.has(row.id));
@@ -223,18 +236,19 @@ export default function FloorPlanCornerLevels({
           layerRef.current?.bringToFront?.();
         } catch (err) {
           if (controller.signal.aborted || err?.name === "AbortError") return;
-          console.warn("[FloorPlanCornerLevels]", err);
-          for (const marker of markers) {
-            setCornerMarkerText(marker, "—");
-            setMarkerTooltip(marker, err.message || "Could not load site levels");
-          }
+          console.warn("[FloorPlanCornerLevels] elevation lookup failed:", err);
+          if (activeFetchKeyRef.current !== key) return;
+          markAllCorners(
+            markers,
+            "—",
+            err.message || "Could not load site levels"
+          );
         }
       })();
     }, delay);
 
     return () => {
-      window.clearTimeout(debounceTimer);
-      controller.abort();
+      window.clearTimeout(fetchTimerRef.current);
     };
   }, [boundsKey(bounds), enabled, lookupState]);
 

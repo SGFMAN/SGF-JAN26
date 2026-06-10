@@ -141,6 +141,9 @@ export default function DraggableFloorPlanOverlay({
       updateMoveHandleMarker(handleRef.current, {
         color: UNIT_HANDLE_COLOR,
         filled,
+        title: filled
+          ? "Unit move enabled (click to lock)"
+          : "Click to enable unit move",
       });
       setOverlayInteraction(overlayRef.current, filled);
       if (filled && overlayRef.current) {
@@ -150,9 +153,6 @@ export default function DraggableFloorPlanOverlay({
       }
       if (handleRef.current) {
         handleRef.current.bringToFront?.();
-        handleRef.current.setTitle(
-          filled ? "Unit move enabled (click to lock)" : "Click to enable unit move"
-        );
       }
     } catch (err) {
       console.warn("[DraggableFloorPlanOverlay] apply movable visuals:", err);
