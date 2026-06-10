@@ -1,6 +1,6 @@
 /**
  * Victorian AHD elevation via Vicmap Elevation FeatureServer (DEECA).
- * Prefers metro/statewide ground surface survey points; falls back to nearest contour.
+ * Interpolates between nearby ground survey points so unit corners get distinct levels.
  */
 
 const VICMAP_ELEVATION_METRO =
@@ -10,15 +10,16 @@ const VICMAP_ELEVATION_STATEWIDE =
   "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Elevation_STATEWIDE_10_to_20_metre/FeatureServer";
 
 const METRO_GROUND_LAYER = 0;
-const METRO_CONTOUR_LAYER = 1;
 const STATEWIDE_GROUND_LAYER = 4;
 
-const FETCH_TIMEOUT_MS = 12000;
+const FETCH_TIMEOUT_MS = 22000;
 const MAX_POINTS = 32;
 const LOOKUP_CONCURRENCY = 4;
-const METRO_GROUND_RADIUS_M = 450;
-const STATEWIDE_GROUND_RADIUS_M = 900;
-const CONTOUR_RADIUS_M = 200;
+const METRO_GROUND_RADIUS_M = 600;
+const STATEWIDE_GROUND_RADIUS_M = 1200;
+const GROUND_RESULT_COUNT = 50;
+const PLANE_FIT_MAX_POINTS = 12;
+const PLANE_FIT_MIN_POINTS = 3;
 
 function normalizeElevationState(raw) {
   const s = String(raw || "")
@@ -63,47 +64,22 @@ function haversineM(lat1, lng1, lat2, lng2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-function distancePointToSegmentM(px, py, ax, ay, bx, by) {
-  const latMid = (ay + by) / 2;
-  const mPerDegLat = 111320;
-  const mPerDegLng = mPerDegLat * Math.cos((latMid * Math.PI) / 180);
-
-  const x = px * mPerDegLng;
-  const y = py * mPerDegLat;
-  const x1 = ax * mPerDegLng;
-  const y1 = ay * mPerDegLat;
-  const x2 = bx * mPerDegLng;
-  const y2 = by * mPerDegLat;
-
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  if (dx === 0 && dy === 0) {
-    return Math.hypot(x - x1, y - y1);
-  }
-  const t = Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy)));
-  const projX = x1 + t * dx;
-  const projY = y1 + t * dy;
-  return Math.hypot(x - projX, y - projY);
+function toLocalEN(lat, lng, originLat, originLng) {
+  const metersPerDegLat = 111320;
+  const metersPerDegLng = metersPerDegLat * Math.cos((originLat * Math.PI) / 180);
+  return {
+    e: (lng - originLng) * metersPerDegLng,
+    n: (lat - originLat) * metersPerDegLat,
+  };
 }
 
-function distancePointToPolylineM(lat, lng, paths) {
-  if (!Array.isArray(paths)) return Infinity;
-  let best = Infinity;
-  for (const path of paths) {
-    if (!Array.isArray(path) || path.length < 2) continue;
-    for (let i = 0; i < path.length - 1; i += 1) {
-      const [ax, ay] = path[i];
-      const [bx, by] = path[i + 1];
-      if (![ax, ay, bx, by].every(Number.isFinite)) continue;
-      best = Math.min(best, distancePointToSegmentM(lng, lat, ax, ay, bx, by));
-    }
-  }
-  return best;
+function roundAhd(value) {
+  return Math.round(value * 100) / 100;
 }
 
-async function fetchArcGisJson(url, timeoutMs) {
+async function fetchArcGisJson(url, timeoutMs = FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
-  const limit = Math.max(3000, Math.min(FETCH_TIMEOUT_MS, timeoutMs || FETCH_TIMEOUT_MS));
+  const limit = Math.max(3000, Number(timeoutMs) || FETCH_TIMEOUT_MS);
   const timer = setTimeout(() => controller.abort(), limit);
   const started = Date.now();
   try {
@@ -136,7 +112,7 @@ async function fetchArcGisJson(url, timeoutMs) {
   }
 }
 
-function buildQueryUrl(baseUrl, layerId, lat, lng, radiusM, returnGeometry) {
+function buildGroundQueryUrl(baseUrl, layerId, lat, lng, radiusM) {
   const params = new URLSearchParams({
     geometry: `${lng},${lat}`,
     geometryType: "esriGeometryPoint",
@@ -146,120 +122,225 @@ function buildQueryUrl(baseUrl, layerId, lat, lng, radiusM, returnGeometry) {
     distance: String(radiusM),
     units: "esriSRUnit_Meter",
     outFields: "altitude",
-    returnGeometry: returnGeometry ? "true" : "false",
-    resultRecordCount: "30",
+    returnGeometry: "true",
+    resultRecordCount: String(GROUND_RESULT_COUNT),
     f: "json",
   });
   return `${baseUrl}/${layerId}/query?${params.toString()}`;
 }
 
-function pickNearestGroundPoint(lat, lng, features, sourceLabel) {
-  let best = null;
-  let bestDist = Infinity;
-  for (const feature of features) {
+function parseGroundFeatures(features) {
+  const rows = [];
+  for (const feature of features || []) {
     const alt = Number(feature.attributes?.altitude);
-    const gx = feature.geometry?.x;
-    const gy = feature.geometry?.y;
-    if (!Number.isFinite(alt) || !Number.isFinite(gx) || !Number.isFinite(gy)) continue;
-    const dist = haversineM(lat, lng, gy, gx);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = {
-        ahdM: alt,
-        source: sourceLabel,
-        approximate: dist > 12,
-      };
-    }
+    const lng = Number(feature.geometry?.x);
+    const lat = Number(feature.geometry?.y);
+    if (!Number.isFinite(alt) || !Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    rows.push({ lat, lng, alt });
   }
-  return best;
+  return rows;
 }
 
-function pickNearestContour(lat, lng, features, sourceLabel) {
-  let best = null;
-  let bestDist = Infinity;
-  for (const feature of features) {
-    const alt = Number(feature.attributes?.altitude);
-    if (!Number.isFinite(alt)) continue;
-    const paths = feature.geometry?.paths;
-    const dist = distancePointToPolylineM(lat, lng, paths);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = {
-        ahdM: alt,
-        source: sourceLabel,
-        approximate: true,
-      };
-    }
+function dedupeGroundPoints(points) {
+  const seen = new Set();
+  const out = [];
+  for (const point of points) {
+    const key = `${point.lat.toFixed(6)},${point.lng.toFixed(6)},${point.alt}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(point);
   }
-  return best;
+  return out;
 }
 
-async function lookupPointAhd(lat, lng) {
-  const metroGround = await fetchArcGisJson(
-    buildQueryUrl(VICMAP_ELEVATION_METRO, METRO_GROUND_LAYER, lat, lng, METRO_GROUND_RADIUS_M, true),
-    FETCH_TIMEOUT_MS
-  );
-  if (!metroGround.error && metroGround.data?.features?.length) {
-    const hit = pickNearestGroundPoint(
-      lat,
-      lng,
-      metroGround.data.features,
-      "vicmap_metro_ground_point"
-    );
-    if (hit) return hit;
-  }
-
-  const [metroContour, statewideGround] = await Promise.all([
+async function fetchGroundSurveyPoints(lat, lng) {
+  const [metro, statewide] = await Promise.all([
     fetchArcGisJson(
-      buildQueryUrl(VICMAP_ELEVATION_METRO, METRO_CONTOUR_LAYER, lat, lng, CONTOUR_RADIUS_M, true),
-      FETCH_TIMEOUT_MS
+      buildGroundQueryUrl(
+        VICMAP_ELEVATION_METRO,
+        METRO_GROUND_LAYER,
+        lat,
+        lng,
+        METRO_GROUND_RADIUS_M
+      )
     ),
     fetchArcGisJson(
-      buildQueryUrl(
+      buildGroundQueryUrl(
         VICMAP_ELEVATION_STATEWIDE,
         STATEWIDE_GROUND_LAYER,
         lat,
         lng,
-        STATEWIDE_GROUND_RADIUS_M,
-        true
-      ),
-      FETCH_TIMEOUT_MS
+        STATEWIDE_GROUND_RADIUS_M
+      )
     ),
   ]);
 
-  if (!metroContour.error && metroContour.data?.features?.length) {
-    const hit = pickNearestContour(lat, lng, metroContour.data.features, "vicmap_metro_contour");
-    if (hit) return hit;
-  }
+  const merged = dedupeGroundPoints([
+    ...parseGroundFeatures(metro.data?.features),
+    ...parseGroundFeatures(statewide.data?.features),
+  ]);
 
-  if (!statewideGround.error && statewideGround.data?.features?.length) {
-    const hit = pickNearestGroundPoint(
-      lat,
-      lng,
-      statewideGround.data.features,
-      "vicmap_statewide_ground_point"
-    );
-    if (hit) return { ...hit, approximate: true };
-  }
-
-  return null;
+  return {
+    points: merged,
+    errors: [metro.error, statewide.error].filter(Boolean),
+  };
 }
 
-async function mapWithConcurrency(items, limit, fn) {
-  const results = new Array(items.length);
-  let nextIndex = 0;
+function selectNearestGroundPoints(lat, lng, groundPoints, maxCount = PLANE_FIT_MAX_POINTS) {
+  return groundPoints
+    .map((point) => ({
+      ...point,
+      distM: haversineM(lat, lng, point.lat, point.lng),
+    }))
+    .sort((a, b) => a.distM - b.distM)
+    .slice(0, maxCount);
+}
 
-  async function worker() {
-    while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      results[index] = await fn(items[index], index);
-    }
+function idwElevation(lat, lng, groundPoints) {
+  if (!groundPoints.length) return null;
+
+  let weightSum = 0;
+  let valueSum = 0;
+  let minDist = Infinity;
+
+  for (const point of groundPoints) {
+    const dist = Math.max(haversineM(lat, lng, point.lat, point.lng), 0.5);
+    minDist = Math.min(minDist, dist);
+    const weight = 1 / (dist * dist);
+    weightSum += weight;
+    valueSum += weight * point.alt;
   }
 
-  const workers = Math.max(1, Math.min(limit, items.length));
-  await Promise.all(Array.from({ length: workers }, () => worker()));
-  return results;
+  if (weightSum <= 0) return null;
+  return {
+    ahdM: roundAhd(valueSum / weightSum),
+    minDistM: minDist,
+  };
+}
+
+function fitElevationPlane(groundPoints, originLat, originLng) {
+  const n = groundPoints.length;
+  if (n < PLANE_FIT_MIN_POINTS) return null;
+
+  let sEe = 0;
+  let sEn = 0;
+  let sEz = 0;
+  let sEeEe = 0;
+  let sEnEn = 0;
+  let sEeEn = 0;
+  let sEeZ = 0;
+  let sEnZ = 0;
+
+  for (const point of groundPoints) {
+    const { e, n: north } = toLocalEN(point.lat, point.lng, originLat, originLng);
+    const z = point.alt;
+    sEe += e;
+    sEn += north;
+    sEz += z;
+    sEeEe += e * e;
+    sEnEn += north * north;
+    sEeEn += e * north;
+    sEeZ += e * z;
+    sEnZ += north * z;
+  }
+
+  const matrix = [
+    [sEeEe, sEeEn, sEe],
+    [sEeEn, sEnEn, sEn],
+    [sEe, sEn, n],
+  ];
+
+  const det3 = (m) =>
+    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
+    m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+    m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+
+  const determinant = det3(matrix);
+  if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-9) return null;
+
+  const detA = det3([
+    [sEeZ, sEeEn, sEe],
+    [sEnZ, sEnEn, sEn],
+    [sEz, sEn, n],
+  ]);
+  const detB = det3([
+    [sEeEe, sEeZ, sEe],
+    [sEeEn, sEnZ, sEn],
+    [sEe, sEz, n],
+  ]);
+  const detC = det3([
+    [sEeEe, sEeEn, sEeZ],
+    [sEeEn, sEnEn, sEnZ],
+    [sEe, sEn, sEz],
+  ]);
+
+  return {
+    a: detA / determinant,
+    b: detB / determinant,
+    c: detC / determinant,
+  };
+}
+
+function evalElevationPlane(plane, lat, lng, originLat, originLng) {
+  const { e, n } = toLocalEN(lat, lng, originLat, originLng);
+  return plane.a * e + plane.b * n + plane.c;
+}
+
+function requestCentroid(points) {
+  let latSum = 0;
+  let lngSum = 0;
+  for (const point of points) {
+    latSum += point.lat;
+    lngSum += point.lng;
+  }
+  return {
+    lat: latSum / points.length,
+    lng: lngSum / points.length,
+  };
+}
+
+function interpolateFromGround(lat, lng, groundPoints, origin) {
+  const nearest = selectNearestGroundPoints(lat, lng, groundPoints);
+  if (!nearest.length) return null;
+
+  const idw = idwElevation(lat, lng, nearest);
+  if (!idw) return null;
+
+  if (nearest.length < PLANE_FIT_MIN_POINTS) {
+    return {
+      ahdM: idw.ahdM,
+      approximate: idw.minDistM > 12,
+      source: "vicmap_ground_idw",
+    };
+  }
+
+  const plane = fitElevationPlane(nearest, origin.lat, origin.lng);
+  if (!plane) {
+    return {
+      ahdM: idw.ahdM,
+      approximate: idw.minDistM > 12,
+      source: "vicmap_ground_idw",
+    };
+  }
+
+  const idwAtOrigin = idwElevation(origin.lat, origin.lng, nearest);
+  const planeAtOrigin = evalElevationPlane(plane, origin.lat, origin.lng, origin.lat, origin.lng);
+  const planeAtPoint = evalElevationPlane(plane, lat, lng, origin.lat, origin.lng);
+
+  if (!idwAtOrigin) {
+    return {
+      ahdM: roundAhd(planeAtPoint),
+      approximate: true,
+      source: "vicmap_ground_plane",
+    };
+  }
+
+  const offset = idwAtOrigin.ahdM - planeAtOrigin;
+  return {
+    ahdM: roundAhd(planeAtPoint + offset),
+    approximate: idw.minDistM > 12 || idwAtOrigin.minDistM > 12,
+    source: "vicmap_ground_plane",
+  };
 }
 
 async function lookupAhdElevations({ state, points }) {
@@ -271,9 +352,29 @@ async function lookupAhdElevations({ state, points }) {
     };
   }
 
+  const origin = requestCentroid(points);
+  const { points: groundPoints, errors } = await fetchGroundSurveyPoints(origin.lat, origin.lng);
+
+  if (!groundPoints.length) {
+    return {
+      state: normalizedState,
+      datum: "AHD",
+      elevations: points.map((point) => ({
+        id: point.id,
+        lat: point.lat,
+        lng: point.lng,
+        ahdM: null,
+        approximate: false,
+        source: null,
+        error: errors[0] || "No Vicmap elevation data within search radius",
+      })),
+      source: "VIC_VICMAP_ELEVATION",
+    };
+  }
+
   const results = await mapWithConcurrency(points, LOOKUP_CONCURRENCY, async (point) => {
     try {
-      const hit = await lookupPointAhd(point.lat, point.lng);
+      const hit = interpolateFromGround(point.lat, point.lng, groundPoints, origin);
       if (!hit) {
         return {
           id: point.id,
@@ -311,7 +412,25 @@ async function lookupAhdElevations({ state, points }) {
     datum: "AHD",
     elevations: results,
     source: "VIC_VICMAP_ELEVATION",
+    groundSurveyCount: groundPoints.length,
   };
+}
+
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await fn(items[index], index);
+    }
+  }
+
+  const workers = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  return results;
 }
 
 module.exports = {

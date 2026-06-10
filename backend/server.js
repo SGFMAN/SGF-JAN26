@@ -2710,9 +2710,15 @@ app.post("/api/maps/elevation-ahd", async (req, res) => {
     if (result.error) {
       return res.status(result.status || 400).json({ ok: false, error: result.error, state });
     }
-    const hits = (result.elevations || []).filter((row) => row?.ahdM != null).length;
+    const rows = result.elevations || [];
+    const hits = rows.filter((row) => row?.ahdM != null).length;
+    const ahdValues = rows.map((row) => Number(row.ahdM)).filter((v) => Number.isFinite(v));
+    const spreadM =
+      ahdValues.length > 1
+        ? (Math.max(...ahdValues) - Math.min(...ahdValues)).toFixed(2)
+        : "0";
     console.log(
-      `[maps/elevation-ahd] ${parsedPoints.points.length} points, ${hits} hits, first=(${parsedPoints.points[0]?.lat}, ${parsedPoints.points[0]?.lng})`
+      `[maps/elevation-ahd] ${parsedPoints.points.length} points, ${hits} hits, spread=${spreadM}m, survey=${result.groundSurveyCount ?? "?"}`
     );
     return res.json({ ok: true, ...result });
   } catch (e) {

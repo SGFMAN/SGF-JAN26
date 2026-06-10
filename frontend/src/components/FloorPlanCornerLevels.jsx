@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import L from "leaflet";
 import { useMap } from "react-leaflet";
 import {
@@ -193,6 +193,11 @@ export default function FloorPlanCornerLevels({
   const siteGeometryRef = useRef(siteGeometry);
   siteGeometryRef.current = siteGeometry;
 
+  const sitePointsKey = useMemo(
+    () => elevationPointsKey(sampleSiteElevationPoints(siteGeometry, 8)),
+    [siteGeometry]
+  );
+
   useEffect(() => {
     return () => {
       window.clearTimeout(fetchTimerRef.current);
@@ -269,7 +274,7 @@ export default function FloorPlanCornerLevels({
 
           let siteMax = siteHighPointAhd(siteRows);
           if (siteMax == null) {
-            siteMax = siteHighPointAhd(unitRows);
+            siteMax = siteHighPointAhd(rows);
           }
 
           if (hits === 0) {
@@ -305,7 +310,7 @@ export default function FloorPlanCornerLevels({
     return () => {
       window.clearTimeout(fetchTimerRef.current);
     };
-  }, [elevationPointsKey(cornerPoints), enabled, lookupState]);
+  }, [elevationPointsKey(cornerPoints), sitePointsKey, enabled, lookupState]);
 
   return null;
 }
