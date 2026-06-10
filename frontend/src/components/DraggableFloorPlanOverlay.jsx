@@ -290,7 +290,7 @@ export default function DraggableFloorPlanOverlay({
       cornerPoints={cornerPoints}
       siteGeometry={siteGeometry}
       lookupState={lookupState}
-      enabled={Boolean(cornerPoints?.length)}
+      enabled={false}
     />
   );
 }

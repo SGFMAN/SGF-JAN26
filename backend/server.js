@@ -2706,7 +2706,8 @@ app.post("/api/maps/elevation-ahd", async (req, res) => {
 
   const state = normalizeElevationState(body.state);
   try {
-    const result = await lookupAhdElevations({ state, points: parsedPoints.points });
+    const mode = body.mode;
+    const result = await lookupAhdElevations({ state, points: parsedPoints.points, mode });
     if (result.error) {
       return res.status(result.status || 400).json({ ok: false, error: result.error, state });
     }
@@ -2718,7 +2719,7 @@ app.post("/api/maps/elevation-ahd", async (req, res) => {
         ? (Math.max(...ahdValues) - Math.min(...ahdValues)).toFixed(2)
         : "0";
     console.log(
-      `[maps/elevation-ahd] ${parsedPoints.points.length} points, ${hits} hits, spread=${spreadM}m, survey=${result.groundSurveyCount ?? "?"}`
+      `[maps/elevation-ahd] mode=${result.mode || mode || "survey"} ${parsedPoints.points.length} points, ${hits} hits, spread=${spreadM}m`
     );
     return res.json({ ok: true, ...result });
   } catch (e) {

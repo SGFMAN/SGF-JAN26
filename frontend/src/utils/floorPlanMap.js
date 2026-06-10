@@ -85,13 +85,30 @@ export function isVictoriaLatLng(lat, lng) {
   );
 }
 
-export async function fetchAhdElevations(points, state = "VIC", externalSignal = null) {
+export const SITE_BOUNDARY_MAX_POINTS = 32;
+
+/** All title-boundary vertices for elevation debug (samples evenly if above max). */
+export function allSiteBoundaryPoints(geometry, maxPoints = SITE_BOUNDARY_MAX_POINTS) {
+  return sampleSiteElevationPoints(geometry, maxPoints);
+}
+
+export function formatAhdLabel(ahdM) {
+  if (!Number.isFinite(ahdM)) return "—";
+  return ahdM.toFixed(2);
+}
+
+export async function fetchAhdElevations(
+  points,
+  state = "VIC",
+  externalSignal = null,
+  mode = "survey"
+) {
   if (externalSignal?.aborted) {
     throw new DOMException("Aborted", "AbortError");
   }
 
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 55000);
+  const timer = window.setTimeout(() => controller.abort(), 90000);
   const onExternalAbort = () => controller.abort();
   if (externalSignal) {
     externalSignal.addEventListener("abort", onExternalAbort, { once: true });
@@ -101,7 +118,7 @@ export async function fetchAhdElevations(points, state = "VIC", externalSignal =
     const res = await fetch("/api/maps/elevation-ahd", {
       method: "POST",
       headers: getApiHeaders(),
-      body: JSON.stringify({ state, points }),
+      body: JSON.stringify({ state, points, mode }),
       signal: controller.signal,
     });
     const data = await res.json().catch(() => ({}));
@@ -173,7 +190,8 @@ export async function fetchAhdElevationsBatched(
   points,
   state = "VIC",
   batchSize = 24,
-  externalSignal = null
+  externalSignal = null,
+  mode = "survey"
 ) {
   if (!points.length) return [];
   const rows = [];
@@ -182,7 +200,7 @@ export async function fetchAhdElevationsBatched(
       throw new DOMException("Aborted", "AbortError");
     }
     const batch = points.slice(i, i + batchSize);
-    const data = await fetchAhdElevations(batch, state, externalSignal);
+    const data = await fetchAhdElevations(batch, state, externalSignal, mode);
     rows.push(...(data.elevations || []));
   }
   return rows;

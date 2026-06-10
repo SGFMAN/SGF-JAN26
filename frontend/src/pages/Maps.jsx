@@ -9,6 +9,7 @@ import shadowUrl from "leaflet/dist/images/marker-shadow.png";
 import logo from "../images/logo.png";
 import { MapBasemapSelector, MapBasemapTileLayer } from "../components/MapBasemapControls";
 import DraggableParcelBoundary from "../components/DraggableParcelBoundary";
+import SiteBoundaryLevels from "../components/SiteBoundaryLevels";
 import PlanningOverlaysLayer, {
   buildInitialPlanningLayerVisibility,
   overlayLayerKey,
@@ -1163,6 +1164,14 @@ export default function Maps() {
                   onFeatureChange={onParcelFeatureChange}
                   movable={movableTarget === "boundary"}
                   onToggleMovable={toggleBoundaryMovable}
+                />
+              )}
+              {parcelFeature && isAdmin && (
+                <SiteBoundaryLevels
+                  key={`levels-${activeSearchQuery || "boundary"}`}
+                  siteGeometry={parcelFeature?.geometry ?? null}
+                  lookupState="VIC"
+                  enabled
                 />
               )}
               {isAdmin && (

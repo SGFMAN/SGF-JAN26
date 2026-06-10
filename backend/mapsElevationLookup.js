@@ -299,6 +299,28 @@ function requestCentroid(points) {
   };
 }
 
+function lookupSurveyAtPoint(lat, lng, groundPoints) {
+  let nearest = null;
+  let nearestDistM = Infinity;
+
+  for (const point of groundPoints) {
+    const distM = haversineM(lat, lng, point.lat, point.lng);
+    if (distM < nearestDistM) {
+      nearestDistM = distM;
+      nearest = point;
+    }
+  }
+
+  if (!nearest) return null;
+
+  return {
+    ahdM: roundAhd(nearest.alt),
+    approximate: nearestDistM > 12,
+    source: "vicmap_nearest_survey",
+    surveyDistM: Math.round(nearestDistM),
+  };
+}
+
 function interpolateFromGround(lat, lng, groundPoints, origin) {
   const nearest = selectNearestGroundPoints(lat, lng, groundPoints);
   if (!nearest.length) return null;
@@ -343,7 +365,15 @@ function interpolateFromGround(lat, lng, groundPoints, origin) {
   };
 }
 
-async function lookupAhdElevations({ state, points }) {
+function normalizeLookupMode(raw) {
+  const mode = String(raw || "survey")
+    .trim()
+    .toLowerCase();
+  if (mode === "interpolate") return "interpolate";
+  return "survey";
+}
+
+async function lookupAhdElevations({ state, points, mode: rawMode }) {
   const normalizedState = normalizeElevationState(state);
   if (normalizedState !== "VIC") {
     return {
@@ -352,29 +382,100 @@ async function lookupAhdElevations({ state, points }) {
     };
   }
 
-  const origin = requestCentroid(points);
-  const { points: groundPoints, errors } = await fetchGroundSurveyPoints(origin.lat, origin.lng);
+  const mode = normalizeLookupMode(rawMode);
+  const groundCache = new Map();
 
-  if (!groundPoints.length) {
+  async function groundNear(lat, lng) {
+    const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+    if (!groundCache.has(key)) {
+      groundCache.set(key, await fetchGroundSurveyPoints(lat, lng));
+    }
+    return groundCache.get(key);
+  }
+
+  if (mode === "interpolate") {
+    const origin = requestCentroid(points);
+    const { points: groundPoints, errors } = await fetchGroundSurveyPoints(origin.lat, origin.lng);
+
+    if (!groundPoints.length) {
+      return {
+        state: normalizedState,
+        datum: "AHD",
+        mode,
+        elevations: points.map((point) => ({
+          id: point.id,
+          lat: point.lat,
+          lng: point.lng,
+          ahdM: null,
+          approximate: false,
+          source: null,
+          error: errors[0] || "No Vicmap elevation data within search radius",
+        })),
+        source: "VIC_VICMAP_ELEVATION",
+      };
+    }
+
+    const results = await mapWithConcurrency(points, LOOKUP_CONCURRENCY, async (point) => {
+      try {
+        const hit = interpolateFromGround(point.lat, point.lng, groundPoints, origin);
+        if (!hit) {
+          return {
+            id: point.id,
+            lat: point.lat,
+            lng: point.lng,
+            ahdM: null,
+            approximate: false,
+            source: null,
+            error: "No Vicmap elevation data within search radius",
+          };
+        }
+        return {
+          id: point.id,
+          lat: point.lat,
+          lng: point.lng,
+          ahdM: hit.ahdM,
+          approximate: hit.approximate ?? false,
+          source: hit.source ?? null,
+        };
+      } catch (err) {
+        return {
+          id: point.id,
+          lat: point.lat,
+          lng: point.lng,
+          ahdM: null,
+          approximate: false,
+          source: null,
+          error: err.message || String(err),
+        };
+      }
+    });
+
     return {
       state: normalizedState,
       datum: "AHD",
-      elevations: points.map((point) => ({
-        id: point.id,
-        lat: point.lat,
-        lng: point.lng,
-        ahdM: null,
-        approximate: false,
-        source: null,
-        error: errors[0] || "No Vicmap elevation data within search radius",
-      })),
+      mode,
+      elevations: results,
       source: "VIC_VICMAP_ELEVATION",
+      groundSurveyCount: groundPoints.length,
     };
   }
 
   const results = await mapWithConcurrency(points, LOOKUP_CONCURRENCY, async (point) => {
     try {
-      const hit = interpolateFromGround(point.lat, point.lng, groundPoints, origin);
+      const { points: groundPoints, errors } = await groundNear(point.lat, point.lng);
+      if (!groundPoints.length) {
+        return {
+          id: point.id,
+          lat: point.lat,
+          lng: point.lng,
+          ahdM: null,
+          approximate: false,
+          source: null,
+          error: errors[0] || "No Vicmap elevation data within search radius",
+        };
+      }
+
+      const hit = lookupSurveyAtPoint(point.lat, point.lng, groundPoints);
       if (!hit) {
         return {
           id: point.id,
@@ -386,6 +487,7 @@ async function lookupAhdElevations({ state, points }) {
           error: "No Vicmap elevation data within search radius",
         };
       }
+
       return {
         id: point.id,
         lat: point.lat,
@@ -393,6 +495,7 @@ async function lookupAhdElevations({ state, points }) {
         ahdM: hit.ahdM,
         approximate: hit.approximate ?? false,
         source: hit.source ?? null,
+        surveyDistM: hit.surveyDistM ?? null,
       };
     } catch (err) {
       return {
@@ -410,9 +513,9 @@ async function lookupAhdElevations({ state, points }) {
   return {
     state: normalizedState,
     datum: "AHD",
+    mode,
     elevations: results,
     source: "VIC_VICMAP_ELEVATION",
-    groundSurveyCount: groundPoints.length,
   };
 }
 
