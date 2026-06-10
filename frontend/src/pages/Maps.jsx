@@ -9,7 +9,6 @@ import shadowUrl from "leaflet/dist/images/marker-shadow.png";
 import logo from "../images/logo.png";
 import { MapBasemapSelector, MapBasemapTileLayer } from "../components/MapBasemapControls";
 import DraggableParcelBoundary from "../components/DraggableParcelBoundary";
-import SiteBoundaryLevels from "../components/SiteBoundaryLevels";
 import PlanningOverlaysLayer, {
   mergePlanningLayerVisibility,
   overlayLayerKey,
@@ -300,12 +299,12 @@ export default function Maps() {
     }
     const initialCenter = marker ? { lat: marker[0], lng: marker[1] } : null;
     setUnitPlacementKey((n) => n + 1);
-    setPlacedUnit({ plan, center: initialCenter });
+    setPlacedUnit({ plan, center: initialCenter, bearing: 0 });
     setMovableTarget("unit");
   }
 
-  function handleUnitCenterChange(center) {
-    setPlacedUnit((prev) => (prev ? { ...prev, center } : null));
+  function handleUnitPlacementChange({ center, bearing }) {
+    setPlacedUnit((prev) => (prev ? { ...prev, center, bearing } : null));
   }
 
   function setMovableTargetExclusive(target) {
@@ -1166,14 +1165,6 @@ export default function Maps() {
                   onToggleMovable={toggleBoundaryMovable}
                 />
               )}
-              {parcelFeature && isAdmin && (
-                <SiteBoundaryLevels
-                  key={`levels-${activeSearchQuery || "boundary"}`}
-                  siteGeometry={parcelFeature?.geometry ?? null}
-                  lookupState="VIC"
-                  enabled
-                />
-              )}
               {isAdmin && (
                 <PlanningOverlaysLayer
                   zoneGeoJson={planningZoneGeoJson}
@@ -1194,7 +1185,8 @@ export default function Maps() {
                   key={`${placedUnit.plan.id}-${unitPlacementKey}`}
                   plan={placedUnit.plan}
                   initialCenter={placedUnit.center}
-                  onCenterChange={handleUnitCenterChange}
+                  initialBearing={placedUnit.bearing ?? 0}
+                  onPlacementChange={handleUnitPlacementChange}
                   movable={movableTarget === "unit"}
                   onToggleMovable={toggleUnitMovable}
                   siteGeometry={parcelFeature?.geometry ?? null}

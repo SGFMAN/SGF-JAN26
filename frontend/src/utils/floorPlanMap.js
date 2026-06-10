@@ -67,6 +67,53 @@ export function cornersFromLatLngBox(south, west, north, east) {
   ];
 }
 
+export function offsetENFromCenter(centerLat, centerLng, eastM, northM) {
+  return {
+    lat: centerLat + northM / METERS_PER_DEG_LAT,
+    lng: centerLng + eastM / metersPerDegreeLng(centerLat),
+  };
+}
+
+/** Rotate local east/north offsets clockwise (degrees from north). */
+export function rotateEN(eastM, northM, bearingDeg) {
+  const rad = (bearingDeg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return {
+    east: eastM * cos + northM * sin,
+    north: -eastM * sin + northM * cos,
+  };
+}
+
+/** Floor plan footprint corners from center, size and bearing (0 = axis-aligned). */
+export function rotatedFloorPlanCorners(centerLat, centerLng, widthM, heightM, bearingDeg = 0) {
+  const halfW = widthM / 2;
+  const halfH = heightM / 2;
+  const locals = [
+    { id: "sw", e: -halfW, n: -halfH },
+    { id: "se", e: halfW, n: -halfH },
+    { id: "ne", e: halfW, n: halfH },
+    { id: "nw", e: -halfW, n: halfH },
+  ];
+  return locals.map(({ id, e, n }) => {
+    const rotated = rotateEN(e, n, bearingDeg);
+    const latlng = offsetENFromCenter(centerLat, centerLng, rotated.east, rotated.north);
+    return { id, lat: latlng.lat, lng: latlng.lng };
+  });
+}
+
+export function rotatedOverlayCornerLatLngs(centerLat, centerLng, widthM, heightM, bearingDeg = 0) {
+  const points = rotatedFloorPlanCorners(centerLat, centerLng, widthM, heightM, bearingDeg);
+  const byId = Object.fromEntries(points.map((corner) => [corner.id, corner]));
+  return {
+    nw: byId.nw,
+    ne: byId.ne,
+    sw: byId.sw,
+    se: byId.se,
+    points,
+  };
+}
+
 export function elevationPointsKey(points) {
   if (!points?.length) return "";
   return points
