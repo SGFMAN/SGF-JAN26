@@ -6,11 +6,14 @@ import {
   elevationPointsKey,
   fetchAhdElevationsBatched,
   formatAhdLabel,
+  formatRelativeFallLabel,
   isVictoriaLatLng,
+  siteHighPointAhd,
 } from "../utils/floorPlanMap";
 
 const FETCH_DEBOUNCE_MS = 300;
-const LABEL_ANCHOR = { x: 40, y: 28 };
+const LABEL_ICON_SIZE = [80, 42];
+const LABEL_ANCHOR = { x: LABEL_ICON_SIZE[0] / 2, y: LABEL_ICON_SIZE[1] };
 
 function escapeAttr(text) {
   return String(text)
@@ -26,8 +29,11 @@ function labelBorderColor(surveyDistM) {
   return "#15803d";
 }
 
-function boundaryLabelHtml(text, tooltip = "", borderColor = "#15803d") {
+function boundaryLabelHtml(ahdText, relativeText = "", tooltip = "", borderColor = "#15803d") {
   const titleAttr = tooltip ? ` title="${escapeAttr(tooltip)}"` : "";
+  const relativeLine = relativeText
+    ? `<div style="font: 600 11px/1.15 system-ui, sans-serif; color: #15803d; margin-top: 2px;">${relativeText}</div>`
+    : "";
   return `<div data-boundary-level-label${titleAttr} style="
     min-width: 44px;
     text-align: center;
@@ -41,7 +47,7 @@ function boundaryLabelHtml(text, tooltip = "", borderColor = "#15803d") {
     box-shadow: 0 2px 6px rgba(0,0,0,0.22);
     pointer-events: auto;
     cursor: help;
-  ">${text}</div>`;
+  "><div>${ahdText}</div>${relativeLine}</div>`;
 }
 
 function bindMarkerTooltip(marker, tooltip) {
@@ -60,8 +66,8 @@ function createBoundaryMarker(point) {
   const marker = L.marker([point.lat, point.lng], {
     icon: L.divIcon({
       className: "site-boundary-level-wrap",
-      html: boundaryLabelHtml("…", "Loading boundary level…"),
-      iconSize: [80, 28],
+      html: boundaryLabelHtml("…", "", "Loading boundary level…"),
+      iconSize: LABEL_ICON_SIZE,
       iconAnchor: [LABEL_ANCHOR.x, LABEL_ANCHOR.y],
     }),
     interactive: true,
@@ -73,13 +79,13 @@ function createBoundaryMarker(point) {
   return marker;
 }
 
-function setBoundaryMarkerText(marker, text, tooltip = "", borderColor = "#15803d") {
+function setBoundaryMarkerText(marker, ahdText, relativeText = "", tooltip = "", borderColor = "#15803d") {
   if (!marker) return;
   marker.setIcon(
     L.divIcon({
       className: "site-boundary-level-wrap",
-      html: boundaryLabelHtml(text, tooltip, borderColor),
-      iconSize: [80, 28],
+      html: boundaryLabelHtml(ahdText, relativeText, tooltip, borderColor),
+      iconSize: LABEL_ICON_SIZE,
       iconAnchor: [LABEL_ANCHOR.x, LABEL_ANCHOR.y],
     })
   );
@@ -108,9 +114,9 @@ function rebuildMarkers(group, boundaryPoints) {
   return markers;
 }
 
-function markAllBoundaryPoints(markers, text, tooltip) {
+function markAllBoundaryPoints(markers, ahdText, relativeText, tooltip) {
   for (const marker of markers) {
-    setBoundaryMarkerText(marker, text, tooltip);
+    setBoundaryMarkerText(marker, ahdText, relativeText, tooltip);
   }
 }
 
@@ -162,6 +168,7 @@ function buildSurveyTooltip(point, row, label) {
 
 function applyBoundaryLabels(group, markers, boundaryPoints, rows) {
   const rowById = new Map(rows.map((row) => [String(row.id), row]));
+  const highestAhd = siteHighPointAhd(rows);
 
   for (let index = 0; index < markers.length; index += 1) {
     const marker = markers[index];
@@ -175,17 +182,24 @@ function applyBoundaryLabels(group, markers, boundaryPoints, rows) {
       setBoundaryMarkerText(
         marker,
         "—",
+        "",
         row?.error || `No Vicmap elevation at ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`
       );
       continue;
     }
 
-    const label = formatAhdLabel(ahdM);
+    const ahdLabel = formatAhdLabel(ahdM);
+    const relativeLabel =
+      highestAhd != null ? formatRelativeFallLabel(highestAhd - ahdM) : "";
     const borderColor = labelBorderColor(row?.surveyDistM);
     setBoundaryMarkerText(
       marker,
-      label,
-      buildSurveyTooltip(point, row, label),
+      ahdLabel,
+      relativeLabel,
+      buildSurveyTooltip(point, row, ahdLabel) +
+        (relativeLabel !== ""
+          ? `\nRelative: ${relativeLabel} m below highest boundary point (${formatAhdLabel(highestAhd)} m AHD)`
+          : ""),
       borderColor
     );
     addVertexPin(group, point.lat, point.lng);
@@ -248,6 +262,7 @@ export default function SiteBoundaryLevels({
       markAllBoundaryPoints(
         markersRef.current,
         "—",
+        "",
         "Boundary coordinates outside Victoria"
       );
       return undefined;
@@ -267,7 +282,7 @@ export default function SiteBoundaryLevels({
       activeFetchKeyRef.current = boundaryKey;
       lastFetchedKeyRef.current = boundaryKey;
 
-      markAllBoundaryPoints(markers, "…", "Loading boundary levels from Vicmap…");
+      markAllBoundaryPoints(markers, "…", "", "Loading boundary levels from Vicmap…");
 
       (async () => {
         try {
@@ -287,6 +302,7 @@ export default function SiteBoundaryLevels({
             markAllBoundaryPoints(
               markers,
               "—",
+              "",
               `No Vicmap elevation for boundary (${sample.lat.toFixed(5)}, ${sample.lng.toFixed(5)}). Check backend on port 3001.`
             );
             return;
@@ -298,12 +314,12 @@ export default function SiteBoundaryLevels({
           if (controller.signal.aborted) return;
           if (err?.name === "AbortError") {
             if (activeFetchKeyRef.current !== boundaryKey) return;
-            markAllBoundaryPoints(markers, "—", "Elevation lookup timed out — try again");
+            markAllBoundaryPoints(markers, "—", "", "Elevation lookup timed out — try again");
             return;
           }
           console.warn("[SiteBoundaryLevels] elevation lookup failed:", err);
           if (activeFetchKeyRef.current !== boundaryKey) return;
-          markAllBoundaryPoints(markers, "—", err.message || "Could not load boundary levels");
+          markAllBoundaryPoints(markers, "—", "", err.message || "Could not load boundary levels");
         }
       })();
     }, delay);

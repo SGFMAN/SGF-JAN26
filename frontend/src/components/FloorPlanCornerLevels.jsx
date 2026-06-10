@@ -4,16 +4,19 @@ import { useMap } from "react-leaflet";
 import {
   elevationPointsKey,
   fetchAhdElevationsBatched,
-  formatFallLabel,
+  formatAhdLabel,
+  formatRelativeFallLabel,
   isVictoriaLatLng,
   sampleSiteElevationPoints,
   siteHighPointAhd,
 } from "../utils/floorPlanMap";
 
+const LABEL_ICON_SIZE = [72, 42];
+
 const CORNER_ANCHORS = {
-  sw: { x: 0, y: 26 },
-  se: { x: 72, y: 26 },
-  ne: { x: 72, y: 0 },
+  sw: { x: 0, y: LABEL_ICON_SIZE[1] },
+  se: { x: LABEL_ICON_SIZE[0], y: LABEL_ICON_SIZE[1] },
+  ne: { x: LABEL_ICON_SIZE[0], y: 0 },
   nw: { x: 0, y: 0 },
 };
 
@@ -26,8 +29,11 @@ function escapeAttr(text) {
     .replace(/</g, "&lt;");
 }
 
-function cornerLabelHtml(text, tooltip = "") {
+function cornerLabelHtml(ahdText, relativeText = "", tooltip = "") {
   const titleAttr = tooltip ? ` title="${escapeAttr(tooltip)}"` : "";
+  const relativeLine = relativeText
+    ? `<div style="font: 600 11px/1.15 system-ui, sans-serif; color: #2563eb; margin-top: 2px;">${relativeText}</div>`
+    : "";
   return `<div data-level-label${titleAttr} style="
     min-width: 36px;
     text-align: center;
@@ -41,7 +47,7 @@ function cornerLabelHtml(text, tooltip = "") {
     box-shadow: 0 2px 6px rgba(0,0,0,0.22);
     pointer-events: auto;
     cursor: help;
-  ">${text}</div>`;
+  "><div>${ahdText}</div>${relativeLine}</div>`;
 }
 
 function bindMarkerTooltip(marker, tooltip) {
@@ -61,8 +67,8 @@ function createCornerMarker(point) {
   const marker = L.marker([point.lat, point.lng], {
     icon: L.divIcon({
       className: "floor-plan-level-wrap",
-      html: cornerLabelHtml("…", "Loading site levels…"),
-      iconSize: [72, 26],
+      html: cornerLabelHtml("…", "", "Loading site levels…"),
+      iconSize: LABEL_ICON_SIZE,
       iconAnchor: [anchor.x, anchor.y],
     }),
     interactive: true,
@@ -74,15 +80,18 @@ function createCornerMarker(point) {
   return marker;
 }
 
-function setCornerMarkerText(marker, text, tooltip = "") {
+function setCornerMarkerText(marker, ahdText, relativeText = "", tooltip = "") {
   if (!marker) return;
   const cornerId = marker.options?.cornerId;
-  const anchor = CORNER_ANCHORS[cornerId] || { x: 36, y: 13 };
+  const anchor = CORNER_ANCHORS[cornerId] || {
+    x: LABEL_ICON_SIZE[0] / 2,
+    y: LABEL_ICON_SIZE[1] / 2,
+  };
   marker.setIcon(
     L.divIcon({
       className: "floor-plan-level-wrap",
-      html: cornerLabelHtml(text, tooltip),
-      iconSize: [72, 26],
+      html: cornerLabelHtml(ahdText, relativeText, tooltip),
+      iconSize: LABEL_ICON_SIZE,
       iconAnchor: [anchor.x, anchor.y],
     })
   );
@@ -125,6 +134,8 @@ function unavailableReason(row, siteMax) {
 
 function applyCornerLabels(markers, unitPoints, unitRows, siteMax) {
   const unitById = new Map(unitRows.map((row) => [String(row.id), row]));
+  const cornerMax = siteHighPointAhd(unitRows);
+  const referenceMax = cornerMax ?? siteMax;
 
   for (let index = 0; index < markers.length; index += 1) {
     const marker = markers[index];
@@ -135,30 +146,33 @@ function applyCornerLabels(markers, unitPoints, unitRows, siteMax) {
       const row = unitById.get(String(point.id));
       const ahdM = readAhdM(row);
 
-      if (siteMax == null || !Number.isFinite(ahdM)) {
-        setCornerMarkerText(marker, "—", unavailableReason(row, siteMax));
+      if (referenceMax == null || !Number.isFinite(ahdM)) {
+        setCornerMarkerText(marker, "—", "", unavailableReason(row, referenceMax));
         continue;
       }
 
-      const fallM = siteMax - ahdM;
-      const label = formatFallLabel(fallM);
+      const fallM = referenceMax - ahdM;
+      const ahdLabel = formatAhdLabel(ahdM);
+      const relativeLabel = formatRelativeFallLabel(fallM);
       setCornerMarkerText(
         marker,
-        label,
-        `Fall ${label} m from site high point` +
-          ` (site ${siteMax.toFixed(2)} m AHD, corner ${ahdM.toFixed(2)} m AHD` +
+        ahdLabel,
+        relativeLabel,
+        `${ahdLabel} m AHD · ${relativeLabel} m below highest corner` +
+          ` (highest corner ${referenceMax.toFixed(2)} m AHD` +
+          `${siteMax != null && siteMax !== referenceMax ? `, site high ${siteMax.toFixed(2)} m AHD` : ""}` +
           `${row?.approximate ? ", approximate" : ""})`
       );
     } catch (err) {
       console.warn("[FloorPlanCornerLevels] marker update:", point?.id, err);
-      setCornerMarkerText(marker, "—", err.message || "Level unavailable");
+      setCornerMarkerText(marker, "—", "", err.message || "Level unavailable");
     }
   }
 }
 
-function markAllCorners(markers, text, tooltip) {
+function markAllCorners(markers, ahdText, relativeText, tooltip) {
   for (const marker of markers) {
-    setCornerMarkerText(marker, text, tooltip);
+    setCornerMarkerText(marker, ahdText, relativeText, tooltip);
   }
 }
 
@@ -173,7 +187,7 @@ function outOfRangeMessage(unitPoints) {
   return `Corner coordinates outside Victoria (${sample.lat.toFixed(5)}, ${sample.lng.toFixed(5)})`;
 }
 
-/** Fall labels at floor plan corners — 0 at site high point, 0.25 m steps below. */
+/** AHD + relative fall at floor plan corners — highest corner = 0, actual difference below. */
 export default function FloorPlanCornerLevels({
   cornerPoints,
   siteGeometry = null,
@@ -235,7 +249,7 @@ export default function FloorPlanCornerLevels({
     }
 
     if (unitPoints.some((point) => !isVictoriaLatLng(point.lat, point.lng))) {
-      markAllCorners(markersRef.current, "—", outOfRangeMessage(unitPoints));
+      markAllCorners(markersRef.current, "—", "", outOfRangeMessage(unitPoints));
       return undefined;
     }
 
@@ -252,7 +266,7 @@ export default function FloorPlanCornerLevels({
       activeFetchKeyRef.current = key;
       lastFetchedKeyRef.current = key;
 
-      markAllCorners(markers, "…", "Loading site levels from Vicmap…");
+      markAllCorners(markers, "…", "", "Loading site levels from Vicmap…");
 
       (async () => {
         try {
@@ -282,6 +296,7 @@ export default function FloorPlanCornerLevels({
             markAllCorners(
               markers,
               "—",
+              "",
               `No Vicmap elevation returned for (${sample.lat.toFixed(5)}, ${sample.lng.toFixed(5)}). Check backend is running on port 3001.`
             );
             return;
@@ -293,7 +308,7 @@ export default function FloorPlanCornerLevels({
           if (controller.signal.aborted) return;
           if (err?.name === "AbortError") {
             if (activeFetchKeyRef.current !== key) return;
-            markAllCorners(markers, "—", "Elevation lookup timed out — try again");
+            markAllCorners(markers, "—", "", "Elevation lookup timed out — try again");
             return;
           }
           console.warn("[FloorPlanCornerLevels] elevation lookup failed:", err);
@@ -301,6 +316,7 @@ export default function FloorPlanCornerLevels({
           markAllCorners(
             markers,
             "—",
+            "",
             err.message || "Could not load site levels"
           );
         }

@@ -10,6 +10,7 @@ import logo from "../images/logo.png";
 import { MapBasemapSelector, MapBasemapTileLayer } from "../components/MapBasemapControls";
 import DraggableParcelBoundary from "../components/DraggableParcelBoundary";
 import SiteBoundaryLevels from "../components/SiteBoundaryLevels";
+import ElevationInterpolationMonuments from "../components/ElevationInterpolationMonuments";
 import PlanningOverlaysLayer, {
   mergePlanningLayerVisibility,
   overlayLayerKey,
@@ -1169,6 +1170,14 @@ export default function Maps() {
               {parcelFeature && isAdmin && (
                 <SiteBoundaryLevels
                   key={`levels-${activeSearchQuery || "boundary"}`}
+                  siteGeometry={parcelFeature?.geometry ?? null}
+                  lookupState="VIC"
+                  enabled
+                />
+              )}
+              {parcelFeature && isAdmin && (
+                <ElevationInterpolationMonuments
+                  key={`monuments-${activeSearchQuery || "boundary"}`}
                   siteGeometry={parcelFeature?.geometry ?? null}
                   lookupState="VIC"
                   enabled

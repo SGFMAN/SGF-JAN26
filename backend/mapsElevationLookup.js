@@ -13,15 +13,16 @@ const METRO_GROUND_LAYER = 0;
 const STATEWIDE_GROUND_LAYER = 4;
 
 const FETCH_TIMEOUT_MS = 22000;
-const MAX_POINTS = 32;
+const MAX_POINTS = 64;
 const LOOKUP_CONCURRENCY = 4;
 const METRO_GROUND_RADIUS_M = 600;
 const STATEWIDE_GROUND_RADIUS_M = 1200;
-const GROUND_RESULT_COUNT = 50;
+const GROUND_RESULT_COUNT = 80;
 const IDW_MAX_CONTRIBUTORS = 10;
 const IDW_MAX_RADIUS_M = 450;
 const IDW_MIN_DISTANCE_M = 2;
-const SURROUND_QUADRANT_TRY = 8;
+const SURROUND_QUADRANT_TRY = 16;
+const QUAD_MIN_EDGE_M = 4;
 
 function normalizeElevationState(raw) {
   const s = String(raw || "")
@@ -98,20 +99,49 @@ function sitePolygonFromPoints(points) {
   return siteRows.length >= 3 ? siteRows : points;
 }
 
-function pointInPolygon(lat, lng, ring) {
-  if (!ring || ring.length < 3) return false;
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
-    const yi = ring[i].lat;
-    const xi = ring[i].lng;
-    const yj = ring[j].lat;
-    const xj = ring[j].lng;
-    const intersects =
-      yi > lat !== yj > lat &&
-      lng < ((xj - xi) * (lat - yi)) / (yj - yi + 0.0) + xi;
-    if (intersects) inside = !inside;
+function siteBounds(points) {
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLng = Infinity;
+  let maxLng = -Infinity;
+  for (const point of points) {
+    if (point.lat < minLat) minLat = point.lat;
+    if (point.lat > maxLat) maxLat = point.lat;
+    if (point.lng < minLng) minLng = point.lng;
+    if (point.lng > maxLng) maxLng = point.lng;
   }
-  return inside;
+  return { minLat, maxLat, minLng, maxLng };
+}
+
+function bboxCenter(bounds) {
+  return {
+    lat: (bounds.minLat + bounds.maxLat) / 2,
+    lng: (bounds.minLng + bounds.maxLng) / 2,
+  };
+}
+
+function isOutsideSiteBounds(lat, lng, bounds) {
+  return (
+    lat < bounds.minLat ||
+    lat > bounds.maxLat ||
+    lng < bounds.minLng ||
+    lng > bounds.maxLng
+  );
+}
+
+/** Boundary vertices plus bbox corners/center — ensures the quad truly wraps the site. */
+function siteEncapsulationTestPoints(sitePoints) {
+  const bounds = siteBounds(sitePoints);
+  const center = bboxCenter(bounds);
+  const { minLat, maxLat, minLng, maxLng } = bounds;
+  const extra = [
+    { lat: minLat, lng: minLng },
+    { lat: minLat, lng: maxLng },
+    { lat: maxLat, lng: minLng },
+    { lat: maxLat, lng: maxLng },
+    center,
+  ];
+  return [...sitePoints, ...extra];
 }
 
 /** 0=SW, 1=SE, 2=NE, 3=NW relative to centroid. */
@@ -122,17 +152,18 @@ function quadrantIndex(dLat, dLng) {
   return 3;
 }
 
-function monumentsByQuadrant(centroid, monuments, siteRing) {
+function monumentsByQuadrant(bounds, monuments) {
+  const center = bboxCenter(bounds);
   const lists = [[], [], [], []];
+
   for (const monument of monuments) {
-    const dLat = monument.lat - centroid.lat;
-    const dLng = monument.lng - centroid.lng;
+    const dLat = monument.lat - center.lat;
+    const dLng = monument.lng - center.lng;
     const q = quadrantIndex(dLat, dLng);
-    const outsideSite = !pointInPolygon(monument.lat, monument.lng, siteRing);
     lists[q].push({
       ...monument,
-      outsideSite,
-      distM: haversineM(centroid.lat, centroid.lng, monument.lat, monument.lng),
+      outsideBbox: isOutsideSiteBounds(monument.lat, monument.lng, bounds),
+      distM: haversineM(center.lat, center.lng, monument.lat, monument.lng),
     });
   }
 
@@ -148,8 +179,8 @@ function monumentsByQuadrant(centroid, monuments, siteRing) {
     let best = null;
     let bestScore = -Infinity;
     for (const monument of monuments) {
-      const dLat = monument.lat - centroid.lat;
-      const dLng = monument.lng - centroid.lng;
+      const dLat = monument.lat - center.lat;
+      const dLng = monument.lng - center.lng;
       const { dLat: dirLat, dLng: dirLng } = quadrantDirs[q];
       const score = dLat * dirLat + dLng * dirLng;
       if (score > bestScore) {
@@ -160,19 +191,32 @@ function monumentsByQuadrant(centroid, monuments, siteRing) {
     if (best) {
       lists[q].push({
         ...best,
-        outsideSite: !pointInPolygon(best.lat, best.lng, siteRing),
-        distM: haversineM(centroid.lat, centroid.lng, best.lat, best.lng),
+        outsideBbox: isOutsideSiteBounds(best.lat, best.lng, bounds),
+        distM: haversineM(center.lat, center.lng, best.lat, best.lng),
       });
     }
   }
 
   for (const list of lists) {
     list.sort((a, b) => {
-      if (a.outsideSite !== b.outsideSite) return a.outsideSite ? -1 : 1;
+      if (a.outsideBbox !== b.outsideBbox) return a.outsideBbox ? -1 : 1;
       return a.distM - b.distM;
     });
   }
   return lists;
+}
+
+function quadOrientationValid(quad) {
+  const origin = quad.sw;
+  const se = toLocalEN(quad.se.lat, quad.se.lng, origin.lat, origin.lng);
+  const nw = toLocalEN(quad.nw.lat, quad.nw.lng, origin.lat, origin.lng);
+  const ne = toLocalEN(quad.ne.lat, quad.ne.lng, origin.lat, origin.lng);
+  return (
+    se.e >= QUAD_MIN_EDGE_M &&
+    nw.n >= QUAD_MIN_EDGE_M &&
+    ne.e >= se.e * 0.35 &&
+    ne.n >= nw.n * 0.35
+  );
 }
 
 function quadAltitudesSane(quad, maxCornerSpreadM = 15) {
@@ -215,43 +259,52 @@ function filterGroundOutliers(monuments, maxDeltaM = 12) {
   return filtered.length >= 4 ? filtered : monuments;
 }
 
+function quadCandidateScore(quad) {
+  const corners = [quad.sw, quad.se, quad.ne, quad.nw];
+  const avgDist = corners.reduce((sum, corner) => sum + corner.distM, 0) / 4;
+  const outsideCount = corners.filter((corner) => corner.outsideBbox).length;
+  return avgDist - outsideCount * 100;
+}
+
 function pickSurroundingQuad(sitePoints, monuments) {
   if (!sitePoints.length || !monuments.length) return null;
 
-  const centroid = centroidOfPoints(sitePoints);
-  const lists = monumentsByQuadrant(centroid, monuments, sitePoints);
+  const bounds = siteBounds(sitePoints);
+  const testPoints = siteEncapsulationTestPoints(sitePoints);
+  const lists = monumentsByQuadrant(bounds, monuments);
   if (lists.some((list) => list.length === 0)) return null;
 
   const limits = lists.map((list) => Math.min(SURROUND_QUADRANT_TRY, list.length));
 
   function acceptQuad(quad) {
-    return quad && quadAltitudesSane(quad) && siteEncapsulatedByQuad(sitePoints, quad);
+    return (
+      quad &&
+      quadOrientationValid(quad) &&
+      quadAltitudesSane(quad) &&
+      siteEncapsulatedByQuad(testPoints, quad)
+    );
   }
 
-  for (let depth = 0; depth < Math.max(...limits); depth += 1) {
-    const quad = quadFromIndices(lists, [depth, depth, depth, depth]);
-    if (acceptQuad(quad)) return quad;
-  }
+  let bestQuad = null;
+  let bestScore = Infinity;
 
   for (let i0 = 0; i0 < limits[0]; i0 += 1) {
     for (let i1 = 0; i1 < limits[1]; i1 += 1) {
       for (let i2 = 0; i2 < limits[2]; i2 += 1) {
         for (let i3 = 0; i3 < limits[3]; i3 += 1) {
           const quad = quadFromIndices(lists, [i0, i1, i2, i3]);
-          if (acceptQuad(quad)) return quad;
+          if (!acceptQuad(quad)) continue;
+          const score = quadCandidateScore(quad);
+          if (score < bestScore) {
+            bestScore = score;
+            bestQuad = quad;
+          }
         }
       }
     }
   }
 
-  const outer = quadFromIndices(
-    lists,
-    lists.map((list) => list.length - 1)
-  );
-  if (acceptQuad(outer)) return outer;
-
-  const fallback = quadFromIndices(lists, [0, 0, 0, 0]);
-  return quadAltitudesSane(fallback) ? fallback : null;
+  return bestQuad;
 }
 
 /** Inverse bilinear: SW=a, SE=b, NE=c, NW=d in local EN metres. */
@@ -332,13 +385,15 @@ function bilinearElevationAt(lat, lng, quad) {
   };
 }
 
-function surroundQuadSummary(quad) {
+function surroundQuadSummary(quad, sitePoints = null) {
   if (!quad) return null;
+  const testPoints = sitePoints ? siteEncapsulationTestPoints(sitePoints) : null;
   return {
     sw: { lat: quad.sw.lat, lng: quad.sw.lng, ahdM: roundAhd(quad.sw.alt) },
     se: { lat: quad.se.lat, lng: quad.se.lng, ahdM: roundAhd(quad.se.alt) },
     ne: { lat: quad.ne.lat, lng: quad.ne.lng, ahdM: roundAhd(quad.ne.alt) },
     nw: { lat: quad.nw.lat, lng: quad.nw.lng, ahdM: roundAhd(quad.nw.alt) },
+    encapsulatesSite: testPoints ? siteEncapsulatedByQuad(testPoints, quad) : true,
   };
 }
 
@@ -601,8 +656,24 @@ async function lookupAhdElevations({ state, points, mode: rawMode }) {
 
   if (mode === "interpolate") {
     const siteRing = sitePolygonFromPoints(points);
-    const centroid = centroidOfPoints(siteRing);
-    const { points: groundPoints, errors } = await groundNear(centroid.lat, centroid.lng);
+    const bounds = siteBounds(siteRing);
+    const centroid = bboxCenter(bounds);
+    const groundAnchors = [
+      centroid,
+      { lat: bounds.minLat, lng: bounds.minLng },
+      { lat: bounds.minLat, lng: bounds.maxLng },
+      { lat: bounds.maxLat, lng: bounds.minLng },
+      { lat: bounds.maxLat, lng: bounds.maxLng },
+    ];
+    const groundErrors = [];
+    const mergedGround = [];
+    for (const anchor of groundAnchors) {
+      const { points: chunk, errors } = await groundNear(anchor.lat, anchor.lng);
+      mergedGround.push(...chunk);
+      groundErrors.push(...errors);
+    }
+    const groundPoints = dedupeGroundPoints(mergedGround);
+    const errors = [...new Set(groundErrors.filter(Boolean))];
 
     if (!groundPoints.length) {
       return {
@@ -655,7 +726,7 @@ async function lookupAhdElevations({ state, points, mode: rawMode }) {
       mode,
       elevations: results,
       source: "VIC_VICMAP_ELEVATION",
-      surroundQuad: surroundQuadSummary(surroundQuad),
+      surroundQuad: surroundQuadSummary(surroundQuad, siteRing),
       groundSurveyCount: groundPoints.length,
     };
   }

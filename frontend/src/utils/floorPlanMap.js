@@ -85,11 +85,35 @@ export function isVictoriaLatLng(lat, lng) {
   );
 }
 
-export const SITE_BOUNDARY_MAX_POINTS = 32;
+export const SITE_BOUNDARY_MAX_POINTS = 64;
 
 /** All title-boundary vertices for elevation debug (samples evenly if above max). */
 export function allSiteBoundaryPoints(geometry, maxPoints = SITE_BOUNDARY_MAX_POINTS) {
   return sampleSiteElevationPoints(geometry, maxPoints);
+}
+
+/** Outer ring as Leaflet lat/lng pairs for map overlays. */
+export function siteBoundaryRingLatLng(geometry) {
+  if (!geometry) return [];
+
+  const ringFromCoords = (coords) => {
+    if (!Array.isArray(coords)) return [];
+    return coords
+      .filter((coord) => Array.isArray(coord) && coord.length >= 2)
+      .map((coord) => [Number(coord[1]), Number(coord[0])])
+      .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+  };
+
+  if (geometry.type === "Polygon") {
+    return ringFromCoords(geometry.coordinates?.[0]);
+  }
+  if (geometry.type === "MultiPolygon") {
+    for (const poly of geometry.coordinates || []) {
+      const ring = ringFromCoords(poly?.[0]);
+      if (ring.length >= 3) return ring;
+    }
+  }
+  return [];
 }
 
 export function formatAhdLabel(ahdM) {
@@ -186,6 +210,16 @@ export function formatFallLabel(fallM, step = FALL_STEP_M) {
   return snapped.toFixed(2);
 }
 
+/** Format actual fall in metres from the highest point (no step snapping). */
+export function formatRelativeFallLabel(fallM) {
+  if (!Number.isFinite(fallM)) return "—";
+  const clamped = Math.max(0, fallM);
+  if (clamped < 0.005) return "0";
+  const rounded = Math.round(clamped * 100) / 100;
+  if (rounded === 0) return "0";
+  return String(rounded);
+}
+
 export async function fetchAhdElevationsBatched(
   points,
   state = "VIC",
@@ -204,6 +238,20 @@ export async function fetchAhdElevationsBatched(
     rows.push(...(data.elevations || []));
   }
   return rows;
+}
+
+/** Site interpolation lookup — includes the four-monument bilinear patch when used. */
+export async function fetchAhdInterpolationContext(
+  points,
+  state = "VIC",
+  externalSignal = null
+) {
+  const data = await fetchAhdElevations(points, state, externalSignal, "interpolate");
+  return {
+    elevations: data.elevations || [],
+    surroundQuad: data.surroundQuad ?? null,
+    groundSurveyCount: data.groundSurveyCount ?? null,
+  };
 }
 
 export function siteHighPointAhd(elevationRows) {
