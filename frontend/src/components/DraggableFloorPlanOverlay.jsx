@@ -87,6 +87,7 @@ export default function DraggableFloorPlanOverlay({
   movable = false,
   onToggleMovable,
   lookupState = "VIC",
+  siteGeometry = null,
 }) {
   const map = useMap();
   const [overlayBounds, setOverlayBounds] = useState(null);
@@ -268,6 +269,7 @@ export default function DraggableFloorPlanOverlay({
   return (
     <FloorPlanCornerLevels
       bounds={overlayBounds}
+      siteGeometry={siteGeometry}
       lookupState={lookupState}
       enabled={Boolean(overlayBounds)}
     />

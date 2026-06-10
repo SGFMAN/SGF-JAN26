@@ -1188,6 +1188,7 @@ export default function Maps() {
                   onCenterChange={handleUnitCenterChange}
                   movable={movableTarget === "unit"}
                   onToggleMovable={toggleUnitMovable}
+                  siteGeometry={parcelFeature?.geometry ?? null}
                 />
               )}
               {marker && (

@@ -2,29 +2,31 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import { useMap } from "react-leaflet";
 import {
-  fetchAhdElevations,
+  fetchAhdElevationsBatched,
   floorPlanCornerPoints,
-  formatAhdLabel,
+  formatFallLabel,
+  sampleSiteElevationPoints,
+  siteHighPointAhd,
 } from "../utils/floorPlanMap";
 
 const CORNER_OFFSETS = {
-  sw: { x: 10, y: -10 },
-  se: { x: -10, y: -10 },
-  ne: { x: -10, y: 10 },
-  nw: { x: 10, y: 10 },
+  sw: { x: 12, y: -12 },
+  se: { x: -12, y: -12 },
+  ne: { x: -12, y: 12 },
+  nw: { x: 12, y: 12 },
 };
 
 function cornerLabelIcon(text, cornerId) {
   const offset = CORNER_OFFSETS[cornerId] || { x: 0, y: 0 };
   const html = `<div style="
-    background: rgba(255,255,255,0.94);
-    border: 1px solid #2563eb;
-    border-radius: 4px;
-    padding: 2px 6px;
-    font: 600 11px/1.2 system-ui, sans-serif;
+    background: rgba(255,255,255,0.96);
+    border: 2px solid #1d4ed8;
+    border-radius: 5px;
+    padding: 3px 8px;
+    font: 700 13px/1.2 system-ui, sans-serif;
     color: #1e3a8a;
     white-space: nowrap;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.22);
     pointer-events: none;
   ">${text}</div>`;
 
@@ -36,8 +38,15 @@ function cornerLabelIcon(text, cornerId) {
   });
 }
 
-/** AHD level labels at the four corners of a floor plan bounds rectangle. */
-export default function FloorPlanCornerLevels({ bounds, lookupState = "VIC", enabled = true }) {
+/**
+ * Fall labels at floor plan corners — 0 at site high point, 0.25 m steps below.
+ */
+export default function FloorPlanCornerLevels({
+  bounds,
+  siteGeometry = null,
+  lookupState = "VIC",
+  enabled = true,
+}) {
   const map = useMap();
   const markersRef = useRef([]);
   const requestIdRef = useRef(0);
@@ -52,20 +61,21 @@ export default function FloorPlanCornerLevels({ bounds, lookupState = "VIC", ena
     }
 
     let cancelled = false;
-    const points = floorPlanCornerPoints(bounds);
-    if (points.length === 0) return undefined;
+    const unitPoints = floorPlanCornerPoints(bounds);
+    if (unitPoints.length === 0) return undefined;
 
     for (const marker of markersRef.current) {
       map.removeLayer(marker);
     }
-    markersRef.current = points.map((point) => {
+    markersRef.current = unitPoints.map((point) => {
       const marker = L.marker([point.lat, point.lng], {
-        icon: cornerLabelIcon("RL …", point.id),
+        icon: cornerLabelIcon("…", point.id),
         interactive: false,
         keyboard: false,
-        zIndexOffset: 2400,
+        zIndexOffset: 2600,
       });
       marker.addTo(map);
+      marker.bringToFront?.();
       return marker;
     });
 
@@ -75,26 +85,49 @@ export default function FloorPlanCornerLevels({ bounds, lookupState = "VIC", ena
 
       (async () => {
         try {
-          const data = await fetchAhdElevations(points, lookupState);
+          const sitePoints = sampleSiteElevationPoints(siteGeometry);
+          const siteRows =
+            sitePoints.length > 0
+              ? await fetchAhdElevationsBatched(sitePoints, lookupState)
+              : [];
+          const unitRows = await fetchAhdElevationsBatched(unitPoints, lookupState);
+
           if (cancelled || requestIdRef.current !== requestId) return;
 
-          const byId = new Map((data.elevations || []).map((row) => [row.id, row]));
+          let siteMax = siteHighPointAhd(siteRows);
+          if (siteMax == null) {
+            siteMax = siteHighPointAhd(unitRows);
+          }
+
+          const unitById = new Map(unitRows.map((row) => [row.id, row]));
+
           markersRef.current.forEach((marker, index) => {
-            const point = points[index];
-            const row = byId.get(point.id);
-            const label = formatAhdLabel(row?.ahdM, { approximate: row?.approximate });
-            const title = row?.ahdM != null
-              ? `AHD ${Number(row.ahdM).toFixed(2)} m${row.approximate ? " (approximate)" : ""}`
-              : "AHD elevation unavailable";
+            const point = unitPoints[index];
+            const row = unitById.get(point.id);
+            const ahdM = Number(row?.ahdM);
+
+            if (siteMax == null || !Number.isFinite(ahdM)) {
+              marker.setIcon(cornerLabelIcon("—", point.id));
+              marker.setTitle("Level unavailable");
+              return;
+            }
+
+            const fallM = siteMax - ahdM;
+            const label = formatFallLabel(fallM);
             marker.setIcon(cornerLabelIcon(label, point.id));
-            marker.setTitle(title);
+            marker.setTitle(
+              `Fall ${formatFallLabel(fallM)} m from site high point` +
+                ` (site RL ${siteMax.toFixed(2)} m AHD, corner ${ahdM.toFixed(2)} m AHD` +
+                `${row.approximate ? ", approximate" : ""})`
+            );
+            marker.bringToFront?.();
           });
         } catch (err) {
           if (cancelled || requestIdRef.current !== requestId) return;
           console.warn("[FloorPlanCornerLevels]", err);
           markersRef.current.forEach((marker, index) => {
-            marker.setIcon(cornerLabelIcon("RL —", points[index].id));
-            marker.setTitle("Could not load AHD elevation");
+            marker.setIcon(cornerLabelIcon("—", unitPoints[index].id));
+            marker.setTitle("Could not load site levels");
           });
         }
       })();
@@ -113,6 +146,7 @@ export default function FloorPlanCornerLevels({ bounds, lookupState = "VIC", ena
     bounds?.getSouthWest()?.lng,
     bounds?.getNorthEast()?.lat,
     bounds?.getNorthEast()?.lng,
+    siteGeometry,
     enabled,
     lookupState,
     map,
