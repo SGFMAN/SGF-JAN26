@@ -142,8 +142,11 @@ function buildSurveyTooltip(point, row, label) {
   let methodNote = "Interpolated from nearby Vicmap survey monuments.";
   if (source === "vicmap_monument_bilinear") {
     methodNote =
-      "Bilinear interpolation from the four monument box (NW/NE/SE/SW). " +
-      "Heights follow the gradient between those monuments.";
+      "Axis-aligned bilinear interpolation from the four monument box (SW/SE/NW/NE). " +
+      "East-west and north-south position in metres between monument edges.";
+    if (row?.tx != null && row?.ty != null) {
+      methodNote += ` Position: tx=${row.tx}, ty=${row.ty}.`;
+    }
   } else if (source === "vicmap_surround_bilinear") {
     methodNote =
       `Bilinear patch from 4 surrounding Vicmap monuments (corner range ${rangeM ?? "?"} m). ` +

@@ -1131,6 +1131,71 @@ function monumentsToInterpolationQuad(monuments) {
   };
 }
 
+const BOX_CLAMP_TOLERANCE = 0.02;
+
+/**
+ * Axis-aligned bilinear AHD from monument box (SW/SE/NW/NE) in local metres.
+ * tx = east-west fraction between west and east edges; ty = south-north between south and north.
+ */
+function monumentBoxBilinearAt(lat, lng, monuments) {
+  const quad = monumentsToInterpolationQuad(monuments);
+  if (!quad) return null;
+
+  const origin = quad.sw;
+  const sw = { e: 0, n: 0 };
+  const se = toLocalEN(quad.se.lat, quad.se.lng, origin.lat, origin.lng);
+  const nw = toLocalEN(quad.nw.lat, quad.nw.lng, origin.lat, origin.lng);
+  const ne = toLocalEN(quad.ne.lat, quad.ne.lng, origin.lat, origin.lng);
+  const p = toLocalEN(lat, lng, origin.lat, origin.lng);
+
+  const westE = Math.min(sw.e, nw.e);
+  const eastE = Math.max(se.e, ne.e);
+  const southN = Math.min(sw.n, se.n);
+  const northN = Math.max(nw.n, ne.n);
+
+  const denomE = eastE - westE;
+  const denomN = northN - southN;
+  if (Math.abs(denomE) < 0.5 || Math.abs(denomN) < 0.5) return null;
+
+  let tx = (p.e - westE) / denomE;
+  let ty = (p.n - southN) / denomN;
+
+  const slightlyOutside =
+    tx < -BOX_CLAMP_TOLERANCE ||
+    tx > 1 + BOX_CLAMP_TOLERANCE ||
+    ty < -BOX_CLAMP_TOLERANCE ||
+    ty > 1 + BOX_CLAMP_TOLERANCE;
+
+  if (slightlyOutside) {
+    tx = Math.max(0, Math.min(1, tx));
+    ty = Math.max(0, Math.min(1, ty));
+  }
+
+  const southHeight = quad.sw.alt * (1 - tx) + quad.se.alt * tx;
+  const northHeight = quad.nw.alt * (1 - tx) + quad.ne.alt * tx;
+  const ahdM = roundAhd(southHeight * (1 - ty) + northHeight * ty);
+
+  const nearestDistM = Math.min(
+    haversineM(lat, lng, quad.sw.lat, quad.sw.lng),
+    haversineM(lat, lng, quad.se.lat, quad.se.lng),
+    haversineM(lat, lng, quad.ne.lat, quad.ne.lng),
+    haversineM(lat, lng, quad.nw.lat, quad.nw.lng)
+  );
+
+  const alts = [quad.sw.alt, quad.se.alt, quad.ne.alt, quad.nw.alt];
+
+  return {
+    ahdM,
+    approximate: slightlyOutside || nearestDistM > 12,
+    source: "vicmap_monument_bilinear",
+    surveyDistM: Math.round(nearestDistM),
+    surveyCount: 4,
+    surveyRangeM: roundAhd(Math.max(...alts) - Math.min(...alts)),
+    tx: roundAhd(tx),
+    ty: roundAhd(ty),
+  };
+}
+
 function sampleBoundaryPoints(siteRing, maxPoints = 64) {
   if (siteRing.length <= maxPoints) {
     return siteRing.map((point, index) => ({ ...point, id: `site-${index}` }));
@@ -1145,11 +1210,10 @@ function sampleBoundaryPoints(siteRing, maxPoints = 64) {
 }
 
 function interpolateBoundaryElevations(siteRing, monuments) {
-  const quad = monumentsToInterpolationQuad(monuments);
-  if (!quad) return [];
+  if (!monumentsToInterpolationQuad(monuments)) return [];
 
   return sampleBoundaryPoints(siteRing).map((point) => {
-    const hit = bilinearElevationAt(point.lat, point.lng, quad);
+    const hit = monumentBoxBilinearAt(point.lat, point.lng, monuments);
     if (!hit) {
       return {
         id: point.id,
@@ -1171,6 +1235,8 @@ function interpolateBoundaryElevations(siteRing, monuments) {
       surveyDistM: hit.surveyDistM,
       surveyCount: hit.surveyCount,
       surveyRangeM: hit.surveyRangeM,
+      tx: hit.tx,
+      ty: hit.ty,
     };
   });
 }
