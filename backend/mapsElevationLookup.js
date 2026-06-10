@@ -1196,6 +1196,18 @@ function monumentBoxBilinearAt(lat, lng, monuments) {
   };
 }
 
+function buildSiteCornerLevels(siteCorners, monuments) {
+  const levels = {};
+  for (const cornerId of ["nw", "ne", "se", "sw"]) {
+    const corner = siteCorners[cornerId];
+    const hit = monumentBoxBilinearAt(corner.lat, corner.lng, monuments);
+    levels[cornerId] = hit
+      ? { lat: corner.lat, lng: corner.lng, ahdM: hit.ahdM }
+      : null;
+  }
+  return levels;
+}
+
 function sampleBoundaryPoints(siteRing, maxPoints = 64) {
   if (siteRing.length <= maxPoints) {
     return siteRing.map((point, index) => ({ ...point, id: `site-${index}` }));
@@ -1305,6 +1317,7 @@ async function lookupMonumentBox({ state, geometry }) {
     dataSources: ELEVATION_MONUMENT_LAYERS.map((layer) => layer.label),
     groundSurveyCount: pool.length,
     boundaryElevations: interpolateBoundaryElevations(siteRing, monuments),
+    siteCornerLevels: buildSiteCornerLevels(siteCorners, monuments),
     ...monumentBoxSummary(siteCorners, monuments, siteRing),
   };
 }

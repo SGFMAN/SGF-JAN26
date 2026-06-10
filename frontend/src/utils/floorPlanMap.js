@@ -273,6 +273,69 @@ export async function fetchMonumentBox(geometry, state = "VIC", externalSignal =
   }
 }
 
+function toLocalEN(lat, lng, originLat, originLng) {
+  const metersPerDegLat = METERS_PER_DEG_LAT;
+  const metersPerDegLng = metersPerDegreeLng(originLat);
+  return {
+    e: (lng - originLng) * metersPerDegLng,
+    n: (lat - originLat) * metersPerDegLat,
+  };
+}
+
+const SITE_GRID_CLAMP_TOLERANCE = 0.02;
+
+/** Axis-aligned bilinear AHD from calculated site corner heights (NW/NE/SE/SW). */
+export function interpolateSiteCornerGrid(lat, lng, siteCornerLevels) {
+  const sw = siteCornerLevels?.sw;
+  const se = siteCornerLevels?.se;
+  const nw = siteCornerLevels?.nw;
+  const ne = siteCornerLevels?.ne;
+  if (!sw || !se || !nw || !ne) return null;
+  if (![sw, se, nw, ne].every((corner) => Number.isFinite(corner.ahdM))) return null;
+
+  const origin = sw;
+  const swEN = { e: 0, n: 0 };
+  const seEN = toLocalEN(se.lat, se.lng, origin.lat, origin.lng);
+  const nwEN = toLocalEN(nw.lat, nw.lng, origin.lat, origin.lng);
+  const neEN = toLocalEN(ne.lat, ne.lng, origin.lat, origin.lng);
+  const p = toLocalEN(lat, lng, origin.lat, origin.lng);
+
+  const westE = Math.min(swEN.e, nwEN.e);
+  const eastE = Math.max(seEN.e, neEN.e);
+  const southN = Math.min(swEN.n, seEN.n);
+  const northN = Math.max(nwEN.n, neEN.n);
+
+  const denomE = eastE - westE;
+  const denomN = northN - southN;
+  if (Math.abs(denomE) < 0.5 || Math.abs(denomN) < 0.5) return null;
+
+  let tx = (p.e - westE) / denomE;
+  let ty = (p.n - southN) / denomN;
+
+  if (
+    tx < -SITE_GRID_CLAMP_TOLERANCE ||
+    tx > 1 + SITE_GRID_CLAMP_TOLERANCE ||
+    ty < -SITE_GRID_CLAMP_TOLERANCE ||
+    ty > 1 + SITE_GRID_CLAMP_TOLERANCE
+  ) {
+    tx = Math.max(0, Math.min(1, tx));
+    ty = Math.max(0, Math.min(1, ty));
+  }
+
+  const southHeight = sw.ahdM * (1 - tx) + se.ahdM * tx;
+  const northHeight = nw.ahdM * (1 - tx) + ne.ahdM * tx;
+  return Math.round((southHeight * (1 - ty) + northHeight * ty) * 100) / 100;
+}
+
+export function geometryCoordinatesKey(geometry) {
+  if (!geometry?.coordinates) return "";
+  try {
+    return JSON.stringify(geometry.coordinates);
+  } catch {
+    return "";
+  }
+}
+
 export function siteHighPointAhd(elevationRows) {
   let max = null;
   for (const row of elevationRows) {

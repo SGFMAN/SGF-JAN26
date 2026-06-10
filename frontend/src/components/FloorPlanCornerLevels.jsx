@@ -3,12 +3,12 @@ import L from "leaflet";
 import { useMap } from "react-leaflet";
 import {
   elevationPointsKey,
-  fetchAhdElevationsBatched,
+  fetchMonumentBox,
   formatAhdLabel,
   formatRelativeFallLabel,
+  geometryCoordinatesKey,
+  interpolateSiteCornerGrid,
   isVictoriaLatLng,
-  sampleSiteElevationPoints,
-  siteHighPointAhd,
 } from "../utils/floorPlanMap";
 
 const LABEL_ICON_SIZE = [72, 42];
@@ -67,7 +67,7 @@ function createCornerMarker(point) {
   const marker = L.marker([point.lat, point.lng], {
     icon: L.divIcon({
       className: "floor-plan-level-wrap",
-      html: cornerLabelHtml("…", "", "Loading site levels…"),
+      html: cornerLabelHtml("…", "", "Loading floor plan levels…"),
       iconSize: LABEL_ICON_SIZE,
       iconAnchor: [anchor.x, anchor.y],
     }),
@@ -113,73 +113,47 @@ function syncMarkerPositions(markers, unitPoints) {
   });
 }
 
-function readAhdM(row) {
-  const raw = row?.ahdM;
-  if (raw == null || raw === "") return NaN;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : NaN;
-}
-
-function countElevationHits(rows) {
-  return rows.filter((row) => Number.isFinite(readAhdM(row))).length;
-}
-
-function unavailableReason(row, siteMax) {
-  if (siteMax == null) {
-    return "Could not determine site high point from Vicmap elevation data";
-  }
-  if (row?.error) return row.error;
-  return "No elevation data for this corner from Vicmap";
-}
-
-function applyCornerLabels(markers, unitPoints, unitRows, siteMax) {
-  const unitById = new Map(unitRows.map((row) => [String(row.id), row]));
-  const cornerMax = siteHighPointAhd(unitRows);
-  const referenceMax = cornerMax ?? siteMax;
-
-  for (let index = 0; index < markers.length; index += 1) {
-    const marker = markers[index];
-    const point = unitPoints[index];
-    if (!marker || !point) continue;
-
-    try {
-      const row = unitById.get(String(point.id));
-      const ahdM = readAhdM(row);
-
-      if (referenceMax == null || !Number.isFinite(ahdM)) {
-        setCornerMarkerText(marker, "—", "", unavailableReason(row, referenceMax));
-        continue;
-      }
-
-      const fallM = referenceMax - ahdM;
-      const ahdLabel = formatAhdLabel(ahdM);
-      const relativeLabel = formatRelativeFallLabel(fallM);
-      setCornerMarkerText(
-        marker,
-        ahdLabel,
-        relativeLabel,
-        `${ahdLabel} m AHD · ${relativeLabel} m below highest corner` +
-          ` (highest corner ${referenceMax.toFixed(2)} m AHD` +
-          `${siteMax != null && siteMax !== referenceMax ? `, site high ${siteMax.toFixed(2)} m AHD` : ""}` +
-          `${row?.approximate ? ", approximate" : ""})`
-      );
-    } catch (err) {
-      console.warn("[FloorPlanCornerLevels] marker update:", point?.id, err);
-      setCornerMarkerText(marker, "—", "", err.message || "Level unavailable");
-    }
-  }
-}
-
 function markAllCorners(markers, ahdText, relativeText, tooltip) {
   for (const marker of markers) {
     setCornerMarkerText(marker, ahdText, relativeText, tooltip);
   }
 }
 
-function splitElevationRows(rows, siteIds) {
-  const siteRows = rows.filter((row) => siteIds.has(String(row.id)));
-  const unitRows = rows.filter((row) => !siteIds.has(String(row.id)));
-  return { siteRows, unitRows };
+function applyCornerLabels(markers, unitPoints, siteCornerLevels) {
+  const elevations = unitPoints.map((point) =>
+    interpolateSiteCornerGrid(point.lat, point.lng, siteCornerLevels)
+  );
+  const highest = elevations.reduce((max, value) => {
+    if (!Number.isFinite(value)) return max;
+    return max == null || value > max ? value : max;
+  }, null);
+
+  for (let index = 0; index < markers.length; index += 1) {
+    const marker = markers[index];
+    const point = unitPoints[index];
+    if (!marker || !point) continue;
+
+    const ahdM = elevations[index];
+    if (!Number.isFinite(ahdM) || highest == null) {
+      setCornerMarkerText(
+        marker,
+        "—",
+        "",
+        "Could not interpolate level from site corner heights"
+      );
+      continue;
+    }
+
+    const ahdLabel = formatAhdLabel(ahdM);
+    const relativeLabel = formatRelativeFallLabel(highest - ahdM);
+    setCornerMarkerText(
+      marker,
+      ahdLabel,
+      relativeLabel,
+      `${ahdLabel} m AHD · ${relativeLabel} m below highest floor plan corner\n` +
+        "Interpolated from site boundary corner levels"
+    );
+  }
 }
 
 function outOfRangeMessage(unitPoints) {
@@ -187,7 +161,7 @@ function outOfRangeMessage(unitPoints) {
   return `Corner coordinates outside Victoria (${sample.lat.toFixed(5)}, ${sample.lng.toFixed(5)})`;
 }
 
-/** AHD + relative fall at floor plan corners — highest corner = 0, actual difference below. */
+/** AHD + relative fall at floor plan corners — interpolated from site corner levels. */
 export default function FloorPlanCornerLevels({
   cornerPoints,
   siteGeometry = null,
@@ -200,17 +174,15 @@ export default function FloorPlanCornerLevels({
 
   const layerRef = useRef(null);
   const markersRef = useRef([]);
-  const lastFetchedKeyRef = useRef("");
+  const siteCornerLevelsRef = useRef(null);
+  const lastFetchedGeometryKeyRef = useRef("");
   const fetchTimerRef = useRef(null);
   const fetchAbortRef = useRef(null);
   const activeFetchKeyRef = useRef("");
-  const siteGeometryRef = useRef(siteGeometry);
-  siteGeometryRef.current = siteGeometry;
 
-  const sitePointsKey = useMemo(
-    () => elevationPointsKey(sampleSiteElevationPoints(siteGeometry, 8)),
-    [siteGeometry]
-  );
+  const geometryKey = useMemo(() => geometryCoordinatesKey(siteGeometry), [siteGeometry]);
+  const unitPoints = Array.isArray(cornerPoints) ? cornerPoints : [];
+  const cornerKey = useMemo(() => elevationPointsKey(unitPoints), [unitPoints]);
 
   useEffect(() => {
     return () => {
@@ -222,14 +194,13 @@ export default function FloorPlanCornerLevels({
 
   useEffect(() => {
     const mapInstance = mapRef.current;
-    const unitPoints = Array.isArray(cornerPoints) ? cornerPoints : [];
-    const key = elevationPointsKey(unitPoints);
 
     if (!enabled || unitPoints.length === 0 || lookupState !== "VIC") {
       window.clearTimeout(fetchTimerRef.current);
       fetchAbortRef.current?.abort();
       removeCornerLayer(mapInstance, layerRef, markersRef);
-      lastFetchedKeyRef.current = "";
+      siteCornerLevelsRef.current = null;
+      lastFetchedGeometryKeyRef.current = "";
       activeFetchKeyRef.current = "";
       return undefined;
     }
@@ -253,72 +224,63 @@ export default function FloorPlanCornerLevels({
       return undefined;
     }
 
+    const markers = markersRef.current;
+    const hasSiteLevels =
+      siteCornerLevelsRef.current &&
+      lastFetchedGeometryKeyRef.current === geometryKey &&
+      ["nw", "ne", "se", "sw"].every((id) => siteCornerLevelsRef.current?.[id]?.ahdM != null);
+
+    if (hasSiteLevels) {
+      applyCornerLabels(markers, unitPoints, siteCornerLevelsRef.current);
+      return undefined;
+    }
+
+    if (!siteGeometry) {
+      markAllCorners(markers, "—", "", "Site boundary required for floor plan levels");
+      return undefined;
+    }
+
     window.clearTimeout(fetchTimerRef.current);
-    const delay = lastFetchedKeyRef.current === "" ? 0 : FETCH_DEBOUNCE_MS;
+    const delay = lastFetchedGeometryKeyRef.current === "" ? 0 : FETCH_DEBOUNCE_MS;
 
     fetchTimerRef.current = window.setTimeout(() => {
-      const markers = markersRef.current;
-      if (!markers.length) return;
-
       fetchAbortRef.current?.abort();
       const controller = new AbortController();
       fetchAbortRef.current = controller;
-      activeFetchKeyRef.current = key;
-      lastFetchedKeyRef.current = key;
+      activeFetchKeyRef.current = geometryKey;
 
-      markAllCorners(markers, "…", "", "Loading site levels from Vicmap…");
+      markAllCorners(markers, "…", "", "Loading site corner levels…");
 
       (async () => {
         try {
-          const sitePoints = sampleSiteElevationPoints(siteGeometryRef.current, 8);
-          const siteIds = new Set(sitePoints.map((point) => String(point.id)));
-          const allPoints = [...sitePoints, ...unitPoints];
+          const data = await fetchMonumentBox(siteGeometry, lookupState, controller.signal);
+          if (controller.signal.aborted || activeFetchKeyRef.current !== geometryKey) return;
 
-          const rows = await fetchAhdElevationsBatched(
-            allPoints,
-            lookupState,
-            24,
-            controller.signal
-          );
+          const levels = data.siteCornerLevels;
+          const complete = levels && ["nw", "ne", "se", "sw"].every((id) => levels[id]?.ahdM != null);
 
-          if (controller.signal.aborted || activeFetchKeyRef.current !== key) return;
-
-          const { siteRows, unitRows } = splitElevationRows(rows, siteIds);
-          const hits = countElevationHits(rows);
-
-          let siteMax = siteHighPointAhd(siteRows);
-          if (siteMax == null) {
-            siteMax = siteHighPointAhd(rows);
-          }
-
-          if (hits === 0) {
-            const sample = unitPoints[0];
-            markAllCorners(
-              markers,
-              "—",
-              "",
-              `No Vicmap elevation returned for (${sample.lat.toFixed(5)}, ${sample.lng.toFixed(5)}). Check backend is running on port 3001.`
-            );
+          if (!complete) {
+            const missing = data.missing?.length
+              ? `Missing monuments: ${data.missing.join(", ").toUpperCase()}`
+              : "Incomplete site corner levels";
+            markAllCorners(markers, "—", "", missing);
             return;
           }
 
-          applyCornerLabels(markers, unitPoints, unitRows, siteMax);
+          siteCornerLevelsRef.current = levels;
+          lastFetchedGeometryKeyRef.current = geometryKey;
+          applyCornerLabels(markers, unitPoints, levels);
           layerRef.current?.bringToFront?.();
         } catch (err) {
           if (controller.signal.aborted) return;
           if (err?.name === "AbortError") {
-            if (activeFetchKeyRef.current !== key) return;
-            markAllCorners(markers, "—", "", "Elevation lookup timed out — try again");
+            if (activeFetchKeyRef.current !== geometryKey) return;
+            markAllCorners(markers, "—", "", "Level lookup timed out — try again");
             return;
           }
-          console.warn("[FloorPlanCornerLevels] elevation lookup failed:", err);
-          if (activeFetchKeyRef.current !== key) return;
-          markAllCorners(
-            markers,
-            "—",
-            "",
-            err.message || "Could not load site levels"
-          );
+          console.warn("[FloorPlanCornerLevels] lookup failed:", err);
+          if (activeFetchKeyRef.current !== geometryKey) return;
+          markAllCorners(markers, "—", "", err.message || "Could not load floor plan levels");
         }
       })();
     }, delay);
@@ -326,7 +288,7 @@ export default function FloorPlanCornerLevels({
     return () => {
       window.clearTimeout(fetchTimerRef.current);
     };
-  }, [elevationPointsKey(cornerPoints), sitePointsKey, enabled, lookupState]);
+  }, [cornerKey, geometryKey, enabled, lookupState, siteGeometry, unitPoints]);
 
   return null;
 }

@@ -7,6 +7,7 @@ import {
   fetchMonumentBox,
   formatAhdLabel,
   formatRelativeFallLabel,
+  geometryCoordinatesKey,
   isVictoriaLatLng,
   siteHighPointAhd,
 } from "../utils/floorPlanMap";
@@ -235,14 +236,7 @@ export default function SiteBoundaryLevels({
     [siteGeometry]
   );
   const boundaryKey = useMemo(() => elevationPointsKey(boundaryPoints), [boundaryPoints]);
-  const geometryKey = useMemo(() => {
-    if (!siteGeometry?.coordinates) return "";
-    try {
-      return JSON.stringify(siteGeometry.coordinates);
-    } catch {
-      return "";
-    }
-  }, [siteGeometry]);
+  const geometryKey = useMemo(() => geometryCoordinatesKey(siteGeometry), [siteGeometry]);
 
   useEffect(() => {
     return () => {
