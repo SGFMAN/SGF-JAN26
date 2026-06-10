@@ -62,9 +62,18 @@ export function floorPlanCornerPoints(bounds) {
   ];
 }
 
-export async function fetchAhdElevations(points, state = "VIC") {
+export async function fetchAhdElevations(points, state = "VIC", externalSignal = null) {
+  if (externalSignal?.aborted) {
+    throw new DOMException("Aborted", "AbortError");
+  }
+
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 55000);
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal) {
+    externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+  }
+
   try {
     const res = await fetch("/api/maps/elevation-ahd", {
       method: "POST",
@@ -79,6 +88,9 @@ export async function fetchAhdElevations(points, state = "VIC") {
     return data;
   } finally {
     window.clearTimeout(timer);
+    if (externalSignal) {
+      externalSignal.removeEventListener("abort", onExternalAbort);
+    }
   }
 }
 
@@ -134,12 +146,20 @@ export function formatFallLabel(fallM, step = FALL_STEP_M) {
   return snapped.toFixed(2);
 }
 
-export async function fetchAhdElevationsBatched(points, state = "VIC", batchSize = 24) {
+export async function fetchAhdElevationsBatched(
+  points,
+  state = "VIC",
+  batchSize = 24,
+  externalSignal = null
+) {
   if (!points.length) return [];
   const rows = [];
   for (let i = 0; i < points.length; i += batchSize) {
+    if (externalSignal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
     const batch = points.slice(i, i + batchSize);
-    const data = await fetchAhdElevations(batch, state);
+    const data = await fetchAhdElevations(batch, state, externalSignal);
     rows.push(...(data.elevations || []));
   }
   return rows;

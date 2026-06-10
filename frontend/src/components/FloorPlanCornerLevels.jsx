@@ -16,13 +16,13 @@ const CORNER_ANCHORS = {
   nw: { x: 0, y: 0 },
 };
 
-const FETCH_DEBOUNCE_MS = 450;
+const FETCH_DEBOUNCE_MS = 300;
 
 function boundsKey(bounds) {
   if (!bounds) return "";
   const sw = bounds.getSouthWest();
   const ne = bounds.getNorthEast();
-  return `${sw.lat.toFixed(6)},${sw.lng.toFixed(6)},${ne.lat.toFixed(6)},${ne.lng.toFixed(6)}`;
+  return `${sw.lat.toFixed(5)},${sw.lng.toFixed(5)},${ne.lat.toFixed(5)},${ne.lng.toFixed(5)}`;
 }
 
 function cornerLabelHtml(text) {
@@ -59,11 +59,7 @@ function createCornerMarker(point) {
 }
 
 function setCornerMarkerText(marker, text) {
-  const el = marker.getElement()?.querySelector("[data-level-label]");
-  if (el) {
-    el.textContent = text;
-    return;
-  }
+  if (!marker) return;
   const cornerId = marker.options?.cornerId;
   const anchor = CORNER_ANCHORS[cornerId] || { x: 36, y: 13 };
   marker.setIcon(
@@ -76,11 +72,60 @@ function setCornerMarkerText(marker, text) {
   );
 }
 
+function removeCornerLayer(map, layerRef, markersRef) {
+  if (layerRef.current) {
+    map.removeLayer(layerRef.current);
+    layerRef.current = null;
+  }
+  markersRef.current = [];
+}
+
 function syncMarkerPositions(markers, unitPoints) {
   unitPoints.forEach((point, index) => {
     const marker = markers[index];
     if (marker) marker.setLatLng([point.lat, point.lng]);
   });
+}
+
+function readAhdM(row) {
+  const raw = row?.ahdM;
+  if (raw == null || raw === "") return NaN;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : NaN;
+}
+
+function applyCornerLabels(markers, unitPoints, unitRows, siteMax) {
+  const unitById = new Map(unitRows.map((row) => [row.id, row]));
+
+  for (let index = 0; index < markers.length; index += 1) {
+    const marker = markers[index];
+    const point = unitPoints[index];
+    if (!marker || !point) continue;
+
+    try {
+      const row = unitById.get(point.id);
+      const ahdM = readAhdM(row);
+
+      if (siteMax == null || !Number.isFinite(ahdM)) {
+        setCornerMarkerText(marker, "—");
+        marker.setTitle("Level unavailable");
+        continue;
+      }
+
+      const fallM = siteMax - ahdM;
+      const label = formatFallLabel(fallM);
+      setCornerMarkerText(marker, label);
+      marker.setTitle(
+        `Fall ${label} m from site high point` +
+          ` (site ${siteMax.toFixed(2)} m AHD, corner ${ahdM.toFixed(2)} m AHD` +
+          `${row?.approximate ? ", approximate" : ""})`
+      );
+    } catch (err) {
+      console.warn("[FloorPlanCornerLevels] marker update:", point?.id, err);
+      setCornerMarkerText(marker, "—");
+      marker.setTitle("Level unavailable");
+    }
+  }
 }
 
 /** Fall labels at floor plan corners — 0 at site high point, 0.25 m steps below. */
@@ -91,32 +136,31 @@ export default function FloorPlanCornerLevels({
   enabled = true,
 }) {
   const map = useMap();
+  const mapRef = useRef(map);
+  mapRef.current = map;
+
   const layerRef = useRef(null);
   const markersRef = useRef([]);
-  const requestIdRef = useRef(0);
+  const lastFetchedKeyRef = useRef("");
   const siteGeometryRef = useRef(siteGeometry);
   siteGeometryRef.current = siteGeometry;
 
   useEffect(() => {
     return () => {
-      if (layerRef.current) {
-        map.removeLayer(layerRef.current);
-        layerRef.current = null;
-      }
-      markersRef.current = [];
+      removeCornerLayer(mapRef.current, layerRef, markersRef);
     };
-  }, [map]);
+  }, []);
 
   useEffect(() => {
+    const mapInstance = mapRef.current;
+
     if (!enabled || !bounds || lookupState !== "VIC") {
-      if (layerRef.current) {
-        map.removeLayer(layerRef.current);
-        layerRef.current = null;
-      }
-      markersRef.current = [];
+      removeCornerLayer(mapInstance, layerRef, markersRef);
+      lastFetchedKeyRef.current = "";
       return undefined;
     }
 
+    const key = boundsKey(bounds);
     const unitPoints = floorPlanCornerPoints(bounds);
     if (unitPoints.length === 0) return undefined;
 
@@ -126,7 +170,7 @@ export default function FloorPlanCornerLevels({
       for (const marker of markersRef.current) {
         group.addLayer(marker);
       }
-      group.addTo(map);
+      group.addTo(mapInstance);
       group.bringToFront?.();
       layerRef.current = group;
     } else {
@@ -134,19 +178,29 @@ export default function FloorPlanCornerLevels({
       layerRef.current.bringToFront?.();
     }
 
+    const markers = markersRef.current;
+    const controller = new AbortController();
+    const delay = lastFetchedKeyRef.current === "" ? 0 : FETCH_DEBOUNCE_MS;
+
     const debounceTimer = window.setTimeout(() => {
-      const requestId = requestIdRef.current + 1;
-      requestIdRef.current = requestId;
-      const markers = markersRef.current;
-      markers.forEach((marker) => setCornerMarkerText(marker, "…"));
+      lastFetchedKeyRef.current = key;
 
       (async () => {
+        for (const marker of markers) {
+          setCornerMarkerText(marker, "…");
+        }
+
         try {
           const sitePoints = sampleSiteElevationPoints(siteGeometryRef.current, 8);
           const allPoints = [...sitePoints, ...unitPoints];
-          const rows = await fetchAhdElevationsBatched(allPoints, lookupState, 16);
+          const rows = await fetchAhdElevationsBatched(
+            allPoints,
+            lookupState,
+            24,
+            controller.signal
+          );
 
-          if (requestIdRef.current !== requestId) return;
+          if (controller.signal.aborted) return;
 
           const siteIds = new Set(sitePoints.map((p) => p.id));
           const siteRows = rows.filter((row) => siteIds.has(row.id));
@@ -157,44 +211,24 @@ export default function FloorPlanCornerLevels({
             siteMax = siteHighPointAhd(unitRows);
           }
 
-          const unitById = new Map(unitRows.map((row) => [row.id, row]));
-
-          markers.forEach((marker, index) => {
-            const point = unitPoints[index];
-            const row = unitById.get(point.id);
-            const ahdM = Number(row?.ahdM);
-
-            if (siteMax == null || !Number.isFinite(ahdM)) {
-              setCornerMarkerText(marker, "—");
-              marker.setTitle("Level unavailable");
-              return;
-            }
-
-            const fallM = siteMax - ahdM;
-            const label = formatFallLabel(fallM);
-            setCornerMarkerText(marker, label);
-            marker.setTitle(
-              `Fall ${label} m from site high point` +
-                ` (site ${siteMax.toFixed(2)} m AHD, corner ${ahdM.toFixed(2)} m AHD` +
-                `${row.approximate ? ", approximate" : ""})`
-            );
-          });
+          applyCornerLabels(markers, unitPoints, unitRows, siteMax);
           layerRef.current?.bringToFront?.();
         } catch (err) {
-          if (requestIdRef.current !== requestId) return;
+          if (controller.signal.aborted || err?.name === "AbortError") return;
           console.warn("[FloorPlanCornerLevels]", err);
-          markers.forEach((marker) => {
+          for (const marker of markers) {
             setCornerMarkerText(marker, "—");
             marker.setTitle(err.message || "Could not load site levels");
-          });
+          }
         }
       })();
-    }, FETCH_DEBOUNCE_MS);
+    }, delay);
 
     return () => {
       window.clearTimeout(debounceTimer);
+      controller.abort();
     };
-  }, [boundsKey(bounds), enabled, lookupState, map]);
+  }, [boundsKey(bounds), enabled, lookupState]);
 
   return null;
 }

@@ -115,7 +115,7 @@ export default function DraggableFloorPlanOverlay({
       const bounds = overlay.getBounds();
       const sw = bounds.getSouthWest();
       const ne = bounds.getNorthEast();
-      const key = `${sw.lat.toFixed(6)},${sw.lng.toFixed(6)},${ne.lat.toFixed(6)},${ne.lng.toFixed(6)}`;
+      const key = `${sw.lat.toFixed(5)},${sw.lng.toFixed(5)},${ne.lat.toFixed(5)},${ne.lng.toFixed(5)}`;
       if (key === lastBoundsKeyRef.current) return;
       lastBoundsKeyRef.current = key;
       setOverlayBounds(bounds);
@@ -227,7 +227,6 @@ export default function DraggableFloorPlanOverlay({
 
         overlay.addTo(map);
         disableNativeImageDrag(overlay);
-        overlay.on("load", () => disableNativeImageDrag(overlay));
         if (handle) handle.addTo(map);
 
         attachOverlayDrag(overlay);
@@ -236,7 +235,16 @@ export default function DraggableFloorPlanOverlay({
         overlayRef.current = overlay;
         handleRef.current = handle;
         lastBoundsKeyRef.current = "";
-        syncHandlePosition();
+
+        const syncBoundsWhenReady = () => {
+          disableNativeImageDrag(overlay);
+          syncHandlePosition();
+        };
+        if (overlay.getElement()?.querySelector("img")?.complete) {
+          syncBoundsWhenReady();
+        } else {
+          overlay.once("load", syncBoundsWhenReady);
+        }
 
         unbindViewSyncRef.current?.();
         unbindViewSyncRef.current = bindDebouncedMapViewSync(map, syncHandlePosition);
