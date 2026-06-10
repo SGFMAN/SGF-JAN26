@@ -101,7 +101,7 @@ export async function fetchAhdElevations(
   points,
   state = "VIC",
   externalSignal = null,
-  mode = "survey"
+  mode = "interpolate"
 ) {
   if (externalSignal?.aborted) {
     throw new DOMException("Aborted", "AbortError");
@@ -191,7 +191,7 @@ export async function fetchAhdElevationsBatched(
   state = "VIC",
   batchSize = 24,
   externalSignal = null,
-  mode = "survey"
+  mode = "interpolate"
 ) {
   if (!points.length) return [];
   const rows = [];
