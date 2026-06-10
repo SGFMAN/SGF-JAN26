@@ -4,7 +4,7 @@ import { useMap } from "react-leaflet";
 import {
   allSiteBoundaryPoints,
   elevationPointsKey,
-  fetchAhdElevationsBatched,
+  fetchMonumentBox,
   formatAhdLabel,
   formatRelativeFallLabel,
   isVictoriaLatLng,
@@ -140,7 +140,11 @@ function buildSurveyTooltip(point, row, label) {
   const source = row?.source || "vicmap";
 
   let methodNote = "Interpolated from nearby Vicmap survey monuments.";
-  if (source === "vicmap_surround_bilinear") {
+  if (source === "vicmap_monument_bilinear") {
+    methodNote =
+      "Bilinear interpolation from the four monument box (NW/NE/SE/SW). " +
+      "Heights follow the gradient between those monuments.";
+  } else if (source === "vicmap_surround_bilinear") {
     methodNote =
       `Bilinear patch from 4 surrounding Vicmap monuments (corner range ${rangeM ?? "?"} m). ` +
       "Relative falls across the site follow this gradient.";
@@ -228,6 +232,14 @@ export default function SiteBoundaryLevels({
     [siteGeometry]
   );
   const boundaryKey = useMemo(() => elevationPointsKey(boundaryPoints), [boundaryPoints]);
+  const geometryKey = useMemo(() => {
+    if (!siteGeometry?.coordinates) return "";
+    try {
+      return JSON.stringify(siteGeometry.coordinates);
+    } catch {
+      return "";
+    }
+  }, [siteGeometry]);
 
   useEffect(() => {
     return () => {
@@ -241,7 +253,7 @@ export default function SiteBoundaryLevels({
   useEffect(() => {
     const mapInstance = mapRef.current;
 
-    if (!enabled || !boundaryPoints.length || lookupState !== "VIC") {
+    if (!enabled || !siteGeometry || !boundaryPoints.length || lookupState !== "VIC") {
       window.clearTimeout(fetchTimerRef.current);
       fetchAbortRef.current?.abort();
       removeBoundaryLayer(mapInstance, layerRef);
@@ -279,31 +291,31 @@ export default function SiteBoundaryLevels({
       fetchAbortRef.current?.abort();
       const controller = new AbortController();
       fetchAbortRef.current = controller;
-      activeFetchKeyRef.current = boundaryKey;
-      lastFetchedKeyRef.current = boundaryKey;
+      activeFetchKeyRef.current = geometryKey;
+      lastFetchedKeyRef.current = geometryKey;
 
-      markAllBoundaryPoints(markers, "…", "", "Loading boundary levels from Vicmap…");
+      markAllBoundaryPoints(markers, "…", "", "Loading boundary levels from monument box…");
 
       (async () => {
         try {
-          const rows = await fetchAhdElevationsBatched(
-            boundaryPoints,
-            lookupState,
-            24,
-            controller.signal,
-            "interpolate"
-          );
+          const data = await fetchMonumentBox(siteGeometry, lookupState, controller.signal);
 
-          if (controller.signal.aborted || activeFetchKeyRef.current !== boundaryKey) return;
+          if (controller.signal.aborted || activeFetchKeyRef.current !== geometryKey) return;
 
+          const rows = data.boundaryElevations || [];
           const hits = rows.filter((row) => Number.isFinite(readAhdM(row))).length;
+
           if (hits === 0) {
             const sample = boundaryPoints[0];
+            const reason =
+              data.missing?.length > 0
+                ? `Missing monuments: ${data.missing.join(", ").toUpperCase()}`
+                : "Could not interpolate boundary levels";
             markAllBoundaryPoints(
               markers,
               "—",
               "",
-              `No Vicmap elevation for boundary (${sample.lat.toFixed(5)}, ${sample.lng.toFixed(5)}). Check backend on port 3001.`
+              `${reason} (${sample.lat.toFixed(5)}, ${sample.lng.toFixed(5)}). Check backend on port 3001.`
             );
             return;
           }
@@ -313,12 +325,12 @@ export default function SiteBoundaryLevels({
         } catch (err) {
           if (controller.signal.aborted) return;
           if (err?.name === "AbortError") {
-            if (activeFetchKeyRef.current !== boundaryKey) return;
+            if (activeFetchKeyRef.current !== geometryKey) return;
             markAllBoundaryPoints(markers, "—", "", "Elevation lookup timed out — try again");
             return;
           }
           console.warn("[SiteBoundaryLevels] elevation lookup failed:", err);
-          if (activeFetchKeyRef.current !== boundaryKey) return;
+          if (activeFetchKeyRef.current !== geometryKey) return;
           markAllBoundaryPoints(markers, "—", "", err.message || "Could not load boundary levels");
         }
       })();
@@ -327,7 +339,7 @@ export default function SiteBoundaryLevels({
     return () => {
       window.clearTimeout(fetchTimerRef.current);
     };
-  }, [boundaryKey, boundaryPoints, enabled, lookupState]);
+  }, [geometryKey, boundaryKey, boundaryPoints, siteGeometry, enabled, lookupState]);
 
   return null;
 }

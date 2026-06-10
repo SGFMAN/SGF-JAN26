@@ -2754,7 +2754,7 @@ app.post("/api/maps/elevation-monument-box", async (req, res) => {
       return res.status(result.status || 400).json({ ok: false, error: result.error, state });
     }
     console.log(
-      `[maps/elevation-monument-box] monuments found, encapsulates=${result.encapsulatesSite}, missing=${result.missing?.join(",") || "none"}`
+      `[maps/elevation-monument-box] monuments found, encapsulates=${result.encapsulatesSite}, missing=${result.missing?.join(",") || "none"}, boundary=${result.boundaryElevations?.filter((row) => row.ahdM != null).length ?? 0}/${result.boundaryElevations?.length ?? 0}`
     );
     return res.json({ ok: true, ...result });
   } catch (e) {

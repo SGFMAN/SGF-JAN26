@@ -1118,6 +1118,63 @@ function monumentBoxSummary(siteCorners, monuments, siteRing) {
   };
 }
 
+function monumentsToInterpolationQuad(monuments) {
+  const corners = ["nw", "ne", "se", "sw"];
+  if (corners.some((id) => !monuments[id] || !Number.isFinite(monuments[id].ahdM))) {
+    return null;
+  }
+  return {
+    nw: { lat: monuments.nw.lat, lng: monuments.nw.lng, alt: monuments.nw.ahdM },
+    ne: { lat: monuments.ne.lat, lng: monuments.ne.lng, alt: monuments.ne.ahdM },
+    se: { lat: monuments.se.lat, lng: monuments.se.lng, alt: monuments.se.ahdM },
+    sw: { lat: monuments.sw.lat, lng: monuments.sw.lng, alt: monuments.sw.ahdM },
+  };
+}
+
+function sampleBoundaryPoints(siteRing, maxPoints = 64) {
+  if (siteRing.length <= maxPoints) {
+    return siteRing.map((point, index) => ({ ...point, id: `site-${index}` }));
+  }
+  const sampled = [];
+  const step = siteRing.length / maxPoints;
+  for (let i = 0; i < maxPoints; i += 1) {
+    const idx = Math.min(siteRing.length - 1, Math.floor(i * step));
+    sampled.push({ ...siteRing[idx], id: `site-${i}` });
+  }
+  return sampled;
+}
+
+function interpolateBoundaryElevations(siteRing, monuments) {
+  const quad = monumentsToInterpolationQuad(monuments);
+  if (!quad) return [];
+
+  return sampleBoundaryPoints(siteRing).map((point) => {
+    const hit = bilinearElevationAt(point.lat, point.lng, quad);
+    if (!hit) {
+      return {
+        id: point.id,
+        lat: point.lat,
+        lng: point.lng,
+        ahdM: null,
+        approximate: false,
+        source: null,
+        error: "Could not bilinear interpolate at this boundary vertex",
+      };
+    }
+    return {
+      id: point.id,
+      lat: point.lat,
+      lng: point.lng,
+      ahdM: hit.ahdM,
+      approximate: hit.approximate,
+      source: "vicmap_monument_bilinear",
+      surveyDistM: hit.surveyDistM,
+      surveyCount: hit.surveyCount,
+      surveyRangeM: hit.surveyRangeM,
+    };
+  });
+}
+
 async function fetchMonumentsNearSite(siteRing) {
   const bounds = siteBounds(siteRing);
   const merged = await fetchAllElevationMonumentsInEnvelope(bounds, MONUMENT_ENVELOPE_PAD_M);
@@ -1181,6 +1238,7 @@ async function lookupMonumentBox({ state, geometry }) {
     datum: "AHD",
     dataSources: ELEVATION_MONUMENT_LAYERS.map((layer) => layer.label),
     groundSurveyCount: pool.length,
+    boundaryElevations: interpolateBoundaryElevations(siteRing, monuments),
     ...monumentBoxSummary(siteCorners, monuments, siteRing),
   };
 }
