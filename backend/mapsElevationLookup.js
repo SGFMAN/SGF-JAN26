@@ -13,11 +13,11 @@ const METRO_GROUND_LAYER = 0;
 const METRO_CONTOUR_LAYER = 1;
 const STATEWIDE_GROUND_LAYER = 4;
 
-const FETCH_TIMEOUT_MS = 12000;
+const FETCH_TIMEOUT_MS = 8000;
 const MAX_POINTS = 32;
 const METRO_GROUND_RADIUS_M = 450;
 const STATEWIDE_GROUND_RADIUS_M = 900;
-const CONTOUR_RADIUS_M = 250;
+const CONTOUR_RADIUS_M = 200;
 
 function normalizeElevationState(raw) {
   const s = String(raw || "")
@@ -194,40 +194,48 @@ function pickNearestContour(lat, lng, features, sourceLabel) {
 }
 
 async function lookupPointAhd(lat, lng) {
-  const { data: metroGround, error: metroGroundErr } = await fetchArcGisJson(
+  const metroGround = await fetchArcGisJson(
     buildQueryUrl(VICMAP_ELEVATION_METRO, METRO_GROUND_LAYER, lat, lng, METRO_GROUND_RADIUS_M, true),
     FETCH_TIMEOUT_MS
   );
-  if (!metroGroundErr && metroGround?.features?.length) {
-    const hit = pickNearestGroundPoint(lat, lng, metroGround.features, "vicmap_metro_ground_point");
-    if (hit) return hit;
-  }
-
-  const { data: metroContour, error: metroContourErr } = await fetchArcGisJson(
-    buildQueryUrl(VICMAP_ELEVATION_METRO, METRO_CONTOUR_LAYER, lat, lng, CONTOUR_RADIUS_M, true),
-    FETCH_TIMEOUT_MS
-  );
-  if (!metroContourErr && metroContour?.features?.length) {
-    const hit = pickNearestContour(lat, lng, metroContour.features, "vicmap_metro_contour");
-    if (hit) return hit;
-  }
-
-  const { data: statewideGround, error: statewideGroundErr } = await fetchArcGisJson(
-    buildQueryUrl(
-      VICMAP_ELEVATION_STATEWIDE,
-      STATEWIDE_GROUND_LAYER,
-      lat,
-      lng,
-      STATEWIDE_GROUND_RADIUS_M,
-      true
-    ),
-    FETCH_TIMEOUT_MS
-  );
-  if (!statewideGroundErr && statewideGround?.features?.length) {
+  if (!metroGround.error && metroGround.data?.features?.length) {
     const hit = pickNearestGroundPoint(
       lat,
       lng,
-      statewideGround.features,
+      metroGround.data.features,
+      "vicmap_metro_ground_point"
+    );
+    if (hit) return hit;
+  }
+
+  const [metroContour, statewideGround] = await Promise.all([
+    fetchArcGisJson(
+      buildQueryUrl(VICMAP_ELEVATION_METRO, METRO_CONTOUR_LAYER, lat, lng, CONTOUR_RADIUS_M, true),
+      FETCH_TIMEOUT_MS
+    ),
+    fetchArcGisJson(
+      buildQueryUrl(
+        VICMAP_ELEVATION_STATEWIDE,
+        STATEWIDE_GROUND_LAYER,
+        lat,
+        lng,
+        STATEWIDE_GROUND_RADIUS_M,
+        true
+      ),
+      FETCH_TIMEOUT_MS
+    ),
+  ]);
+
+  if (!metroContour.error && metroContour.data?.features?.length) {
+    const hit = pickNearestContour(lat, lng, metroContour.data.features, "vicmap_metro_contour");
+    if (hit) return hit;
+  }
+
+  if (!statewideGround.error && statewideGround.data?.features?.length) {
+    const hit = pickNearestGroundPoint(
+      lat,
+      lng,
+      statewideGround.data.features,
       "vicmap_statewide_ground_point"
     );
     if (hit) return { ...hit, approximate: true };

@@ -63,22 +63,29 @@ export function floorPlanCornerPoints(bounds) {
 }
 
 export async function fetchAhdElevations(points, state = "VIC") {
-  const res = await fetch("/api/maps/elevation-ahd", {
-    method: "POST",
-    headers: getApiHeaders(),
-    body: JSON.stringify({ state, points }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.ok) {
-    throw new Error(data.error || "Failed to load AHD elevations");
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 55000);
+  try {
+    const res = await fetch("/api/maps/elevation-ahd", {
+      method: "POST",
+      headers: getApiHeaders(),
+      body: JSON.stringify({ state, points }),
+      signal: controller.signal,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || `Failed to load elevations (${res.status})`);
+    }
+    return data;
+  } finally {
+    window.clearTimeout(timer);
   }
-  return data;
 }
 
 export const FALL_STEP_M = 0.25;
 
 /** Sample vertices from a title boundary for site elevation lookup. */
-export function sampleSiteElevationPoints(geometry, maxPoints = 20) {
+export function sampleSiteElevationPoints(geometry, maxPoints = 8) {
   if (!geometry) return [];
   const raw = [];
 
