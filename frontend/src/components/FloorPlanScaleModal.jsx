@@ -332,7 +332,7 @@ export default function FloorPlanScaleModal({ imageBlob, snapCorners = [], onCon
       : 0;
 
   return (
-    <ModalBackdrop onClose={onCancel} zIndex={2300} style={{ background: "rgba(0,0,0,0.55)" }}>
+    <ModalBackdrop zIndex={2300} style={{ background: "rgba(0,0,0,0.55)" }}>
       <div
         style={{
           background: WHITE,

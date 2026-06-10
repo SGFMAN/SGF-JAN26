@@ -99,7 +99,7 @@ export default function FloorPlanPickerModal({ onSelect, onClose }) {
   const canSelect = selectedPlan?.scale?.metersPerPixel;
 
   return (
-    <ModalBackdrop onClose={onClose} zIndex={2100}>
+    <ModalBackdrop zIndex={2100}>
       <div
         style={{
           background: WHITE,

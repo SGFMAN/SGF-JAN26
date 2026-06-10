@@ -294,7 +294,7 @@ export default function FloorPlanCropModal({ file, onConfirm, onCancel }) {
   const zoomPercent = Math.round(viewRef.current.zoom * 100);
 
   return (
-    <ModalBackdrop onClose={onCancel} zIndex={2200} style={{ background: "rgba(0,0,0,0.55)" }}>
+    <ModalBackdrop zIndex={2200} style={{ background: "rgba(0,0,0,0.55)" }}>
       <div
         style={{
           background: WHITE,

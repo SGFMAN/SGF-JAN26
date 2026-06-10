@@ -48,3 +48,35 @@ export function loadImageSizeFromBlob(blob) {
     img.src = url;
   });
 }
+
+/** @returns {{ id: string, lat: number, lng: number }[]} */
+export function floorPlanCornerPoints(bounds) {
+  if (!bounds) return [];
+  const sw = bounds.getSouthWest();
+  const ne = bounds.getNorthEast();
+  return [
+    { id: "sw", lat: sw.lat, lng: sw.lng },
+    { id: "se", lat: sw.lat, lng: ne.lng },
+    { id: "ne", lat: ne.lat, lng: ne.lng },
+    { id: "nw", lat: ne.lat, lng: sw.lng },
+  ];
+}
+
+export async function fetchAhdElevations(points, state = "VIC") {
+  const res = await fetch("/api/maps/elevation-ahd", {
+    method: "POST",
+    headers: getApiHeaders(),
+    body: JSON.stringify({ state, points }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) {
+    throw new Error(data.error || "Failed to load AHD elevations");
+  }
+  return data;
+}
+
+export function formatAhdLabel(ahdM, { approximate = false } = {}) {
+  if (ahdM == null || !Number.isFinite(Number(ahdM))) return "RL —";
+  const suffix = approximate ? "~" : "";
+  return `RL ${Number(ahdM).toFixed(1)}${suffix}`;
+}

@@ -296,7 +296,7 @@ export default function FloorPlansModal({ onClose }) {
 
   return (
     <>
-      <ModalBackdrop onClose={onClose} zIndex={2000}>
+      <ModalBackdrop zIndex={2000}>
         <div
           style={modalCard({
             width: "min(920px, 94vw)",
@@ -474,7 +474,7 @@ export default function FloorPlansModal({ onClose }) {
       </ModalBackdrop>
 
       {showFormModal && (
-        <ModalBackdrop onClose={closeFormModal} zIndex={2100}>
+        <ModalBackdrop zIndex={2100}>
           <div style={modalCard({ width: "min(480px, 92vw)" })}>
             <h3 style={{ margin: "0 0 16px", color: MONUMENT, fontSize: "1.2rem" }}>
               {editingPlan ? "Edit Floor Plan" : "Add Floor Plan"}
@@ -560,10 +560,7 @@ export default function FloorPlansModal({ onClose }) {
       )}
 
       {showDeleteModal && selectedPlan && (
-        <ModalBackdrop
-          onClose={() => !deleting && setShowDeleteModal(false)}
-          zIndex={2100}
-        >
+        <ModalBackdrop zIndex={2100}>
           <div style={modalCard({ width: "min(440px, 92vw)" })}>
             <h3 style={{ margin: "0 0 12px", color: MONUMENT, fontSize: "1.2rem" }}>Delete Floor Plan</h3>
             <p style={{ margin: "0 0 20px", color: "#666", lineHeight: 1.5 }}>

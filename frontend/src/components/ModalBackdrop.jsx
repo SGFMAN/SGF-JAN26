@@ -12,8 +12,8 @@ const OVERLAY_STYLE = {
   touchAction: "none",
 };
 
-/** Full-screen modal backdrop — portals to body, blocks scroll and background clicks. */
-export default function ModalBackdrop({ onClose, zIndex = 2000, children, style = {} }) {
+/** Full-screen modal backdrop — portals to body, blocks scroll and background interaction. */
+export default function ModalBackdrop({ zIndex = 2000, children, style = {} }) {
   useModalBodyLock(true);
 
   return createPortal(
@@ -21,8 +21,6 @@ export default function ModalBackdrop({ onClose, zIndex = 2000, children, style 
       role="presentation"
       aria-hidden={false}
       style={{ ...OVERLAY_STYLE, zIndex, ...style }}
-      onClick={onClose}
-      onMouseDown={(event) => event.stopPropagation()}
     >
       {children}
     </div>,

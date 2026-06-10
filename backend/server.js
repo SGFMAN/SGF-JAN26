@@ -40,6 +40,11 @@ const {
   formatPropertyEasementsResponse,
 } = require("./mapsEasementsLookup");
 const {
+  lookupAhdElevations,
+  normalizeElevationState,
+  parsePointsInput,
+} = require("./mapsElevationLookup");
+const {
   parseFloorPlanFields,
   listFloorPlans,
   createFloorPlan,
@@ -2681,6 +2686,36 @@ async function handlePropertyEasementsRequest(req, res) {
 
 app.get("/api/property-easements", handlePropertyEasementsRequest);
 app.post("/api/property-easements", handlePropertyEasementsRequest);
+
+// --- Victorian AHD elevation at points (Vicmap Elevation FeatureServer) ---
+app.post("/api/maps/elevation-ahd", async (req, res) => {
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) {
+    return res.status(403).json({ ok: false, error: "Admin access required" });
+  }
+
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const parsedPoints = parsePointsInput(body.points);
+  if (parsedPoints.error) {
+    return res.status(400).json({ ok: false, error: parsedPoints.error });
+  }
+
+  const state = normalizeElevationState(body.state);
+  try {
+    const result = await lookupAhdElevations({ state, points: parsedPoints.points });
+    if (result.error) {
+      return res.status(result.status || 400).json({ ok: false, error: result.error, state });
+    }
+    return res.json({ ok: true, ...result });
+  } catch (e) {
+    console.error("[maps/elevation-ahd] lookup error:", e);
+    return res.status(502).json({
+      ok: false,
+      error: e.message || "Elevation service unavailable",
+      state,
+    });
+  }
+});
 
 // --- Maps floor plans (settings) ---
 app.get("/api/maps/floor-plans", async (req, res) => {

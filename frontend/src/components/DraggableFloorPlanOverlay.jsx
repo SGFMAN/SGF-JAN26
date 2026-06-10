@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import { useMap } from "react-leaflet";
+import FloorPlanCornerLevels from "./FloorPlanCornerLevels";
 import {
   boundsFromCenter,
   fetchFloorPlanImageBlob,
@@ -85,8 +86,10 @@ export default function DraggableFloorPlanOverlay({
   onCenterChange,
   movable = false,
   onToggleMovable,
+  lookupState = "VIC",
 }) {
   const map = useMap();
+  const [overlayBounds, setOverlayBounds] = useState(null);
   const overlayRef = useRef(null);
   const handleRef = useRef(null);
   const objectUrlRef = useRef(null);
@@ -103,12 +106,23 @@ export default function DraggableFloorPlanOverlay({
   movableRef.current = movable;
   initialCenterRef.current = initialCenter;
 
+  function syncOverlayBounds() {
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+    try {
+      setOverlayBounds(overlay.getBounds());
+    } catch (err) {
+      console.warn("[DraggableFloorPlanOverlay] sync bounds:", err);
+    }
+  }
+
   function syncHandlePosition() {
     const overlay = overlayRef.current;
     if (!overlay || !handleRef.current) return;
     try {
       const latlng = handleLatLngForBounds(map, overlay.getBounds());
       if (latlng) handleRef.current.setLatLng(latlng);
+      syncOverlayBounds();
     } catch (err) {
       console.warn("[DraggableFloorPlanOverlay] sync handle:", err);
     }
@@ -247,8 +261,15 @@ export default function DraggableFloorPlanOverlay({
         URL.revokeObjectURL(objectUrlRef.current);
         objectUrlRef.current = null;
       }
+      setOverlayBounds(null);
     };
   }, [plan?.id, plan?.scale?.metersPerPixel, plan?.name, map]);
 
-  return null;
+  return (
+    <FloorPlanCornerLevels
+      bounds={overlayBounds}
+      lookupState={lookupState}
+      enabled={Boolean(overlayBounds)}
+    />
+  );
 }
