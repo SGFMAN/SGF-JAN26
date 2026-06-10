@@ -88,11 +88,11 @@ export function sourcePointsToCropSpace(points) {
 }
 
 /**
- * Crop polygon region from source canvas and return JPEG blob plus crop-space corners.
+ * Crop polygon region from source canvas and return PNG blob with transparent exterior.
  * @param {HTMLCanvasElement} sourceCanvas
  * @param {{ x: number, y: number }[]} points source-space coordinates
  */
-export function cropPolygonToJpegBlob(sourceCanvas, points, quality = 0.92) {
+export function cropPolygonToPngBlob(sourceCanvas, points) {
   if (points.length < 3) {
     return Promise.reject(new Error("Draw at least 3 corners"));
   }
@@ -111,8 +111,7 @@ export function cropPolygonToJpegBlob(sourceCanvas, points, quality = 0.92) {
   const ctx = out.getContext("2d");
   if (!ctx) return Promise.reject(new Error("Could not create canvas"));
 
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, w, h);
+  ctx.clearRect(0, 0, w, h);
   ctx.save();
   ctx.beginPath();
   points.forEach((p, i) => {
@@ -139,11 +138,10 @@ export function cropPolygonToJpegBlob(sourceCanvas, points, quality = 0.92) {
   return new Promise((resolve, reject) => {
     out.toBlob(
       (blob) => {
-        if (!blob) reject(new Error("Failed to export JPEG"));
+        if (!blob) reject(new Error("Failed to export PNG"));
         else resolve({ blob, cropCorners });
       },
-      "image/jpeg",
-      quality
+      "image/png"
     );
   });
 }

@@ -38,10 +38,72 @@ export function offsetLatLngByPixels(map, latlng, dx, dy) {
 }
 
 /** Place handle just outside the north-east corner of bounds. */
-export function handleLatLngForBounds(map, bounds, pixelOffset = 14) {
+export function handleLatLngForBounds(map, bounds, pixelOffset = 8) {
   const ne = northEastFromBounds(bounds);
   if (!ne || !map) return ne;
   return offsetLatLngByPixels(map, ne, pixelOffset, -pixelOffset);
+}
+
+function isLatLngLike(value) {
+  return value instanceof L.LatLng || (value?.lat != null && value?.lng != null);
+}
+
+function isLatLngRing(latlngs) {
+  return Array.isArray(latlngs) && latlngs.length > 0 && isLatLngLike(latlngs[0]);
+}
+
+function collectVertices(latlngs, out) {
+  if (!Array.isArray(latlngs)) return;
+  if (isLatLngRing(latlngs)) {
+    for (const ll of latlngs) {
+      out.push(ll instanceof L.LatLng ? ll : L.latLng(ll.lat, ll.lng));
+    }
+    return;
+  }
+  for (const part of latlngs) {
+    collectVertices(part, out);
+  }
+}
+
+/** North-east corner of actual path geometry (not axis-aligned bbox). */
+export function northEastVertexFromLayerGroup(group) {
+  if (!group) return null;
+  const vertices = [];
+  group.eachLayer((layer) => {
+    if (layer instanceof L.Polygon || layer instanceof L.Polyline) {
+      collectVertices(layer.getLatLngs(), vertices);
+    }
+  });
+  if (vertices.length === 0) return null;
+
+  let best = vertices[0];
+  let bestScore = best.lat + best.lng;
+  for (let i = 1; i < vertices.length; i += 1) {
+    const vertex = vertices[i];
+    const score = vertex.lat + vertex.lng;
+    if (score > bestScore) {
+      bestScore = score;
+      best = vertex;
+    }
+  }
+  return best;
+}
+
+/** Place handle just outside the north-east vertex of path geometry. */
+export function handleLatLngForLayerGroup(map, group, pixelOffset = 8) {
+  const vertex = northEastVertexFromLayerGroup(group);
+  if (!vertex || !map) return null;
+  return offsetLatLngByPixels(map, vertex, pixelOffset, -pixelOffset);
+}
+
+export function deferMapToggle(callback) {
+  window.setTimeout(() => {
+    try {
+      callback?.();
+    } catch (err) {
+      console.warn("[mapMoveHandle] deferred toggle:", err);
+    }
+  }, 0);
 }
 
 export function createMoveHandleMarker(latlng, { color, filled, onToggle, title }) {
@@ -57,20 +119,21 @@ export function createMoveHandleMarker(latlng, { color, filled, onToggle, title 
     bubblingMouseEvents: false,
   });
 
-  const fireToggle = (event) => {
-    L.DomEvent.stopPropagation(event);
-    L.DomEvent.preventDefault(event);
-    onToggle?.();
-  };
-
-  marker.on("mousedown", fireToggle);
+  marker.on("mousedown", (event) => {
+    L.DomEvent.stop(event);
+    deferMapToggle(onToggle);
+  });
 
   return marker;
 }
 
 export function updateMoveHandleMarker(marker, { color, filled }) {
   if (!marker) return;
-  marker.setIcon(createMoveHandleIcon(color, filled));
+  try {
+    marker.setIcon(createMoveHandleIcon(color, filled));
+  } catch (err) {
+    console.warn("[mapMoveHandle] update handle:", err);
+  }
 }
 
 export function northEastFromBounds(bounds) {

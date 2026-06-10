@@ -152,10 +152,10 @@ function uploadExtension(mimetype, originalname) {
 async function saveUploadFile(file) {
   ensureUploadDir();
   const ext = uploadExtension(file.mimetype, file.originalname);
-  if (ext !== ".jpg") {
-    throw new Error("Floor plans must be saved as JPEG after cropping");
+  if (ext !== ".png") {
+    throw new Error("Floor plans must be saved as PNG after cropping");
   }
-  const filename = `${Date.now()}-${crypto.randomBytes(8).toString("hex")}.jpg`;
+  const filename = `${Date.now()}-${crypto.randomBytes(8).toString("hex")}.png`;
   await fs.writeFile(path.join(UPLOAD_DIR, filename), file.buffer);
   return filename;
 }

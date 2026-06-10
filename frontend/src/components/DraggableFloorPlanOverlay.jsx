@@ -22,6 +22,62 @@ function setOverlayInteraction(overlay, movable) {
   el.style.pointerEvents = movable ? "auto" : "none";
 }
 
+function disableNativeImageDrag(overlay) {
+  const el = overlay?.getElement?.();
+  if (!el) return;
+  el.draggable = false;
+  el.style.userSelect = "none";
+  el.style.webkitUserDrag = "none";
+  el.addEventListener("dragstart", (event) => {
+    L.DomEvent.preventDefault(event);
+  });
+}
+
+function startUnitDrag(map, overlay, movableRef, syncHandlePosition, onCenterChangeRef, startEvent) {
+  if (!movableRef.current || !startEvent.latlng) return;
+  L.DomEvent.stop(startEvent);
+  if (startEvent.originalEvent) {
+    L.DomEvent.preventDefault(startEvent.originalEvent);
+  }
+  map.dragging.disable();
+  map.getContainer().style.cursor = "grabbing";
+  setOverlayInteraction(overlay, true);
+
+  let last = startEvent.latlng;
+
+  const onMove = (ev) => {
+    if (ev.originalEvent) {
+      L.DomEvent.preventDefault(ev.originalEvent);
+    }
+    const dLat = ev.latlng.lat - last.lat;
+    const dLng = ev.latlng.lng - last.lng;
+    last = ev.latlng;
+    const current = overlay.getBounds();
+    const sw = current.getSouthWest();
+    const ne = current.getNorthEast();
+    overlay.setBounds([
+      [sw.lat + dLat, sw.lng + dLng],
+      [ne.lat + dLat, ne.lng + dLng],
+    ]);
+    syncHandlePosition();
+  };
+
+  const onUp = () => {
+    map.off("mousemove", onMove);
+    map.off("mouseup", onUp);
+    if (!movableRef.current) {
+      map.dragging.enable();
+    }
+    map.getContainer().style.cursor = "";
+    setOverlayInteraction(overlay, movableRef.current);
+    const c = overlay.getBounds().getCenter();
+    onCenterChangeRef.current?.({ lat: c.lat, lng: c.lng });
+  };
+
+  map.on("mousemove", onMove);
+  map.on("mouseup", onUp);
+}
+
 /** Scaled floor plan overlay with corner handle to toggle dragging. */
 export default function DraggableFloorPlanOverlay({
   plan,
@@ -40,6 +96,7 @@ export default function DraggableFloorPlanOverlay({
   const initialCenterRef = useRef(initialCenter);
   const dragHandlerRef = useRef(null);
   const unbindViewSyncRef = useRef(null);
+  const draggingRef = useRef(false);
 
   onCenterChangeRef.current = onCenterChange;
   onToggleRef.current = onToggleMovable;
@@ -57,49 +114,52 @@ export default function DraggableFloorPlanOverlay({
     }
   }
 
+  function applyMovableVisuals(filled) {
+    try {
+      updateMoveHandleMarker(handleRef.current, {
+        color: UNIT_HANDLE_COLOR,
+        filled,
+      });
+      setOverlayInteraction(overlayRef.current, filled);
+      if (filled && overlayRef.current) {
+        overlayRef.current.bringToFront?.();
+        const el = overlayRef.current.getElement?.();
+        if (el) el.style.zIndex = "900";
+      }
+      if (handleRef.current) {
+        handleRef.current.bringToFront?.();
+        handleRef.current.setTitle(
+          filled ? "Unit move enabled (click to lock)" : "Click to enable unit move"
+        );
+      }
+    } catch (err) {
+      console.warn("[DraggableFloorPlanOverlay] apply movable visuals:", err);
+    }
+  }
+
+  function handleToggleMovable() {
+    onToggleRef.current?.();
+  }
+
+  useEffect(() => {
+    movableRef.current = movable;
+    applyMovableVisuals(movable);
+  }, [movable]);
+
   function attachOverlayDrag(overlay) {
     if (dragHandlerRef.current) {
       overlay.off("mousedown", dragHandlerRef.current);
     }
 
     const beginDrag = (startEvent) => {
-      if (!movableRef.current) return;
-      L.DomEvent.stopPropagation(startEvent);
-      L.DomEvent.preventDefault(startEvent);
-      map.dragging.disable();
-      map.getContainer().style.cursor = "grabbing";
-      setOverlayInteraction(overlay, true);
-      const el = overlay.getElement?.();
-      if (el) el.style.cursor = "grabbing";
-
-      let last = startEvent.latlng;
-
-      const onMove = (ev) => {
-        const dLat = ev.latlng.lat - last.lat;
-        const dLng = ev.latlng.lng - last.lng;
-        last = ev.latlng;
-        const current = overlay.getBounds();
-        const sw = current.getSouthWest();
-        const ne = current.getNorthEast();
-        overlay.setBounds([
-          [sw.lat + dLat, sw.lng + dLng],
-          [ne.lat + dLat, ne.lng + dLng],
-        ]);
-        syncHandlePosition();
+      if (draggingRef.current) return;
+      draggingRef.current = true;
+      startUnitDrag(map, overlay, movableRef, syncHandlePosition, onCenterChangeRef, startEvent);
+      const onDragEnd = () => {
+        draggingRef.current = false;
+        map.off("mouseup", onDragEnd);
       };
-
-      const onUp = () => {
-        map.off("mousemove", onMove);
-        map.off("mouseup", onUp);
-        map.dragging.enable();
-        map.getContainer().style.cursor = "";
-        setOverlayInteraction(overlay, movableRef.current);
-        const c = overlay.getBounds().getCenter();
-        onCenterChangeRef.current?.({ lat: c.lat, lng: c.lng });
-      };
-
-      map.on("mousemove", onMove);
-      map.on("mouseup", onUp);
+      map.once("mouseup", onDragEnd);
     };
 
     overlay.on("mousedown", beginDrag);
@@ -140,21 +200,28 @@ export default function DraggableFloorPlanOverlay({
           color: UNIT_HANDLE_COLOR,
           filled: movableRef.current,
           title: movableRef.current ? "Unit move enabled (click to lock)" : "Click to enable unit move",
-          onToggle: () => onToggleRef.current?.(),
+          onToggle: handleToggleMovable,
         });
 
-        attachOverlayDrag(overlay);
-        setOverlayInteraction(overlay, movableRef.current);
-
         overlay.addTo(map);
+        disableNativeImageDrag(overlay);
+        overlay.on("load", () => disableNativeImageDrag(overlay));
         if (handle) handle.addTo(map);
+
+        attachOverlayDrag(overlay);
+        applyMovableVisuals(movableRef.current);
 
         overlayRef.current = overlay;
         handleRef.current = handle;
 
         unbindViewSyncRef.current?.();
         unbindViewSyncRef.current = bindDebouncedMapViewSync(map, syncHandlePosition);
-        onCenterChangeRef.current?.({ lat: startCenter.lat, lng: startCenter.lng });
+        if (initialCenterRef.current) {
+          onCenterChangeRef.current?.({
+            lat: startCenter.lat,
+            lng: startCenter.lng,
+          });
+        }
       } catch (err) {
         console.error("[DraggableFloorPlanOverlay]", err);
       }
@@ -182,19 +249,6 @@ export default function DraggableFloorPlanOverlay({
       }
     };
   }, [plan?.id, plan?.scale?.metersPerPixel, plan?.name, map]);
-
-  useEffect(() => {
-    updateMoveHandleMarker(handleRef.current, {
-      color: UNIT_HANDLE_COLOR,
-      filled: movable,
-    });
-    setOverlayInteraction(overlayRef.current, movable);
-    if (handleRef.current) {
-      handleRef.current.setTitle(
-        movable ? "Unit move enabled (click to lock)" : "Click to enable unit move"
-      );
-    }
-  }, [movable]);
 
   return null;
 }

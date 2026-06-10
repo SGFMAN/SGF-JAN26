@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  cropPolygonToJpegBlob,
+  cropPolygonToPngBlob,
   fitScale,
   loadFloorPlanSourceCanvas,
 } from "../utils/floorPlanCrop";
@@ -281,7 +281,7 @@ export default function FloorPlanCropModal({ file, onConfirm, onCancel }) {
 
     setExporting(true);
     try {
-      const { blob, cropCorners } = await cropPolygonToJpegBlob(source, points);
+      const { blob, cropCorners } = await cropPolygonToPngBlob(source, points);
       onConfirm({ blob, cropCorners });
     } catch (err) {
       alert(err.message || "Failed to crop floor plan");

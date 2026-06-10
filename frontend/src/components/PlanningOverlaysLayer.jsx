@@ -1,4 +1,6 @@
-import { GeoJSON } from "react-leaflet";
+import { useEffect, useRef } from "react";
+import L from "leaflet";
+import { useMap } from "react-leaflet";
 
 export const PLANNING_VISIBILITY_ZONE = "zone";
 
@@ -75,48 +77,103 @@ function bindPlanningTooltip(layer, code, description) {
   }
 }
 
+function featureCollection(data) {
+  if (!data || !Array.isArray(data.features) || data.features.length === 0) return null;
+  return { type: "FeatureCollection", features: data.features };
+}
+
+/** Planning zone/overlays rendered imperatively — avoids react-leaflet GeoJSON render crashes. */
 export default function PlanningOverlaysLayer({
   zoneGeoJson,
   overlayGeoJson,
   layerVisibility = {},
 }) {
-  const showZone =
-    layerVisibility[PLANNING_VISIBILITY_ZONE] === true && zoneGeoJson?.features?.length > 0;
+  const map = useMap();
+  const zoneLayerRef = useRef(null);
+  const overlayLayerRef = useRef(null);
 
-  const visibleOverlayFeatures = (overlayGeoJson?.features || []).filter((feature) => {
-    const code = feature?.properties?.overlay_code;
-    const key = String(code || feature?.properties?.overlay_description || "").trim();
-    return key && layerVisibility[key] === true;
-  });
+  useEffect(() => {
+    let cancelled = false;
 
-  if (!showZone && visibleOverlayFeatures.length === 0) return null;
+    const frameId = requestAnimationFrame(() => {
+      if (cancelled) return;
 
-  return (
-    <>
-      {showZone && (
-        <GeoJSON
-          key="planning-zone"
-          data={zoneGeoJson}
-          style={ZONE_STYLE}
-          onEachFeature={(feature, layer) => {
-            const code = feature?.properties?.zone_code;
-            const desc = feature?.properties?.zone_description;
-            bindPlanningTooltip(layer, code, desc);
-          }}
-        />
-      )}
-      {visibleOverlayFeatures.length > 0 && (
-        <GeoJSON
-          key={`planning-overlays-${visibleOverlayFeatures.length}-${visibleOverlayFeatures.map((f) => f.properties?.overlay_code).join(",")}`}
-          data={{ type: "FeatureCollection", features: visibleOverlayFeatures }}
-          style={styleForOverlayFeature}
-          onEachFeature={(feature, layer) => {
-            const code = feature?.properties?.overlay_code;
-            const desc = feature?.properties?.overlay_description;
-            bindPlanningTooltip(layer, code, desc);
-          }}
-        />
-      )}
-    </>
-  );
+      if (zoneLayerRef.current) {
+        map.removeLayer(zoneLayerRef.current);
+        zoneLayerRef.current = null;
+      }
+      if (overlayLayerRef.current) {
+        map.removeLayer(overlayLayerRef.current);
+        overlayLayerRef.current = null;
+      }
+
+      const showZone =
+        layerVisibility[PLANNING_VISIBILITY_ZONE] === true &&
+        Array.isArray(zoneGeoJson?.features) &&
+        zoneGeoJson.features.length > 0;
+
+      if (showZone) {
+        try {
+          const zoneData = featureCollection(zoneGeoJson);
+          if (zoneData) {
+            const layer = L.geoJSON(zoneData, {
+              style: ZONE_STYLE,
+              onEachFeature: (feature, path) => {
+                const code = feature?.properties?.zone_code;
+                const desc = feature?.properties?.zone_description;
+                bindPlanningTooltip(path, code, desc);
+              },
+            });
+            layer.addTo(map);
+            zoneLayerRef.current = layer;
+          }
+        } catch (err) {
+          console.error("[PlanningOverlaysLayer] zone render failed:", err);
+        }
+      }
+
+      const overlayFeatures = (Array.isArray(overlayGeoJson?.features) ? overlayGeoJson.features : []).filter(
+        (feature) => {
+          const code = feature?.properties?.overlay_code;
+          const key = String(code || feature?.properties?.overlay_description || "").trim();
+          return key && layerVisibility[key] === true;
+        }
+      );
+
+      if (overlayFeatures.length > 0) {
+        try {
+          const layer = L.geoJSON(
+            { type: "FeatureCollection", features: overlayFeatures },
+            {
+              style: styleForOverlayFeature,
+              onEachFeature: (feature, path) => {
+                const code = feature?.properties?.overlay_code;
+                const desc = feature?.properties?.overlay_description;
+                bindPlanningTooltip(path, code, desc);
+              },
+            }
+          );
+          layer.addTo(map);
+          overlayLayerRef.current = layer;
+        } catch (err) {
+          console.error("[PlanningOverlaysLayer] overlay render failed:", err);
+        }
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameId);
+      if (zoneLayerRef.current) {
+        map.removeLayer(zoneLayerRef.current);
+        zoneLayerRef.current = null;
+      }
+      if (overlayLayerRef.current) {
+        map.removeLayer(overlayLayerRef.current);
+        overlayLayerRef.current = null;
+      }
+    };
+  }, [zoneGeoJson, overlayGeoJson, layerVisibility, map]);
+
+  return null;
 }

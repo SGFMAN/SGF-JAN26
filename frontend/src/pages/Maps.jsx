@@ -105,28 +105,54 @@ function MapFlyTo({ position, zoom, enabled, flyKey }) {
   return null;
 }
 
+/** Disable map pan while boundary or unit move mode is active. */
+function MapPanLock({ locked }) {
+  const map = useMap();
+  useEffect(() => {
+    if (locked) {
+      map.dragging.disable();
+    } else {
+      map.dragging.enable();
+    }
+  }, [locked, map]);
+  return null;
+}
+
 function MapFitBounds({ bounds, fitKey }) {
   const map = useMap();
   const lastFitRef = useRef(null);
-  const boundsKey = bounds ? JSON.stringify(bounds) : null;
+  const boundsKey =
+    bounds?.length === 2 && bounds[0]?.length === 2 && bounds[1]?.length === 2
+      ? `${bounds[0][0]},${bounds[0][1]},${bounds[1][0]},${bounds[1][1]}`
+      : null;
 
   useEffect(() => {
     if (!bounds || !boundsKey) {
       if (!boundsKey) lastFitRef.current = null;
-      return;
+      return undefined;
     }
     const token = `${fitKey || ""}:${boundsKey}`;
-    if (lastFitRef.current === token) return;
+    if (lastFitRef.current === token) return undefined;
     lastFitRef.current = token;
-    try {
-      map.fitBounds(bounds, {
-        padding: [22, 22],
-        animate: false,
-        maxZoom: MAP_MAX_ZOOM,
-      });
-    } catch {
-      // ignore fit errors
-    }
+
+    let cancelled = false;
+    const frameId = requestAnimationFrame(() => {
+      if (cancelled) return;
+      try {
+        map.fitBounds(bounds, {
+          padding: [22, 22],
+          animate: false,
+          maxZoom: MAP_MAX_ZOOM,
+        });
+      } catch {
+        // ignore fit errors
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameId);
+    };
   }, [boundsKey, fitKey, map, bounds]);
 
   return null;
@@ -281,17 +307,16 @@ export default function Maps() {
     setPlacedUnit((prev) => (prev ? { ...prev, center } : null));
   }
 
-  function handleRemoveUnit() {
-    setPlacedUnit(null);
-    setMovableTarget(parcelFeature ? "boundary" : null);
+  function setMovableTargetExclusive(target) {
+    setMovableTarget((prev) => (prev === target ? null : target));
   }
 
   function toggleBoundaryMovable() {
-    setMovableTarget((prev) => (prev === "boundary" ? null : "boundary"));
+    setMovableTargetExclusive("boundary");
   }
 
   function toggleUnitMovable() {
-    setMovableTarget((prev) => (prev === "unit" ? null : "unit"));
+    setMovableTargetExclusive("unit");
   }
 
   useEffect(() => {
@@ -651,9 +676,14 @@ export default function Maps() {
 
   useEffect(() => {
     const searchQuery = location.state?.searchQuery;
-    if (!searchQuery) return;
+    if (!searchQuery) return undefined;
+    const q = String(searchQuery);
+    setQuery(q);
     navigate("/maps", { replace: true, state: {} });
-    void runSearch(String(searchQuery));
+    const id = window.setTimeout(() => {
+      void runSearch(q);
+    }, 0);
+    return () => window.clearTimeout(id);
   }, [location.state?.searchQuery, navigate, runSearch]);
 
   const onParcelFeatureChange = useCallback(
@@ -1125,6 +1155,7 @@ export default function Maps() {
               zoomControl
             >
               <MapBasemapTileLayer basemapId={resolvedBasemapId} />
+              <MapPanLock locked={movableTarget != null} />
               {parcelFeature && (
                 <DraggableParcelBoundary
                   key={activeSearchQuery || "boundary"}
@@ -1141,10 +1172,11 @@ export default function Maps() {
                   layerVisibility={planningLayerVisibility}
                 />
               )}
-              {easementsGeoJson?.features?.length > 0 && (
+              {easementsGeoJson && (
                 <EasementsLayer
                   key={activeSearchQuery || "easements"}
                   easementsGeoJson={easementsGeoJson}
+                  blockPointerEvents={movableTarget === "unit"}
                 />
               )}
               {isAdmin && placedUnit && onMapView && (
@@ -1182,45 +1214,6 @@ export default function Maps() {
                 fitKey={activeSearchQuery || (bulkBounds ? "bulk" : "")}
               />
             </MapContainer>
-            {isAdmin && placedUnit && onMapView && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "12px",
-                  right: "12px",
-                  zIndex: 1000,
-                  background: "rgba(255,255,255,0.95)",
-                  border: `1px solid ${EXPLORER_BORDER}`,
-                  borderRadius: "10px",
-                  padding: "10px 12px",
-                  fontSize: "0.85rem",
-                  color: MONUMENT,
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
-                  maxWidth: "220px",
-                }}
-              >
-                <div style={{ fontWeight: 700, marginBottom: "4px" }}>{placedUnit.plan.name}</div>
-                <div style={{ color: "#666", marginBottom: "8px", lineHeight: 1.4 }}>
-                  Click the blue corner square to enable dragging (filled = move enabled). Yellow square
-                  controls the title boundary — only one can move at a time.
-                </div>
-                <button
-                  type="button"
-                  onClick={handleRemoveUnit}
-                  style={{
-                    background: WHITE,
-                    border: `1px solid ${EXPLORER_BORDER}`,
-                    borderRadius: "6px",
-                    padding: "6px 10px",
-                    cursor: "pointer",
-                    fontSize: "0.82rem",
-                    color: MONUMENT,
-                  }}
-                >
-                  Remove unit
-                </button>
-              </div>
-            )}
           </div>
 
           {bulkProgress.total > 0 && bulkSelection != null && (
@@ -1234,13 +1227,6 @@ export default function Maps() {
             </div>
           )}
 
-          <p style={{ margin: 0, fontSize: "0.8rem", color: "#555", lineHeight: 1.45 }}>
-            Imagery: Vicmap Aerial (default for VIC), Esri World Imagery, or Nearmap when configured.
-            Address search: OpenStreetMap Nominatim (please use sparingly). VIC title boundaries: Vicmap
-            cadastral parcels matched to the blue search pin (contains-point first; nearest-edge fallback
-            marked approximate). Planning: Vicmap zone (green) and overlays (purple / light blue) — toggle each layer in the planning panel.
-            Easements: Vicmap Property (red lines) shown automatically on the map. Default view: greater Melbourne, Victoria.
-          </p>
         </div>
       </div>
 

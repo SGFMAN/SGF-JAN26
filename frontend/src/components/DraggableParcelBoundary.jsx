@@ -5,7 +5,7 @@ import {
   BOUNDARY_HANDLE_COLOR,
   bindDebouncedMapViewSync,
   createMoveHandleMarker,
-  handleLatLngForBounds,
+  handleLatLngForLayerGroup,
   updateMoveHandleMarker,
 } from "../utils/mapMoveHandle";
 import { PARCEL_BOUNDARY_STYLE } from "../utils/parcelBoundaryStyle";
@@ -43,19 +43,6 @@ function translateLayerGroup(group, dLat, dLng) {
   forEachPathLayer(group, (layer) => {
     layer.setLatLngs(translateLatLngs(layer.getLatLngs(), dLat, dLng));
   });
-}
-
-function boundsFromLayerGroup(group) {
-  if (!group) return null;
-  try {
-    const bounds = L.latLngBounds([]);
-    forEachPathLayer(group, (layer) => {
-      bounds.extend(layer.getBounds());
-    });
-    return bounds.isValid() ? bounds : null;
-  } catch {
-    return null;
-  }
 }
 
 function ringToCoordinates(ring) {
@@ -102,6 +89,13 @@ function setBoundaryCursor(group, cursor) {
   });
 }
 
+function setBoundaryPointerEvents(group, enabled) {
+  forEachPathLayer(group, (layer) => {
+    const el = layer.getElement?.();
+    if (el) el.style.pointerEvents = enabled ? "auto" : "none";
+  });
+}
+
 /** Title boundary with corner handle to toggle dragging. */
 export default function DraggableParcelBoundary({
   feature,
@@ -117,136 +111,161 @@ export default function DraggableParcelBoundary({
   const onToggleRef = useRef(onToggleMovable);
   const onFeatureChangeRef = useRef(onFeatureChange);
   const dragHandlersRef = useRef(new Map());
-  const geometryKeyRef = useRef(null);
 
   featureRef.current = feature;
-  movableRef.current = movable;
   onToggleRef.current = onToggleMovable;
   onFeatureChangeRef.current = onFeatureChange;
 
-  const geometryKey = feature?.geometry ? JSON.stringify(feature.geometry) : null;
+  function applyMovableVisuals(filled) {
+    try {
+      updateMoveHandleMarker(handleRef.current, {
+        color: BOUNDARY_HANDLE_COLOR,
+        filled,
+      });
+      setBoundaryCursor(boundaryRef.current, filled ? "grab" : "");
+      setBoundaryPointerEvents(boundaryRef.current, filled);
+      if (filled) {
+        boundaryRef.current?.bringToFront?.();
+        handleRef.current?.bringToFront?.();
+      }
+      if (handleRef.current) {
+        handleRef.current.setTitle(
+          filled ? "Boundary move enabled (click to lock)" : "Click to enable boundary move"
+        );
+      }
+    } catch (err) {
+      console.warn("[DraggableParcelBoundary] apply movable visuals:", err);
+    }
+  }
+
+  function handleToggleMovable() {
+    onToggleRef.current?.();
+  }
+
+  useEffect(() => {
+    movableRef.current = movable;
+    applyMovableVisuals(movable);
+  }, [movable]);
 
   useEffect(() => {
     if (!feature?.geometry) return undefined;
 
+    const mapInstance = map;
     let handle = null;
     let boundaryGroup = null;
     let unbindViewSync = null;
+    let cancelled = false;
 
-    try {
-      boundaryGroup = L.layerGroup();
-      L.geoJSON(feature, {
-        style: PARCEL_BOUNDARY_STYLE,
-        interactive: true,
-      }).eachLayer((layer) => boundaryGroup.addLayer(layer));
+    const setup = () => {
+      if (cancelled) return;
+      const currentFeature = featureRef.current;
+      if (!currentFeature?.geometry) return;
+      try {
+        boundaryGroup = L.layerGroup();
+        L.geoJSON(currentFeature, {
+          style: PARCEL_BOUNDARY_STYLE,
+          interactive: true,
+        }).eachLayer((layer) => boundaryGroup.addLayer(layer));
 
-      boundaryGroup.addTo(map);
-      boundaryGroup.bringToFront?.();
-      boundaryRef.current = boundaryGroup;
-      geometryKeyRef.current = geometryKey;
+        boundaryGroup.addTo(mapInstance);
+        boundaryGroup.bringToFront?.();
+        boundaryRef.current = boundaryGroup;
 
-      const syncHandlePosition = () => {
-        if (!boundaryRef.current || !handleRef.current) return;
-        try {
-          const nextBounds = boundsFromLayerGroup(boundaryRef.current);
-          if (!nextBounds) return;
-          const latlng = handleLatLngForBounds(map, nextBounds);
-          if (latlng) handleRef.current.setLatLng(latlng);
-        } catch (err) {
-          console.warn("[DraggableParcelBoundary] sync handle:", err);
+        const syncHandlePosition = () => {
+          if (!boundaryRef.current || !handleRef.current) return;
+          try {
+            const latlng = handleLatLngForLayerGroup(mapInstance, boundaryRef.current);
+            if (latlng) handleRef.current.setLatLng(latlng);
+          } catch (err) {
+            console.warn("[DraggableParcelBoundary] sync handle:", err);
+          }
+        };
+
+        handle = createMoveHandleMarker(
+          boundaryGroup
+            ? handleLatLngForLayerGroup(mapInstance, boundaryGroup)
+            : mapInstance.getCenter(),
+          {
+            color: BOUNDARY_HANDLE_COLOR,
+            filled: movableRef.current,
+            title: movableRef.current
+              ? "Boundary move enabled (click to lock)"
+              : "Click to enable boundary move",
+            onToggle: handleToggleMovable,
+          }
+        );
+        if (handle) {
+          handle.addTo(mapInstance);
+          handleRef.current = handle;
         }
-      };
 
-      const bounds = boundsFromLayerGroup(boundaryGroup);
-      handle = createMoveHandleMarker(
-        bounds ? handleLatLngForBounds(map, bounds) : map.getCenter(),
-        {
-          color: BOUNDARY_HANDLE_COLOR,
-          filled: movableRef.current,
-          title: movableRef.current
-            ? "Boundary move enabled (click to lock)"
-            : "Click to enable boundary move",
-          onToggle: () => onToggleRef.current?.(),
-        }
-      );
-      if (handle) {
-        handle.addTo(map);
-        handleRef.current = handle;
+        const beginDrag = (startEvent) => {
+          if (!movableRef.current) return;
+          L.DomEvent.stop(startEvent);
+          mapInstance.dragging.disable();
+          mapInstance.getContainer().style.cursor = "grabbing";
+          setBoundaryCursor(boundaryGroup, "grabbing");
+
+          let last = startEvent.latlng;
+
+          const onMove = (ev) => {
+            const dLat = ev.latlng.lat - last.lat;
+            const dLng = ev.latlng.lng - last.lng;
+            last = ev.latlng;
+            translateLayerGroup(boundaryGroup, dLat, dLng);
+            syncHandlePosition();
+          };
+
+          const onUp = () => {
+            mapInstance.off("mousemove", onMove);
+            mapInstance.off("mouseup", onUp);
+            if (!movableRef.current) {
+              mapInstance.dragging.enable();
+            }
+            mapInstance.getContainer().style.cursor = "";
+            setBoundaryCursor(boundaryGroup, movableRef.current ? "grab" : "");
+
+            const geometry = geometryFromLayerGroup(boundaryGroup);
+            if (!geometry) return;
+            onFeatureChangeRef.current?.({
+              ...featureRef.current,
+              geometry,
+            });
+          };
+
+          mapInstance.on("mousemove", onMove);
+          mapInstance.on("mouseup", onUp);
+        };
+
+        dragHandlersRef.current.clear();
+        forEachPathLayer(boundaryGroup, (layer) => {
+          layer.on("mousedown", beginDrag);
+          dragHandlersRef.current.set(layer, beginDrag);
+        });
+        setBoundaryCursor(boundaryGroup, movableRef.current ? "grab" : "");
+        setBoundaryPointerEvents(boundaryGroup, movableRef.current);
+        unbindViewSync = bindDebouncedMapViewSync(mapInstance, syncHandlePosition);
+      } catch (err) {
+        console.error("[DraggableParcelBoundary] setup failed:", err);
       }
+    };
 
-      const beginDrag = (startEvent) => {
-        if (!movableRef.current) return;
-        L.DomEvent.stopPropagation(startEvent);
-        L.DomEvent.preventDefault(startEvent);
-        map.dragging.disable();
-        map.getContainer().style.cursor = "grabbing";
-        setBoundaryCursor(boundaryGroup, "grabbing");
-
-        let last = startEvent.latlng;
-
-        const onMove = (ev) => {
-          const dLat = ev.latlng.lat - last.lat;
-          const dLng = ev.latlng.lng - last.lng;
-          last = ev.latlng;
-          translateLayerGroup(boundaryGroup, dLat, dLng);
-          syncHandlePosition();
-        };
-
-        const onUp = () => {
-          map.off("mousemove", onMove);
-          map.off("mouseup", onUp);
-          map.dragging.enable();
-          map.getContainer().style.cursor = "";
-          setBoundaryCursor(boundaryGroup, movableRef.current ? "grab" : "");
-
-          const geometry = geometryFromLayerGroup(boundaryGroup);
-          if (!geometry) return;
-          onFeatureChangeRef.current?.({
-            ...featureRef.current,
-            geometry,
-          });
-        };
-
-        map.on("mousemove", onMove);
-        map.on("mouseup", onUp);
-      };
-
-      dragHandlersRef.current.clear();
-      forEachPathLayer(boundaryGroup, (layer) => {
-        layer.on("mousedown", beginDrag);
-        dragHandlersRef.current.set(layer, beginDrag);
-      });
-      setBoundaryCursor(boundaryGroup, movableRef.current ? "grab" : "");
-      unbindViewSync = bindDebouncedMapViewSync(map, syncHandlePosition);
-    } catch (err) {
-      console.error("[DraggableParcelBoundary] setup failed:", err);
-    }
+    const frameId = requestAnimationFrame(setup);
 
     return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameId);
       unbindViewSync?.();
       dragHandlersRef.current.forEach((handler, layer) => {
         layer.off("mousedown", handler);
       });
       dragHandlersRef.current.clear();
-      if (handle) map.removeLayer(handle);
-      if (boundaryGroup) map.removeLayer(boundaryGroup);
+      if (handle) mapInstance.removeLayer(handle);
+      if (boundaryGroup) mapInstance.removeLayer(boundaryGroup);
       handleRef.current = null;
       boundaryRef.current = null;
     };
-  }, [geometryKey, feature, map]);
-
-  useEffect(() => {
-    updateMoveHandleMarker(handleRef.current, {
-      color: BOUNDARY_HANDLE_COLOR,
-      filled: movable,
-    });
-    setBoundaryCursor(boundaryRef.current, movable ? "grab" : "");
-    if (handleRef.current) {
-      handleRef.current.setTitle(
-        movable ? "Boundary move enabled (click to lock)" : "Click to enable boundary move"
-      );
-    }
-  }, [movable]);
+  }, [map]);
 
   return null;
 }

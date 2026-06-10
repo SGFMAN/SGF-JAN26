@@ -273,7 +273,7 @@ export default function FloorPlansModal({ onClose }) {
   async function handleScaleConfirm(scale) {
     if (!scaleSession) return;
     const safeName = form.name.trim().replace(/[^\w\s-]+/g, "").replace(/\s+/g, "-") || "floor-plan";
-    const imageFile = new File([scaleSession.blob], `${safeName}.jpg`, { type: "image/jpeg" });
+    const imageFile = new File([scaleSession.blob], `${safeName}.png`, { type: "image/png" });
     setSaving(true);
     try {
       await uploadFloorPlan(imageFile, scale);
