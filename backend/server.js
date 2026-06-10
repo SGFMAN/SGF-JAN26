@@ -393,20 +393,25 @@ const APP_MODE_CACHE_TTL = 30000; // 30 seconds — reduces DB reads on every AP
 
 // Helper function to check if request is from admin
 async function isAdminRequest(req) {
-  if (!pool) return false;
   try {
-    // Allow localhost requests in development mode (bypass admin check)
     const host = req.headers.host || req.headers["host"] || "";
     const origin = req.headers.origin || req.headers["origin"] || "";
-    const isLocalhost = host.includes("localhost") || host.includes("127.0.0.1") || 
-                        origin.includes("localhost:5173") || origin.includes("127.0.0.1:5173");
-    
+    const isLocalhost =
+      host.includes("localhost") ||
+      host.includes("127.0.0.1") ||
+      origin.includes("localhost:5173") ||
+      origin.includes("127.0.0.1:5173") ||
+      /^https?:\/\/(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(origin);
+
     if (isLocalhost) {
-      console.log("Localhost request detected - granting admin access for dev mode");
       return true;
     }
-    
-    // Headers in Express are case-insensitive, but normalize to lowercase
+  } catch {
+    // fall through to DB admin check
+  }
+
+  if (!pool) return false;
+  try {
     const userId = req.headers["x-user-id"] || req.headers["X-User-Id"];
     const passwordType = req.headers["x-password-type"] || req.headers["X-Password-Type"];
     

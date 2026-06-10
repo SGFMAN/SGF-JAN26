@@ -244,6 +244,25 @@ async function lookupPointAhd(lat, lng) {
   return null;
 }
 
+async function mapWithConcurrency(items, concurrency, mapper) {
+  if (!items.length) return [];
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker())
+  );
+  return results;
+}
+
 async function lookupAhdElevations({ state, points }) {
   const normalizedState = normalizeElevationState(state);
   if (normalizedState !== "VIC") {
@@ -253,31 +272,29 @@ async function lookupAhdElevations({ state, points }) {
     };
   }
 
-  const results = await Promise.all(
-    points.map(async (point) => {
-      try {
-        const hit = await lookupPointAhd(point.lat, point.lng);
-        return {
-          id: point.id,
-          lat: point.lat,
-          lng: point.lng,
-          ahdM: hit?.ahdM ?? null,
-          approximate: hit?.approximate ?? false,
-          source: hit?.source ?? null,
-        };
-      } catch (err) {
-        return {
-          id: point.id,
-          lat: point.lat,
-          lng: point.lng,
-          ahdM: null,
-          approximate: false,
-          source: null,
-          error: err.message || String(err),
-        };
-      }
-    })
-  );
+  const results = await mapWithConcurrency(points, 4, async (point) => {
+    try {
+      const hit = await lookupPointAhd(point.lat, point.lng);
+      return {
+        id: point.id,
+        lat: point.lat,
+        lng: point.lng,
+        ahdM: hit?.ahdM ?? null,
+        approximate: hit?.approximate ?? false,
+        source: hit?.source ?? null,
+      };
+    } catch (err) {
+      return {
+        id: point.id,
+        lat: point.lat,
+        lng: point.lng,
+        ahdM: null,
+        approximate: false,
+        source: null,
+        error: err.message || String(err),
+      };
+    }
+  });
 
   return {
     state: normalizedState,
