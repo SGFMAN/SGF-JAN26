@@ -101,6 +101,7 @@ export default function DraggableFloorPlanOverlay({
   const dragHandlerRef = useRef(null);
   const unbindViewSyncRef = useRef(null);
   const draggingRef = useRef(false);
+  const lastBoundsKeyRef = useRef("");
 
   onCenterChangeRef.current = onCenterChange;
   onToggleRef.current = onToggleMovable;
@@ -111,7 +112,13 @@ export default function DraggableFloorPlanOverlay({
     const overlay = overlayRef.current;
     if (!overlay) return;
     try {
-      setOverlayBounds(overlay.getBounds());
+      const bounds = overlay.getBounds();
+      const sw = bounds.getSouthWest();
+      const ne = bounds.getNorthEast();
+      const key = `${sw.lat.toFixed(6)},${sw.lng.toFixed(6)},${ne.lat.toFixed(6)},${ne.lng.toFixed(6)}`;
+      if (key === lastBoundsKeyRef.current) return;
+      lastBoundsKeyRef.current = key;
+      setOverlayBounds(bounds);
     } catch (err) {
       console.warn("[DraggableFloorPlanOverlay] sync bounds:", err);
     }
@@ -228,6 +235,8 @@ export default function DraggableFloorPlanOverlay({
 
         overlayRef.current = overlay;
         handleRef.current = handle;
+        lastBoundsKeyRef.current = "";
+        syncHandlePosition();
 
         unbindViewSyncRef.current?.();
         unbindViewSyncRef.current = bindDebouncedMapViewSync(map, syncHandlePosition);
@@ -262,6 +271,7 @@ export default function DraggableFloorPlanOverlay({
         URL.revokeObjectURL(objectUrlRef.current);
         objectUrlRef.current = null;
       }
+      lastBoundsKeyRef.current = "";
       setOverlayBounds(null);
     };
   }, [plan?.id, plan?.scale?.metersPerPixel, plan?.name, map]);

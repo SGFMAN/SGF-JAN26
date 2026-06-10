@@ -16,6 +16,8 @@ const CORNER_ANCHORS = {
   nw: { x: 0, y: 0 },
 };
 
+const FETCH_DEBOUNCE_MS = 450;
+
 function boundsKey(bounds) {
   if (!bounds) return "";
   const sw = bounds.getSouthWest();
@@ -74,6 +76,13 @@ function setCornerMarkerText(marker, text) {
   );
 }
 
+function syncMarkerPositions(markers, unitPoints) {
+  unitPoints.forEach((point, index) => {
+    const marker = markers[index];
+    if (marker) marker.setLatLng([point.lat, point.lng]);
+  });
+}
+
 /** Fall labels at floor plan corners — 0 at site high point, 0.25 m steps below. */
 export default function FloorPlanCornerLevels({
   bounds,
@@ -89,6 +98,16 @@ export default function FloorPlanCornerLevels({
   siteGeometryRef.current = siteGeometry;
 
   useEffect(() => {
+    return () => {
+      if (layerRef.current) {
+        map.removeLayer(layerRef.current);
+        layerRef.current = null;
+      }
+      markersRef.current = [];
+    };
+  }, [map]);
+
+  useEffect(() => {
     if (!enabled || !bounds || lookupState !== "VIC") {
       if (layerRef.current) {
         map.removeLayer(layerRef.current);
@@ -101,79 +120,79 @@ export default function FloorPlanCornerLevels({
     const unitPoints = floorPlanCornerPoints(bounds);
     if (unitPoints.length === 0) return undefined;
 
-    if (layerRef.current) {
-      map.removeLayer(layerRef.current);
+    if (!layerRef.current) {
+      const group = L.layerGroup();
+      markersRef.current = unitPoints.map((point) => createCornerMarker(point));
+      for (const marker of markersRef.current) {
+        group.addLayer(marker);
+      }
+      group.addTo(map);
+      group.bringToFront?.();
+      layerRef.current = group;
+    } else {
+      syncMarkerPositions(markersRef.current, unitPoints);
+      layerRef.current.bringToFront?.();
     }
-    const group = L.layerGroup();
-    markersRef.current = unitPoints.map((point) => createCornerMarker(point));
-    for (const marker of markersRef.current) {
-      group.addLayer(marker);
-    }
-    group.addTo(map);
-    group.bringToFront?.();
-    layerRef.current = group;
 
-    let cancelled = false;
-    const requestId = requestIdRef.current + 1;
-    requestIdRef.current = requestId;
+    const debounceTimer = window.setTimeout(() => {
+      const requestId = requestIdRef.current + 1;
+      requestIdRef.current = requestId;
+      const markers = markersRef.current;
+      markers.forEach((marker) => setCornerMarkerText(marker, "…"));
 
-    (async () => {
-      try {
-        const sitePoints = sampleSiteElevationPoints(siteGeometryRef.current, 8);
-        const allPoints = [...sitePoints, ...unitPoints];
-        const rows = await fetchAhdElevationsBatched(allPoints, lookupState, 16);
+      (async () => {
+        try {
+          const sitePoints = sampleSiteElevationPoints(siteGeometryRef.current, 8);
+          const allPoints = [...sitePoints, ...unitPoints];
+          const rows = await fetchAhdElevationsBatched(allPoints, lookupState, 16);
 
-        if (cancelled || requestIdRef.current !== requestId) return;
+          if (requestIdRef.current !== requestId) return;
 
-        const siteIds = new Set(sitePoints.map((p) => p.id));
-        const siteRows = rows.filter((row) => siteIds.has(row.id));
-        const unitRows = rows.filter((row) => !siteIds.has(row.id));
+          const siteIds = new Set(sitePoints.map((p) => p.id));
+          const siteRows = rows.filter((row) => siteIds.has(row.id));
+          const unitRows = rows.filter((row) => !siteIds.has(row.id));
 
-        let siteMax = siteHighPointAhd(siteRows);
-        if (siteMax == null) {
-          siteMax = siteHighPointAhd(unitRows);
-        }
-
-        const unitById = new Map(unitRows.map((row) => [row.id, row]));
-
-        markersRef.current.forEach((marker, index) => {
-          const point = unitPoints[index];
-          const row = unitById.get(point.id);
-          const ahdM = Number(row?.ahdM);
-
-          if (siteMax == null || !Number.isFinite(ahdM)) {
-            setCornerMarkerText(marker, "—");
-            marker.setTitle("Level unavailable");
-            return;
+          let siteMax = siteHighPointAhd(siteRows);
+          if (siteMax == null) {
+            siteMax = siteHighPointAhd(unitRows);
           }
 
-          const fallM = siteMax - ahdM;
-          const label = formatFallLabel(fallM);
-          setCornerMarkerText(marker, label);
-          marker.setTitle(
-            `Fall ${label} m from site high point` +
-              ` (site ${siteMax.toFixed(2)} m AHD, corner ${ahdM.toFixed(2)} m AHD` +
-              `${row.approximate ? ", approximate" : ""})`
-          );
-        });
-        layerRef.current?.bringToFront?.();
-      } catch (err) {
-        if (cancelled || requestIdRef.current !== requestId) return;
-        console.warn("[FloorPlanCornerLevels]", err);
-        markersRef.current.forEach((marker) => {
-          setCornerMarkerText(marker, "—");
-          marker.setTitle(err.message || "Could not load site levels");
-        });
-      }
-    })();
+          const unitById = new Map(unitRows.map((row) => [row.id, row]));
+
+          markers.forEach((marker, index) => {
+            const point = unitPoints[index];
+            const row = unitById.get(point.id);
+            const ahdM = Number(row?.ahdM);
+
+            if (siteMax == null || !Number.isFinite(ahdM)) {
+              setCornerMarkerText(marker, "—");
+              marker.setTitle("Level unavailable");
+              return;
+            }
+
+            const fallM = siteMax - ahdM;
+            const label = formatFallLabel(fallM);
+            setCornerMarkerText(marker, label);
+            marker.setTitle(
+              `Fall ${label} m from site high point` +
+                ` (site ${siteMax.toFixed(2)} m AHD, corner ${ahdM.toFixed(2)} m AHD` +
+                `${row.approximate ? ", approximate" : ""})`
+            );
+          });
+          layerRef.current?.bringToFront?.();
+        } catch (err) {
+          if (requestIdRef.current !== requestId) return;
+          console.warn("[FloorPlanCornerLevels]", err);
+          markers.forEach((marker) => {
+            setCornerMarkerText(marker, "—");
+            marker.setTitle(err.message || "Could not load site levels");
+          });
+        }
+      })();
+    }, FETCH_DEBOUNCE_MS);
 
     return () => {
-      cancelled = true;
-      if (layerRef.current) {
-        map.removeLayer(layerRef.current);
-        layerRef.current = null;
-      }
-      markersRef.current = [];
+      window.clearTimeout(debounceTimer);
     };
   }, [boundsKey(bounds), enabled, lookupState, map]);
 
