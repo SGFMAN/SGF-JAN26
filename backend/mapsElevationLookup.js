@@ -13,8 +13,9 @@ const METRO_GROUND_LAYER = 0;
 const METRO_CONTOUR_LAYER = 1;
 const STATEWIDE_GROUND_LAYER = 4;
 
-const FETCH_TIMEOUT_MS = 8000;
+const FETCH_TIMEOUT_MS = 12000;
 const MAX_POINTS = 32;
+const LOOKUP_CONCURRENCY = 4;
 const METRO_GROUND_RADIUS_M = 450;
 const STATEWIDE_GROUND_RADIUS_M = 900;
 const CONTOUR_RADIUS_M = 200;
@@ -244,8 +245,7 @@ async function lookupPointAhd(lat, lng) {
   return null;
 }
 
-async function mapWithConcurrency(items, concurrency, mapper) {
-  if (!items.length) return [];
+async function mapWithConcurrency(items, limit, fn) {
   const results = new Array(items.length);
   let nextIndex = 0;
 
@@ -253,13 +253,12 @@ async function mapWithConcurrency(items, concurrency, mapper) {
     while (nextIndex < items.length) {
       const index = nextIndex;
       nextIndex += 1;
-      results[index] = await mapper(items[index], index);
+      results[index] = await fn(items[index], index);
     }
   }
 
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, () => worker())
-  );
+  const workers = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: workers }, () => worker()));
   return results;
 }
 
@@ -272,16 +271,27 @@ async function lookupAhdElevations({ state, points }) {
     };
   }
 
-  const results = await mapWithConcurrency(points, 4, async (point) => {
+  const results = await mapWithConcurrency(points, LOOKUP_CONCURRENCY, async (point) => {
     try {
       const hit = await lookupPointAhd(point.lat, point.lng);
+      if (!hit) {
+        return {
+          id: point.id,
+          lat: point.lat,
+          lng: point.lng,
+          ahdM: null,
+          approximate: false,
+          source: null,
+          error: "No Vicmap elevation data within search radius",
+        };
+      }
       return {
         id: point.id,
         lat: point.lat,
         lng: point.lng,
-        ahdM: hit?.ahdM ?? null,
-        approximate: hit?.approximate ?? false,
-        source: hit?.source ?? null,
+        ahdM: hit.ahdM,
+        approximate: hit.approximate ?? false,
+        source: hit.source ?? null,
       };
     } catch (err) {
       return {
