@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import logo from "../images/logo.png";
-import MapsSidebar, { LIGHT_MONUMENT, MONUMENT, SECTION_GREY, WHITE } from "../components/MapsSidebar";
+import MapsSidebar, {
+  LIGHT_MONUMENT,
+  MONUMENT,
+  SECTION_GREY,
+  sgfContentPanelStyle,
+  sgfPageHeadingStyle,
+  sgfSectionsContainerStyle,
+  WHITE,
+} from "../components/MapsSidebar";
 import {
   formatRecentSearchWhen,
   loadRecentMapSearches,
@@ -41,61 +49,40 @@ export default function MapsRecent() {
         overflowY: "auto",
       }}
     >
-      <div
-        style={{
-          margin: "32px auto 24px auto",
-          width: "calc(100vw - 64px)",
-          maxWidth: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          position: "relative",
-          padding: "0 32px",
-          boxSizing: "border-box",
-        }}
-      >
+      <div style={sgfPageHeadingStyle}>
         <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
-          <img src={logo} alt="SGF Logo" style={{ width: "120px", height: "auto" }} />
+          <img
+            src={logo}
+            alt="SGF Logo"
+            style={{
+              width: "120px",
+              height: "auto",
+            }}
+          />
         </Link>
-        <h1
-          style={{
-            margin: 0,
-            fontSize: "2.4rem",
-            fontWeight: 700,
-            color: WHITE,
-            letterSpacing: "1px",
-          }}
-        >
-          Recent searches
-        </h1>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "2.4rem",
+              fontWeight: 700,
+              color: WHITE,
+              letterSpacing: "1px",
+            }}
+          >
+            Recent searches
+          </h1>
+        </div>
       </div>
 
-      <div
-        className="sections-container"
-        style={{
-          display: "flex",
-          width: "calc(100vw - 64px)",
-          maxWidth: "100%",
-          margin: "24px auto 48px auto",
-          gap: "32px",
-          flexWrap: "wrap",
-          alignItems: "stretch",
-        }}
-      >
+      <div className="sections-container" style={sgfSectionsContainerStyle}>
         <MapsSidebar activeView="recent" />
 
         <div
           className="content-section"
           style={{
-            background: SECTION_GREY,
-            borderRadius: "18px",
-            flex: "1 1 320px",
-            minWidth: 0,
-            minHeight: "clamp(520px, calc(100vh - 220px), 900px)",
-            boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
+            ...sgfContentPanelStyle,
             padding: "16px",
-            boxSizing: "border-box",
-            overflow: "hidden",
             display: "flex",
             flexDirection: "column",
             gap: "12px",

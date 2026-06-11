@@ -15,8 +15,10 @@ import PlanningOverlaysLayer, {
   PLANNING_VISIBILITY_ZONE,
 } from "../components/PlanningOverlaysLayer";
 import EasementsLayer from "../components/EasementsLayer";
+import EditableBuildingsLayer from "../components/EditableBuildingsLayer";
 import DraggableFloorPlanOverlay from "../components/DraggableFloorPlanOverlay";
 import FloorPlanPickerModal from "../components/FloorPlanPickerModal";
+import SiteBoundary3DModal from "../components/SiteBoundary3DModal";
 import {
   BASEMAP_ESRI_IMAGERY,
   BASEMAP_VICMAP_AERIAL,
@@ -26,7 +28,11 @@ import {
   MAP_MAX_ZOOM,
   resolveBasemapId,
 } from "../utils/mapBasemaps";
-import MapsSidebar from "../components/MapsSidebar";
+import MapsSidebar, {
+  sgfContentPanelStyle,
+  sgfPageHeadingStyle,
+  sgfSectionsContainerStyle,
+} from "../components/MapsSidebar";
 import { getApiHeaders, isUserAdmin } from "../utils/auth";
 import {
   addRecentMapSearch,
@@ -158,6 +164,35 @@ function MapFitBounds({ bounds, fitKey }) {
   return null;
 }
 
+/** Keep Leaflet tile layout in sync with the fixed map panel size. */
+function MapInvalidateSize() {
+  const map = useMap();
+
+  useEffect(() => {
+    const container = map.getContainer();
+    const parent = container.parentElement;
+    if (!parent) return undefined;
+
+    const refresh = () => {
+      map.invalidateSize();
+    };
+
+    refresh();
+    const observer = new ResizeObserver(refresh);
+    observer.observe(parent);
+    window.addEventListener("resize", refresh);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", refresh);
+    };
+  }, [map]);
+
+  return null;
+}
+
+const MAP_RIGHT_PANEL_WIDTH = "360px";
+
 /** Normalize DB state for filter (matches App usage: VIC / QLD). */
 function projectStateUpper(p) {
   return String(p?.state ?? "").trim().toUpperCase();
@@ -256,6 +291,12 @@ export default function Maps() {
   const [planningLayerVisibility, setPlanningLayerVisibility] = useState({});
   const [planningLoading, setPlanningLoading] = useState(false);
   const [easementsGeoJson, setEasementsGeoJson] = useState(null);
+  const [buildingsGeoJson, setBuildingsGeoJson] = useState(null);
+  const [originalBuildingsGeoJson, setOriginalBuildingsGeoJson] = useState(null);
+  const [buildingsLoading, setBuildingsLoading] = useState(false);
+  const [buildingsStatus, setBuildingsStatus] = useState("");
+  const [buildingsLayerVisible, setBuildingsLayerVisible] = useState(true);
+  const [buildingsResetKey, setBuildingsResetKey] = useState(0);
   const [bulkPins, setBulkPins] = useState([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0, ok: 0, failed: 0 });
@@ -270,12 +311,22 @@ export default function Maps() {
   });
   const [basemapId, setBasemapId] = useState(DEFAULT_BASEMAP_ID);
   const [showFloorPlanPicker, setShowFloorPlanPicker] = useState(false);
+  const [show3dVisualisationModal, setShow3dVisualisationModal] = useState(false);
   const [placedUnit, setPlacedUnit] = useState(null);
   const [unitPlacementKey, setUnitPlacementKey] = useState(0);
   const [movableTarget, setMovableTarget] = useState(null);
   const hadParcelRef = useRef(false);
   const location = useLocation();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!show3dVisualisationModal) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [show3dVisualisationModal]);
 
   useEffect(() => {
     (async () => setIsAdmin(await isUserAdmin()))();
@@ -434,6 +485,61 @@ export default function Maps() {
     []
   );
 
+  const fetchBuildingsForSite = useCallback(async (lat, lng, searchState, boundaryGeometry) => {
+    if (searchState !== "VIC") {
+      setBuildingsGeoJson(null);
+      setOriginalBuildingsGeoJson(null);
+      setBuildingsStatus("");
+      return;
+    }
+
+    const admin = await isUserAdmin();
+    if (!admin) {
+      setBuildingsGeoJson(null);
+      setOriginalBuildingsGeoJson(null);
+      setBuildingsStatus("");
+      return;
+    }
+
+    setBuildingsLoading(true);
+    setBuildingsStatus("Loading building outlines…");
+    try {
+      const envelope = envelopeParamFromGeometry(boundaryGeometry);
+      const res = await fetch("/api/property-buildings", {
+        method: "POST",
+        headers: getApiHeaders(),
+        body: JSON.stringify({
+          lat,
+          lng,
+          state: "VIC",
+          envelope: envelope || null,
+          boundary: boundaryGeometry || null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        const geo = data.buildingsGeoJson || null;
+        setBuildingsGeoJson(geo);
+        setOriginalBuildingsGeoJson(geo ? structuredClone(geo) : null);
+        setBuildingsResetKey((key) => key + 1);
+        setBuildingsStatus(
+          geo?.features?.length ? "Building outlines loaded" : "No building outlines found"
+        );
+      } else {
+        setBuildingsGeoJson(null);
+        setOriginalBuildingsGeoJson(null);
+        setBuildingsStatus(data.error || "Building outlines unavailable");
+      }
+    } catch (err) {
+      console.error("[Maps] property-buildings fetch failed:", err);
+      setBuildingsGeoJson(null);
+      setOriginalBuildingsGeoJson(null);
+      setBuildingsStatus("Building outlines unavailable");
+    } finally {
+      setBuildingsLoading(false);
+    }
+  }, []);
+
   const runSearch = useCallback(async (searchQueryOverride) => {
     const q = (searchQueryOverride != null ? String(searchQueryOverride) : query).trim();
     if (!q) {
@@ -453,6 +559,10 @@ export default function Maps() {
     setPlanningOverlayGeoJson(null);
     setPlanningLayerVisibility({});
     setEasementsGeoJson(null);
+    setBuildingsGeoJson(null);
+    setOriginalBuildingsGeoJson(null);
+    setBuildingsStatus("");
+    setBuildingsLayerVisible(true);
     setPlacedUnit(null);
     setMovableTarget(null);
     try {
@@ -525,6 +635,7 @@ export default function Maps() {
           savedFeature.geometry,
           savedFeature.properties?.parcel_pfi || savedFeature.properties?.parcelId || null
         );
+        void fetchBuildingsForSite(lat, lon, searchState, savedFeature.geometry);
         return;
       }
 
@@ -654,6 +765,7 @@ export default function Maps() {
             planningBoundaryGeometry,
             parcelIdForEasements
           );
+          void fetchBuildingsForSite(lat, lon, searchState, planningBoundaryGeometry);
         }, planningBoundaryGeometry ? 900 : 300);
       }
     } catch (e) {
@@ -668,7 +780,7 @@ export default function Maps() {
     } finally {
       setLoading(false);
     }
-  }, [query, fetchPlanningForSite, fetchEasementsForSite]);
+  }, [query, fetchPlanningForSite, fetchEasementsForSite, fetchBuildingsForSite]);
 
   const onSearch = useCallback(() => {
     void runSearch();
@@ -701,10 +813,27 @@ export default function Maps() {
           feature.geometry,
           feature.properties?.parcel_pfi || feature.properties?.parcelId || null
         );
+        void fetchBuildingsForSite(marker[0], marker[1], "VIC", feature.geometry);
       }
     },
-    [activeSearchQuery, marker, fetchPlanningForSite, fetchEasementsForSite]
+    [activeSearchQuery, marker, fetchPlanningForSite, fetchEasementsForSite, fetchBuildingsForSite]
   );
+
+  const handleBuildingsChange = useCallback((nextGeoJson) => {
+    setBuildingsGeoJson(nextGeoJson);
+    setBuildingsStatus("Building outline manually edited");
+  }, []);
+
+  const resetBuildingOutlines = useCallback(() => {
+    if (!originalBuildingsGeoJson) return;
+    setBuildingsGeoJson(structuredClone(originalBuildingsGeoJson));
+    setBuildingsResetKey((key) => key + 1);
+    setBuildingsStatus(
+      originalBuildingsGeoJson.features?.length
+        ? "Building outlines loaded"
+        : "No building outlines found"
+    );
+  }, [originalBuildingsGeoJson]);
 
   const togglePlanningLayer = useCallback((layerKey) => {
     setPlanningLayerVisibility((prev) => ({
@@ -853,46 +982,33 @@ export default function Maps() {
         overflowY: "auto",
       }}
     >
-      <div
-        style={{
-          margin: "32px auto 24px auto",
-          width: "calc(100vw - 64px)",
-          maxWidth: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          position: "relative",
-          padding: "0 32px",
-          boxSizing: "border-box",
-        }}
-      >
+      <div style={sgfPageHeadingStyle}>
         <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
-          <img src={logo} alt="SGF Logo" style={{ width: "120px", height: "auto" }} />
+          <img
+            src={logo}
+            alt="SGF Logo"
+            style={{
+              width: "120px",
+              height: "auto",
+            }}
+          />
         </Link>
-        <h1
-          style={{
-            margin: 0,
-            fontSize: "2.4rem",
-            fontWeight: 700,
-            color: WHITE,
-            letterSpacing: "1px",
-          }}
-        >
-          Maps
-        </h1>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "2.4rem",
+              fontWeight: 700,
+              color: WHITE,
+              letterSpacing: "1px",
+            }}
+          >
+            Maps
+          </h1>
+        </div>
       </div>
 
-      <div
-        className="sections-container"
-        style={{
-          display: "flex",
-          width: "calc(100vw - 64px)",
-          maxWidth: "100%",
-          margin: "24px auto 48px auto",
-          gap: "32px",
-          flexWrap: "wrap",
-        }}
-      >
+      <div className="sections-container" style={sgfSectionsContainerStyle}>
         <MapsSidebar
           activeView={location.pathname === "/maps/sold-projects" ? "sold" : "map"}
           onLoadBulkProjects={onLoadBulkProjects}
@@ -905,240 +1021,19 @@ export default function Maps() {
         <div
           className="content-section"
           style={{
-            background: SECTION_GREY,
-            borderRadius: "18px",
-            flex: "1 1 320px",
+            ...sgfContentPanelStyle,
             minWidth: 0,
-            minHeight: "520px",
-            boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
-            padding: "16px",
-            boxSizing: "border-box",
-            overflow: "hidden",
+            padding: "14px",
             display: "flex",
-            flexDirection: "column",
-            gap: "12px",
+            flexDirection: "row",
+            gap: "14px",
           }}
         >
           <div
             style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "10px",
-              background: EXPLORER_BG,
-              borderRadius: "12px",
-              border: `1px solid ${EXPLORER_BORDER}`,
-              padding: "12px 14px",
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "nowrap",
-                alignItems: "stretch",
-                gap: "10px",
-                minWidth: 0,
-              }}
-            >
-              <div
-                style={{
-                  flex: "0 1 380px",
-                  maxWidth: "420px",
-                  minWidth: "280px",
-                  display: "flex",
-                  gap: "8px",
-                }}
-              >
-                <input
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={onKeyDown}
-                  placeholder="Search address (e.g. 123 Collins St, Melbourne VIC)"
-                  disabled={loading || parcelLoading}
-                  aria-busy={loading}
-                  style={{
-                    flex: "1 1 0",
-                    minWidth: 0,
-                    padding: "10px 12px",
-                    fontSize: "0.9rem",
-                    borderRadius: "10px",
-                    border: `1px solid ${EXPLORER_BORDER}`,
-                    background: WHITE,
-                    color: MONUMENT,
-                    boxSizing: "border-box",
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={onSearch}
-                  disabled={loading || parcelLoading}
-                  style={{
-                    flexShrink: 0,
-                    padding: "10px 14px",
-                    fontSize: "0.9rem",
-                    fontWeight: 600,
-                    borderRadius: "10px",
-                    border: `1px solid ${EXPLORER_BORDER}`,
-                    background: loading ? "#e0e0e0" : WHITE,
-                    color: MONUMENT,
-                    cursor: loading ? "not-allowed" : "pointer",
-                    letterSpacing: "0.3px",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {loading ? "Searching…" : parcelLoading ? "Loading…" : "Search"}
-                </button>
-              </div>
-
-              {isAdmin && (planningLoading || planningInfo) && !error && (
-                <div
-                  style={{
-                    flex: "1 1 0",
-                    minWidth: 0,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "6px",
-                    padding: "8px 12px",
-                    borderRadius: "10px",
-                    background: "#f3e8ff",
-                    border: "1px solid #d8b4fe",
-                    fontSize: "0.8rem",
-                    color: MONUMENT,
-                    maxHeight: "140px",
-                    overflowY: "auto",
-                  }}
-                >
-                  {planningLoading ? (
-                    <span>Loading planning…</span>
-                  ) : (
-                    <>
-                      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", lineHeight: 1.4 }}>
-                        <strong style={{ fontSize: "0.82rem" }}>Planning</strong>
-                        <span style={{ color: "#555" }}>
-                          Council: {planningInfo.council || "—"}
-                        </span>
-                      </div>
-                      <ul
-                        style={{
-                          margin: 0,
-                          padding: 0,
-                          listStyle: "none",
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "4px",
-                        }}
-                      >
-                        {planningInfo.planningZone && (
-                          <li>
-                            <label
-                              style={{
-                                display: "flex",
-                                alignItems: "flex-start",
-                                gap: "8px",
-                                cursor: "pointer",
-                              }}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={planningLayerVisibility[PLANNING_VISIBILITY_ZONE] === true}
-                                onChange={() => togglePlanningLayer(PLANNING_VISIBILITY_ZONE)}
-                                style={{ marginTop: "2px", flexShrink: 0 }}
-                              />
-                              <span>
-                                <span style={{ color: "#166534", fontWeight: 600 }}>Zone: </span>
-                                {planningInfo.planningZone.code}
-                                {planningInfo.planningZone.description
-                                  ? ` — ${planningInfo.planningZone.description}`
-                                  : ""}
-                              </span>
-                            </label>
-                          </li>
-                        )}
-                        {(planningInfo.overlays || []).map((overlay) => {
-                          const key = overlayLayerKey(overlay);
-                          if (!key) return null;
-                          const label =
-                            overlay.code && overlay.description
-                              ? `${overlay.code} — ${overlay.description}`
-                              : overlay.code || overlay.description;
-                          return (
-                            <li key={key}>
-                              <label
-                                style={{
-                                  display: "flex",
-                                  alignItems: "flex-start",
-                                  gap: "8px",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={planningLayerVisibility[key] === true}
-                                  onChange={() => togglePlanningLayer(key)}
-                                  style={{ marginTop: "2px", flexShrink: 0 }}
-                                />
-                                <span>{label}</span>
-                              </label>
-                            </li>
-                          );
-                        })}
-                        {!planningInfo.planningZone && !(planningInfo.overlays || []).length && (
-                          <li style={{ color: "#666" }}>No zone or overlays</li>
-                        )}
-                      </ul>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <MapBasemapSelector
-              basemapId={basemapId}
-              onBasemapIdChange={setBasemapId}
-              basemapConfig={basemapConfig}
-              placement="inline"
-            />
-          </div>
-
-          {error && (
-            <div
-              role="alert"
-              style={{
-                padding: "10px 14px",
-                borderRadius: "10px",
-                background: "#fdecea",
-                border: "1px solid #f5c2c0",
-                color: "#842029",
-                fontSize: "0.95rem",
-              }}
-            >
-              {error}
-            </div>
-          )}
-
-          {isAdmin && (parcelNotice || parcelLoading) && !error && (
-            <div
-              style={{
-                padding: "8px 14px",
-                borderRadius: "10px",
-                background: "#fff8e1",
-                border: "1px solid #ffe082",
-                color: "#6d5a00",
-                fontSize: "0.9rem",
-              }}
-            >
-              {parcelLoading && !parcelNotice
-                ? "Looking up title boundary…"
-                : parcelNotice}
-            </div>
-          )}
-
-          <div
-            style={{
               flex: "1 1 auto",
-              width: "100%",
-              minHeight: "clamp(380px, calc(100vh - 320px), 820px)",
+              minWidth: 0,
+              height: "100%",
               borderRadius: "14px",
               overflow: "hidden",
               border: `1px solid ${EXPLORER_BORDER}`,
@@ -1151,10 +1046,11 @@ export default function Maps() {
               zoom={DEFAULT_ZOOM}
               maxZoom={MAP_MAX_ZOOM}
               scrollWheelZoom
-              style={{ height: "100%", width: "100%", borderRadius: "14px" }}
+              style={{ height: "100%", width: "100%" }}
               zoomControl
             >
               <MapBasemapTileLayer basemapId={resolvedBasemapId} />
+              <MapInvalidateSize />
               <MapPanLock locked={movableTarget != null} />
               {parcelFeature && (
                 <DraggableParcelBoundary
@@ -1178,6 +1074,16 @@ export default function Maps() {
                   key={activeSearchQuery || "easements"}
                   easementsGeoJson={easementsGeoJson}
                   blockPointerEvents={movableTarget != null}
+                />
+              )}
+              {isAdmin && buildingsGeoJson && (
+                <EditableBuildingsLayer
+                  key={`${activeSearchQuery || "buildings"}-${buildingsResetKey}`}
+                  buildingsGeoJson={buildingsGeoJson}
+                  visible={buildingsLayerVisible}
+                  blockPointerEvents={movableTarget != null}
+                  resetKey={buildingsResetKey}
+                  onBuildingsChange={handleBuildingsChange}
                 />
               )}
               {isAdmin && placedUnit && onMapView && (
@@ -1219,17 +1125,362 @@ export default function Maps() {
             </MapContainer>
           </div>
 
-          {bulkProgress.total > 0 && bulkSelection != null && (
-            <div style={{ fontSize: "0.85rem", color: "#555" }}>
-              <div>
-                {bulkSelectionLabel(bulkSelection)} pins loaded: {bulkProgress.ok}/{bulkProgress.total} · geocode
-                attempts: {bulkProgress.done} · failures: {bulkProgress.failed}
+          <aside
+            style={{
+              flex: `0 0 ${MAP_RIGHT_PANEL_WIDTH}`,
+              width: MAP_RIGHT_PANEL_WIDTH,
+              height: "100%",
+              display: "flex",
+              flexDirection: "column",
+              gap: "10px",
+              overflowY: "auto",
+              overflowX: "hidden",
+              boxSizing: "border-box",
+            }}
+          >
+            <div
+              style={{
+                background: EXPLORER_BG,
+                borderRadius: "12px",
+                border: `1px solid ${EXPLORER_BORDER}`,
+                padding: "12px 14px",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "0.72rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  color: "#666",
+                  marginBottom: "6px",
+                }}
+              >
+                Address
               </div>
-              {bulkPhase ? <div style={{ marginTop: "4px" }}>{bulkPhase}</div> : null}
-              {bulkCurrent ? <div style={{ marginTop: "4px" }}>Current: {bulkCurrent}</div> : null}
+              <div
+                style={{
+                  fontSize: "0.92rem",
+                  lineHeight: 1.45,
+                  color: MONUMENT,
+                  wordBreak: "break-word",
+                }}
+              >
+                {resultLabel || activeSearchQuery || "Search for an address to begin"}
+              </div>
             </div>
-          )}
 
+            <div
+              style={{
+                background: EXPLORER_BG,
+                borderRadius: "12px",
+                border: `1px solid ${EXPLORER_BORDER}`,
+                padding: "12px 14px",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "0.72rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  color: "#666",
+                }}
+              >
+                Search
+              </div>
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={onKeyDown}
+                placeholder="123 Collins St, Melbourne VIC"
+                disabled={loading || parcelLoading}
+                aria-busy={loading}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  fontSize: "0.9rem",
+                  borderRadius: "10px",
+                  border: `1px solid ${EXPLORER_BORDER}`,
+                  background: WHITE,
+                  color: MONUMENT,
+                  boxSizing: "border-box",
+                }}
+              />
+              <button
+                type="button"
+                onClick={onSearch}
+                disabled={loading || parcelLoading}
+                style={{
+                  width: "100%",
+                  padding: "10px 14px",
+                  fontSize: "0.9rem",
+                  fontWeight: 600,
+                  borderRadius: "10px",
+                  border: `1px solid ${EXPLORER_BORDER}`,
+                  background: loading ? "#e0e0e0" : WHITE,
+                  color: MONUMENT,
+                  cursor: loading ? "not-allowed" : "pointer",
+                  letterSpacing: "0.3px",
+                }}
+              >
+                {loading ? "Searching…" : parcelLoading ? "Loading…" : "Search"}
+              </button>
+            </div>
+
+            <div
+              style={{
+                background: EXPLORER_BG,
+                borderRadius: "12px",
+                border: `1px solid ${EXPLORER_BORDER}`,
+                padding: "12px 14px",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8)",
+              }}
+            >
+              <MapBasemapSelector
+                basemapId={basemapId}
+                onBasemapIdChange={setBasemapId}
+                basemapConfig={basemapConfig}
+                placement="inline"
+                style={{ width: "100%" }}
+              />
+            </div>
+
+            {isAdmin && (planningLoading || planningInfo) && !error && (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "6px",
+                  padding: "10px 12px",
+                  borderRadius: "12px",
+                  background: "#f3e8ff",
+                  border: "1px solid #d8b4fe",
+                  fontSize: "0.8rem",
+                  color: MONUMENT,
+                  maxHeight: "220px",
+                  overflowY: "auto",
+                }}
+              >
+                {planningLoading ? (
+                  <span>Loading planning…</span>
+                ) : (
+                  <>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "4px", lineHeight: 1.4 }}>
+                      <strong style={{ fontSize: "0.82rem" }}>Planning</strong>
+                      <span style={{ color: "#555" }}>Council: {planningInfo.council || "—"}</span>
+                    </div>
+                    <ul
+                      style={{
+                        margin: 0,
+                        padding: 0,
+                        listStyle: "none",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "4px",
+                      }}
+                    >
+                      {planningInfo.planningZone && (
+                        <li>
+                          <label
+                            style={{
+                              display: "flex",
+                              alignItems: "flex-start",
+                              gap: "8px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={planningLayerVisibility[PLANNING_VISIBILITY_ZONE] === true}
+                              onChange={() => togglePlanningLayer(PLANNING_VISIBILITY_ZONE)}
+                              style={{ marginTop: "2px", flexShrink: 0 }}
+                            />
+                            <span>
+                              <span style={{ color: "#166534", fontWeight: 600 }}>Zone: </span>
+                              {planningInfo.planningZone.code}
+                              {planningInfo.planningZone.description
+                                ? ` — ${planningInfo.planningZone.description}`
+                                : ""}
+                            </span>
+                          </label>
+                        </li>
+                      )}
+                      {(planningInfo.overlays || []).map((overlay) => {
+                        const key = overlayLayerKey(overlay);
+                        if (!key) return null;
+                        const label =
+                          overlay.code && overlay.description
+                            ? `${overlay.code} — ${overlay.description}`
+                            : overlay.code || overlay.description;
+                        return (
+                          <li key={key}>
+                            <label
+                              style={{
+                                display: "flex",
+                                alignItems: "flex-start",
+                                gap: "8px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={planningLayerVisibility[key] === true}
+                                onChange={() => togglePlanningLayer(key)}
+                                style={{ marginTop: "2px", flexShrink: 0 }}
+                              />
+                              <span>{label}</span>
+                            </label>
+                          </li>
+                        );
+                      })}
+                      {!planningInfo.planningZone && !(planningInfo.overlays || []).length && (
+                        <li style={{ color: "#666" }}>No zone or overlays</li>
+                      )}
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
+
+            {isAdmin && parcelFeature && (
+              <div
+                style={{
+                  background: EXPLORER_BG,
+                  borderRadius: "12px",
+                  border: `1px solid ${EXPLORER_BORDER}`,
+                  padding: "10px 12px",
+                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                  fontSize: "0.82rem",
+                  color: MONUMENT,
+                }}
+              >
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    cursor: "pointer",
+                    fontWeight: 600,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={buildingsLayerVisible}
+                    onChange={() => setBuildingsLayerVisible((visible) => !visible)}
+                    style={{ marginTop: "1px", flexShrink: 0 }}
+                  />
+                  <span>Buildings</span>
+                </label>
+                {(buildingsLoading || buildingsStatus) && (
+                  <span style={{ color: "#555", lineHeight: 1.4 }}>
+                    {buildingsLoading ? "Loading building outlines…" : buildingsStatus}
+                  </span>
+                )}
+                {originalBuildingsGeoJson?.features?.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={resetBuildingOutlines}
+                    disabled={buildingsLoading}
+                    style={{
+                      width: "100%",
+                      padding: "8px 12px",
+                      fontSize: "0.82rem",
+                      fontWeight: 600,
+                      borderRadius: "10px",
+                      border: `1px solid ${EXPLORER_BORDER}`,
+                      background: WHITE,
+                      color: MONUMENT,
+                      cursor: buildingsLoading ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    Reset Building Outlines
+                  </button>
+                )}
+              </div>
+            )}
+
+            {parcelFeature && (
+              <button
+                type="button"
+                onClick={() => setShow3dVisualisationModal(true)}
+                style={{
+                  width: "100%",
+                  padding: "10px 14px",
+                  fontSize: "0.85rem",
+                  fontWeight: 600,
+                  borderRadius: "10px",
+                  border: "1px solid #d8b4fe",
+                  background: WHITE,
+                  color: MONUMENT,
+                  cursor: "pointer",
+                  letterSpacing: "0.2px",
+                }}
+              >
+                3d Visualisation
+              </button>
+            )}
+
+            {error && (
+              <div
+                role="alert"
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: "10px",
+                  background: "#fdecea",
+                  border: "1px solid #f5c2c0",
+                  color: "#842029",
+                  fontSize: "0.9rem",
+                }}
+              >
+                {error}
+              </div>
+            )}
+
+            {isAdmin && (parcelNotice || parcelLoading) && !error && (
+              <div
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: "10px",
+                  background: "#fff8e1",
+                  border: "1px solid #ffe082",
+                  color: "#6d5a00",
+                  fontSize: "0.88rem",
+                }}
+              >
+                {parcelLoading && !parcelNotice ? "Looking up title boundary…" : parcelNotice}
+              </div>
+            )}
+
+            {bulkProgress.total > 0 && bulkSelection != null && (
+              <div
+                style={{
+                  fontSize: "0.82rem",
+                  color: "#555",
+                  padding: "8px 10px",
+                  borderRadius: "10px",
+                  background: EXPLORER_BG,
+                  border: `1px solid ${EXPLORER_BORDER}`,
+                }}
+              >
+                <div>
+                  {bulkSelectionLabel(bulkSelection)} pins loaded: {bulkProgress.ok}/{bulkProgress.total} · geocode
+                  attempts: {bulkProgress.done} · failures: {bulkProgress.failed}
+                </div>
+                {bulkPhase ? <div style={{ marginTop: "4px" }}>{bulkPhase}</div> : null}
+                {bulkCurrent ? <div style={{ marginTop: "4px" }}>Current: {bulkCurrent}</div> : null}
+              </div>
+            )}
+          </aside>
         </div>
       </div>
 
@@ -1237,6 +1488,15 @@ export default function Maps() {
         <FloorPlanPickerModal
           onSelect={handleSelectFloorPlan}
           onClose={() => setShowFloorPlanPicker(false)}
+        />
+      )}
+
+      {show3dVisualisationModal && parcelFeature?.geometry && (
+        <SiteBoundary3DModal
+          siteGeometry={parcelFeature.geometry}
+          lookupState="VIC"
+          placedUnit={placedUnit}
+          onBack={() => setShow3dVisualisationModal(false)}
         />
       )}
     </div>

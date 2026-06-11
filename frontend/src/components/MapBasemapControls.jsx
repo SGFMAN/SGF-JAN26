@@ -44,7 +44,8 @@ export function MapBasemapSelector({
     <div
       style={{
         display: "flex",
-        alignItems: "center",
+        alignItems: isInline ? "stretch" : "center",
+        flexDirection: isInline ? "column" : "row",
         gap: "8px",
         padding: isInline ? "0" : "8px 10px",
         borderRadius: isInline ? 0 : "10px",
@@ -72,13 +73,14 @@ export function MapBasemapSelector({
         value={resolvedId}
         onChange={(e) => onBasemapIdChange(e.target.value)}
         style={{
+          width: isInline ? "100%" : "auto",
           padding: "6px 8px",
           borderRadius: "8px",
           border: `1px solid ${CONTROL_BORDER}`,
           background: "#fff",
           color: CONTROL_TEXT,
           fontSize: "0.85rem",
-          maxWidth: "min(200px, 42vw)",
+          boxSizing: "border-box",
         }}
       >
         {options.map((opt) => (

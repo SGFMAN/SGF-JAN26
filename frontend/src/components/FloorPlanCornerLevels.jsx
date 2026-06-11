@@ -14,8 +14,8 @@ import {
 
 const LABEL_WIDTH_M = 2;
 const FETCH_DEBOUNCE_MS = 300;
-const MIN_FONT_PX = 9;
-const MIN_LABEL_WIDTH_PX = 36;
+const MIN_FONT_PX = 6;
+const MIN_LABEL_WIDTH_PX = 24;
 
 function layerPointFor(map, latLng, zoomEvent) {
   if (zoomEvent?.zoom != null && zoomEvent?.center) {
@@ -37,7 +37,7 @@ function estimateTextWidthPx(text, fontSize) {
 
 function labelMetrics(map, lat, lng, hasRelativeLine, zoomEvent) {
   const widthPx = metersToLayerPixels(map, lat, lng, LABEL_WIDTH_M, zoomEvent);
-  const fontSize = widthPx * 0.13;
+  const fontSize = widthPx * 0.15;
   const relativeFontSize = fontSize * 0.82;
   const paddingX = fontSize * 0.45;
   const paddingY = fontSize * 0.28;
