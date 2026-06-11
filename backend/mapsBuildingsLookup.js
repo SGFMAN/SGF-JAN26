@@ -3,6 +3,8 @@
  * Source: https://services-ap1.arcgis.com/.../Vicmap_Features_of_Interest/FeatureServer/7
  */
 
+const turf = require("@turf/turf");
+
 const VICMAP_BUILDINGS_BASE =
   "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Features_of_Interest/FeatureServer";
 
@@ -11,8 +13,9 @@ const LAYER_BUILDING_POLYGON = 7;
 const FETCH_TIMEOUT_MS = 20000;
 const LOOKUP_BUDGET_MS = 35000;
 const MAX_BUILDING_FEATURES = 50;
-
-const { clipEasementFeaturesToBoundary } = require("./mapsEasementClip");
+const POINT_BUFFER_DISTANCES_M = [80, 120];
+const BUILDING_BOUNDARY_BUFFER_M = 25;
+const BUILDING_NEAREST_MAX_M = 65;
 
 const BUILDINGS_WARNING =
   "Building outlines are indicative only. Confirm against aerial imagery and site survey.";
@@ -123,20 +126,32 @@ function layerQueryUrl(layerId, params) {
 }
 
 function geoJsonPolygonToEsriGeometry(geometry) {
-  if (!geometry) return null;
-  if (geometry.type === "Polygon") {
-    return JSON.stringify({
-      rings: geometry.coordinates,
-      spatialReference: { wkid: 4326 },
-    });
+  if (!geometry || geometry.type !== "Polygon") return null;
+  return JSON.stringify({
+    rings: geometry.coordinates,
+    spatialReference: { wkid: 4326 },
+  });
+}
+
+function boundaryPolygonParts(boundaryGeometry) {
+  if (!boundaryGeometry?.type) return [];
+  if (boundaryGeometry.type === "Polygon") return [boundaryGeometry];
+  if (boundaryGeometry.type === "MultiPolygon") {
+    return boundaryGeometry.coordinates.map((coordinates) => ({
+      type: "Polygon",
+      coordinates,
+    }));
   }
-  if (geometry.type === "MultiPolygon" && geometry.coordinates?.length > 0) {
-    return JSON.stringify({
-      rings: geometry.coordinates[0],
-      spatialReference: { wkid: 4326 },
-    });
+  return [];
+}
+
+function envelopeFromBoundary(boundaryGeometry, bufferDeg = 0.00005) {
+  try {
+    const [west, south, east, north] = turf.bbox(turf.feature(boundaryGeometry));
+    return `${west - bufferDeg},${south - bufferDeg},${east + bufferDeg},${north + bufferDeg}`;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 function expandEnvelopeString(envelope, bufferDeg = 0.00035) {
@@ -147,22 +162,31 @@ function expandEnvelopeString(envelope, bufferDeg = 0.00035) {
 }
 
 function buildSpatialStrategies({ lat, lng, boundaryGeometry, envelope }) {
-  const point = `${lng},${lat}`;
   const strategies = [];
+  const point = `${lng},${lat}`;
 
-  if (boundaryGeometry?.type) {
-    const esriGeom = geoJsonPolygonToEsriGeometry(boundaryGeometry);
+  for (const part of boundaryPolygonParts(boundaryGeometry)) {
+    const esriGeom = geoJsonPolygonToEsriGeometry(part);
     if (esriGeom) {
-      return [
-        {
-          mode: "boundary_intersects",
-          confidence: "high",
-          spatialRel: "esriSpatialRelIntersects",
-          geometry: esriGeom,
-          geometryType: "esriGeometryPolygon",
-        },
-      ];
+      strategies.push({
+        mode: "boundary_intersects",
+        confidence: "high",
+        spatialRel: "esriSpatialRelIntersects",
+        geometry: esriGeom,
+        geometryType: "esriGeometryPolygon",
+      });
     }
+  }
+
+  const boundaryEnvelope = boundaryGeometry ? envelopeFromBoundary(boundaryGeometry) : null;
+  if (boundaryEnvelope) {
+    strategies.push({
+      mode: "boundary_envelope",
+      confidence: "high",
+      spatialRel: "esriSpatialRelIntersects",
+      geometry: boundaryEnvelope,
+      geometryType: "esriGeometryEnvelope",
+    });
   }
 
   if (envelope) {
@@ -175,15 +199,17 @@ function buildSpatialStrategies({ lat, lng, boundaryGeometry, envelope }) {
     });
   }
 
-  strategies.push({
-    mode: "point_buffer",
-    confidence: "point",
-    spatialRel: "esriSpatialRelIntersects",
-    geometry: point,
-    geometryType: "esriGeometryPoint",
-    distance: "50",
-    units: "esriSRUnit_Meter",
-  });
+  for (const distanceM of POINT_BUFFER_DISTANCES_M) {
+    strategies.push({
+      mode: `point_buffer_${distanceM}m`,
+      confidence: "point",
+      spatialRel: "esriSpatialRelIntersects",
+      geometry: point,
+      geometryType: "esriGeometryPoint",
+      distance: String(distanceM),
+      units: "esriSRUnit_Meter",
+    });
+  }
 
   return strategies;
 }
@@ -236,6 +262,89 @@ function mapBuildingFeature(feature, index) {
   };
 }
 
+function dedupeBuildingFeatures(features) {
+  const seen = new Set();
+  return features.filter((feature) => {
+    const key =
+      feature.properties?.building_id ||
+      JSON.stringify(feature.geometry?.coordinates?.[0]?.[0] ?? null);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Keep building footprints on/near the title boundary (cadastre vs footprint often misalign). */
+function filterBuildingsForSite(features, boundaryGeometry, lat, lng) {
+  if (!features?.length) return [];
+  if (!boundaryGeometry) return features;
+
+  const boundary = turf.feature(boundaryGeometry);
+  const asFeature = (feature) => turf.feature(feature.geometry);
+
+  let matched = features.filter((feature) => {
+    try {
+      return turf.booleanIntersects(asFeature(feature), boundary);
+    } catch {
+      return false;
+    }
+  });
+  if (matched.length) return { features: matched, filterMode: "boundary_intersects" };
+
+  matched = features.filter((feature) => {
+    try {
+      return turf.booleanPointInPolygon(turf.centroid(asFeature(feature)), boundary);
+    } catch {
+      return false;
+    }
+  });
+  if (matched.length) return { features: matched, filterMode: "centroid_in_boundary" };
+
+  try {
+    const buffered = turf.buffer(boundary, BUILDING_BOUNDARY_BUFFER_M, { units: "meters" });
+    matched = features.filter((feature) => {
+      try {
+        return turf.booleanIntersects(asFeature(feature), buffered);
+      } catch {
+        return false;
+      }
+    });
+    if (matched.length) return { features: matched, filterMode: "buffered_boundary" };
+  } catch {
+    // ignore buffer failures
+  }
+
+  try {
+    const pin = turf.point([lng, lat]);
+    if (turf.booleanPointInPolygon(pin, boundary)) {
+      const ranked = features
+        .map((feature) => {
+          try {
+            const dist = turf.distance(pin, turf.centroid(asFeature(feature)), { units: "meters" });
+            return { feature, dist };
+          } catch {
+            return { feature, dist: Infinity };
+          }
+        })
+        .filter(({ dist }) => dist <= BUILDING_NEAREST_MAX_M)
+        .sort((a, b) => a.dist - b.dist);
+      if (ranked.length) {
+        const closestDist = ranked[0].dist;
+        return {
+          features: ranked
+            .filter(({ dist }) => dist <= closestDist + 15)
+            .map(({ feature }) => feature),
+          filterMode: "nearest_to_pin",
+        };
+      }
+    }
+  } catch {
+    // ignore nearest fallback failures
+  }
+
+  return { features: [], filterMode: "none" };
+}
+
 async function queryBuildingFeatures(spatial, log, deadlineMs) {
   const remaining = budgetRemaining(deadlineMs);
   if (remaining < 2500) {
@@ -279,9 +388,7 @@ async function queryBuildingFeatures(spatial, log, deadlineMs) {
   }
 
   const rawFeatures = Array.isArray(data?.features) ? data.features : [];
-  return flattenPolygonFeatures(rawFeatures)
-    .map((feature, index) => mapBuildingFeature(feature, index))
-    .slice(0, MAX_BUILDING_FEATURES);
+  return flattenPolygonFeatures(rawFeatures).map((feature, index) => mapBuildingFeature(feature, index));
 }
 
 /**
@@ -323,25 +430,31 @@ async function lookupPropertyBuildings({
   const strategies = buildSpatialStrategies({ lat, lng, boundaryGeometry, envelope });
 
   let features = [];
-  let usedStrategy = null;
+  const modesUsed = [];
   for (const spatial of strategies) {
-    features = await queryBuildingFeatures(spatial, log, deadlineMs);
-    if (features.length > 0) {
-      usedStrategy = spatial;
-      break;
+    if (budgetRemaining(deadlineMs) < 2500) break;
+    const batch = await queryBuildingFeatures(spatial, log, deadlineMs);
+    if (batch.length > 0) {
+      modesUsed.push(spatial.mode);
+      features = dedupeBuildingFeatures([...features, ...batch]);
+      if (features.length >= MAX_BUILDING_FEATURES) break;
     }
   }
 
-  log.queryMode = usedStrategy?.mode || strategies[0]?.mode || null;
-  log.confidence = usedStrategy?.confidence || strategies[0]?.confidence || null;
+  log.queryModes = modesUsed;
+  log.confidence = boundaryGeometry ? "high" : "point";
 
-  const countBeforeClip = features.length;
+  const countBeforeFilter = features.length;
   if (boundaryGeometry && features.length > 0) {
-    features = clipEasementFeaturesToBoundary(features, boundaryGeometry);
-    log.clippedToBoundary = true;
-    log.countBeforeClip = countBeforeClip;
-    log.countAfterClip = features.length;
+    const filtered = filterBuildingsForSite(features, boundaryGeometry, lat, lng);
+    features = filtered.features;
+    log.filteredToBoundary = true;
+    log.filterMode = filtered.filterMode;
+    log.countBeforeFilter = countBeforeFilter;
+    log.countAfterFilter = features.length;
   }
+
+  features = features.slice(0, MAX_BUILDING_FEATURES);
 
   const buildingsGeoJson =
     features.length > 0
@@ -360,7 +473,7 @@ async function lookupPropertyBuildings({
       buildingsGeoJson,
       count: features.length,
       source: "VIC_VICMAP_BUILDING_POLYGON",
-      confidence: usedStrategy?.confidence || strategies[0]?.confidence || "point",
+      confidence: log.confidence,
       warning: BUILDINGS_WARNING,
       message: features.length === 0 ? "No building outlines found." : null,
       parcelId: parcelId || null,

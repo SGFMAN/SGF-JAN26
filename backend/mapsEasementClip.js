@@ -82,6 +82,22 @@ function clipEasementFeaturesToBoundary(features, boundaryGeometry) {
     .filter(Boolean);
 }
 
+/** Keep features that intersect the title boundary (does not clip geometry). */
+function filterFeaturesIntersectingBoundary(features, boundaryGeometry) {
+  const boundary = boundaryFeature(boundaryGeometry);
+  if (!boundary || !features?.length) return features || [];
+
+  return features.filter((feature) => {
+    if (!feature?.geometry) return false;
+    try {
+      return turf.booleanIntersects(turf.feature(feature.geometry), boundary);
+    } catch {
+      return false;
+    }
+  });
+}
+
 module.exports = {
   clipEasementFeaturesToBoundary,
+  filterFeaturesIntersectingBoundary,
 };
