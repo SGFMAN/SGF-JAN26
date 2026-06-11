@@ -82,5 +82,6 @@ function clipEasementFeaturesToBoundary(features, boundaryGeometry) {
     .filter(Boolean);
 }
 
+module.exports = {
   clipEasementFeaturesToBoundary,
 };
