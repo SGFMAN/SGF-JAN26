@@ -47,13 +47,16 @@ const {
 } = require("./mapsElevationLookup");
 const {
   parseFloorPlanFields,
+  ensureMapFloorPlansDollarValueColumn,
   listFloorPlans,
   createFloorPlan,
   updateFloorPlan,
+  updateFloorPlanDollarValue,
   deleteFloorPlan,
   getFloorPlanImagePath,
 } = require("./mapFloorPlans");
-const { listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
+const { ensureMapQuoteItemsTable, listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
+const { generateMapsProposalPdf, OUTPUT_FILENAME, PROPOSAL_DIR } = require("./mapsProposalPdf");
 const {
   ensureProjectAccessTokens,
   isLegacyNumericProjectId,
@@ -1045,6 +1048,8 @@ async function ensureSchema() {
   if (await isSchemaUpToDate(pool)) {
     console.log(`Schema ${SCHEMA_VERSION} already applied — skipping migrations`);
     await ensureProjectAccessTokens(pool);
+    await ensureMapQuoteItemsTable(pool);
+    await ensureMapFloorPlansDollarValueColumn(pool);
     return;
   }
   console.log(`Applying schema migrations (target ${SCHEMA_VERSION})…`);
@@ -2843,6 +2848,26 @@ app.put("/api/maps/floor-plans/:id", upload.single("image"), async (req, res) =>
   }
 });
 
+app.patch("/api/maps/floor-plans/:id/dollar-value", async (req, res) => {
+  if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
+  try {
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "Invalid floor plan id" });
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const result = await updateFloorPlanDollarValue(pool, id, body.dollarValue ?? body.dollar_value);
+    if (result.error) {
+      return res.status(result.status || 400).json({ ok: false, error: result.error });
+    }
+    if (result.notFound) return res.status(400).json({ ok: false, error: "Floor plan not found" });
+    return res.json({ ok: true, floorPlan: result.plan });
+  } catch (e) {
+    console.error("[floor-plans] dollar-value error:", e);
+    return res.status(500).json({ ok: false, error: e.message || "Failed to update dollar value" });
+  }
+});
+
 app.delete("/api/maps/floor-plans/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
   const isAdmin = await isAdminRequest(req);
@@ -2889,6 +2914,59 @@ app.put("/api/maps/quote-items", async (req, res) => {
     return res.status(500).json({ ok: false, error: e.message || "Failed to save quote items" });
   }
 });
+
+app.post(
+  "/api/maps/generate-proposal",
+  upload.fields([
+    { name: "visual3d", maxCount: 1 },
+    { name: "mapScreenshot", maxCount: 1 },
+  ]),
+  async (req, res) => {
+    if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+    const isAdmin = await isAdminRequest(req);
+    if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
+    try {
+      let quoteItems = [];
+      if (req.body?.quoteItems) {
+        try {
+          quoteItems = JSON.parse(req.body.quoteItems);
+        } catch {
+          return res.status(400).json({ ok: false, error: "Invalid quoteItems JSON" });
+        }
+      }
+      if (!Array.isArray(quoteItems)) {
+        return res.status(400).json({ ok: false, error: "quoteItems must be an array" });
+      }
+
+      const visual3dBuffer = req.files?.visual3d?.[0]?.buffer || null;
+      const mapBuffer = req.files?.mapScreenshot?.[0]?.buffer || null;
+      if (!visual3dBuffer?.length) {
+        return res.status(400).json({ ok: false, error: "3D visualisation image is required" });
+      }
+      if (!mapBuffer?.length) {
+        return res.status(400).json({ ok: false, error: "Map screenshot is required" });
+      }
+
+      const outputPath = await generateMapsProposalPdf({
+        visual3dBuffer,
+        mapBuffer,
+        quoteItems,
+        addressLabel: req.body?.addressLabel || "",
+      });
+
+      return res.json({
+        ok: true,
+        path: outputPath,
+        filename: OUTPUT_FILENAME,
+        folder: PROPOSAL_DIR,
+      });
+    } catch (e) {
+      console.error("[maps/generate-proposal] error:", e);
+      const status = e.code === "MISSING_FILE" ? 400 : 500;
+      return res.status(status).json({ ok: false, error: e.message || "Failed to generate proposal PDF" });
+    }
+  }
+);
 
 // --- Map basemap config & Nearmap tile proxy (keeps API key server-side) ---
 const NEARMAP_API_KEY = String(

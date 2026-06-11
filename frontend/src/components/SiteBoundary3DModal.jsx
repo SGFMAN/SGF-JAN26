@@ -1,208 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { fetchMonumentBox, fetchFloorPlanImageBlob, floorPlanDimensionsMeters, loadImageSizeFromBlob } from "../utils/floorPlanMap";
 import {
-  assignEarthUVs,
-  assignGrassUVs,
   createEarthMaterial,
   createEarthTexture,
   createGrassMaterial,
   createGrassTexture,
 } from "../utils/earthTexture";
 import {
-  buildEarthVolumeMesh,
-  buildBuildingOutlineLinePositions,
-  buildExtrudedFootprintMesh,
-  buildFootprintEdgeLinePositions,
-  buildFootprintTopCapMesh,
-  buildFloorPlanOutlineLinePositions,
-  footprintRingAtY,
-  FLOOR_PLAN_UPPER_HEIGHT_M,
-  buildHeightTopSurfaceMesh,
-  buildSiteSlabMesh,
-  cornerRelativeHeightsM,
-  extractOuterRings,
-  SITE_THICKNESS_M,
-} from "../utils/siteBoundaryMesh";
+  disposeThreeObject,
+  fitCameraToObject,
+  populateSiteBoundary3DGroup,
+} from "../utils/siteBoundary3DRender";
+import { SITE_THICKNESS_M } from "../utils/siteBoundaryMesh";
 
 const WHITE = "#fff";
-const MONUMENT = "#323233";
-const FLOOR_PLAN_SUBFLOOR_COLOR = 0x323233;
-const FLOOR_PLAN_UPPER_COLOR = 0xd1d5db;
-const BUILDING_WALL_COLOR = 0xffffff;
-const BUILDING_ROOF_COLOR = FLOOR_PLAN_UPPER_COLOR;
-const BUILDING_EDGE_COLOR = 0x323233;
-const FOOTPRINT_BOTTOM_Y = 0;
-
-function addExtrudedFootprintMesh(boundaryGroup, topRingPositions, color, options = {}) {
-  const bottomYM = options.bottomYM ?? FOOTPRINT_BOTTOM_Y;
-  const volume = buildExtrudedFootprintMesh(topRingPositions, bottomYM, options);
-  if (!volume) return;
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(volume.positions, 3));
-  geometry.setIndex(new THREE.BufferAttribute(volume.indices, 1));
-  geometry.computeVertexNormals();
-
-  const material = new THREE.MeshBasicMaterial({
-    color,
-    side: options.doubleSided ? THREE.DoubleSide : THREE.FrontSide,
-    depthTest: true,
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.renderOrder = 15;
-  boundaryGroup.add(mesh);
-}
-
-function addFlatFootprintCap(boundaryGroup, topRingPositions, color) {
-  const cap = buildFootprintTopCapMesh(topRingPositions);
-  if (!cap) return;
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(cap.positions, 3));
-  geometry.setIndex(new THREE.BufferAttribute(cap.indices, 1));
-  geometry.computeVertexNormals();
-
-  const material = new THREE.MeshBasicMaterial({
-    color,
-    side: THREE.FrontSide,
-    depthTest: true,
-    polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -1,
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.renderOrder = 16;
-  boundaryGroup.add(mesh);
-}
-
-function addFootprintEdgeLines(
-  boundaryGroup,
-  topRingPositions,
-  bottomYM = FOOTPRINT_BOTTOM_Y,
-  color = BUILDING_EDGE_COLOR
-) {
-  const positions = buildFootprintEdgeLinePositions(topRingPositions, bottomYM);
-  if (!positions) return;
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  const lines = new THREE.LineSegments(
-    geometry,
-    new THREE.LineBasicMaterial({
-      color,
-      depthTest: true,
-      depthWrite: false,
-    })
-  );
-  lines.renderOrder = 18;
-  boundaryGroup.add(lines);
-}
-
-function fitCameraToObject(camera, object, padding = 1.4) {
-  const box = new THREE.Box3().setFromObject(object);
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  const maxDim = Math.max(size.x, size.y, size.z, 1);
-  const fov = (camera.fov * Math.PI) / 180;
-  let dist = maxDim / (2 * Math.tan(fov / 2));
-  dist *= padding;
-
-  camera.position.set(center.x + dist * 0.55, center.y + dist * 0.65, center.z + dist * 0.55);
-  camera.lookAt(center);
-  camera.near = Math.max(0.1, dist / 100);
-  camera.far = dist * 20;
-  camera.updateProjectionMatrix();
-}
-
-function addBoundaryScene(boundaryGroup, ring, siteCornerLevels, earthMaterial, grassMaterial) {
-  const slabData = buildSiteSlabMesh(ring);
-  if (!slabData) throw new Error("Could not build site boundary");
-
-  const cornerHeights = cornerRelativeHeightsM(ring, siteCornerLevels);
-  if (!cornerHeights) throw new Error("Could not calculate corner heights");
-
-  const earthVolume = buildEarthVolumeMesh(ring, slabData.topPositions, cornerHeights);
-  if (!earthVolume) throw new Error("Could not build earth volume");
-
-  const earthGeometry = new THREE.BufferGeometry();
-  earthGeometry.setAttribute("position", new THREE.BufferAttribute(earthVolume.positions, 3));
-  earthGeometry.setIndex(earthVolume.indices);
-  const earthUvs = new Float32Array((earthVolume.positions.length / 3) * 2);
-  assignEarthUVs(earthVolume.positions, earthUvs);
-  earthGeometry.setAttribute("uv", new THREE.BufferAttribute(earthUvs, 2));
-  earthGeometry.computeVertexNormals();
-  boundaryGroup.add(new THREE.Mesh(earthGeometry, earthMaterial));
-
-  const topSurface = buildHeightTopSurfaceMesh(ring, slabData.topPositions, cornerHeights);
-  if (!topSurface) throw new Error("Could not build grass top surface");
-
-  const grassGeometry = new THREE.BufferGeometry();
-  grassGeometry.setAttribute("position", new THREE.BufferAttribute(topSurface.positions, 3));
-  grassGeometry.setIndex(new THREE.BufferAttribute(topSurface.indices, 1));
-  const grassUvs = new Float32Array((topSurface.positions.length / 3) * 2);
-  assignGrassUVs(topSurface.positions, grassUvs);
-  grassGeometry.setAttribute("uv", new THREE.BufferAttribute(grassUvs, 2));
-  grassGeometry.computeVertexNormals();
-  boundaryGroup.add(new THREE.Mesh(grassGeometry, grassMaterial));
-
-  return cornerHeights;
-}
-
-async function addFloorPlanVolume(boundaryGroup, ring, siteCornerLevels, placedUnit) {
-  const { plan, center, bearing = 0 } = placedUnit || {};
-  if (!plan?.id || !plan?.scale?.metersPerPixel || !center?.lat || !center?.lng) {
-    return;
-  }
-
-  const blob = await fetchFloorPlanImageBlob(plan.id);
-  const { width, height } = await loadImageSizeFromBlob(blob);
-  const dims = floorPlanDimensionsMeters(plan, width, height);
-  if (!dims) return;
-
-  const outline = buildFloorPlanOutlineLinePositions(
-    ring,
-    siteCornerLevels,
-    center.lat,
-    center.lng,
-    dims.widthM,
-    dims.heightM,
-    bearing
-  );
-  if (!outline) return;
-
-  addExtrudedFootprintMesh(boundaryGroup, outline.positions, FLOOR_PLAN_SUBFLOOR_COLOR, {
-    doubleSided: true,
-    bottomYM: FOOTPRINT_BOTTOM_Y,
-  });
-
-  const upperTopY = outline.outlineYM + FLOOR_PLAN_UPPER_HEIGHT_M;
-  const upperRing = footprintRingAtY(outline.positions, upperTopY);
-  addExtrudedFootprintMesh(boundaryGroup, upperRing, FLOOR_PLAN_UPPER_COLOR, {
-    doubleSided: true,
-    bottomYM: outline.outlineYM,
-  });
-  addFootprintEdgeLines(boundaryGroup, upperRing, outline.outlineYM);
-}
-
-function addBuildingVolumes(boundaryGroup, siteRing, siteCornerLevels, buildingsGeoJson) {
-  const features = buildingsGeoJson?.features || [];
-  if (!features.length) return;
-
-  for (const feature of features) {
-    const rings = extractOuterRings(feature.geometry);
-    for (const ring of rings) {
-      const outline = buildBuildingOutlineLinePositions(ring, siteRing, siteCornerLevels);
-      if (!outline) continue;
-      addExtrudedFootprintMesh(boundaryGroup, outline.positions, BUILDING_WALL_COLOR, {
-        includeTopCap: false,
-        doubleSided: true,
-      });
-      addFlatFootprintCap(boundaryGroup, outline.positions, BUILDING_ROOF_COLOR);
-      addFootprintEdgeLines(boundaryGroup, outline.positions);
-    }
-  }
-}
 
 export default function SiteBoundary3DModal({
   siteGeometry,
@@ -342,56 +153,21 @@ export default function SiteBoundary3DModal({
         setStatus("loading");
         setStatusDetail("Loading site levels…");
 
-        const rings = extractOuterRings(siteGeometry);
-        if (!rings.length) {
-          setStatus("error");
-          setStatusDetail("No site boundary geometry");
-          return;
-        }
-
-        const data = await fetchMonumentBox(siteGeometry, lookupState);
-        if (disposed) return;
-
-        const levels = data.siteCornerLevels;
-        const complete =
-          levels && ["nw", "ne", "se", "sw"].every((id) => Number.isFinite(levels[id]?.ahdM));
-
-        if (!complete) {
-          setStatus("error");
-          setStatusDetail(
-            data.missing?.length
-              ? `Missing monument data (${data.missing.join(", ").toUpperCase()})`
-              : "Could not calculate site corner levels"
-          );
-          return;
-        }
-
-        const cornerHeights = addBoundaryScene(
-          boundaryGroup,
-          rings[0],
-          levels,
+        const { maxRelativeFall } = await populateSiteBoundary3DGroup(boundaryGroup, {
+          siteGeometry,
+          lookupState,
+          placedUnit,
+          buildingsGeoJson,
           earthMaterial,
-          grassMaterial
-        );
-        const maxRelative = Math.max(...cornerHeights.map((c) => c.relativeM));
-
-        if (placedUnit) {
-          setStatusDetail("Loading unit footprint…");
-          try {
-            await addFloorPlanVolume(boundaryGroup, rings[0], levels, placedUnit);
-          } catch {
-            /* unit outline is optional */
-          }
-          if (disposed) return;
-        }
-
-        addBuildingVolumes(boundaryGroup, rings[0], levels, buildingsGeoJson);
+          grassMaterial,
+        });
+        if (disposed) return;
 
         fitCameraToObject(camera, boundaryGroup);
         syncCameraOrbitFromFit();
         boundaryGroup.rotation.set(0, rotationY, 0);
 
-        setSiteFallM(maxRelative);
+        setSiteFallM(maxRelativeFall);
         setStatus("ready");
         setStatusDetail("");
       } catch (err) {
@@ -414,13 +190,7 @@ export default function SiteBoundary3DModal({
       if (renderer?.domElement?.parentNode === container) {
         container.removeChild(renderer.domElement);
       }
-      scene.traverse((obj) => {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) {
-          if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
-          else obj.material.dispose();
-        }
-      });
+      disposeThreeObject(scene);
       earthTexture.dispose();
       grassTexture.dispose();
     };

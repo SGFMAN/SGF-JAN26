@@ -12,6 +12,25 @@ function ensureUploadDir() {
   }
 }
 
+async function ensureMapFloorPlansDollarValueColumn(pool) {
+  if (!pool) return;
+  await pool.query(`
+    ALTER TABLE map_floor_plans ADD COLUMN IF NOT EXISTS dollar_value NUMERIC(12, 2);
+  `);
+}
+
+function parseDollarValue(raw) {
+  if (raw == null || String(raw).trim() === "") {
+    return { dollarValue: null };
+  }
+  const cleaned = String(raw).replace(/[$ ,\s]/g, "");
+  const n = Number.parseFloat(cleaned);
+  if (!Number.isFinite(n) || n < 0) {
+    return { error: "dollar_value must be a non-negative number" };
+  }
+  return { dollarValue: n };
+}
+
 function buildScale(row) {
   const x1 = row.scale_line_x1;
   const y1 = row.scale_line_y1;
@@ -46,6 +65,7 @@ function rowToPlan(row) {
     name: row.name,
     category: row.category,
     sizeSqm: Number(row.size_sqm),
+    dollarValue: row.dollar_value != null ? Number(row.dollar_value) : null,
     hasImage: Boolean(row.image_filename),
     fileType,
     imageUrl: row.image_filename ? `/api/maps/floor-plans/${row.id}/image` : null,
@@ -125,11 +145,15 @@ function parseFloorPlanFields(body, { requireScale = false } = {}) {
     return { error: "Scale calibration is required for new floor plan images" };
   }
 
+  const dollarParsed = parseDollarValue(body.dollar_value ?? body.dollarValue);
+  if (dollarParsed.error) return dollarParsed;
+
   return {
     name: nameParsed.name,
     category: categoryParsed.category,
     sizeSqm: sizeParsed.sizeSqm,
     scale: scaleParsed.scale,
+    dollarValue: dollarParsed.dollarValue,
   };
 }
 
@@ -170,8 +194,9 @@ async function deleteImageFile(filename) {
 }
 
 async function listFloorPlans(pool) {
+  await ensureMapFloorPlansDollarValueColumn(pool);
   const r = await pool.query(
-    `SELECT id, name, category, size_sqm, image_filename,
+    `SELECT id, name, category, size_sqm, dollar_value, image_filename,
             scale_line_x1, scale_line_y1, scale_line_x2, scale_line_y2, scale_line_meters,
             created_at, updated_at
      FROM map_floor_plans ORDER BY name ASC`
@@ -191,15 +216,16 @@ async function createFloorPlan(pool, fields, file) {
   const { scale } = fields;
   const r = await pool.query(
     `INSERT INTO map_floor_plans (
-       name, category, size_sqm, image_filename,
+       name, category, size_sqm, dollar_value, image_filename,
        scale_line_x1, scale_line_y1, scale_line_x2, scale_line_y2, scale_line_meters,
        updated_at
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW()) RETURNING *`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW()) RETURNING *`,
     [
       fields.name,
       fields.category,
       fields.sizeSqm,
+      fields.dollarValue,
       imageFilename,
       scale.x1,
       scale.y1,
@@ -237,14 +263,15 @@ async function updateFloorPlan(pool, id, fields, file) {
 
   const r = await pool.query(
     `UPDATE map_floor_plans
-     SET name = $1, category = $2, size_sqm = $3, image_filename = $4,
-         scale_line_x1 = $5, scale_line_y1 = $6, scale_line_x2 = $7, scale_line_y2 = $8,
-         scale_line_meters = $9, updated_at = NOW()
-     WHERE id = $10 RETURNING *`,
+     SET name = $1, category = $2, size_sqm = $3, dollar_value = $4, image_filename = $5,
+         scale_line_x1 = $6, scale_line_y1 = $7, scale_line_x2 = $8, scale_line_y2 = $9,
+         scale_line_meters = $10, updated_at = NOW()
+     WHERE id = $11 RETURNING *`,
     [
       fields.name,
       fields.category,
       fields.sizeSqm,
+      fields.dollarValue,
       imageFilename,
       scaleX1,
       scaleY1,
@@ -254,6 +281,21 @@ async function updateFloorPlan(pool, id, fields, file) {
       id,
     ]
   );
+  return { plan: rowToPlan(r.rows[0]) };
+}
+
+async function updateFloorPlanDollarValue(pool, id, rawValue) {
+  await ensureMapFloorPlansDollarValueColumn(pool);
+  const parsed = parseDollarValue(rawValue);
+  if (parsed.error) return { error: parsed.error, status: 400 };
+
+  const r = await pool.query(
+    `UPDATE map_floor_plans
+     SET dollar_value = $1, updated_at = NOW()
+     WHERE id = $2 RETURNING *`,
+    [parsed.dollarValue, id]
+  );
+  if (!r.rows.length) return { notFound: true };
   return { plan: rowToPlan(r.rows[0]) };
 }
 
@@ -276,9 +318,11 @@ async function getFloorPlanImagePath(pool, id) {
 module.exports = {
   FLOOR_PLAN_CATEGORIES,
   parseFloorPlanFields,
+  ensureMapFloorPlansDollarValueColumn,
   listFloorPlans,
   createFloorPlan,
   updateFloorPlan,
+  updateFloorPlanDollarValue,
   deleteFloorPlan,
   getFloorPlanImagePath,
 };

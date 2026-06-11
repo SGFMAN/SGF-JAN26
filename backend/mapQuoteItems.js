@@ -1,3 +1,19 @@
+async function ensureMapQuoteItemsTable(pool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS map_quote_items (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL DEFAULT '',
+      price TEXT NOT NULL DEFAULT '',
+      checked BOOLEAN NOT NULL DEFAULT true,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`
+    ALTER TABLE map_quote_items ADD COLUMN IF NOT EXISTS price TEXT NOT NULL DEFAULT '';
+  `);
+}
+
 function normalizeItem(raw, index) {
   const id = String(raw?.id || "").trim();
   const label = String(raw?.label ?? "").trim();
@@ -5,7 +21,7 @@ function normalizeItem(raw, index) {
   return {
     id,
     label,
-    checked: raw?.checked === true,
+    price: String(raw?.price ?? "").trim(),
     sortOrder: Number.isFinite(Number(raw?.sortOrder)) ? Number(raw.sortOrder) : index,
   };
 }
@@ -14,7 +30,7 @@ function rowToItem(row) {
   return {
     id: row.id,
     label: row.label || "",
-    checked: row.checked === true,
+    price: row.price || "",
     sortOrder: Number(row.sort_order) || 0,
   };
 }
@@ -36,8 +52,9 @@ function validateItemsInput(items) {
 }
 
 async function listQuoteItems(pool) {
+  await ensureMapQuoteItemsTable(pool);
   const r = await pool.query(
-    `SELECT id, label, checked, sort_order
+    `SELECT id, label, price, sort_order
      FROM map_quote_items
      ORDER BY sort_order ASC, label ASC, id ASC`
   );
@@ -45,6 +62,7 @@ async function listQuoteItems(pool) {
 }
 
 async function saveQuoteItems(pool, items) {
+  await ensureMapQuoteItemsTable(pool);
   const parsed = validateItemsInput(items);
   if (parsed.error) return { error: parsed.error, status: 400 };
 
@@ -55,9 +73,9 @@ async function saveQuoteItems(pool, items) {
     for (let i = 0; i < parsed.items.length; i += 1) {
       const item = parsed.items[i];
       await client.query(
-        `INSERT INTO map_quote_items (id, label, checked, sort_order, updated_at)
-         VALUES ($1, $2, $3, $4, NOW())`,
-        [item.id, item.label, item.checked, i]
+        `INSERT INTO map_quote_items (id, label, price, checked, sort_order, updated_at)
+         VALUES ($1, $2, $3, true, $4, NOW())`,
+        [item.id, item.label, item.price, i]
       );
     }
     await client.query("COMMIT");
@@ -71,6 +89,7 @@ async function saveQuoteItems(pool, items) {
 }
 
 module.exports = {
+  ensureMapQuoteItemsTable,
   listQuoteItems,
   saveQuoteItems,
 };

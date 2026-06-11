@@ -20,6 +20,43 @@ const DRAFT_LINE_STYLE = {
 
 const CLOSE_HIT_PX = 12;
 
+function polygonCentroid(latlngs) {
+  if (!latlngs?.length) return null;
+  let area = 0;
+  let cx = 0;
+  let cy = 0;
+  const n = latlngs.length;
+  for (let i = 0; i < n; i += 1) {
+    const j = (i + 1) % n;
+    const xi = latlngs[i].lng;
+    const yi = latlngs[i].lat;
+    const xj = latlngs[j].lng;
+    const yj = latlngs[j].lat;
+    const f = xi * yj - xj * yi;
+    area += f;
+    cx += (xi + xj) * f;
+    cy += (yi + yj) * f;
+  }
+  area *= 0.5;
+  if (Math.abs(area) < 1e-12) {
+    const lat = latlngs.reduce((sum, p) => sum + p.lat, 0) / n;
+    const lng = latlngs.reduce((sum, p) => sum + p.lng, 0) / n;
+    return L.latLng(lat, lng);
+  }
+  cx /= 6 * area;
+  cy /= 6 * area;
+  return L.latLng(cy, cx);
+}
+
+function existingBuildingLabelIcon() {
+  return L.divIcon({
+    className: "sgf-existing-building-label",
+    iconSize: [0, 0],
+    iconAnchor: [0, 0],
+    html: `<div style="transform:translate(-50%,-50%);white-space:nowrap;padding:3px 8px;border-radius:4px;background:rgba(255,255,255,0.94);border:1px solid #323233;color:#323233;font:600 11px/1.2 Arial,sans-serif;pointer-events:none;">Existing Building</div>`,
+  });
+}
+
 function ensureBuildingsPane(map) {
   if (!map.getPane(BUILDINGS_PANE)) {
     map.createPane(BUILDINGS_PANE);
@@ -103,6 +140,17 @@ export default function EditableBuildingsLayer({
               interactive: false,
             })
           );
+          const centroid = polygonCentroid(latlngs);
+          if (centroid) {
+            layerGroup.addLayer(
+              L.marker(centroid, {
+                pane: BUILDINGS_PANE,
+                interactive: false,
+                icon: existingBuildingLabelIcon(),
+                zIndexOffset: 500,
+              })
+            );
+          }
         }
 
         layerGroup.addTo(map);

@@ -315,6 +315,8 @@ export default function Maps() {
   const [unitPlacementKey, setUnitPlacementKey] = useState(0);
   const [movableTarget, setMovableTarget] = useState(null);
   const hadParcelRef = useRef(false);
+  const mapCaptureRef = useRef(null);
+  const [propertySearchState, setPropertySearchState] = useState("VIC");
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -508,7 +510,7 @@ export default function Maps() {
       });
       return { type: "FeatureCollection", features };
     });
-    // Stay in draw mode so the user can outline another building straight away.
+    setAddingBuilding(false);
   }, []);
 
   const clearBuildingOutlines = useCallback(() => {
@@ -583,6 +585,7 @@ export default function Maps() {
       setActiveSearchQuery(q);
 
       const searchState = inferStateFromNominatimHit(hit);
+      setPropertySearchState(searchState);
 
       const admin = await isUserAdmin();
       setIsAdmin(admin);
@@ -988,6 +991,7 @@ export default function Maps() {
           }}
         >
           <div
+            ref={mapCaptureRef}
             style={{
               flex: "1 1 auto",
               minWidth: 0,
@@ -1350,7 +1354,7 @@ export default function Maps() {
                   <>
                     <span style={{ color: "#555", lineHeight: 1.4 }}>
                       Click each corner of the building on the map. Click the first point again to
-                      finish, then draw another or press Done.
+                      finish.
                     </span>
                     <button
                       type="button"
@@ -1495,12 +1499,25 @@ export default function Maps() {
         />
       )}
 
-      {showQuoteModal && <MapsQuoteModal onClose={() => setShowQuoteModal(false)} />}
+      {showQuoteModal && (
+        <MapsQuoteModal
+          onClose={() => setShowQuoteModal(false)}
+          unitPlan={placedUnit?.plan ?? null}
+          proposalContext={{
+            mapElement: mapCaptureRef.current,
+            siteGeometry: parcelFeature?.geometry ?? null,
+            lookupState: propertySearchState,
+            placedUnit,
+            buildingsGeoJson,
+            addressLabel: resultLabel || activeSearchQuery || "",
+          }}
+        />
+      )}
 
       {show3dVisualisationModal && parcelFeature?.geometry && (
         <SiteBoundary3DModal
           siteGeometry={parcelFeature.geometry}
-          lookupState="VIC"
+          lookupState={propertySearchState}
           placedUnit={placedUnit}
           buildingsGeoJson={buildingsGeoJson}
           onBack={() => setShow3dVisualisationModal(false)}

@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { CORRUGATED_ROOF_PITCH_M } from "./corrugatedRoofTexture";
 import {
   interpolateSiteCornerGrid,
   METERS_PER_DEG_LAT,
@@ -15,6 +16,10 @@ export const SITE_BASE_OFFSET_M = SITE_THICKNESS_M;
 export const FLOOR_PLAN_HEIGHT_ABOVE_GRASS_M = 0.65;
 /** Light-grey unit volume above the subfloor (wall height). */
 export const FLOOR_PLAN_UPPER_HEIGHT_M = 3;
+/** Gable roof overhang beyond floor plan walls (m). */
+export const FLOOR_PLAN_ROOF_OVERHANG_M = 0.3;
+/** Gable ridge height above the top of the floor plan walls (m). */
+export const FLOOR_PLAN_ROOF_RIDGE_RISE_M = 1;
 /** Existing building volumes extend this far above the highest grass point under the footprint. */
 export const BUILDING_HEIGHT_ABOVE_GRASS_M = 4.5;
 
@@ -321,6 +326,285 @@ export function footprintRingAtY(topRingPositions, y) {
     ring[i] = y;
   }
   return ring;
+}
+
+function readFootprintCornerXZ(topRingPositions, index) {
+  return {
+    x: topRingPositions[index * 3],
+    z: topRingPositions[index * 3 + 2],
+  };
+}
+
+function midpointXZ(a, b) {
+  return { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 };
+}
+
+function outwardNormalCCW(from, to) {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-9) return { x: 0, z: 0 };
+  return { x: dz / len, z: -dx / len };
+}
+
+function intersectOffsetEdges(fromA, toA, normalA, fromB, toB, normalB, offsetM) {
+  const startA = {
+    x: fromA.x + normalA.x * offsetM,
+    z: fromA.z + normalA.z * offsetM,
+  };
+  const dirA = { x: toA.x - fromA.x, z: toA.z - fromA.z };
+  const startB = {
+    x: fromB.x + normalB.x * offsetM,
+    z: fromB.z + normalB.z * offsetM,
+  };
+  const dirB = { x: toB.x - fromB.x, z: toB.z - fromB.z };
+  const cross = dirA.x * dirB.z - dirA.z * dirB.x;
+  if (Math.abs(cross) < 1e-12) {
+    return { x: startA.x, z: startA.z };
+  }
+  const dx = startB.x - startA.x;
+  const dz = startB.z - startA.z;
+  const t = (dx * dirB.z - dz * dirB.x) / cross;
+  return { x: startA.x + t * dirA.x, z: startA.z + t * dirA.z };
+}
+
+function rectangleSignedAreaXZ(sw, se, ne, nw) {
+  const pts = [sw, se, ne, nw];
+  let area = 0;
+  for (let i = 0; i < pts.length; i += 1) {
+    const j = (i + 1) % pts.length;
+    area += pts[i].x * pts[j].z - pts[j].x * pts[i].z;
+  }
+  return area * 0.5;
+}
+
+function offsetRectangleCorners(sw, se, ne, nw, offsetM) {
+  // Floor plan rings are clockwise in site XZ (z = -north); flip offset when needed.
+  const outwardOffset = rectangleSignedAreaXZ(sw, se, ne, nw) >= 0 ? offsetM : -offsetM;
+  const normalSouth = outwardNormalCCW(sw, se);
+  const normalEast = outwardNormalCCW(se, ne);
+  const normalNorth = outwardNormalCCW(ne, nw);
+  const normalWest = outwardNormalCCW(nw, sw);
+  return {
+    sw: intersectOffsetEdges(nw, sw, normalWest, sw, se, normalSouth, outwardOffset),
+    se: intersectOffsetEdges(sw, se, normalSouth, se, ne, normalEast, outwardOffset),
+    ne: intersectOffsetEdges(se, ne, normalEast, ne, nw, normalNorth, outwardOffset),
+    nw: intersectOffsetEdges(ne, nw, normalNorth, nw, sw, normalWest, outwardOffset),
+  };
+}
+
+function unitXZ(dx, dz) {
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-9) return { x: 0, z: 0 };
+  return { x: dx / len, z: dz / len };
+}
+
+function roofUV(x, z, originX, originZ, uDir, vDir, pitchM = CORRUGATED_ROOF_PITCH_M) {
+  const rx = x - originX;
+  const rz = z - originZ;
+  return {
+    u: (rx * uDir.x + rz * uDir.z) / pitchM,
+    v: (rx * vDir.x + rz * vDir.z) / pitchM,
+  };
+}
+
+function pushRoofVertex(positions, uvs, x, y, z, u, v) {
+  const index = positions.length / 3;
+  positions.push(x, y, z);
+  uvs.push(u, v);
+  return index;
+}
+
+function pushRoofQuad(indices, a, b, c, d) {
+  indices.push(a, b, c, a, c, d);
+}
+
+/** Emit quad triangles with normals facing upward (+Y). */
+function pushRoofQuadFacingUp(indices, positions, a, b, c, d) {
+  const ax = positions[a * 3];
+  const ay = positions[a * 3 + 1];
+  const az = positions[a * 3 + 2];
+  const bx = positions[b * 3];
+  const by = positions[b * 3 + 1];
+  const bz = positions[b * 3 + 2];
+  const cx = positions[c * 3];
+  const cy = positions[c * 3 + 1];
+  const cz = positions[c * 3 + 2];
+  const ux = bx - ax;
+  const uy = by - ay;
+  const uz = bz - az;
+  const vx = cx - ax;
+  const vy = cy - ay;
+  const vz = cz - az;
+  const normalY = uz * vx - ux * vz;
+  if (normalY >= 0) {
+    pushRoofQuad(indices, a, b, c, d);
+  } else {
+    pushRoofQuad(indices, a, d, c, b);
+  }
+}
+
+/**
+ * Two-plane gable roof for a rectangular floor plan footprint.
+ * Ridge runs lengthways; eaves overhang outward by overhangM at wallTopYM;
+ * ridge is ridgeRiseM above wallTopYM.
+ * @returns {{ positions: Float32Array, indices: Uint32Array } | null}
+ */
+export function buildFloorPlanGableRoofMesh(
+  topRingPositions,
+  widthM,
+  heightM,
+  wallTopYM,
+  overhangM = FLOOR_PLAN_ROOF_OVERHANG_M,
+  ridgeRiseM = FLOOR_PLAN_ROOF_RIDGE_RISE_M
+) {
+  const vertexCount = topRingPositions.length / 3;
+  if (vertexCount < 4) return null;
+
+  const sw = readFootprintCornerXZ(topRingPositions, 0);
+  const se = readFootprintCornerXZ(topRingPositions, 1);
+  const ne = readFootprintCornerXZ(topRingPositions, 2);
+  const nw = readFootprintCornerXZ(topRingPositions, 3);
+  const eave = offsetRectangleCorners(sw, se, ne, nw, overhangM);
+  const eaveYM = wallTopYM;
+  const ridgeYM = wallTopYM + ridgeRiseM;
+
+  const positions = [];
+  const uvs = [];
+  const indices = [];
+  const lengthRunsEastWest = widthM >= heightM;
+
+  if (lengthRunsEastWest) {
+    const ridgeWest = midpointXZ(eave.sw, eave.nw);
+    const ridgeEast = midpointXZ(eave.se, eave.ne);
+    const southUDir = unitXZ(eave.se.x - eave.sw.x, eave.se.z - eave.sw.z);
+    const southVDir = unitXZ(ridgeWest.x - eave.sw.x, ridgeWest.z - eave.sw.z);
+    const northUDir = unitXZ(eave.ne.x - eave.nw.x, eave.ne.z - eave.nw.z);
+    const northVDir = unitXZ(ridgeWest.x - eave.nw.x, ridgeWest.z - eave.nw.z);
+
+    const swUV = roofUV(eave.sw.x, eave.sw.z, eave.sw.x, eave.sw.z, southUDir, southVDir);
+    const seUV = roofUV(eave.se.x, eave.se.z, eave.sw.x, eave.sw.z, southUDir, southVDir);
+    const ridgeWestUV = roofUV(ridgeWest.x, ridgeWest.z, eave.sw.x, eave.sw.z, southUDir, southVDir);
+    const ridgeEastUV = roofUV(ridgeEast.x, ridgeEast.z, eave.sw.x, eave.sw.z, southUDir, southVDir);
+
+    const swIdx = pushRoofVertex(positions, uvs, eave.sw.x, eaveYM, eave.sw.z, swUV.u, swUV.v);
+    const seIdx = pushRoofVertex(positions, uvs, eave.se.x, eaveYM, eave.se.z, seUV.u, seUV.v);
+    const ridgeWestIdx = pushRoofVertex(
+      positions,
+      uvs,
+      ridgeWest.x,
+      ridgeYM,
+      ridgeWest.z,
+      ridgeWestUV.u,
+      ridgeWestUV.v
+    );
+    const ridgeEastIdx = pushRoofVertex(
+      positions,
+      uvs,
+      ridgeEast.x,
+      ridgeYM,
+      ridgeEast.z,
+      ridgeEastUV.u,
+      ridgeEastUV.v
+    );
+
+    const nwUV = roofUV(eave.nw.x, eave.nw.z, eave.nw.x, eave.nw.z, northUDir, northVDir);
+    const neUV = roofUV(eave.ne.x, eave.ne.z, eave.nw.x, eave.nw.z, northUDir, northVDir);
+    const ridgeWestNorthUV = roofUV(ridgeWest.x, ridgeWest.z, eave.nw.x, eave.nw.z, northUDir, northVDir);
+    const ridgeEastNorthUV = roofUV(ridgeEast.x, ridgeEast.z, eave.nw.x, eave.nw.z, northUDir, northVDir);
+
+    const nwIdx = pushRoofVertex(positions, uvs, eave.nw.x, eaveYM, eave.nw.z, nwUV.u, nwUV.v);
+    const neIdx = pushRoofVertex(positions, uvs, eave.ne.x, eaveYM, eave.ne.z, neUV.u, neUV.v);
+    const ridgeWestNorthIdx = pushRoofVertex(
+      positions,
+      uvs,
+      ridgeWest.x,
+      ridgeYM,
+      ridgeWest.z,
+      ridgeWestNorthUV.u,
+      ridgeWestNorthUV.v
+    );
+    const ridgeEastNorthIdx = pushRoofVertex(
+      positions,
+      uvs,
+      ridgeEast.x,
+      ridgeYM,
+      ridgeEast.z,
+      ridgeEastNorthUV.u,
+      ridgeEastNorthUV.v
+    );
+
+    pushRoofQuadFacingUp(indices, positions, swIdx, seIdx, ridgeEastIdx, ridgeWestIdx);
+    pushRoofQuadFacingUp(indices, positions, nwIdx, neIdx, ridgeEastNorthIdx, ridgeWestNorthIdx);
+  } else {
+    const ridgeSouth = midpointXZ(eave.sw, eave.se);
+    const ridgeNorth = midpointXZ(eave.nw, eave.ne);
+    const westUDir = unitXZ(eave.nw.x - eave.sw.x, eave.nw.z - eave.sw.z);
+    const westVDir = unitXZ(ridgeSouth.x - eave.sw.x, ridgeSouth.z - eave.sw.z);
+    const eastUDir = unitXZ(eave.ne.x - eave.se.x, eave.ne.z - eave.se.z);
+    const eastVDir = unitXZ(ridgeSouth.x - eave.se.x, ridgeSouth.z - eave.se.z);
+
+    const swUV = roofUV(eave.sw.x, eave.sw.z, eave.sw.x, eave.sw.z, westUDir, westVDir);
+    const nwUV = roofUV(eave.nw.x, eave.nw.z, eave.sw.x, eave.sw.z, westUDir, westVDir);
+    const ridgeSouthUV = roofUV(ridgeSouth.x, ridgeSouth.z, eave.sw.x, eave.sw.z, westUDir, westVDir);
+    const ridgeNorthWestUV = roofUV(ridgeNorth.x, ridgeNorth.z, eave.sw.x, eave.sw.z, westUDir, westVDir);
+
+    const swIdx = pushRoofVertex(positions, uvs, eave.sw.x, eaveYM, eave.sw.z, swUV.u, swUV.v);
+    const nwIdx = pushRoofVertex(positions, uvs, eave.nw.x, eaveYM, eave.nw.z, nwUV.u, nwUV.v);
+    const ridgeSouthIdx = pushRoofVertex(
+      positions,
+      uvs,
+      ridgeSouth.x,
+      ridgeYM,
+      ridgeSouth.z,
+      ridgeSouthUV.u,
+      ridgeSouthUV.v
+    );
+    const ridgeNorthWestIdx = pushRoofVertex(
+      positions,
+      uvs,
+      ridgeNorth.x,
+      ridgeYM,
+      ridgeNorth.z,
+      ridgeNorthWestUV.u,
+      ridgeNorthWestUV.v
+    );
+
+    const seUV = roofUV(eave.se.x, eave.se.z, eave.se.x, eave.se.z, eastUDir, eastVDir);
+    const neUV = roofUV(eave.ne.x, eave.ne.z, eave.se.x, eave.se.z, eastUDir, eastVDir);
+    const ridgeSouthEastUV = roofUV(ridgeSouth.x, ridgeSouth.z, eave.se.x, eave.se.z, eastUDir, eastVDir);
+    const ridgeNorthEastUV = roofUV(ridgeNorth.x, ridgeNorth.z, eave.se.x, eave.se.z, eastUDir, eastVDir);
+
+    const seIdx = pushRoofVertex(positions, uvs, eave.se.x, eaveYM, eave.se.z, seUV.u, seUV.v);
+    const neIdx = pushRoofVertex(positions, uvs, eave.ne.x, eaveYM, eave.ne.z, neUV.u, neUV.v);
+    const ridgeSouthEastIdx = pushRoofVertex(
+      positions,
+      uvs,
+      ridgeSouth.x,
+      ridgeYM,
+      ridgeSouth.z,
+      ridgeSouthEastUV.u,
+      ridgeSouthEastUV.v
+    );
+    const ridgeNorthEastIdx = pushRoofVertex(
+      positions,
+      uvs,
+      ridgeNorth.x,
+      ridgeYM,
+      ridgeNorth.z,
+      ridgeNorthEastUV.u,
+      ridgeNorthEastUV.v
+    );
+
+    pushRoofQuadFacingUp(indices, positions, swIdx, nwIdx, ridgeNorthWestIdx, ridgeSouthIdx);
+    pushRoofQuadFacingUp(indices, positions, seIdx, neIdx, ridgeNorthEastIdx, ridgeSouthEastIdx);
+  }
+
+  return {
+    positions: new Float32Array(positions),
+    uvs: new Float32Array(uvs),
+    indices: new Uint32Array(indices),
+  };
 }
 
 /**

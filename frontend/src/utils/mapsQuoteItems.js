@@ -1,10 +1,15 @@
 import { getApiHeaders } from "./auth";
 
-export function newQuoteItemId() {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return `quote-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+export function catalogQuoteItemId(rowIndex) {
+  return `catalog-${rowIndex}`;
+}
+
+export function quoteItemFromCatalogMatch(match) {
+  return {
+    id: catalogQuoteItemId(match.rowIndex),
+    label: String(match.product || "—").trim(),
+    price: String(match.price ?? "").trim(),
+  };
 }
 
 export function normalizeQuoteItem(raw, index = 0) {
@@ -14,7 +19,7 @@ export function normalizeQuoteItem(raw, index = 0) {
   return {
     id,
     label: String(raw.label ?? "").trim(),
-    checked: raw.checked === true,
+    price: String(raw.price ?? "").trim(),
     sortOrder: Number.isFinite(Number(raw.sortOrder)) ? Number(raw.sortOrder) : index,
   };
 }
@@ -49,8 +54,4 @@ export async function saveQuoteItems(items) {
   return (data.items || [])
     .map((item, index) => normalizeQuoteItem(item, index))
     .filter(Boolean);
-}
-
-export function checkedQuoteItems(items) {
-  return (items || []).filter((item) => item.checked);
 }

@@ -12,10 +12,16 @@ const EMPTY_FORM = {
   name: "",
   category: "Affordable",
   sizeSqm: "",
+  dollarValue: "",
   imageFile: null,
   imagePreview: "",
   previewType: "image",
 };
+
+function formatDollarDisplay(value) {
+  if (value == null || !Number.isFinite(Number(value))) return null;
+  return Number(value).toLocaleString("en-AU");
+}
 
 function isPdfUpload(file) {
   if (!file) return false;
@@ -153,6 +159,10 @@ export default function FloorPlansModal({ onClose }) {
       name: selectedPlan.name,
       category: selectedPlan.category,
       sizeSqm: String(selectedPlan.sizeSqm),
+      dollarValue:
+        selectedPlan.dollarValue != null && Number.isFinite(selectedPlan.dollarValue)
+          ? String(selectedPlan.dollarValue)
+          : "",
       imageFile: null,
       imagePreview: selectedPlan.imageUrl || "",
       previewType: selectedPlan.fileType || "image",
@@ -195,6 +205,11 @@ export default function FloorPlansModal({ onClose }) {
     body.append("name", form.name.trim());
     body.append("category", form.category);
     body.append("size_sqm", String(Number.parseFloat(form.sizeSqm)));
+    if (form.dollarValue.trim() !== "") {
+      body.append("dollar_value", form.dollarValue.trim());
+    } else {
+      body.append("dollar_value", "");
+    }
     if (imageFile) body.append("image", imageFile);
     if (scale) {
       body.append("scale_line_x1", String(scale.scaleLineX1));
@@ -365,6 +380,9 @@ export default function FloorPlansModal({ onClose }) {
                         <div style={{ fontWeight: 600 }}>{plan.name}</div>
                         <div style={{ fontSize: "0.82rem", color: "#666", marginTop: "2px" }}>
                           {plan.category} · {plan.sizeSqm} m²
+                          {formatDollarDisplay(plan.dollarValue) != null && (
+                            <> · ${formatDollarDisplay(plan.dollarValue)}</>
+                          )}
                         </div>
                       </button>
                     </li>
@@ -422,6 +440,12 @@ export default function FloorPlansModal({ onClose }) {
                     <div>
                       <span style={{ color: "#666" }}>Size: </span>
                       {selectedPlan.sizeSqm} m²
+                    </div>
+                    <div>
+                      <span style={{ color: "#666" }}>Dollar value: </span>
+                      {formatDollarDisplay(selectedPlan.dollarValue) != null
+                        ? `$${formatDollarDisplay(selectedPlan.dollarValue)}`
+                        : "—"}
                     </div>
                     {selectedPlan.scale && (
                       <div>
@@ -510,6 +534,25 @@ export default function FloorPlansModal({ onClose }) {
                   onChange={(e) => setForm((prev) => ({ ...prev, sizeSqm: e.target.value }))}
                   style={{ padding: "10px 12px", borderRadius: "8px", border: "1px solid #ccc" }}
                 />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <span style={{ fontSize: "0.9rem", color: "#555" }}>Dollar value</span>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ fontSize: "0.95rem", color: MONUMENT }}>$</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={form.dollarValue}
+                    onChange={(e) => setForm((prev) => ({ ...prev, dollarValue: e.target.value }))}
+                    placeholder="Optional"
+                    style={{
+                      flex: 1,
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: "1px solid #ccc",
+                    }}
+                  />
+                </div>
               </label>
               <label style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                 <span style={{ fontSize: "0.9rem", color: "#555" }}>
