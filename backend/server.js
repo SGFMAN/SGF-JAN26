@@ -40,14 +40,6 @@ const {
   formatPropertyEasementsResponse,
 } = require("./mapsEasementsLookup");
 const {
-  normalizeBuildingsState,
-  parseBuildingsLatLng,
-  parseEnvelope: parseBuildingsEnvelope,
-  normalizeBoundaryInput: normalizeBuildingsBoundaryInput,
-  lookupPropertyBuildings,
-  formatPropertyBuildingsResponse,
-} = require("./mapsBuildingsLookup");
-const {
   lookupAhdElevations,
   lookupMonumentBox,
   normalizeElevationState,
@@ -61,6 +53,7 @@ const {
   deleteFloorPlan,
   getFloorPlanImagePath,
 } = require("./mapFloorPlans");
+const { listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
 const {
   ensureProjectAccessTokens,
   isLegacyNumericProjectId,
@@ -1630,6 +1623,15 @@ async function ensureSchema() {
     "scale_line_y2",
   ], "DOUBLE PRECISION");
   await addMissingColumns(pool, "map_floor_plans", ["scale_line_meters"], "NUMERIC(10, 3)");
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS map_quote_items (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL DEFAULT '',
+      checked BOOLEAN NOT NULL DEFAULT false,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
   await ensureProjectAccessTokens(pool);
   await markSchemaUpToDate(pool);
   console.log(`Schema ${SCHEMA_VERSION} applied`);
@@ -2700,73 +2702,6 @@ async function handlePropertyEasementsRequest(req, res) {
 app.get("/api/property-easements", handlePropertyEasementsRequest);
 app.post("/api/property-easements", handlePropertyEasementsRequest);
 
-// --- Victorian building footprints (Vicmap Features of Interest — BUILDING_POLYGON) ---
-async function handlePropertyBuildingsRequest(req, res) {
-  const isAdmin = await isAdminRequest(req);
-  if (!isAdmin) {
-    return res.status(403).json({ ok: false, error: "Admin access required" });
-  }
-
-  const input =
-    req.method === "POST" && req.body && typeof req.body === "object" ? req.body : req.query;
-
-  const parsed = parseBuildingsLatLng(input);
-  if (parsed.error) {
-    return res.status(400).json({ ok: false, error: parsed.error });
-  }
-  const { lat, lng } = parsed;
-  const state = normalizeBuildingsState(input.state);
-
-  const envelopeParsed = parseBuildingsEnvelope(input);
-  if (envelopeParsed?.error) {
-    return res.status(400).json({ ok: false, error: envelopeParsed.error });
-  }
-  const envelope = typeof envelopeParsed === "string" ? envelopeParsed : null;
-
-  const boundaryParsed = normalizeBuildingsBoundaryInput(input.boundary ?? input.boundaryGeometry);
-  if (boundaryParsed?.error) {
-    return res.status(400).json({ ok: false, error: boundaryParsed.error });
-  }
-  const boundaryGeometry =
-    boundaryParsed && typeof boundaryParsed === "object" && boundaryParsed.type
-      ? boundaryParsed
-      : null;
-
-  const parcelId =
-    input.parcelId != null ? String(input.parcelId).trim() || null : null;
-
-  try {
-    const result = await lookupPropertyBuildings({
-      state,
-      lat,
-      lng,
-      envelope,
-      boundaryGeometry,
-      parcelId,
-    });
-
-    if (result.error) {
-      return res.status(result.status || 400).json({
-        ok: false,
-        error: result.error,
-        state,
-      });
-    }
-
-    return res.json(formatPropertyBuildingsResponse(result.hit));
-  } catch (e) {
-    console.error("[property-buildings] lookup error:", e);
-    return res.status(502).json({
-      ok: false,
-      error: e.message || "Buildings service unavailable",
-      state,
-    });
-  }
-}
-
-app.get("/api/property-buildings", handlePropertyBuildingsRequest);
-app.post("/api/property-buildings", handlePropertyBuildingsRequest);
-
 // --- Victorian AHD elevation at points (Vicmap Elevation FeatureServer) ---
 app.post("/api/maps/elevation-ahd", async (req, res) => {
   const isAdmin = await isAdminRequest(req);
@@ -2921,6 +2856,37 @@ app.delete("/api/maps/floor-plans/:id", async (req, res) => {
   } catch (e) {
     console.error("[floor-plans] delete error:", e);
     return res.status(500).json({ ok: false, error: e.message || "Failed to delete floor plan" });
+  }
+});
+
+// --- Maps quote checklist (settings + maps quote modal) ---
+app.get("/api/maps/quote-items", async (req, res) => {
+  if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
+  try {
+    const items = await listQuoteItems(pool);
+    return res.json({ ok: true, items });
+  } catch (e) {
+    console.error("[quote-items] list error:", e);
+    return res.status(500).json({ ok: false, error: e.message || "Failed to list quote items" });
+  }
+});
+
+app.put("/api/maps/quote-items", async (req, res) => {
+  if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const result = await saveQuoteItems(pool, body.items);
+    if (result.error) {
+      return res.status(result.status || 400).json({ ok: false, error: result.error });
+    }
+    return res.json({ ok: true, items: result.items });
+  } catch (e) {
+    console.error("[quote-items] save error:", e);
+    return res.status(500).json({ ok: false, error: e.message || "Failed to save quote items" });
   }
 });
 

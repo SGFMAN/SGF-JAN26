@@ -116,6 +116,8 @@ export default function MapsSidebar({
   bulkSelection = null,
   onAddUnit,
   showAddUnit = false,
+  onQuote,
+  showQuote = false,
 }) {
   const showBulkActions = typeof onLoadBulkProjects === "function";
   const onSoldMenu = activeView === "sold";
@@ -132,6 +134,12 @@ export default function MapsSidebar({
       {showAddUnit && typeof onAddUnit === "function" && (
         <button type="button" onClick={onAddUnit} style={sidebarButtonStyle(false)}>
           Add Unit
+        </button>
+      )}
+
+      {showQuote && typeof onQuote === "function" && (
+        <button type="button" onClick={onQuote} style={sidebarButtonStyle(false)}>
+          Quote
         </button>
       )}
 

@@ -11,6 +11,12 @@ import {
 /** Site slab thickness and height offset (m). Corner posts start at the top of the slab. */
 export const SITE_THICKNESS_M = 2;
 export const SITE_BASE_OFFSET_M = SITE_THICKNESS_M;
+/** Unit subfloor extends this far above the highest grass point under the footprint. */
+export const FLOOR_PLAN_HEIGHT_ABOVE_GRASS_M = 0.65;
+/** Light-grey unit volume above the subfloor (wall height). */
+export const FLOOR_PLAN_UPPER_HEIGHT_M = 3;
+/** Existing building volumes extend this far above the highest grass point under the footprint. */
+export const BUILDING_HEIGHT_ABOVE_GRASS_M = 4.5;
 
 function ringAreaM2(ring) {
   if (ring.length < 3) return 0;
@@ -257,8 +263,8 @@ export function sampleRotatedRectanglePoints(
 }
 
 /**
- * Flat yellow floor plan outline — horizontal at the highest grass point under the footprint.
- * @returns {{ positions: Float32Array, outlineYM: number } | null}
+ * Flat floor plan footprint — top at highest grass point + FLOOR_PLAN_HEIGHT_ABOVE_GRASS_M.
+ * @returns {{ positions: Float32Array, outlineYM: number, grassTopYM: number } | null}
  */
 export function buildFloorPlanOutlineLinePositions(
   ring,
@@ -268,7 +274,8 @@ export function buildFloorPlanOutlineLinePositions(
   widthM,
   heightM,
   bearingDeg = 0,
-  baseOffsetM = SITE_BASE_OFFSET_M
+  baseOffsetM = SITE_BASE_OFFSET_M,
+  heightAboveGrassM = FLOOR_PLAN_HEIGHT_ABOVE_GRASS_M
 ) {
   const frame = getSiteMeshFrame(ring);
   const minAhdM = siteMinAhdM(ring, siteCornerLevels);
@@ -289,7 +296,8 @@ export function buildFloorPlanOutlineLinePositions(
     maxRelativeM = Math.max(maxRelativeM, relativeM);
   }
 
-  const outlineYM = baseOffsetM + maxRelativeM + 0.012;
+  const grassTopYM = baseOffsetM + maxRelativeM + 0.012;
+  const outlineYM = grassTopYM + heightAboveGrassM;
   const corners = rotatedFloorPlanCorners(centerLat, centerLng, widthM, heightM, bearingDeg);
   const order = ["sw", "se", "ne", "nw"];
   const byId = Object.fromEntries(corners.map((corner) => [corner.id, corner]));
@@ -303,7 +311,334 @@ export function buildFloorPlanOutlineLinePositions(
     positions[i * 3 + 2] = z;
   }
 
-  return { positions, outlineYM };
+  return { positions, outlineYM, grassTopYM };
+}
+
+/** Same footprint ring at a flat height (x/z unchanged). */
+export function footprintRingAtY(topRingPositions, y) {
+  const ring = topRingPositions.slice();
+  for (let i = 1; i < ring.length; i += 3) {
+    ring[i] = y;
+  }
+  return ring;
+}
+
+/**
+ * Building footprint — top at highest grass point + BUILDING_HEIGHT_ABOVE_GRASS_M.
+ * @returns {{ positions: Float32Array, outlineYM: number, grassTopYM: number } | null}
+ */
+export function buildBuildingOutlineLinePositions(
+  ring,
+  siteBoundaryRing,
+  siteCornerLevels,
+  baseOffsetM = SITE_BASE_OFFSET_M,
+  heightAboveGrassM = BUILDING_HEIGHT_ABOVE_GRASS_M
+) {
+  const frame = getSiteMeshFrame(siteBoundaryRing);
+  const minAhdM = siteMinAhdM(siteBoundaryRing, siteCornerLevels);
+  if (!frame || minAhdM == null) return null;
+
+  const points = dedupeClosedRing(ring);
+  if (points.length < 3) return null;
+
+  let maxRelativeM = 0;
+  const samplePoints = [...points];
+  for (let i = 0; i < points.length; i += 1) {
+    const j = (i + 1) % points.length;
+    samplePoints.push({
+      lat: (points[i].lat + points[j].lat) / 2,
+      lng: (points[i].lng + points[j].lng) / 2,
+    });
+  }
+
+  for (const point of samplePoints) {
+    const relativeM = grassRelativeHeightAt(point.lat, point.lng, siteCornerLevels, minAhdM);
+    if (relativeM == null) return null;
+    maxRelativeM = Math.max(maxRelativeM, relativeM);
+  }
+
+  const grassTopYM = baseOffsetM + maxRelativeM + 0.012;
+  const outlineYM = grassTopYM + heightAboveGrassM;
+  const positions = new Float32Array(points.length * 3);
+
+  for (let i = 0; i < points.length; i += 1) {
+    const { x, z } = latLngToSiteLocalXZ(points[i].lat, points[i].lng, frame);
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = outlineYM;
+    positions[i * 3 + 2] = z;
+  }
+
+  return { positions, outlineYM, grassTopYM };
+}
+
+/**
+ * Solid extrusion of a flat footprint from its top ring down to the bottom of the dirt (y=0).
+ * @param {Float32Array} topRingPositions - n vertices × 3 (flat top, shared Y)
+ * @param {number} bottomYM
+ * @param {{ includeTopCap?: boolean }} [options]
+ * @returns {{ positions: Float32Array, indices: Uint32Array } | null}
+ */
+export function buildExtrudedFootprintMesh(topRingPositions, bottomYM = 0, options = {}) {
+  const includeTopCap = options.includeTopCap !== false;
+  const vertexCount = topRingPositions.length / 3;
+  if (vertexCount < 3) return null;
+
+  const contour = [];
+  for (let i = 0; i < vertexCount; i += 1) {
+    contour.push(
+      new THREE.Vector2(topRingPositions[i * 3], topRingPositions[i * 3 + 2])
+    );
+  }
+
+  const triangles = THREE.ShapeUtils.triangulateShape(contour, []);
+  if (!triangles.length) return null;
+
+  const topY = topRingPositions[1];
+  const topPositions = new Float32Array(vertexCount * 3);
+  const bottomPositions = new Float32Array(vertexCount * 3);
+
+  for (let i = 0; i < vertexCount; i += 1) {
+    const x = topRingPositions[i * 3];
+    const z = topRingPositions[i * 3 + 2];
+    topPositions[i * 3] = x;
+    topPositions[i * 3 + 1] = topY;
+    topPositions[i * 3 + 2] = z;
+    bottomPositions[i * 3] = x;
+    bottomPositions[i * 3 + 1] = bottomYM;
+    bottomPositions[i * 3 + 2] = z;
+  }
+
+  const flatIndices = [];
+  for (const tri of triangles) {
+    flatIndices.push(tri[0], tri[1], tri[2]);
+  }
+
+  let signedArea = 0;
+  for (let i = 0; i < contour.length; i += 1) {
+    const j = (i + 1) % contour.length;
+    signedArea += contour[i].x * contour[j].y - contour[j].x * contour[i].y;
+  }
+  const counterClockwise = signedArea > 0;
+
+  const topTriCount = includeTopCap ? flatIndices.length : 0;
+  const bottomTriCount = flatIndices.length;
+  const sideTriCount = vertexCount * 6;
+  const indices = new Uint32Array(topTriCount + bottomTriCount + sideTriCount);
+  let offset = 0;
+
+  if (includeTopCap) {
+    for (let i = 0; i < flatIndices.length; i += 3) {
+      const a = flatIndices[i];
+      const b = flatIndices[i + 1];
+      const c = flatIndices[i + 2];
+      if (counterClockwise) {
+        indices[offset + i] = a;
+        indices[offset + i + 1] = b;
+        indices[offset + i + 2] = c;
+      } else {
+        indices[offset + i] = a;
+        indices[offset + i + 1] = c;
+        indices[offset + i + 2] = b;
+      }
+    }
+    offset += topTriCount;
+  }
+
+  for (let i = 0; i < flatIndices.length; i += 3) {
+    const a = flatIndices[i] + vertexCount;
+    const b = flatIndices[i + 1] + vertexCount;
+    const c = flatIndices[i + 2] + vertexCount;
+    if (counterClockwise) {
+      indices[offset + i] = c;
+      indices[offset + i + 1] = b;
+      indices[offset + i + 2] = a;
+    } else {
+      indices[offset + i] = a;
+      indices[offset + i + 1] = b;
+      indices[offset + i + 2] = c;
+    }
+  }
+  offset += bottomTriCount;
+
+  for (let i = 0; i < vertexCount; i += 1) {
+    const j = (i + 1) % vertexCount;
+    const t0 = i;
+    const t1 = j;
+    const b0 = i + vertexCount;
+    const b1 = j + vertexCount;
+    const sideBase = offset + i * 6;
+    if (counterClockwise) {
+      indices[sideBase] = t0;
+      indices[sideBase + 1] = b0;
+      indices[sideBase + 2] = t1;
+      indices[sideBase + 3] = t1;
+      indices[sideBase + 4] = b0;
+      indices[sideBase + 5] = b1;
+    } else {
+      indices[sideBase] = t0;
+      indices[sideBase + 1] = t1;
+      indices[sideBase + 2] = b0;
+      indices[sideBase + 3] = t1;
+      indices[sideBase + 4] = b1;
+      indices[sideBase + 5] = b0;
+    }
+  }
+
+  const positions = new Float32Array(vertexCount * 2 * 3);
+  positions.set(topPositions, 0);
+  positions.set(bottomPositions, vertexCount * 3);
+
+  return { positions, indices };
+}
+
+/**
+ * Flat horizontal cap matching a footprint polygon (for building roofs).
+ * @param {Float32Array} topRingPositions - n vertices × 3 (flat ring, shared Y)
+ * @param {number} liftM - tiny offset above the ring to avoid z-fighting
+ * @returns {{ positions: Float32Array, indices: Uint32Array } | null}
+ */
+export function buildFootprintTopCapMesh(topRingPositions, liftM = 0.003) {
+  const vertexCount = topRingPositions.length / 3;
+  if (vertexCount < 3) return null;
+
+  const contour = [];
+  for (let i = 0; i < vertexCount; i += 1) {
+    contour.push(
+      new THREE.Vector2(topRingPositions[i * 3], topRingPositions[i * 3 + 2])
+    );
+  }
+
+  let signedArea = 0;
+  for (let i = 0; i < contour.length; i += 1) {
+    const j = (i + 1) % contour.length;
+    signedArea += contour[i].x * contour[j].y - contour[j].x * contour[i].y;
+  }
+  const counterClockwise = signedArea > 0;
+
+  const triangles = THREE.ShapeUtils.triangulateShape(contour, []);
+  if (!triangles.length) return null;
+
+  const capY = topRingPositions[1] + liftM;
+  const positions = new Float32Array(vertexCount * 3);
+  for (let i = 0; i < vertexCount; i += 1) {
+    positions[i * 3] = topRingPositions[i * 3];
+    positions[i * 3 + 1] = capY;
+    positions[i * 3 + 2] = topRingPositions[i * 3 + 2];
+  }
+
+  const indices = [];
+  for (const tri of triangles) {
+    if (counterClockwise) {
+      indices.push(tri[0], tri[1], tri[2]);
+    } else {
+      indices.push(tri[0], tri[2], tri[1]);
+    }
+  }
+
+  return { positions, indices: new Uint32Array(indices) };
+}
+
+/** How far edge lines sit outside wall corners (m) — keeps alcove corners visible. */
+export const FOOTPRINT_EDGE_OFFSET_M = 0.045;
+
+/**
+ * Monument edge lines for an extruded footprint. Corner vertices are nudged along the
+ * exterior bisector so concave (alcove) corners stay visible, not buried in the walls.
+ * @returns {Float32Array | null} line-segment positions (pairs of xyz)
+ */
+export function buildFootprintEdgeLinePositions(
+  topRingPositions,
+  bottomYM = 0,
+  offsetM = FOOTPRINT_EDGE_OFFSET_M
+) {
+  const vertexCount = topRingPositions.length / 3;
+  if (vertexCount < 3) return null;
+
+  const topY = topRingPositions[1];
+
+  let signedArea = 0;
+  for (let i = 0; i < vertexCount; i += 1) {
+    const j = (i + 1) % vertexCount;
+    signedArea +=
+      topRingPositions[i * 3] * topRingPositions[j * 3 + 2] -
+      topRingPositions[j * 3] * topRingPositions[i * 3 + 2];
+  }
+  const counterClockwise = signedArea > 0;
+
+  const offsetXZ = new Array(vertexCount);
+  for (let i = 0; i < vertexCount; i += 1) {
+    const prev = (i - 1 + vertexCount) % vertexCount;
+    const next = (i + 1) % vertexCount;
+
+    const px0 = topRingPositions[prev * 3];
+    const pz0 = topRingPositions[prev * 3 + 2];
+    const px1 = topRingPositions[i * 3];
+    const pz1 = topRingPositions[i * 3 + 2];
+    const px2 = topRingPositions[next * 3];
+    const pz2 = topRingPositions[next * 3 + 2];
+
+    const d1x = px1 - px0;
+    const d1z = pz1 - pz0;
+    const d2x = px2 - px1;
+    const d2z = pz2 - pz1;
+    const len1 = Math.hypot(d1x, d1z) || 1;
+    const len2 = Math.hypot(d2x, d2z) || 1;
+
+    const n1x = counterClockwise ? d1z / len1 : -d1z / len1;
+    const n1z = counterClockwise ? -d1x / len1 : d1x / len1;
+    const n2x = counterClockwise ? d2z / len2 : -d2z / len2;
+    const n2z = counterClockwise ? -d2x / len2 : d2x / len2;
+
+    let bx = n1x + n2x;
+    let bz = n1z + n2z;
+    const blen = Math.hypot(bx, bz);
+    if (blen < 1e-9) {
+      bx = n1x;
+      bz = n1z;
+    } else {
+      bx /= blen;
+      bz /= blen;
+    }
+
+    const dot = Math.max(-1, Math.min(1, n1x * n2x + n1z * n2z));
+    const halfAngleCos = Math.sqrt((1 + dot) / 2);
+    const miterScale = Math.min(3, 1 / Math.max(0.3, halfAngleCos));
+    const scale = offsetM * miterScale;
+
+    offsetXZ[i] = {
+      x: px1 + bx * scale,
+      z: pz1 + bz * scale,
+    };
+  }
+
+  const segmentCount = vertexCount * 3;
+  const positions = new Float32Array(segmentCount * 6);
+  let offset = 0;
+
+  const pushSegment = (x0, y0, z0, x1, y1, z1) => {
+    positions[offset] = x0;
+    positions[offset + 1] = y0;
+    positions[offset + 2] = z0;
+    positions[offset + 3] = x1;
+    positions[offset + 4] = y1;
+    positions[offset + 5] = z1;
+    offset += 6;
+  };
+
+  for (let i = 0; i < vertexCount; i += 1) {
+    const { x, z } = offsetXZ[i];
+    pushSegment(x, bottomYM, z, x, topY, z);
+  }
+
+  for (let i = 0; i < vertexCount; i += 1) {
+    const j = (i + 1) % vertexCount;
+    const a = offsetXZ[i];
+    const b = offsetXZ[j];
+    pushSegment(a.x, topY, a.z, b.x, topY, b.z);
+    pushSegment(a.x, bottomYM, a.z, b.x, bottomYM, b.z);
+  }
+
+  return positions;
 }
 
 /** AHD at each boundary vertex, relative to the lowest corner (lowest = 0). */

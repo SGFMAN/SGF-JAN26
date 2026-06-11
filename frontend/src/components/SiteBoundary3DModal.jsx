@@ -11,7 +11,13 @@ import {
 } from "../utils/earthTexture";
 import {
   buildEarthVolumeMesh,
+  buildBuildingOutlineLinePositions,
+  buildExtrudedFootprintMesh,
+  buildFootprintEdgeLinePositions,
+  buildFootprintTopCapMesh,
   buildFloorPlanOutlineLinePositions,
+  footprintRingAtY,
+  FLOOR_PLAN_UPPER_HEIGHT_M,
   buildHeightTopSurfaceMesh,
   buildSiteSlabMesh,
   cornerRelativeHeightsM,
@@ -20,7 +26,78 @@ import {
 } from "../utils/siteBoundaryMesh";
 
 const WHITE = "#fff";
-const FLOOR_PLAN_OUTLINE_COLOR = 0xffea00;
+const MONUMENT = "#323233";
+const FLOOR_PLAN_SUBFLOOR_COLOR = 0x323233;
+const FLOOR_PLAN_UPPER_COLOR = 0xd1d5db;
+const BUILDING_WALL_COLOR = 0xffffff;
+const BUILDING_ROOF_COLOR = FLOOR_PLAN_UPPER_COLOR;
+const BUILDING_EDGE_COLOR = 0x323233;
+const FOOTPRINT_BOTTOM_Y = 0;
+
+function addExtrudedFootprintMesh(boundaryGroup, topRingPositions, color, options = {}) {
+  const bottomYM = options.bottomYM ?? FOOTPRINT_BOTTOM_Y;
+  const volume = buildExtrudedFootprintMesh(topRingPositions, bottomYM, options);
+  if (!volume) return;
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(volume.positions, 3));
+  geometry.setIndex(new THREE.BufferAttribute(volume.indices, 1));
+  geometry.computeVertexNormals();
+
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    side: options.doubleSided ? THREE.DoubleSide : THREE.FrontSide,
+    depthTest: true,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.renderOrder = 15;
+  boundaryGroup.add(mesh);
+}
+
+function addFlatFootprintCap(boundaryGroup, topRingPositions, color) {
+  const cap = buildFootprintTopCapMesh(topRingPositions);
+  if (!cap) return;
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(cap.positions, 3));
+  geometry.setIndex(new THREE.BufferAttribute(cap.indices, 1));
+  geometry.computeVertexNormals();
+
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    side: THREE.FrontSide,
+    depthTest: true,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.renderOrder = 16;
+  boundaryGroup.add(mesh);
+}
+
+function addFootprintEdgeLines(
+  boundaryGroup,
+  topRingPositions,
+  bottomYM = FOOTPRINT_BOTTOM_Y,
+  color = BUILDING_EDGE_COLOR
+) {
+  const positions = buildFootprintEdgeLinePositions(topRingPositions, bottomYM);
+  if (!positions) return;
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const lines = new THREE.LineSegments(
+    geometry,
+    new THREE.LineBasicMaterial({
+      color,
+      depthTest: true,
+      depthWrite: false,
+    })
+  );
+  lines.renderOrder = 18;
+  boundaryGroup.add(lines);
+}
 
 function fitCameraToObject(camera, object, padding = 1.4) {
   const box = new THREE.Box3().setFromObject(object);
@@ -72,7 +149,7 @@ function addBoundaryScene(boundaryGroup, ring, siteCornerLevels, earthMaterial, 
   return cornerHeights;
 }
 
-async function addFloorPlanOutline(boundaryGroup, ring, siteCornerLevels, placedUnit) {
+async function addFloorPlanVolume(boundaryGroup, ring, siteCornerLevels, placedUnit) {
   const { plan, center, bearing = 0 } = placedUnit || {};
   if (!plan?.id || !plan?.scale?.metersPerPixel || !center?.lat || !center?.lng) {
     return;
@@ -94,18 +171,46 @@ async function addFloorPlanOutline(boundaryGroup, ring, siteCornerLevels, placed
   );
   if (!outline) return;
 
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(outline.positions, 3));
-  const material = new THREE.LineBasicMaterial({
-    color: FLOOR_PLAN_OUTLINE_COLOR,
-    depthTest: true,
+  addExtrudedFootprintMesh(boundaryGroup, outline.positions, FLOOR_PLAN_SUBFLOOR_COLOR, {
+    doubleSided: true,
+    bottomYM: FOOTPRINT_BOTTOM_Y,
   });
-  const line = new THREE.LineLoop(geometry, material);
-  line.renderOrder = 10;
-  boundaryGroup.add(line);
+
+  const upperTopY = outline.outlineYM + FLOOR_PLAN_UPPER_HEIGHT_M;
+  const upperRing = footprintRingAtY(outline.positions, upperTopY);
+  addExtrudedFootprintMesh(boundaryGroup, upperRing, FLOOR_PLAN_UPPER_COLOR, {
+    doubleSided: true,
+    bottomYM: outline.outlineYM,
+  });
+  addFootprintEdgeLines(boundaryGroup, upperRing, outline.outlineYM);
 }
 
-export default function SiteBoundary3DModal({ siteGeometry, lookupState = "VIC", placedUnit = null, onBack }) {
+function addBuildingVolumes(boundaryGroup, siteRing, siteCornerLevels, buildingsGeoJson) {
+  const features = buildingsGeoJson?.features || [];
+  if (!features.length) return;
+
+  for (const feature of features) {
+    const rings = extractOuterRings(feature.geometry);
+    for (const ring of rings) {
+      const outline = buildBuildingOutlineLinePositions(ring, siteRing, siteCornerLevels);
+      if (!outline) continue;
+      addExtrudedFootprintMesh(boundaryGroup, outline.positions, BUILDING_WALL_COLOR, {
+        includeTopCap: false,
+        doubleSided: true,
+      });
+      addFlatFootprintCap(boundaryGroup, outline.positions, BUILDING_ROOF_COLOR);
+      addFootprintEdgeLines(boundaryGroup, outline.positions);
+    }
+  }
+}
+
+export default function SiteBoundary3DModal({
+  siteGeometry,
+  lookupState = "VIC",
+  placedUnit = null,
+  buildingsGeoJson = null,
+  onBack,
+}) {
   const containerRef = useRef(null);
   const [status, setStatus] = useState("loading");
   const [statusDetail, setStatusDetail] = useState("");
@@ -273,12 +378,14 @@ export default function SiteBoundary3DModal({ siteGeometry, lookupState = "VIC",
         if (placedUnit) {
           setStatusDetail("Loading unit footprint…");
           try {
-            await addFloorPlanOutline(boundaryGroup, rings[0], levels, placedUnit);
+            await addFloorPlanVolume(boundaryGroup, rings[0], levels, placedUnit);
           } catch {
             /* unit outline is optional */
           }
           if (disposed) return;
         }
+
+        addBuildingVolumes(boundaryGroup, rings[0], levels, buildingsGeoJson);
 
         fitCameraToObject(camera, boundaryGroup);
         syncCameraOrbitFromFit();
@@ -317,7 +424,7 @@ export default function SiteBoundary3DModal({ siteGeometry, lookupState = "VIC",
       earthTexture.dispose();
       grassTexture.dispose();
     };
-  }, [siteGeometry, lookupState, placedUnit]);
+  }, [siteGeometry, lookupState, placedUnit, buildingsGeoJson]);
 
   return (
     <div

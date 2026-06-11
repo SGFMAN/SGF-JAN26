@@ -18,6 +18,7 @@ import EasementsLayer from "../components/EasementsLayer";
 import EditableBuildingsLayer from "../components/EditableBuildingsLayer";
 import DraggableFloorPlanOverlay from "../components/DraggableFloorPlanOverlay";
 import FloorPlanPickerModal from "../components/FloorPlanPickerModal";
+import MapsQuoteModal from "../components/MapsQuoteModal";
 import SiteBoundary3DModal from "../components/SiteBoundary3DModal";
 import {
   BASEMAP_ESRI_IMAGERY,
@@ -292,11 +293,8 @@ export default function Maps() {
   const [planningLoading, setPlanningLoading] = useState(false);
   const [easementsGeoJson, setEasementsGeoJson] = useState(null);
   const [buildingsGeoJson, setBuildingsGeoJson] = useState(null);
-  const [originalBuildingsGeoJson, setOriginalBuildingsGeoJson] = useState(null);
-  const [buildingsLoading, setBuildingsLoading] = useState(false);
-  const [buildingsStatus, setBuildingsStatus] = useState("");
   const [buildingsLayerVisible, setBuildingsLayerVisible] = useState(true);
-  const [buildingsResetKey, setBuildingsResetKey] = useState(0);
+  const [addingBuilding, setAddingBuilding] = useState(false);
   const [bulkPins, setBulkPins] = useState([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0, ok: 0, failed: 0 });
@@ -311,6 +309,7 @@ export default function Maps() {
   });
   const [basemapId, setBasemapId] = useState(DEFAULT_BASEMAP_ID);
   const [showFloorPlanPicker, setShowFloorPlanPicker] = useState(false);
+  const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [show3dVisualisationModal, setShow3dVisualisationModal] = useState(false);
   const [placedUnit, setPlacedUnit] = useState(null);
   const [unitPlacementKey, setUnitPlacementKey] = useState(0);
@@ -340,6 +339,10 @@ export default function Maps() {
       return;
     }
     setShowFloorPlanPicker(true);
+  }
+
+  function handleQuote() {
+    setShowQuoteModal(true);
   }
 
   function handleSelectFloorPlan(plan) {
@@ -485,59 +488,32 @@ export default function Maps() {
     []
   );
 
-  const fetchBuildingsForSite = useCallback(async (lat, lng, searchState, boundaryGeometry) => {
-    if (searchState !== "VIC") {
-      setBuildingsGeoJson(null);
-      setOriginalBuildingsGeoJson(null);
-      setBuildingsStatus("");
-      return;
-    }
 
-    const admin = await isUserAdmin();
-    if (!admin) {
-      setBuildingsGeoJson(null);
-      setOriginalBuildingsGeoJson(null);
-      setBuildingsStatus("");
-      return;
-    }
+  const handleAddBuilding = useCallback(() => {
+    setMovableTarget(null);
+    setAddingBuilding(true);
+  }, []);
 
-    setBuildingsLoading(true);
-    setBuildingsStatus("Loading building outlines…");
-    try {
-      const envelope = envelopeParamFromGeometry(boundaryGeometry);
-      const res = await fetch("/api/property-buildings", {
-        method: "POST",
-        headers: getApiHeaders(),
-        body: JSON.stringify({
-          lat,
-          lng,
-          state: "VIC",
-          envelope: envelope || null,
-          boundary: boundaryGeometry || null,
-        }),
+  const handleBuildingDrawn = useCallback((geometry) => {
+    setBuildingsGeoJson((prev) => {
+      const features = prev?.features ? [...prev.features] : [];
+      const nextIndex = features.length + 1;
+      features.push({
+        type: "Feature",
+        properties: {
+          building_id: `building-${nextIndex}`,
+          label: `Building ${nextIndex}`,
+        },
+        geometry,
       });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ok) {
-        const geo = data.buildingsGeoJson || null;
-        setBuildingsGeoJson(geo);
-        setOriginalBuildingsGeoJson(geo ? structuredClone(geo) : null);
-        setBuildingsResetKey((key) => key + 1);
-        setBuildingsStatus(
-          geo?.features?.length ? "Building outlines loaded" : "No building outlines found"
-        );
-      } else {
-        setBuildingsGeoJson(null);
-        setOriginalBuildingsGeoJson(null);
-        setBuildingsStatus(data.error || "Building outlines unavailable");
-      }
-    } catch (err) {
-      console.error("[Maps] property-buildings fetch failed:", err);
-      setBuildingsGeoJson(null);
-      setOriginalBuildingsGeoJson(null);
-      setBuildingsStatus("Building outlines unavailable");
-    } finally {
-      setBuildingsLoading(false);
-    }
+      return { type: "FeatureCollection", features };
+    });
+    // Stay in draw mode so the user can outline another building straight away.
+  }, []);
+
+  const clearBuildingOutlines = useCallback(() => {
+    setBuildingsGeoJson(null);
+    setAddingBuilding(false);
   }, []);
 
   const runSearch = useCallback(async (searchQueryOverride) => {
@@ -560,9 +536,8 @@ export default function Maps() {
     setPlanningLayerVisibility({});
     setEasementsGeoJson(null);
     setBuildingsGeoJson(null);
-    setOriginalBuildingsGeoJson(null);
-    setBuildingsStatus("");
     setBuildingsLayerVisible(true);
+    setAddingBuilding(false);
     setPlacedUnit(null);
     setMovableTarget(null);
     try {
@@ -635,7 +610,6 @@ export default function Maps() {
           savedFeature.geometry,
           savedFeature.properties?.parcel_pfi || savedFeature.properties?.parcelId || null
         );
-        void fetchBuildingsForSite(lat, lon, searchState, savedFeature.geometry);
         return;
       }
 
@@ -765,7 +739,6 @@ export default function Maps() {
             planningBoundaryGeometry,
             parcelIdForEasements
           );
-          void fetchBuildingsForSite(lat, lon, searchState, planningBoundaryGeometry);
         }, planningBoundaryGeometry ? 900 : 300);
       }
     } catch (e) {
@@ -780,7 +753,7 @@ export default function Maps() {
     } finally {
       setLoading(false);
     }
-  }, [query, fetchPlanningForSite, fetchEasementsForSite, fetchBuildingsForSite]);
+  }, [query, fetchPlanningForSite, fetchEasementsForSite]);
 
   const onSearch = useCallback(() => {
     void runSearch();
@@ -813,27 +786,10 @@ export default function Maps() {
           feature.geometry,
           feature.properties?.parcel_pfi || feature.properties?.parcelId || null
         );
-        void fetchBuildingsForSite(marker[0], marker[1], "VIC", feature.geometry);
       }
     },
-    [activeSearchQuery, marker, fetchPlanningForSite, fetchEasementsForSite, fetchBuildingsForSite]
+    [activeSearchQuery, marker, fetchPlanningForSite, fetchEasementsForSite]
   );
-
-  const handleBuildingsChange = useCallback((nextGeoJson) => {
-    setBuildingsGeoJson(nextGeoJson);
-    setBuildingsStatus("Building outline manually edited");
-  }, []);
-
-  const resetBuildingOutlines = useCallback(() => {
-    if (!originalBuildingsGeoJson) return;
-    setBuildingsGeoJson(structuredClone(originalBuildingsGeoJson));
-    setBuildingsResetKey((key) => key + 1);
-    setBuildingsStatus(
-      originalBuildingsGeoJson.features?.length
-        ? "Building outlines loaded"
-        : "No building outlines found"
-    );
-  }, [originalBuildingsGeoJson]);
 
   const togglePlanningLayer = useCallback((layerKey) => {
     setPlanningLayerVisibility((prev) => ({
@@ -1016,6 +972,8 @@ export default function Maps() {
           bulkSelection={bulkSelection}
           showAddUnit={isAdmin && onMapView}
           onAddUnit={handleAddUnit}
+          showQuote={isAdmin && onMapView}
+          onQuote={handleQuote}
         />
 
         <div
@@ -1051,7 +1009,7 @@ export default function Maps() {
             >
               <MapBasemapTileLayer basemapId={resolvedBasemapId} />
               <MapInvalidateSize />
-              <MapPanLock locked={movableTarget != null} />
+              <MapPanLock locked={movableTarget != null || addingBuilding} />
               {parcelFeature && (
                 <DraggableParcelBoundary
                   key={activeSearchQuery || "boundary"}
@@ -1066,24 +1024,23 @@ export default function Maps() {
                   zoneGeoJson={planningZoneGeoJson}
                   overlayGeoJson={planningOverlayGeoJson}
                   layerVisibility={planningLayerVisibility}
-                  blockPointerEvents={movableTarget != null}
+                  blockPointerEvents={movableTarget != null || addingBuilding}
                 />
               )}
               {easementsGeoJson && (
                 <EasementsLayer
                   key={activeSearchQuery || "easements"}
                   easementsGeoJson={easementsGeoJson}
-                  blockPointerEvents={movableTarget != null}
+                  blockPointerEvents={movableTarget != null || addingBuilding}
                 />
               )}
-              {isAdmin && buildingsGeoJson && (
+              {isAdmin && parcelFeature && (
                 <EditableBuildingsLayer
-                  key={`${activeSearchQuery || "buildings"}-${buildingsResetKey}`}
                   buildingsGeoJson={buildingsGeoJson}
                   visible={buildingsLayerVisible}
-                  blockPointerEvents={movableTarget != null}
-                  resetKey={buildingsResetKey}
-                  onBuildingsChange={handleBuildingsChange}
+                  drawingActive={addingBuilding}
+                  onDrawingComplete={handleBuildingDrawn}
+                  onDrawingCancel={() => setAddingBuilding(false)}
                 />
               )}
               {isAdmin && placedUnit && onMapView && (
@@ -1364,47 +1321,94 @@ export default function Maps() {
                   color: MONUMENT,
                 }}
               >
-                <label
+                <button
+                  type="button"
+                  onClick={handleAddBuilding}
+                  disabled={addingBuilding}
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    cursor: "pointer",
+                    width: "100%",
+                    padding: "8px 12px",
+                    fontSize: "0.82rem",
                     fontWeight: 600,
+                    borderRadius: "10px",
+                    border: `1px solid ${EXPLORER_BORDER}`,
+                    background: addingBuilding ? "#f3f4f6" : WHITE,
+                    color: MONUMENT,
+                    cursor: addingBuilding ? "not-allowed" : "pointer",
                   }}
                 >
-                  <input
-                    type="checkbox"
-                    checked={buildingsLayerVisible}
-                    onChange={() => setBuildingsLayerVisible((visible) => !visible)}
-                    style={{ marginTop: "1px", flexShrink: 0 }}
-                  />
-                  <span>Buildings</span>
-                </label>
-                {(buildingsLoading || buildingsStatus) && (
+                  {addingBuilding ? "Adding building…" : "Add Building"}
+                </button>
+                {buildingsGeoJson?.features?.length > 0 && (
                   <span style={{ color: "#555", lineHeight: 1.4 }}>
-                    {buildingsLoading ? "Loading building outlines…" : buildingsStatus}
+                    {buildingsGeoJson.features.length}{" "}
+                    {buildingsGeoJson.features.length === 1 ? "building" : "buildings"} drawn — all
+                    shown on the map and in 3D.
                   </span>
                 )}
-                {originalBuildingsGeoJson?.features?.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={resetBuildingOutlines}
-                    disabled={buildingsLoading}
-                    style={{
-                      width: "100%",
-                      padding: "8px 12px",
-                      fontSize: "0.82rem",
-                      fontWeight: 600,
-                      borderRadius: "10px",
-                      border: `1px solid ${EXPLORER_BORDER}`,
-                      background: WHITE,
-                      color: MONUMENT,
-                      cursor: buildingsLoading ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    Reset Building Outlines
-                  </button>
+                {addingBuilding && (
+                  <>
+                    <span style={{ color: "#555", lineHeight: 1.4 }}>
+                      Click each corner of the building on the map. Click the first point again to
+                      finish, then draw another or press Done.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setAddingBuilding(false)}
+                      style={{
+                        width: "100%",
+                        padding: "8px 12px",
+                        fontSize: "0.82rem",
+                        fontWeight: 600,
+                        borderRadius: "10px",
+                        border: `1px solid ${EXPLORER_BORDER}`,
+                        background: WHITE,
+                        color: MONUMENT,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Done
+                    </button>
+                  </>
+                )}
+                {buildingsGeoJson?.features?.length > 0 && (
+                  <>
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={buildingsLayerVisible}
+                        onChange={() => setBuildingsLayerVisible((visible) => !visible)}
+                        style={{ marginTop: "1px", flexShrink: 0 }}
+                      />
+                      <span>Show building outlines</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={clearBuildingOutlines}
+                      disabled={addingBuilding}
+                      style={{
+                        width: "100%",
+                        padding: "8px 12px",
+                        fontSize: "0.82rem",
+                        fontWeight: 600,
+                        borderRadius: "10px",
+                        border: `1px solid ${EXPLORER_BORDER}`,
+                        background: WHITE,
+                        color: MONUMENT,
+                        cursor: addingBuilding ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      Clear all buildings
+                    </button>
+                  </>
                 )}
               </div>
             )}
@@ -1491,11 +1495,14 @@ export default function Maps() {
         />
       )}
 
+      {showQuoteModal && <MapsQuoteModal onClose={() => setShowQuoteModal(false)} />}
+
       {show3dVisualisationModal && parcelFeature?.geometry && (
         <SiteBoundary3DModal
           siteGeometry={parcelFeature.geometry}
           lookupState="VIC"
           placedUnit={placedUnit}
+          buildingsGeoJson={buildingsGeoJson}
           onBack={() => setShow3dVisualisationModal(false)}
         />
       )}
