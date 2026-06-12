@@ -52,6 +52,7 @@ const {
   createFloorPlan,
   updateFloorPlan,
   updateFloorPlanDollarValue,
+  updateFloorPlanDefine3D,
   deleteFloorPlan,
   getFloorPlanImagePath,
 } = require("./mapFloorPlans");
@@ -2865,6 +2866,26 @@ app.patch("/api/maps/floor-plans/:id/dollar-value", async (req, res) => {
   } catch (e) {
     console.error("[floor-plans] dollar-value error:", e);
     return res.status(500).json({ ok: false, error: e.message || "Failed to update dollar value" });
+  }
+});
+
+app.patch("/api/maps/floor-plans/:id/define-3d", async (req, res) => {
+  if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
+  try {
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "Invalid floor plan id" });
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const result = await updateFloorPlanDefine3D(pool, id, body.define3d ?? body);
+    if (result.error) {
+      return res.status(result.status || 400).json({ ok: false, error: result.error });
+    }
+    if (result.notFound) return res.status(404).json({ ok: false, error: "Floor plan not found" });
+    return res.json({ ok: true, floorPlan: result.plan });
+  } catch (e) {
+    console.error("[floor-plans] define-3d error:", e);
+    return res.status(500).json({ ok: false, error: e.message || "Failed to save Define 3D data" });
   }
 });
 

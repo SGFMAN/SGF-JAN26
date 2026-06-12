@@ -19,6 +19,77 @@ async function ensureMapFloorPlansDollarValueColumn(pool) {
   `);
 }
 
+async function ensureMapFloorPlansDefine3DColumn(pool) {
+  if (!pool) return;
+  await pool.query(`
+    ALTER TABLE map_floor_plans ADD COLUMN IF NOT EXISTS define_3d JSONB;
+  `);
+}
+
+function parseDefine3DPoint(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const x = Number(raw.x);
+  const y = Number(raw.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
+}
+
+function normalizeDefine3D(raw) {
+  if (raw == null) {
+    return { externalWallPolygons: [], internalWallSegments: [] };
+  }
+
+  const source = typeof raw === "string" ? JSON.parse(raw) : raw;
+  if (!source || typeof source !== "object") {
+    return { error: "define3d must be an object" };
+  }
+
+  const externalWallPolygons = Array.isArray(source.externalWallPolygons)
+    ? source.externalWallPolygons
+        .map((polygon) => {
+          if (!Array.isArray(polygon)) return null;
+          const points = polygon.map(parseDefine3DPoint).filter(Boolean);
+          return points.length >= 3 ? points : null;
+        })
+        .filter(Boolean)
+    : [];
+
+  const internalWallSegments = Array.isArray(source.internalWallSegments)
+    ? source.internalWallSegments
+        .map((segment) => {
+          if (!Array.isArray(segment) || segment.length !== 2) return null;
+          const start = parseDefine3DPoint(segment[0]);
+          const end = parseDefine3DPoint(segment[1]);
+          if (!start || !end) return null;
+          if (Math.hypot(end.x - start.x, end.y - start.y) < 1) return null;
+          return [start, end];
+        })
+        .filter(Boolean)
+    : [];
+
+  if (
+    !Array.isArray(source.externalWallPolygons) &&
+    !Array.isArray(source.internalWallSegments)
+  ) {
+    return { error: "define3d must include externalWallPolygons and/or internalWallSegments" };
+  }
+
+  return { define3d: { externalWallPolygons, internalWallSegments } };
+}
+
+function define3dFromRow(raw) {
+  if (raw == null) return null;
+  try {
+    const parsed = normalizeDefine3D(raw);
+    if (parsed.error) return null;
+    const { externalWallPolygons, internalWallSegments } = parsed.define3d;
+    if (!externalWallPolygons.length && !internalWallSegments.length) return null;
+    return parsed.define3d;
+  } catch {
+    return null;
+  }
+}
+
 function parseDollarValue(raw) {
   if (raw == null || String(raw).trim() === "") {
     return { dollarValue: null };
@@ -70,6 +141,7 @@ function rowToPlan(row) {
     fileType,
     imageUrl: row.image_filename ? `/api/maps/floor-plans/${row.id}/image` : null,
     scale: buildScale(row),
+    define3d: define3dFromRow(row.define_3d),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -195,8 +267,9 @@ async function deleteImageFile(filename) {
 
 async function listFloorPlans(pool) {
   await ensureMapFloorPlansDollarValueColumn(pool);
+  await ensureMapFloorPlansDefine3DColumn(pool);
   const r = await pool.query(
-    `SELECT id, name, category, size_sqm, dollar_value, image_filename,
+    `SELECT id, name, category, size_sqm, dollar_value, image_filename, define_3d,
             scale_line_x1, scale_line_y1, scale_line_x2, scale_line_y2, scale_line_meters,
             created_at, updated_at
      FROM map_floor_plans ORDER BY name ASC`
@@ -299,6 +372,27 @@ async function updateFloorPlanDollarValue(pool, id, rawValue) {
   return { plan: rowToPlan(r.rows[0]) };
 }
 
+async function updateFloorPlanDefine3D(pool, id, rawDefine3d) {
+  await ensureMapFloorPlansDefine3DColumn(pool);
+  const parsed = normalizeDefine3D(rawDefine3d);
+  if (parsed.error) return { error: parsed.error, status: 400 };
+
+  const { externalWallPolygons, internalWallSegments } = parsed.define3d;
+  const payload =
+    externalWallPolygons.length || internalWallSegments.length
+      ? JSON.stringify({ externalWallPolygons, internalWallSegments })
+      : null;
+
+  const r = await pool.query(
+    `UPDATE map_floor_plans
+     SET define_3d = $1::jsonb, updated_at = NOW()
+     WHERE id = $2 RETURNING *`,
+    [payload, id]
+  );
+  if (!r.rows.length) return { notFound: true };
+  return { plan: rowToPlan(r.rows[0]) };
+}
+
 async function deleteFloorPlan(pool, id) {
   const existing = await pool.query(`SELECT * FROM map_floor_plans WHERE id = $1`, [id]);
   if (!existing.rows.length) return { notFound: true };
@@ -319,10 +413,13 @@ module.exports = {
   FLOOR_PLAN_CATEGORIES,
   parseFloorPlanFields,
   ensureMapFloorPlansDollarValueColumn,
+  ensureMapFloorPlansDefine3DColumn,
+  normalizeDefine3D,
   listFloorPlans,
   createFloorPlan,
   updateFloorPlan,
   updateFloorPlanDollarValue,
+  updateFloorPlanDefine3D,
   deleteFloorPlan,
   getFloorPlanImagePath,
 };

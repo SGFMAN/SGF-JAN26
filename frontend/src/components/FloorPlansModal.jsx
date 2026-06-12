@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { getApiHeaders, getLoggedInUserId, getPasswordType } from "../utils/auth";
 import FloorPlanCropModal from "./FloorPlanCropModal";
+import FloorPlanDefine3DModal from "./FloorPlanDefine3DModal";
 import FloorPlanScaleModal from "./FloorPlanScaleModal";
 import ModalBackdrop from "./ModalBackdrop";
 
@@ -115,6 +116,7 @@ export default function FloorPlansModal({ onClose }) {
   const [error, setError] = useState(null);
   const [cropFile, setCropFile] = useState(null);
   const [scaleSession, setScaleSession] = useState(null);
+  const [showDefine3DModal, setShowDefine3DModal] = useState(false);
 
   const loadFloorPlans = useCallback(async () => {
     setLoading(true);
@@ -428,6 +430,18 @@ export default function FloorPlansModal({ onClose }) {
                       No file uploaded
                     </div>
                   )}
+                  {selectedPlan.imageUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setShowDefine3DModal(true)}
+                      style={{
+                        ...btnPrimary,
+                        width: "100%",
+                      }}
+                    >
+                      Define 3D
+                    </button>
+                  )}
                   <div style={{ fontSize: "0.95rem", lineHeight: 1.5 }}>
                     <div>
                       <span style={{ color: "#666" }}>Name: </span>
@@ -599,6 +613,19 @@ export default function FloorPlansModal({ onClose }) {
           snapCorners={scaleSession.cropCorners}
           onConfirm={(scale) => handleScaleConfirm(scale)}
           onCancel={() => setScaleSession(null)}
+        />
+      )}
+
+      {showDefine3DModal && selectedPlan && (
+        <FloorPlanDefine3DModal
+          plan={selectedPlan}
+          onClose={() => setShowDefine3DModal(false)}
+          onDefine3DUpdated={(updatedPlan) => {
+            if (!updatedPlan?.id) return;
+            setFloorPlans((plans) =>
+              plans.map((p) => (p.id === updatedPlan.id ? { ...p, ...updatedPlan } : p))
+            );
+          }}
         />
       )}
 
