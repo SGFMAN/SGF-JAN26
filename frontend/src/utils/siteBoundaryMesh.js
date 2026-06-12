@@ -20,6 +20,12 @@ export const FLOOR_PLAN_HEIGHT_ABOVE_GRASS_M = 0.65;
 export const FLOOR_PLAN_UPPER_HEIGHT_M = 3;
 /** Internal partition wall thickness in 3D (m). */
 export const FLOOR_PLAN_INTERNAL_WALL_THICKNESS_M = 0.1;
+/** External wall panel thickness in 3D (m). */
+export const FLOOR_PLAN_EXTERNAL_WALL_THICKNESS_M = 0.15;
+/** Max polygon vertices / wall panels to guard against bad geometry data. */
+export const DEFINE3D_MAX_POLYGON_VERTICES = 64;
+export const DEFINE3D_MAX_INTERNAL_SEGMENTS = 256;
+export const DEFINE3D_MAX_FOOTPRINT_SPAN_M = 80;
 /** Gable roof overhang beyond floor plan walls (m). */
 export const FLOOR_PLAN_ROOF_OVERHANG_M = 0.3;
 /** Gable ridge height above the top of the floor plan walls (m). */
@@ -399,8 +405,11 @@ export function buildFloorPlanPolygonFootprintPositions(
   const frame = getSiteMeshFrame(ring);
   if (!frame || !polygonPixels || polygonPixels.length < 3) return null;
 
+  const sanitized = sanitizeDefine3DPolygonPixels(polygonPixels, imageWidth, imageHeight);
+  if (!sanitized) return null;
+
   const samplePoints = latLngPointsFromPolygonPixels(
-    polygonPixels,
+    sanitized,
     centerLat,
     centerLng,
     imageWidth,
@@ -412,11 +421,11 @@ export function buildFloorPlanPolygonFootprintPositions(
   const heights = computeFloorPlanPlacementHeights(ring, siteCornerLevels, samplePoints);
   if (!heights) return null;
 
-  const positions = new Float32Array(polygonPixels.length * 3);
-  for (let i = 0; i < polygonPixels.length; i += 1) {
+  const positions = new Float32Array(sanitized.length * 3);
+  for (let i = 0; i < sanitized.length; i += 1) {
     const latlng = floorPlanPixelToLatLng(
-      polygonPixels[i].x,
-      polygonPixels[i].y,
+      sanitized[i].x,
+      sanitized[i].y,
       centerLat,
       centerLng,
       imageWidth,
@@ -431,11 +440,170 @@ export function buildFloorPlanPolygonFootprintPositions(
     positions[i * 3 + 2] = z;
   }
 
+  if (!isValidFootprintSpanM(positions)) return null;
   return { positions, outlineYM: heights.outlineYM, grassTopYM: heights.grassTopYM };
 }
 
+export function sanitizeDefine3DPolygonPixels(
+  polygon,
+  imageWidth,
+  imageHeight,
+  maxVertices = DEFINE3D_MAX_POLYGON_VERTICES
+) {
+  if (!Array.isArray(polygon) || polygon.length < 3) return null;
+  if (!Number.isFinite(imageWidth) || !Number.isFinite(imageHeight) || imageWidth < 1 || imageHeight < 1) {
+    return null;
+  }
+
+  const cleaned = [];
+  for (const raw of polygon) {
+    const x = Number(raw?.x);
+    const y = Number(raw?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const point = {
+      x: Math.max(0, Math.min(imageWidth, x)),
+      y: Math.max(0, Math.min(imageHeight, y)),
+    };
+    const last = cleaned[cleaned.length - 1];
+    if (last && Math.hypot(point.x - last.x, point.y - last.y) < 0.75) continue;
+    cleaned.push(point);
+  }
+
+  if (cleaned.length >= 2) {
+    const first = cleaned[0];
+    const last = cleaned[cleaned.length - 1];
+    if (Math.hypot(first.x - last.x, first.y - last.y) < 0.75) {
+      cleaned.pop();
+    }
+  }
+
+  if (cleaned.length < 3 || cleaned.length > maxVertices) return null;
+
+  const simplified = [];
+  for (let i = 0; i < cleaned.length; i += 1) {
+    const prev = cleaned[(i - 1 + cleaned.length) % cleaned.length];
+    const curr = cleaned[i];
+    const next = cleaned[(i + 1) % cleaned.length];
+    const dx1 = curr.x - prev.x;
+    const dy1 = curr.y - prev.y;
+    const dx2 = next.x - curr.x;
+    const dy2 = next.y - curr.y;
+    if (Math.abs(dx1 * dy2 - dy1 * dx2) < 1e-6) continue;
+    simplified.push(curr);
+  }
+
+  return simplified.length >= 3 ? simplified : null;
+}
+
+function isValidFootprintSpanM(positions, maxSpanM = DEFINE3D_MAX_FOOTPRINT_SPAN_M) {
+  if (!positions?.length || positions.length % 3 !== 0) return false;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+
+  for (let i = 0; i < positions.length; i += 3) {
+    const x = positions[i];
+    const z = positions[i + 2];
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return false;
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minZ = Math.min(minZ, z);
+    maxZ = Math.max(maxZ, z);
+  }
+
+  return Math.max(maxX - minX, maxZ - minZ) <= maxSpanM;
+}
+
+function safeTriangulateFootprint(contour) {
+  if (!contour?.length || contour.length < 3 || contour.length > DEFINE3D_MAX_POLYGON_VERTICES) {
+    return null;
+  }
+
+  for (const point of contour) {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+  }
+
+  try {
+    const triangles = THREE.ShapeUtils.triangulateShape(contour, []);
+    if (!triangles?.length || triangles.length > contour.length * 4) return null;
+    return triangles;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Internal wall segment from Define 3D pixels → thin quad footprint at subfloor height.
+ * Shared deck height for all Define 3D walls on a placed unit.
+ * @returns {{ outlineYM: number, grassTopYM: number } | null}
+ */
+export function computeDefine3DPlacementHeights(
+  ring,
+  siteCornerLevels,
+  centerLat,
+  centerLng,
+  externalPolygons,
+  internalSegments,
+  imageWidth,
+  imageHeight,
+  widthM,
+  heightM,
+  bearingDeg = 0
+) {
+  const samplePoints = [];
+
+  for (const polygon of externalPolygons || []) {
+    const sanitized = sanitizeDefine3DPolygonPixels(polygon, imageWidth, imageHeight);
+    if (!sanitized) continue;
+    samplePoints.push(
+      ...latLngPointsFromPolygonPixels(
+        sanitized,
+        centerLat,
+        centerLng,
+        imageWidth,
+        imageHeight,
+        widthM,
+        heightM,
+        bearingDeg
+      )
+    );
+  }
+
+  for (const segment of (internalSegments || []).slice(0, DEFINE3D_MAX_INTERNAL_SEGMENTS)) {
+    if (segment?.length !== 2) continue;
+    const start = floorPlanPixelToLatLng(
+      segment[0].x,
+      segment[0].y,
+      centerLat,
+      centerLng,
+      imageWidth,
+      imageHeight,
+      widthM,
+      heightM,
+      bearingDeg
+    );
+    const end = floorPlanPixelToLatLng(
+      segment[1].x,
+      segment[1].y,
+      centerLat,
+      centerLng,
+      imageWidth,
+      imageHeight,
+      widthM,
+      heightM,
+      bearingDeg
+    );
+    samplePoints.push(start, end, {
+      lat: (start.lat + end.lat) / 2,
+      lng: (start.lng + end.lng) / 2,
+    });
+  }
+
+  return computeFloorPlanPlacementHeights(ring, siteCornerLevels, samplePoints);
+}
+
+/**
+ * Internal / external wall segment from Define 3D pixels → thin quad footprint.
  * @returns {{ positions: Float32Array, outlineYM: number } | null}
  */
 export function buildFloorPlanInternalWallFootprintPositions(
@@ -449,7 +617,8 @@ export function buildFloorPlanInternalWallFootprintPositions(
   widthM,
   heightM,
   bearingDeg = 0,
-  thicknessM = FLOOR_PLAN_INTERNAL_WALL_THICKNESS_M
+  thicknessM = FLOOR_PLAN_INTERNAL_WALL_THICKNESS_M,
+  fixedOutlineYM = null
 ) {
   const frame = getSiteMeshFrame(ring);
   if (!frame || segmentPixels?.length !== 2) return null;
@@ -476,9 +645,14 @@ export function buildFloorPlanInternalWallFootprintPositions(
     heightM,
     bearingDeg
   );
-  const mid = { lat: (start.lat + end.lat) / 2, lng: (start.lng + end.lng) / 2 };
-  const heights = computeFloorPlanPlacementHeights(ring, siteCornerLevels, [start, end, mid]);
-  if (!heights) return null;
+
+  let outlineYM = fixedOutlineYM;
+  if (!Number.isFinite(outlineYM)) {
+    const mid = { lat: (start.lat + end.lat) / 2, lng: (start.lng + end.lng) / 2 };
+    const heights = computeFloorPlanPlacementHeights(ring, siteCornerLevels, [start, end, mid]);
+    if (!heights) return null;
+    outlineYM = heights.outlineYM;
+  }
 
   const startXZ = latLngToSiteLocalXZ(start.lat, start.lng, frame);
   const endXZ = latLngToSiteLocalXZ(end.lat, end.lng, frame);
@@ -490,7 +664,7 @@ export function buildFloorPlanInternalWallFootprintPositions(
   const halfT = thicknessM / 2;
   const nx = (-dz / len) * halfT;
   const nz = (dx / len) * halfT;
-  const y = heights.outlineYM;
+  const y = outlineYM;
   const positions = new Float32Array([
     startXZ.x + nx,
     y,
@@ -506,7 +680,8 @@ export function buildFloorPlanInternalWallFootprintPositions(
     startXZ.z - nz,
   ]);
 
-  return { positions, outlineYM: heights.outlineYM };
+  if (!isValidFootprintSpanM(positions)) return null;
+  return { positions, outlineYM };
 }
 
 /**
@@ -950,8 +1125,8 @@ export function buildExtrudedFootprintMesh(topRingPositions, bottomYM = 0, optio
     );
   }
 
-  const triangles = THREE.ShapeUtils.triangulateShape(contour, []);
-  if (!triangles.length) return null;
+  const triangles = safeTriangulateFootprint(contour);
+  if (!triangles) return null;
 
   const topY = topRingPositions[1];
   const topPositions = new Float32Array(vertexCount * 3);
@@ -1075,8 +1250,8 @@ export function buildFootprintTopCapMesh(topRingPositions, liftM = 0.003) {
   }
   const counterClockwise = signedArea > 0;
 
-  const triangles = THREE.ShapeUtils.triangulateShape(contour, []);
-  if (!triangles.length) return null;
+  const triangles = safeTriangulateFootprint(contour);
+  if (!triangles) return null;
 
   const capY = topRingPositions[1] + liftM;
   const positions = new Float32Array(vertexCount * 3);

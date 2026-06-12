@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import {
   createEarthMaterial,
@@ -12,6 +12,7 @@ import {
   populateSiteBoundary3DGroup,
 } from "../utils/siteBoundary3DRender";
 import { SITE_THICKNESS_M } from "../utils/siteBoundaryMesh";
+import { siteGeometryStableKey } from "../utils/floorPlanMap";
 
 const WHITE = "#fff";
 
@@ -28,6 +29,23 @@ export default function SiteBoundary3DModal({
   const [statusDetail, setStatusDetail] = useState("");
   const [siteFallM, setSiteFallM] = useState(null);
 
+  const sceneKey = useMemo(() => {
+    const unit = placedUnit;
+    const define3d = unit?.plan?.define3d;
+    return [
+      lookupState,
+      unit?.plan?.id ?? "",
+      unit?.center?.lat?.toFixed(6) ?? "",
+      unit?.center?.lng?.toFixed(6) ?? "",
+      unit?.bearing ?? 0,
+      define3d?.externalWallPolygons?.length ?? 0,
+      define3d?.internalWallSegments?.length ?? 0,
+      siteGeometryStableKey(siteGeometry),
+      buildingsGeoJson?.features?.length ?? 0,
+      verandahsGeoJson?.features?.length ?? 0,
+    ].join("|");
+  }, [lookupState, placedUnit, siteGeometry, buildingsGeoJson, verandahsGeoJson]);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !siteGeometry) return undefined;
@@ -42,7 +60,7 @@ export default function SiteBoundary3DModal({
 
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);
     renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     container.appendChild(renderer.domElement);
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.55));
@@ -142,12 +160,14 @@ export default function SiteBoundary3DModal({
     resizeObserver.observe(container);
     resize();
 
+    let sceneReady = false;
+    const abortController = new AbortController();
+
     const renderLoop = () => {
-      if (disposed) return;
+      if (disposed || !sceneReady) return;
       animationId = requestAnimationFrame(renderLoop);
       renderer.render(scene, camera);
     };
-    renderLoop();
 
     (async () => {
       try {
@@ -162,8 +182,9 @@ export default function SiteBoundary3DModal({
           verandahsGeoJson,
           earthMaterial,
           grassMaterial,
+          signal: abortController.signal,
         });
-        if (disposed) return;
+        if (disposed || abortController.signal.aborted) return;
 
         fitCameraToObject(camera, boundaryGroup);
         syncCameraOrbitFromFit();
@@ -172,8 +193,10 @@ export default function SiteBoundary3DModal({
         setSiteFallM(maxRelativeFall);
         setStatus("ready");
         setStatusDetail("");
+        sceneReady = true;
+        renderLoop();
       } catch (err) {
-        if (disposed) return;
+        if (disposed || abortController.signal.aborted || err?.name === "AbortError") return;
         setStatus("error");
         setStatusDetail(err.message || "Failed to load 3D site");
       }
@@ -181,6 +204,8 @@ export default function SiteBoundary3DModal({
 
     return () => {
       disposed = true;
+      sceneReady = false;
+      abortController.abort();
       if (animationId != null) cancelAnimationFrame(animationId);
       container.removeEventListener("pointerdown", onPointerDown);
       container.removeEventListener("pointermove", onPointerMove);
@@ -196,7 +221,7 @@ export default function SiteBoundary3DModal({
       earthTexture.dispose();
       grassTexture.dispose();
     };
-  }, [siteGeometry, lookupState, placedUnit, buildingsGeoJson, verandahsGeoJson]);
+  }, [sceneKey, siteGeometry, lookupState, placedUnit, buildingsGeoJson, verandahsGeoJson]);
 
   return (
     <div

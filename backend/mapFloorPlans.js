@@ -26,6 +26,38 @@ async function ensureMapFloorPlansDefine3DColumn(pool) {
   `);
 }
 
+async function ensureMapFloorPlansImageDimensionsColumn(pool) {
+  if (!pool) return;
+  await pool.query(`
+    ALTER TABLE map_floor_plans ADD COLUMN IF NOT EXISTS image_width INTEGER;
+  `);
+  await pool.query(`
+    ALTER TABLE map_floor_plans ADD COLUMN IF NOT EXISTS image_height INTEGER;
+  `);
+}
+
+async function readPngDimensions(filename) {
+  if (!filename) return null;
+  const filePath = path.join(UPLOAD_DIR, filename);
+  if (!fsSync.existsSync(filePath)) return null;
+
+  const handle = await fs.open(filePath, "r");
+  try {
+    const header = Buffer.alloc(24);
+    await handle.read(header, 0, 24, 0);
+    if (header.toString("ascii", 1, 4) !== "PNG") return null;
+    const width = header.readUInt32BE(16);
+    const height = header.readUInt32BE(20);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) {
+      return null;
+    }
+    if (width > 20000 || height > 20000) return null;
+    return { width, height };
+  } finally {
+    await handle.close();
+  }
+}
+
 function parseDefine3DPoint(raw) {
   if (!raw || typeof raw !== "object") return null;
   const x = Number(raw.x);
@@ -131,6 +163,8 @@ function buildScale(row) {
 function rowToPlan(row) {
   const ext = path.extname(row.image_filename || "").toLowerCase();
   const fileType = ext === ".pdf" ? "pdf" : "image";
+  const imageWidth = row.image_width != null ? Number(row.image_width) : null;
+  const imageHeight = row.image_height != null ? Number(row.image_height) : null;
   return {
     id: row.id,
     name: row.name,
@@ -140,6 +174,8 @@ function rowToPlan(row) {
     hasImage: Boolean(row.image_filename),
     fileType,
     imageUrl: row.image_filename ? `/api/maps/floor-plans/${row.id}/image` : null,
+    imageWidth: Number.isFinite(imageWidth) && imageWidth > 0 ? imageWidth : null,
+    imageHeight: Number.isFinite(imageHeight) && imageHeight > 0 ? imageHeight : null,
     scale: buildScale(row),
     define3d: define3dFromRow(row.define_3d),
     createdAt: row.created_at,
@@ -253,7 +289,8 @@ async function saveUploadFile(file) {
   }
   const filename = `${Date.now()}-${crypto.randomBytes(8).toString("hex")}.png`;
   await fs.writeFile(path.join(UPLOAD_DIR, filename), file.buffer);
-  return filename;
+  const dimensions = await readPngDimensions(filename);
+  return { filename, ...dimensions };
 }
 
 async function deleteImageFile(filename) {
@@ -268,9 +305,10 @@ async function deleteImageFile(filename) {
 async function listFloorPlans(pool) {
   await ensureMapFloorPlansDollarValueColumn(pool);
   await ensureMapFloorPlansDefine3DColumn(pool);
+  await ensureMapFloorPlansImageDimensionsColumn(pool);
   const r = await pool.query(
-    `SELECT id, name, category, size_sqm, dollar_value, image_filename, define_3d,
-            scale_line_x1, scale_line_y1, scale_line_x2, scale_line_y2, scale_line_meters,
+    `SELECT id, name, category, size_sqm, dollar_value, image_filename, image_width, image_height,
+            define_3d, scale_line_x1, scale_line_y1, scale_line_x2, scale_line_y2, scale_line_meters,
             created_at, updated_at
      FROM map_floor_plans ORDER BY name ASC`
   );
@@ -280,15 +318,29 @@ async function listFloorPlans(pool) {
 async function getFloorPlan(pool, id) {
   await ensureMapFloorPlansDollarValueColumn(pool);
   await ensureMapFloorPlansDefine3DColumn(pool);
+  await ensureMapFloorPlansImageDimensionsColumn(pool);
   const r = await pool.query(
-    `SELECT id, name, category, size_sqm, dollar_value, image_filename, define_3d,
-            scale_line_x1, scale_line_y1, scale_line_x2, scale_line_y2, scale_line_meters,
+    `SELECT id, name, category, size_sqm, dollar_value, image_filename, image_width, image_height,
+            define_3d, scale_line_x1, scale_line_y1, scale_line_x2, scale_line_y2, scale_line_meters,
             created_at, updated_at
      FROM map_floor_plans WHERE id = $1`,
     [id]
   );
   if (!r.rows.length) return null;
-  return rowToPlan(r.rows[0]);
+
+  const row = r.rows[0];
+  if ((!row.image_width || !row.image_height) && row.image_filename) {
+    const dimensions = await readPngDimensions(row.image_filename);
+    if (dimensions) {
+      row.image_width = dimensions.width;
+      row.image_height = dimensions.height;
+      await pool.query(
+        `UPDATE map_floor_plans SET image_width = $1, image_height = $2, updated_at = NOW() WHERE id = $3`,
+        [dimensions.width, dimensions.height, id]
+      );
+    }
+  }
+  return rowToPlan(row);
 }
 
 async function createFloorPlan(pool, fields, file) {
@@ -299,21 +351,23 @@ async function createFloorPlan(pool, fields, file) {
     throw new Error("Scale calibration is required");
   }
 
-  const imageFilename = await saveUploadFile(file);
+  const upload = await saveUploadFile(file);
   const { scale } = fields;
   const r = await pool.query(
     `INSERT INTO map_floor_plans (
-       name, category, size_sqm, dollar_value, image_filename,
+       name, category, size_sqm, dollar_value, image_filename, image_width, image_height,
        scale_line_x1, scale_line_y1, scale_line_x2, scale_line_y2, scale_line_meters,
        updated_at
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW()) RETURNING *`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW()) RETURNING *`,
     [
       fields.name,
       fields.category,
       fields.sizeSqm,
       fields.dollarValue,
-      imageFilename,
+      upload.filename,
+      upload.width ?? null,
+      upload.height ?? null,
       scale.x1,
       scale.y1,
       scale.x2,
@@ -335,12 +389,18 @@ async function updateFloorPlan(pool, id, fields, file) {
   let scaleY2 = existing.rows[0].scale_line_y2;
   let scaleMeters = existing.rows[0].scale_line_meters;
 
+  let imageWidth = existing.rows[0].image_width;
+  let imageHeight = existing.rows[0].image_height;
+
   if (file) {
     if (!fields.scale) {
       throw new Error("Scale calibration is required when replacing the floor plan image");
     }
     await deleteImageFile(imageFilename);
-    imageFilename = await saveUploadFile(file);
+    const upload = await saveUploadFile(file);
+    imageFilename = upload.filename;
+    imageWidth = upload.width ?? null;
+    imageHeight = upload.height ?? null;
     scaleX1 = fields.scale.x1;
     scaleY1 = fields.scale.y1;
     scaleX2 = fields.scale.x2;
@@ -351,15 +411,18 @@ async function updateFloorPlan(pool, id, fields, file) {
   const r = await pool.query(
     `UPDATE map_floor_plans
      SET name = $1, category = $2, size_sqm = $3, dollar_value = $4, image_filename = $5,
-         scale_line_x1 = $6, scale_line_y1 = $7, scale_line_x2 = $8, scale_line_y2 = $9,
-         scale_line_meters = $10, updated_at = NOW()
-     WHERE id = $11 RETURNING *`,
+         image_width = $6, image_height = $7,
+         scale_line_x1 = $8, scale_line_y1 = $9, scale_line_x2 = $10, scale_line_y2 = $11,
+         scale_line_meters = $12, updated_at = NOW()
+     WHERE id = $13 RETURNING *`,
     [
       fields.name,
       fields.category,
       fields.sizeSqm,
       fields.dollarValue,
       imageFilename,
+      imageWidth,
+      imageHeight,
       scaleX1,
       scaleY1,
       scaleX2,

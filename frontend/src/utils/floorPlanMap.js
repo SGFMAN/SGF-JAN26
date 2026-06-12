@@ -421,6 +421,24 @@ export function geometryCoordinatesKey(geometry) {
   }
 }
 
+/** Lightweight stable key for 3D scene remounts (avoids stringifying huge geometries). */
+export function siteGeometryStableKey(geometry) {
+  if (!geometry?.type) return "";
+  const ring = siteBoundaryRingLatLng(geometry);
+  if (ring.length < 3) return geometry.type;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLng = Infinity;
+  let maxLng = -Infinity;
+  for (const [lat, lng] of ring) {
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+    minLng = Math.min(minLng, lng);
+    maxLng = Math.max(maxLng, lng);
+  }
+  return `${geometry.type}:${ring.length}:${minLat.toFixed(5)},${minLng.toFixed(5)},${maxLat.toFixed(5)},${maxLng.toFixed(5)}`;
+}
+
 export function siteHighPointAhd(elevationRows) {
   let max = null;
   for (const row of elevationRows) {
