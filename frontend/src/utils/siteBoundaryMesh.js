@@ -22,6 +22,8 @@ export const FLOOR_PLAN_ROOF_OVERHANG_M = 0.3;
 export const FLOOR_PLAN_ROOF_RIDGE_RISE_M = 1;
 /** Existing building volumes extend this far above the highest grass point under the footprint. */
 export const BUILDING_HEIGHT_ABOVE_GRASS_M = 4.5;
+/** Verandah deck height above the highest grass point under the footprint. */
+export const VERANDAH_HEIGHT_ABOVE_GRASS_M = 0.65;
 
 function ringAreaM2(ring) {
   if (ring.length < 3) return 0;
@@ -653,6 +655,23 @@ export function buildBuildingOutlineLinePositions(
   }
 
   return { positions, outlineYM, grassTopYM };
+}
+
+/** Verandah deck — top at highest grass point + VERANDAH_HEIGHT_ABOVE_GRASS_M. */
+export function buildVerandahOutlineLinePositions(
+  ring,
+  siteBoundaryRing,
+  siteCornerLevels,
+  baseOffsetM = SITE_BASE_OFFSET_M,
+  heightAboveGrassM = VERANDAH_HEIGHT_ABOVE_GRASS_M
+) {
+  return buildBuildingOutlineLinePositions(
+    ring,
+    siteBoundaryRing,
+    siteCornerLevels,
+    baseOffsetM,
+    heightAboveGrassM
+  );
 }
 
 /**

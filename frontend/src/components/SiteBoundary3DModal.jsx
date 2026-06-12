@@ -20,6 +20,7 @@ export default function SiteBoundary3DModal({
   lookupState = "VIC",
   placedUnit = null,
   buildingsGeoJson = null,
+  verandahsGeoJson = null,
   onBack,
 }) {
   const containerRef = useRef(null);
@@ -158,6 +159,7 @@ export default function SiteBoundary3DModal({
           lookupState,
           placedUnit,
           buildingsGeoJson,
+          verandahsGeoJson,
           earthMaterial,
           grassMaterial,
         });
@@ -194,7 +196,7 @@ export default function SiteBoundary3DModal({
       earthTexture.dispose();
       grassTexture.dispose();
     };
-  }, [siteGeometry, lookupState, placedUnit, buildingsGeoJson]);
+  }, [siteGeometry, lookupState, placedUnit, buildingsGeoJson, verandahsGeoJson]);
 
   return (
     <div

@@ -30,6 +30,7 @@ export async function generateMapsProposal({
   lookupState = "VIC",
   placedUnit = null,
   buildingsGeoJson = null,
+  verandahsGeoJson = null,
   quoteItems = [],
   addressLabel = "",
 }) {
@@ -43,6 +44,7 @@ export async function generateMapsProposal({
       lookupState,
       placedUnit,
       buildingsGeoJson,
+      verandahsGeoJson,
     }),
     captureMapScreenshot(mapElement),
   ]);

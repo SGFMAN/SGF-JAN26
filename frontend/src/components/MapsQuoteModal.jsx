@@ -3,6 +3,7 @@ import ModalBackdrop from "./ModalBackdrop";
 import PricingCatalogPricePill from "./PricingCatalogPricePill";
 import { getApiHeaders } from "../utils/auth";
 import { generateMapsProposal } from "../utils/mapsProposalGenerate";
+import { buildVerandahQuoteLineItem } from "../utils/mapsVerandahQuote";
 import { fetchQuoteItems } from "../utils/mapsQuoteItems";
 
 const MONUMENT = "#323233";
@@ -38,10 +39,12 @@ async function resolveUnitPlan(unitPlan) {
 export default function MapsQuoteModal({
   onClose,
   unitPlan = null,
+  verandahsGeoJson = null,
   proposalContext = null,
 }) {
   const [items, setItems] = useState([]);
   const [unitItem, setUnitItem] = useState(null);
+  const [verandahItem, setVerandahItem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
@@ -53,13 +56,15 @@ export default function MapsQuoteModal({
       setLoading(true);
       setError("");
       try {
-        const [loaded, resolvedUnit] = await Promise.all([
+        const [loaded, resolvedUnit, resolvedVerandah] = await Promise.all([
           fetchQuoteItems(),
           resolveUnitPlan(unitPlan),
+          buildVerandahQuoteLineItem(verandahsGeoJson).catch(() => null),
         ]);
         if (cancelled) return;
         setItems(loaded);
         setUnitItem(resolvedUnit);
+        setVerandahItem(resolvedVerandah);
       } catch (err) {
         if (!cancelled) setError(err.message || "Failed to load quote items");
       } finally {
@@ -69,12 +74,14 @@ export default function MapsQuoteModal({
     return () => {
       cancelled = true;
     };
-  }, [unitPlan?.id]);
+  }, [unitPlan?.id, verandahsGeoJson]);
 
-  const displayItems = useMemo(
-    () => (unitItem ? [unitItem, ...items] : items),
-    [unitItem, items]
-  );
+  const displayItems = useMemo(() => {
+    const list = [];
+    if (unitItem) list.push(unitItem);
+    if (verandahItem) list.push(verandahItem);
+    return [...list, ...items];
+  }, [unitItem, verandahItem, items]);
 
   async function handleGenerate() {
     if (!proposalContext?.siteGeometry) {
@@ -96,6 +103,7 @@ export default function MapsQuoteModal({
         lookupState: proposalContext.lookupState || "VIC",
         placedUnit: proposalContext.placedUnit ?? null,
         buildingsGeoJson: proposalContext.buildingsGeoJson ?? null,
+        verandahsGeoJson: proposalContext.verandahsGeoJson ?? null,
         quoteItems: displayItems,
         addressLabel: proposalContext.addressLabel || "",
       });

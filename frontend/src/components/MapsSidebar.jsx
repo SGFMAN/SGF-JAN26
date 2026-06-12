@@ -116,6 +116,14 @@ export default function MapsSidebar({
   bulkSelection = null,
   onAddUnit,
   showAddUnit = false,
+  onAddBuilding,
+  showAddBuilding = false,
+  addBuildingDisabled = false,
+  addBuildingActive = false,
+  onAddVerandah,
+  showAddVerandah = false,
+  addVerandahDisabled = false,
+  addVerandahActive = false,
   onQuote,
   showQuote = false,
 }) {
@@ -134,6 +142,28 @@ export default function MapsSidebar({
       {showAddUnit && typeof onAddUnit === "function" && (
         <button type="button" onClick={onAddUnit} style={sidebarButtonStyle(false)}>
           Add Unit
+        </button>
+      )}
+
+      {showAddBuilding && typeof onAddBuilding === "function" && (
+        <button
+          type="button"
+          onClick={onAddBuilding}
+          disabled={addBuildingDisabled}
+          style={sidebarButtonStyle(addBuildingDisabled)}
+        >
+          {addBuildingActive ? "Adding building…" : "Add Building"}
+        </button>
+      )}
+
+      {showAddVerandah && typeof onAddVerandah === "function" && (
+        <button
+          type="button"
+          onClick={onAddVerandah}
+          disabled={addVerandahDisabled}
+          style={sidebarButtonStyle(addVerandahDisabled)}
+        >
+          {addVerandahActive ? "Adding verandah…" : "Add Verandah"}
         </button>
       )}
 

@@ -16,6 +16,7 @@ import PlanningOverlaysLayer, {
 } from "../components/PlanningOverlaysLayer";
 import EasementsLayer from "../components/EasementsLayer";
 import EditableBuildingsLayer from "../components/EditableBuildingsLayer";
+import EditableVerandahsLayer from "../components/EditableVerandahsLayer";
 import DraggableFloorPlanOverlay from "../components/DraggableFloorPlanOverlay";
 import FloorPlanPickerModal from "../components/FloorPlanPickerModal";
 import MapsQuoteModal from "../components/MapsQuoteModal";
@@ -295,6 +296,9 @@ export default function Maps() {
   const [buildingsGeoJson, setBuildingsGeoJson] = useState(null);
   const [buildingsLayerVisible, setBuildingsLayerVisible] = useState(true);
   const [addingBuilding, setAddingBuilding] = useState(false);
+  const [verandahsGeoJson, setVerandahsGeoJson] = useState(null);
+  const [verandahsLayerVisible, setVerandahsLayerVisible] = useState(true);
+  const [addingVerandah, setAddingVerandah] = useState(false);
   const [bulkPins, setBulkPins] = useState([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0, ok: 0, failed: 0 });
@@ -492,6 +496,7 @@ export default function Maps() {
 
 
   const handleAddBuilding = useCallback(() => {
+    setAddingVerandah(false);
     setMovableTarget(null);
     setAddingBuilding(true);
   }, []);
@@ -518,6 +523,34 @@ export default function Maps() {
     setAddingBuilding(false);
   }, []);
 
+  const handleAddVerandah = useCallback(() => {
+    setAddingBuilding(false);
+    setMovableTarget(null);
+    setAddingVerandah(true);
+  }, []);
+
+  const handleVerandahDrawn = useCallback((geometry) => {
+    setVerandahsGeoJson((prev) => {
+      const features = prev?.features ? [...prev.features] : [];
+      const nextIndex = features.length + 1;
+      features.push({
+        type: "Feature",
+        properties: {
+          verandah_id: `verandah-${nextIndex}`,
+          label: `Verandah ${nextIndex}`,
+        },
+        geometry,
+      });
+      return { type: "FeatureCollection", features };
+    });
+    setAddingVerandah(false);
+  }, []);
+
+  const clearVerandahOutlines = useCallback(() => {
+    setVerandahsGeoJson(null);
+    setAddingVerandah(false);
+  }, []);
+
   const runSearch = useCallback(async (searchQueryOverride) => {
     const q = (searchQueryOverride != null ? String(searchQueryOverride) : query).trim();
     if (!q) {
@@ -540,6 +573,9 @@ export default function Maps() {
     setBuildingsGeoJson(null);
     setBuildingsLayerVisible(true);
     setAddingBuilding(false);
+    setVerandahsGeoJson(null);
+    setVerandahsLayerVisible(true);
+    setAddingVerandah(false);
     setPlacedUnit(null);
     setMovableTarget(null);
     try {
@@ -975,6 +1011,14 @@ export default function Maps() {
           bulkSelection={bulkSelection}
           showAddUnit={isAdmin && onMapView}
           onAddUnit={handleAddUnit}
+          showAddBuilding={isAdmin && onMapView && Boolean(parcelFeature)}
+          onAddBuilding={handleAddBuilding}
+          addBuildingDisabled={addingVerandah}
+          addBuildingActive={addingBuilding}
+          showAddVerandah={isAdmin && onMapView && Boolean(parcelFeature)}
+          onAddVerandah={handleAddVerandah}
+          addVerandahDisabled={addingBuilding}
+          addVerandahActive={addingVerandah}
           showQuote={isAdmin && onMapView}
           onQuote={handleQuote}
         />
@@ -1013,7 +1057,7 @@ export default function Maps() {
             >
               <MapBasemapTileLayer basemapId={resolvedBasemapId} />
               <MapInvalidateSize />
-              <MapPanLock locked={movableTarget != null || addingBuilding} />
+              <MapPanLock locked={movableTarget != null || addingBuilding || addingVerandah} />
               {parcelFeature && (
                 <DraggableParcelBoundary
                   key={activeSearchQuery || "boundary"}
@@ -1028,14 +1072,14 @@ export default function Maps() {
                   zoneGeoJson={planningZoneGeoJson}
                   overlayGeoJson={planningOverlayGeoJson}
                   layerVisibility={planningLayerVisibility}
-                  blockPointerEvents={movableTarget != null || addingBuilding}
+                  blockPointerEvents={movableTarget != null || addingBuilding || addingVerandah}
                 />
               )}
               {easementsGeoJson && (
                 <EasementsLayer
                   key={activeSearchQuery || "easements"}
                   easementsGeoJson={easementsGeoJson}
-                  blockPointerEvents={movableTarget != null || addingBuilding}
+                  blockPointerEvents={movableTarget != null || addingBuilding || addingVerandah}
                 />
               )}
               {isAdmin && parcelFeature && (
@@ -1045,6 +1089,15 @@ export default function Maps() {
                   drawingActive={addingBuilding}
                   onDrawingComplete={handleBuildingDrawn}
                   onDrawingCancel={() => setAddingBuilding(false)}
+                />
+              )}
+              {isAdmin && parcelFeature && (
+                <EditableVerandahsLayer
+                  verandahsGeoJson={verandahsGeoJson}
+                  visible={verandahsLayerVisible}
+                  drawingActive={addingVerandah}
+                  onDrawingComplete={handleVerandahDrawn}
+                  onDrawingCancel={() => setAddingVerandah(false)}
                 />
               )}
               {isAdmin && placedUnit && onMapView && (
@@ -1320,41 +1373,23 @@ export default function Maps() {
                   boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8)",
                   display: "flex",
                   flexDirection: "column",
-                  gap: "8px",
+                  gap: "10px",
                   fontSize: "0.82rem",
                   color: MONUMENT,
                 }}
               >
-                <button
-                  type="button"
-                  onClick={handleAddBuilding}
-                  disabled={addingBuilding}
-                  style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    fontSize: "0.82rem",
-                    fontWeight: 600,
-                    borderRadius: "10px",
-                    border: `1px solid ${EXPLORER_BORDER}`,
-                    background: addingBuilding ? "#f3f4f6" : WHITE,
-                    color: MONUMENT,
-                    cursor: addingBuilding ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {addingBuilding ? "Adding building…" : "Add Building"}
-                </button>
+                <div style={{ fontWeight: 700 }}>Buildings</div>
                 {buildingsGeoJson?.features?.length > 0 && (
                   <span style={{ color: "#555", lineHeight: 1.4 }}>
                     {buildingsGeoJson.features.length}{" "}
-                    {buildingsGeoJson.features.length === 1 ? "building" : "buildings"} drawn — all
-                    shown on the map and in 3D.
+                    {buildingsGeoJson.features.length === 1 ? "building" : "buildings"} drawn — shown
+                    on the map and in 3D.
                   </span>
                 )}
                 {addingBuilding && (
                   <>
                     <span style={{ color: "#555", lineHeight: 1.4 }}>
-                      Click each corner of the building on the map. Click the first point again to
-                      finish.
+                      Click each corner on the map. Click the first point again to finish.
                     </span>
                     <button
                       type="button"
@@ -1411,6 +1446,80 @@ export default function Maps() {
                       }}
                     >
                       Clear all buildings
+                    </button>
+                  </>
+                )}
+
+                <div style={{ height: "1px", background: EXPLORER_BORDER, margin: "2px 0" }} />
+
+                <div style={{ fontWeight: 700 }}>Verandahs</div>
+                {verandahsGeoJson?.features?.length > 0 && (
+                  <span style={{ color: "#555", lineHeight: 1.4 }}>
+                    {verandahsGeoJson.features.length}{" "}
+                    {verandahsGeoJson.features.length === 1 ? "verandah" : "verandahs"} drawn —
+                    shown on the map, quote, and 3D.
+                  </span>
+                )}
+                {addingVerandah && (
+                  <>
+                    <span style={{ color: "#555", lineHeight: 1.4 }}>
+                      Click each corner on the map. Click the first point again to finish.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setAddingVerandah(false)}
+                      style={{
+                        width: "100%",
+                        padding: "8px 12px",
+                        fontSize: "0.82rem",
+                        fontWeight: 600,
+                        borderRadius: "10px",
+                        border: `1px solid ${EXPLORER_BORDER}`,
+                        background: WHITE,
+                        color: MONUMENT,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Done
+                    </button>
+                  </>
+                )}
+                {verandahsGeoJson?.features?.length > 0 && (
+                  <>
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={verandahsLayerVisible}
+                        onChange={() => setVerandahsLayerVisible((visible) => !visible)}
+                        style={{ marginTop: "1px", flexShrink: 0 }}
+                      />
+                      <span>Show verandahs</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={clearVerandahOutlines}
+                      disabled={addingVerandah}
+                      style={{
+                        width: "100%",
+                        padding: "8px 12px",
+                        fontSize: "0.82rem",
+                        fontWeight: 600,
+                        borderRadius: "10px",
+                        border: `1px solid ${EXPLORER_BORDER}`,
+                        background: WHITE,
+                        color: MONUMENT,
+                        cursor: addingVerandah ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      Clear all verandahs
                     </button>
                   </>
                 )}
@@ -1503,12 +1612,14 @@ export default function Maps() {
         <MapsQuoteModal
           onClose={() => setShowQuoteModal(false)}
           unitPlan={placedUnit?.plan ?? null}
+          verandahsGeoJson={verandahsGeoJson}
           proposalContext={{
             mapElement: mapCaptureRef.current,
             siteGeometry: parcelFeature?.geometry ?? null,
             lookupState: propertySearchState,
             placedUnit,
             buildingsGeoJson,
+            verandahsGeoJson,
             addressLabel: resultLabel || activeSearchQuery || "",
           }}
         />
@@ -1520,6 +1631,7 @@ export default function Maps() {
           lookupState={propertySearchState}
           placedUnit={placedUnit}
           buildingsGeoJson={buildingsGeoJson}
+          verandahsGeoJson={verandahsGeoJson}
           onBack={() => setShow3dVisualisationModal(false)}
         />
       )}

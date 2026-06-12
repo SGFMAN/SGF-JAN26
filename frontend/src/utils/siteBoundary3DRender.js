@@ -13,8 +13,14 @@ import {
   createGrassTexture,
 } from "./earthTexture";
 import {
+  createTimberDeckMaterial,
+  createTimberDeckTexture,
+  assignTimberDeckUVs,
+} from "./timberDeckTexture";
+import {
   buildEarthVolumeMesh,
   buildBuildingOutlineLinePositions,
+  buildVerandahOutlineLinePositions,
   buildExtrudedFootprintMesh,
   buildFootprintEdgeLinePositions,
   buildFootprintTopCapMesh,
@@ -33,6 +39,8 @@ const FLOOR_PLAN_UPPER_COLOR = 0xd1d5db;
 const BUILDING_WALL_COLOR = 0xffffff;
 const BUILDING_ROOF_COLOR = 0xffffff;
 const BUILDING_EDGE_COLOR = 0x323233;
+const VERANDAH_WALL_COLOR = 0x8b6914;
+const VERANDAH_EDGE_COLOR = 0x6b4423;
 const FOOTPRINT_BOTTOM_Y = 0;
 
 function addExtrudedFootprintMesh(boundaryGroup, topRingPositions, color, options = {}) {
@@ -75,6 +83,25 @@ function addFlatFootprintCap(boundaryGroup, topRingPositions, color, options = {
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.renderOrder = 17;
+  boundaryGroup.add(mesh);
+}
+
+function addTimberDeckCap(boundaryGroup, topRingPositions) {
+  const cap = buildFootprintTopCapMesh(topRingPositions, 0.008);
+  if (!cap) return;
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(cap.positions, 3));
+  geometry.setIndex(new THREE.BufferAttribute(cap.indices, 1));
+  const uvs = new Float32Array((cap.positions.length / 3) * 2);
+  assignTimberDeckUVs(cap.positions, uvs);
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  geometry.computeVertexNormals();
+
+  const texture = createTimberDeckTexture();
+  const material = createTimberDeckMaterial(texture);
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.renderOrder = 18;
   boundaryGroup.add(mesh);
 }
 
@@ -285,6 +312,26 @@ function addBuildingVolumes(boundaryGroup, siteRing, siteCornerLevels, buildings
   }
 }
 
+function addVerandahVolumes(boundaryGroup, siteRing, siteCornerLevels, verandahsGeoJson) {
+  const features = verandahsGeoJson?.features || [];
+  if (!features.length) return;
+
+  for (const feature of features) {
+    const rings = extractOuterRings(feature.geometry);
+    for (const ring of rings) {
+      const outline = buildVerandahOutlineLinePositions(ring, siteRing, siteCornerLevels);
+      if (!outline) continue;
+      addExtrudedFootprintMesh(boundaryGroup, outline.positions, VERANDAH_WALL_COLOR, {
+        includeTopCap: false,
+        doubleSided: true,
+        bottomYM: outline.grassTopYM,
+      });
+      addTimberDeckCap(boundaryGroup, outline.positions);
+      addFootprintEdgeLines(boundaryGroup, outline.positions, outline.grassTopYM, VERANDAH_EDGE_COLOR);
+    }
+  }
+}
+
 export function disposeThreeObject(root) {
   root.traverse((obj) => {
     if (obj.geometry) obj.geometry.dispose();
@@ -300,7 +347,15 @@ export function disposeThreeObject(root) {
 
 export async function populateSiteBoundary3DGroup(
   boundaryGroup,
-  { siteGeometry, lookupState = "VIC", placedUnit = null, buildingsGeoJson = null, earthMaterial, grassMaterial }
+  {
+    siteGeometry,
+    lookupState = "VIC",
+    placedUnit = null,
+    buildingsGeoJson = null,
+    verandahsGeoJson = null,
+    earthMaterial,
+    grassMaterial,
+  }
 ) {
   const rings = extractOuterRings(siteGeometry);
   if (!rings.length) {
@@ -327,6 +382,7 @@ export async function populateSiteBoundary3DGroup(
     /* unit outline is optional */
   }
   addBuildingVolumes(boundaryGroup, rings[0], levels, buildingsGeoJson);
+  addVerandahVolumes(boundaryGroup, rings[0], levels, verandahsGeoJson);
 
   return {
     maxRelativeFall: Math.max(...cornerHeights.map((c) => c.relativeM)),
@@ -339,6 +395,7 @@ export async function captureSiteBoundary3DSnapshot({
   lookupState = "VIC",
   placedUnit = null,
   buildingsGeoJson = null,
+  verandahsGeoJson = null,
   width = 1280,
   height = 720,
 }) {
@@ -372,6 +429,7 @@ export async function captureSiteBoundary3DSnapshot({
       lookupState,
       placedUnit,
       buildingsGeoJson,
+      verandahsGeoJson,
       earthMaterial,
       grassMaterial,
     });
