@@ -49,6 +49,7 @@ const {
   parseFloorPlanFields,
   ensureMapFloorPlansDollarValueColumn,
   listFloorPlans,
+  getFloorPlan,
   createFloorPlan,
   updateFloorPlan,
   updateFloorPlanDollarValue,
@@ -2794,6 +2795,22 @@ app.get("/api/maps/floor-plans", async (req, res) => {
   } catch (e) {
     console.error("[floor-plans] list error:", e);
     return res.status(500).json({ ok: false, error: e.message || "Failed to list floor plans" });
+  }
+});
+
+app.get("/api/maps/floor-plans/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
+  try {
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "Invalid floor plan id" });
+    const plan = await getFloorPlan(pool, id);
+    if (!plan) return res.status(404).json({ ok: false, error: "Floor plan not found" });
+    return res.json({ ok: true, floorPlan: plan });
+  } catch (e) {
+    console.error("[floor-plans] get error:", e);
+    return res.status(500).json({ ok: false, error: e.message || "Failed to load floor plan" });
   }
 });
 

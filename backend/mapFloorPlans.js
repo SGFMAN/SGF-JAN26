@@ -277,6 +277,20 @@ async function listFloorPlans(pool) {
   return r.rows.map(rowToPlan);
 }
 
+async function getFloorPlan(pool, id) {
+  await ensureMapFloorPlansDollarValueColumn(pool);
+  await ensureMapFloorPlansDefine3DColumn(pool);
+  const r = await pool.query(
+    `SELECT id, name, category, size_sqm, dollar_value, image_filename, define_3d,
+            scale_line_x1, scale_line_y1, scale_line_x2, scale_line_y2, scale_line_meters,
+            created_at, updated_at
+     FROM map_floor_plans WHERE id = $1`,
+    [id]
+  );
+  if (!r.rows.length) return null;
+  return rowToPlan(r.rows[0]);
+}
+
 async function createFloorPlan(pool, fields, file) {
   if (!file) {
     throw new Error("Floor plan image is required");
@@ -416,6 +430,7 @@ module.exports = {
   ensureMapFloorPlansDefine3DColumn,
   normalizeDefine3D,
   listFloorPlans,
+  getFloorPlan,
   createFloorPlan,
   updateFloorPlan,
   updateFloorPlanDollarValue,

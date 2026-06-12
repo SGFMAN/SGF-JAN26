@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { CORRUGATED_ROOF_PITCH_M } from "./corrugatedRoofTexture";
 import {
+  floorPlanPixelToLatLng,
+  floorPlanPixelToLocalEN,
   interpolateSiteCornerGrid,
   METERS_PER_DEG_LAT,
   metersPerDegreeLng,
@@ -16,6 +18,8 @@ export const SITE_BASE_OFFSET_M = SITE_THICKNESS_M;
 export const FLOOR_PLAN_HEIGHT_ABOVE_GRASS_M = 0.65;
 /** Light-grey unit volume above the subfloor (wall height). */
 export const FLOOR_PLAN_UPPER_HEIGHT_M = 3;
+/** Internal partition wall thickness in 3D (m). */
+export const FLOOR_PLAN_INTERNAL_WALL_THICKNESS_M = 0.1;
 /** Gable roof overhang beyond floor plan walls (m). */
 export const FLOOR_PLAN_ROOF_OVERHANG_M = 0.3;
 /** Gable ridge height above the top of the floor plan walls (m). */
@@ -319,6 +323,259 @@ export function buildFloorPlanOutlineLinePositions(
   }
 
   return { positions, outlineYM, grassTopYM };
+}
+
+function computeFloorPlanPlacementHeights(
+  ring,
+  siteCornerLevels,
+  sampleLatLngPoints,
+  baseOffsetM = SITE_BASE_OFFSET_M,
+  heightAboveGrassM = FLOOR_PLAN_HEIGHT_ABOVE_GRASS_M
+) {
+  const minAhdM = siteMinAhdM(ring, siteCornerLevels);
+  if (minAhdM == null || !sampleLatLngPoints.length) return null;
+
+  let maxRelativeM = 0;
+  for (const point of sampleLatLngPoints) {
+    const relativeM = grassRelativeHeightAt(point.lat, point.lng, siteCornerLevels, minAhdM);
+    if (relativeM == null) return null;
+    maxRelativeM = Math.max(maxRelativeM, relativeM);
+  }
+
+  const grassTopYM = baseOffsetM + maxRelativeM + 0.012;
+  const outlineYM = grassTopYM + heightAboveGrassM;
+  return { outlineYM, grassTopYM };
+}
+
+function latLngPointsFromPolygonPixels(
+  polygon,
+  centerLat,
+  centerLng,
+  imageWidth,
+  imageHeight,
+  widthM,
+  heightM,
+  bearingDeg
+) {
+  const points = polygon.map((pt) =>
+    floorPlanPixelToLatLng(
+      pt.x,
+      pt.y,
+      centerLat,
+      centerLng,
+      imageWidth,
+      imageHeight,
+      widthM,
+      heightM,
+      bearingDeg
+    )
+  );
+  for (let i = 0; i < points.length; i += 1) {
+    const j = (i + 1) % points.length;
+    points.push({
+      lat: (points[i].lat + points[j].lat) / 2,
+      lng: (points[i].lng + points[j].lng) / 2,
+    });
+  }
+  return points;
+}
+
+/**
+ * External wall polygon from Define 3D pixels → flat footprint ring in site local coords.
+ * @returns {{ positions: Float32Array, outlineYM: number, grassTopYM: number } | null}
+ */
+export function buildFloorPlanPolygonFootprintPositions(
+  ring,
+  siteCornerLevels,
+  centerLat,
+  centerLng,
+  polygonPixels,
+  imageWidth,
+  imageHeight,
+  widthM,
+  heightM,
+  bearingDeg = 0
+) {
+  const frame = getSiteMeshFrame(ring);
+  if (!frame || !polygonPixels || polygonPixels.length < 3) return null;
+
+  const samplePoints = latLngPointsFromPolygonPixels(
+    polygonPixels,
+    centerLat,
+    centerLng,
+    imageWidth,
+    imageHeight,
+    widthM,
+    heightM,
+    bearingDeg
+  );
+  const heights = computeFloorPlanPlacementHeights(ring, siteCornerLevels, samplePoints);
+  if (!heights) return null;
+
+  const positions = new Float32Array(polygonPixels.length * 3);
+  for (let i = 0; i < polygonPixels.length; i += 1) {
+    const latlng = floorPlanPixelToLatLng(
+      polygonPixels[i].x,
+      polygonPixels[i].y,
+      centerLat,
+      centerLng,
+      imageWidth,
+      imageHeight,
+      widthM,
+      heightM,
+      bearingDeg
+    );
+    const { x, z } = latLngToSiteLocalXZ(latlng.lat, latlng.lng, frame);
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = heights.outlineYM;
+    positions[i * 3 + 2] = z;
+  }
+
+  return { positions, outlineYM: heights.outlineYM, grassTopYM: heights.grassTopYM };
+}
+
+/**
+ * Internal wall segment from Define 3D pixels → thin quad footprint at subfloor height.
+ * @returns {{ positions: Float32Array, outlineYM: number } | null}
+ */
+export function buildFloorPlanInternalWallFootprintPositions(
+  ring,
+  siteCornerLevels,
+  centerLat,
+  centerLng,
+  segmentPixels,
+  imageWidth,
+  imageHeight,
+  widthM,
+  heightM,
+  bearingDeg = 0,
+  thicknessM = FLOOR_PLAN_INTERNAL_WALL_THICKNESS_M
+) {
+  const frame = getSiteMeshFrame(ring);
+  if (!frame || segmentPixels?.length !== 2) return null;
+
+  const start = floorPlanPixelToLatLng(
+    segmentPixels[0].x,
+    segmentPixels[0].y,
+    centerLat,
+    centerLng,
+    imageWidth,
+    imageHeight,
+    widthM,
+    heightM,
+    bearingDeg
+  );
+  const end = floorPlanPixelToLatLng(
+    segmentPixels[1].x,
+    segmentPixels[1].y,
+    centerLat,
+    centerLng,
+    imageWidth,
+    imageHeight,
+    widthM,
+    heightM,
+    bearingDeg
+  );
+  const mid = { lat: (start.lat + end.lat) / 2, lng: (start.lng + end.lng) / 2 };
+  const heights = computeFloorPlanPlacementHeights(ring, siteCornerLevels, [start, end, mid]);
+  if (!heights) return null;
+
+  const startXZ = latLngToSiteLocalXZ(start.lat, start.lng, frame);
+  const endXZ = latLngToSiteLocalXZ(end.lat, end.lng, frame);
+  const dx = endXZ.x - startXZ.x;
+  const dz = endXZ.z - startXZ.z;
+  const len = Math.hypot(dx, dz);
+  if (len < 0.05) return null;
+
+  const halfT = thicknessM / 2;
+  const nx = (-dz / len) * halfT;
+  const nz = (dx / len) * halfT;
+  const y = heights.outlineYM;
+  const positions = new Float32Array([
+    startXZ.x + nx,
+    y,
+    startXZ.z + nz,
+    endXZ.x + nx,
+    y,
+    endXZ.z + nz,
+    endXZ.x - nx,
+    y,
+    endXZ.z - nz,
+    startXZ.x - nx,
+    y,
+    startXZ.z - nz,
+  ]);
+
+  return { positions, outlineYM: heights.outlineYM };
+}
+
+/**
+ * Axis-aligned gable roof footprint from the bounding box of Define 3D external walls.
+ * @returns {{ positions: Float32Array, widthM: number, heightM: number } | null}
+ */
+export function buildFloorPlanGableRoofFootprintFromDefine3D(
+  ring,
+  centerLat,
+  centerLng,
+  externalPolygons,
+  imageWidth,
+  imageHeight,
+  widthM,
+  heightM,
+  bearingDeg,
+  wallTopYM
+) {
+  const frame = getSiteMeshFrame(ring);
+  if (!frame || !externalPolygons?.length) return null;
+
+  let minE = Infinity;
+  let maxE = -Infinity;
+  let minN = Infinity;
+  let maxN = -Infinity;
+
+  for (const polygon of externalPolygons) {
+    for (const pt of polygon) {
+      const { eastM, northM } = floorPlanPixelToLocalEN(
+        pt.x,
+        pt.y,
+        imageWidth,
+        imageHeight,
+        widthM,
+        heightM
+      );
+      minE = Math.min(minE, eastM);
+      maxE = Math.max(maxE, eastM);
+      minN = Math.min(minN, northM);
+      maxN = Math.max(maxN, northM);
+    }
+  }
+
+  if (!Number.isFinite(minE) || maxE - minE < 0.05 || maxN - minN < 0.05) return null;
+
+  const localCorners = {
+    sw: { e: minE, n: minN },
+    se: { e: maxE, n: minN },
+    ne: { e: maxE, n: maxN },
+    nw: { e: minE, n: maxN },
+  };
+  const order = ["sw", "se", "ne", "nw"];
+  const positions = new Float32Array(order.length * 3);
+
+  for (let i = 0; i < order.length; i += 1) {
+    const local = localCorners[order[i]];
+    const rotated = rotateEN(local.e, local.n, bearingDeg);
+    const latlng = offsetENFromCenter(centerLat, centerLng, rotated.east, rotated.north);
+    const { x, z } = latLngToSiteLocalXZ(latlng.lat, latlng.lng, frame);
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = wallTopYM;
+    positions[i * 3 + 2] = z;
+  }
+
+  return {
+    positions,
+    widthM: maxE - minE,
+    heightM: maxN - minN,
+  };
 }
 
 /** Same footprint ring at a flat height (x/z unchanged). */

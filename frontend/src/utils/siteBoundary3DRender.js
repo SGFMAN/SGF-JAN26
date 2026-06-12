@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { fetchMonumentBox, fetchFloorPlanImageBlob, floorPlanDimensionsMeters, loadImageSizeFromBlob } from "./floorPlanMap";
+import { fetchMonumentBox, fetchFloorPlanImageBlob, fetchFloorPlanMeta, floorPlanDimensionsMeters, loadImageSizeFromBlob } from "./floorPlanMap";
 import {
   createCorrugatedRoofMaterial,
   createCorrugatedRoofTexture,
@@ -25,7 +25,10 @@ import {
   buildFootprintEdgeLinePositions,
   buildFootprintTopCapMesh,
   buildFloorPlanGableRoofMesh,
+  buildFloorPlanGableRoofFootprintFromDefine3D,
+  buildFloorPlanInternalWallFootprintPositions,
   buildFloorPlanOutlineLinePositions,
+  buildFloorPlanPolygonFootprintPositions,
   footprintRingAtY,
   FLOOR_PLAN_UPPER_HEIGHT_M,
   buildHeightTopSurfaceMesh,
@@ -258,10 +261,108 @@ async function addFloorPlanVolume(boundaryGroup, ring, siteCornerLevels, placedU
     return;
   }
 
+  let planMeta = plan;
+  try {
+    planMeta = await fetchFloorPlanMeta(plan.id);
+  } catch {
+    planMeta = plan;
+  }
+
   const blob = await fetchFloorPlanImageBlob(plan.id);
   const { width, height } = await loadImageSizeFromBlob(blob);
-  const dims = floorPlanDimensionsMeters(plan, width, height);
+  const dims = floorPlanDimensionsMeters(planMeta, width, height);
   if (!dims) return;
+
+  const define3d = planMeta.define3d;
+  const externalPolygons = define3d?.externalWallPolygons ?? [];
+  const internalSegments = define3d?.internalWallSegments ?? [];
+  const hasDefine3DWalls = externalPolygons.length > 0;
+
+  if (hasDefine3DWalls) {
+    let outlineYM = null;
+    let upperTopY = null;
+
+    for (const polygon of externalPolygons) {
+      const footprint = buildFloorPlanPolygonFootprintPositions(
+        ring,
+        siteCornerLevels,
+        center.lat,
+        center.lng,
+        polygon,
+        width,
+        height,
+        dims.widthM,
+        dims.heightM,
+        bearing
+      );
+      if (!footprint) continue;
+
+      outlineYM = footprint.outlineYM;
+      upperTopY = footprint.outlineYM + FLOOR_PLAN_UPPER_HEIGHT_M;
+
+      addExtrudedFootprintMesh(boundaryGroup, footprint.positions, FLOOR_PLAN_SUBFLOOR_COLOR, {
+        doubleSided: true,
+        bottomYM: FOOTPRINT_BOTTOM_Y,
+      });
+
+      const upperRing = footprintRingAtY(footprint.positions, upperTopY);
+      addExtrudedFootprintMesh(boundaryGroup, upperRing, FLOOR_PLAN_UPPER_COLOR, {
+        includeTopCap: false,
+        doubleSided: true,
+        bottomYM: footprint.outlineYM,
+      });
+      addFootprintEdgeLines(boundaryGroup, upperRing, footprint.outlineYM);
+    }
+
+    if (outlineYM == null || upperTopY == null) return;
+
+    for (const segment of internalSegments) {
+      const wallFootprint = buildFloorPlanInternalWallFootprintPositions(
+        ring,
+        siteCornerLevels,
+        center.lat,
+        center.lng,
+        segment,
+        width,
+        height,
+        dims.widthM,
+        dims.heightM,
+        bearing
+      );
+      if (!wallFootprint) continue;
+
+      const upperRing = footprintRingAtY(wallFootprint.positions, upperTopY);
+      addExtrudedFootprintMesh(boundaryGroup, upperRing, FLOOR_PLAN_UPPER_COLOR, {
+        includeTopCap: false,
+        doubleSided: true,
+        bottomYM: wallFootprint.outlineYM,
+      });
+      addFootprintEdgeLines(boundaryGroup, upperRing, wallFootprint.outlineYM);
+    }
+
+    const roofFootprint = buildFloorPlanGableRoofFootprintFromDefine3D(
+      ring,
+      center.lat,
+      center.lng,
+      externalPolygons,
+      width,
+      height,
+      dims.widthM,
+      dims.heightM,
+      bearing,
+      upperTopY
+    );
+    if (roofFootprint) {
+      addFloorPlanGableRoof(
+        boundaryGroup,
+        roofFootprint.positions,
+        roofFootprint.widthM,
+        roofFootprint.heightM,
+        upperTopY
+      );
+    }
+    return;
+  }
 
   const outline = buildFloorPlanOutlineLinePositions(
     ring,

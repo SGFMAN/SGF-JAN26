@@ -30,7 +30,45 @@ export function floorPlanDimensionsMeters(plan, imageWidth, imageHeight) {
   return {
     widthM: imageWidth * mpp,
     heightM: imageHeight * mpp,
+    imageWidth,
+    imageHeight,
   };
+}
+
+/** Map Define 3D image pixel to local east/north metres (image NW at top-left). */
+export function floorPlanPixelToLocalEN(px, py, imageWidth, imageHeight, widthM, heightM) {
+  return {
+    eastM: (px / imageWidth - 0.5) * widthM,
+    northM: (0.5 - py / imageHeight) * heightM,
+  };
+}
+
+/** Map Define 3D image pixel to lat/lng on the placed unit. */
+export function floorPlanPixelToLatLng(
+  px,
+  py,
+  centerLat,
+  centerLng,
+  imageWidth,
+  imageHeight,
+  widthM,
+  heightM,
+  bearingDeg = 0
+) {
+  const { eastM, northM } = floorPlanPixelToLocalEN(px, py, imageWidth, imageHeight, widthM, heightM);
+  const rotated = rotateEN(eastM, northM, bearingDeg);
+  return offsetENFromCenter(centerLat, centerLng, rotated.east, rotated.north);
+}
+
+export async function fetchFloorPlanMeta(planId) {
+  const res = await fetch(`/api/maps/floor-plans/${planId}`, {
+    headers: getApiHeaders(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) {
+    throw new Error(data.error || "Failed to load floor plan");
+  }
+  return data.floorPlan;
 }
 
 export function loadImageSizeFromBlob(blob) {
