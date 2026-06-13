@@ -21,6 +21,7 @@ import DraggableFloorPlanOverlay from "../components/DraggableFloorPlanOverlay";
 import FloorPlanPickerModal from "../components/FloorPlanPickerModal";
 import MapsQuoteModal from "../components/MapsQuoteModal";
 import SiteBoundary3DModal from "../components/SiteBoundary3DModal";
+import { fetchFloorPlanMeta } from "../utils/floorPlanMap";
 import {
   BASEMAP_ESRI_IMAGERY,
   BASEMAP_VICMAP_AERIAL,
@@ -349,6 +350,18 @@ export default function Maps() {
 
   function handleQuote() {
     setShowQuoteModal(true);
+  }
+
+  async function handleOpen3DVisualisation() {
+    if (placedUnit?.plan?.id) {
+      try {
+        const fresh = await fetchFloorPlanMeta(placedUnit.plan.id);
+        setPlacedUnit((prev) => (prev?.plan?.id === fresh.id ? { ...prev, plan: fresh } : prev));
+      } catch {
+        /* use existing plan metadata */
+      }
+    }
+    setShow3dVisualisationModal(true);
   }
 
   function handleSelectFloorPlan(plan) {
@@ -1529,7 +1542,7 @@ export default function Maps() {
             {parcelFeature && (
               <button
                 type="button"
-                onClick={() => setShow3dVisualisationModal(true)}
+                onClick={() => void handleOpen3DVisualisation()}
                 style={{
                   width: "100%",
                   padding: "10px 14px",

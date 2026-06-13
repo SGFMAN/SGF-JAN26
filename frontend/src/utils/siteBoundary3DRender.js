@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import { fetchMonumentBox, fetchFloorPlanMeta, floorPlanDimensionsMeters } from "./floorPlanMap";
+import { fetchMonumentBox } from "./floorPlanMap";
+import { addDefine3DWallBoxes } from "./floorPlanDefine3dRender";
 import {
   createCorrugatedRoofMaterial,
   createCorrugatedRoofTexture,
@@ -25,23 +26,14 @@ import {
   buildFootprintEdgeLinePositions,
   buildFootprintTopCapMesh,
   buildFloorPlanGableRoofMesh,
-  buildFloorPlanGableRoofFootprintFromDefine3D,
   buildFloorPlanOutlineLinePositions,
-  computeDefine3DPlacementHeights,
-  DEFINE3D_MAX_INTERNAL_SEGMENTS,
-  FLOOR_PLAN_EXTERNAL_WALL_THICKNESS_M,
-  FLOOR_PLAN_INTERNAL_WALL_THICKNESS_M,
   footprintRingAtY,
-  getSiteMeshFrame,
-  latLngToSiteLocalXZ,
-  sanitizeDefine3DPolygonPixels,
   FLOOR_PLAN_UPPER_HEIGHT_M,
   buildHeightTopSurfaceMesh,
   buildSiteSlabMesh,
   cornerRelativeHeightsM,
   extractOuterRings,
 } from "./siteBoundaryMesh";
-import { floorPlanPixelToLatLng } from "./floorPlanMap";
 
 const FLOOR_PLAN_SUBFLOOR_COLOR = 0x323233;
 const FLOOR_PLAN_UPPER_COLOR = 0xd1d5db;
@@ -52,66 +44,14 @@ const VERANDAH_WALL_COLOR = 0x8b6914;
 const VERANDAH_EDGE_COLOR = 0x6b4423;
 const FOOTPRINT_BOTTOM_Y = 0;
 
-function resolvePlanImageDimensions(planMeta) {
-  const width = Number(planMeta?.imageWidth);
-  const height = Number(planMeta?.imageHeight);
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) {
-    return null;
-  }
-  return { width, height };
-}
-
-function segmentPixelsToSiteXZ(
-  ring,
-  centerLat,
-  centerLng,
-  segmentPixels,
-  imageWidth,
-  imageHeight,
-  widthM,
-  heightM,
-  bearingDeg
-) {
-  const frame = getSiteMeshFrame(ring);
-  if (!frame || segmentPixels?.length !== 2) return null;
-
-  const start = floorPlanPixelToLatLng(
-    segmentPixels[0].x,
-    segmentPixels[0].y,
-    centerLat,
-    centerLng,
-    imageWidth,
-    imageHeight,
-    widthM,
-    heightM,
-    bearingDeg
-  );
-  const end = floorPlanPixelToLatLng(
-    segmentPixels[1].x,
-    segmentPixels[1].y,
-    centerLat,
-    centerLng,
-    imageWidth,
-    imageHeight,
-    widthM,
-    heightM,
-    bearingDeg
-  );
-
-  return {
-    start: latLngToSiteLocalXZ(start.lat, start.lng, frame),
-    end: latLngToSiteLocalXZ(end.lat, end.lng, frame),
-  };
-}
-
 function addWallSegmentBox(boundaryGroup, startXZ, endXZ, bottomY, topY, thicknessM, color) {
   const dx = endXZ.x - startXZ.x;
   const dz = endXZ.z - startXZ.z;
   const length = Math.hypot(dx, dz);
-  if (!Number.isFinite(length) || length < 0.05) return;
+  if (!Number.isFinite(length) || length < 0.05 || length > 80) return;
 
   const height = topY - bottomY;
-  if (!Number.isFinite(height) || height <= 0) return;
+  if (!Number.isFinite(height) || height <= 0 || height > 20) return;
 
   const geometry = new THREE.BoxGeometry(length, height, thicknessM);
   const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide });
@@ -290,6 +230,11 @@ export function fitCameraToObject(camera, object, padding = 1.4) {
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z, 1);
+  if (!Number.isFinite(maxDim) || maxDim > 500) {
+    camera.position.set(20, 25, 20);
+    camera.lookAt(0, 0, 0);
+    return;
+  }
   const fov = (camera.fov * Math.PI) / 180;
   let dist = maxDim / (2 * Math.tan(fov / 2));
   dist *= padding;
@@ -335,144 +280,39 @@ function addBoundaryScene(boundaryGroup, ring, siteCornerLevels, earthMaterial, 
   return cornerHeights;
 }
 
-async function addFloorPlanVolume(boundaryGroup, ring, siteCornerLevels, placedUnit, signal) {
-  if (signal?.aborted) return;
-
+function addFloorPlanVolume(boundaryGroup, ring, siteCornerLevels, placedUnit) {
   const { plan, center, bearing = 0 } = placedUnit || {};
-  if (!plan?.id || !plan?.scale?.metersPerPixel || !center?.lat || !center?.lng) {
+  if (!plan?.scale?.metersPerPixel || !center?.lat || !center?.lng) {
     return;
   }
 
-  let planMeta = plan;
-  try {
-    planMeta = await fetchFloorPlanMeta(plan.id);
-  } catch {
-    planMeta = plan;
-  }
-  if (signal?.aborted) return;
+  const drewDefine3D = addDefine3DWallBoxes(
+    boundaryGroup,
+    ring,
+    siteCornerLevels,
+    placedUnit,
+    (group, start, end, bottom, top, thickness) =>
+      addWallSegmentBox(group, start, end, bottom, top, thickness, FLOOR_PLAN_UPPER_COLOR)
+  );
+  if (drewDefine3D) return;
 
-  const imageSize = resolvePlanImageDimensions(planMeta);
-  if (!imageSize) {
-    throw new Error(
-      "Floor plan image dimensions are unavailable. Re-open the floor plan in Settings once, then retry."
-    );
-  }
-
-  const { width, height } = imageSize;
-  const dims = floorPlanDimensionsMeters(planMeta, width, height);
-  if (!dims) return;
-
-  const define3d = planMeta.define3d;
-  const externalPolygons = define3d?.externalWallPolygons ?? [];
-  const internalSegments = define3d?.internalWallSegments ?? [];
-  const hasDefine3DWalls = externalPolygons.length > 0;
-
-  if (hasDefine3DWalls) {
-    const heights = computeDefine3DPlacementHeights(
-      ring,
-      siteCornerLevels,
-      center.lat,
-      center.lng,
-      externalPolygons,
-      internalSegments,
-      width,
-      height,
-      dims.widthM,
-      dims.heightM,
-      bearing
-    );
-    if (!heights) return;
-
-    const { outlineYM } = heights;
-    const upperTopY = outlineYM + FLOOR_PLAN_UPPER_HEIGHT_M;
-
-    for (const polygon of externalPolygons) {
-      const sanitized = sanitizeDefine3DPolygonPixels(polygon, width, height);
-      if (!sanitized) continue;
-
-      for (let i = 0; i < sanitized.length; i += 1) {
-        if (signal?.aborted) return;
-        const j = (i + 1) % sanitized.length;
-        const segmentXZ = segmentPixelsToSiteXZ(
-          ring,
-          center.lat,
-          center.lng,
-          [sanitized[i], sanitized[j]],
-          width,
-          height,
-          dims.widthM,
-          dims.heightM,
-          bearing
-        );
-        if (!segmentXZ) continue;
-        addWallSegmentBox(
-          boundaryGroup,
-          segmentXZ.start,
-          segmentXZ.end,
-          outlineYM,
-          upperTopY,
-          FLOOR_PLAN_EXTERNAL_WALL_THICKNESS_M,
-          FLOOR_PLAN_UPPER_COLOR
-        );
-      }
-    }
-
-    for (const segment of internalSegments.slice(0, DEFINE3D_MAX_INTERNAL_SEGMENTS)) {
-      if (signal?.aborted) return;
-      const segmentXZ = segmentPixelsToSiteXZ(
-        ring,
-        center.lat,
-        center.lng,
-        segment,
-        width,
-        height,
-        dims.widthM,
-        dims.heightM,
-        bearing
-      );
-      if (!segmentXZ) continue;
-      addWallSegmentBox(
-        boundaryGroup,
-        segmentXZ.start,
-        segmentXZ.end,
-        outlineYM,
-        upperTopY,
-        FLOOR_PLAN_INTERNAL_WALL_THICKNESS_M,
-        FLOOR_PLAN_UPPER_COLOR
-      );
-    }
-
-    const roofFootprint = buildFloorPlanGableRoofFootprintFromDefine3D(
-      ring,
-      center.lat,
-      center.lng,
-      externalPolygons,
-      width,
-      height,
-      dims.widthM,
-      dims.heightM,
-      bearing,
-      upperTopY
-    );
-    if (roofFootprint) {
-      addFloorPlanGableRoof(
-        boundaryGroup,
-        roofFootprint.positions,
-        roofFootprint.widthM,
-        roofFootprint.heightM,
-        upperTopY
-      );
-    }
+  const imageWidth = Number(plan?.imageWidth ?? plan?.define3d?.imageWidth);
+  const imageHeight = Number(plan?.imageHeight ?? plan?.define3d?.imageHeight);
+  const metersPerPixel = plan.scale.metersPerPixel;
+  if (!Number.isFinite(imageWidth) || !Number.isFinite(imageHeight) || imageWidth < 1 || imageHeight < 1) {
     return;
   }
+
+  const widthM = imageWidth * metersPerPixel;
+  const heightM = imageHeight * metersPerPixel;
 
   const outline = buildFloorPlanOutlineLinePositions(
     ring,
     siteCornerLevels,
     center.lat,
     center.lng,
-    dims.widthM,
-    dims.heightM,
+    widthM,
+    heightM,
     bearing
   );
   if (!outline) return;
@@ -490,7 +330,7 @@ async function addFloorPlanVolume(boundaryGroup, ring, siteCornerLevels, placedU
     bottomYM: outline.outlineYM,
   });
   addFootprintEdgeLines(boundaryGroup, upperRing, outline.outlineYM);
-  addFloorPlanGableRoof(boundaryGroup, outline.positions, dims.widthM, dims.heightM, upperTopY);
+  addFloorPlanGableRoof(boundaryGroup, outline.positions, widthM, heightM, upperTopY);
 }
 
 function addBuildingVolumes(boundaryGroup, siteRing, siteCornerLevels, buildingsGeoJson) {
@@ -587,12 +427,7 @@ export async function populateSiteBoundary3DGroup(
   }
 
   const cornerHeights = addBoundaryScene(boundaryGroup, rings[0], levels, earthMaterial, grassMaterial);
-  try {
-    await addFloorPlanVolume(boundaryGroup, rings[0], levels, placedUnit, signal);
-  } catch (err) {
-    if (err?.name === "AbortError") throw err;
-    /* unit outline is optional */
-  }
+  addFloorPlanVolume(boundaryGroup, rings[0], levels, placedUnit);
   addBuildingVolumes(boundaryGroup, rings[0], levels, buildingsGeoJson);
   addVerandahVolumes(boundaryGroup, rings[0], levels, verandahsGeoJson);
 

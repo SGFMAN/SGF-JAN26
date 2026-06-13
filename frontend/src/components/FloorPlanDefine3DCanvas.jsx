@@ -37,6 +37,7 @@ export default function FloorPlanDefine3DCanvas({
   onExternalWallPolygonsChange,
   internalWallSegments = [],
   onInternalWallSegmentsChange,
+  onImageSize,
 }) {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
@@ -98,6 +99,7 @@ export default function FloorPlanDefine3DCanvas({
         const source = await loadPlanSourceCanvas(plan);
         if (cancelled) return;
         sourceRef.current = source;
+        onImageSize?.({ width: source.width, height: source.height });
         layoutCanvas();
       } catch (err) {
         if (!cancelled) setLoadError(err.message || "Could not load floor plan");

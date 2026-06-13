@@ -42,14 +42,14 @@ function wallsFromPlan(plan) {
   };
 }
 
-async function saveDefine3D(planId, externalWallPolygons, internalWallSegments) {
+async function saveDefine3D(planId, payload) {
   const res = await fetch(`/api/maps/floor-plans/${planId}/define-3d`, {
     method: "PATCH",
     headers: {
       ...getApiHeaders(),
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ externalWallPolygons, internalWallSegments }),
+    body: JSON.stringify(payload),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.ok) {
@@ -65,6 +65,11 @@ export default function FloorPlanDefine3DModal({ plan, onClose, onDefine3DUpdate
   const [saveState, setSaveState] = useState("idle");
   const [saveError, setSaveError] = useState(null);
   const [closing, setClosing] = useState(false);
+  const [imageSize, setImageSize] = useState(() => {
+    const w = plan?.define3d?.imageWidth ?? plan?.imageWidth;
+    const h = plan?.define3d?.imageHeight ?? plan?.imageHeight;
+    return Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0 ? { width: w, height: h } : null;
+  });
 
   const saveTimerRef = useRef(null);
   const skipSaveRef = useRef(true);
@@ -79,6 +84,11 @@ export default function FloorPlanDefine3DModal({ plan, onClose, onDefine3DUpdate
     latestWallsRef.current = walls;
     setSaveState("idle");
     setSaveError(null);
+    const w = plan?.define3d?.imageWidth ?? plan?.imageWidth;
+    const h = plan?.define3d?.imageHeight ?? plan?.imageHeight;
+    setImageSize(
+      Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0 ? { width: w, height: h } : null
+    );
   }, [plan?.id]);
 
   latestWallsRef.current = { externalWallPolygons, internalWallSegments };
@@ -93,7 +103,12 @@ export default function FloorPlanDefine3DModal({ plan, onClose, onDefine3DUpdate
       setSaveError(null);
 
       try {
-        const updatedPlan = await saveDefine3D(plan.id, external, internal);
+        const updatedPlan = await saveDefine3D(plan.id, {
+          imageWidth: imageSize?.width ?? undefined,
+          imageHeight: imageSize?.height ?? undefined,
+          externalWallPolygons: external,
+          internalWallSegments: internal,
+        });
         if (saveRequestRef.current !== requestId) return updatedPlan;
 
         onDefine3DUpdated?.(updatedPlan);
@@ -106,7 +121,7 @@ export default function FloorPlanDefine3DModal({ plan, onClose, onDefine3DUpdate
         return null;
       }
     },
-    [plan?.id, onDefine3DUpdated]
+    [plan?.id, onDefine3DUpdated, imageSize?.width, imageSize?.height]
   );
 
   useEffect(() => {
@@ -285,6 +300,7 @@ export default function FloorPlanDefine3DModal({ plan, onClose, onDefine3DUpdate
                 onExternalWallPolygonsChange={setExternalWallPolygons}
                 internalWallSegments={internalWallSegments}
                 onInternalWallSegmentsChange={setInternalWallSegments}
+                onImageSize={(size) => setImageSize(size)}
               />
             ) : (
               <div

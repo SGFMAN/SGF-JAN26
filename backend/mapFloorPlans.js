@@ -99,6 +99,9 @@ function normalizeDefine3D(raw) {
         .filter(Boolean)
     : [];
 
+  const imageWidth = Number(source.imageWidth);
+  const imageHeight = Number(source.imageHeight);
+
   if (
     !Array.isArray(source.externalWallPolygons) &&
     !Array.isArray(source.internalWallSegments)
@@ -106,7 +109,11 @@ function normalizeDefine3D(raw) {
     return { error: "define3d must include externalWallPolygons and/or internalWallSegments" };
   }
 
-  return { define3d: { externalWallPolygons, internalWallSegments } };
+  const define3d = { externalWallPolygons, internalWallSegments };
+  if (Number.isFinite(imageWidth) && imageWidth > 0) define3d.imageWidth = imageWidth;
+  if (Number.isFinite(imageHeight) && imageHeight > 0) define3d.imageHeight = imageHeight;
+
+  return { define3d };
 }
 
 function define3dFromRow(raw) {
