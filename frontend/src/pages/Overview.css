@@ -57,6 +57,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  container-type: inline-size;
+  container-name: overview-tile;
 }
 
 /* Prevent global mobile overflow rules from breaking the status grid */
@@ -66,36 +68,51 @@
 }
 
 .overview-status-label {
-  font-size: clamp(0.65rem, 1.4vw, 0.8rem);
+  font-size: clamp(0.45rem, 10cqw, 0.75rem);
   color: #32323399;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
   font-weight: 500;
   text-align: center;
-  min-height: clamp(28px, 4vh, 40px);
+  min-height: 0;
+  flex: 0 0 auto;
+  max-height: 2.8em;
   display: flex;
   align-items: center;
   justify-content: center;
-  line-height: 1.2;
-  padding: 0 2px;
-  flex-shrink: 0;
+  line-height: 1.08;
+  padding: 0 1px;
+  overflow: hidden;
+  word-break: break-word;
 }
 
 .overview-status-card {
-  padding: clamp(4px, 0.8vw, 8px) clamp(3px, 0.6vw, 6px);
+  padding: 2px 3px;
   border-radius: 8px;
   border: none;
-  font-size: clamp(0.68rem, 1.2vw, 0.85rem);
   color: #fff;
   box-sizing: border-box;
   width: 100%;
-  flex: 1;
-  min-height: clamp(44px, 6vw, 82px);
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
   cursor: pointer;
   transition: opacity 0.2s;
+  overflow: hidden;
+}
+
+.overview-status-card__text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
+  max-width: 100%;
+  width: 100%;
+  font-size: clamp(0.42rem, 19cqw, 0.8rem);
+  line-height: 1.1;
   word-break: break-word;
   hyphens: auto;
 }
@@ -110,8 +127,10 @@
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
-  .overview-status-card {
-    min-height: clamp(40px, 7vh, 72px);
+  .overview-status-card__text {
+    font-size: clamp(0.44rem, 17cqw, 0.76rem);
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
   }
 }
 
@@ -122,13 +141,13 @@
   }
 
   .overview-status-label {
-    min-height: 30px;
-    font-size: 0.72rem;
+    font-size: clamp(0.44rem, 9cqw, 0.68rem);
   }
 
-  .overview-status-card {
-    min-height: clamp(36px, 8vh, 60px);
-    font-size: 0.76rem;
+  .overview-status-card__text {
+    font-size: clamp(0.44rem, 16cqw, 0.72rem);
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
   }
 }
 
@@ -175,21 +194,26 @@
   gap: clamp(3px, 1vw, 6px);
 }
 
+.project-page-mobile__content--overview .overview-status-item {
+  container-type: size;
+}
+
 .project-page-mobile__content--overview .overview-status-label {
-  min-height: 0;
-  max-height: 2.4em;
-  margin-bottom: 2px;
-  font-size: clamp(0.52rem, 2.4vw, 0.62rem);
-  line-height: 1.1;
-  overflow: hidden;
+  max-height: 24%;
+  margin-bottom: 1px;
+  font-size: clamp(0.4rem, 8cqw, 0.55rem);
+  line-height: 1.05;
 }
 
 .project-page-mobile__content--overview .overview-status-card {
-  flex: 1;
-  min-height: 0;
-  font-size: clamp(0.58rem, 2.6vw, 0.7rem);
-  line-height: 1.12;
-  padding: 2px 3px;
+  padding: 1px 2px;
+}
+
+.project-page-mobile__content--overview .overview-status-card__text {
+  font-size: clamp(0.4rem, min(17cqw, 22cqh), 0.62rem);
+  line-height: 1.06;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
 }
 
 /* Mobile overview outside project shell (fallback) */
@@ -217,8 +241,8 @@
     gap: 6px;
   }
 
-  .overview-status-card {
-    min-height: clamp(36px, 11vw, 52px);
+  .overview-status-card__text {
+    font-size: clamp(0.42rem, 15cqw, 0.65rem);
   }
 }
 
@@ -234,9 +258,8 @@
     gap: 12px;
   }
 
-  .overview-status-card {
-    font-size: 0.9rem;
-    min-height: clamp(56px, 5vw, 88px);
+  .overview-status-card__text {
+    font-size: clamp(0.5rem, 14cqw, 0.88rem);
   }
 }
 

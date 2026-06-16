@@ -37,7 +37,7 @@ function OverviewStatusTile({ label, value, background, onClick }) {
           }
         }}
       >
-        {value}
+        <span className="overview-status-card__text">{value}</span>
       </div>
     </div>
   );
