@@ -13,11 +13,35 @@ import {
 import craig1 from "../images/craig1.jpg";
 import craig2 from "../images/craig2.jpg";
 import craig3 from "../images/craig3.jpg";
+import "./Overview.css";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 const API_URL = "";
+
+function OverviewStatusTile({ label, value, background, onClick }) {
+  return (
+    <div className="overview-status-item">
+      <div className="overview-status-label">{label}</div>
+      <div
+        role="button"
+        tabIndex={0}
+        className="overview-status-card"
+        style={{ background }}
+        onClick={onClick}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onClick();
+          }
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
 
 export default function Overview({ project }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
@@ -1069,12 +1093,102 @@ export default function Overview({ project }) {
     window.location.href = mailtoLink;
   }
 
+  function buildDesignPhaseStatusTiles() {
+    if (!project) return [];
+    return [
+      {
+        key: "deposit",
+        label: "Deposit Status",
+        value: getDepositStatus(),
+        color: getDepositStatusColor(),
+        view: "admin",
+      },
+      {
+        key: "drawings",
+        label: "Drawings Status",
+        value: project.drawings_status || "Not Assigned",
+        color: getDrawingsStatusColor(),
+        view: "drawings",
+      },
+      {
+        key: "site-visit",
+        label: "Site Visit Status",
+        value: project.site_visit_status || "Not Complete",
+        color: getSiteVisitStatusColor(),
+        view: "site-visit",
+      },
+      {
+        key: "colours",
+        label: "Colour Status",
+        value: project.colours_status || "Not Sent",
+        color: getColoursStatusColor(),
+        view: "colours",
+      },
+      {
+        key: "windows",
+        label: "Window Status",
+        value: project.window_status || "Not Ordered",
+        color: getWindowStatusColor(),
+        view: "windows",
+      },
+      {
+        key: "contract",
+        label: "Contract Status",
+        value: getContractStatusText(),
+        color: getContractStatusColor(),
+        view: "contract",
+      },
+      {
+        key: "survey-soils",
+        label: "Survey & Soils",
+        value: getSurveySoilsStatusText(),
+        color: getSurveySoilsStatusColor(),
+        view: "survey-soil",
+      },
+      {
+        key: "planning",
+        label: "Planning Permit Status",
+        value: project.planning_status || "Not Selected",
+        color: getPlanningPermitStatusColor(),
+        view: "planning",
+      },
+      {
+        key: "energy",
+        label: "Energy Report Status",
+        value: project.energy_report_status || "Not Submitted",
+        color: getEnergyReportStatusColor(),
+        view: "planning",
+      },
+      {
+        key: "footing",
+        label: "Footing Certification Status",
+        value: project.footing_certification_status || "Not Submitted",
+        color: getFootingCertificationStatusColor(),
+        view: "planning",
+      },
+      {
+        key: "building-permit",
+        label: "Building Permit Status",
+        value: project.building_permit_status || "Not Submitted",
+        color: getBuildingPermitStatusColor(),
+        view: "planning",
+      },
+      {
+        key: "pic",
+        label: "PIC",
+        value: project.pic === "Yes" ? "Yes" : "No",
+        color: getPicStatusColor(),
+        view: "planning",
+      },
+    ];
+  }
+
+  const designPhaseStatusTiles = buildDesignPhaseStatusTiles();
+
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-        <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT }}>
-          Overview
-        </h2>
+    <div className="overview-page">
+      <div className="overview-header">
+        <h2>Overview</h2>
         {/* Virtual Construction Manager button - hidden for now */}
         {false && (
           <button
@@ -1101,61 +1215,13 @@ export default function Overview({ project }) {
       
       {/* FAQ Modal */}
       {faqModalOpen && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-            padding: "20px",
-          }}
-          onClick={handleCloseFaqModal}
-        >
-          <div
-            style={{
-              background: WHITE,
-              borderRadius: "12px",
-              padding: "24px",
-              maxWidth: "800px",
-              width: "100%",
-              maxHeight: "90vh",
-              overflow: "auto",
-              boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
-              position: "relative",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="overview-modal-backdrop" onClick={handleCloseFaqModal}>
+          <div className="overview-modal-panel" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
               onClick={handleCloseFaqModal}
-              style={{
-                position: "absolute",
-                top: "16px",
-                right: "16px",
-                background: "transparent",
-                border: "none",
-                fontSize: "24px",
-                cursor: "pointer",
-                color: MONUMENT,
-                width: "32px",
-                height: "32px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: "4px",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "#f0f0f0";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-              }}
+              className="overview-modal-close"
+              aria-label="Close"
             >
               ×
             </button>
@@ -1164,38 +1230,20 @@ export default function Overview({ project }) {
               Ask Virtual Construction Manager
             </h2>
             
-            <div style={{ display: "flex", gap: "20px", marginBottom: "20px" }}>
-              {/* Craig Animation */}
-              <div style={{ flexShrink: 0 }}>
+            <div className="overview-faq-row">
+              <div className="overview-faq-avatar">
                 <img
                   src={craigImages[currentCraigImage]}
                   alt="Virtual Construction Manager"
-                  style={{
-                    width: "150px",
-                    height: "150px",
-                    objectFit: "cover",
-                    borderRadius: "8px",
-                    border: `2px solid ${SECTION_GREY}`,
-                  }}
                 />
               </div>
               
-              {/* Search Input */}
-              <div style={{ flex: 1 }}>
+              <div className="overview-faq-search">
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={handleSearchChange}
                   placeholder="Ask a question about the process (e.g., 'When can we order windows?', 'What's needed for building permit?')"
-                  style={{
-                    width: "100%",
-                    padding: "12px 16px",
-                    borderRadius: "8px",
-                    border: `1px solid ${SECTION_GREY}`,
-                    fontSize: "0.95rem",
-                    color: MONUMENT,
-                    boxSizing: "border-box",
-                  }}
                   autoFocus
                 />
               </div>
@@ -1302,433 +1350,24 @@ export default function Overview({ project }) {
         </div>
       )}
       {project && (
-        <div style={{ marginTop: "24px", display: "flex", flexDirection: "column", gap: "24px" }}>
-          {/* Design Phase Progress Section */}
-          <div
-            style={{
-              background: "transparent",
-              border: "2px solid white",
-              borderRadius: "12px",
-              padding: "24px",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-            }}
-          >
-            <h2 style={{ fontSize: "1.3rem", fontWeight: 600, color: MONUMENT, marginTop: 0, marginBottom: "20px" }}>
-              Design Phase Progress
-            </h2>
+        <div className="overview-stack">
+          <div className="overview-progress-section">
+            <h2>Design Phase Progress</h2>
 
-            {/* Status Rectangles - 12 columns in a single row */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: "10px" }}>
-              {/* Deposit Status */}
-              <div>
-                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
-                  Deposit Status
-                </div>
-                <div
-                  onClick={() => navigate(projectPath(project, { view: "admin", t: Date.now() }), { replace: false })}
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: "8px",
-                    border: "2px solid white",
-                    fontSize: "0.85rem",
-                    color: WHITE,
-                    background: getDepositStatusColor(),
-                    boxSizing: "border-box",
-                    height: "82px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
-                    cursor: "pointer",
-                    transition: "opacity 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = "0.8";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = "1";
-                  }}
-                >
-                  {getDepositStatus()}
-                </div>
-              </div>
-
-              {/* Drawings Status */}
-              <div>
-                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
-                  Drawings Status
-                </div>
-                <div
-                  onClick={() => navigate(projectPath(project, { view: "drawings", t: Date.now() }), { replace: false })}
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: "8px",
-                    border: "2px solid white",
-                    fontSize: "0.85rem",
-                    color: WHITE,
-                    background: getDrawingsStatusColor(),
-                    boxSizing: "border-box",
-                    height: "82px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
-                    cursor: "pointer",
-                    transition: "opacity 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = "0.8";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = "1";
-                  }}
-                >
-                  {project.drawings_status || "Not Assigned"}
-                </div>
-              </div>
-
-              {/* Site Visit Status */}
-              <div>
-                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
-                  Site Visit Status
-                </div>
-                <div
-                  onClick={() => navigate(projectPath(project, { view: "site-visit", t: Date.now() }), { replace: false })}
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: "8px",
-                    border: "2px solid white",
-                    fontSize: "0.85rem",
-                    color: WHITE,
-                    background: getSiteVisitStatusColor(),
-                    boxSizing: "border-box",
-                    height: "82px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
-                    cursor: "pointer",
-                    transition: "opacity 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = "0.8";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = "1";
-                  }}
-                >
-                  {project.site_visit_status || "Not Complete"}
-                </div>
-              </div>
-
-              {/* Colour Status */}
-              <div>
-                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
-                  Colour Status
-                </div>
-                <div
-                  onClick={() => navigate(projectPath(project, { view: "colours", t: Date.now() }), { replace: false })}
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: "8px",
-                    border: "2px solid white",
-                    fontSize: "0.85rem",
-                    color: WHITE,
-                    background: getColoursStatusColor(),
-                    boxSizing: "border-box",
-                    height: "82px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
-                    cursor: "pointer",
-                    transition: "opacity 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = "0.8";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = "1";
-                  }}
-                >
-                  {project.colours_status || "Not Sent"}
-                </div>
-              </div>
-
-              {/* Window Status */}
-              <div>
-                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
-                  Window Status
-                </div>
-                <div
-                  onClick={() => navigate(projectPath(project, { view: "windows", t: Date.now() }), { replace: false })}
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: "8px",
-                    border: "2px solid white",
-                    fontSize: "0.85rem",
-                    color: WHITE,
-                    background: getWindowStatusColor(),
-                    boxSizing: "border-box",
-                    height: "82px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
-                    cursor: "pointer",
-                    transition: "opacity 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = "0.8";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = "1";
-                  }}
-                >
-                  {project.window_status || "Not Ordered"}
-                </div>
-              </div>
-
-              {/* Contract Status */}
-              <div>
-                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
-                  Contract Status
-                </div>
-                <div
-                  onClick={() => navigate(projectPath(project, { view: "contract", t: Date.now() }), { replace: false })}
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: "8px",
-                    border: "2px solid white",
-                    fontSize: "0.85rem",
-                    color: WHITE,
-                    background: getContractStatusColor(),
-                    boxSizing: "border-box",
-                    height: "82px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
-                    cursor: "pointer",
-                    transition: "opacity 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = "0.8";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = "1";
-                  }}
-                >
-                  {getContractStatusText()}
-                </div>
-              </div>
-
-              {/* Survey & Soils Status */}
-              <div>
-                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
-                  Survey & Soils
-                </div>
-                <div
-                  onClick={() => navigate(projectPath(project, { view: "survey-soil", t: Date.now() }), { replace: false })}
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: "8px",
-                    border: "2px solid white",
-                    fontSize: "0.85rem",
-                    color: WHITE,
-                    background: getSurveySoilsStatusColor(),
-                    boxSizing: "border-box",
-                    height: "82px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
-                    cursor: "pointer",
-                    transition: "opacity 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = "0.8";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = "1";
-                  }}
-                >
-                  {getSurveySoilsStatusText()}
-                </div>
-              </div>
-
-              {/* Planning Permit Status */}
-              <div>
-                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
-                  Planning Permit Status
-                </div>
-                <div
-                  onClick={() => navigate(projectPath(project, { view: "planning", t: Date.now() }), { replace: false })}
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: "8px",
-                    border: "2px solid white",
-                    fontSize: "0.85rem",
-                    color: WHITE,
-                    background: getPlanningPermitStatusColor(),
-                    boxSizing: "border-box",
-                    height: "82px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
-                    cursor: "pointer",
-                    transition: "opacity 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = "0.8";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = "1";
-                  }}
-                >
-                  {project.planning_status || "Not Selected"}
-                </div>
-              </div>
-
-              {/* Energy Report Status */}
-              <div>
-                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
-                  Energy Report Status
-                </div>
-                <div
-                  onClick={() => navigate(projectPath(project, { view: "planning", t: Date.now() }), { replace: false })}
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: "8px",
-                    border: "2px solid white",
-                    fontSize: "0.85rem",
-                    color: WHITE,
-                    background: getEnergyReportStatusColor(),
-                    boxSizing: "border-box",
-                    height: "82px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
-                    textDecoration: "none",
-                    cursor: "pointer",
-                    transition: "opacity 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = "0.8";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = "1";
-                  }}
-                >
-                  {project.energy_report_status || "Not Submitted"}
-                </div>
-              </div>
-
-              {/* Footing Certification Status */}
-              <div>
-                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
-                  Footing Certification Status
-                </div>
-                <div
-                  onClick={() => navigate(projectPath(project, { view: "planning", t: Date.now() }), { replace: false })}
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: "8px",
-                    border: "2px solid white",
-                    fontSize: "0.85rem",
-                    color: WHITE,
-                    background: getFootingCertificationStatusColor(),
-                    boxSizing: "border-box",
-                    height: "82px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
-                    textDecoration: "none",
-                    cursor: "pointer",
-                    transition: "opacity 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = "0.8";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = "1";
-                  }}
-                >
-                  {project.footing_certification_status || "Not Submitted"}
-                </div>
-              </div>
-
-              {/* Building Permit Status */}
-              <div>
-                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
-                  Building Permit Status
-                </div>
-                <div
-                  onClick={() => navigate(projectPath(project, { view: "planning", t: Date.now() }), { replace: false })}
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: "8px",
-                    border: "2px solid white",
-                    fontSize: "0.85rem",
-                    color: WHITE,
-                    background: getBuildingPermitStatusColor(),
-                    boxSizing: "border-box",
-                    height: "82px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
-                    textDecoration: "none",
-                    cursor: "pointer",
-                    transition: "opacity 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = "0.8";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = "1";
-                  }}
-                >
-                  {project.building_permit_status || "Not Submitted"}
-                </div>
-              </div>
-
-              {/* PIC */}
-              <div>
-                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px", fontWeight: "500", textAlign: "center", minHeight: "40px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: "1.3" }}>
-                  PIC
-                </div>
-                <div
-                  onClick={() => navigate(projectPath(project, { view: "planning", t: Date.now() }), { replace: false })}
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: "8px",
-                    border: "2px solid white",
-                    fontSize: "0.85rem",
-                    color: WHITE,
-                    background: getPicStatusColor(),
-                    boxSizing: "border-box",
-                    height: "82px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    textAlign: "center",
-                    cursor: "pointer",
-                    transition: "opacity 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = "0.8";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = "1";
-                  }}
-                >
-                  {project?.pic === "Yes" ? "Yes" : "No"}
-                </div>
-              </div>
+            <div className="overview-status-grid">
+              {designPhaseStatusTiles.map((tile) => (
+                <OverviewStatusTile
+                  key={tile.key}
+                  label={tile.label}
+                  value={tile.value}
+                  background={tile.color}
+                  onClick={() =>
+                    navigate(projectPath(project, { view: tile.view, t: Date.now() }), {
+                      replace: false,
+                    })
+                  }
+                />
+              ))}
             </div>
           </div>
         </div>
@@ -1736,49 +1375,15 @@ export default function Overview({ project }) {
 
       {/* Email Preview Modal */}
       {previewModalOpen && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              background: WHITE,
-              borderRadius: "12px",
-              padding: "24px",
-              width: "90%",
-              maxWidth: "800px",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Preview & Send Email</h2>
+        <div className="overview-modal-backdrop">
+          <div className="overview-modal-panel">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", paddingRight: "40px" }}>
+              <h2 style={{ margin: 0, fontSize: "clamp(1.15rem, 3vw, 1.5rem)", color: MONUMENT }}>Preview & Send Email</h2>
               <button
+                type="button"
                 onClick={() => setPreviewModalOpen(false)}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  fontSize: "1.5rem",
-                  cursor: "pointer",
-                  color: MONUMENT,
-                  padding: "0",
-                  width: "30px",
-                  height: "30px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
+                className="overview-modal-close"
+                aria-label="Close"
               >
                 ×
               </button>
@@ -1883,7 +1488,7 @@ export default function Overview({ project }) {
                 </div>
               </div>
 
-              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
+              <div className="overview-email-actions">
                 <button
                   onClick={() => setPreviewModalOpen(false)}
                   style={{
