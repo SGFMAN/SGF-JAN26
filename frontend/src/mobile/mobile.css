@@ -162,7 +162,12 @@
   margin-top: 8px;
 }
 
-.project-page-mobile__tabs {
+.project-page-mobile__content--overview {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 8px 10px 10px;
+}
   flex-shrink: 0;
   display: flex;
   background: #323233;

@@ -67,7 +67,11 @@ export default function ProjectPageMobile({
         </h1>
       </header>
 
-      <div className="project-page-mobile__content">
+      <div
+        className={`project-page-mobile__content${
+          activeView === "overview" ? " project-page-mobile__content--overview" : ""
+        }`}
+      >
         {loading && <p style={{ color: "#32323399", margin: 0 }}>Loading project…</p>}
         {error && <p style={{ color: "#cc3333", margin: 0 }}>Error: {error}</p>}
         {!loading && !error && project && (
