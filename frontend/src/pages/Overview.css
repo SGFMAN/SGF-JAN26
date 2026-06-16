@@ -105,53 +105,83 @@
   }
 }
 
-/* Tablet */
-@media (max-width: 900px) {
+/* Tablet — 4×3 still fits all 12 on one screen */
+@media (max-width: 900px) and (min-width: 769px) {
   .overview-status-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .overview-status-label {
-    min-height: 36px;
-  }
-
-  .overview-status-card {
-    min-height: 72px;
-  }
-}
-
-/* Phone */
-@media (max-width: 600px) {
-  .overview-stack {
-    margin-top: 16px;
-    gap: 16px;
-  }
-
-  .overview-progress-section {
-    padding: 14px;
-  }
-
-  .overview-status-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
-
-  .overview-status-label {
-    min-height: auto;
-    margin-bottom: 6px;
+    min-height: 32px;
     font-size: 0.72rem;
   }
 
   .overview-status-card {
     min-height: 64px;
-    padding: 10px 8px;
+    font-size: 0.78rem;
   }
 }
 
-/* Very narrow phones */
-@media (max-width: 380px) {
+/* Mobile — 3 columns × 4 rows, all 12 tiles on one screen */
+@media (max-width: 768px) {
+  .overview-stack {
+    margin-top: 8px;
+    gap: 8px;
+  }
+
+  .overview-header {
+    margin-bottom: 8px;
+  }
+
+  .overview-header h2 {
+    font-size: 1rem;
+  }
+
+  .overview-progress-section {
+    padding: 10px;
+  }
+
+  .overview-progress-section h2 {
+    margin-bottom: 8px;
+    font-size: 1rem;
+  }
+
   .overview-status-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(4, minmax(0, auto));
+    gap: 6px;
+  }
+
+  .overview-status-label {
+    min-height: 26px;
+    max-height: 32px;
+    margin-bottom: 2px;
+    font-size: 0.6rem;
+    line-height: 1.1;
+    overflow: hidden;
+  }
+
+  .overview-status-card {
+    min-height: 44px;
+    max-height: 52px;
+    padding: 4px 3px;
+    font-size: 0.65rem;
+    line-height: 1.15;
+    border-width: 1px;
+  }
+}
+
+/* Slightly roomier tiles on wider phones in the 3×4 grid */
+@media (max-width: 768px) and (min-height: 700px) {
+  .overview-status-label {
+    min-height: 30px;
+    font-size: 0.65rem;
+  }
+
+  .overview-status-card {
+    min-height: 52px;
+    max-height: 58px;
+    font-size: 0.7rem;
   }
 }
 
@@ -272,7 +302,11 @@
   flex-wrap: wrap;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 768px) {
+  .project-page-mobile__content .overview-stack {
+    margin-top: 4px;
+  }
+
   .overview-faq-row {
     flex-direction: column;
     align-items: center;
