@@ -211,3 +211,64 @@ export const NIGHT_WALKER_HERO_COLORS = {
   darkClothColor: "#2f3e7a",
   jointColor: "#e89888",
 };
+
+export function applyWalkCycle(armRig, legRig, walkPhase) {
+  const armSwing = Math.sin(walkPhase) * 0.62;
+  const elbowBend = Math.max(0, Math.sin(walkPhase + 0.4)) * 0.24;
+  const legSwing = Math.sin(walkPhase) * 0.75;
+  const kneeBend = Math.max(0, Math.sin(walkPhase + 0.2)) * 0.42;
+  const footRock = Math.sin(walkPhase + 0.8) * 0.2;
+
+  if (armRig.left && armRig.right) {
+    armRig.left.armPivot.rotation.x = armSwing;
+    armRig.right.armPivot.rotation.x = -armSwing;
+    armRig.left.forearmPivot.rotation.x = -elbowBend;
+    armRig.right.forearmPivot.rotation.x = -Math.max(0, -Math.sin(walkPhase + 0.4)) * 0.24;
+    armRig.left.hand.rotation.x = -armSwing * 0.25;
+    armRig.right.hand.rotation.x = armSwing * 0.25;
+  }
+
+  if (legRig.left && legRig.right) {
+    legRig.left.legPivot.rotation.x = -legSwing;
+    legRig.right.legPivot.rotation.x = legSwing;
+    legRig.left.lowerLegPivot.rotation.x = kneeBend;
+    legRig.right.lowerLegPivot.rotation.x = Math.max(0, -Math.sin(walkPhase + 0.2)) * 0.42;
+    legRig.left.foot.rotation.x = legRig.left.baseFootX + footRock;
+    legRig.right.foot.rotation.x = legRig.right.baseFootX - footRock;
+  }
+}
+
+export function resetPose(armRig, legRig) {
+  const reset = (current, target) => current + (target - current) * 0.15;
+  const resetRot3 = (rot, tx, ty, tz) => {
+    rot.x = reset(rot.x, tx);
+    rot.y = reset(rot.y, ty);
+    rot.z = reset(rot.z, tz);
+  };
+  if (armRig.left && armRig.right) {
+    resetRot3(armRig.left.armPivot.rotation, 0, 0, 0);
+    resetRot3(armRig.right.armPivot.rotation, 0, 0, 0);
+    resetRot3(armRig.left.forearmPivot.rotation, 0, 0, 0);
+    resetRot3(armRig.right.forearmPivot.rotation, 0, 0, 0);
+    resetRot3(armRig.left.upperArmPivot?.rotation ?? armRig.left.upperArm.rotation, 0, 0, armRig.left.baseUpperArmZ ?? armRig.left.side * 0.22);
+    resetRot3(armRig.right.upperArmPivot?.rotation ?? armRig.right.upperArm.rotation, 0, 0, armRig.right.baseUpperArmZ ?? armRig.right.side * 0.22);
+    resetRot3(armRig.left.upperArm.rotation, 0, 0, 0);
+    resetRot3(armRig.right.upperArm.rotation, 0, 0, 0);
+    armRig.left.hand.rotation.x = reset(armRig.left.hand.rotation.x, armRig.left.baseHandX);
+    armRig.right.hand.rotation.x = reset(armRig.right.hand.rotation.x, armRig.right.baseHandX);
+  }
+  if (legRig.left && legRig.right) {
+    resetRot3(legRig.left.legPivot.rotation, legRig.left.baseLegPivotX, 0, 0);
+    resetRot3(legRig.right.legPivot.rotation, legRig.right.baseLegPivotX, 0, 0);
+    legRig.left.lowerLegPivot.rotation.x = reset(
+      legRig.left.lowerLegPivot.rotation.x,
+      legRig.left.baseLowerPivotX
+    );
+    legRig.right.lowerLegPivot.rotation.x = reset(
+      legRig.right.lowerLegPivot.rotation.x,
+      legRig.right.baseLowerPivotX
+    );
+    legRig.left.foot.rotation.x = reset(legRig.left.foot.rotation.x, legRig.left.baseFootX);
+    legRig.right.foot.rotation.x = reset(legRig.right.foot.rotation.x, legRig.right.baseFootX);
+  }
+}

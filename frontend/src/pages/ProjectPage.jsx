@@ -17,6 +17,7 @@ import Planning from "./PlanningNew";
 import Admin from "./Admin";
 import Robes from "./Robes";
 import Variations from "./Variations";
+import Payments from "./Payments";
 import { isUserAdmin } from "../utils/auth";
 import { computeProjectFolderPathFromRecord } from "../utils/projectFolderPath";
 import { projectPath, portalProjectPath } from "../utils/projectUrl";
@@ -144,6 +145,7 @@ const CONSTRUCTION_MENU_OPTIONS = [
   { label: "Client Info", key: "client-info" },
   { label: "Robes", key: "robes" },
   { label: "Variations", key: "variations" },
+  { label: "Payments", key: "payments" },
 ];
 
 export default function ProjectPage() {
@@ -969,6 +971,12 @@ export default function ProjectPage() {
               )}
               {activeView === "admin" && <Admin project={project} onUpdate={updateProject} />}
               {activeView === "variations" && <Variations project={project} />}
+              {activeView === "payments" && (
+                <Payments
+                  project={project}
+                  onUpdate={isPortalProjectPath ? () => {} : updateProject}
+                />
+              )}
             </>
           )}
         </div>

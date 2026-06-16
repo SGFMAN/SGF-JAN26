@@ -1,6 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { createHumanoidRig, NIGHT_WALKER_HERO_COLORS } from "../utils/nightWalkerHumanoid";
+import {
+  applyWalkCycle,
+  createHumanoidRig,
+  NIGHT_WALKER_HERO_COLORS,
+  resetPose,
+} from "../utils/nightWalkerHumanoid";
 import { getSecretAreaWsUrl } from "../utils/secretAreaWs";
 /** Assets at C:/SGF/jacko/ */
 import mjFaceUrl from "../../../jacko/MJ1.jpg";
@@ -122,32 +127,6 @@ const SLOT_COLORS = [
     withHeadLamp: false,
   },
 ];
-
-function applyWalkCycle(armRig, legRig, walkPhase) {
-  const armSwing = Math.sin(walkPhase) * 0.62;
-  const elbowBend = Math.max(0, Math.sin(walkPhase + 0.4)) * 0.24;
-  const legSwing = Math.sin(walkPhase) * 0.75;
-  const kneeBend = Math.max(0, Math.sin(walkPhase + 0.2)) * 0.42;
-  const footRock = Math.sin(walkPhase + 0.8) * 0.2;
-
-  if (armRig.left && armRig.right) {
-    armRig.left.armPivot.rotation.x = armSwing;
-    armRig.right.armPivot.rotation.x = -armSwing;
-    armRig.left.forearmPivot.rotation.x = -elbowBend;
-    armRig.right.forearmPivot.rotation.x = -Math.max(0, -Math.sin(walkPhase + 0.4)) * 0.24;
-    armRig.left.hand.rotation.x = -armSwing * 0.25;
-    armRig.right.hand.rotation.x = armSwing * 0.25;
-  }
-
-  if (legRig.left && legRig.right) {
-    legRig.left.legPivot.rotation.x = -legSwing;
-    legRig.right.legPivot.rotation.x = legSwing;
-    legRig.left.lowerLegPivot.rotation.x = kneeBend;
-    legRig.right.lowerLegPivot.rotation.x = Math.max(0, -Math.sin(walkPhase + 0.2)) * 0.42;
-    legRig.left.foot.rotation.x = legRig.left.baseFootX + footRock;
-    legRig.right.foot.rotation.x = legRig.right.baseFootX - footRock;
-  }
-}
 
 function applyMoonwalkCycle(armRig, legRig, walkPhase) {
   const armSwing = Math.sin(walkPhase) * 0.58;
@@ -451,41 +430,6 @@ function applySpinPose(armRig, legRig, spinProgress, player) {
   }
 
   applySpinLegs(legRig, progressT);
-}
-
-function resetPose(armRig, legRig) {
-  const reset = (current, target) => current + (target - current) * 0.15;
-  const resetRot3 = (rot, tx, ty, tz) => {
-    rot.x = reset(rot.x, tx);
-    rot.y = reset(rot.y, ty);
-    rot.z = reset(rot.z, tz);
-  };
-  if (armRig.left && armRig.right) {
-    resetRot3(armRig.left.armPivot.rotation, 0, 0, 0);
-    resetRot3(armRig.right.armPivot.rotation, 0, 0, 0);
-    resetRot3(armRig.left.forearmPivot.rotation, 0, 0, 0);
-    resetRot3(armRig.right.forearmPivot.rotation, 0, 0, 0);
-    resetRot3(armRig.left.upperArmPivot?.rotation ?? armRig.left.upperArm.rotation, 0, 0, armRig.left.baseUpperArmZ ?? armRig.left.side * 0.22);
-    resetRot3(armRig.right.upperArmPivot?.rotation ?? armRig.right.upperArm.rotation, 0, 0, armRig.right.baseUpperArmZ ?? armRig.right.side * 0.22);
-    resetRot3(armRig.left.upperArm.rotation, 0, 0, 0);
-    resetRot3(armRig.right.upperArm.rotation, 0, 0, 0);
-    armRig.left.hand.rotation.x = reset(armRig.left.hand.rotation.x, armRig.left.baseHandX);
-    armRig.right.hand.rotation.x = reset(armRig.right.hand.rotation.x, armRig.right.baseHandX);
-  }
-  if (legRig.left && legRig.right) {
-    resetRot3(legRig.left.legPivot.rotation, legRig.left.baseLegPivotX, 0, 0);
-    resetRot3(legRig.right.legPivot.rotation, legRig.right.baseLegPivotX, 0, 0);
-    legRig.left.lowerLegPivot.rotation.x = reset(
-      legRig.left.lowerLegPivot.rotation.x,
-      legRig.left.baseLowerPivotX
-    );
-    legRig.right.lowerLegPivot.rotation.x = reset(
-      legRig.right.lowerLegPivot.rotation.x,
-      legRig.right.baseLowerPivotX
-    );
-    legRig.left.foot.rotation.x = reset(legRig.left.foot.rotation.x, legRig.left.baseFootX);
-    legRig.right.foot.rotation.x = reset(legRig.right.foot.rotation.x, legRig.right.baseFootX);
-  }
 }
 
 function localBoxToWorldAabb(gx, gz, rotY, scale, { cx, cz, hx, hz }) {
@@ -2018,6 +1962,7 @@ export default function NightWalkerCharacterWalk({
   const mountRef = useRef(null);
   const mountWrapRef = useRef(null);
   const [speechBubble, setSpeechBubble] = useState(null);
+  const [doorPortalHint, setDoorPortalHint] = useState(false);
   const setSpeechBubbleRef = useRef(setSpeechBubble);
   setSpeechBubbleRef.current = setSpeechBubble;
   const onRoomFullRef = useRef(onRoomFull);
@@ -2415,11 +2360,14 @@ export default function NightWalkerCharacterWalk({
             return;
           }
 
-          if (slidingDoor && doorOpenT < 0.99) {
+          if (slidingDoor) {
             const distDoor = Math.hypot(px - slidingDoor.interactX, pz - slidingDoor.interactZ);
             if (distDoor <= DOOR_INTERACT_RADIUS) {
               e.preventDefault();
-              doorOpening = true;
+              if (doorOpenT < 0.99) {
+                doorOpening = true;
+              }
+              doorwayTransitioning = true;
               return;
             }
           }
@@ -2511,14 +2459,15 @@ export default function NightWalkerCharacterWalk({
         }
         const obstacleColliders = mergeObstacleColliders(deskColliders, doorOpenT);
 
-        if (
-          !doorwayTransitioning &&
-          !terminalCameraActive &&
-          doorOpenT >= DOOR_OPEN_PASS_THRESHOLD &&
-          Math.abs(player.position.z - DOOR_CENTER_Z) <= DOOR_HALF_WIDTH + PLAYER_COLLISION_RADIUS &&
-          player.position.x >= DOOR_EXIT_TRIGGER_X
-        ) {
-          doorwayTransitioning = true;
+        if (slidingDoor && !doorwayTransitioning && !terminalCameraActive && trapPhase === "idle") {
+          const distDoor = Math.hypot(
+            player.position.x - slidingDoor.interactX,
+            player.position.z - slidingDoor.interactZ
+          );
+          const nearDoor = distDoor <= DOOR_INTERACT_RADIUS;
+          setDoorPortalHint((prev) => (prev === nearDoor ? prev : nearDoor));
+        } else {
+          setDoorPortalHint((prev) => (prev ? false : prev));
         }
 
         if (doorwayTransitioning) {
@@ -3094,6 +3043,29 @@ export default function NightWalkerCharacterWalk({
               }}
             />
           </div>
+        </div>
+      ) : null}
+      {doorPortalHint ? (
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            bottom: "28px",
+            transform: "translateX(-50%)",
+            zIndex: 25,
+            padding: "12px 20px",
+            background: "rgba(0, 0, 0, 0.72)",
+            color: "#22ff88",
+            fontFamily: "Consolas, Monaco, monospace",
+            fontSize: "1rem",
+            fontWeight: 700,
+            letterSpacing: "0.08em",
+            borderRadius: "8px",
+            border: "1px solid rgba(34, 255, 136, 0.45)",
+            pointerEvents: "none",
+          }}
+        >
+          Press SPACE to enter
         </div>
       ) : null}
     </div>

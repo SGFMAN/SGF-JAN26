@@ -1113,7 +1113,7 @@ export default function Maps() {
                   onDrawingCancel={() => setAddingVerandah(false)}
                 />
               )}
-              {isAdmin && placedUnit && onMapView && (
+              {isAdmin && placedUnit && onMapView && !show3dVisualisationModal && (
                 <DraggableFloorPlanOverlay
                   key={`${placedUnit.plan.id}-${unitPlacementKey}`}
                   plan={placedUnit.plan}

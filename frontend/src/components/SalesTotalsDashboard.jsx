@@ -69,6 +69,7 @@ const TOTALS_CARD = {
 export default function SalesTotalsDashboard({
   data,
   selectedYear,
+  periodLabel,
   streamColors,
   onStateClick,
 }) {
@@ -91,6 +92,7 @@ export default function SalesTotalsDashboard({
 
   const formatCurrency = formatSalesTotalsCurrency;
   const progressPeriodTotal = calendarYearMeta?.daysInMonth ?? calendarYearMeta?.daysInYear;
+  const yearDisplay = periodLabel ?? selectedYear;
 
   const stateCardProps = (state) =>
     onStateClick
@@ -395,7 +397,7 @@ export default function SalesTotalsDashboard({
             <div style={TOTALS_CARD.grandCol}>
               <div>
                 <div style={TOTALS_CARD.label}>Year</div>
-                <div style={TOTALS_CARD.valueMd}>{selectedYear}</div>
+                <div style={TOTALS_CARD.valueMd}>{yearDisplay}</div>
               </div>
               <div>
                 <div style={TOTALS_CARD.label}>Progress</div>

@@ -8,11 +8,16 @@ import { captureElementsToPdfBlob } from "../utils/captureElementPdf";
 import { filterProjectsForSalesMonth } from "../utils/salesMonths";
 import {
   computeSalesTotalsData,
-  filterProjectsByYear,
+  filterProjectsByPeriod,
   formatSalesTotalsCurrency,
-  getCalendarYearProgressMeta,
-  getMonthsForPdfExport,
+  formatSalesTotalsPeriodLabel,
+  getAvailableCalendarYears,
+  getAvailableFinancialYears,
+  getCurrentFinancialYearEnd,
+  getMonthsForPdfExportByView,
+  getPeriodProgressMeta,
   normalizeProjectYearToISO,
+  SALES_YEAR_VIEW,
 } from "../utils/salesTotalsCompute";
 
 const SALES_TOTALS_EMAIL_FROM = "info@superiorgrannyflats.com.au";
@@ -43,6 +48,7 @@ export default function SalesTotals() {
   const [selectedYear, setSelectedYear] = useState(() => {
     return new Date().getFullYear().toString();
   });
+  const [yearView, setYearView] = useState(SALES_YEAR_VIEW.CALENDAR);
 
   // Modal shown when user clicks the VIC/QLD total rectangles.
   // "VIC" | "QLD" | null
@@ -129,51 +135,42 @@ export default function SalesTotals() {
     }
   }
 
-  // Get available years from projects
-  const availableYears = React.useMemo(() => {
-    const years = new Set();
-    projects.forEach((project) => {
-      if (project.year) {
-        const projectYear = project.year.toString().trim();
-        // Extract year from YYYY-MM-DD format
-        if (projectYear.includes("-")) {
-          const parts = projectYear.split("-");
-          if (parts.length >= 1) {
-            const year = parts[0].trim();
-            if (/^\d{4}$/.test(year)) {
-              years.add(year);
-            }
-          }
-        }
-        // Extract year from MM/DD/YYYY format
-        else if (projectYear.includes("/")) {
-          const parts = projectYear.split("/");
-          if (parts.length === 3) {
-            const year = parts[2].trim();
-            if (/^\d{4}$/.test(year)) {
-              years.add(year);
-            }
-          }
-        }
-        // If it's just YYYY
-        else if (/^\d{4}$/.test(projectYear)) {
-          years.add(projectYear);
-        }
-      }
-    });
-    return Array.from(years).sort((a, b) => b.localeCompare(a));
-  }, [projects]);
-
-  const yearFilteredProjects = React.useMemo(
-    () => filterProjectsByYear(projects, selectedYear),
-    [projects, selectedYear]
+  // Available periods for the year dropdown (calendar or financial)
+  const availableCalendarYears = React.useMemo(
+    () => getAvailableCalendarYears(projects),
+    [projects]
   );
 
-  const calendarYearMeta = getCalendarYearProgressMeta(selectedYear);
+  const availableFinancialYears = React.useMemo(
+    () => getAvailableFinancialYears(projects),
+    [projects]
+  );
+
+  const availablePeriods =
+    yearView === SALES_YEAR_VIEW.FINANCIAL ? availableFinancialYears : availableCalendarYears;
+
+  const periodLabel = formatSalesTotalsPeriodLabel(selectedYear, yearView);
+
+  React.useEffect(() => {
+    if (availablePeriods.length === 0) return;
+    if (!availablePeriods.includes(selectedYear)) {
+      setSelectedYear(availablePeriods[0]);
+    }
+  }, [availablePeriods, selectedYear]);
+
+  const yearFilteredProjects = React.useMemo(
+    () => filterProjectsByPeriod(projects, selectedYear, yearView),
+    [projects, selectedYear, yearView]
+  );
+
+  const periodProgressMeta = React.useMemo(
+    () => getPeriodProgressMeta(selectedYear, yearView),
+    [selectedYear, yearView]
+  );
 
   const salesTotalsData = React.useMemo(
-    () => computeSalesTotalsData(yearFilteredProjects, calendarYearMeta),
-    [yearFilteredProjects, calendarYearMeta]
+    () => computeSalesTotalsData(yearFilteredProjects, periodProgressMeta),
+    [yearFilteredProjects, periodProgressMeta]
   );
 
   const formatCurrency = formatSalesTotalsCurrency;
@@ -250,8 +247,8 @@ export default function SalesTotals() {
       return;
     }
 
-    const annualMeta = getCalendarYearProgressMeta(selectedYear);
-    const monthDefs = getMonthsForPdfExport(selectedYear);
+    const annualMeta = getPeriodProgressMeta(selectedYear, yearView);
+    const monthDefs = getMonthsForPdfExportByView(selectedYear, yearView);
     const pages = [
       {
         key: "annual",
@@ -260,12 +257,15 @@ export default function SalesTotals() {
         data: computeSalesTotalsData(yearFilteredProjects, annualMeta),
       },
       ...monthDefs.map((m) => ({
-        key: `month-${m.monthIndex}`,
+        key: `month-${m.calendarYear}-${m.monthIndex}`,
         pageType: "sales-list",
         title: m.title,
-        monthProjects: filterProjectsForSalesMonth(projects, selectedYear, m.monthIndex, todayISO).filter(
-          (p) => (p.classification || "").trim() !== "Home Office / Studio"
-        ),
+        monthProjects: filterProjectsForSalesMonth(
+          projects,
+          m.calendarYear,
+          m.monthIndex,
+          todayISO
+        ).filter((p) => (p.classification || "").trim() !== "Home Office / Studio"),
       })),
     ];
 
@@ -284,12 +284,15 @@ export default function SalesTotals() {
       }
 
       const pdfBlob = await captureElementsToPdfBlob(elements);
-      const filename = `Sales-Totals-${selectedYear}.pdf`;
+      const filename =
+        yearView === SALES_YEAR_VIEW.FINANCIAL
+          ? `Sales-Totals-FY-${periodLabel.replace("/", "-")}.pdf`
+          : `Sales-Totals-${selectedYear}.pdf`;
       setPdfAttachmentBlob(pdfBlob);
       setPdfAttachmentFilename(filename);
       setPdfEmailFrom(SALES_TOTALS_EMAIL_FROM);
-      setPdfEmailSubject(`Sales Totals ${selectedYear}`);
-      setPdfEmailBody(`Please find attached the Sales Totals report for ${selectedYear}.`);
+      setPdfEmailSubject(`Sales Totals ${periodLabel}`);
+      setPdfEmailBody(`Please find attached the Sales Totals report for ${periodLabel}.`);
       setPdfEmailTo("");
       setPdfEmailModalOpen(true);
     } catch (err) {
@@ -319,7 +322,7 @@ export default function SalesTotals() {
       return;
     }
     const bodyHtml = pdfEmailBodyRef.current?.innerHTML ?? pdfEmailBody;
-    const filename = pdfAttachmentFilename || `Sales-Totals-${selectedYear}.pdf`;
+    const filename = pdfAttachmentFilename || `Sales-Totals-${periodLabel}.pdf`;
 
     setPdfSending(true);
     try {
@@ -347,6 +350,23 @@ export default function SalesTotals() {
       setPdfSending(false);
     }
   }
+
+  function handleYearViewToggle() {
+    setYearView((prev) => {
+      const next =
+        prev === SALES_YEAR_VIEW.CALENDAR ? SALES_YEAR_VIEW.FINANCIAL : SALES_YEAR_VIEW.CALENDAR;
+      if (next === SALES_YEAR_VIEW.FINANCIAL) {
+        const fyEnd = getCurrentFinancialYearEnd();
+        if (fyEnd) setSelectedYear(String(fyEnd));
+      } else {
+        setSelectedYear(String(new Date().getFullYear()));
+      }
+      return next;
+    });
+  }
+
+  const yearViewToggleLabel =
+    yearView === SALES_YEAR_VIEW.CALENDAR ? "Calendar Year" : "Financial Year";
 
   return (
     <div
@@ -384,7 +404,7 @@ export default function SalesTotals() {
             }}
           />
         </Link>
-        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", justifyContent: "center" }}>
           <h1
             style={{
               margin: 0,
@@ -396,6 +416,25 @@ export default function SalesTotals() {
           >
             Sales Totals
           </h1>
+          <button
+            type="button"
+            onClick={handleYearViewToggle}
+            title="Toggle between calendar year (Jan–Dec) and financial year (Jul–Jun)"
+            style={{
+              padding: "8px 14px",
+              borderRadius: "8px",
+              border: "2px solid #fff",
+              fontSize: "0.9rem",
+              fontWeight: 600,
+              color: MONUMENT,
+              background: WHITE,
+              cursor: "pointer",
+              outline: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {yearViewToggleLabel}
+          </button>
           <select
             value={selectedYear}
             onChange={(e) => setSelectedYear(e.target.value)}
@@ -411,9 +450,11 @@ export default function SalesTotals() {
               outline: "none",
             }}
           >
-            {availableYears.map((year) => (
+            {availablePeriods.map((year) => (
               <option key={year} value={year}>
-                {year}
+                {yearView === SALES_YEAR_VIEW.FINANCIAL
+                  ? formatSalesTotalsPeriodLabel(year, SALES_YEAR_VIEW.FINANCIAL)
+                  : year}
               </option>
             ))}
           </select>
@@ -560,6 +601,7 @@ export default function SalesTotals() {
             <SalesTotalsDashboard
               data={salesTotalsData}
               selectedYear={selectedYear}
+              periodLabel={periodLabel}
               streamColors={STREAM_COLORS}
               onStateClick={openStateJobsModal}
             />
@@ -606,17 +648,18 @@ export default function SalesTotals() {
                     }}
                   >
                     {page.title}
-                    <span style={{ fontWeight: 500, fontSize: "1.1rem", marginLeft: "12px" }}>{selectedYear}</span>
+                    <span style={{ fontWeight: 500, fontSize: "1.1rem", marginLeft: "12px" }}>{periodLabel}</span>
                   </h2>
                   <SalesTotalsDashboard
                     data={page.data}
                     selectedYear={selectedYear}
+                    periodLabel={periodLabel}
                     streamColors={STREAM_COLORS}
                   />
                 </>
               ) : (
                 <SalesMonthLists
-                  pageTitle={`${page.title} — ${selectedYear}`}
+                  pageTitle={`${page.title} — ${periodLabel}`}
                   monthFilteredProjects={page.monthProjects}
                 />
               )}
@@ -800,7 +843,7 @@ export default function SalesTotals() {
                   padding: "10px 12px",
                 }}
               >
-                Attachment: <strong>{pdfAttachmentFilename || `Sales-Totals-${selectedYear}.pdf`}</strong>
+                Attachment: <strong>{pdfAttachmentFilename || `Sales-Totals-${periodLabel}.pdf`}</strong>
               </div>
 
               <div>

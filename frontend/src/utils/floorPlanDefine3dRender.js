@@ -1,169 +1,102 @@
 import {
-  computeDefine3DPlacementHeights,
-  DEFINE3D_MAX_INTERNAL_SEGMENTS,
-  FLOOR_PLAN_EXTERNAL_WALL_THICKNESS_M,
-  FLOOR_PLAN_INTERNAL_WALL_THICKNESS_M,
-  FLOOR_PLAN_UPPER_HEIGHT_M,
-  getSiteMeshFrame,
-  latLngToSiteLocalXZ,
+  buildFloorPlanPolygonFootprintPositions,
   sanitizeDefine3DPolygonPixels,
 } from "./siteBoundaryMesh";
-import { floorPlanPixelToLatLng } from "./floorPlanMap";
+import { floorPlanPixelToLocalEN } from "./floorPlanMap";
 
-/** Resolve saved Define 3D wall data + image pixel size from the plan record only (no image fetch). */
-export function resolveDefine3DWallContext(plan) {
+/** Image pixel size from saved define3d data or plan metadata (no PNG load). */
+export function resolvePlanImagePixelSize(plan) {
   const define3d = plan?.define3d;
-  const externalWallPolygons = define3d?.externalWallPolygons ?? [];
-  const internalWallSegments = define3d?.internalWallSegments ?? [];
-  if (!externalWallPolygons.length && !internalWallSegments.length) {
-    return null;
+  let imageWidth = Number(define3d?.imageWidth ?? plan?.imageWidth);
+  let imageHeight = Number(define3d?.imageHeight ?? plan?.imageHeight);
+
+  const polygons = define3d?.externalWallPolygons ?? [];
+  if ((!imageWidth || !imageHeight) && polygons.length) {
+    let maxX = 0;
+    let maxY = 0;
+    for (const polygon of polygons) {
+      for (const pt of polygon) {
+        if (Number.isFinite(pt?.x)) maxX = Math.max(maxX, pt.x);
+        if (Number.isFinite(pt?.y)) maxY = Math.max(maxY, pt.y);
+      }
+    }
+    if (!imageWidth && maxX > 0) imageWidth = maxX;
+    if (!imageHeight && maxY > 0) imageHeight = maxY;
   }
 
-  const metersPerPixel = plan?.scale?.metersPerPixel;
-  const imageWidth = Number(define3d?.imageWidth ?? plan?.imageWidth);
-  const imageHeight = Number(define3d?.imageHeight ?? plan?.imageHeight);
-  if (!metersPerPixel || !Number.isFinite(imageWidth) || !Number.isFinite(imageHeight)) {
+  if (!Number.isFinite(imageWidth) || !Number.isFinite(imageHeight) || imageWidth < 1 || imageHeight < 1) {
     return null;
   }
-  if (imageWidth < 1 || imageHeight < 1) return null;
-
-  return {
-    externalWallPolygons,
-    internalWallSegments,
-    imageWidth,
-    imageHeight,
-    widthM: imageWidth * metersPerPixel,
-    heightM: imageHeight * metersPerPixel,
-  };
-}
-
-function segmentPixelsToSiteXZ(
-  ring,
-  centerLat,
-  centerLng,
-  segmentPixels,
-  imageWidth,
-  imageHeight,
-  widthM,
-  heightM,
-  bearingDeg
-) {
-  const frame = getSiteMeshFrame(ring);
-  if (!frame || segmentPixels?.length !== 2) return null;
-
-  const start = floorPlanPixelToLatLng(
-    segmentPixels[0].x,
-    segmentPixels[0].y,
-    centerLat,
-    centerLng,
-    imageWidth,
-    imageHeight,
-    widthM,
-    heightM,
-    bearingDeg
-  );
-  const end = floorPlanPixelToLatLng(
-    segmentPixels[1].x,
-    segmentPixels[1].y,
-    centerLat,
-    centerLng,
-    imageWidth,
-    imageHeight,
-    widthM,
-    heightM,
-    bearingDeg
-  );
-
-  const startXZ = latLngToSiteLocalXZ(start.lat, start.lng, frame);
-  const endXZ = latLngToSiteLocalXZ(end.lat, end.lng, frame);
-  if (
-    ![startXZ.x, startXZ.z, endXZ.x, endXZ.z].every(Number.isFinite) ||
-    Math.hypot(endXZ.x - startXZ.x, endXZ.z - startXZ.z) > 80
-  ) {
-    return null;
-  }
-
-  return { start: startXZ, end: endXZ };
+  return { imageWidth, imageHeight };
 }
 
 /**
- * Draw Define 3D walls using saved image-pixel points only.
- * @returns {boolean} true if walls were drawn
+ * Same output shape as buildFloorPlanOutlineLinePositions, but corners come from
+ * the first saved external-wall polygon instead of the full image rectangle.
  */
-export function addDefine3DWallBoxes(boundaryGroup, ring, siteCornerLevels, placedUnit, addWallBox) {
-  const { plan, center, bearing = 0 } = placedUnit || {};
-  const ctx = resolveDefine3DWallContext(plan);
-  if (!ctx || !center?.lat || !center?.lng) return false;
+export function buildFloorPlanOutlineFromDefine3D(
+  ring,
+  siteCornerLevels,
+  centerLat,
+  centerLng,
+  plan,
+  bearingDeg = 0
+) {
+  const polygon = plan?.define3d?.externalWallPolygons?.[0];
+  if (!polygon?.length || polygon.length < 3) return null;
 
-  const heights = computeDefine3DPlacementHeights(
+  const pixelSize = resolvePlanImagePixelSize(plan);
+  const metersPerPixel = plan?.scale?.metersPerPixel;
+  if (!pixelSize || !metersPerPixel) return null;
+
+  const { imageWidth, imageHeight } = pixelSize;
+  const widthM = imageWidth * metersPerPixel;
+  const heightM = imageHeight * metersPerPixel;
+
+  const sanitized = sanitizeDefine3DPolygonPixels(polygon, imageWidth, imageHeight);
+  if (!sanitized) return null;
+
+  const footprint = buildFloorPlanPolygonFootprintPositions(
     ring,
     siteCornerLevels,
-    center.lat,
-    center.lng,
-    ctx.externalWallPolygons,
-    ctx.internalWallSegments,
-    ctx.imageWidth,
-    ctx.imageHeight,
-    ctx.widthM,
-    ctx.heightM,
-    bearing
+    centerLat,
+    centerLng,
+    sanitized,
+    imageWidth,
+    imageHeight,
+    widthM,
+    heightM,
+    bearingDeg
   );
-  if (!heights) return false;
+  if (!footprint) return null;
 
-  const { outlineYM } = heights;
-  const upperTopY = outlineYM + FLOOR_PLAN_UPPER_HEIGHT_M;
-
-  for (const polygon of ctx.externalWallPolygons) {
-    const sanitized = sanitizeDefine3DPolygonPixels(polygon, ctx.imageWidth, ctx.imageHeight);
-    if (!sanitized) continue;
-
-    for (let i = 0; i < sanitized.length; i += 1) {
-      const j = (i + 1) % sanitized.length;
-      const segmentXZ = segmentPixelsToSiteXZ(
-        ring,
-        center.lat,
-        center.lng,
-        [sanitized[i], sanitized[j]],
-        ctx.imageWidth,
-        ctx.imageHeight,
-        ctx.widthM,
-        ctx.heightM,
-        bearing
-      );
-      if (!segmentXZ) continue;
-      addWallBox(
-        boundaryGroup,
-        segmentXZ.start,
-        segmentXZ.end,
-        outlineYM,
-        upperTopY,
-        FLOOR_PLAN_EXTERNAL_WALL_THICKNESS_M
-      );
-    }
+  let minE = Infinity;
+  let maxE = -Infinity;
+  let minN = Infinity;
+  let maxN = -Infinity;
+  for (const pt of sanitized) {
+    const { eastM, northM } = floorPlanPixelToLocalEN(
+      pt.x,
+      pt.y,
+      imageWidth,
+      imageHeight,
+      widthM,
+      heightM
+    );
+    minE = Math.min(minE, eastM);
+    maxE = Math.max(maxE, eastM);
+    minN = Math.min(minN, northM);
+    maxN = Math.max(maxN, northM);
   }
 
-  for (const segment of ctx.internalWallSegments.slice(0, DEFINE3D_MAX_INTERNAL_SEGMENTS)) {
-    const segmentXZ = segmentPixelsToSiteXZ(
-      ring,
-      center.lat,
-      center.lng,
-      segment,
-      ctx.imageWidth,
-      ctx.imageHeight,
-      ctx.widthM,
-      ctx.heightM,
-      bearing
-    );
-    if (!segmentXZ) continue;
-    addWallBox(
-      boundaryGroup,
-      segmentXZ.start,
-      segmentXZ.end,
-      outlineYM,
-      upperTopY,
-      FLOOR_PLAN_INTERNAL_WALL_THICKNESS_M
-    );
-  }
+  const roofWidthM = Math.max(maxE - minE, 0.5);
+  const roofHeightM = Math.max(maxN - minN, 0.5);
 
-  return true;
+  return {
+    positions: footprint.positions,
+    outlineYM: footprint.outlineYM,
+    grassTopYM: footprint.grassTopYM,
+    roofWidthM,
+    roofHeightM,
+  };
 }

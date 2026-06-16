@@ -6,6 +6,7 @@ import {
   isSecretAreaSessionUnlocked,
   lockSecretAreaSession,
 } from "../utils/secretAreaProject";
+import { SECRET_GAME_SCENES, INITIAL_SCENE_INDEX } from "../Game/secretGameScenes";
 
 const MONUMENT = "#323233";
 const WHITE = "#fff";
@@ -42,7 +43,11 @@ export default function SecretArea() {
     levelNavStartedRef.current = true;
     disconnectRef.current?.();
     navigate("/secret-area/level", {
-      state: { returnTo: "/secret-area", secretReturnTo: returnTo },
+      state: {
+        sceneId: SECRET_GAME_SCENES[INITIAL_SCENE_INDEX].id,
+        returnTo: "/secret-area",
+        secretReturnTo: returnTo,
+      },
     });
   }, [navigate, returnTo]);
 

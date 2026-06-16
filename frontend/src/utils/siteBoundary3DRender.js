@@ -1,6 +1,9 @@
 import * as THREE from "three";
 import { fetchMonumentBox } from "./floorPlanMap";
-import { addDefine3DWallBoxes } from "./floorPlanDefine3dRender";
+import {
+  buildFloorPlanOutlineFromDefine3D,
+  resolvePlanImagePixelSize,
+} from "./floorPlanDefine3dRender";
 import {
   createCorrugatedRoofMaterial,
   createCorrugatedRoofTexture,
@@ -44,26 +47,21 @@ const VERANDAH_WALL_COLOR = 0x8b6914;
 const VERANDAH_EDGE_COLOR = 0x6b4423;
 const FOOTPRINT_BOTTOM_Y = 0;
 
-function addWallSegmentBox(boundaryGroup, startXZ, endXZ, bottomY, topY, thicknessM, color) {
-  const dx = endXZ.x - startXZ.x;
-  const dz = endXZ.z - startXZ.z;
-  const length = Math.hypot(dx, dz);
-  if (!Number.isFinite(length) || length < 0.05 || length > 80) return;
+function drawFloorPlanFootprint(boundaryGroup, outline, roofWidthM, roofHeightM) {
+  addExtrudedFootprintMesh(boundaryGroup, outline.positions, FLOOR_PLAN_SUBFLOOR_COLOR, {
+    doubleSided: true,
+    bottomYM: FOOTPRINT_BOTTOM_Y,
+  });
 
-  const height = topY - bottomY;
-  if (!Number.isFinite(height) || height <= 0 || height > 20) return;
-
-  const geometry = new THREE.BoxGeometry(length, height, thicknessM);
-  const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.set(
-    (startXZ.x + endXZ.x) / 2,
-    bottomY + height / 2,
-    (startXZ.z + endXZ.z) / 2
-  );
-  mesh.rotation.y = -Math.atan2(dz, dx);
-  mesh.renderOrder = 16;
-  boundaryGroup.add(mesh);
+  const upperTopY = outline.outlineYM + FLOOR_PLAN_UPPER_HEIGHT_M;
+  const upperRing = footprintRingAtY(outline.positions, upperTopY);
+  addExtrudedFootprintMesh(boundaryGroup, upperRing, FLOOR_PLAN_UPPER_COLOR, {
+    includeTopCap: false,
+    doubleSided: true,
+    bottomYM: outline.outlineYM,
+  });
+  addFootprintEdgeLines(boundaryGroup, upperRing, outline.outlineYM);
+  addFloorPlanGableRoof(boundaryGroup, outline.positions, roofWidthM, roofHeightM, upperTopY);
 }
 
 function addExtrudedFootprintMesh(boundaryGroup, topRingPositions, color, options = {}) {
@@ -286,25 +284,30 @@ function addFloorPlanVolume(boundaryGroup, ring, siteCornerLevels, placedUnit) {
     return;
   }
 
-  const drewDefine3D = addDefine3DWallBoxes(
-    boundaryGroup,
+  const savedOutline = buildFloorPlanOutlineFromDefine3D(
     ring,
     siteCornerLevels,
-    placedUnit,
-    (group, start, end, bottom, top, thickness) =>
-      addWallSegmentBox(group, start, end, bottom, top, thickness, FLOOR_PLAN_UPPER_COLOR)
+    center.lat,
+    center.lng,
+    plan,
+    bearing
   );
-  if (drewDefine3D) return;
-
-  const imageWidth = Number(plan?.imageWidth ?? plan?.define3d?.imageWidth);
-  const imageHeight = Number(plan?.imageHeight ?? plan?.define3d?.imageHeight);
-  const metersPerPixel = plan.scale.metersPerPixel;
-  if (!Number.isFinite(imageWidth) || !Number.isFinite(imageHeight) || imageWidth < 1 || imageHeight < 1) {
+  if (savedOutline) {
+    drawFloorPlanFootprint(
+      boundaryGroup,
+      savedOutline,
+      savedOutline.roofWidthM,
+      savedOutline.roofHeightM
+    );
     return;
   }
 
-  const widthM = imageWidth * metersPerPixel;
-  const heightM = imageHeight * metersPerPixel;
+  const pixelSize = resolvePlanImagePixelSize(plan);
+  if (!pixelSize) return;
+
+  const { imageWidth, imageHeight } = pixelSize;
+  const widthM = imageWidth * plan.scale.metersPerPixel;
+  const heightM = imageHeight * plan.scale.metersPerPixel;
 
   const outline = buildFloorPlanOutlineLinePositions(
     ring,
@@ -317,20 +320,7 @@ function addFloorPlanVolume(boundaryGroup, ring, siteCornerLevels, placedUnit) {
   );
   if (!outline) return;
 
-  addExtrudedFootprintMesh(boundaryGroup, outline.positions, FLOOR_PLAN_SUBFLOOR_COLOR, {
-    doubleSided: true,
-    bottomYM: FOOTPRINT_BOTTOM_Y,
-  });
-
-  const upperTopY = outline.outlineYM + FLOOR_PLAN_UPPER_HEIGHT_M;
-  const upperRing = footprintRingAtY(outline.positions, upperTopY);
-  addExtrudedFootprintMesh(boundaryGroup, upperRing, FLOOR_PLAN_UPPER_COLOR, {
-    includeTopCap: false,
-    doubleSided: true,
-    bottomYM: outline.outlineYM,
-  });
-  addFootprintEdgeLines(boundaryGroup, upperRing, outline.outlineYM);
-  addFloorPlanGableRoof(boundaryGroup, outline.positions, widthM, heightM, upperTopY);
+  drawFloorPlanFootprint(boundaryGroup, outline, widthM, heightM);
 }
 
 function addBuildingVolumes(boundaryGroup, siteRing, siteCornerLevels, buildingsGeoJson) {

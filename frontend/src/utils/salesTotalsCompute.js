@@ -22,6 +22,52 @@ const MS_PER_DAY = 86400000;
 
 import { SALES_MONTHS } from "./salesMonths";
 
+export const SALES_YEAR_VIEW = {
+  CALENDAR: "calendar",
+  FINANCIAL: "financial",
+};
+
+/** Jul–Jun FY ending year for an ISO date (e.g. 2025-08-01 → 2026). */
+export function getFinancialYearEndForDate(isoDate) {
+  if (!isoDate || isoDate.length < 7) return null;
+  const [yStr, mStr] = isoDate.split("-");
+  const y = parseInt(yStr, 10);
+  const m = parseInt(mStr, 10);
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return null;
+  return m >= 7 ? y + 1 : y;
+}
+
+export function getCurrentFinancialYearEnd(referenceDate = new Date()) {
+  const iso = `${referenceDate.getFullYear()}-${String(referenceDate.getMonth() + 1).padStart(2, "0")}-${String(referenceDate.getDate()).padStart(2, "0")}`;
+  return getFinancialYearEndForDate(iso);
+}
+
+export function getFinancialYearRange(fyEndYear) {
+  const end = parseInt(String(fyEndYear).trim(), 10);
+  const start = end - 1;
+  return {
+    startISO: `${start}-07-01`,
+    endISO: `${end}-06-30`,
+    startYear: start,
+    endYear: end,
+  };
+}
+
+/** Display label e.g. 2026 → "26/25" (Jul 2025 – Jun 2026). */
+export function formatFinancialYearLabel(fyEndYear) {
+  const end = parseInt(String(fyEndYear).trim(), 10);
+  if (!Number.isFinite(end)) return String(fyEndYear);
+  const start = end - 1;
+  return `${String(end).slice(-2)}/${String(start).slice(-2)}`;
+}
+
+export function formatSalesTotalsPeriodLabel(selectedYear, yearView) {
+  if (yearView === SALES_YEAR_VIEW.FINANCIAL) {
+    return formatFinancialYearLabel(selectedYear);
+  }
+  return String(selectedYear);
+}
+
 export function normalizeProjectYearToISO(yearValue) {
   if (!yearValue) return null;
   const v = yearValue.toString().trim();
@@ -62,6 +108,59 @@ export function filterProjectsByYear(projects, selectedYear) {
   });
 }
 
+export function filterProjectsByFinancialYear(projects, fyEndYear) {
+  const { startISO, endISO } = getFinancialYearRange(fyEndYear);
+  return projects.filter((project) => {
+    const iso = normalizeProjectYearToISO(project.year);
+    if (!iso) return false;
+    return iso >= startISO && iso <= endISO;
+  });
+}
+
+export function filterProjectsByPeriod(projects, selectedYear, yearView) {
+  if (yearView === SALES_YEAR_VIEW.FINANCIAL) {
+    return filterProjectsByFinancialYear(projects, selectedYear);
+  }
+  return filterProjectsByYear(projects, selectedYear);
+}
+
+export function getAvailableCalendarYears(projects) {
+  const years = new Set();
+  projects.forEach((project) => {
+    if (!project.year) return;
+    const projectYear = project.year.toString().trim();
+    if (projectYear.includes("-")) {
+      const parts = projectYear.split("-");
+      if (parts.length >= 1) {
+        const year = parts[0].trim();
+        if (/^\d{4}$/.test(year)) years.add(year);
+      }
+    } else if (projectYear.includes("/")) {
+      const parts = projectYear.split("/");
+      if (parts.length === 3) {
+        const year = parts[2].trim();
+        if (/^\d{4}$/.test(year)) years.add(year);
+      }
+    } else if (/^\d{4}$/.test(projectYear)) {
+      years.add(projectYear);
+    }
+  });
+  return Array.from(years).sort((a, b) => b.localeCompare(a));
+}
+
+export function getAvailableFinancialYears(projects, referenceDate = new Date()) {
+  const years = new Set();
+  projects.forEach((project) => {
+    const iso = normalizeProjectYearToISO(project.year);
+    if (!iso) return;
+    const fyEnd = getFinancialYearEndForDate(iso);
+    if (fyEnd) years.add(String(fyEnd));
+  });
+  const currentFyEnd = getCurrentFinancialYearEnd(referenceDate);
+  if (currentFyEnd) years.add(String(currentFyEnd));
+  return Array.from(years).sort((a, b) => b.localeCompare(a));
+}
+
 export function filterProjectsByMonth(yearFilteredProjects, selectedYear, monthIndex0, todayISO) {
   const yearNum = parseInt(String(selectedYear).trim(), 10);
   if (!Number.isFinite(yearNum) || monthIndex0 < 0 || monthIndex0 > 11) return [];
@@ -96,12 +195,154 @@ export function getMonthsForPdfExport(selectedYear, referenceDate = new Date()) 
 
   return Array.from({ length: monthCount }, (_, i) => ({
     monthIndex: i,
+    calendarYear: String(selectedYear),
     title:
       yearNum === refYear && i === refMonth
         ? `${SALES_MONTHS[i]} SALES (partial)`
         : `${SALES_MONTHS[i]} SALES`,
     isPartial: yearNum === refYear && i === refMonth,
   }));
+}
+
+/** FY month order: Jul → Jun (calendar month indices 6..11, 0..5). */
+export const FINANCIAL_YEAR_MONTH_ORDER = [6, 7, 8, 9, 10, 11, 0, 1, 2, 3, 4, 5];
+
+/** Months to include in PDF for a financial year (Jul–Jun), ending in fyEndYear. */
+export function getFinancialMonthsForPdfExport(fyEndYearStr, referenceDate = new Date()) {
+  const fyEnd = parseInt(String(fyEndYearStr).trim(), 10);
+  if (!Number.isFinite(fyEnd)) return [];
+
+  const fyStart = fyEnd - 1;
+  const now = referenceDate;
+  const currentFyEnd = getCurrentFinancialYearEnd(now);
+
+  const allMonths = FINANCIAL_YEAR_MONTH_ORDER.map((monthIndex) => ({
+    monthIndex,
+    calendarYear: String(monthIndex >= 6 ? fyStart : fyEnd),
+  }));
+
+  if (fyEnd > currentFyEnd) return [];
+
+  if (fyEnd < currentFyEnd) {
+    return allMonths.map((m) => ({
+      ...m,
+      title: `${SALES_MONTHS[m.monthIndex]} SALES`,
+      isPartial: false,
+    }));
+  }
+
+  const currentCalYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  let monthCount = 0;
+  for (let i = 0; i < allMonths.length; i++) {
+    const m = allMonths[i];
+    const calYear = parseInt(m.calendarYear, 10);
+    if (calYear < currentCalYear) {
+      monthCount = i + 1;
+      continue;
+    }
+    if (calYear === currentCalYear && m.monthIndex <= currentMonth) {
+      monthCount = i + 1;
+    } else {
+      break;
+    }
+  }
+
+  return allMonths.slice(0, monthCount).map((m, i) => ({
+    ...m,
+    title:
+      i === monthCount - 1
+        ? `${SALES_MONTHS[m.monthIndex]} SALES (partial)`
+        : `${SALES_MONTHS[m.monthIndex]} SALES`,
+    isPartial: i === monthCount - 1,
+  }));
+}
+
+export function getMonthsForPdfExportByView(selectedYear, yearView, referenceDate = new Date()) {
+  if (yearView === SALES_YEAR_VIEW.FINANCIAL) {
+    return getFinancialMonthsForPdfExport(selectedYear, referenceDate);
+  }
+  return getMonthsForPdfExport(selectedYear, referenceDate);
+}
+
+/** Previous period key for comparisons (calendar year −1 or FY end −1). */
+export function getPreviousPeriodKey(selectedYear, yearView) {
+  const n = parseInt(String(selectedYear).trim(), 10);
+  if (!Number.isFinite(n)) return String(selectedYear);
+  return String(n - 1);
+}
+
+export function formatPreviousPeriodLabel(selectedYear, yearView) {
+  return formatSalesTotalsPeriodLabel(getPreviousPeriodKey(selectedYear, yearView), yearView);
+}
+
+export function isCurrentPeriod(selectedYear, yearView, referenceDate = new Date()) {
+  if (yearView === SALES_YEAR_VIEW.FINANCIAL) {
+    return String(selectedYear) === String(getCurrentFinancialYearEnd(referenceDate));
+  }
+  return parseInt(String(selectedYear).trim(), 10) === referenceDate.getFullYear();
+}
+
+/** Month slots for analytics charts: Jul–Jun order in financial view, Jan–Dec in calendar. */
+export function getPeriodMonthSlots(selectedYear, yearView) {
+  if (yearView === SALES_YEAR_VIEW.CALENDAR) {
+    const year = String(selectedYear);
+    return Array.from({ length: 12 }, (_, i) => ({
+      monthIndex: i,
+      calendarYear: year,
+      name: SALES_MONTHS[i],
+    }));
+  }
+  const fyEnd = parseInt(String(selectedYear).trim(), 10);
+  const fyStart = fyEnd - 1;
+  return FINANCIAL_YEAR_MONTH_ORDER.map((monthIndex) => ({
+    monthIndex,
+    calendarYear: String(monthIndex >= 6 ? fyStart : fyEnd),
+    name: SALES_MONTHS[monthIndex],
+  }));
+}
+
+export function projectMatchesMonthSlot(project, slot) {
+  if (!project?.year) return false;
+  const monthNumber = String(slot.monthIndex + 1).padStart(2, "0");
+  const projectYear = project.year.toString().trim();
+  if (projectYear.includes("-")) {
+    const parts = projectYear.split("-");
+    if (parts.length >= 2) {
+      return parts[0].trim() === slot.calendarYear && parts[1].trim().padStart(2, "0") === monthNumber;
+    }
+  } else if (projectYear.includes("/")) {
+    const parts = projectYear.split("/");
+    if (parts.length === 3) {
+      const month = parts[0].trim().padStart(2, "0");
+      return parts[2].trim() === slot.calendarYear && month === monthNumber;
+    }
+  }
+  return false;
+}
+
+/** Index (0–11) of the current calendar month within the selected period. */
+export function getCurrentPeriodSlotIndex(selectedYear, yearView, referenceDate = new Date()) {
+  const slots = getPeriodMonthSlots(selectedYear, yearView);
+  const today = referenceDate;
+  for (let i = 0; i < slots.length; i++) {
+    const s = slots[i];
+    if (parseInt(s.calendarYear, 10) === today.getFullYear() && s.monthIndex === today.getMonth()) {
+      return i;
+    }
+  }
+  return 11;
+}
+
+export function getEffectivePeriodMonthIndexForSlot(
+  selectedYear,
+  yearView,
+  slotIndex,
+  referenceDate = new Date()
+) {
+  if (!isCurrentPeriod(selectedYear, yearView, referenceDate)) return slotIndex;
+  const currentSlot = getCurrentPeriodSlotIndex(selectedYear, yearView, referenceDate);
+  return Math.min(slotIndex, currentSlot);
 }
 
 export function getCalendarYearProgressMeta(yearStr, referenceDate = new Date()) {
@@ -147,6 +388,60 @@ export function getCalendarYearProgressMeta(yearStr, referenceDate = new Date())
     percentThrough,
     mode: "ytd",
   };
+}
+
+export function getFinancialYearProgressMeta(fyEndYearStr, referenceDate = new Date()) {
+  const fyEnd = parseInt(String(fyEndYearStr).trim(), 10);
+  if (!Number.isFinite(fyEnd)) return null;
+
+  const fyStart = new Date(fyEnd - 1, 6, 1);
+  fyStart.setHours(0, 0, 0, 0);
+  const fyEndExclusive = new Date(fyEnd, 6, 1);
+  fyEndExclusive.setHours(0, 0, 0, 0);
+  const fyLastDay = new Date(fyEnd, 5, 30);
+  fyLastDay.setHours(0, 0, 0, 0);
+
+  const daysInYear = Math.round((fyEndExclusive.getTime() - fyStart.getTime()) / MS_PER_DAY);
+  const now = referenceDate;
+  const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  if (today0 < fyStart) {
+    return {
+      daysInYear,
+      daysElapsed: 0,
+      fraction: 0,
+      percentThrough: 0,
+      mode: "future",
+    };
+  }
+  if (today0 > fyLastDay) {
+    return {
+      daysInYear,
+      daysElapsed: daysInYear,
+      fraction: 1,
+      percentThrough: 100,
+      mode: "complete",
+    };
+  }
+
+  const daysSinceFyStart = Math.floor((today0.getTime() - fyStart.getTime()) / MS_PER_DAY);
+  const daysElapsed = Math.min(daysInYear, Math.max(1, daysSinceFyStart + 1));
+  const fraction = daysElapsed / daysInYear;
+  const percentThrough = Math.min(100, Math.round(fraction * 1000) / 10);
+  return {
+    daysInYear,
+    daysElapsed,
+    fraction,
+    percentThrough,
+    mode: "ytd",
+  };
+}
+
+export function getPeriodProgressMeta(selectedYear, yearView, referenceDate = new Date()) {
+  if (yearView === SALES_YEAR_VIEW.FINANCIAL) {
+    return getFinancialYearProgressMeta(selectedYear, referenceDate);
+  }
+  return getCalendarYearProgressMeta(selectedYear, referenceDate);
 }
 
 export function getMonthProgressMeta(yearStr, monthIndex0, referenceDate = new Date()) {

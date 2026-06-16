@@ -1,6 +1,24 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import logo from "../images/logo.png";
+import {
+  computeMonthlySalesBreakdown,
+  computePieValueBreakdown,
+  computePreviousPeriodMonthlyBreakdown,
+  filterAnalyticsProjectsByPeriod,
+} from "../utils/salesAnalyticsCompute";
+import {
+  formatPreviousPeriodLabel,
+  formatSalesTotalsPeriodLabel,
+  getAvailableCalendarYears,
+  getAvailableFinancialYears,
+  getCurrentFinancialYearEnd,
+  getCurrentPeriodSlotIndex,
+  getEffectivePeriodMonthIndexForSlot,
+  getPreviousPeriodKey,
+  isCurrentPeriod,
+  SALES_YEAR_VIEW,
+} from "../utils/salesTotalsCompute";
 
 const MONUMENT = "#323233";
 const SECTION_GREY = "#a1a1a3";
@@ -91,6 +109,8 @@ function adjustedPaceFromYtd(basePerMonth, effectiveMonthIndexZeroBased, ytdActu
 function CumulativeRatesLineChart({
   monthlyData,
   selectedYear,
+  yearView,
+  previousPeriodLabel,
   combinedMonthlyTargetJobs,
   combinedAnnualTargetJobs,
   includeVic = true,
@@ -100,12 +120,8 @@ function CumulativeRatesLineChart({
   previousYearMonthlyData,
   showLastYearRates = false,
 }) {
-  const selYearNum = parseInt(selectedYear, 10);
-  const today = new Date();
-  const isCalendarCurrentYear =
-    Number.isFinite(selYearNum) && selYearNum === today.getFullYear();
-  const todayMonthIndex = today.getMonth();
-  const effectiveMonthIndex = isCalendarCurrentYear ? Math.min(11, todayMonthIndex) : 11;
+  const isPeriodCurrent = isCurrentPeriod(selectedYear, yearView);
+  const effectiveMonthIndex = isPeriodCurrent ? getCurrentPeriodSlotIndex(selectedYear, yearView) : 11;
 
   const monthsElapsed = Math.max(1, effectiveMonthIndex + 1);
   let ytdVic = 0;
@@ -147,9 +163,7 @@ function CumulativeRatesLineChart({
         })
       : [];
   const prevYearTotalJobs = prevCumThroughMonth[11] ?? 0;
-  const prevYearLabel = Number.isFinite(parseInt(selectedYear, 10))
-    ? String(parseInt(selectedYear, 10) - 1)
-    : "";
+  const prevYearLabel = previousPeriodLabel;
 
   const pad = { t: 52, r: 40, b: 58, l: 72 };
   const svgW = 1080;
@@ -312,9 +326,9 @@ function CumulativeRatesLineChart({
           stroke={WHITE}
           strokeWidth={1.5}
         />
-        {MONTHS.map((name, i) => (
+        {monthlyData.map((m, i) => (
           <text
-            key={name}
+            key={`${m.name}-${i}`}
             x={xAt(i + 0.5)}
             y={svgH - pad.b + 34}
             textAnchor="middle"
@@ -322,7 +336,7 @@ function CumulativeRatesLineChart({
             fontWeight={700}
             fill={MONUMENT}
           >
-            {name.substring(0, 3)}
+            {m.name.substring(0, 3)}
           </text>
         ))}
         {Array.from({ length: Math.floor(maxYAxis / yStep) + 1 }, (_, j) => {
@@ -384,6 +398,7 @@ export default function SalesAnalytics() {
   const [selectedYear, setSelectedYear] = useState(() => {
     return new Date().getFullYear().toString();
   });
+  const [yearView, setYearView] = useState(SALES_YEAR_VIEW.CALENDAR);
   const [selectedView, setSelectedView] = useState("bar"); // "bar" | "pie" | "rates" | "targets"
   const [showLastYearOutline, setShowLastYearOutline] = useState(true);
   const [showMonthlyTargets, setShowMonthlyTargets] = useState(false);
@@ -456,513 +471,81 @@ export default function SalesAnalytics() {
     }
   }
 
-  // Get available years from projects
-  const availableYears = React.useMemo(() => {
-    const years = new Set();
-    projects.forEach((project) => {
-      if (project.year) {
-        const projectYear = project.year.toString().trim();
-        // Extract year from YYYY-MM-DD format
-        if (projectYear.includes("-")) {
-          const parts = projectYear.split("-");
-          if (parts.length >= 1) {
-            const year = parts[0].trim();
-            if (/^\d{4}$/.test(year)) {
-              years.add(year);
-            }
-          }
-        }
-        // Extract year from MM/DD/YYYY format
-        else if (projectYear.includes("/")) {
-          const parts = projectYear.split("/");
-          if (parts.length === 3) {
-            const year = parts[2].trim();
-            if (/^\d{4}$/.test(year)) {
-              years.add(year);
-            }
-          }
-        }
-        // If it's just YYYY
-        else if (/^\d{4}$/.test(projectYear)) {
-          years.add(projectYear);
-        }
-      }
-    });
-    return Array.from(years).sort((a, b) => b.localeCompare(a));
-  }, [projects]);
+  const availableCalendarYears = React.useMemo(
+    () => getAvailableCalendarYears(projects),
+    [projects]
+  );
 
-  // Filter projects by selected year (all months) - excluding Home Office / Studio
-  const yearFilteredProjects = React.useMemo(() => {
-    return projects.filter((project) => {
-      // Exclude Home Office / Studio projects
-      if (project.classification === "Home Office / Studio") {
-        return false;
-      }
-      
-      if (!project.year) return false;
-      const projectYear = project.year.toString().trim();
-      
-      // Check if it's YYYY-MM-DD format
-      if (projectYear.includes("-")) {
-        const parts = projectYear.split("-");
-        if (parts.length >= 1) {
-          const year = parts[0].trim();
-          return year === selectedYear;
-        }
-      }
-      // Check if it's MM/DD/YYYY format
-      else if (projectYear.includes("/")) {
-        const parts = projectYear.split("/");
-        if (parts.length === 3) {
-          const year = parts[2].trim();
-          return year === selectedYear;
-        }
-      }
-      // If it's just YYYY
-      else if (/^\d{4}$/.test(projectYear)) {
-        return projectYear === selectedYear;
-      }
-      
-      return false;
-    });
-  }, [projects, selectedYear]);
+  const availableFinancialYears = React.useMemo(
+    () => getAvailableFinancialYears(projects),
+    [projects]
+  );
 
-  // Calculate totals for pie chart
+  const availablePeriods =
+    yearView === SALES_YEAR_VIEW.FINANCIAL ? availableFinancialYears : availableCalendarYears;
+
+  const periodLabel = formatSalesTotalsPeriodLabel(selectedYear, yearView);
+  const previousPeriodLabel = formatPreviousPeriodLabel(selectedYear, yearView);
+
+  React.useEffect(() => {
+    if (availablePeriods.length === 0) return;
+    if (!availablePeriods.includes(selectedYear)) {
+      setSelectedYear(availablePeriods[0]);
+    }
+  }, [availablePeriods, selectedYear]);
+
+  const yearFilteredProjects = React.useMemo(
+    () => filterAnalyticsProjectsByPeriod(projects, selectedYear, yearView),
+    [projects, selectedYear, yearView]
+  );
+
+  const pieValueBreakdown = React.useMemo(
+    () => computePieValueBreakdown(yearFilteredProjects),
+    [yearFilteredProjects]
+  );
+
+  const previousYearPieData = React.useMemo(() => {
+    const prevProjects = filterAnalyticsProjectsByPeriod(
+      projects,
+      getPreviousPeriodKey(selectedYear, yearView),
+      yearView
+    );
+    return computePieValueBreakdown(prevProjects);
+  }, [projects, selectedYear, yearView]);
+
+  const monthlyData = React.useMemo(
+    () => computeMonthlySalesBreakdown(yearFilteredProjects, selectedYear, yearView),
+    [yearFilteredProjects, selectedYear, yearView]
+  );
+
+  const previousYearData = React.useMemo(
+    () => computePreviousPeriodMonthlyBreakdown(projects, selectedYear, yearView),
+    [projects, selectedYear, yearView]
+  );
+
   const pieData = React.useMemo(() => {
-    // SGF - VIC total
-    const vicProjects = yearFilteredProjects.filter((project) => {
-      const projectStream = (project.stream || "").trim();
-      return projectStream === "SGF - VIC";
-    });
-    const vicTotal = vicProjects.reduce((sum, project) => {
-      if (project?.project_cost) {
-        const cost = parseInt(project.project_cost.toString().replace(/[^0-9]/g, "") || 0);
-        return sum + cost;
-      }
-      return sum;
-    }, 0);
-
-    // SGF - QLD total
-    const qldProjects = yearFilteredProjects.filter((project) => {
-      const projectStream = (project.stream || "").trim();
-      return projectStream === "SGF - QLD";
-    });
-    const qldTotal = qldProjects.reduce((sum, project) => {
-      if (project?.project_cost) {
-        const cost = parseInt(project.project_cost.toString().replace(/[^0-9]/g, "") || 0);
-        return sum + cost;
-      }
-      return sum;
-    }, 0);
-
-    // Green Streams total
-    let greenTotal = 0;
-    GREEN_STREAMS.forEach((stream) => {
-      const streamProjects = yearFilteredProjects.filter((project) => {
-        const projectStream = (project.stream || "").trim();
-        const streamNormalized = stream.trim();
-        
-        // Handle stream name variations
-        if (streamNormalized === "Pumped On Property") {
-          return projectStream === "Pumped On Property" || 
-                 projectStream === "Pumped on Property" ||
-                 projectStream.toLowerCase() === "pumped on property";
-        }
-        if (streamNormalized === "Create Cash Flow") {
-          return projectStream === "Create Cash Flow" || 
-                 projectStream === "Creat Cash Flow" ||
-                 projectStream.toLowerCase() === "create cash flow";
-        }
-        if (projectStream === streamNormalized) {
-          return true;
-        }
-        return projectStream.toLowerCase() === streamNormalized.toLowerCase();
-      });
-      
-      const streamTotal = streamProjects.reduce((sum, project) => {
-        if (project?.project_cost) {
-          const cost = parseInt(project.project_cost.toString().replace(/[^0-9]/g, "") || 0);
-          return sum + cost;
-        }
-        return sum;
-      }, 0);
-      
-      greenTotal += streamTotal;
-    });
-
-    const total = vicTotal + qldTotal + greenTotal;
-    
+    const { vic, qld, green, total } = pieValueBreakdown;
     return [
       {
         name: "SGF - VIC",
-        value: vicTotal,
-        percentage: total > 0 ? (vicTotal / total) * 100 : 0,
+        value: vic,
+        percentage: total > 0 ? (vic / total) * 100 : 0,
         color: STREAM_COLORS["SGF - VIC"].darker,
       },
       {
         name: "SGF - QLD",
-        value: qldTotal,
-        percentage: total > 0 ? (qldTotal / total) * 100 : 0,
+        value: qld,
+        percentage: total > 0 ? (qld / total) * 100 : 0,
         color: STREAM_COLORS["SGF - QLD"].darker,
       },
       {
         name: "Green Streams",
-        value: greenTotal,
-        percentage: total > 0 ? (greenTotal / total) * 100 : 0,
+        value: green,
+        percentage: total > 0 ? (green / total) * 100 : 0,
         color: STREAM_COLORS["Green Streams"].darker,
       },
     ];
-  }, [yearFilteredProjects]);
-
-  // Calculate previous year pie data for comparison
-  const previousYearPieData = React.useMemo(() => {
-    const previousYear = (parseInt(selectedYear) - 1).toString();
-    const prevYearProjects = projects.filter((project) => {
-      // Exclude Home Office / Studio projects
-      if (project.classification === "Home Office / Studio") {
-        return false;
-      }
-      
-      if (!project.year) return false;
-      const projectYear = project.year.toString().trim();
-      
-      // Check if it's YYYY-MM-DD format
-      if (projectYear.includes("-")) {
-        const parts = projectYear.split("-");
-        if (parts.length >= 1) {
-          const year = parts[0].trim();
-          return year === previousYear;
-        }
-      }
-      // Check if it's MM/DD/YYYY format
-      else if (projectYear.includes("/")) {
-        const parts = projectYear.split("/");
-        if (parts.length === 3) {
-          const year = parts[2].trim();
-          return year === previousYear;
-        }
-      }
-      // If it's just YYYY
-      else if (/^\d{4}$/.test(projectYear)) {
-        return projectYear === previousYear;
-      }
-      
-      return false;
-    });
-    
-    // SGF - VIC total
-    const vicProjects = prevYearProjects.filter((project) => {
-      const projectStream = (project.stream || "").trim();
-      return projectStream === "SGF - VIC";
-    });
-    const vicTotal = vicProjects.reduce((sum, project) => {
-      if (project?.project_cost) {
-        const cost = parseInt(project.project_cost.toString().replace(/[^0-9]/g, "") || 0);
-        return sum + cost;
-      }
-      return sum;
-    }, 0);
-
-    // SGF - QLD total
-    const qldProjects = prevYearProjects.filter((project) => {
-      const projectStream = (project.stream || "").trim();
-      return projectStream === "SGF - QLD";
-    });
-    const qldTotal = qldProjects.reduce((sum, project) => {
-      if (project?.project_cost) {
-        const cost = parseInt(project.project_cost.toString().replace(/[^0-9]/g, "") || 0);
-        return sum + cost;
-      }
-      return sum;
-    }, 0);
-
-    // Green Streams total
-    let greenTotal = 0;
-    GREEN_STREAMS.forEach((stream) => {
-      const streamProjects = prevYearProjects.filter((project) => {
-        const projectStream = (project.stream || "").trim();
-        const streamNormalized = stream.trim();
-        
-        // Handle stream name variations
-        if (streamNormalized === "Pumped On Property") {
-          return projectStream === "Pumped On Property" || 
-                 projectStream === "Pumped on Property" ||
-                 projectStream.toLowerCase() === "pumped on property";
-        }
-        if (streamNormalized === "Create Cash Flow") {
-          return projectStream === "Create Cash Flow" || 
-                 projectStream === "Creat Cash Flow" ||
-                 projectStream.toLowerCase() === "create cash flow";
-        }
-        if (projectStream === streamNormalized) {
-          return true;
-        }
-        return projectStream.toLowerCase() === streamNormalized.toLowerCase();
-      });
-      
-      const streamTotal = streamProjects.reduce((sum, project) => {
-        if (project?.project_cost) {
-          const cost = parseInt(project.project_cost.toString().replace(/[^0-9]/g, "") || 0);
-          return sum + cost;
-        }
-        return sum;
-      }, 0);
-      
-      greenTotal += streamTotal;
-    });
-
-    const total = vicTotal + qldTotal + greenTotal;
-    
-    return {
-      vic: vicTotal,
-      qld: qldTotal,
-      green: greenTotal,
-      total: total,
-    };
-  }, [projects, selectedYear]);
-
-  // Calculate monthly totals for bar chart (VIC and QLD breakdown)
-  const monthlyData = React.useMemo(() => {
-    const months = [];
-    
-    for (let i = 0; i < 12; i++) {
-      const monthNumber = String(i + 1).padStart(2, "0");
-      const monthName = MONTHS[i];
-      
-      const monthProjects = yearFilteredProjects.filter((project) => {
-        if (!project.year) return false;
-        const projectYear = project.year.toString().trim();
-        
-        // Check if it's YYYY-MM-DD format
-        if (projectYear.includes("-")) {
-          const parts = projectYear.split("-");
-          if (parts.length >= 2) {
-            const year = parts[0].trim();
-            const month = parts[1].trim().padStart(2, "0");
-            return year === selectedYear && month === monthNumber;
-          }
-        }
-        // Check if it's MM/DD/YYYY format
-        else if (projectYear.includes("/")) {
-          const parts = projectYear.split("/");
-          if (parts.length === 3) {
-            const month = parts[0].trim().padStart(2, "0");
-            const year = parts[2].trim();
-            return year === selectedYear && month === monthNumber;
-          }
-        }
-        return false;
-      });
-      
-      // Helper function to check if a project is a green stream
-      const isGreenStream = (project) => {
-        const projectStream = (project.stream || "").trim();
-        return GREEN_STREAMS.some((stream) => {
-          const streamNormalized = stream.trim();
-          // Handle stream name variations
-          if (streamNormalized === "Pumped On Property") {
-            return projectStream === "Pumped On Property" || 
-                   projectStream === "Pumped on Property" ||
-                   projectStream.toLowerCase() === "pumped on property";
-          }
-          if (streamNormalized === "Create Cash Flow") {
-            return projectStream === "Create Cash Flow" || 
-                   projectStream === "Creat Cash Flow" ||
-                   projectStream.toLowerCase() === "create cash flow";
-          }
-          if (projectStream === streamNormalized) {
-            return true;
-          }
-          return projectStream.toLowerCase() === streamNormalized.toLowerCase();
-        });
-      };
-      
-      // Green Streams projects (all green stream types, regardless of state)
-      const greenStreamProjects = monthProjects.filter((project) => isGreenStream(project));
-      
-      // Separate VIC and QLD projects (excluding green streams)
-      const vicProjects = monthProjects.filter((project) => {
-        // Exclude green stream projects
-        if (isGreenStream(project)) return false;
-        
-        const state = (project.state || "").trim().toUpperCase();
-        return state === "VIC" || state === "VICTORIA";
-      });
-      
-      const qldProjects = monthProjects.filter((project) => {
-        // Exclude green stream projects
-        if (isGreenStream(project)) return false;
-        
-        const state = (project.state || "").trim().toUpperCase();
-        return state === "QLD" || state === "QUEENSLAND";
-      });
-      
-      // Calculate VIC totals
-      const vicSalesCount = vicProjects.length;
-      const vicTotalValue = vicProjects.reduce((sum, project) => {
-        if (project?.project_cost) {
-          const cost = parseInt(project.project_cost.toString().replace(/[^0-9]/g, "") || 0);
-          return sum + cost;
-        }
-        return sum;
-      }, 0);
-      
-      // Calculate QLD totals
-      const qldSalesCount = qldProjects.length;
-      const qldTotalValue = qldProjects.reduce((sum, project) => {
-        if (project?.project_cost) {
-          const cost = parseInt(project.project_cost.toString().replace(/[^0-9]/g, "") || 0);
-          return sum + cost;
-        }
-        return sum;
-      }, 0);
-      
-      // Calculate Green Streams totals
-      const greenStreamSalesCount = greenStreamProjects.length;
-      const greenStreamTotalValue = greenStreamProjects.reduce((sum, project) => {
-        if (project?.project_cost) {
-          const cost = parseInt(project.project_cost.toString().replace(/[^0-9]/g, "") || 0);
-          return sum + cost;
-        }
-        return sum;
-      }, 0);
-      
-      months.push({
-        name: monthName,
-        vicSalesCount,
-        vicTotalValue,
-        qldSalesCount,
-        qldTotalValue,
-        greenStreamSalesCount,
-        greenStreamTotalValue,
-        totalSalesCount: vicSalesCount + qldSalesCount + greenStreamSalesCount,
-        totalValue: vicTotalValue + qldTotalValue + greenStreamTotalValue,
-      });
-    }
-    
-    return months;
-  }, [yearFilteredProjects, selectedYear]);
-
-  // Calculate monthly totals for previous year (for comparison)
-  const previousYearData = React.useMemo(() => {
-    const previousYear = (parseInt(selectedYear) - 1).toString();
-    const months = [];
-    
-    for (let i = 0; i < 12; i++) {
-      const monthNumber = String(i + 1).padStart(2, "0");
-      const monthName = MONTHS[i];
-      
-      const monthProjects = projects.filter((project) => {
-        // Exclude Home Office / Studio projects
-        if (project.classification === "Home Office / Studio") {
-          return false;
-        }
-        
-        if (!project.year) return false;
-        const projectYear = project.year.toString().trim();
-        
-        // Check if it's YYYY-MM-DD format
-        if (projectYear.includes("-")) {
-          const parts = projectYear.split("-");
-          if (parts.length >= 2) {
-            const year = parts[0].trim();
-            const month = parts[1].trim().padStart(2, "0");
-            return year === previousYear && month === monthNumber;
-          }
-        }
-        // Check if it's MM/DD/YYYY format
-        else if (projectYear.includes("/")) {
-          const parts = projectYear.split("/");
-          if (parts.length === 3) {
-            const month = parts[0].trim().padStart(2, "0");
-            const year = parts[2].trim();
-            return year === previousYear && month === monthNumber;
-          }
-        }
-        return false;
-      });
-      
-      // Helper function to check if a project is a green stream
-      const isGreenStream = (project) => {
-        const projectStream = (project.stream || "").trim();
-        return GREEN_STREAMS.some((stream) => {
-          const streamNormalized = stream.trim();
-          if (streamNormalized === "Pumped On Property") {
-            return projectStream === "Pumped On Property" || 
-                   projectStream === "Pumped on Property" ||
-                   projectStream.toLowerCase() === "pumped on property";
-          }
-          if (streamNormalized === "Create Cash Flow") {
-            return projectStream === "Create Cash Flow" || 
-                   projectStream === "Creat Cash Flow" ||
-                   projectStream.toLowerCase() === "create cash flow";
-          }
-          if (projectStream === streamNormalized) {
-            return true;
-          }
-          return projectStream.toLowerCase() === streamNormalized.toLowerCase();
-        });
-      };
-      
-      // Green Streams projects (all green stream types, regardless of state)
-      const greenStreamProjects = monthProjects.filter((project) => isGreenStream(project));
-      
-      // Separate VIC and QLD projects (excluding green streams)
-      const vicProjects = monthProjects.filter((project) => {
-        if (isGreenStream(project)) return false;
-        const state = (project.state || "").trim().toUpperCase();
-        return state === "VIC" || state === "VICTORIA";
-      });
-      
-      const qldProjects = monthProjects.filter((project) => {
-        if (isGreenStream(project)) return false;
-        const state = (project.state || "").trim().toUpperCase();
-        return state === "QLD" || state === "QUEENSLAND";
-      });
-      
-      // Calculate totals
-      const vicSalesCount = vicProjects.length;
-      const vicTotalValue = vicProjects.reduce((sum, project) => {
-        if (project?.project_cost) {
-          const cost = parseInt(project.project_cost.toString().replace(/[^0-9]/g, "") || 0);
-          return sum + cost;
-        }
-        return sum;
-      }, 0);
-      
-      const qldSalesCount = qldProjects.length;
-      const qldTotalValue = qldProjects.reduce((sum, project) => {
-        if (project?.project_cost) {
-          const cost = parseInt(project.project_cost.toString().replace(/[^0-9]/g, "") || 0);
-          return sum + cost;
-        }
-        return sum;
-      }, 0);
-      
-      const greenStreamSalesCount = greenStreamProjects.length;
-      const greenStreamTotalValue = greenStreamProjects.reduce((sum, project) => {
-        if (project?.project_cost) {
-          const cost = parseInt(project.project_cost.toString().replace(/[^0-9]/g, "") || 0);
-          return sum + cost;
-        }
-        return sum;
-      }, 0);
-      
-      months.push({
-        name: monthName,
-        vicSalesCount,
-        vicTotalValue,
-        qldSalesCount,
-        qldTotalValue,
-        greenStreamSalesCount,
-        greenStreamTotalValue,
-        totalSalesCount: vicSalesCount + qldSalesCount + greenStreamSalesCount,
-        totalValue: vicTotalValue + qldTotalValue + greenStreamTotalValue,
-      });
-    }
-    
-    return months;
-  }, [projects, selectedYear]);
+  }, [pieValueBreakdown]);
 
   // Format number with commas
   function formatCurrency(amount) {
@@ -996,6 +579,23 @@ export default function SalesAnalytics() {
     
     return `M ${centerX} ${centerY} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2} Z`;
   }
+
+  function handleYearViewToggle() {
+    setYearView((prev) => {
+      const next =
+        prev === SALES_YEAR_VIEW.CALENDAR ? SALES_YEAR_VIEW.FINANCIAL : SALES_YEAR_VIEW.CALENDAR;
+      if (next === SALES_YEAR_VIEW.FINANCIAL) {
+        const fyEnd = getCurrentFinancialYearEnd();
+        if (fyEnd) setSelectedYear(String(fyEnd));
+      } else {
+        setSelectedYear(String(new Date().getFullYear()));
+      }
+      return next;
+    });
+  }
+
+  const yearViewToggleLabel =
+    yearView === SALES_YEAR_VIEW.CALENDAR ? "Calendar Year" : "Financial Year";
 
   return (
     <div
@@ -1045,7 +645,26 @@ export default function SalesAnalytics() {
           >
             Sales Analytics
           </h1>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", justifyContent: "center" }}>
+            <button
+              type="button"
+              onClick={handleYearViewToggle}
+              title="Toggle between calendar year (Jan–Dec) and financial year (Jul–Jun)"
+              style={{
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: "2px solid #fff",
+                fontSize: "0.9rem",
+                fontWeight: 600,
+                color: MONUMENT,
+                background: WHITE,
+                cursor: "pointer",
+                outline: "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {yearViewToggleLabel}
+            </button>
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(e.target.value)}
@@ -1061,9 +680,11 @@ export default function SalesAnalytics() {
                 outline: "none",
               }}
             >
-              {availableYears.map((year) => (
+              {availablePeriods.map((year) => (
                 <option key={year} value={year}>
-                  {year}
+                  {yearView === SALES_YEAR_VIEW.FINANCIAL
+                    ? formatSalesTotalsPeriodLabel(year, SALES_YEAR_VIEW.FINANCIAL)
+                    : year}
                 </option>
               ))}
             </select>
@@ -1395,7 +1016,7 @@ export default function SalesAnalytics() {
               {selectedView === "pie" ? (
                 <>
                   <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "32px" }}>
-                    Total Value Breakdown for {selectedYear}
+                    Total Value Breakdown for {periodLabel}
                   </h2>
                   
                   {/* Pie Chart */}
@@ -1479,7 +1100,7 @@ export default function SalesAnalytics() {
               ) : selectedView === "rates" ? (
                 <>
                   <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "16px" }}>
-                    Planned vs actual cumulative jobs — {selectedYear}
+                    Planned vs actual cumulative jobs — {periodLabel}
                   </h2>
                   <div
                     style={{
@@ -1575,6 +1196,8 @@ export default function SalesAnalytics() {
                   <CumulativeRatesLineChart
                     monthlyData={monthlyData}
                     selectedYear={selectedYear}
+                    yearView={yearView}
+                    previousPeriodLabel={previousPeriodLabel}
                     combinedMonthlyTargetJobs={ratesChartMonthlyTargetJobs}
                     combinedAnnualTargetJobs={ratesChartAnnualTargetJobs}
                     includeVic={ratesIncludeVic}
@@ -1666,7 +1289,7 @@ export default function SalesAnalytics() {
               ) : (
                 <>
                   <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "32px" }}>
-                    Monthly Sales for {selectedYear}
+                    Monthly Sales for {periodLabel}
                   </h2>
                   <div style={{ width: "100%", maxWidth: "1240px", position: "relative", display: "flex" }}>
                     {/* Y-axis scale */}
@@ -1851,14 +1474,16 @@ export default function SalesAnalytics() {
                           });
                         }
 
-                        const selYearNum = parseInt(selectedYear, 10);
-                        const today = new Date();
-                        const isCalendarCurrentYear =
-                          Number.isFinite(selYearNum) && selYearNum === today.getFullYear();
-                        const todayMonthIndex = today.getMonth(); // 0 = Jan
-                        const effectiveMonthIndex = isCalendarCurrentYear
-                          ? Math.min(index, todayMonthIndex)
-                          : index;
+                        const effectiveMonthIndex = getEffectivePeriodMonthIndexForSlot(
+                          selectedYear,
+                          yearView,
+                          index
+                        );
+                        const monthsAfterThis = 12 - (effectiveMonthIndex + 1);
+                        const paceNote =
+                          effectiveMonthIndex < index
+                            ? ` (through ${monthlyData[effectiveMonthIndex]?.name ?? MONTHS[effectiveMonthIndex]}; same for months not yet reached this period)`
+                            : "";
 
                         let ytdVic = 0;
                         let ytdQld = 0;
@@ -1868,11 +1493,6 @@ export default function SalesAnalytics() {
                           ytdQld += monthlyData[j].qldSalesCount;
                           ytdGreen += monthlyData[j].greenStreamSalesCount;
                         }
-                        const monthsAfterThis = 12 - (effectiveMonthIndex + 1);
-                        const paceNote =
-                          effectiveMonthIndex < index
-                            ? ` (through ${MONTHS[effectiveMonthIndex]}; same for months not yet reached this year)`
-                            : "";
 
                         const adjustedTargetSegments = [];
                         if (showBarGreen) {
