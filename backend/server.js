@@ -1052,6 +1052,7 @@ async function ensureSchema() {
     await ensureProjectAccessTokens(pool);
     await ensureMapQuoteItemsTable(pool);
     await ensureMapFloorPlansDollarValueColumn(pool);
+    await addMissingColumns(pool, "projects", ["construction_payments_paid"]);
     return;
   }
   console.log(`Applying schema migrations (target ${SCHEMA_VERSION})…`);

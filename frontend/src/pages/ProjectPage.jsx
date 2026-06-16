@@ -21,6 +21,8 @@ import Payments from "./Payments";
 import { isUserAdmin } from "../utils/auth";
 import { computeProjectFolderPathFromRecord } from "../utils/projectFolderPath";
 import { projectPath, portalProjectPath } from "../utils/projectUrl";
+import useIsMobile from "../hooks/useIsMobile";
+import ProjectPageMobile from "../mobile/ProjectPageMobile";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -148,10 +150,13 @@ const CONSTRUCTION_MENU_OPTIONS = [
   { label: "Payments", key: "payments" },
 ];
 
+const MOBILE_PROJECT_VIEWS = ["overview", "project-info", "drawings"];
+
 export default function ProjectPage() {
   const { token } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const isMobile = useIsMobile();
   /** Client portal project URL: same full UI as internal /project/:id, but read-only and portal API */
   const isPortalProjectPath = /^\/portal\/projects\/[^/]+$/.test(location.pathname);
   const [project, setProject] = useState(null);
@@ -197,19 +202,23 @@ export default function ProjectPage() {
   // Check for view parameter in URL to preserve active view
   useEffect(() => {
     const urlParams = new URLSearchParams(location.search);
-    const viewParam = urlParams.get('view');
+    const viewParam = urlParams.get("view");
     const allKeys = [...MENU_OPTIONS, ...CONSTRUCTION_MENU_OPTIONS];
-    if (viewParam && allKeys.some((opt) => opt.key === viewParam)) {
+    const allowedKeys = isMobile
+      ? MOBILE_PROJECT_VIEWS.map((key) => ({ key }))
+      : allKeys;
+    if (viewParam && allowedKeys.some((opt) => opt.key === viewParam)) {
       if (isPortalProjectPath && viewParam === "admin") {
         setActiveView("overview");
       } else {
         setActiveView(viewParam);
       }
     } else if (!viewParam) {
-      // If no view parameter, default to overview
+      setActiveView("overview");
+    } else if (isMobile) {
       setActiveView("overview");
     }
-  }, [token, location.search, isPortalProjectPath]);
+  }, [token, location.search, isPortalProjectPath, isMobile]);
 
   // Set default menu view for Construction Phase projects
   useEffect(() => {
@@ -527,9 +536,25 @@ export default function ProjectPage() {
     return newProject;
   }
 
+  if (isMobile) {
+    return (
+      <ProjectPageMobile
+        project={project}
+        loading={loading}
+        error={error}
+        activeView={activeView}
+        setActiveView={setActiveView}
+        onUpdate={isPortalProjectPath ? () => {} : updateProject}
+        isPortalProjectPath={isPortalProjectPath}
+        token={token}
+        isAdmin={isAdmin}
+      />
+    );
+  }
+
   return (
     <div
-      className="page-container"
+      className="page-container sgf-desktop-only"
       style={{
         position: "fixed",
         inset: 0,

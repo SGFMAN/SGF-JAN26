@@ -5,8 +5,9 @@ const SECTION_GREY = "#a1a1a3";
 const WHITE = "#fff";
 const API_URL = "";
 
-const PAYMENT_STAGES = [
-  { key: "deposit", label: "Deposit", percent: 5 },
+const DEPOSIT_STAGE = { key: "deposit", label: "Deposit", percent: 5 };
+
+const CHECKBOX_STAGES = [
   { key: "base", label: "Base", percent: 10 },
   { key: "frame", label: "Frame", percent: 15 },
   { key: "lock_up", label: "Lock Up", percent: 35 },
@@ -14,7 +15,7 @@ const PAYMENT_STAGES = [
   { key: "final", label: "Final", percent: 10 },
 ];
 
-const DEFAULT_PAID_STATE = Object.fromEntries(PAYMENT_STAGES.map((s) => [s.key, false]));
+const DEFAULT_PAID_STATE = Object.fromEntries(CHECKBOX_STAGES.map((s) => [s.key, false]));
 
 function parseProjectCost(projectCost) {
   if (projectCost == null || projectCost === "") return 0;
@@ -44,7 +45,7 @@ function parsePaidState(raw) {
     return {
       ...DEFAULT_PAID_STATE,
       ...Object.fromEntries(
-        PAYMENT_STAGES.map((s) => [s.key, Boolean(parsed[s.key])])
+        CHECKBOX_STAGES.map((s) => [s.key, Boolean(parsed[s.key])])
       ),
     };
   } catch {
@@ -69,8 +70,11 @@ export default function Payments({ project, onUpdate }) {
 
   const projectCost = parseProjectCost(project?.project_cost);
 
+  const depositAmount =
+    projectCost > 0 ? Math.round((projectCost * DEPOSIT_STAGE.percent) / 100) : 0;
+
   const stageAmounts = useMemo(() => {
-    return PAYMENT_STAGES.map((stage) => ({
+    return CHECKBOX_STAGES.map((stage) => ({
       ...stage,
       amount: projectCost > 0 ? Math.round((projectCost * stage.percent) / 100) : 0,
     }));
@@ -159,6 +163,38 @@ export default function Payments({ project, onUpdate }) {
             gap: "10px",
           }}
         >
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr auto",
+              alignItems: "center",
+              gap: "12px",
+              padding: "10px 12px",
+              borderRadius: "8px",
+              background: "#e8f5e9",
+            }}
+          >
+            <span
+              style={{
+                fontSize: "0.95rem",
+                color: MONUMENT,
+                fontWeight: 600,
+              }}
+            >
+              {DEPOSIT_STAGE.label} {DEPOSIT_STAGE.percent}%
+            </span>
+            <span
+              style={{
+                fontSize: "0.95rem",
+                color: MONUMENT,
+                fontWeight: 600,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {projectCost > 0 ? `$${formatCurrency(depositAmount)}` : "—"}
+            </span>
+          </div>
+
           {stageAmounts.map((stage) => (
             <label
               key={stage.key}

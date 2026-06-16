@@ -120,3 +120,16 @@
     max-width: 100% !important;
   }
 }
+
+/* SGF Central mobile shell — desktop layout unchanged above 768px */
+@media (max-width: 768px) {
+  .sgf-desktop-only {
+    display: none !important;
+  }
+}
+
+@media (min-width: 769px) {
+  .sgf-mobile-only {
+    display: none !important;
+  }
+}

@@ -18,6 +18,8 @@ import {
 import { CLASSIFICATION_OPTIONS } from "../utils/classifications";
 import ProjectRectangleCard from "../components/ProjectRectangleCard";
 import logo from "../images/logo.png";
+import useIsMobile from "../hooks/useIsMobile";
+import MobileProjectsHome from "../mobile/MobileProjectsHome";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
 const MONUMENT = "#323233";
@@ -216,6 +218,7 @@ function SaggingDuplicateChainIcon() {
 
 export default function HomePage() {
   const location = useLocation();
+  const isMobile = useIsMobile();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -568,9 +571,13 @@ export default function HomePage() {
   const availableValues = getAvailableValues();
   const filteredProjects = getFilteredProjects();
 
+  if (isMobile) {
+    return <MobileProjectsHome />;
+  }
+
   return (
     <div
-      className="page-container"
+      className="page-container sgf-desktop-only"
       style={{
         position: "fixed",
         inset: 0,
