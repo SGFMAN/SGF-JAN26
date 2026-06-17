@@ -35,6 +35,11 @@ import TimeSheet from "./pages/TimeSheet";
 import AppModeBanner from "./components/AppModeBanner";
 import { EmailSendOverlayProvider } from "./components/EmailSendOverlay";
 import PortalProjects from "./pages/PortalProjects";
+import RequireAuth from "./components/RequireAuth";
+
+function Auth({ children }) {
+  return <RequireAuth>{children}</RequireAuth>;
+}
 
 export default function App() {
   const isCloudflarePublicHost =
@@ -49,61 +54,60 @@ export default function App() {
       <Routes>
         {isCloudflarePublicHost ? (
           <>
-            {/* Public portal-only mode when accessed via Cloudflare tunnel */}
-            <Route path="/portal" element={<PortalProjects />} />
-            <Route path="/portal/projects/:token" element={<ProjectPage />} />
+            <Route path="/" element={<SplashPage />} />
+            <Route path="/portal" element={<Auth><PortalProjects /></Auth>} />
+            <Route path="/portal/projects/:token" element={<Auth><ProjectPage /></Auth>} />
             <Route path="/approve-concept/:projectId" element={<ApproveConcept />} />
             <Route path="/colours-portal/:projectId" element={<ColoursPortal />} />
             <Route path="/3d-vis-portal/:projectId" element={<ThreeDVisPortal />} />
-            <Route path="/secret-area" element={<SecretArea />} />
-            <Route path="/secret-area/level-editor" element={<SecretLevelEditor />} />
-            <Route path="/secret-area/level" element={<SecretLevel />} />
-            <Route path="*" element={<Navigate to="/portal" replace />} />
+            <Route path="/secret-area" element={<Auth><SecretArea /></Auth>} />
+            <Route path="/secret-area/level-editor" element={<Auth><SecretLevelEditor /></Auth>} />
+            <Route path="/secret-area/level" element={<Auth><SecretLevel /></Auth>} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </>
         ) : (
           <>
             <Route path="/" element={<SplashPage />} />
-            <Route path="/projects" element={<HomePage />} />
-            {/* Old standalone URL; Variations lives under Project → menu */}
+            <Route path="/projects" element={<Auth><HomePage /></Auth>} />
             <Route path="/variations" element={<Navigate to="/projects" replace />} />
-            <Route path="/project/:token" element={<ProjectPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/apply-fields" element={<ApplyFields />} />
-            <Route path="/finished-projects" element={<FinishedProjects />} />
-            <Route path="/construction-phase" element={<InConstruction />} />
+            <Route path="/project/:token" element={<Auth><ProjectPage /></Auth>} />
+            <Route path="/settings" element={<Auth><SettingsPage /></Auth>} />
+            <Route path="/apply-fields" element={<Auth><ApplyFields /></Auth>} />
+            <Route path="/finished-projects" element={<Auth><FinishedProjects /></Auth>} />
+            <Route path="/construction-phase" element={<Auth><InConstruction /></Auth>} />
             <Route path="/in-construction" element={<Navigate to="/construction-phase" replace />} />
-            <Route path="/site-visit-manager" element={<SiteVisitManager />} />
-            <Route path="/site-visit-planner" element={<SiteVisitPlanner />} />
-            <Route path="/hotlist" element={<Hotlist />} />
-            <Route path="/all-projects" element={<AllProjects />} />
-            <Route path="/cancelled" element={<Cancelled />} />
-            <Route path="/on-hold" element={<OnHold />} />
-            <Route path="/managers" element={<Managers />} />
-            <Route path="/managers/site-visit-manager" element={<SiteVisitManager />} />
-            <Route path="/managers/contract-manager" element={<ContractManager />} />
-            <Route path="/managers/colour-manager" element={<ColourManager />} />
-            <Route path="/managers/status-manager" element={<StatusManager />} />
-            <Route path="/managers/drawing-manager" element={<AdminDrawingManagerRoute />} />
-            <Route path="/managers/qp-manager" element={<QpManager />} />
-            <Route path="/managers/project-claim" element={<ProjectClaim />} />
-            <Route path="/sales" element={<Sales />} />
-            <Route path="/sales-totals" element={<SalesTotals />} />
-            <Route path="/sales-analytics" element={<SalesAnalytics />} />
-            <Route path="/email-generator" element={<EmailGenerator />} />
-            <Route path="/secret-area" element={<SecretArea />} />
-            <Route path="/secret-area/level-editor" element={<SecretLevelEditor />} />
-            <Route path="/secret-area/level" element={<SecretLevel />} />
-            <Route path="/maps" element={<Maps />} />
-            <Route path="/maps/recent" element={<MapsRecent />} />
-            <Route path="/maps/sold-projects" element={<Maps />} />
-            <Route path="/time-sheet" element={<TimeSheet />} />
+            <Route path="/site-visit-manager" element={<Auth><SiteVisitManager /></Auth>} />
+            <Route path="/site-visit-planner" element={<Auth><SiteVisitPlanner /></Auth>} />
+            <Route path="/hotlist" element={<Auth><Hotlist /></Auth>} />
+            <Route path="/all-projects" element={<Auth><AllProjects /></Auth>} />
+            <Route path="/cancelled" element={<Auth><Cancelled /></Auth>} />
+            <Route path="/on-hold" element={<Auth><OnHold /></Auth>} />
+            <Route path="/managers" element={<Auth><Managers /></Auth>} />
+            <Route path="/managers/site-visit-manager" element={<Auth><SiteVisitManager /></Auth>} />
+            <Route path="/managers/contract-manager" element={<Auth><ContractManager /></Auth>} />
+            <Route path="/managers/colour-manager" element={<Auth><ColourManager /></Auth>} />
+            <Route path="/managers/status-manager" element={<Auth><StatusManager /></Auth>} />
+            <Route path="/managers/drawing-manager" element={<Auth><AdminDrawingManagerRoute /></Auth>} />
+            <Route path="/managers/qp-manager" element={<Auth><QpManager /></Auth>} />
+            <Route path="/managers/project-claim" element={<Auth><ProjectClaim /></Auth>} />
+            <Route path="/sales" element={<Auth><Sales /></Auth>} />
+            <Route path="/sales-totals" element={<Auth><SalesTotals /></Auth>} />
+            <Route path="/sales-analytics" element={<Auth><SalesAnalytics /></Auth>} />
+            <Route path="/email-generator" element={<Auth><EmailGenerator /></Auth>} />
+            <Route path="/secret-area" element={<Auth><SecretArea /></Auth>} />
+            <Route path="/secret-area/level-editor" element={<Auth><SecretLevelEditor /></Auth>} />
+            <Route path="/secret-area/level" element={<Auth><SecretLevel /></Auth>} />
+            <Route path="/maps" element={<Auth><Maps /></Auth>} />
+            <Route path="/maps/recent" element={<Auth><MapsRecent /></Auth>} />
+            <Route path="/maps/sold-projects" element={<Auth><Maps /></Auth>} />
+            <Route path="/time-sheet" element={<Auth><TimeSheet /></Auth>} />
             <Route path="/benbox" element={<Navigate to="/maps" replace />} />
             <Route path="/faq" element={<Navigate to="/maps" replace />} />
             <Route path="/approve-concept/:projectId" element={<ApproveConcept />} />
             <Route path="/colours-portal/:projectId" element={<ColoursPortal />} />
             <Route path="/3d-vis-portal/:projectId" element={<ThreeDVisPortal />} />
-            <Route path="/portal" element={<PortalProjects />} />
-            <Route path="/portal/projects/:token" element={<ProjectPage />} />
+            <Route path="/portal" element={<Auth><PortalProjects /></Auth>} />
+            <Route path="/portal/projects/:token" element={<Auth><ProjectPage /></Auth>} />
           </>
         )}
       </Routes>

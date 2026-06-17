@@ -1,26 +1,71 @@
 const API_URL = "";
 
+const AUTH_USER_ID_KEY = "loggedInUserId";
+const AUTH_PASSWORD_TYPE_KEY = "passwordType";
+
+function getAuthStorage() {
+  return sessionStorage;
+}
+
 /**
- * Get the logged-in user ID from localStorage
+ * Get the logged-in user ID from session storage.
  */
 export function getLoggedInUserId() {
-  return localStorage.getItem("loggedInUserId");
+  return getAuthStorage().getItem(AUTH_USER_ID_KEY);
 }
 
 /**
- * Get the password type used during login (global or admin)
+ * Get the password type used during login (global or admin).
  */
 export function getPasswordType() {
-  return localStorage.getItem("passwordType") || "global";
+  return getAuthStorage().getItem(AUTH_PASSWORD_TYPE_KEY) || "global";
 }
 
 /**
- * Get headers with admin authentication info for API requests
+ * Whether the current browser tab has an active login session.
+ */
+export function isAuthenticated() {
+  return Boolean(getLoggedInUserId());
+}
+
+/**
+ * Store login session for the current browser tab.
+ */
+export function setAuthSession(userId, passwordType) {
+  const storage = getAuthStorage();
+  storage.setItem(AUTH_USER_ID_KEY, String(userId));
+  storage.setItem(AUTH_PASSWORD_TYPE_KEY, passwordType || "global");
+  // Clear legacy persistent login from older versions.
+  try {
+    localStorage.removeItem(AUTH_USER_ID_KEY);
+    localStorage.removeItem(AUTH_PASSWORD_TYPE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Clear the current login session.
+ */
+export function clearAuthSession() {
+  const storage = getAuthStorage();
+  storage.removeItem(AUTH_USER_ID_KEY);
+  storage.removeItem(AUTH_PASSWORD_TYPE_KEY);
+  try {
+    localStorage.removeItem(AUTH_USER_ID_KEY);
+    localStorage.removeItem(AUTH_PASSWORD_TYPE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Get headers with admin authentication info for API requests.
  */
 export function getApiHeaders(additionalHeaders = {}) {
   const userId = getLoggedInUserId();
   const passwordType = getPasswordType();
-  
+
   return {
     "Content-Type": "application/json",
     "X-User-Id": userId || "",
@@ -30,41 +75,17 @@ export function getApiHeaders(additionalHeaders = {}) {
 }
 
 /**
- * Check if running in development mode (localhost:5173 or LAN IP:5173)
- * When using the dev server via WiFi/LAN (e.g. 192.168.x.x:5173), treat as dev so admin buttons work.
- */
-export function isDevelopmentMode() {
-  const hostname = window.location.hostname;
-  const port = window.location.port;
-  if (hostname === 'localhost' && port === '5173') return true;
-  // Private IPv4 (e.g. 192.168.x.x, 10.x.x.x) on Vite dev port = same dev server
-  const isPrivateIP = /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/.test(hostname);
-  return isPrivateIP && port === '5173';
-}
-
-/**
- * Check if the logged-in user has Admin position AND logged in with admin password
- * Returns a promise that resolves to true only if:
- * 1. User has "Admin" position, AND
- * 2. User logged in with admin password (not global password)
- * 
- * In development mode (localhost:5173), always returns true for full admin access
+ * Check if the logged-in user has Admin position AND logged in with admin access.
  */
 export async function isUserAdmin() {
-  // In development mode, always grant admin access
-  if (isDevelopmentMode()) {
-    return true;
-  }
-
   const userId = getLoggedInUserId();
   if (!userId) {
     return false;
   }
 
-  // Check if user logged in with admin password
   const passwordType = getPasswordType();
   if (passwordType !== "admin") {
-    return false; // Even if user has Admin position, they need admin password for full access
+    return false;
   }
 
   try {
@@ -73,15 +94,13 @@ export async function isUserAdmin() {
       return false;
     }
     const users = await response.json();
-    const user = users.find((u) => u.id === parseInt(userId));
-    
+    const user = users.find((u) => u.id === parseInt(userId, 10));
+
     if (!user || !user.positions || !Array.isArray(user.positions)) {
       return false;
     }
 
-    // Check if user has "Admin" position AND logged in with admin password
-    const hasAdminPosition = user.positions.some((position) => position.name === "Admin");
-    return hasAdminPosition && passwordType === "admin";
+    return user.positions.some((position) => position.name === "Admin");
   } catch (error) {
     console.error("Error checking admin status:", error);
     return false;

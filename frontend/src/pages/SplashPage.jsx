@@ -1,91 +1,29 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import logo from "../images/logo.png";
+import { setAuthSession } from "../utils/auth";
 
 const MONUMENT = "#323233";
-const LIGHT_MONUMENT = "#42464d"; // More blue and slightly lighter version of monument
+const LIGHT_MONUMENT = "#42464d";
 const WHITE = "#fff";
 const API_URL = "";
 
 export default function SplashPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [users, setUsers] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(true);
-  const [globalPassword, setGlobalPassword] = useState(null);
-  const [adminPassword, setAdminPassword] = useState(null);
-  const [checkingPassword, setCheckingPassword] = useState(false);
-
-  // Check if running in development (localhost:5173)
-  const isDevelopment = window.location.hostname === 'localhost' && window.location.port === '5173';
+  const [loggingIn, setLoggingIn] = useState(false);
 
   useEffect(() => {
-    // Check if already logged in
-    const loggedInUserId = localStorage.getItem("loggedInUserId");
-    if (loggedInUserId) {
-      // Already logged in, redirect to projects
-      navigate("/projects");
-      return;
-    }
-
-    async function autoLoginDev() {
-      try {
-        // Fetch users to find an admin
-        const response = await fetch(`${API_URL}/api/users`);
-        if (!response.ok) {
-          // If API fails, still set dev credentials and continue
-          console.warn("Failed to fetch users, using dev fallback");
-          localStorage.setItem("loggedInUserId", "1"); // Fallback user ID
-          localStorage.setItem("passwordType", "admin");
-          navigate("/projects");
-          return;
-        }
-        const usersData = await response.json();
-        setUsers(usersData);
-
-        // Find first admin user, or first user if no admin exists
-        const adminUser = usersData.find((u) => 
-          u.positions && 
-          Array.isArray(u.positions) && 
-          u.positions.some((p) => p.name === "Admin")
-        ) || usersData[0];
-
-        if (adminUser) {
-          // Auto-login as admin in dev mode
-          localStorage.setItem("loggedInUserId", adminUser.id.toString());
-          localStorage.setItem("passwordType", "admin"); // Always use admin password type in dev
-          navigate("/projects");
-        } else {
-          // No users found, but in dev mode we still want to proceed
-          // Use a fallback user ID
-          console.warn("No users found, using dev fallback");
-          localStorage.setItem("loggedInUserId", "1"); // Fallback user ID
-          localStorage.setItem("passwordType", "admin");
-          navigate("/projects");
-        }
-      } catch (error) {
-        console.error("Error in dev auto-login:", error);
-        // Even on error, set dev credentials so user can still access
-        localStorage.setItem("loggedInUserId", "1"); // Fallback user ID
-        localStorage.setItem("passwordType", "admin");
-        navigate("/projects");
-      }
-    }
-
-    if (isDevelopment) {
-      // Auto-login in development mode
-      autoLoginDev();
-    } else {
-      // Normal login flow for production
-      fetchUsers();
-      fetchPasswords();
-    }
-  }, [isDevelopment, navigate]);
+    fetchUsers();
+  }, []);
 
   async function fetchUsers() {
     try {
-      const response = await fetch(`${API_URL}/api/users`);
+      const response = await fetch(`${API_URL}/api/users/names`);
       if (!response.ok) {
         throw new Error("Failed to fetch users");
       }
@@ -98,92 +36,40 @@ export default function SplashPage() {
     }
   }
 
-  async function fetchPasswords() {
-    try {
-      const response = await fetch(`${API_URL}/api/settings`);
-      if (!response.ok) {
-        throw new Error("Failed to fetch settings");
-      }
-      const data = await response.json();
-      setGlobalPassword(data.global_password || null);
-      setAdminPassword(data.admin_password || null);
-    } catch (error) {
-      console.error("Error fetching passwords:", error);
-    }
-  }
-
   async function handleLogin() {
     if (!selectedUserId || !password) {
       alert("Please select a user and enter a password");
       return;
     }
 
-    // Get the selected user to check if they have Admin position
-    const selectedUser = users.find((u) => u.id === parseInt(selectedUserId));
-    const isAdminUser = selectedUser && 
-                       selectedUser.positions && 
-                       Array.isArray(selectedUser.positions) &&
-                       selectedUser.positions.some((p) => p.name === "Admin");
+    setLoggingIn(true);
+    try {
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: parseInt(selectedUserId, 10),
+          password,
+        }),
+      });
 
-    let passwordType = "global"; // Track which password was used
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Login failed" }));
+        alert(errorData.error || "Incorrect password");
+        return;
+      }
 
-    // If user has Admin position, they must use admin password for full access
-    if (isAdminUser) {
-      if (adminPassword && adminPassword.trim() !== "") {
-        if (password === adminPassword) {
-          passwordType = "admin"; // Admin password used - full access
-        } else if (globalPassword && globalPassword.trim() !== "" && password === globalPassword) {
-          passwordType = "global"; // Global password used - restricted access
-        } else {
-          alert("Incorrect password");
-          return;
-        }
-      } else if (globalPassword && globalPassword.trim() !== "") {
-        // No admin password set, but global password exists
-        if (password !== globalPassword) {
-          alert("Incorrect password");
-          return;
-        }
-        passwordType = "global";
-      }
-    } else {
-      // Non-admin user - must use global password
-      if (globalPassword && globalPassword.trim() !== "") {
-        if (password !== globalPassword) {
-          alert("Incorrect password");
-          return;
-        }
-      } else {
-        // If no global password is set, allow login (for initial setup)
-      }
+      const data = await response.json();
+      setAuthSession(data.userId, data.passwordType);
+
+      const redirectTo = location.state?.from?.pathname || "/projects";
+      navigate(redirectTo, { replace: true });
+    } catch (error) {
+      console.error("Error logging in:", error);
+      alert("Login failed. Please try again.");
+    } finally {
+      setLoggingIn(false);
     }
-
-    // Store the logged-in user ID and password type in localStorage
-    localStorage.setItem("loggedInUserId", selectedUserId);
-    localStorage.setItem("passwordType", passwordType);
-
-    // Navigate to projects page
-    navigate("/projects");
-  }
-
-  // In development, show a brief loading state while auto-login runs
-  if (isDevelopment && loading) {
-    return (
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: LIGHT_MONUMENT,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: MONUMENT,
-          fontSize: "1.1rem",
-        }}
-      >
-        Loading…
-      </div>
-    );
   }
 
   return (
@@ -199,31 +85,19 @@ export default function SplashPage() {
         paddingTop: "calc(15% - 500px)",
       }}
     >
-      <Link to="/projects" style={{ cursor: "pointer", display: "inline-block" }}>
-        <img
-          src={logo}
-          alt="SGF Logo"
-          style={{
-            maxWidth: "1000px",
-            maxHeight: "80%",
-            objectFit: "contain",
-            transition: "opacity 0.3s, transform 0.3s",
-            position: "relative",
-            zIndex: 1,
-            marginTop: "-50px",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.opacity = "0.8";
-            e.currentTarget.style.transform = "scale(1.05)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.opacity = "1";
-            e.currentTarget.style.transform = "scale(1)";
-          }}
-        />
-      </Link>
-      
-      {/* Login Form */}
+      <img
+        src={logo}
+        alt="SGF Logo"
+        style={{
+          maxWidth: "1000px",
+          maxHeight: "80%",
+          objectFit: "contain",
+          position: "relative",
+          zIndex: 1,
+          marginTop: "-50px",
+        }}
+      />
+
       <div
         style={{
           display: "flex",
@@ -252,7 +126,7 @@ export default function SplashPage() {
           <select
             value={selectedUserId}
             onChange={(e) => setSelectedUserId(e.target.value)}
-            disabled={loading}
+            disabled={loading || loggingIn}
             style={{
               width: "100%",
               padding: "10px 12px",
@@ -262,10 +136,12 @@ export default function SplashPage() {
               color: MONUMENT,
               background: WHITE,
               boxSizing: "border-box",
-              cursor: loading ? "not-allowed" : "pointer",
+              cursor: loading || loggingIn ? "not-allowed" : "pointer",
             }}
           >
-            <option value="">Select user...</option>
+            <option value="">
+              {loading ? "Loading..." : users.length === 0 ? "No users" : "Select user..."}
+            </option>
             {users.map((user) => (
               <option key={user.id} value={user.id}>
                 {user.name}
@@ -296,6 +172,7 @@ export default function SplashPage() {
               }
             }}
             placeholder="Enter password"
+            disabled={loggingIn}
             style={{
               width: "100%",
               padding: "10px 12px",
@@ -313,7 +190,7 @@ export default function SplashPage() {
         <button
           type="button"
           onClick={handleLogin}
-          disabled={!selectedUserId || !password}
+          disabled={!selectedUserId || !password || loggingIn}
           style={{
             width: "100%",
             maxWidth: "300px",
@@ -321,14 +198,14 @@ export default function SplashPage() {
             fontSize: "1rem",
             fontWeight: 500,
             color: WHITE,
-            background: !selectedUserId || !password ? "#666" : MONUMENT,
+            background: !selectedUserId || !password || loggingIn ? "#666" : MONUMENT,
             border: "none",
             borderRadius: "8px",
-            cursor: !selectedUserId || !password ? "not-allowed" : "pointer",
+            cursor: !selectedUserId || !password || loggingIn ? "not-allowed" : "pointer",
             transition: "background 0.17s",
           }}
         >
-          Enter
+          {loggingIn ? "Signing in…" : "Enter"}
         </button>
       </div>
     </div>

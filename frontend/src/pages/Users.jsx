@@ -13,6 +13,7 @@ export default function Users() {
   const [newUserName, setNewUserName] = useState("");
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserPhone, setNewUserPhone] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("admin");
   const [selectedPositionIds, setSelectedPositionIds] = useState([]);
   const [primaryPositionId, setPrimaryPositionId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -53,6 +54,12 @@ export default function Users() {
   }
 
   function handleNewUser() {
+    setNewUserName("");
+    setNewUserEmail("");
+    setNewUserPhone("");
+    setNewUserPassword("admin");
+    setSelectedPositionIds([]);
+    setPrimaryPositionId(null);
     setShowNewUserModal(true);
   }
 
@@ -66,6 +73,7 @@ export default function Users() {
     setNewUserName(user.name || "");
     setNewUserEmail(user.email || "");
     setNewUserPhone(user.phone || "");
+    setNewUserPassword(user.password || "admin");
     // Set primary position from user data
     setPrimaryPositionId(user.primary_position_id || null);
     // Also set selectedPositionIds to include all positions (for backward compatibility)
@@ -89,6 +97,7 @@ export default function Users() {
     setNewUserName("");
     setNewUserEmail("");
     setNewUserPhone("");
+    setNewUserPassword("admin");
     setSelectedPositionIds([]);
     setPrimaryPositionId(null);
   }
@@ -98,6 +107,7 @@ export default function Users() {
     setNewUserName("");
     setNewUserEmail("");
     setNewUserPhone("");
+    setNewUserPassword("admin");
     setSelectedPositionIds([]);
     setPrimaryPositionId(null);
   }
@@ -206,6 +216,7 @@ export default function Users() {
           name: newUserName.trim(),
           email: newUserEmail.trim() || null,
           phone: newUserPhone.trim() || null,
+          password: newUserPassword.trim() || "admin",
           // Include primary position in positionIds for backward compatibility
           positionIds: primaryPositionId ? [primaryPositionId, ...selectedPositionIds.filter(id => id !== primaryPositionId)] : selectedPositionIds,
           primaryPositionId: primaryPositionId || null,
@@ -292,6 +303,7 @@ export default function Users() {
           name: newUserName.trim(),
           email: newUserEmail.trim() || null,
           phone: newUserPhone.trim() || null,
+          password: newUserPassword.trim() || "admin",
           // Include primary position in positionIds for backward compatibility
           positionIds: primaryPositionId ? [primaryPositionId, ...selectedPositionIds.filter(id => id !== primaryPositionId)] : selectedPositionIds,
           primaryPositionId: primaryPositionId || null,
@@ -734,6 +746,25 @@ export default function Users() {
               </div>
             </div>
 
+            {/* Password */}
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                Password
+              </div>
+              <div style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: "8px",
+                border: "none",
+                fontSize: "1rem",
+                color: MONUMENT,
+                background: WHITE,
+                boxSizing: "border-box",
+              }}>
+                {selectedUser.password || "admin"}
+              </div>
+            </div>
+
             {/* Line 3: Positions */}
             <div style={{ marginBottom: "16px" }}>
               <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
@@ -907,6 +938,37 @@ export default function Users() {
                 value={newUserPhone}
                 onChange={(e) => setNewUserPhone(e.target.value.replace(/\D/g, ""))}
                 placeholder="Enter phone number"
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "none",
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: "#f0f0f0",
+                  boxSizing: "border-box",
+                }}
+                autoComplete="off"
+              />
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  color: "#32323399",
+                  marginBottom: "6px",
+                  fontWeight: 500,
+                }}
+              >
+                Password
+              </label>
+              <input
+                type="text"
+                value={newUserPassword}
+                onChange={(e) => setNewUserPassword(e.target.value)}
+                placeholder="Enter password"
                 style={{
                   width: "100%",
                   padding: "10px 12px",
@@ -1202,6 +1264,37 @@ export default function Users() {
                 value={newUserPhone}
                 onChange={(e) => setNewUserPhone(e.target.value.replace(/\D/g, ""))}
                 placeholder="Enter phone number"
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "none",
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: "#f0f0f0",
+                  boxSizing: "border-box",
+                }}
+                autoComplete="off"
+              />
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  color: "#32323399",
+                  marginBottom: "6px",
+                  fontWeight: 500,
+                }}
+              >
+                Password
+              </label>
+              <input
+                type="text"
+                value={newUserPassword}
+                onChange={(e) => setNewUserPassword(e.target.value)}
+                placeholder="Enter password"
                 style={{
                   width: "100%",
                   padding: "10px 12px",

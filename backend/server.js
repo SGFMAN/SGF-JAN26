@@ -1053,6 +1053,8 @@ async function ensureSchema() {
     await ensureMapQuoteItemsTable(pool);
     await ensureMapFloorPlansDollarValueColumn(pool);
     await addMissingColumns(pool, "projects", ["construction_payments_paid"]);
+    await addMissingColumns(pool, "users", ["password"]);
+    await pool.query(`UPDATE users SET password = 'admin' WHERE password IS NULL OR password = ''`);
     return;
   }
   console.log(`Applying schema migrations (target ${SCHEMA_VERSION})…`);
@@ -1111,6 +1113,23 @@ async function ensureSchema() {
     `);
   } catch (e) {
     console.log(`Column primary_position_id might already exist:`, e.message);
+  }
+  // Add password column if it doesn't exist (per-user login)
+  try {
+    await pool.query(`
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name='users' AND column_name='password'
+        ) THEN
+          ALTER TABLE users ADD COLUMN password TEXT DEFAULT 'admin';
+        END IF;
+      END $$;
+    `);
+    await pool.query(`UPDATE users SET password = 'admin' WHERE password IS NULL OR password = ''`);
+  } catch (e) {
+    console.log(`Column password might already exist:`, e.message);
   }
   // Create positions table
   await pool.query(`
@@ -3256,12 +3275,32 @@ app.post("/api/projects/:id/verify-drawings-job-folder", async (req, res) => {
   }
 });
 
-// List users
-app.get("/api/users", async (req, res) => {
+// User names for login dropdown (no passwords)
+app.get("/api/users/names", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const usersResult = await pool.query(
-      `SELECT u.id, u.name, u.email, u.phone, u.primary_position_id, u.created_at, u.updated_at,
+      `SELECT id, name FROM users ORDER BY name ASC, id ASC`
+    );
+    res.json(usersResult.rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Login with per-user password
+app.post("/api/auth/login", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+
+  const { userId, password } = req.body || {};
+  const id = Number(userId);
+  if (!Number.isFinite(id) || password == null || String(password).length === 0) {
+    return res.status(400).json({ error: "userId and password required" });
+  }
+
+  try {
+    const userResult = await pool.query(
+      `SELECT u.id, u.name, u.password, u.primary_position_id,
               COALESCE(
                 json_agg(json_build_object('id', p.id, 'name', p.name) ORDER BY p.name)
                   FILTER (WHERE p.id IS NOT NULL),
@@ -3270,7 +3309,57 @@ app.get("/api/users", async (req, res) => {
        FROM users u
        LEFT JOIN user_positions up ON up.user_id = u.id
        LEFT JOIN positions p ON p.id = up.position_id
-       GROUP BY u.id, u.name, u.email, u.phone, u.primary_position_id, u.created_at, u.updated_at
+       WHERE u.id = $1
+       GROUP BY u.id, u.name, u.password, u.primary_position_id`,
+      [id]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({ error: "Incorrect password" });
+    }
+
+    const user = userResult.rows[0];
+    const storedPassword = user.password || "admin";
+    if (String(password) !== storedPassword) {
+      return res.status(401).json({ error: "Incorrect password" });
+    }
+
+    const positions = Array.isArray(user.positions) ? user.positions : [];
+    const hasAdminPosition = positions.some((position) => position.name === "Admin");
+
+    res.json({
+      userId: user.id,
+      passwordType: hasAdminPosition ? "admin" : "global",
+      user: {
+        id: user.id,
+        name: user.name,
+        primary_position_id: user.primary_position_id,
+        positions,
+      },
+    });
+  } catch (e) {
+    console.error("Error during login:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// List users
+app.get("/api/users", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  try {
+    const usersResult = await pool.query(
+      `SELECT u.id, u.name, u.email, u.phone, u.primary_position_id,
+              COALESCE(u.password, 'admin') AS password,
+              u.created_at, u.updated_at,
+              COALESCE(
+                json_agg(json_build_object('id', p.id, 'name', p.name) ORDER BY p.name)
+                  FILTER (WHERE p.id IS NOT NULL),
+                '[]'::json
+              ) AS positions
+       FROM users u
+       LEFT JOIN user_positions up ON up.user_id = u.id
+       LEFT JOIN positions p ON p.id = up.position_id
+       GROUP BY u.id, u.name, u.email, u.phone, u.primary_position_id, u.password, u.created_at, u.updated_at
        ORDER BY u.name ASC, u.id ASC`
     );
     res.json(usersResult.rows);
@@ -3285,20 +3374,21 @@ app.get("/api/users", async (req, res) => {
 app.post("/api/users", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const { name, email, phone, positionIds, primaryPositionId } = req.body || {};
+    const { name, email, phone, positionIds, primaryPositionId, password } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
 
     await pool.query('BEGIN');
     
     // Create the user
     const userResult = await pool.query(
-      `INSERT INTO users (name, email, phone, primary_position_id) 
-       VALUES ($1, $2, $3, $4) RETURNING *`,
+      `INSERT INTO users (name, email, phone, primary_position_id, password) 
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
       [
         name.trim(),
         email ? email.trim() : null,
         phone ? phone.trim() : null,
         primaryPositionId ? parseInt(primaryPositionId) : null,
+        password && String(password).trim() !== "" ? String(password) : "admin",
       ]
     );
 
@@ -3320,7 +3410,9 @@ app.post("/api/users", async (req, res) => {
 
     // Fetch user with positions
     const userWithPositionsResult = await pool.query(
-      `SELECT u.id, u.name, u.email, u.phone, u.primary_position_id, u.created_at, u.updated_at 
+      `SELECT u.id, u.name, u.email, u.phone, u.primary_position_id,
+              COALESCE(u.password, 'admin') AS password,
+              u.created_at, u.updated_at 
        FROM users u WHERE u.id = $1`,
       [userId]
     );
@@ -3365,7 +3457,7 @@ app.put("/api/users/:id", async (req, res) => {
   }
 
   try {
-    const { name, email, phone, positionIds, primaryPositionId } = req.body || {};
+    const { name, email, phone, positionIds, primaryPositionId, password } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
 
     await pool.query('BEGIN');
@@ -3373,14 +3465,17 @@ app.put("/api/users/:id", async (req, res) => {
     // Update the user
     const userResult = await pool.query(
       `UPDATE users 
-       SET name = $1, email = $2, phone = $3, primary_position_id = $4, updated_at = NOW()
-       WHERE id = $5 
+       SET name = $1, email = $2, phone = $3, primary_position_id = $4,
+           password = COALESCE($5, password, 'admin'),
+           updated_at = NOW()
+       WHERE id = $6 
        RETURNING *`,
       [
         name.trim(),
         email ? email.trim() : null,
         phone ? phone.trim() : null,
         primaryPositionId ? parseInt(primaryPositionId) : null,
+        password != null && String(password).trim() !== "" ? String(password) : null,
         id,
       ]
     );
