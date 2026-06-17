@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import NewProject from "./NewProject_1_Address";
 import NewProject2 from "./NewProject_2_ClientDetails";
 import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
@@ -78,9 +78,23 @@ function hotlistStreamGroup(item) {
   return "unassigned";
 }
 
+async function resolveAccessTokenFromProjectList(projectId) {
+  if (!projectId) return null;
+  try {
+    const response = await fetch(`${API_URL}/api/projects`);
+    if (!response.ok) return null;
+    const projects = await response.json();
+    const match = projects.find((p) => Number(p.id) === Number(projectId));
+    return match?.access_token || null;
+  } catch {
+    return null;
+  }
+}
+
 export default function Hotlist() {
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const location = useLocation();
+  const navigate = useNavigate();
   const [hotlistItems, setHotlistItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -103,6 +117,8 @@ export default function Hotlist() {
   const [currentModal, setCurrentModal] = useState(1); // New: 1–3 (address, client, stream). Edit: 1–2. Sold: 3–7 (ProjectCost→…)
   const [createdProjectAccessToken, setCreatedProjectAccessToken] = useState(null);
   const [createdProjectForEmail, setCreatedProjectForEmail] = useState(null);
+  /** Stable token for post–sold-flow navigation (survives modal state resets). */
+  const createdProjectTokenRef = useRef(null);
   const [agreementSentItems, setAgreementSentItems] = useState(new Set());
   const [formData, setFormData] = useState({
     street: "",
@@ -337,10 +353,28 @@ export default function Hotlist() {
     }
   }
 
+  async function goToCreatedProjectAfterSoldFlow(tokenHint, projectIdHint) {
+    let token = tokenHint || null;
+    if (!token && projectIdHint) {
+      token = await resolveAccessTokenFromProjectList(projectIdHint);
+    }
+    if (token) {
+      navigate(projectPath(token));
+      return;
+    }
+    console.warn("Sold flow finished but no project access token — staying on Hotlist");
+    await fetchHotlist();
+  }
+
   function handleModalClose() {
     const wasSoldFlow = isSoldFlowOpen;
-    const projectToken = createdProjectAccessToken;
-    
+    const tokenHint =
+      createdProjectTokenRef.current ||
+      createdProjectAccessToken ||
+      createdProjectForEmail?.access_token ||
+      null;
+    const projectIdHint = createdProjectForEmail?.id ?? null;
+
     setIsNewItemOpen(false);
     setIsEditItemOpen(false);
     setIsSoldFlowOpen(false);
@@ -363,16 +397,14 @@ export default function Hotlist() {
       proposalFile: null,
       customDeposit: "",
     });
-    
-    // Navigate to project if we just completed a sold flow
-    if (wasSoldFlow && projectToken) {
-      setTimeout(() => {
-        window.location.href = projectPath(projectToken);
-      }, 100);
-    }
-    
+
     setCreatedProjectAccessToken(null);
     setCreatedProjectForEmail(null);
+    createdProjectTokenRef.current = null;
+
+    if (wasSoldFlow) {
+      void goToCreatedProjectAfterSoldFlow(tokenHint, projectIdHint);
+    }
   }
 
   async function handleCreateHotlistItem() {
@@ -806,11 +838,14 @@ export default function Hotlist() {
       }
 
       await fetchHotlist();
-      setCreatedProjectAccessToken(newProject.access_token);
+      const accessToken = newProject.access_token || null;
+      createdProjectTokenRef.current = accessToken;
+      setCreatedProjectAccessToken(accessToken);
 
       // Merge form data into project so email modal (step 6) has deposit, project_cost, etc.
       const projectForEmail = {
         ...newProject,
+        access_token: accessToken || newProject.access_token,
         project_cost: formData.projectCost || newProject.project_cost,
         deposit: formData.deposit || newProject.deposit,
         stream: formData.stream || newProject.stream,
@@ -1957,7 +1992,12 @@ export default function Hotlist() {
               onNo={async () => {
                 try {
                   const project = await handleCreateProjectFromSold(formData);
-                  if (project) setCreatedProjectForEmail(project);
+                  if (project) {
+                    setCreatedProjectForEmail(project);
+                    if (project.access_token) {
+                      createdProjectTokenRef.current = project.access_token;
+                    }
+                  }
                   setCurrentModal(6);
                 } catch (e) {
                   // Error already shown in handleCreateProjectFromSold
@@ -1973,7 +2013,12 @@ export default function Hotlist() {
               onFormDataChange={handleFormDataChange}
               onBack={() => setCurrentModal(4)}
               onNext={(project) => {
-                if (project) setCreatedProjectForEmail(project);
+                if (project) {
+                  setCreatedProjectForEmail(project);
+                  if (project.access_token) {
+                    createdProjectTokenRef.current = project.access_token;
+                  }
+                }
                 setCurrentModal(6);
               }}
               onCreate={handleCreateProjectFromSold}

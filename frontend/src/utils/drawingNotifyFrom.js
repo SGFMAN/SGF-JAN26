@@ -71,6 +71,8 @@ function drawingFieldKeyForStreamRow(streamKey, vicStyleKey) {
     designToSalespersonFromEmail: "qldDesignToSalespersonFromEmail",
     designToSalespersonToEmail: "qldDesignToSalespersonToEmail",
     designToSalespersonToEmail2: "qldDesignToSalespersonToEmail2",
+    designToSalespersonConstructionToEmail: "qldDesignToSalespersonConstructionToEmail",
+    designToSalespersonConstructionToEmail2: "qldDesignToSalespersonConstructionToEmail2",
     designNotesFromEmail: "qldDesignNotesFromEmail",
     designNotesToEmail: "qldDesignNotesToEmail",
     salesNotesFromEmail: "qldSalesNotesFromEmail",
@@ -259,7 +261,9 @@ function resolveDesignToSalespersonStreamRowKey(project, settings) {
       d &&
       (drawingValue(d, key, "designToSalespersonFromEmail") ||
         drawingValue(d, key, "designToSalespersonToEmail") ||
-        drawingValue(d, key, "designToSalespersonToEmail2"))
+        drawingValue(d, key, "designToSalespersonToEmail2") ||
+        drawingValue(d, key, "designToSalespersonConstructionToEmail") ||
+        drawingValue(d, key, "designToSalespersonConstructionToEmail2"))
     ) {
       return key;
     }
@@ -278,7 +282,9 @@ function resolveDesignToSalespersonStreamRowKey(project, settings) {
     const hasRouting =
       drawingValue(d, k, "designToSalespersonFromEmail") ||
       drawingValue(d, k, "designToSalespersonToEmail") ||
-      drawingValue(d, k, "designToSalespersonToEmail2");
+      drawingValue(d, k, "designToSalespersonToEmail2") ||
+      drawingValue(d, k, "designToSalespersonConstructionToEmail") ||
+      drawingValue(d, k, "designToSalespersonConstructionToEmail2");
     if (!hasRouting) continue;
 
     const lk = k.toLowerCase();
@@ -301,7 +307,13 @@ const DESIGN_TO_SALESPERSON_FIELD_KEYS = new Set([
   "designToSalespersonFromEmail",
   "designToSalespersonToEmail",
   "designToSalespersonToEmail2",
+  "designToSalespersonConstructionToEmail",
+  "designToSalespersonConstructionToEmail2",
 ]);
+
+export function isConstructionPhaseProject(project) {
+  return String(project?.status ?? "").trim() === "Construction Phase";
+}
 
 /** Per-stream-row `drawings` values only. */
 function getDrawingFieldFromStreamRows(settings, project, vicStyleKey) {
@@ -335,11 +347,19 @@ export function resolveDesignToSalespersonFrom(settings, project, _templateFrom)
 
 /**
  * To recipients for Drawings Upload (primary + optional second To on VIC/QLD stream row `drawings`).
+ * Uses [DESIGN] or [CONSTRUCTION] To fields based on project status.
  */
 export function resolveDesignToSalespersonToEmails(settings, project, _templateToEmails) {
-  const primary = parseSettingsToEmailList(getDrawingFieldFromStreamRows(settings, project, "designToSalespersonToEmail"));
+  const construction = isConstructionPhaseProject(project);
+  const primaryKey = construction
+    ? "designToSalespersonConstructionToEmail"
+    : "designToSalespersonToEmail";
+  const secondaryKey = construction
+    ? "designToSalespersonConstructionToEmail2"
+    : "designToSalespersonToEmail2";
+  const primary = parseSettingsToEmailList(getDrawingFieldFromStreamRows(settings, project, primaryKey));
   const secondary = parseSettingsToEmailList(
-    getDrawingFieldFromStreamRows(settings, project, "designToSalespersonToEmail2")
+    getDrawingFieldFromStreamRows(settings, project, secondaryKey)
   );
   return mergeUniqueEmails(primary, secondary);
 }

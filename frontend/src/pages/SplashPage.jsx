@@ -166,9 +166,24 @@ export default function SplashPage() {
     navigate("/projects");
   }
 
-  // In development, don't show login screen (auto-login handles it)
+  // In development, show a brief loading state while auto-login runs
   if (isDevelopment && loading) {
-    return null; // Or a loading spinner if you prefer
+    return (
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: LIGHT_MONUMENT,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: MONUMENT,
+          fontSize: "1.1rem",
+        }}
+      >
+        Loading…
+      </div>
+    );
   }
 
   return (

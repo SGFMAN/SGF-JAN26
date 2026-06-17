@@ -114,6 +114,10 @@ function drawingsUploadFieldKeys(fieldGroup) {
       to2Vic: "designToSalespersonToEmail2",
       toQld: "qldDesignToSalespersonToEmail",
       to2Qld: "qldDesignToSalespersonToEmail2",
+      toConstructionVic: "designToSalespersonConstructionToEmail",
+      toConstruction2Vic: "designToSalespersonConstructionToEmail2",
+      toConstructionQld: "qldDesignToSalespersonConstructionToEmail",
+      toConstruction2Qld: "qldDesignToSalespersonConstructionToEmail2",
     };
   }
   if (fieldGroup === "designNotes") {
@@ -269,8 +273,12 @@ function defaultDrawingsState() {
   return {
     designToSalespersonFromEmail: "",
     designToSalespersonToEmail: "",
-    /** VIC: second Drawings Upload To slot (merged with primary at send time). */
+    /** VIC: second Drawings Upload To slot [DESIGN] (merged with primary at send time). */
     designToSalespersonToEmail2: "",
+    /** VIC: Drawings Upload To [CONSTRUCTION] */
+    designToSalespersonConstructionToEmail: "",
+    /** VIC: Drawings Upload To (additional) [CONSTRUCTION] */
+    designToSalespersonConstructionToEmail2: "",
     salespersonToClientFromEmail: "",
     sendToClients: false,
     extraEmail1: false,
@@ -288,8 +296,12 @@ function defaultDrawingsState() {
     qldExtraEmail3Address: "",
     qldDesignToSalespersonFromEmail: "",
     qldDesignToSalespersonToEmail: "",
-    /** QLD: second Drawings Upload To slot (merged with primary at send time). */
+    /** QLD: second Drawings Upload To slot [DESIGN] (merged with primary at send time). */
     qldDesignToSalespersonToEmail2: "",
+    /** QLD: Drawings Upload To [CONSTRUCTION] */
+    qldDesignToSalespersonConstructionToEmail: "",
+    /** QLD: Drawings Upload To (additional) [CONSTRUCTION] */
+    qldDesignToSalespersonConstructionToEmail2: "",
     qldSalespersonToClientFromEmail: "",
     designNotesFromEmail: "",
     designNotesToEmail: "",
@@ -368,6 +380,14 @@ function normalizeStreamSettingsMap(raw) {
     }
     if (!row.drawings.qldDesignToSalespersonToEmail2) {
       row.drawings.qldDesignToSalespersonToEmail2 = row.drawings.designToSalespersonToEmail2 || "";
+    }
+    if (!row.drawings.qldDesignToSalespersonConstructionToEmail) {
+      row.drawings.qldDesignToSalespersonConstructionToEmail =
+        row.drawings.designToSalespersonConstructionToEmail || "";
+    }
+    if (!row.drawings.qldDesignToSalespersonConstructionToEmail2) {
+      row.drawings.qldDesignToSalespersonConstructionToEmail2 =
+        row.drawings.designToSalespersonConstructionToEmail2 || "";
     }
     if (!row.drawings.qldSalespersonToClientFromEmail) {
       row.drawings.qldSalespersonToClientFromEmail = row.drawings.salespersonToClientFromEmail || "";
@@ -1997,6 +2017,13 @@ export default function StreamSettings() {
                                           if (!K) return null;
                                           const fromKey = isQld ? K.fromQld : K.fromVic;
                                           const toKey = isQld ? K.toQld : K.toVic;
+                                          const to2Key = isQld ? K.to2Qld : K.to2Vic;
+                                          const toConstructionKey = isQld
+                                            ? K.toConstructionQld
+                                            : K.toConstructionVic;
+                                          const toConstruction2Key = isQld
+                                            ? K.toConstruction2Qld
+                                            : K.toConstruction2Vic;
                                           return (
                                             <>
                                               <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -2015,7 +2042,7 @@ export default function StreamSettings() {
                                               </div>
                                               <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                                 <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                                  {K.label} — To
+                                                  {K.label} — To [DESIGN]
                                                 </span>
                                                 <DrawingNotifySmtpSelect
                                                   smtpOptions={smtpSlotEmails}
@@ -2027,33 +2054,47 @@ export default function StreamSettings() {
                                                   onCommit={flushPersist}
                                                 />
                                               </div>
-                                              {!isQld && K.to2Vic ? (
+                                              {to2Key ? (
                                                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                                   <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                                    {K.label} — To (additional)
+                                                    {K.label} — To (additional) [DESIGN]
                                                   </span>
                                                   <DrawingNotifySmtpSelect
                                                     smtpOptions={smtpSlotEmails}
-                                                    value={d[K.to2Vic] || ""}
+                                                    value={d[to2Key] || ""}
                                                     disabled={saving}
                                                     onValueChange={(next) => {
-                                                      updateDrawingText(rowKey, K.to2Vic, next);
+                                                      updateDrawingText(rowKey, to2Key, next);
                                                     }}
                                                     onCommit={flushPersist}
                                                   />
                                                 </div>
                                               ) : null}
-                                              {isQld && K.to2Qld ? (
+                                              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                                <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                                  {K.label} — To [CONSTRUCTION]
+                                                </span>
+                                                <DrawingNotifySmtpSelect
+                                                  smtpOptions={smtpSlotEmails}
+                                                  value={d[toConstructionKey] || ""}
+                                                  disabled={saving}
+                                                  onValueChange={(next) => {
+                                                    updateDrawingText(rowKey, toConstructionKey, next);
+                                                  }}
+                                                  onCommit={flushPersist}
+                                                />
+                                              </div>
+                                              {toConstruction2Key ? (
                                                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                                   <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                                    {K.label} — To (additional)
+                                                    {K.label} — To (additional) [CONSTRUCTION]
                                                   </span>
                                                   <DrawingNotifySmtpSelect
                                                     smtpOptions={smtpSlotEmails}
-                                                    value={d[K.to2Qld] || ""}
+                                                    value={d[toConstruction2Key] || ""}
                                                     disabled={saving}
                                                     onValueChange={(next) => {
-                                                      updateDrawingText(rowKey, K.to2Qld, next);
+                                                      updateDrawingText(rowKey, toConstruction2Key, next);
                                                     }}
                                                     onCommit={flushPersist}
                                                   />

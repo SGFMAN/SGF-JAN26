@@ -168,6 +168,8 @@
   overflow: hidden;
   padding: 8px 10px 10px;
 }
+
+.project-page-mobile__tabs {
   flex-shrink: 0;
   display: flex;
   background: #323233;

@@ -2123,8 +2123,9 @@ export default function Drawings({
       const previewFromResolved = resolveDesignToSalespersonFrom(settingsForPreview, project, "");
 
       if (!previewToResolved.length) {
+        const phaseLabel = project?.status === "Construction Phase" ? "CONSTRUCTION" : "DESIGN";
         alert(
-          "No recipient addresses in Stream Settings → Drawings → Drawings Upload — To. Configure Settings → Email Settings → Streams → Drawings → Drawings Upload for this stream (VIC/QLD column)."
+          `No recipient addresses in Stream Settings → Drawings → Drawings Upload — To [${phaseLabel}]. Configure Settings → Email Settings → Streams → Drawings → Drawings Upload for this stream (VIC/QLD column).`
         );
         return;
       }
