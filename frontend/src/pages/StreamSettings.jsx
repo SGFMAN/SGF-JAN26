@@ -16,6 +16,37 @@ const NEW_PROJECT_SECTION_BLUE = {
   padding: "12px 14px 14px",
   boxSizing: "border-box",
 };
+/** Drawings Upload — grouped field shading (From / Design / Construction). */
+const DRAWINGS_UPLOAD_FROM_GROUP = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "10px",
+  backgroundColor: "#f0f0f2",
+  border: "1px solid #b8b8bc",
+  borderRadius: "10px",
+  padding: "12px 14px",
+  boxSizing: "border-box",
+};
+const DRAWINGS_UPLOAD_DESIGN_GROUP = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "10px",
+  backgroundColor: "#e8f2fc",
+  border: "1px solid #4d93d9",
+  borderRadius: "10px",
+  padding: "12px 14px",
+  boxSizing: "border-box",
+};
+const DRAWINGS_UPLOAD_CONSTRUCTION_GROUP = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "10px",
+  backgroundColor: "#fef3e8",
+  border: "1px solid #e67e22",
+  borderRadius: "10px",
+  padding: "12px 14px",
+  boxSizing: "border-box",
+};
 const API_URL = "";
 
 /** Non-empty `smtp_user_1`…`smtp_user_16` from settings (deduped, sorted). */
@@ -117,9 +148,11 @@ function drawingsUploadFieldKeys(fieldGroup) {
       toConstructionVic: "designToSalespersonConstructionToEmail",
       toConstruction2Vic: "designToSalespersonConstructionToEmail2",
       toConstruction3Vic: "designToSalespersonConstructionToEmail3",
+      toConstruction4Vic: "designToSalespersonConstructionToEmail4",
       toConstructionQld: "qldDesignToSalespersonConstructionToEmail",
       toConstruction2Qld: "qldDesignToSalespersonConstructionToEmail2",
       toConstruction3Qld: "qldDesignToSalespersonConstructionToEmail3",
+      toConstruction4Qld: "qldDesignToSalespersonConstructionToEmail4",
     };
   }
   if (fieldGroup === "designNotes") {
@@ -283,6 +316,8 @@ function defaultDrawingsState() {
     designToSalespersonConstructionToEmail2: "",
     /** VIC: Drawings Upload To (additional 2) [CONSTRUCTION] */
     designToSalespersonConstructionToEmail3: "",
+    /** VIC: Drawings Upload To (additional 3) [CONSTRUCTION] */
+    designToSalespersonConstructionToEmail4: "",
     salespersonToClientFromEmail: "",
     sendToClients: false,
     extraEmail1: false,
@@ -308,6 +343,8 @@ function defaultDrawingsState() {
     qldDesignToSalespersonConstructionToEmail2: "",
     /** QLD: Drawings Upload To (additional 2) [CONSTRUCTION] */
     qldDesignToSalespersonConstructionToEmail3: "",
+    /** QLD: Drawings Upload To (additional 3) [CONSTRUCTION] */
+    qldDesignToSalespersonConstructionToEmail4: "",
     qldSalespersonToClientFromEmail: "",
     designNotesFromEmail: "",
     designNotesToEmail: "",
@@ -398,6 +435,10 @@ function normalizeStreamSettingsMap(raw) {
     if (!row.drawings.qldDesignToSalespersonConstructionToEmail3) {
       row.drawings.qldDesignToSalespersonConstructionToEmail3 =
         row.drawings.designToSalespersonConstructionToEmail3 || "";
+    }
+    if (!row.drawings.qldDesignToSalespersonConstructionToEmail4) {
+      row.drawings.qldDesignToSalespersonConstructionToEmail4 =
+        row.drawings.designToSalespersonConstructionToEmail4 || "";
     }
     if (!row.drawings.qldSalespersonToClientFromEmail) {
       row.drawings.qldSalespersonToClientFromEmail = row.drawings.salespersonToClientFromEmail || "";
@@ -2037,9 +2078,22 @@ export default function StreamSettings() {
                                           const toConstruction3Key = isQld
                                             ? K.toConstruction3Qld
                                             : K.toConstruction3Vic;
+                                          const toConstruction4Key = isQld
+                                            ? K.toConstruction4Qld
+                                            : K.toConstruction4Vic;
+                                          const isDrawingsUpload = section.fieldGroup === "drawingsUpload";
+                                          const fieldWrapStyle = (groupStyle) =>
+                                            isDrawingsUpload ? groupStyle : { display: "flex", flexDirection: "column", gap: "6px" };
+                                          const toPrimaryLabel = isDrawingsUpload
+                                            ? `${K.label} — To [DESIGN]`
+                                            : `${K.label} — To`;
+                                          const toAdditionalLabel = isDrawingsUpload
+                                            ? `${K.label} — To (additional) [DESIGN]`
+                                            : `${K.label} — To (additional)`;
                                           return (
                                             <>
-                                              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                              <div style={fieldWrapStyle(DRAWINGS_UPLOAD_FROM_GROUP)}>
+                                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                                 <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
                                                   {K.label} — From
                                                 </span>
@@ -2052,10 +2106,12 @@ export default function StreamSettings() {
                                                   }}
                                                   onCommit={flushPersist}
                                                 />
+                                                </div>
                                               </div>
+                                              <div style={fieldWrapStyle(DRAWINGS_UPLOAD_DESIGN_GROUP)}>
                                               <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                                 <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                                  {K.label} — To [DESIGN]
+                                                  {toPrimaryLabel}
                                                 </span>
                                                 <DrawingNotifySmtpSelect
                                                   smtpOptions={smtpSlotEmails}
@@ -2070,7 +2126,7 @@ export default function StreamSettings() {
                                               {to2Key ? (
                                                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                                   <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                                    {K.label} — To (additional) [DESIGN]
+                                                    {toAdditionalLabel}
                                                   </span>
                                                   <DrawingNotifySmtpSelect
                                                     smtpOptions={smtpSlotEmails}
@@ -2083,6 +2139,9 @@ export default function StreamSettings() {
                                                   />
                                                 </div>
                                               ) : null}
+                                              </div>
+                                              {isDrawingsUpload ? (
+                                              <div style={fieldWrapStyle(DRAWINGS_UPLOAD_CONSTRUCTION_GROUP)}>
                                               <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                                 <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
                                                   {K.label} — To [CONSTRUCTION]
@@ -2128,6 +2187,24 @@ export default function StreamSettings() {
                                                     onCommit={flushPersist}
                                                   />
                                                 </div>
+                                              ) : null}
+                                              {toConstruction4Key ? (
+                                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                                  <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                                    {K.label} — To (additional 3) [CONSTRUCTION]
+                                                  </span>
+                                                  <DrawingNotifySmtpSelect
+                                                    smtpOptions={smtpSlotEmails}
+                                                    value={d[toConstruction4Key] || ""}
+                                                    disabled={saving}
+                                                    onValueChange={(next) => {
+                                                      updateDrawingText(rowKey, toConstruction4Key, next);
+                                                    }}
+                                                    onCommit={flushPersist}
+                                                  />
+                                                </div>
+                                              ) : null}
+                                              </div>
                                               ) : null}
                                             </>
                                           );

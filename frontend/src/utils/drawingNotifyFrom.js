@@ -74,6 +74,7 @@ function drawingFieldKeyForStreamRow(streamKey, vicStyleKey) {
     designToSalespersonConstructionToEmail: "qldDesignToSalespersonConstructionToEmail",
     designToSalespersonConstructionToEmail2: "qldDesignToSalespersonConstructionToEmail2",
     designToSalespersonConstructionToEmail3: "qldDesignToSalespersonConstructionToEmail3",
+    designToSalespersonConstructionToEmail4: "qldDesignToSalespersonConstructionToEmail4",
     designNotesFromEmail: "qldDesignNotesFromEmail",
     designNotesToEmail: "qldDesignNotesToEmail",
     salesNotesFromEmail: "qldSalesNotesFromEmail",
@@ -265,7 +266,8 @@ function resolveDesignToSalespersonStreamRowKey(project, settings) {
         drawingValue(d, key, "designToSalespersonToEmail2") ||
         drawingValue(d, key, "designToSalespersonConstructionToEmail") ||
         drawingValue(d, key, "designToSalespersonConstructionToEmail2") ||
-        drawingValue(d, key, "designToSalespersonConstructionToEmail3"))
+        drawingValue(d, key, "designToSalespersonConstructionToEmail3") ||
+        drawingValue(d, key, "designToSalespersonConstructionToEmail4"))
     ) {
       return key;
     }
@@ -287,7 +289,8 @@ function resolveDesignToSalespersonStreamRowKey(project, settings) {
       drawingValue(d, k, "designToSalespersonToEmail2") ||
       drawingValue(d, k, "designToSalespersonConstructionToEmail") ||
       drawingValue(d, k, "designToSalespersonConstructionToEmail2") ||
-      drawingValue(d, k, "designToSalespersonConstructionToEmail3");
+      drawingValue(d, k, "designToSalespersonConstructionToEmail3") ||
+      drawingValue(d, k, "designToSalespersonConstructionToEmail4");
     if (!hasRouting) continue;
 
     const lk = k.toLowerCase();
@@ -313,6 +316,7 @@ const DESIGN_TO_SALESPERSON_FIELD_KEYS = new Set([
   "designToSalespersonConstructionToEmail",
   "designToSalespersonConstructionToEmail2",
   "designToSalespersonConstructionToEmail3",
+  "designToSalespersonConstructionToEmail4",
 ]);
 
 export function isConstructionPhaseProject(project) {
@@ -365,7 +369,10 @@ export function resolveDesignToSalespersonToEmails(settings, project, _templateT
     const additional2 = parseSettingsToEmailList(
       getDrawingFieldFromStreamRows(settings, project, "designToSalespersonConstructionToEmail3")
     );
-    return mergeUniqueEmails(primary, additional, additional2);
+    const additional3 = parseSettingsToEmailList(
+      getDrawingFieldFromStreamRows(settings, project, "designToSalespersonConstructionToEmail4")
+    );
+    return mergeUniqueEmails(primary, additional, additional2, additional3);
   }
   const primary = parseSettingsToEmailList(
     getDrawingFieldFromStreamRows(settings, project, "designToSalespersonToEmail")
