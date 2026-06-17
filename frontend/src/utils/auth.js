@@ -2,6 +2,7 @@ const API_URL = "";
 
 const AUTH_USER_ID_KEY = "loggedInUserId";
 const AUTH_PASSWORD_TYPE_KEY = "passwordType";
+const AUTH_USER_NAME_KEY = "loggedInUserName";
 
 function getAuthStorage() {
   return sessionStorage;
@@ -22,6 +23,13 @@ export function getPasswordType() {
 }
 
 /**
+ * Get the logged-in user's display name from session storage.
+ */
+export function getLoggedInUserName() {
+  return getAuthStorage().getItem(AUTH_USER_NAME_KEY) || "";
+}
+
+/**
  * Whether the current browser tab has an active login session.
  */
 export function isAuthenticated() {
@@ -31,14 +39,18 @@ export function isAuthenticated() {
 /**
  * Store login session for the current browser tab.
  */
-export function setAuthSession(userId, passwordType) {
+export function setAuthSession(userId, passwordType, userName) {
   const storage = getAuthStorage();
   storage.setItem(AUTH_USER_ID_KEY, String(userId));
   storage.setItem(AUTH_PASSWORD_TYPE_KEY, passwordType || "global");
+  if (userName) {
+    storage.setItem(AUTH_USER_NAME_KEY, String(userName));
+  }
   // Clear legacy persistent login from older versions.
   try {
     localStorage.removeItem(AUTH_USER_ID_KEY);
     localStorage.removeItem(AUTH_PASSWORD_TYPE_KEY);
+    localStorage.removeItem(AUTH_USER_NAME_KEY);
   } catch {
     // ignore
   }
@@ -51,9 +63,11 @@ export function clearAuthSession() {
   const storage = getAuthStorage();
   storage.removeItem(AUTH_USER_ID_KEY);
   storage.removeItem(AUTH_PASSWORD_TYPE_KEY);
+  storage.removeItem(AUTH_USER_NAME_KEY);
   try {
     localStorage.removeItem(AUTH_USER_ID_KEY);
     localStorage.removeItem(AUTH_PASSWORD_TYPE_KEY);
+    localStorage.removeItem(AUTH_USER_NAME_KEY);
   } catch {
     // ignore
   }

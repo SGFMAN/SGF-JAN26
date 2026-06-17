@@ -60,7 +60,7 @@ export default function SplashPage() {
       }
 
       const data = await response.json();
-      setAuthSession(data.userId, data.passwordType);
+      setAuthSession(data.userId, data.passwordType, data.user?.name);
 
       const redirectTo = location.state?.from?.pathname || "/projects";
       navigate(redirectTo, { replace: true });

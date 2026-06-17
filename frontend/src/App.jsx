@@ -36,6 +36,7 @@ import AppModeBanner from "./components/AppModeBanner";
 import { EmailSendOverlayProvider } from "./components/EmailSendOverlay";
 import PortalProjects from "./pages/PortalProjects";
 import RequireAuth from "./components/RequireAuth";
+import LoggedInUserButton from "./components/LoggedInUserButton";
 
 function Auth({ children }) {
   return <RequireAuth>{children}</RequireAuth>;
@@ -51,6 +52,7 @@ export default function App() {
     <BrowserRouter>
       <EmailSendOverlayProvider>
       {!isCloudflarePublicHost && <AppModeBanner />}
+      <LoggedInUserButton />
       <Routes>
         {isCloudflarePublicHost ? (
           <>

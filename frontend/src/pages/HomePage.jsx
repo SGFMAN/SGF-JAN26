@@ -628,7 +628,7 @@ export default function HomePage() {
           style={{
             position: "absolute",
             top: "20px",
-            right: "20px",
+            right: "68px",
             display: "flex",
             gap: "10px",
             alignItems: "center",
