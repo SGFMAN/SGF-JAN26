@@ -1,5 +1,5 @@
 /** In-memory last-seen timestamps for logged-in users (tab session + API activity). */
-const PRESENCE_TIMEOUT_MS = 45_000;
+const PRESENCE_TIMEOUT_MS = 25_000;
 
 /** @type {Map<number, number>} */
 const userLastSeen = new Map();

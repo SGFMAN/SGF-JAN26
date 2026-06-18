@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { getApiHeaders, getLoggedInUserId } from "../utils/auth";
 
 const API_URL = "";
-const HEARTBEAT_MS = 20_000;
+const HEARTBEAT_MS = 10_000;
 
 export default function PresenceHeartbeat() {
   useEffect(() => {

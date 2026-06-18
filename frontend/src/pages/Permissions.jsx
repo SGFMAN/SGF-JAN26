@@ -7,7 +7,7 @@ import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 
 const API_URL = "";
-const ONLINE_POLL_MS = 5_000;
+const ONLINE_POLL_MS = 2_000;
 
 export default function Permissions() {
   const [areas, setAreas] = useState([]);
@@ -91,9 +91,17 @@ export default function Permissions() {
     refreshOnline();
     const intervalId = window.setInterval(refreshOnline, ONLINE_POLL_MS);
 
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        refreshOnline();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [loadOnlineUsers]);
 
