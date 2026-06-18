@@ -9,6 +9,7 @@ import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
 import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import SalesSidebarLink from "../components/SalesSidebarLink";
+import HotlistSidebarSection from "../components/HotlistSidebarSection";
 import { isUserAdmin } from "../utils/auth";
 import { projectPath } from "../utils/projectUrl";
 import {
@@ -1421,31 +1422,7 @@ export default function Hotlist() {
           }}
         >
           {/* Menu Buttons */}
-          {/* Hot List - Light Blue */}
-          <div style={{ background: MENU.blue, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
-            <Link
-              to="/hotlist"
-              style={{
-                background: MENU.blueActive,
-                color: MENU.activeText,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Hot List
-            </Link>
-          </div>
+          <HotlistSidebarSection active />
           
           {/* All Projects, Design Phase, Construction Phase, Finished Projects, Cancelled, On Hold - Light Green */}
           <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: `2px solid ${UI.outline}` }}>
@@ -1609,6 +1586,66 @@ export default function Hotlist() {
             </Link>
             <SalesSidebarLink />
           </div>
+
+          {/* Email Generator, Maps — Purple (Admin Only) */}
+          {isAdmin && (
+            <div
+              style={{
+                background: MENU.purple,
+                borderRadius: "10px",
+                padding: "4px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px",
+                border: `2px solid ${UI.outline}`,
+              }}
+            >
+              <Link
+                to="/email-generator"
+                style={{
+                  background: "transparent",
+                  color: UI.textSecondary,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "8px 8px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  textDecoration: "none",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  marginBottom: "0px",
+                  lineHeight: "1.4",
+                  display: "block",
+                }}
+              >
+                Email Generator
+              </Link>
+              <Link
+                to="/maps"
+                style={{
+                  background: "transparent",
+                  color: UI.textSecondary,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "8px 8px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  textDecoration: "none",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  marginBottom: "0px",
+                  lineHeight: "1.4",
+                  display: "block",
+                }}
+              >
+                Maps
+              </Link>
+            </div>
+          )}
           <div style={{ flex: 1 }} />
           {isAdmin && (
             <Link

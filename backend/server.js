@@ -414,6 +414,19 @@ async function isAdminRequest(req) {
   }
 }
 
+// Helper: whether the request user has Sales checked in Permissions
+async function isSalesRequest(req) {
+  try {
+    if (!pool) return false;
+    const userId = Number(req.headers["x-user-id"] || req.headers["X-User-Id"]);
+    if (!Number.isFinite(userId)) return false;
+    return userHasAccessGrant(pool, userId, "sales");
+  } catch (e) {
+    console.error("Error checking sales access:", e);
+    return false;
+  }
+}
+
 // ------------------------------------------------------------
 // Serve the built frontend (Vite dist) on the same port
 // ------------------------------------------------------------
@@ -9299,6 +9312,9 @@ app.delete("/api/projects/:id", async (req, res) => {
 // List hotlist items (projects with status "Hotlist")
 app.get("/api/hotlist", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await isSalesRequest(req))) {
+    return res.status(403).json({ error: "Sales access required" });
+  }
   try {
     const r = await pool.query(
       "SELECT id, name, status, suburb, street, state, stream, client_name, email, phone, agreement_sent, hotlist_notes, updated_at FROM projects WHERE status = $1 ORDER BY updated_at DESC, id DESC",
@@ -9313,6 +9329,9 @@ app.get("/api/hotlist", async (req, res) => {
 // Get single hotlist item
 app.get("/api/hotlist/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await isSalesRequest(req))) {
+    return res.status(403).json({ error: "Sales access required" });
+  }
   
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
@@ -9338,6 +9357,9 @@ app.get("/api/hotlist/:id", async (req, res) => {
 // Create hotlist item (as project with status "Hotlist")
 app.post("/api/hotlist", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await isSalesRequest(req))) {
+    return res.status(403).json({ error: "Sales access required" });
+  }
   try {
     const { street, suburb, state, stream, client_name, email, phone } = req.body || {};
     
@@ -9398,6 +9420,9 @@ app.post("/api/hotlist", async (req, res) => {
 // Update hotlist item
 app.put("/api/hotlist/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await isSalesRequest(req))) {
+    return res.status(403).json({ error: "Sales access required" });
+  }
 
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
@@ -9462,6 +9487,9 @@ app.put("/api/hotlist/:id", async (req, res) => {
 // Autosave hotlist-only notes (does not touch other project fields)
 app.patch("/api/hotlist/:id/notes", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await isSalesRequest(req))) {
+    return res.status(403).json({ error: "Sales access required" });
+  }
 
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
@@ -9497,6 +9525,9 @@ app.patch("/api/hotlist/:id/notes", async (req, res) => {
 // Update agreement sent status for hotlist item
 app.post("/api/hotlist/:id/agreement-sent", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await isSalesRequest(req))) {
+    return res.status(403).json({ error: "Sales access required" });
+  }
 
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
@@ -9524,6 +9555,9 @@ app.post("/api/hotlist/:id/agreement-sent", async (req, res) => {
 
 app.delete("/api/hotlist/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await isSalesRequest(req))) {
+    return res.status(403).json({ error: "Sales access required" });
+  }
 
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
@@ -9643,6 +9677,9 @@ app.post("/api/substatuses", async (req, res) => {
 // Upgrade hotlist item to project (Sold) - changes status from "Hotlist" to "Design Phase"
 app.post("/api/hotlist/:id/sold", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await isSalesRequest(req))) {
+    return res.status(403).json({ error: "Sales access required" });
+  }
 
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {

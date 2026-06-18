@@ -4,6 +4,7 @@ import { useUiTheme } from "../context/UiThemeProvider";
 import { UI } from "../utils/uiThemeTokens";
 import { applyUiThemeToDocument } from "../themes/applyUiTheme";
 import { UI_THEME_COLOR_KEYS, UI_THEME_LIST, UI_THEMES } from "../themes/uiThemes";
+import TimeSheetSettingsContent from "./TimeSheetSettingsContent";
 
 const AUTO_SAVE_DELAY_MS = 600;
 const THEME_COLOR_SAVE_DELAY_MS = 400;
@@ -399,13 +400,6 @@ const MENU_OPTIONS = [
   { key: "timeSheet", label: "Time Sheet" },
 ];
 
-const PLACEHOLDER_CONTENT = {
-  timeSheet: {
-    title: "Time Sheet",
-    body: "Time sheet settings will appear here.",
-  },
-};
-
 function firstNameFromFullName(fullName) {
   const trimmed = (fullName || "").trim();
   if (!trimmed) return "User";
@@ -603,38 +597,6 @@ function AccountSettingsContent({ open }) {
   );
 }
 
-function PlaceholderContent({ sectionKey }) {
-  const placeholder = PLACEHOLDER_CONTENT[sectionKey];
-  if (!placeholder) {
-    return null;
-  }
-
-  return (
-    <>
-      <h3
-        style={{
-          margin: "0 0 12px 0",
-          fontSize: "1.2rem",
-          fontWeight: 600,
-          color: UI.textPrimary,
-        }}
-      >
-        {placeholder.title}
-      </h3>
-      <p
-        style={{
-          margin: 0,
-          fontSize: "1rem",
-          color: UI.textMuted,
-          lineHeight: 1.5,
-        }}
-      >
-        {placeholder.body}
-      </p>
-    </>
-  );
-}
-
 function renderSectionContent(selected, open) {
   if (selected === "account") {
     return <AccountSettingsContent open={open} />;
@@ -642,7 +604,10 @@ function renderSectionContent(selected, open) {
   if (selected === "colourTheme") {
     return <ColourThemeContent />;
   }
-  return <PlaceholderContent sectionKey={selected} />;
+  if (selected === "timeSheet") {
+    return <TimeSheetSettingsContent />;
+  }
+  return null;
 }
 
 export default function UserSettingsModal({ open, onClose, userName }) {
@@ -808,6 +773,9 @@ export default function UserSettingsModal({ open, onClose, userName }) {
               padding: "24px",
               overflowY: "auto",
               minWidth: 0,
+              display: selected === "timeSheet" ? "flex" : "block",
+              flexDirection: selected === "timeSheet" ? "column" : undefined,
+              minHeight: selected === "timeSheet" ? 0 : undefined,
             }}
           >
             {renderSectionContent(selected, open)}

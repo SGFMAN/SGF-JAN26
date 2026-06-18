@@ -95,6 +95,7 @@ export default function TimeSheetFourColumns({
   periodDays = [],
   persistTemplate = false,
   cycleKey = "",
+  hideUserSelect = false,
 }) {
   const [dayEntries, setDayEntries] = useState(createDefaultDayEntries);
   const [constructionProjects, setConstructionProjects] = useState([]);
@@ -441,47 +442,51 @@ export default function TimeSheetFourColumns({
           alignSelf: "flex-start",
         }}
       >
-        <span
-          ref={measureUserLabelRef}
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            visibility: "hidden",
-            whiteSpace: "nowrap",
-            fontSize: "0.95rem",
-            fontWeight: 400,
-            fontFamily: "inherit",
-            pointerEvents: "none",
-          }}
-        />
-        <div>
-          <h2 style={{ fontSize: "1.05rem", marginTop: 0, marginBottom: "12px", fontWeight: 600 }}>User</h2>
-          <select
-            value={selectedUserId}
-            onChange={onUserChange}
-            disabled={loadingUsers}
-            style={{
-              width: userSelectWidth ? `${userSelectWidth}px` : "max-content",
-              minWidth: "120px",
-              padding: "10px 12px",
-              borderRadius: "8px",
-              border: "none",
-              fontSize: "0.95rem",
-              color: MONUMENT,
-              background: WHITE,
-              boxSizing: "border-box",
-              cursor: "pointer",
-              display: "block",
-            }}
-          >
-            <option value="">{userSelectPlaceholder}</option>
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {!hideUserSelect && (
+          <>
+            <span
+              ref={measureUserLabelRef}
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                visibility: "hidden",
+                whiteSpace: "nowrap",
+                fontSize: "0.95rem",
+                fontWeight: 400,
+                fontFamily: "inherit",
+                pointerEvents: "none",
+              }}
+            />
+            <div>
+              <h2 style={{ fontSize: "1.05rem", marginTop: 0, marginBottom: "12px", fontWeight: 600 }}>User</h2>
+              <select
+                value={selectedUserId}
+                onChange={onUserChange}
+                disabled={loadingUsers}
+                style={{
+                  width: userSelectWidth ? `${userSelectWidth}px` : "max-content",
+                  minWidth: "120px",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "none",
+                  fontSize: "0.95rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                  cursor: "pointer",
+                  display: "block",
+                }}
+              >
+                <option value="">{userSelectPlaceholder}</option>
+                {users.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
         {!isTemplate && (
           <button
             type="button"

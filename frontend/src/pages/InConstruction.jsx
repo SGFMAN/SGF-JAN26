@@ -10,10 +10,13 @@ import NewProject2 from "./NewProject_2_ClientDetails";
 import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
 import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
 import SalesSidebarLink from "../components/SalesSidebarLink";
+import HotlistSidebarSection from "../components/HotlistSidebarSection";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter, setStateFilter } from "../utils/stateFilter";
 import { CLASSIFICATION_OPTIONS as CLASSIFICATION_SORT_ORDER } from "../utils/classifications";
 import ProjectRectangleCard from "../components/ProjectRectangleCard";
+import ProjectListGroupHeader from "../components/ProjectListGroupHeader";
+import { getProjectListGroupKey } from "../utils/projectListGrouping";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -399,31 +402,7 @@ export default function InConstruction() {
           }}
         >
           {/* Menu Buttons */}
-          {/* Hot List - Light Blue */}
-          <div style={{ background: MENU.blue, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
-            <Link
-              to="/hotlist"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Hot List
-            </Link>
-          </div>
+          <HotlistSidebarSection />
           
           {/* All Projects, Design Phase, Construction Phase, Finished Projects, Cancelled, On Hold - Light Green */}
           <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: `2px solid ${UI.outline}` }}>
@@ -587,6 +566,66 @@ export default function InConstruction() {
             </Link>
             <SalesSidebarLink />
           </div>
+
+          {/* Email Generator, Maps — Purple (Admin Only) */}
+          {isAdmin && (
+            <div
+              style={{
+                background: MENU.purple,
+                borderRadius: "10px",
+                padding: "4px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px",
+                border: `2px solid ${UI.outline}`,
+              }}
+            >
+              <Link
+                to="/email-generator"
+                style={{
+                  background: "transparent",
+                  color: UI.textSecondary,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "8px 8px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  textDecoration: "none",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  marginBottom: "0px",
+                  lineHeight: "1.4",
+                  display: "block",
+                }}
+              >
+                Email Generator
+              </Link>
+              <Link
+                to="/maps"
+                style={{
+                  background: "transparent",
+                  color: UI.textSecondary,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "8px 8px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  textDecoration: "none",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  marginBottom: "0px",
+                  lineHeight: "1.4",
+                  display: "block",
+                }}
+              >
+                Maps
+              </Link>
+            </div>
+          )}
           <div style={{ flex: 1 }} />
           {isAdmin && (
             <Link
@@ -785,57 +824,15 @@ export default function InConstruction() {
                 }}
               >
                 {filteredProjects.map((project, index) => {
-                  const suburbName = (project.suburb || "").trim();
-                  const prevSuburbName = index > 0 ? (filteredProjects[index - 1]?.suburb || "").trim() : "";
-                  const classificationName = (project.classification || "").trim();
-                  const prevClassificationName =
-                    index > 0 ? (filteredProjects[index - 1]?.classification || "").trim() : "";
-                  const streamName = (project.stream || "").trim();
-                  const prevStreamName = index > 0 ? (filteredProjects[index - 1]?.stream || "").trim() : "";
-
-                  const groupKey =
-                    sortMode === "suburb"
-                      ? suburbName
-                        ? suburbName[0].toUpperCase()
-                        : ""
-                      : sortMode === "class"
-                      ? classificationName
-                      : sortMode === "stream"
-                      ? streamName
-                      : "";
-
-                  const prevGroupKey =
-                    sortMode === "suburb"
-                      ? prevSuburbName
-                        ? prevSuburbName[0].toUpperCase()
-                        : ""
-                      : sortMode === "class"
-                      ? prevClassificationName
-                      : sortMode === "stream"
-                      ? prevStreamName
-                      : "";
-
+                  const prevProject = index > 0 ? filteredProjects[index - 1] : null;
+                  const groupKey = getProjectListGroupKey(project, sortMode);
+                  const prevGroupKey = getProjectListGroupKey(prevProject, sortMode);
                   const showGroupHeader = groupKey && groupKey !== prevGroupKey;
-                  const groupLabel = groupKey;
 
                   return (
                     <Fragment key={project.id}>
                       {showGroupHeader && (
-                        <div style={{ flexBasis: "100%", width: "100%", marginTop: index === 0 ? 0 : "18px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                            <div
-                              style={{
-                                fontSize: "1.3rem",
-                                fontWeight: 800,
-                                color: MONUMENT,
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {groupLabel}
-                            </div>
-                            <div style={{ height: "2px", background: MONUMENT, flex: 1, opacity: 0.4 }} />
-                          </div>
-                        </div>
+                        <ProjectListGroupHeader label={groupKey} isFirst={index === 0} />
                       )}
                       <ProjectRectangleCard project={project} />
                     </Fragment>

@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { CLASSIFICATION_BADGE_MAP } from "../utils/classifications";
+import { getProjectStreamBadge } from "../utils/streamBadges";
 import { projectPath } from "../utils/projectUrl";
 import { OnHoldSash, CancelledSash } from "./ProjectStatusSash";
 
@@ -13,19 +14,6 @@ const OUTLINE = UI.outline;
 
 const CARD_W = 200;
 const CARD_H = 100;
-
-const DESIGN_PHASE_STREAM_MAP = {
-  "SGF - VIC": { acronym: "VIC", color: "#4D93D9" },
-  "SGF - QLD": { acronym: "QLD", color: "#D54358" },
-  "Dual Dwelling": { acronym: "DDI", color: "#92D050" },
-  ATA: { acronym: "ATA", color: "#92D050" },
-  "Pumped on Property": { acronym: "POP", color: "#92D050" },
-  "Pumped On Property": { acronym: "POP", color: "#92D050" },
-  Henderson: { acronym: "HEN", color: "#92D050" },
-  "Creat Cash Flow": { acronym: "CCF", color: "#92D050" },
-  "Create Cash Flow": { acronym: "CCF", color: "#92D050" },
-  "Fresh Start Advisory": { acronym: "FSA", color: "#92D050" },
-};
 
 /**
  * Same dark rectangle as the main /projects (Design Phase) grid.
@@ -54,7 +42,7 @@ export default function ProjectRectangleCard({ project, fitColumn = false, onInt
   const classificationInfo = project.classification
     ? CLASSIFICATION_BADGE_MAP[project.classification]
     : null;
-  const streamInfo = project.stream ? DESIGN_PHASE_STREAM_MAP[project.stream] : null;
+  const streamInfo = getProjectStreamBadge(project);
   const onHold = project.on_hold === "true" || project.on_hold === true;
   const cancelled = project.status === "Cancelled";
 

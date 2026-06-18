@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Fragment } from "react";
 import { Link } from "react-router-dom";
 import SalesSidebarLink from "../components/SalesSidebarLink";
+import HotlistSidebarSection from "../components/HotlistSidebarSection";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import ProjectRectangleCard from "../components/ProjectRectangleCard";
+import ProjectListGroupHeader from "../components/ProjectListGroupHeader";
+import { getProjectListGroupKey } from "../utils/projectListGrouping";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -280,31 +283,7 @@ export default function AllProjects() {
           }}
         >
           {/* Menu Buttons */}
-          {/* Hot List - Light Blue */}
-          <div style={{ background: MENU.blue, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
-            <Link
-              to="/hotlist"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Hot List
-            </Link>
-          </div>
+          <HotlistSidebarSection />
           
           {/* All Projects, Design Phase, Construction Phase, Finished Projects, Cancelled, On Hold - Light Green */}
           <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: `2px solid ${UI.outline}` }}>
@@ -468,6 +447,66 @@ export default function AllProjects() {
             </Link>
             <SalesSidebarLink />
           </div>
+
+          {/* Email Generator, Maps — Purple (Admin Only) */}
+          {isAdmin && (
+            <div
+              style={{
+                background: MENU.purple,
+                borderRadius: "10px",
+                padding: "4px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px",
+                border: `2px solid ${UI.outline}`,
+              }}
+            >
+              <Link
+                to="/email-generator"
+                style={{
+                  background: "transparent",
+                  color: UI.textSecondary,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "8px 8px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  textDecoration: "none",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  marginBottom: "0px",
+                  lineHeight: "1.4",
+                  display: "block",
+                }}
+              >
+                Email Generator
+              </Link>
+              <Link
+                to="/maps"
+                style={{
+                  background: "transparent",
+                  color: UI.textSecondary,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "8px 8px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  textDecoration: "none",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  marginBottom: "0px",
+                  lineHeight: "1.4",
+                  display: "block",
+                }}
+              >
+                Maps
+              </Link>
+            </div>
+          )}
           <div style={{ flex: 1 }} />
           {isAdmin && (
             <Link
@@ -634,9 +673,21 @@ export default function AllProjects() {
                 alignItems: "flex-start",
               }}
             >
-              {filteredProjects.map((project) => (
-                <ProjectRectangleCard key={project.id} project={project} />
-              ))}
+              {filteredProjects.map((project, index) => {
+                const prevProject = index > 0 ? filteredProjects[index - 1] : null;
+                const groupKey = getProjectListGroupKey(project, "suburb");
+                const prevGroupKey = getProjectListGroupKey(prevProject, "suburb");
+                const showGroupHeader = groupKey && groupKey !== prevGroupKey;
+
+                return (
+                  <Fragment key={project.id}>
+                    {showGroupHeader && (
+                      <ProjectListGroupHeader label={groupKey} isFirst={index === 0} />
+                    )}
+                    <ProjectRectangleCard project={project} />
+                  </Fragment>
+                );
+              })}
             </div>
           )}
         </div>

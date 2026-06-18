@@ -19,8 +19,6 @@ import StatusManager from "./pages/StatusManager";
 import AdminDrawingManagerRoute from "./components/AdminDrawingManagerRoute";
 import AdminAccessRoute from "./components/AdminAccessRoute";
 import SalesAccessRoute from "./components/SalesAccessRoute";
-import QpManager from "./pages/QpManager";
-import ProjectClaim from "./pages/ProjectClaim";
 import Sales from "./pages/Sales";
 import SalesTotals from "./pages/SalesTotals";
 import SalesAnalytics from "./pages/SalesAnalytics";
@@ -33,7 +31,6 @@ import SecretLevelEditor from "./pages/SecretLevelEditor";
 import SecretLevel from "./pages/SecretLevel";
 import Maps from "./pages/Maps";
 import MapsRecent from "./pages/MapsRecent";
-import TimeSheet from "./pages/TimeSheet";
 import { EmailSendOverlayProvider } from "./components/EmailSendOverlay";
 import PortalProjects from "./pages/PortalProjects";
 import RequireAuth from "./components/RequireAuth";
@@ -82,7 +79,7 @@ export default function App() {
             <Route path="/in-construction" element={<Navigate to="/construction-phase" replace />} />
             <Route path="/site-visit-manager" element={<Auth><SiteVisitManager /></Auth>} />
             <Route path="/site-visit-planner" element={<Auth><SiteVisitPlanner /></Auth>} />
-            <Route path="/hotlist" element={<Auth><Hotlist /></Auth>} />
+            <Route path="/hotlist" element={<Auth><SalesAccessRoute><Hotlist /></SalesAccessRoute></Auth>} />
             <Route path="/all-projects" element={<Auth><AllProjects /></Auth>} />
             <Route path="/cancelled" element={<Auth><Cancelled /></Auth>} />
             <Route path="/on-hold" element={<Auth><OnHold /></Auth>} />
@@ -92,8 +89,6 @@ export default function App() {
             <Route path="/managers/colour-manager" element={<Auth><ColourManager /></Auth>} />
             <Route path="/managers/status-manager" element={<Auth><StatusManager /></Auth>} />
             <Route path="/managers/drawing-manager" element={<Auth><AdminDrawingManagerRoute /></Auth>} />
-            <Route path="/managers/qp-manager" element={<Auth><QpManager /></Auth>} />
-            <Route path="/managers/project-claim" element={<Auth><ProjectClaim /></Auth>} />
             <Route path="/sales" element={<Auth><SalesAccessRoute><Sales /></SalesAccessRoute></Auth>} />
             <Route path="/sales-totals" element={<Auth><SalesAccessRoute><SalesTotals /></SalesAccessRoute></Auth>} />
             <Route path="/sales-analytics" element={<Auth><SalesAccessRoute><SalesAnalytics /></SalesAccessRoute></Auth>} />
@@ -104,7 +99,6 @@ export default function App() {
             <Route path="/maps" element={<Auth><AdminAccessRoute><Maps /></AdminAccessRoute></Auth>} />
             <Route path="/maps/recent" element={<Auth><AdminAccessRoute><MapsRecent /></AdminAccessRoute></Auth>} />
             <Route path="/maps/sold-projects" element={<Auth><AdminAccessRoute><Maps /></AdminAccessRoute></Auth>} />
-            <Route path="/time-sheet" element={<Auth><TimeSheet /></Auth>} />
             <Route path="/benbox" element={<Navigate to="/maps" replace />} />
             <Route path="/faq" element={<Navigate to="/maps" replace />} />
             <Route path="/approve-concept/:projectId" element={<ApproveConcept />} />
