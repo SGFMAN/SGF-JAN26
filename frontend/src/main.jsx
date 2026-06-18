@@ -39,7 +39,7 @@ window.fetch = function(url, options = {}) {
     });
     url.headers = headers;
   }
-  return originalFetch.apply(this, arguments);
+  return originalFetch.call(this, url, options);
 };
 
 createRoot(document.getElementById('root')).render(

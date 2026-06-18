@@ -10,7 +10,7 @@ import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import SalesSidebarLink from "../components/SalesSidebarLink";
 import HotlistSidebarSection from "../components/HotlistSidebarSection";
-import { isUserAdmin } from "../utils/auth";
+import { isUserAdmin, getApiHeaders } from "../utils/auth";
 import { projectPath } from "../utils/projectUrl";
 import {
   generalEmailStateCode,
@@ -209,7 +209,7 @@ export default function Hotlist() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`${API_URL}/api/hotlist`);
+      const response = await fetch(`${API_URL}/api/hotlist`, { headers: getApiHeaders() });
       if (!response.ok) {
         throw new Error(`Failed to fetch hotlist: ${response.statusText}`);
       }
@@ -226,7 +226,7 @@ export default function Hotlist() {
   async function persistHotlistNotes(itemId, text) {
     const response = await fetch(`${API_URL}/api/hotlist/${itemId}/notes`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: getApiHeaders(),
       body: JSON.stringify({ hotlist_notes: text }),
     });
     if (!response.ok) {
@@ -415,9 +415,7 @@ export default function Hotlist() {
     try {
       const response = await fetch(`${API_URL}/api/hotlist`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: getApiHeaders(),
         body: JSON.stringify({
           street: formData.street || null,
           suburb: formData.suburb || null,
@@ -448,9 +446,7 @@ export default function Hotlist() {
     try {
       const response = await fetch(`${API_URL}/api/hotlist/${editingItem.id}`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: getApiHeaders(),
         body: JSON.stringify({
           street: formData.street || null,
           suburb: formData.suburb || null,
@@ -488,6 +484,7 @@ export default function Hotlist() {
     try {
       const response = await fetch(`${API_URL}/api/hotlist/${id}`, {
         method: "DELETE",
+        headers: getApiHeaders(),
       });
 
       if (!response.ok) {
@@ -507,7 +504,7 @@ export default function Hotlist() {
     try {
       const response = await fetch(`${API_URL}/api/hotlist/${item.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getApiHeaders(),
         body: JSON.stringify({
           street: item.street || null,
           suburb: item.suburb || null,
@@ -568,6 +565,7 @@ export default function Hotlist() {
     try {
       const response = await fetch(`${API_URL}/api/hotlist/${item.id}/agreement-sent`, {
         method: "POST",
+        headers: getApiHeaders(),
       });
 
       if (!response.ok) {
@@ -806,6 +804,7 @@ export default function Hotlist() {
       // First upgrade the hotlist item to a project
       const upgradeResponse = await fetch(`${API_URL}/api/hotlist/${soldItemId}/sold`, {
         method: "POST",
+        headers: getApiHeaders(),
       });
 
       if (!upgradeResponse.ok) {
