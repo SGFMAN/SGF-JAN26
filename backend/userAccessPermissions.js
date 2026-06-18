@@ -1,5 +1,6 @@
 const ACCESS_AREAS = [
   { key: "admin", label: "Admin" },
+  { key: "managers", label: "Managers" },
   { key: "sales", label: "Sales" },
 ];
 

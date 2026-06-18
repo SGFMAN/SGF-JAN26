@@ -1,7 +1,7 @@
 import React, { useState, useEffect, Fragment } from "react";
 import { Link } from "react-router-dom";
-import SalesSidebarLink from "../components/SalesSidebarLink";
 import HotlistSidebarSection from "../components/HotlistSidebarSection";
+import ManagersSalesMenuGroup from "../components/ManagersSalesMenuGroup";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import ProjectRectangleCard from "../components/ProjectRectangleCard";
@@ -421,32 +421,7 @@ export default function Cancelled() {
             </Link>
           </div>
           
-          {/* Managers and Sales - Light Red */}
-          <div style={{ background: MENU.red, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: `2px solid ${UI.outline}` }}>
-            <Link
-              to="/managers"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Managers
-            </Link>
-            <SalesSidebarLink />
-          </div>
+          <ManagersSalesMenuGroup />
 
           {/* Email Generator, Maps — Purple (Admin Only) */}
           {isAdmin && (

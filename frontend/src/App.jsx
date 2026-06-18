@@ -19,6 +19,7 @@ import StatusManager from "./pages/StatusManager";
 import AdminDrawingManagerRoute from "./components/AdminDrawingManagerRoute";
 import AdminAccessRoute from "./components/AdminAccessRoute";
 import SalesAccessRoute from "./components/SalesAccessRoute";
+import ManagersAccessRoute from "./components/ManagersAccessRoute";
 import Sales from "./pages/Sales";
 import SalesTotals from "./pages/SalesTotals";
 import SalesAnalytics from "./pages/SalesAnalytics";
@@ -83,12 +84,12 @@ export default function App() {
             <Route path="/all-projects" element={<Auth><AllProjects /></Auth>} />
             <Route path="/cancelled" element={<Auth><Cancelled /></Auth>} />
             <Route path="/on-hold" element={<Auth><OnHold /></Auth>} />
-            <Route path="/managers" element={<Auth><Managers /></Auth>} />
-            <Route path="/managers/site-visit-manager" element={<Auth><SiteVisitManager /></Auth>} />
-            <Route path="/managers/contract-manager" element={<Auth><ContractManager /></Auth>} />
-            <Route path="/managers/colour-manager" element={<Auth><ColourManager /></Auth>} />
-            <Route path="/managers/status-manager" element={<Auth><StatusManager /></Auth>} />
-            <Route path="/managers/drawing-manager" element={<Auth><AdminDrawingManagerRoute /></Auth>} />
+            <Route path="/managers" element={<Auth><ManagersAccessRoute><Managers /></ManagersAccessRoute></Auth>} />
+            <Route path="/managers/site-visit-manager" element={<Auth><ManagersAccessRoute><SiteVisitManager /></ManagersAccessRoute></Auth>} />
+            <Route path="/managers/contract-manager" element={<Auth><ManagersAccessRoute><ContractManager /></ManagersAccessRoute></Auth>} />
+            <Route path="/managers/colour-manager" element={<Auth><ManagersAccessRoute><ColourManager /></ManagersAccessRoute></Auth>} />
+            <Route path="/managers/status-manager" element={<Auth><ManagersAccessRoute><StatusManager /></ManagersAccessRoute></Auth>} />
+            <Route path="/managers/drawing-manager" element={<Auth><ManagersAccessRoute><AdminDrawingManagerRoute /></ManagersAccessRoute></Auth>} />
             <Route path="/sales" element={<Auth><SalesAccessRoute><Sales /></SalesAccessRoute></Auth>} />
             <Route path="/sales-totals" element={<Auth><SalesAccessRoute><SalesTotals /></SalesAccessRoute></Auth>} />
             <Route path="/sales-analytics" element={<Auth><SalesAccessRoute><SalesAnalytics /></SalesAccessRoute></Auth>} />
