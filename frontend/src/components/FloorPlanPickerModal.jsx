@@ -3,9 +3,11 @@ import { getApiHeaders } from "../utils/auth";
 import { fetchFloorPlanImageBlob } from "../utils/floorPlanMap";
 import ModalBackdrop from "./ModalBackdrop";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 
 function AuthenticatedPlanPreview({ planId, alt }) {
   const [src, setSrc] = useState(null);
@@ -55,7 +57,7 @@ function AuthenticatedPlanPreview({ planId, alt }) {
         display: "block",
         borderRadius: "8px",
         border: "1px solid #eee",
-        background: "#f5f5f5",
+        background: UI.inputBg,
       }}
     />
   );

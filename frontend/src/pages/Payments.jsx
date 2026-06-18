@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const DEPOSIT_STAGE = { key: "deposit", label: "Deposit", percent: 5 };
@@ -139,7 +141,7 @@ export default function Payments({ project, onUpdate }) {
         }}
       >
         <div>
-          <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+          <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
             Project Cost
           </div>
           <div

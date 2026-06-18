@@ -3,8 +3,10 @@ import * as THREE from "three";
 import grassImage from "../images/grass.jpg";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
 
-const MONUMENT = "#323233";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const COLOUR_OPTIONS = ["Select", ...COLORBOND_COLOURS.map(c => c.name)];
 const ROOF_STYLE_OPTIONS = ["Select", "Affordable", "Superior", "Skillion"];
 // Window frames are only available in these colours
@@ -3281,7 +3283,7 @@ export default function ThreeDVis({
     <div style={{ display: "flex", flexDirection: "column", gap: "12px", minWidth: "300px" }}>
       {/* Roof Style */}
       <div>
-        <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "4px", fontWeight: "500" }}>
+        <div style={{ fontSize: "0.85rem", color: UI.textMuted, marginBottom: "4px", fontWeight: "500" }}>
           Roof Style
         </div>
         <select
@@ -3308,7 +3310,7 @@ export default function ThreeDVis({
 
       {/* Building Part Selector */}
       <div>
-        <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "4px", fontWeight: "500" }}>
+        <div style={{ fontSize: "0.85rem", color: UI.textMuted, marginBottom: "4px", fontWeight: "500" }}>
           Building Part
         </div>
         <select
@@ -3353,13 +3355,13 @@ export default function ThreeDVis({
                 padding: "2px",
                 borderRadius: "3px",
                 cursor: "pointer",
-                backgroundColor: isSelected ? "#f0f0f0" : "transparent",
+                backgroundColor: isSelected ? UI.inputBg : "transparent",
                 border: isSelected ? "2px solid #ff0000" : "1px solid #ddd",
                 transition: "all 0.2s",
               }}
               onMouseEnter={(e) => {
                 if (!isSelected) {
-                  e.currentTarget.style.backgroundColor = "#f9f9f9";
+                  e.currentTarget.style.backgroundColor = UI.inputBg;
                 }
               }}
               onMouseLeave={(e) => {
@@ -3463,7 +3465,7 @@ export default function ThreeDVis({
         {/* Column 1: Colors */}
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", overflow: "hidden" }}>
           <div>
-            <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "4px", fontWeight: "500" }}>
+            <div style={{ fontSize: "0.85rem", color: UI.textMuted, marginBottom: "4px", fontWeight: "500" }}>
               Roof Style
             </div>
             <select
@@ -3488,7 +3490,7 @@ export default function ThreeDVis({
             </select>
           </div>
           <div>
-            <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "4px", fontWeight: "500" }}>
+            <div style={{ fontSize: "0.85rem", color: UI.textMuted, marginBottom: "4px", fontWeight: "500" }}>
               Building Part
             </div>
             <select
@@ -3532,13 +3534,13 @@ export default function ThreeDVis({
                     padding: "2px",
                     borderRadius: "3px",
                     cursor: "pointer",
-                    backgroundColor: isSelected ? "#f0f0f0" : "transparent",
+                    backgroundColor: isSelected ? UI.inputBg : "transparent",
                     border: isSelected ? "2px solid #ff0000" : "1px solid #ddd",
                     transition: "all 0.2s",
                   }}
                   onMouseEnter={(e) => {
                     if (!isSelected) {
-                      e.currentTarget.style.backgroundColor = "#f9f9f9";
+                      e.currentTarget.style.backgroundColor = UI.inputBg;
                     }
                   }}
                   onMouseLeave={(e) => {

@@ -8,10 +8,13 @@ import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import logo from "../images/logo.png";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d"; // More blue and slightly lighter version of monument
-const WHITE = "#fff";
+import { UI, BANNER } from "../utils/uiThemeTokens.js";
+import { OnHoldSash, CancelledSash } from "../components/ProjectStatusSash";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const HOURS = [
@@ -973,7 +976,7 @@ export default function SiteVisitPlanner() {
           <div
             style={{
               fontSize: "0.75rem",
-              color: "#32323399",
+              color: UI.textMuted,
               marginTop: "4px",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -1036,7 +1039,7 @@ export default function SiteVisitPlanner() {
               margin: 0,
               fontSize: "2.4rem",
               fontWeight: 700,
-              color: WHITE,
+              color: PAGE_TEXT,
               letterSpacing: "1px",
             }}
           >
@@ -1081,7 +1084,7 @@ export default function SiteVisitPlanner() {
             to="/all-projects"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -1102,7 +1105,7 @@ export default function SiteVisitPlanner() {
             to="/projects"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -1123,7 +1126,7 @@ export default function SiteVisitPlanner() {
             to="/construction-phase"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -1144,7 +1147,7 @@ export default function SiteVisitPlanner() {
             to="/finished-projects"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -1177,7 +1180,7 @@ export default function SiteVisitPlanner() {
               cursor: "pointer",
               transition: "background 0.18s, color 0.15s",
               marginBottom: "0px",
-              outline: `2px solid ${MONUMENT}`,
+              outline: `2px solid ${UI.outline}`,
               boxShadow: "0 2px 4px rgba(50,50,51,.04)",
               display: "block",
             }}
@@ -1189,7 +1192,7 @@ export default function SiteVisitPlanner() {
               to="/settings"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "12px 8px",
@@ -1212,7 +1215,7 @@ export default function SiteVisitPlanner() {
               to="/apply-fields"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "12px 8px",
@@ -1283,10 +1286,10 @@ export default function SiteVisitPlanner() {
             </div>
           </div>
 
-          {loading && <p style={{ color: "#32323399" }}>Loading projects...</p>}
+          {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && <p style={{ color: "#cc3333" }}>Error: {error}</p>}
           {!loading && !error && groupProjects.length === 0 && (
-            <p style={{ color: "#32323399" }}>No projects in this group.</p>
+            <p style={{ color: UI.textMuted }}>No projects in this group.</p>
           )}
           {!loading && !error && groupProjects.length > 0 && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px", flex: 1, overflow: "hidden", minWidth: 0 }}>
@@ -1417,64 +1420,10 @@ export default function SiteVisitPlanner() {
                           >
                             {/* On Hold and Cancelled bands - same as before */}
                             {(project.on_hold === 'true' || project.on_hold === true) && (
-                              <div
-                                style={{
-                                  position: "absolute",
-                                  top: "50%",
-                                  left: "50%",
-                                  transform: "translate(-50%, -50%) rotate(-45deg)",
-                                  width: "280px",
-                                  height: "40px",
-                                  background: "#0066cc",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  zIndex: 10,
-                                  boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    color: WHITE,
-                                    fontWeight: 700,
-                                    fontSize: "1.1rem",
-                                    letterSpacing: "2px",
-                                    textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                                  }}
-                                >
-                                  ON HOLD
-                                </span>
-                              </div>
+                              <OnHoldSash />
                             )}
                             {project.status === "Cancelled" && (
-                              <div
-                                style={{
-                                  position: "absolute",
-                                  top: "50%",
-                                  left: "50%",
-                                  transform: "translate(-50%, -50%) rotate(-45deg)",
-                                  width: "280px",
-                                  height: "40px",
-                                  background: "#cc0000",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  zIndex: 10,
-                                  boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    color: WHITE,
-                                    fontWeight: 700,
-                                    fontSize: "1.1rem",
-                                    letterSpacing: "2px",
-                                    textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                                  }}
-                                >
-                                  CANCELLED
-                                </span>
-                              </div>
+                              <CancelledSash />
                             )}
                             <div
                               style={{
@@ -1622,64 +1571,10 @@ export default function SiteVisitPlanner() {
                           >
                             {/* On Hold and Cancelled bands - same as before */}
                             {(project.on_hold === 'true' || project.on_hold === true) && (
-                              <div
-                                style={{
-                                  position: "absolute",
-                                  top: "50%",
-                                  left: "50%",
-                                  transform: "translate(-50%, -50%) rotate(-45deg)",
-                                  width: "280px",
-                                  height: "40px",
-                                  background: "#0066cc",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  zIndex: 10,
-                                  boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    color: WHITE,
-                                    fontWeight: 700,
-                                    fontSize: "1.1rem",
-                                    letterSpacing: "2px",
-                                    textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                                  }}
-                                >
-                                  ON HOLD
-                                </span>
-                              </div>
+                              <OnHoldSash />
                             )}
                             {project.status === "Cancelled" && (
-                              <div
-                                style={{
-                                  position: "absolute",
-                                  top: "50%",
-                                  left: "50%",
-                                  transform: "translate(-50%, -50%) rotate(-45deg)",
-                                  width: "280px",
-                                  height: "40px",
-                                  background: "#cc0000",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  zIndex: 10,
-                                  boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    color: WHITE,
-                                    fontWeight: 700,
-                                    fontSize: "1.1rem",
-                                    letterSpacing: "2px",
-                                    textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                                  }}
-                                >
-                                  CANCELLED
-                                </span>
-                              </div>
+                              <CancelledSash />
                             )}
                             <div
                               style={{
@@ -1750,65 +1645,11 @@ export default function SiteVisitPlanner() {
                     >
                       {/* On Hold Diagonal Band */}
                       {(draggedProject.on_hold === 'true' || draggedProject.on_hold === true) && (
-                        <div
-                          style={{
-                            position: "absolute",
-                            top: "50%",
-                            left: "50%",
-                            transform: "translate(-50%, -50%) rotate(-45deg)",
-                            width: "280px",
-                            height: "40px",
-                            background: "#0066cc",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            zIndex: 10,
-                            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-                          }}
-                        >
-                          <span
-                            style={{
-                              color: WHITE,
-                              fontWeight: 700,
-                              fontSize: "1.1rem",
-                              letterSpacing: "2px",
-                              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                            }}
-                          >
-                            ON HOLD
-                          </span>
-                        </div>
+                        <OnHoldSash />
                       )}
                       {/* Cancelled Diagonal Band */}
                       {draggedProject.status === "Cancelled" && (
-                        <div
-                          style={{
-                            position: "absolute",
-                            top: "50%",
-                            left: "50%",
-                            transform: "translate(-50%, -50%) rotate(-45deg)",
-                            width: "280px",
-                            height: "40px",
-                            background: "#cc0000",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            zIndex: 10,
-                            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-                          }}
-                        >
-                          <span
-                            style={{
-                              color: WHITE,
-                              fontWeight: 700,
-                              fontSize: "1.1rem",
-                              letterSpacing: "2px",
-                              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                            }}
-                          >
-                            CANCELLED
-                          </span>
-                        </div>
+                        <CancelledSash />
                       )}
                       <div
                         style={{
@@ -2011,7 +1852,7 @@ export default function SiteVisitPlanner() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   To (comma-separated)
                 </label>
                 <input
@@ -2032,7 +1873,7 @@ export default function SiteVisitPlanner() {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   From
                 </label>
                 <select
@@ -2062,7 +1903,7 @@ export default function SiteVisitPlanner() {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Subject
                 </label>
                 <input
@@ -2083,7 +1924,7 @@ export default function SiteVisitPlanner() {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Body
                 </label>
                 <div

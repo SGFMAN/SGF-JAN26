@@ -24,10 +24,14 @@ import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 import { isLatestRevisionWorkingDrawingsApproved } from "../utils/drawingsStatusRules";
 import logo from "../images/logo.png";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d";
-const WHITE = "#fff";
+import { UI, BANNER } from "../utils/uiThemeTokens.js";
+import { getThemeBannerColors, readStoredUiThemeId } from "../themes/applyUiTheme";
+import { getLoggedInUserId } from "../utils/auth";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const DRAWING_MANAGER_STATUS_SECTIONS = [
@@ -402,6 +406,7 @@ export default function DrawingManager() {
    */
   function buildEmailListHtml(projectRows) {
     const DEPOSIT_ORANGE = "#ff8800";
+    const banner = getThemeBannerColors(readStoredUiThemeId(getLoggedInUserId()));
     const EMAIL_W = 960;
     const PROJECT_W = 320;
     const OTHER_W = 128;
@@ -472,7 +477,7 @@ export default function DrawingManager() {
           `<td style="${tdBase}text-align:left;background:${WHITE};">` +
             `<span style="word-break:break-word;">${escapeHtmlForEmailList(projectName)}</span>` +
             (onHold
-              ? `<br/><span style="display:inline-block;margin-top:2px;padding:2px 5px;background:#0066cc;color:${WHITE};border-radius:2px;font-size:9px;font-weight:700;line-height:1.1;">ON HOLD</span>`
+              ? `<br/><span style="display:inline-block;margin-top:2px;padding:2px 5px;background:${banner.onHold};color:${banner.onHoldText};border-radius:2px;font-size:9px;font-weight:700;line-height:1.1;">ON HOLD</span>`
               : "") +
             (needsDeposit
               ? `<br/><span style="display:inline-block;margin-top:2px;padding:2px 5px;background:${DEPOSIT_ORANGE};color:${WHITE};border-radius:2px;font-size:9px;font-weight:700;line-height:1.1;">NEEDS DEPOSIT</span>`
@@ -858,8 +863,8 @@ export default function DrawingManager() {
                 <span
                   style={{
                     padding: "4px 8px",
-                    background: "#0066cc",
-                    color: WHITE,
+                    background: BANNER.onHold,
+                    color: BANNER.onHoldText,
                     borderRadius: "4px",
                     fontSize: "0.75rem",
                     fontWeight: 600,
@@ -932,7 +937,7 @@ export default function DrawingManager() {
             gap: "4px",
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = "#f0f0f0";
+            e.currentTarget.style.background = UI.inputBg;
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.background = WHITE;
@@ -963,7 +968,7 @@ export default function DrawingManager() {
               fontSize: "0.78rem",
               fontWeight: 600,
               color: MONUMENT,
-              background: "#f0f0f0",
+              background: UI.inputBg,
               border: `1px solid ${SECTION_GREY}`,
               borderRadius: "6px",
               cursor: "pointer",
@@ -1090,7 +1095,7 @@ export default function DrawingManager() {
             style={{
               background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
               color: stateFilter === "VIC" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : MONUMENT}`,
+              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -1100,7 +1105,7 @@ export default function DrawingManager() {
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -1120,7 +1125,7 @@ export default function DrawingManager() {
             style={{
               background: stateFilter === "QLD" ? "#D54358" : WHITE,
               color: stateFilter === "QLD" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : MONUMENT}`,
+              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -1130,7 +1135,7 @@ export default function DrawingManager() {
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -1150,7 +1155,7 @@ export default function DrawingManager() {
             style={{
               background: stateFilter === "All" ? MONUMENT : WHITE,
               color: stateFilter === "All" ? WHITE : MONUMENT,
-              border: `2px solid ${MONUMENT}`,
+              border: `2px solid ${UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -1160,7 +1165,7 @@ export default function DrawingManager() {
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "All") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -1211,7 +1216,7 @@ export default function DrawingManager() {
             to="/managers/site-visit-manager"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -1233,7 +1238,7 @@ export default function DrawingManager() {
             to="/managers/contract-manager"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -1255,7 +1260,7 @@ export default function DrawingManager() {
             to="/managers/colour-manager"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -1277,7 +1282,7 @@ export default function DrawingManager() {
             to="/managers/status-manager"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -1312,7 +1317,7 @@ export default function DrawingManager() {
               transition: "background 0.18s, color 0.15s",
               marginBottom: "0px",
               lineHeight: "1.4",
-              outline: `2px solid ${MONUMENT}`,
+              outline: `2px solid ${UI.outline}`,
               boxShadow: "0 2px 4px rgba(50,50,51,.04)",
               display: "block",
             }}
@@ -1323,7 +1328,7 @@ export default function DrawingManager() {
             to="/managers/qp-manager"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -1345,7 +1350,7 @@ export default function DrawingManager() {
             to="/managers/project-claim"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -1368,7 +1373,7 @@ export default function DrawingManager() {
             to="/projects"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -1450,7 +1455,7 @@ export default function DrawingManager() {
             );
           })()}
 
-          {loading && <p style={{ color: "#32323399" }}>Loading projects...</p>}
+          {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && (
             <p style={{ color: "#cc3333" }}>
               Error: {error}
@@ -1466,7 +1471,7 @@ export default function DrawingManager() {
                 );
 
                 if (totalCount === 0) {
-                  return <p style={{ color: "#32323399" }}>No Design Phase projects found.</p>;
+                  return <p style={{ color: UI.textMuted }}>No Design Phase projects found.</p>;
                 }
 
                 return (
@@ -1486,7 +1491,7 @@ export default function DrawingManager() {
                             {sectionTitle} ({sectionProjects.length})
                           </h3>
                           {sectionProjects.length === 0 ? (
-                            <p style={{ color: "#32323399", margin: 0, fontSize: "0.9rem" }}>
+                            <p style={{ color: UI.textMuted, margin: 0, fontSize: "0.9rem" }}>
                               No projects
                             </p>
                           ) : (
@@ -1547,7 +1552,7 @@ export default function DrawingManager() {
             
             <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "20px" }}>
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   To (comma-separated)
                 </label>
                 <input
@@ -1568,7 +1573,7 @@ export default function DrawingManager() {
               </div>
               
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   From
                 </label>
                 <input
@@ -1589,7 +1594,7 @@ export default function DrawingManager() {
               </div>
               
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Subject
                 </label>
                 <input
@@ -1611,7 +1616,7 @@ export default function DrawingManager() {
             </div>
             
             <div style={{ marginBottom: "20px" }}>
-              <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+              <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                 Preview (960px wide — same grid as the sent email)
               </label>
               <div
@@ -1619,7 +1624,7 @@ export default function DrawingManager() {
                   border: `1px solid ${SECTION_GREY}`,
                   borderRadius: "8px",
                   padding: "10px",
-                  background: "#f5f5f5",
+                  background: UI.inputBg,
                   maxHeight: "420px",
                   overflow: "auto",
                   lineHeight: 1.25,
@@ -1856,7 +1861,7 @@ export default function DrawingManager() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "18px" }}>
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   To (comma-separated)
                 </label>
                 <input
@@ -1877,7 +1882,7 @@ export default function DrawingManager() {
                 />
               </div>
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   From
                 </label>
                 <input
@@ -1898,7 +1903,7 @@ export default function DrawingManager() {
                 />
               </div>
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Subject
                 </label>
                 <input
@@ -1919,7 +1924,7 @@ export default function DrawingManager() {
                 />
               </div>
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Body
                 </label>
                 <textarea

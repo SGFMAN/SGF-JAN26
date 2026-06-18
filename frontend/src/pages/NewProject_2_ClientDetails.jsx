@@ -1,8 +1,10 @@
 import React from "react";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 
 export default function NewProject2({ isOpen, onClose, formData, onFormDataChange, onBack, onNext }) {
   if (!isOpen) return null;
@@ -55,7 +57,7 @@ export default function NewProject2({ isOpen, onClose, formData, onFormDataChang
             style={{
               display: "block",
               fontSize: "0.9rem",
-              color: "#32323399",
+              color: UI.textMuted,
               marginBottom: "6px",
               fontWeight: 500,
             }}
@@ -85,7 +87,7 @@ export default function NewProject2({ isOpen, onClose, formData, onFormDataChang
             style={{
               display: "block",
               fontSize: "0.9rem",
-              color: "#32323399",
+              color: UI.textMuted,
               marginBottom: "6px",
               fontWeight: 500,
             }}
@@ -115,7 +117,7 @@ export default function NewProject2({ isOpen, onClose, formData, onFormDataChang
             style={{
               display: "block",
               fontSize: "0.9rem",
-              color: "#32323399",
+              color: UI.textMuted,
               marginBottom: "6px",
               fontWeight: 500,
             }}
@@ -146,7 +148,7 @@ export default function NewProject2({ isOpen, onClose, formData, onFormDataChang
             type="button"
             onClick={onBack}
             style={{
-              background: "#e0e0e0",
+              background: UI.border,
               color: MONUMENT,
               border: "none",
               borderRadius: "10px",
@@ -163,7 +165,7 @@ export default function NewProject2({ isOpen, onClose, formData, onFormDataChang
             type="button"
             onClick={onClose}
             style={{
-              background: "#e0e0e0",
+              background: UI.border,
               color: MONUMENT,
               border: "none",
               borderRadius: "10px",

@@ -2,8 +2,10 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import logo from "../images/logo.png";
 
-const MONUMENT = "#323233";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 export default function ApproveConcept() {

@@ -6,10 +6,12 @@ import { isUserAdmin } from "../utils/auth";
 import logo from "../images/logo.png";
 import { projectPath } from "../utils/projectUrl";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 // SubStatus Detail options based on SubStatus
@@ -709,7 +711,7 @@ export default function StatusManager() {
             style={{
               background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
               color: stateFilter === "VIC" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : MONUMENT}`,
+              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -719,7 +721,7 @@ export default function StatusManager() {
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -739,7 +741,7 @@ export default function StatusManager() {
             style={{
               background: stateFilter === "QLD" ? "#D54358" : WHITE,
               color: stateFilter === "QLD" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : MONUMENT}`,
+              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -749,7 +751,7 @@ export default function StatusManager() {
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -769,7 +771,7 @@ export default function StatusManager() {
             style={{
               background: stateFilter === "All" ? MONUMENT : WHITE,
               color: stateFilter === "All" ? WHITE : MONUMENT,
-              border: `2px solid ${MONUMENT}`,
+              border: `2px solid ${UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -779,7 +781,7 @@ export default function StatusManager() {
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "All") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -830,7 +832,7 @@ export default function StatusManager() {
             to="/managers/site-visit-manager"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -852,7 +854,7 @@ export default function StatusManager() {
             to="/managers/contract-manager"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -874,7 +876,7 @@ export default function StatusManager() {
             to="/managers/colour-manager"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -909,7 +911,7 @@ export default function StatusManager() {
               transition: "background 0.18s, color 0.15s",
               marginBottom: "0px",
               lineHeight: "1.4",
-              outline: `2px solid ${MONUMENT}`,
+              outline: `2px solid ${UI.outline}`,
               boxShadow: "0 2px 4px rgba(50,50,51,.04)",
               display: "block",
             }}
@@ -921,7 +923,7 @@ export default function StatusManager() {
               to="/managers/drawing-manager"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -944,7 +946,7 @@ export default function StatusManager() {
             to="/managers/qp-manager"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -966,7 +968,7 @@ export default function StatusManager() {
             to="/managers/project-claim"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -989,7 +991,7 @@ export default function StatusManager() {
             to="/projects"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -1643,7 +1645,7 @@ export default function StatusManager() {
                       cursor: "pointer",
                       transition: "background 0.2s",
                     }}
-                    onMouseOver={(e) => (e.currentTarget.style.background = "#f5f5f5")}
+                    onMouseOver={(e) => (e.currentTarget.style.background = UI.inputBg)}
                     onMouseOut={(e) => (e.currentTarget.style.background = WHITE)}
                     onClick={async () => {
                       // Select this option
@@ -1679,7 +1681,7 @@ export default function StatusManager() {
                           cursor: "pointer",
                           transition: "background 0.2s",
                         }}
-                        onMouseOver={(e) => (e.target.style.background = "#f5f5f5")}
+                        onMouseOver={(e) => (e.target.style.background = UI.inputBg)}
                         onMouseOut={(e) => (e.target.style.background = WHITE)}
                       >
                         Edit
@@ -1830,7 +1832,7 @@ export default function StatusManager() {
                       cursor: "pointer",
                       transition: "background 0.2s",
                     }}
-                    onMouseOver={(e) => (e.target.style.background = "#f5f5f5")}
+                    onMouseOver={(e) => (e.target.style.background = UI.inputBg)}
                     onMouseOut={(e) => (e.target.style.background = WHITE)}
                   >
                     Cancel Edit
@@ -1860,7 +1862,7 @@ export default function StatusManager() {
                   cursor: "pointer",
                   transition: "background 0.2s",
                 }}
-                onMouseOver={(e) => (e.target.style.background = "#f5f5f5")}
+                onMouseOver={(e) => (e.target.style.background = UI.inputBg)}
                 onMouseOut={(e) => (e.target.style.background = WHITE)}
               >
                 Close

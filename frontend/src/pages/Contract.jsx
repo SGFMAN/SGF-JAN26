@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const CONTRACT_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
@@ -191,7 +193,7 @@ export default function Contract({ project, onUpdate }) {
           {/* Column 1 - Contract */}
           <div style={{ flex: "1", minWidth: "200px" }}>
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Contract Status
               </div>
               <select
@@ -222,7 +224,7 @@ export default function Contract({ project, onUpdate }) {
 
             {contractStatus === "Sent" && project?.contract_sent_date && (
               <div style={{ marginBottom: "16px" }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                   Sent Date & Time
                 </div>
                 <div
@@ -245,7 +247,7 @@ export default function Contract({ project, onUpdate }) {
 
             {contractStatus === "Complete" && project?.contract_complete_date && (
               <div style={{ marginBottom: "16px" }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                   Complete Date & Time
                 </div>
                 <div
@@ -270,7 +272,7 @@ export default function Contract({ project, onUpdate }) {
           {/* Column 2 - Supporting Documents */}
           <div style={{ flex: "1", minWidth: "200px" }}>
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Supporting Documents Status
               </div>
               <select
@@ -301,7 +303,7 @@ export default function Contract({ project, onUpdate }) {
 
             {supportingDocumentsStatus === "Sent" && project?.supporting_documents_sent_date && (
               <div style={{ marginBottom: "16px" }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                   Sent Date & Time
                 </div>
                 <div
@@ -324,7 +326,7 @@ export default function Contract({ project, onUpdate }) {
 
             {supportingDocumentsStatus === "Complete" && project?.supporting_documents_complete_date && (
               <div style={{ marginBottom: "16px" }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                   Complete Date & Time
                 </div>
                 <div
@@ -349,7 +351,7 @@ export default function Contract({ project, onUpdate }) {
           {/* Column 3 - Water Authority & Water Declaration */}
           <div style={{ flex: "1", minWidth: "200px" }}>
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Water Authority
               </div>
               <select
@@ -380,7 +382,7 @@ export default function Contract({ project, onUpdate }) {
 
             {waterAuthority !== "Not Required" && (
               <div style={{ marginBottom: "16px" }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                   Water Declaration Status
                 </div>
                 <select
@@ -412,7 +414,7 @@ export default function Contract({ project, onUpdate }) {
 
             {waterDeclarationStatus === "Sent" && project?.water_declaration_sent_date && (
               <div style={{ marginBottom: "16px" }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                   Sent Date & Time
                 </div>
                 <div
@@ -435,7 +437,7 @@ export default function Contract({ project, onUpdate }) {
 
             {waterDeclarationStatus === "Complete" && project?.water_declaration_complete_date && (
               <div style={{ marginBottom: "16px" }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                   Complete Date & Time
                 </div>
                 <div
@@ -459,7 +461,7 @@ export default function Contract({ project, onUpdate }) {
 
           {/* Column 4 - Notes */}
           <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", height: "100%" }}>
-            <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+            <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
               Notes
             </div>
             <textarea

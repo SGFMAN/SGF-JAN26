@@ -2,9 +2,11 @@ import React, { useState, useEffect } from "react";
 import { CLASSIFICATION_OPTIONS, CLASSIFICATION_ABBREV_MAP as CLASSIFICATION_MAP } from "../utils/classifications";
 import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const STREAM_OPTIONS = [
@@ -465,7 +467,7 @@ export default function NewProject_3_ProjectCost({
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -496,7 +498,7 @@ export default function NewProject_3_ProjectCost({
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -532,7 +534,7 @@ export default function NewProject_3_ProjectCost({
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -582,7 +584,7 @@ export default function NewProject_3_ProjectCost({
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -622,7 +624,7 @@ export default function NewProject_3_ProjectCost({
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -660,7 +662,7 @@ export default function NewProject_3_ProjectCost({
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -696,7 +698,7 @@ export default function NewProject_3_ProjectCost({
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -734,7 +736,7 @@ export default function NewProject_3_ProjectCost({
               type="button"
               onClick={onBack}
               style={{
-                background: "#e0e0e0",
+                background: UI.border,
                 color: MONUMENT,
                 border: "none",
                 borderRadius: "10px",
@@ -751,7 +753,7 @@ export default function NewProject_3_ProjectCost({
               type="button"
               onClick={onClose}
               style={{
-                background: "#e0e0e0",
+                background: UI.border,
                 color: MONUMENT,
                 border: "none",
                 borderRadius: "10px",
@@ -852,7 +854,7 @@ export default function NewProject_3_ProjectCost({
                 type="button"
                 onClick={handleDepositModalCancel}
                 style={{
-                  background: "#e0e0e0",
+                  background: UI.border,
                   color: MONUMENT,
                   border: "none",
                   borderRadius: "8px",

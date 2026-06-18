@@ -6,8 +6,10 @@ import { COLORBOND_COLOURS } from "../constants/colorbondColours";
 import logo from "../images/logo.png";
 import ThreeDVis from "./ThreeDVis";
 
-const MONUMENT = "#323233";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const ROOF_STYLE_OPTIONS = ["Affordable", "Superior", "Skillion"];
@@ -365,7 +367,7 @@ export default function ThreeDVisPortal() {
           }}>
             {/* Roof Style */}
             <div style={{ marginBottom: "12px", flexShrink: 0 }}>
-              <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "4px", fontWeight: "500" }}>
+              <div style={{ fontSize: "0.85rem", color: UI.textMuted, marginBottom: "4px", fontWeight: "500" }}>
                 Roof Style
               </div>
               <select
@@ -394,7 +396,7 @@ export default function ThreeDVisPortal() {
 
             {/* Building Part Selector */}
             <div style={{ marginBottom: "12px", flexShrink: 0 }}>
-              <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "4px", fontWeight: "500" }}>
+              <div style={{ fontSize: "0.85rem", color: UI.textMuted, marginBottom: "4px", fontWeight: "500" }}>
                 Building Part
               </div>
               <select
@@ -440,7 +442,7 @@ export default function ThreeDVisPortal() {
                         cursor: "pointer",
                         padding: "8px",
                         borderRadius: "8px",
-                        backgroundColor: isSelected ? "#f0f0f0" : "transparent",
+                        backgroundColor: isSelected ? UI.inputBg : "transparent",
                         border: isSelected ? "2px solid #ff0000" : "1px solid #ddd",
                         transition: "all 0.2s",
                         display: "flex",
@@ -450,7 +452,7 @@ export default function ThreeDVisPortal() {
                       }}
                       onMouseEnter={(e) => {
                         if (!isSelected) {
-                          e.currentTarget.style.backgroundColor = "#f9f9f9";
+                          e.currentTarget.style.backgroundColor = UI.inputBg;
                         }
                       }}
                       onMouseLeave={(e) => {

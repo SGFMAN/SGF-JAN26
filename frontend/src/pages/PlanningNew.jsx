@@ -5,13 +5,15 @@ import { portalProjectPath, projectPath } from "../utils/projectUrl";
 import { isSecretAreaProject, unlockSecretAreaSession } from "../utils/secretAreaProject";
 import SiteVisit from "./SiteVisit";
 
-const MONUMENT = "#323233";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
 const TILE_BLUE = "#63a7e8";
-const WHITE = "#fff";
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const TILE_RED = "#d9534f";
 const TILE_GREEN = "#43a047";
 const TILE_ORANGE = "#f0ad4e";
-const SECTION_GREY = "#a1a1a3";
+const SECTION_GREY = UI.panelBg;
 const SECRET_PURPLE = "#B19CD9";
 const SURVEY_STATUS_OPTIONS = ["Not Booked", "Booked", "Complete"];
 const SOIL_STATUS_OPTIONS = ["Not Booked", "Booked", "Complete"];
@@ -1065,7 +1067,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
           height: "100%",
           minWidth: 0,
           minHeight: 0,
-          border: "none",
+          border: selected ? `2px solid ${UI.outline}` : "2px solid transparent",
           borderRadius: "6px",
           padding: "5px",
           fontSize: "0.8125rem",
@@ -1075,7 +1077,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
           background: selected ? WHITE : "rgba(255,255,255,0.22)",
           color: selected ? MONUMENT : "#2c2c30",
           boxShadow: selected ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
-          outline: selected ? `2px solid ${MONUMENT}` : "none",
+          outline: "none",
           overflow: "hidden",
         }}
       >
@@ -1151,6 +1153,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
             height: "100%",
             background: SECTION_GREY,
             borderRadius: "12px",
+            border: `2px solid ${UI.outline}`,
             padding: "8px 6px",
             boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
             display: "grid",
@@ -1176,6 +1179,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
             flexDirection: "column",
             background: WHITE,
             borderRadius: "12px",
+            border: `2px solid ${UI.outline}`,
             boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
             overflow: "hidden",
           }}
@@ -1638,7 +1642,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                         style={{
                           display: "block",
                           fontSize: "0.9rem",
-                          color: "#32323399",
+                          color: UI.textMuted,
                           marginBottom: "6px",
                           fontWeight: 500,
                         }}
@@ -1749,7 +1753,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                         style={{
                           display: "block",
                           fontSize: "0.9rem",
-                          color: "#32323399",
+                          color: UI.textMuted,
                           marginBottom: "6px",
                           fontWeight: 500,
                         }}
@@ -1849,7 +1853,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                         style={{
                           display: "block",
                           fontSize: "0.9rem",
-                          color: "#32323399",
+                          color: UI.textMuted,
                           marginBottom: "6px",
                           fontWeight: 500,
                         }}
@@ -2139,7 +2143,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                         style={{
                           display: "block",
                           fontSize: "0.9rem",
-                          color: "#32323399",
+                          color: UI.textMuted,
                           marginBottom: "6px",
                           fontWeight: 500,
                         }}
@@ -2219,7 +2223,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                         style={{
                           display: "block",
                           fontSize: "0.9rem",
-                          color: "#32323399",
+                          color: UI.textMuted,
                           marginBottom: "6px",
                           fontWeight: 500,
                         }}
@@ -2630,7 +2634,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                     justifyContent: "center",
                     overflow: "auto",
                     borderRadius: "8px",
-                    background: "#f5f5f5",
+                    background: UI.inputBg,
                   }}
                 >
                   <img

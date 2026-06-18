@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 const TEMPLATE_TEST_EMAIL_TO = "ben@superiorgrannyflats.com.au";
 const TEMPLATE_SECTIONS = ["Colours", "Drawings", "New Project", "Misc"];
@@ -526,7 +528,7 @@ export default function EmailTemplate() {
           }}
         >
           {templates.length === 0 ? (
-            <div style={{ color: "#32323399", fontSize: "0.9rem", fontStyle: "italic" }}>
+            <div style={{ color: UI.textMuted, fontSize: "0.9rem", fontStyle: "italic" }}>
               None yet
             </div>
           ) : (
@@ -544,7 +546,7 @@ export default function EmailTemplate() {
                       borderRadius: "10px",
                       border: "2px solid #000",
                       background: "#A6C9EC",
-                      color: "#404049",
+                      color: UI.textSecondary,
                       cursor: "pointer",
                       fontSize: "0.95rem",
                       fontWeight: 500,
@@ -557,7 +559,7 @@ export default function EmailTemplate() {
                     }}
                   >
                     <span>{section}</span>
-                    <span style={{ fontWeight: 500, color: "#404049", fontSize: "0.95rem", letterSpacing: "0.5px", opacity: 0.85 }}>
+                    <span style={{ fontWeight: 500, color: UI.textSecondary, fontSize: "0.95rem", letterSpacing: "0.5px", opacity: 0.85 }}>
                       {sectionTemplates.length} {isExpanded ? "▾" : "▸"}
                     </span>
                   </button>
@@ -566,7 +568,7 @@ export default function EmailTemplate() {
                       {sectionTemplates.length === 0 ? (
                         <div
                           style={{
-                            color: "#32323399",
+                            color: UI.textMuted,
                             fontSize: "0.85rem",
                             fontStyle: "italic",
                             padding: "4px 2px 8px 2px",
@@ -624,10 +626,10 @@ export default function EmailTemplate() {
             </h2>
             <div style={{ fontSize: "0.88rem", color: "#323233cc", lineHeight: 1.45, marginBottom: "8px" }}>
               <div>
-                <span style={{ color: "#32323399" }}>Name:</span> {templateName}
+                <span style={{ color: UI.textMuted }}>Name:</span> {templateName}
               </div>
               <div>
-                <span style={{ color: "#32323399" }}>Group:</span> {templateGroup}
+                <span style={{ color: UI.textMuted }}>Group:</span> {templateGroup}
               </div>
               <button
                 type="button"
@@ -656,7 +658,7 @@ export default function EmailTemplate() {
               style={{
                 display: "block",
                 fontSize: "0.9rem",
-                color: "#32323399",
+                color: UI.textMuted,
                 marginBottom: "6px",
                 fontWeight: 500,
               }}
@@ -711,7 +713,7 @@ export default function EmailTemplate() {
                 fontWeight: 500,
                 color: MONUMENT,
                 background: WHITE,
-                border: `2px solid ${MONUMENT}`,
+                border: `2px solid ${UI.outline}`,
                 borderRadius: "8px",
                 cursor: testSending ? "wait" : "pointer",
                 opacity: testSending ? 0.75 : 1,
@@ -1000,7 +1002,7 @@ export default function EmailTemplate() {
               style={{
                 display: "block",
                 fontSize: "0.9rem",
-                color: "#32323399",
+                color: UI.textMuted,
                 marginBottom: "6px",
                 fontWeight: 500,
               }}
@@ -1030,7 +1032,7 @@ export default function EmailTemplate() {
               style={{
                 display: "block",
                 fontSize: "0.9rem",
-                color: "#32323399",
+                color: UI.textMuted,
                 marginBottom: "6px",
                 fontWeight: 500,
               }}

@@ -2,9 +2,11 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { fitScale } from "../utils/floorPlanCrop";
 import ModalBackdrop from "./ModalBackdrop";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 12;
 const VIEWPORT_WIDTH = 880;

@@ -1,7 +1,9 @@
 import React from "react";
 
-const MONUMENT = "#323233";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 
 const COLUMN1_STREAM = "SGF - VIC";
 const COLUMN2_STREAM = "SGF - QLD";

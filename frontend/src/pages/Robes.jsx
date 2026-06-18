@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 // Generate width options from 1200 to 3500 in 100mm increments
@@ -343,7 +345,7 @@ export default function Robes({ project, onUpdate }) {
             style={{
               display: "block",
               fontSize: "0.9rem",
-              color: "#32323399",
+              color: UI.textMuted,
               marginBottom: "6px",
               fontWeight: 500,
             }}
@@ -357,7 +359,7 @@ export default function Robes({ project, onUpdate }) {
               width: "100%",
               padding: "12px 16px",
               borderRadius: "8px",
-              border: `2px solid ${MONUMENT}`,
+              border: `2px solid ${UI.outline}`,
               fontSize: "1rem",
               color: MONUMENT,
               background: WHITE,
@@ -486,7 +488,7 @@ export default function Robes({ project, onUpdate }) {
                       style={{
                         display: "block",
                         fontSize: "0.85rem",
-                        color: "#32323399",
+                        color: UI.textMuted,
                         marginBottom: "6px",
                         fontWeight: 500,
                       }}
@@ -509,7 +511,7 @@ export default function Robes({ project, onUpdate }) {
                             padding: "12px 16px",
                             paddingRight: "40px",
                             borderRadius: "8px",
-                            border: `2px solid ${MONUMENT}`,
+                            border: `2px solid ${UI.outline}`,
                             fontSize: "0.9rem",
                             color: MONUMENT,
                             background: WHITE,
@@ -557,7 +559,7 @@ export default function Robes({ project, onUpdate }) {
                             minWidth: "80px",
                             padding: "12px 12px",
                             borderRadius: "8px",
-                            border: `2px solid ${MONUMENT}`,
+                            border: `2px solid ${UI.outline}`,
                             fontSize: "0.9rem",
                             color: MONUMENT,
                             background: WHITE,
@@ -576,7 +578,7 @@ export default function Robes({ project, onUpdate }) {
                         style={{
                           display: "block",
                           fontSize: "0.85rem",
-                          color: "#32323399",
+                          color: UI.textMuted,
                           marginBottom: "6px",
                           fontWeight: 500,
                         }}
@@ -590,7 +592,7 @@ export default function Robes({ project, onUpdate }) {
                           width: "100%",
                           padding: "12px 16px",
                           borderRadius: "8px",
-                          border: `2px solid ${MONUMENT}`,
+                          border: `2px solid ${UI.outline}`,
                           fontSize: "0.9rem",
                           color: MONUMENT,
                           background: WHITE,
@@ -615,7 +617,7 @@ export default function Robes({ project, onUpdate }) {
                         style={{
                           display: "block",
                           fontSize: "0.85rem",
-                          color: "#32323399",
+                          color: UI.textMuted,
                           marginBottom: "6px",
                           fontWeight: 500,
                         }}
@@ -629,7 +631,7 @@ export default function Robes({ project, onUpdate }) {
                           width: "100%",
                           padding: "12px 16px",
                           borderRadius: "8px",
-                          border: `2px solid ${MONUMENT}`,
+                          border: `2px solid ${UI.outline}`,
                           fontSize: "0.9rem",
                           color: MONUMENT,
                           background: WHITE,
@@ -657,7 +659,7 @@ export default function Robes({ project, onUpdate }) {
                       style={{
                         display: "block",
                         fontSize: "0.85rem",
-                        color: "#32323399",
+                        color: UI.textMuted,
                         marginBottom: "6px",
                         fontWeight: 500,
                       }}
@@ -680,7 +682,7 @@ export default function Robes({ project, onUpdate }) {
                             padding: "12px 16px",
                             paddingRight: "40px",
                             borderRadius: "8px",
-                            border: `2px solid ${MONUMENT}`,
+                            border: `2px solid ${UI.outline}`,
                             fontSize: "0.9rem",
                             color: MONUMENT,
                             background: WHITE,
@@ -728,7 +730,7 @@ export default function Robes({ project, onUpdate }) {
                             minWidth: "80px",
                             padding: "12px 12px",
                             borderRadius: "8px",
-                            border: `2px solid ${MONUMENT}`,
+                            border: `2px solid ${UI.outline}`,
                             fontSize: "0.9rem",
                             color: MONUMENT,
                             background: WHITE,
@@ -746,7 +748,7 @@ export default function Robes({ project, onUpdate }) {
                       style={{
                         display: "block",
                         fontSize: "0.85rem",
-                        color: "#32323399",
+                        color: UI.textMuted,
                         marginBottom: "6px",
                         fontWeight: 500,
                       }}
@@ -760,7 +762,7 @@ export default function Robes({ project, onUpdate }) {
                         width: "100%",
                         padding: "12px 16px",
                         borderRadius: "8px",
-                        border: `2px solid ${MONUMENT}`,
+                        border: `2px solid ${UI.outline}`,
                         fontSize: "0.9rem",
                         color: MONUMENT,
                         background: WHITE,
@@ -789,7 +791,7 @@ export default function Robes({ project, onUpdate }) {
                           style={{
                             display: "block",
                             fontSize: "0.85rem",
-                            color: "#32323399",
+                            color: UI.textMuted,
                             marginBottom: "6px",
                             fontWeight: 500,
                           }}
@@ -803,7 +805,7 @@ export default function Robes({ project, onUpdate }) {
                             width: "100%",
                             padding: "12px 16px",
                             borderRadius: "8px",
-                            border: `2px solid ${MONUMENT}`,
+                            border: `2px solid ${UI.outline}`,
                             fontSize: "0.9rem",
                             color: MONUMENT,
                             background: WHITE,
@@ -829,7 +831,7 @@ export default function Robes({ project, onUpdate }) {
                             style={{
                               display: "block",
                               fontSize: "0.85rem",
-                              color: "#32323399",
+                              color: UI.textMuted,
                               marginBottom: "6px",
                               fontWeight: 500,
                             }}
@@ -843,7 +845,7 @@ export default function Robes({ project, onUpdate }) {
                               width: "100%",
                               padding: "12px 16px",
                               borderRadius: "8px",
-                              border: `2px solid ${MONUMENT}`,
+                              border: `2px solid ${UI.outline}`,
                               fontSize: "0.9rem",
                               color: MONUMENT,
                               background: WHITE,
@@ -873,7 +875,7 @@ export default function Robes({ project, onUpdate }) {
                           style={{
                             display: "block",
                             fontSize: "0.85rem",
-                            color: "#32323399",
+                            color: UI.textMuted,
                             marginBottom: "6px",
                             fontWeight: 500,
                           }}
@@ -887,7 +889,7 @@ export default function Robes({ project, onUpdate }) {
                             width: "100%",
                             padding: "12px 16px",
                             borderRadius: "8px",
-                            border: `2px solid ${MONUMENT}`,
+                            border: `2px solid ${UI.outline}`,
                             fontSize: "0.9rem",
                             color: MONUMENT,
                             background: WHITE,
@@ -913,7 +915,7 @@ export default function Robes({ project, onUpdate }) {
                             style={{
                               display: "block",
                               fontSize: "0.85rem",
-                              color: "#32323399",
+                              color: UI.textMuted,
                               marginBottom: "6px",
                               fontWeight: 500,
                             }}
@@ -927,7 +929,7 @@ export default function Robes({ project, onUpdate }) {
                               width: "100%",
                               padding: "12px 16px",
                               borderRadius: "8px",
-                              border: `2px solid ${MONUMENT}`,
+                              border: `2px solid ${UI.outline}`,
                               fontSize: "0.9rem",
                               color: MONUMENT,
                               background: WHITE,

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import Users from "./Users";
+import Permissions from "./Permissions";
 import FileSettings from "./FileSettings";
 import EmailTemplate from "./EmailTemplate";
 import EmailSettings from "./EmailSettings";
@@ -10,10 +11,12 @@ import StreamSettings from "./StreamSettings";
 import MapsSettings from "./MapsSettings";
 import logo from "../images/logo.png";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d"; // More blue and slightly lighter version of monument
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 
 // Sidebar menu entries (alphabetical by label)
 const menuOptions = [
@@ -25,6 +28,7 @@ const menuOptions = [
   { key: "maps", label: "Maps" },
   { key: "emailSettings", label: "SMTP Settings" },
   { key: "users", label: "Users" },
+  { key: "permissions", label: "Permissions" },
 ];
 
 export default function SettingsPage() {
@@ -40,6 +44,8 @@ export default function SettingsPage() {
         return <EmailSettings />;
       case "users":
         return <Users />;
+      case "permissions":
+        return <Permissions />;
       case "account":
         return <AccountSettings />;
       case "colourSettings":
@@ -160,7 +166,7 @@ export default function SettingsPage() {
               onClick={() => setSelected(option.key)}
               style={{
                 background: selected === option.key ? WHITE : "transparent",
-                color: selected === option.key ? MONUMENT : "#404049",
+                color: selected === option.key ? MONUMENT : UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "12px 8px",
@@ -172,7 +178,7 @@ export default function SettingsPage() {
                 cursor: "pointer",
                 transition: "background 0.18s, color 0.15s",
                 marginBottom: "2px",
-                outline: selected === option.key ? `2px solid ${MONUMENT}` : "none",
+                outline: selected === option.key ? `2px solid ${UI.outline}` : "none",
                 boxShadow: selected === option.key ? "0 2px 4px rgba(50,50,51,.04)" : "none"
               }}
             >
@@ -216,9 +222,9 @@ export default function SettingsPage() {
             height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             display: "flex",
-            alignItems: selected === "streamSettings" || selected === "maps" ? "stretch" : "center",
-            justifyContent: selected === "streamSettings" || selected === "maps" ? "flex-start" : "center",
-            overflow: selected === "streamSettings" || selected === "maps" ? "hidden" : "visible",
+            alignItems: selected === "streamSettings" || selected === "maps" || selected === "permissions" ? "stretch" : "center",
+            justifyContent: selected === "streamSettings" || selected === "maps" || selected === "permissions" ? "flex-start" : "center",
+            overflow: selected === "streamSettings" || selected === "maps" || selected === "permissions" ? "hidden" : "visible",
             minWidth: 0,
             color: MONUMENT,
             fontSize: "1.22rem",

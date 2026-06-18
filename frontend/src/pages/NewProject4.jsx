@@ -10,9 +10,11 @@ import { CLASSIFICATION_OPTIONS, CLASSIFICATION_ABBREV_MAP as CLASSIFICATION_MAP
 import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const STREAM_OPTIONS = [
@@ -704,7 +706,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -735,7 +737,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -771,7 +773,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -821,7 +823,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -861,7 +863,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -899,7 +901,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -935,7 +937,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -973,7 +975,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
               type="button"
               onClick={onBack}
               style={{
-                background: "#e0e0e0",
+                background: UI.border,
                 color: MONUMENT,
                 border: "none",
                 borderRadius: "10px",
@@ -990,7 +992,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
               type="button"
               onClick={onClose}
               style={{
-                background: "#e0e0e0",
+                background: UI.border,
                 color: MONUMENT,
                 border: "none",
                 borderRadius: "10px",
@@ -1091,7 +1093,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
                 type="button"
                 onClick={handleDepositModalCancel}
                 style={{
-                  background: "#e0e0e0",
+                  background: UI.border,
                   color: MONUMENT,
                   border: "none",
                   borderRadius: "8px",
@@ -1180,7 +1182,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
 
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   To (comma-separated)
                 </label>
                 <input
@@ -1201,7 +1203,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   From
                 </label>
                 <input
@@ -1222,7 +1224,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Subject
                 </label>
                 <input
@@ -1243,7 +1245,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Body
                 </label>
                 <div

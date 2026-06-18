@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const PRICE_BOX_WIDTH = 118;
@@ -417,7 +419,7 @@ export default function Variations({ project }) {
           <p
             style={{
               fontSize: "0.82rem",
-              color: "#32323399",
+              color: UI.textMuted,
               marginTop: 0,
               marginBottom: "10px",
               lineHeight: 1.4,
@@ -498,7 +500,7 @@ export default function Variations({ project }) {
                           justifySelf: "center",
                           fontSize: "0.68rem",
                           fontWeight: 600,
-                          color: "#32323399",
+                          color: UI.textMuted,
                           textTransform: "uppercase",
                           letterSpacing: "0.04em",
                           lineHeight: 1.2,
@@ -659,10 +661,10 @@ export default function Variations({ project }) {
             >
               Select consultant
             </h3>
-            <p style={{ fontSize: "0.85rem", color: "#32323399", marginTop: 0, marginBottom: "12px" }}>
+            <p style={{ fontSize: "0.85rem", color: UI.textMuted, marginTop: 0, marginBottom: "12px" }}>
               Choose who will appear on the variation PDF as Consultant.
             </p>
-            <p style={{ fontSize: "0.8rem", color: "#32323399", marginTop: 0, marginBottom: "12px", lineHeight: 1.45 }}>
+            <p style={{ fontSize: "0.8rem", color: UI.textMuted, marginTop: 0, marginBottom: "12px", lineHeight: 1.45 }}>
               The PDF is saved to the project folder and emailed to clients whose Contact is checked in Client Info (with an
               email). They can approve from the PDF; the approved file is saved as{" "}
               <strong style={{ color: MONUMENT }}>Variation APPROVED.pdf</strong>.
@@ -680,7 +682,7 @@ export default function Variations({ project }) {
               {loadingUsersModal ? (
                 <div style={{ padding: "16px", color: MONUMENT }}>Loading users…</div>
               ) : usersForModal.length === 0 ? (
-                <div style={{ padding: "16px", color: "#32323399" }}>No users found.</div>
+                <div style={{ padding: "16px", color: UI.textMuted }}>No users found.</div>
               ) : (
                 usersForModal.map((u) => (
                   <label

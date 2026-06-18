@@ -37,6 +37,7 @@ import { EmailSendOverlayProvider } from "./components/EmailSendOverlay";
 import PortalProjects from "./pages/PortalProjects";
 import RequireAuth from "./components/RequireAuth";
 import LoggedInUserButton from "./components/LoggedInUserButton";
+import { UiThemeProvider } from "./context/UiThemeProvider";
 
 function Auth({ children }) {
   return <RequireAuth>{children}</RequireAuth>;
@@ -50,6 +51,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <UiThemeProvider>
       <EmailSendOverlayProvider>
       {!isCloudflarePublicHost && <AppModeBanner />}
       <LoggedInUserButton />
@@ -114,6 +116,7 @@ export default function App() {
         )}
       </Routes>
       </EmailSendOverlayProvider>
+      </UiThemeProvider>
     </BrowserRouter>
   );
 }

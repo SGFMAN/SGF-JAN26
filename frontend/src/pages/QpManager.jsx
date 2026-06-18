@@ -4,10 +4,12 @@ import { isUserAdmin } from "../utils/auth";
 import logo from "../images/logo.png";
 import { projectPath } from "../utils/projectUrl";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const YEAR_OPTIONS = [2024, 2025, 2026];
@@ -37,7 +39,7 @@ function compareProjects(a, b, column) {
 
 const linkInactive = {
   background: "transparent",
-  color: "#404049",
+  color: UI.textSecondary,
   border: "none",
   borderRadius: "10px",
   padding: "8px 8px",
@@ -57,7 +59,7 @@ const linkActive = {
   ...linkInactive,
   background: WHITE,
   color: MONUMENT,
-  outline: `2px solid ${MONUMENT}`,
+  outline: `2px solid ${UI.outline}`,
   boxShadow: "0 2px 4px rgba(50,50,51,.04)",
 };
 
@@ -349,7 +351,7 @@ export default function QpManager() {
           <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "8px" }}>
             Queensland (QLD) jobs — QP numbers
           </h2>
-          <p style={{ margin: "0 0 20px 0", fontSize: "0.9rem", color: "#32323399", maxWidth: "640px" }}>
+          <p style={{ margin: "0 0 20px 0", fontSize: "0.9rem", color: UI.textMuted, maxWidth: "640px" }}>
             Choose a year to list QLD projects that start in that year (from the project date field). Edit QP
             numbers inline; they save automatically after you pause typing or when you leave the field.
           </p>
@@ -398,20 +400,20 @@ export default function QpManager() {
             </button>
           </div>
 
-          {loading && <p style={{ color: "#32323399" }}>Loading projects…</p>}
+          {loading && <p style={{ color: UI.textMuted }}>Loading projects…</p>}
           {error && <p style={{ color: "#cc3333" }}>Error: {error}</p>}
 
           {!loading && !error && selectedYear === "" && (
-            <p style={{ color: "#32323399" }}>Select a year to see QLD jobs.</p>
+            <p style={{ color: UI.textMuted }}>Select a year to see QLD jobs.</p>
           )}
 
           {!loading && !error && selectedYear !== "" && (
             <>
-              <p style={{ margin: "0 0 12px 0", fontSize: "0.9rem", color: "#32323399" }}>
+              <p style={{ margin: "0 0 12px 0", fontSize: "0.9rem", color: UI.textMuted }}>
                 {filteredProjects.length} job{filteredProjects.length === 1 ? "" : "s"} for {selectedYear}
               </p>
               {filteredProjects.length === 0 ? (
-                <p style={{ color: "#32323399" }}>No QLD jobs found for that year.</p>
+                <p style={{ color: UI.textMuted }}>No QLD jobs found for that year.</p>
               ) : (
                 <div style={{ overflowX: "auto" }}>
                   <table

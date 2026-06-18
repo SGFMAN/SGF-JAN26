@@ -1186,6 +1186,16 @@ async function ensureSchema() {
       PRIMARY KEY (user_id, position_id)
     );
   `);
+  // Per-user app access areas (Permissions matrix in Settings)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_access_permissions (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      access_area TEXT NOT NULL,
+      granted BOOLEAN NOT NULL DEFAULT FALSE,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, access_area)
+    );
+  `);
   // Create substatuses table to store all possible substatuses and their details
   await pool.query(`
     CREATE TABLE IF NOT EXISTS substatuses (
@@ -3430,6 +3440,89 @@ app.post("/api/users", async (req, res) => {
     });
   } catch (e) {
     await pool.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  }
+});
+
+const ACCESS_AREAS = [
+  { key: "admin", label: "Admin" },
+  { key: "sales", label: "Sales" },
+];
+
+const ACCESS_AREA_KEYS = new Set(ACCESS_AREAS.map((area) => area.key));
+
+function buildAccessPermissionsMatrix(userRows, grantRows) {
+  const matrix = {};
+  for (const user of userRows) {
+    matrix[user.id] = {};
+    for (const area of ACCESS_AREAS) {
+      matrix[user.id][area.key] = false;
+    }
+  }
+  for (const row of grantRows) {
+    const userId = row.user_id;
+    const area = row.access_area;
+    if (matrix[userId] && ACCESS_AREA_KEYS.has(area)) {
+      matrix[userId][area] = row.granted === true;
+    }
+  }
+  return matrix;
+}
+
+// Access permissions matrix (Settings → Permissions)
+app.get("/api/access-permissions", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  try {
+    const usersResult = await pool.query(
+      `SELECT id, name FROM users ORDER BY name ASC, id ASC`
+    );
+    const grantsResult = await pool.query(
+      `SELECT user_id, access_area, granted FROM user_access_permissions`
+    );
+    res.json({
+      areas: ACCESS_AREAS,
+      users: usersResult.rows,
+      matrix: buildAccessPermissionsMatrix(usersResult.rows, grantsResult.rows),
+    });
+  } catch (e) {
+    console.error("Error fetching access permissions:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.put("/api/access-permissions", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  try {
+    const { userId, accessArea, granted } = req.body || {};
+    const id = Number(userId);
+    const area = String(accessArea || "").trim().toLowerCase();
+
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: "userId required" });
+    }
+    if (!ACCESS_AREA_KEYS.has(area)) {
+      return res.status(400).json({ error: "Invalid access area" });
+    }
+    if (typeof granted !== "boolean") {
+      return res.status(400).json({ error: "granted must be a boolean" });
+    }
+
+    const userCheck = await pool.query(`SELECT id FROM users WHERE id = $1`, [id]);
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    await pool.query(
+      `INSERT INTO user_access_permissions (user_id, access_area, granted, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (user_id, access_area)
+       DO UPDATE SET granted = EXCLUDED.granted, updated_at = NOW()`,
+      [id, area, granted]
+    );
+
+    res.json({ ok: true, userId: id, accessArea: area, granted });
+  } catch (e) {
+    console.error("Error saving access permission:", e);
     res.status(500).json({ error: e.message });
   }
 });

@@ -3,9 +3,11 @@ import { PROJECT_STATUS_OPTIONS as STATUS_OPTIONS } from "../utils/projectStatus
 import { CLASSIFICATION_OPTIONS } from "../utils/classifications";
 import SiteSatelliteMapModal from "../components/SiteSatelliteMapModal";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 const SPECS_OPTIONS = ["Affordable", "Superior"];
 
@@ -257,7 +259,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
           {/* Column 1 */}
           <div style={{ flex: "1", minWidth: "200px" }}>
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Status
               </div>
               <select
@@ -299,13 +301,13 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                     cursor: "pointer",
                   }}
                 />
-                <div style={{ fontSize: "0.9rem", color: "#32323399" }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted }}>
                   On Hold
                 </div>
               </label>
             </div>
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Street
               </div>
               <input
@@ -328,7 +330,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
               />
             </div>
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Suburb
               </div>
               <input
@@ -351,7 +353,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
               />
             </div>
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 State
               </div>
               <input
@@ -375,7 +377,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
             </div>
             {isQldState(state) && (
               <div style={{ marginBottom: "16px" }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                   QP Number
                 </div>
                 <input
@@ -515,7 +517,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
           {/* Column 2 - Specs and Classification */}
           <div style={{ flex: "1", minWidth: "200px" }}>
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Specs
               </div>
               <select
@@ -545,7 +547,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
               </select>
             </div>
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Classification
               </div>
               <select
@@ -602,7 +604,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                 >
                   Duplicate & Link SSD
                 </button>
-                <div style={{ fontSize: "0.75rem", color: "#32323399", marginTop: "6px", maxWidth: "300px", lineHeight: 1.35 }}>
+                <div style={{ fontSize: "0.75rem", color: UI.textMuted, marginTop: "6px", maxWidth: "300px", lineHeight: 1.35 }}>
                   New job number and sales entry; re-use the same Windows job folder (no new folder).
                 </div>
               </div>
@@ -635,7 +637,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                 >
                   Duplicate & Link Renovation
                 </button>
-                <div style={{ fontSize: "0.75rem", color: "#32323399", marginTop: "6px", maxWidth: "300px", lineHeight: 1.35 }}>
+                <div style={{ fontSize: "0.75rem", color: UI.textMuted, marginTop: "6px", maxWidth: "300px", lineHeight: 1.35 }}>
                   New renovation job linked to this folder; renovation proposal PDF goes in 12. RENOVATION only.
                 </div>
               </div>
@@ -644,7 +646,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
 
           {/* Column 3 - Project Log */}
           <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", height: "100%" }}>
-            <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+            <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
               Project Log
             </div>
             <div
@@ -672,7 +674,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
 
           {/* Column 4 - Notes */}
           <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", height: "100%" }}>
-            <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", flexShrink: 0 }}>
+            <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", flexShrink: 0 }}>
               Notes
             </div>
             <textarea

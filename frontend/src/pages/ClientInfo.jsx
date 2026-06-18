@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 export default function ClientInfo({ project, onUpdate }) {
@@ -369,7 +371,7 @@ export default function ClientInfo({ project, onUpdate }) {
 
   const labelStyle = {
     fontSize: "0.9rem",
-    color: "#32323399",
+    color: UI.textMuted,
     marginBottom: "6px",
   };
 
@@ -544,7 +546,7 @@ export default function ClientInfo({ project, onUpdate }) {
 
           {/* Column 4 - Notes */}
           <div style={{ ...columnStyle, display: "flex", flexDirection: "column", height: "100%" }}>
-            <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", flexShrink: 0 }}>
+            <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", flexShrink: 0 }}>
               Notes
             </div>
             <textarea
@@ -592,7 +594,7 @@ export default function ClientInfo({ project, onUpdate }) {
                 display: "block",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = WHITE;
@@ -618,7 +620,7 @@ export default function ClientInfo({ project, onUpdate }) {
                 display: "block",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = WHITE;

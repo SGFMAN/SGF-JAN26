@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 
-const MONUMENT = "#323233";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 export default function FileSettings() {
@@ -189,7 +191,7 @@ export default function FileSettings() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -218,7 +220,7 @@ export default function FileSettings() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -250,7 +252,7 @@ export default function FileSettings() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -282,7 +284,7 @@ export default function FileSettings() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -313,7 +315,7 @@ export default function FileSettings() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}

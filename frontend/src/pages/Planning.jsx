@@ -7,9 +7,11 @@ import {
 } from "../utils/streamNewProjectEmail";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const PLANNING_STATUS_OPTIONS = ["Not Selected", "No Planning Required", "Planning Required", "Planning Permit Issued"];
@@ -332,7 +334,7 @@ export default function Planning({ project, onUpdate }) {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: "500",
                 }}
@@ -369,7 +371,7 @@ export default function Planning({ project, onUpdate }) {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: "500",
                 }}
@@ -406,7 +408,7 @@ export default function Planning({ project, onUpdate }) {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: "500",
                 }}
@@ -443,7 +445,7 @@ export default function Planning({ project, onUpdate }) {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: "500",
                 }}
@@ -480,7 +482,7 @@ export default function Planning({ project, onUpdate }) {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: "500",
                 }}
@@ -517,7 +519,7 @@ export default function Planning({ project, onUpdate }) {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: "500",
                 }}
@@ -551,7 +553,7 @@ export default function Planning({ project, onUpdate }) {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: "500",
                 }}
@@ -601,7 +603,7 @@ export default function Planning({ project, onUpdate }) {
               {isPreparingEmail ? "Preparing..." : "Organise Inspection"}
             </button>
             {septicEmailSentDate && (
-              <div style={{ marginTop: "8px", fontSize: "0.82rem", color: "#32323399" }}>
+              <div style={{ marginTop: "8px", fontSize: "0.82rem", color: UI.textMuted }}>
                 Email sent: {septicEmailSentDate}
               </div>
             )}

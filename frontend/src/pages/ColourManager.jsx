@@ -10,10 +10,12 @@ import { projectPath } from "../utils/projectUrl";
 import { isUserAdmin } from "../utils/auth";
 import logo from "../images/logo.png";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 export default function ColourManager() {
@@ -236,7 +238,7 @@ const data = await response.json();
             style={{
               background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
               color: stateFilter === "VIC" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : MONUMENT}`,
+              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -246,7 +248,7 @@ const data = await response.json();
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -266,7 +268,7 @@ const data = await response.json();
             style={{
               background: stateFilter === "QLD" ? "#D54358" : WHITE,
               color: stateFilter === "QLD" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : MONUMENT}`,
+              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -276,7 +278,7 @@ const data = await response.json();
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -296,7 +298,7 @@ const data = await response.json();
             style={{
               background: stateFilter === "All" ? MONUMENT : WHITE,
               color: stateFilter === "All" ? WHITE : MONUMENT,
-              border: `2px solid ${MONUMENT}`,
+              border: `2px solid ${UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -306,7 +308,7 @@ const data = await response.json();
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "All") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -357,7 +359,7 @@ const data = await response.json();
             to="/managers/site-visit-manager"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -379,7 +381,7 @@ const data = await response.json();
             to="/managers/contract-manager"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -414,7 +416,7 @@ const data = await response.json();
               transition: "background 0.18s, color 0.15s",
               marginBottom: "0px",
               lineHeight: "1.4",
-              outline: `2px solid ${MONUMENT}`,
+              outline: `2px solid ${UI.outline}`,
               boxShadow: "0 2px 4px rgba(50,50,51,.04)",
               display: "block",
             }}
@@ -425,7 +427,7 @@ const data = await response.json();
             to="/managers/status-manager"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -448,7 +450,7 @@ const data = await response.json();
               to="/managers/drawing-manager"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -471,7 +473,7 @@ const data = await response.json();
             to="/managers/qp-manager"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -493,7 +495,7 @@ const data = await response.json();
             to="/managers/project-claim"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -516,7 +518,7 @@ const data = await response.json();
             to="/projects"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -579,7 +581,7 @@ const data = await response.json();
             </button>
           </div>
 
-          {loading && <p style={{ color: "#32323399" }}>Loading projects...</p>}
+          {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && (
             <p style={{ color: "#cc3333" }}>
               Error: {error}
@@ -598,7 +600,7 @@ const data = await response.json();
                 
                 if (filteredProjects.length === 0) {
                   return (
-                    <p style={{ color: "#32323399" }}>No Design Phase projects found.</p>
+                    <p style={{ color: UI.textMuted }}>No Design Phase projects found.</p>
                   );
                 }
                 

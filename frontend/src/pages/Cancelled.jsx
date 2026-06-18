@@ -2,16 +2,17 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
-import { CLASSIFICATION_BADGE_MAP } from "../utils/classifications";
-import { projectPath } from "../utils/projectUrl";
+import ProjectRectangleCard from "../components/ProjectRectangleCard";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
-const MONUMENT = "#323233";
+import { UI, MENU } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
-const SECTION_GREY = "#a1a1a3"; // Moderately lightened version
-const LIGHT_MONUMENT = "#42464d"; // More blue and slightly lighter version of monument
-const WHITE = "#fff";
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 
 const API_URL = "";
 
@@ -162,7 +163,7 @@ export default function Cancelled() {
             style={{
               background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
               color: stateFilter === "VIC" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : MONUMENT}`,
+              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -172,7 +173,7 @@ export default function Cancelled() {
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -192,7 +193,7 @@ export default function Cancelled() {
             style={{
               background: stateFilter === "QLD" ? "#D54358" : WHITE,
               color: stateFilter === "QLD" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : MONUMENT}`,
+              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -202,7 +203,7 @@ export default function Cancelled() {
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -222,7 +223,7 @@ export default function Cancelled() {
             style={{
               background: stateFilter === "All" ? MONUMENT : WHITE,
               color: stateFilter === "All" ? WHITE : MONUMENT,
-              border: `2px solid ${MONUMENT}`,
+              border: `2px solid ${UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -232,7 +233,7 @@ export default function Cancelled() {
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "All") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -279,12 +280,12 @@ export default function Cancelled() {
         >
           {/* Menu Buttons */}
           {/* Hot List - Light Blue */}
-          <div style={{ background: "#A6C9EC", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+          <div style={{ background: MENU.blue, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
             <Link
               to="/hotlist"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -305,12 +306,12 @@ export default function Cancelled() {
           </div>
           
           {/* All Projects, Design Phase, Construction Phase, Finished Projects, Cancelled, On Hold - Light Green */}
-          <div style={{ background: "#CEEAB0", borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: "2px solid #000" }}>
+          <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: `2px solid ${UI.outline}` }}>
             <Link
               to="/all-projects"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -332,7 +333,7 @@ export default function Cancelled() {
               to="/projects"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -354,7 +355,7 @@ export default function Cancelled() {
               to="/construction-phase"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -376,7 +377,7 @@ export default function Cancelled() {
               to="/finished-projects"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -397,8 +398,8 @@ export default function Cancelled() {
             <Link
               to="/cancelled"
               style={{
-                background: "#92D050",
-                color: WHITE,
+                background: MENU.greenActive,
+                color: MENU.activeText,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -420,7 +421,7 @@ export default function Cancelled() {
               to="/on-hold"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -441,12 +442,12 @@ export default function Cancelled() {
           </div>
           
           {/* Managers and Sales - Light Red */}
-          <div style={{ background: "#F79198", borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: "2px solid #000" }}>
+          <div style={{ background: MENU.red, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: `2px solid ${UI.outline}` }}>
             <Link
               to="/managers"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -468,7 +469,7 @@ export default function Cancelled() {
               to="/sales"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -493,7 +494,7 @@ export default function Cancelled() {
               to="/settings"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -517,7 +518,7 @@ export default function Cancelled() {
               to="/apply-fields"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -576,7 +577,7 @@ export default function Cancelled() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   marginTop: 0,
                   fontWeight: 500,
@@ -593,7 +594,7 @@ export default function Cancelled() {
                   width: "420px",
                   padding: "12px 16px",
                   borderRadius: "8px",
-                  border: `2px solid ${MONUMENT}`,
+                  border: `2px solid ${UI.outline}`,
                   fontSize: "1rem",
                   color: MONUMENT,
                   background: WHITE,
@@ -616,7 +617,7 @@ export default function Cancelled() {
                     fontWeight: 500,
                     color: MONUMENT,
                     background: WHITE,
-                    border: `2px solid ${MONUMENT}`,
+                    border: `2px solid ${UI.outline}`,
                     borderRadius: "8px",
                     cursor: "pointer",
                     height: "42px",
@@ -630,14 +631,14 @@ export default function Cancelled() {
             )}
           </div>
 
-          {loading && <p style={{ color: "#32323399" }}>Loading projects...</p>}
+          {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && (
             <p style={{ color: "#cc3333" }}>
               Error: {error}
             </p>
           )}
           {!loading && !error && filteredProjects.length === 0 && (
-            <p style={{ color: "#32323399" }}>
+            <p style={{ color: UI.textMuted }}>
               {searchQuery.trim()
                 ? "No projects match your search."
                 : "No cancelled projects found."}
@@ -653,156 +654,9 @@ export default function Cancelled() {
                 alignItems: "flex-start",
               }}
             >
-              {filteredProjects.map((project) => {
-                const classificationInfo = project.classification
-                  ? CLASSIFICATION_BADGE_MAP[project.classification]
-                  : null;
-
-                // Stream mapping - colored by stream type
-                const streamMap = {
-                  "SGF - VIC": { acronym: "VIC", color: "#4D93D9" }, // Blue
-                  "SGF - QLD": { acronym: "QLD", color: "#D54358" }, // Red
-                  "Dual Dwelling": { acronym: "DDI", color: "#92D050" }, // Green
-                  "ATA": { acronym: "ATA", color: "#92D050" }, // Green
-                  "Pumped on Property": { acronym: "POP", color: "#92D050" }, // Green
-                  "Pumped On Property": { acronym: "POP", color: "#92D050" }, // Green (handle both variations)
-                  "Henderson": { acronym: "HEN", color: "#92D050" }, // Green
-                  "Creat Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green
-                  "Create Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green (handle both variations)
-                  "Fresh Start Advisory": { acronym: "FSA", color: "#92D050" }, // Green
-                };
-                const streamInfo = project.stream ? streamMap[project.stream] : null;
-
-                return (
-                  <Link
-                    key={project.id}
-                    to={projectPath(project)}
-                    style={{
-                      textDecoration: "none",
-                      display: "block",
-                    }}
-                  >
-                    <div
-                      style={{
-                        background: MONUMENT,
-                        borderRadius: "8px",
-                        width: "200px",
-                        height: "100px",
-                        color: SECTION_GREY,
-                        cursor: "pointer",
-                        transition: "opacity 0.2s",
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "center",
-                        alignItems: "center",
-                        position: "relative",
-                        overflow: "hidden",
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
-                      onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-                    >
-                      {/* Cancelled Diagonal Band */}
-                      <div
-                        style={{
-                          position: "absolute",
-                          top: "50%",
-                          left: "50%",
-                          transform: "translate(-50%, -50%) rotate(-45deg)",
-                          width: "280px",
-                          height: "40px",
-                          background: "#cc0000",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          zIndex: 10,
-                          boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-                        }}
-                      >
-                        <span
-                          style={{
-                            color: WHITE,
-                            fontWeight: 700,
-                            fontSize: "1.1rem",
-                            letterSpacing: "2px",
-                            textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                          }}
-                        >
-                          CANCELLED
-                        </span>
-                      </div>
-                      {/* Stream Acronym - Left Bottom */}
-                      {streamInfo && (
-                        <div
-                          style={{
-                            position: "absolute",
-                            bottom: "8px",
-                            left: "8px",
-                            fontSize: "0.85rem",
-                            fontWeight: 700,
-                            color: streamInfo.color,
-                            zIndex: 11,
-                            textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                          }}
-                        >
-                          {streamInfo.acronym}
-                        </div>
-                      )}
-                      {/* Classification Acronym - Right Bottom */}
-                      {classificationInfo && (
-                        <div
-                          style={{
-                            position: "absolute",
-                            bottom: "8px",
-                            right: "8px",
-                            fontSize: "0.85rem",
-                            fontWeight: 700,
-                            color: classificationInfo.color,
-                            zIndex: 11,
-                            textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                          }}
-                        >
-                          {classificationInfo.acronym}
-                        </div>
-                      )}
-                      <div
-                        style={{
-                          fontWeight: 600,
-                          fontSize: "1.1rem",
-                          textAlign: "center",
-                          marginBottom: "4px",
-                          width: "100%",
-                          display: "flex",
-                          justifyContent: "center",
-                          alignItems: "center",
-                          flex: 1,
-                          flexDirection: "column",
-                          gap: "4px",
-                          position: "relative",
-                          zIndex: 1,
-                        }}
-                      >
-                        <div style={{ fontWeight: 600, fontSize: "1.1rem", color: WHITE }}>
-                          {(project.suburb || "Unknown Suburb").toUpperCase()}
-                        </div>
-                        <div style={{ fontSize: "0.95rem", color: WHITE, fontWeight: 400 }}>
-                          {project.street || "No address"}
-                        </div>
-                      </div>
-                      <div 
-                        style={{ 
-                          fontSize: "0.9rem", 
-                          color: "#323233cc", 
-                          textAlign: "center",
-                          position: "relative",
-                          zIndex: 1,
-                        }}
-                      >
-                        Status: {project.status}
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
+              {filteredProjects.map((project) => (
+                <ProjectRectangleCard key={project.id} project={project} />
+              ))}
             </div>
           )}
         </div>

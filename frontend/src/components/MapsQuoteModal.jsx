@@ -6,8 +6,10 @@ import { generateMapsProposal } from "../utils/mapsProposalGenerate";
 import { buildVerandahQuoteLineItem } from "../utils/mapsVerandahQuote";
 import { fetchQuoteItems } from "../utils/mapsQuoteItems";
 
-const MONUMENT = "#323233";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 
 function unitQuoteLineItem(plan) {
   if (!plan?.id) return null;

@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { isUserAdmin, getApiHeaders } from "../utils/auth";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 export default function AccountSettings() {
@@ -140,7 +142,7 @@ export default function AccountSettings() {
               width: "100%",
               padding: "10px 12px",
               borderRadius: "8px",
-              border: `2px solid ${MONUMENT}`,
+              border: `2px solid ${UI.outline}`,
               fontSize: "1rem",
               color: MONUMENT,
               background: WHITE,
@@ -199,7 +201,7 @@ export default function AccountSettings() {
               width: "100%",
               padding: "10px 12px",
               borderRadius: "8px",
-              border: `2px solid ${MONUMENT}`,
+              border: `2px solid ${UI.outline}`,
               fontSize: "1rem",
               color: MONUMENT,
               background: WHITE,
@@ -259,7 +261,7 @@ export default function AccountSettings() {
                   fontWeight: 500,
                   color: appMode === "USE" ? WHITE : MONUMENT,
                   background: appMode === "USE" ? MONUMENT : WHITE,
-                  border: `2px solid ${MONUMENT}`,
+                  border: `2px solid ${UI.outline}`,
                   borderRadius: "8px",
                   cursor: loading || appMode === "USE" ? "not-allowed" : "pointer",
                   transition: "background 0.17s",
@@ -276,7 +278,7 @@ export default function AccountSettings() {
                   fontWeight: 500,
                   color: appMode === "EDIT" ? WHITE : MONUMENT,
                   background: appMode === "EDIT" ? MONUMENT : WHITE,
-                  border: `2px solid ${MONUMENT}`,
+                  border: `2px solid ${UI.outline}`,
                   borderRadius: "8px",
                   cursor: loading || appMode === "EDIT" ? "not-allowed" : "pointer",
                   transition: "background 0.17s",

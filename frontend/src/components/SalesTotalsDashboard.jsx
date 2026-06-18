@@ -5,15 +5,17 @@ import {
   formatStreamName,
 } from "../utils/salesTotalsCompute";
 
-const MONUMENT = "#323233";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 
 const TOTALS_CARD = {
   shell: {
     background: MONUMENT,
     borderRadius: "12px",
     padding: "20px",
-    border: `2px solid ${MONUMENT}`,
+    border: `2px solid ${UI.outline}`,
     boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
     display: "flex",
     flexDirection: "column",
@@ -157,19 +159,19 @@ export default function SalesTotalsDashboard({
                 <div>{names.line2}</div>
               </div>
               <div style={{ flex: 1, marginBottom: "12px" }}>
-                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>Sales Count</div>
+                <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginBottom: "4px" }}>Sales Count</div>
                 <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>{totals.salesCount}</div>
               </div>
               <div style={{ marginTop: "auto", borderTop: `1px solid ${colors.darker}`, paddingTop: "12px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: "10px" }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>Total Value</div>
+                    <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginBottom: "4px" }}>Total Value</div>
                     <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
                       {formatCurrency(totals.totalCost)}
                     </div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>Projected</div>
+                    <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginBottom: "4px" }}>Projected</div>
                     <div style={{ fontSize: "1.15rem", fontWeight: 700, color: MONUMENT }}>
                       {projected != null ? formatCurrency(projected) : "—"}
                     </div>
@@ -211,7 +213,7 @@ export default function SalesTotalsDashboard({
             <div
               style={{
                 fontSize: "0.8rem",
-                color: "#32323399",
+                color: UI.textMuted,
                 marginBottom: "4px",
                 display: "flex",
                 justifyContent: "space-between",
@@ -260,13 +262,13 @@ export default function SalesTotalsDashboard({
           <div style={{ marginTop: "auto", borderTop: "1px solid #92D050", paddingTop: "12px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: "10px" }}>
               <div>
-                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>Total Value</div>
+                <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginBottom: "4px" }}>Total Value</div>
                 <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
                   {formatCurrency(greenStreamsTotal.totalCost)}
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>Projected</div>
+                <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginBottom: "4px" }}>Projected</div>
                 <div style={{ fontSize: "1.15rem", fontWeight: 700, color: MONUMENT }}>
                   {projectedGreenStreamsValue != null ? formatCurrency(projectedGreenStreamsValue) : "—"}
                 </div>
@@ -302,13 +304,13 @@ export default function SalesTotalsDashboard({
             HOME OFFICE
           </div>
           <div style={{ flex: 1, marginBottom: "12px" }}>
-            <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>Sales Count</div>
+            <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginBottom: "4px" }}>Sales Count</div>
             <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
               {homeOfficeStudioTotal.salesCount}
             </div>
           </div>
           <div style={{ marginTop: "auto", borderTop: "1px solid #FF8C42", paddingTop: "12px" }}>
-            <div style={{ fontSize: "0.8rem", color: "#32323399", marginBottom: "4px" }}>Total Value</div>
+            <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginBottom: "4px" }}>Total Value</div>
             <div style={{ fontSize: "1.3rem", fontWeight: 700, color: MONUMENT }}>
               {formatCurrency(homeOfficeStudioTotal.totalCost)}
             </div>

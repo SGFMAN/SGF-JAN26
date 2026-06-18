@@ -1,8 +1,10 @@
 import React, { useState } from "react";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 
 export default function NewProject({ isOpen, onClose, formData, onFormDataChange, onNext }) {
   const [addressPaste, setAddressPaste] = useState("");
@@ -168,7 +170,7 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
             }}
             autoComplete="off"
           />
-          <small style={{ color: "#32323399" }}>
+          <small style={{ color: UI.textMuted }}>
             You can paste an address to fill below, or just type in the boxes.
           </small>
         </div>
@@ -177,7 +179,7 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
             style={{
               display: "block",
               fontSize: "0.9rem",
-              color: "#32323399",
+              color: UI.textMuted,
               marginBottom: "6px",
               fontWeight: 500,
             }}
@@ -208,7 +210,7 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
               style={{
                 display: "block",
                 fontSize: "0.9rem",
-                color: "#32323399",
+                color: UI.textMuted,
                 marginBottom: "6px",
                 fontWeight: 500,
               }}
@@ -238,7 +240,7 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
               style={{
                 display: "block",
                 fontSize: "0.9rem",
-                color: "#32323399",
+                color: UI.textMuted,
                 marginBottom: "6px",
                 fontWeight: 500,
               }}
@@ -271,7 +273,7 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
             type="button"
             onClick={onClose}
             style={{
-              background: "#e0e0e0",
+              background: UI.border,
               color: MONUMENT,
               border: "none",
               borderRadius: "10px",

@@ -38,9 +38,11 @@ import {
   parseDrawingsHistory,
 } from "../utils/drawingsStatusRules";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 /** Above `EmailSendOverlay` (2147483000) so folder / upload errors are never hidden behind it. */
 const DRAWINGS_ALERT_MODAL_Z = 2147483646;
@@ -2882,7 +2884,7 @@ export default function Drawings({
           Drawings
         </h2>
         <div style={{ flex: "0.5", minWidth: "200px" }}>
-          <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", marginTop: "20px" }}>
+          <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", marginTop: "20px" }}>
             Status
           </div>
         </div>
@@ -2918,7 +2920,7 @@ export default function Drawings({
 
               if (!drawingsHistory || drawingsHistory.length === 0) {
                 return (
-                  <div style={{ color: "#32323399", fontSize: "0.9rem", fontStyle: "italic" }}>
+                  <div style={{ color: UI.textMuted, fontSize: "0.9rem", fontStyle: "italic" }}>
                     No drawings uploaded yet
                   </div>
                 );
@@ -3061,10 +3063,10 @@ export default function Drawings({
                             </div>
                           ) : null}
                         </div>
-                        <div style={{ fontSize: "0.85rem", color: "#32323399", textAlign: "right" }}>
+                        <div style={{ fontSize: "0.85rem", color: UI.textMuted, textAlign: "right" }}>
                           {drawing.revision !== null ? drawing.revision : "-"}
                         </div>
-                        <div style={{ fontSize: "0.85rem", color: "#32323399", textAlign: "right" }}>
+                        <div style={{ fontSize: "0.85rem", color: UI.textMuted, textAlign: "right" }}>
                           {drawing.date}
                         </div>
                         <div style={{ textAlign: "right" }}>
@@ -3084,7 +3086,7 @@ export default function Drawings({
                               width: "100px",
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#f0f0f0";
+                              e.currentTarget.style.background = UI.inputBg;
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.background = WHITE;
@@ -3110,7 +3112,7 @@ export default function Drawings({
                               width: "100px",
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#f0f0f0";
+                              e.currentTarget.style.background = UI.inputBg;
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.background = WHITE;
@@ -3272,7 +3274,7 @@ export default function Drawings({
           <div style={{ flex: "0.5", minWidth: "200px", display: "flex", flexDirection: "column", minHeight: "600px" }}>
             <div style={{ display: "flex", flexDirection: "column", flex: "0 0 auto" }}>
               <div style={{ marginBottom: "24px", marginTop: "-18px" }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                   Draftsperson
                 </div>
                 <select
@@ -3300,7 +3302,7 @@ export default function Drawings({
                 </select>
               </div>
               <div style={{ marginBottom: "24px" }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                   Status
                 </div>
                 <div
@@ -3346,7 +3348,7 @@ export default function Drawings({
                           disabled={!hasDrawings}
                           style={{
                             flex: 1,
-                            background: !hasDrawings ? "#e0e0e0" : "#e8f5e9",
+                            background: !hasDrawings ? UI.border : "#e8f5e9",
                             color: !hasDrawings ? "#999" : "#1b5e20",
                             border: !hasDrawings ? "1px solid #ccc" : "1px solid rgba(40, 167, 69, 0.55)",
                             borderRadius: "10px",
@@ -3367,7 +3369,7 @@ export default function Drawings({
                           disabled={!canApproveWorkingDrawings}
                           style={{
                             flex: 1,
-                            background: !canApproveWorkingDrawings ? "#e0e0e0" : "#e3f2fd",
+                            background: !canApproveWorkingDrawings ? UI.border : "#e3f2fd",
                             color: !canApproveWorkingDrawings ? "#999" : "#0d47a1",
                             border: !canApproveWorkingDrawings ? "1px solid #ccc" : "1px solid rgba(77, 147, 217, 0.65)",
                             borderRadius: "10px",
@@ -3392,7 +3394,7 @@ export default function Drawings({
 
             {/* Drawings PDF Upload Drop Zone */}
             <div style={{ display: "flex", flexDirection: "column", width: "100%", marginTop: "24px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: "500" }}>
                 Drawings PDF
               </div>
               <div style={{ position: "relative", width: "100%" }}>
@@ -3533,8 +3535,8 @@ export default function Drawings({
               const { emails: clientEmails, labels: clientNames } = getDrawingsClientRecipients();
               const extraEmails = getStreamExtraDrawingEmails(project?.stream, streamSettingsJson, project);
               return (
-                <div style={{ marginBottom: "16px", padding: "12px", background: "#f5f5f5", borderRadius: "8px" }}>
-                  <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "8px", fontWeight: "500" }}>
+                <div style={{ marginBottom: "16px", padding: "12px", background: UI.inputBg, borderRadius: "8px" }}>
+                  <div style={{ fontSize: "0.85rem", color: UI.textMuted, marginBottom: "8px", fontWeight: "500" }}>
                     Sending to:
                   </div>
                   {sendDrawingsToClientsEnabled &&
@@ -3544,7 +3546,7 @@ export default function Drawings({
                       </div>
                     ))}
                   {!sendDrawingsToClientsEnabled && clientEmails.length > 0 && (
-                    <div style={{ fontSize: "0.82rem", color: "#32323399", marginBottom: "8px" }}>
+                    <div style={{ fontSize: "0.82rem", color: UI.textMuted, marginBottom: "8px" }}>
                       Project client contacts are skipped (Send to Clients is off for this stream in Stream Settings).
                     </div>
                   )}
@@ -3557,7 +3559,7 @@ export default function Drawings({
               );
             })()}
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: "500" }}>
                 Notes (optional)
               </div>
               <textarea
@@ -3930,7 +3932,7 @@ export default function Drawings({
                     Working drawings
                   </label>
                 </div>
-                <div style={{ fontSize: "0.8rem", color: "#32323399", marginTop: "8px" }}>
+                <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginTop: "8px" }}>
                   Required — status is set to Concept Stage or Working Drawing Stage for this upload.
                 </div>
               </div>
@@ -3952,14 +3954,14 @@ export default function Drawings({
                 boxSizing: "border-box",
                 marginBottom: "16px",
                 color: "#000",
-                backgroundColor: (!notesForRevision.isNewDrawing && !notesForRevision.isCurrentRevision) ? "#f5f5f5" : WHITE,
+                backgroundColor: (!notesForRevision.isNewDrawing && !notesForRevision.isCurrentRevision) ? UI.inputBg : WHITE,
                 cursor: (!notesForRevision.isNewDrawing && !notesForRevision.isCurrentRevision) ? "not-allowed" : "text",
               }}
             />
             {/* Show Markup PDF drop zone only for new drawings */}
             {notesForRevision.isNewDrawing && (
               <div style={{ marginBottom: "16px" }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: "500" }}>
                   Markup PDF (optional)
                 </div>
                 <div
@@ -3988,7 +3990,7 @@ export default function Drawings({
                       <div style={{ color: MONUMENT, fontWeight: "500", marginBottom: "4px" }}>
                         {markupFile.name}
                       </div>
-                      <div style={{ fontSize: "0.85rem", color: "#32323399" }}>
+                      <div style={{ fontSize: "0.85rem", color: UI.textMuted }}>
                         Click to select a different file
                       </div>
                     </div>
@@ -3997,7 +3999,7 @@ export default function Drawings({
                       <div style={{ color: MONUMENT, fontWeight: "500", marginBottom: "4px" }}>
                         Drag and drop markup PDF here
                       </div>
-                      <div style={{ fontSize: "0.85rem", color: "#32323399" }}>
+                      <div style={{ fontSize: "0.85rem", color: UI.textMuted }}>
                         or click to browse
                       </div>
                     </div>
@@ -4081,7 +4083,7 @@ export default function Drawings({
                       }}
                       onMouseEnter={(e) => {
                         if (!newDrawingUploadKind || isSendingDraftingEmail) return;
-                        e.currentTarget.style.background = "#f5f5f5";
+                        e.currentTarget.style.background = UI.inputBg;
                       }}
                       onMouseLeave={(e) => {
                         if (!newDrawingUploadKind || isSendingDraftingEmail) return;
@@ -4191,7 +4193,7 @@ export default function Drawings({
                 boxSizing: "border-box",
                 marginBottom: "16px",
                 color: "#000",
-                backgroundColor: !salesNotesForRevision.isCurrentRevision ? "#f5f5f5" : WHITE,
+                backgroundColor: !salesNotesForRevision.isCurrentRevision ? UI.inputBg : WHITE,
                 cursor: !salesNotesForRevision.isCurrentRevision ? "not-allowed" : "text",
               }}
             />
@@ -4313,7 +4315,7 @@ export default function Drawings({
 
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   To (comma-separated)
                 </label>
                 <input
@@ -4334,7 +4336,7 @@ export default function Drawings({
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   From
                 </label>
                 <input
@@ -4355,7 +4357,7 @@ export default function Drawings({
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Subject
                 </label>
                 <input
@@ -4376,7 +4378,7 @@ export default function Drawings({
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Body
                 </label>
                 <div
@@ -4503,7 +4505,7 @@ export default function Drawings({
 
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   To (comma-separated)
                 </label>
                 <input
@@ -4524,7 +4526,7 @@ export default function Drawings({
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   From
                 </label>
                 {emailDrawingsFlowKind === "sendTo" && vicSmtpFromOptions.length > 0 ? (
@@ -4569,7 +4571,7 @@ export default function Drawings({
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Subject
                 </label>
                 <input
@@ -4590,7 +4592,7 @@ export default function Drawings({
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Body
                 </label>
                 <div

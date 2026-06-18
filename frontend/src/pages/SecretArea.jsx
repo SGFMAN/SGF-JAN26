@@ -8,8 +8,10 @@ import {
 } from "../utils/secretAreaProject";
 import { SECRET_GAME_SCENES, INITIAL_SCENE_INDEX } from "../Game/secretGameScenes";
 
-const MONUMENT = "#323233";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 
 export default function SecretArea() {
   const navigate = useNavigate();

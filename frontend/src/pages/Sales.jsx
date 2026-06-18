@@ -5,10 +5,12 @@ import { projectPath } from "../utils/projectUrl";
 import SalesMonthLists from "../components/SalesMonthLists";
 import { SALES_MONTHS, filterProjectsForSalesMonth } from "../utils/salesMonths";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d";
-const WHITE = "#fff";
+import { UI, MENU } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 export default function Sales() {
@@ -138,7 +140,7 @@ export default function Sales() {
               margin: 0,
               fontSize: "2.4rem",
               fontWeight: 700,
-              color: WHITE,
+              color: PAGE_TEXT,
               letterSpacing: "1px",
             }}
           >
@@ -200,12 +202,12 @@ export default function Sales() {
           }}
         >
           {/* TOTALS - Light Blue */}
-          <div style={{ background: "#A6C9EC", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+          <div style={{ background: MENU.blue, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
             <Link
               to="/sales-totals"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -226,14 +228,14 @@ export default function Sales() {
           </div>
           
           {/* Months - Light Green */}
-          <div style={{ background: "#CEEAB0", borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: "2px solid #000" }}>
+          <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: `2px solid ${UI.outline}` }}>
             {SALES_MONTHS.map((month) => (
               <button
                 key={month}
                 onClick={() => setSelectedMonth(month)}
                 style={{
-                  background: selectedMonth === month ? "#92D050" : "transparent",
-                  color: selectedMonth === month ? WHITE : "#404049",
+                  background: selectedMonth === month ? MENU.greenActive : "transparent",
+                  color: selectedMonth === month ? MENU.activeText : UI.textSecondary,
                   border: "none",
                   borderRadius: "10px",
                   padding: "8px 8px",
@@ -256,12 +258,12 @@ export default function Sales() {
           <div style={{ flex: 1 }} />
           
           {/* Back to Main - Light Red */}
-          <div style={{ background: "#F79198", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+          <div style={{ background: MENU.red, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
             <Link
               to="/projects"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -301,7 +303,7 @@ export default function Sales() {
           }}
         >
 
-          {loading && <p style={{ color: "#32323399" }}>Loading projects...</p>}
+          {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && (
             <p style={{ color: "#cc3333" }}>
               Error: {error}

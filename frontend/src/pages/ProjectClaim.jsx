@@ -6,15 +6,17 @@ import { isDesignPhaseStatus } from "../utils/projectStatus";
 import ProjectRectangleCard from "../components/ProjectRectangleCard";
 import logo from "../images/logo.png";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const linkInactive = {
   background: "transparent",
-  color: "#404049",
+  color: UI.textSecondary,
   border: "none",
   borderRadius: "10px",
   padding: "8px 8px",
@@ -34,7 +36,7 @@ const linkActive = {
   ...linkInactive,
   background: WHITE,
   color: MONUMENT,
-  outline: `2px solid ${MONUMENT}`,
+  outline: `2px solid ${UI.outline}`,
   boxShadow: "0 2px 4px rgba(50,50,51,.04)",
 };
 
@@ -329,14 +331,14 @@ export default function ProjectClaim() {
             color: MONUMENT,
           }}
         >
-          {loading && <p style={{ color: "#32323399", margin: 0 }}>Loading projects…</p>}
+          {loading && <p style={{ color: UI.textMuted, margin: 0 }}>Loading projects…</p>}
           {error && (
             <p style={{ color: "#cc3333", margin: 0 }}>
               Error: {error}
             </p>
           )}
           {!loading && !error && claimProjects.length === 0 && (
-            <p style={{ color: "#32323399", margin: 0 }}>
+            <p style={{ color: UI.textMuted, margin: 0 }}>
               No projects match (QLD state, Design Phase, draftsperson not set).
             </p>
           )}

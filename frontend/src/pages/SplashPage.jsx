@@ -2,11 +2,14 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import logo from "../images/logo.png";
 import { setAuthSession } from "../utils/auth";
+import { applyUiThemeToDocument, readStoredUiThemeColorOverrides, readStoredUiThemeId } from "../themes/applyUiTheme";
+import { UI } from "../utils/uiThemeTokens";
 
-const MONUMENT = "#323233";
-const LIGHT_MONUMENT = "#42464d";
-const WHITE = "#fff";
 const API_URL = "";
+const MONUMENT = UI.textPrimary;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 
 export default function SplashPage() {
   const navigate = useNavigate();
@@ -61,6 +64,10 @@ export default function SplashPage() {
 
       const data = await response.json();
       setAuthSession(data.userId, data.passwordType, data.user?.name);
+      applyUiThemeToDocument(
+        readStoredUiThemeId(data.userId),
+        readStoredUiThemeColorOverrides(data.userId)
+      );
 
       const redirectTo = location.state?.from?.pathname || "/projects";
       navigate(redirectTo, { replace: true });
@@ -116,7 +123,7 @@ export default function SplashPage() {
             style={{
               display: "block",
               fontSize: "0.9rem",
-              color: WHITE,
+              color: PAGE_TEXT,
               marginBottom: "6px",
               fontWeight: 500,
             }}
@@ -155,7 +162,7 @@ export default function SplashPage() {
             style={{
               display: "block",
               fontSize: "0.9rem",
-              color: WHITE,
+              color: PAGE_TEXT,
               marginBottom: "6px",
               fontWeight: 500,
             }}
@@ -197,8 +204,8 @@ export default function SplashPage() {
             padding: "12px 20px",
             fontSize: "1rem",
             fontWeight: 500,
-            color: WHITE,
-            background: !selectedUserId || !password || loggingIn ? "#666" : MONUMENT,
+            color: UI.buttonPrimaryText,
+            background: !selectedUserId || !password || loggingIn ? "#666" : UI.buttonPrimary,
             border: "none",
             borderRadius: "8px",
             cursor: !selectedUserId || !password || loggingIn ? "not-allowed" : "pointer",

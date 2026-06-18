@@ -5,10 +5,13 @@ import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stat
 import { CLASSIFICATION_BADGE_MAP } from "../utils/classifications";
 import logo from "../images/logo.png";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d"; // More blue and slightly lighter version of monument
-const WHITE = "#fff";
+import { UI, BANNER, PROJECT_CARD } from "../utils/uiThemeTokens.js";
+import { OnHoldSash, CancelledSash } from "../components/ProjectStatusSash";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 // Predefined colors for groups
@@ -218,7 +221,7 @@ export default function SiteVisitManager() {
               margin: 0,
               fontSize: "2.4rem",
               fontWeight: 700,
-              color: WHITE,
+              color: PAGE_TEXT,
               letterSpacing: "1px",
             }}
           >
@@ -245,7 +248,7 @@ export default function SiteVisitManager() {
             style={{
               background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
               color: stateFilter === "VIC" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : MONUMENT}`,
+              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -255,7 +258,7 @@ export default function SiteVisitManager() {
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -275,7 +278,7 @@ export default function SiteVisitManager() {
             style={{
               background: stateFilter === "QLD" ? "#D54358" : WHITE,
               color: stateFilter === "QLD" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : MONUMENT}`,
+              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -285,7 +288,7 @@ export default function SiteVisitManager() {
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -305,7 +308,7 @@ export default function SiteVisitManager() {
             style={{
               background: stateFilter === "All" ? MONUMENT : WHITE,
               color: stateFilter === "All" ? WHITE : MONUMENT,
-              border: `2px solid ${MONUMENT}`,
+              border: `2px solid ${UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -315,7 +318,7 @@ export default function SiteVisitManager() {
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "All") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -379,7 +382,7 @@ export default function SiteVisitManager() {
               transition: "background 0.18s, color 0.15s",
               marginBottom: "0px",
               lineHeight: "1.4",
-              outline: `2px solid ${MONUMENT}`,
+              outline: `2px solid ${UI.outline}`,
               boxShadow: "0 2px 4px rgba(50,50,51,.04)",
               display: "block",
             }}
@@ -390,7 +393,7 @@ export default function SiteVisitManager() {
             to="/managers/contract-manager"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -412,7 +415,7 @@ export default function SiteVisitManager() {
             to="/managers/colour-manager"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -434,7 +437,7 @@ export default function SiteVisitManager() {
             to="/managers/status-manager"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -457,7 +460,7 @@ export default function SiteVisitManager() {
               to="/managers/drawing-manager"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -480,7 +483,7 @@ export default function SiteVisitManager() {
             to="/managers/qp-manager"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -502,7 +505,7 @@ export default function SiteVisitManager() {
             to="/managers/project-claim"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -525,7 +528,7 @@ export default function SiteVisitManager() {
             to="/projects"
             style={{
               background: "transparent",
-              color: "#404049",
+              color: UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "8px 8px",
@@ -569,14 +572,14 @@ export default function SiteVisitManager() {
             </h2>
           </div>
 
-          {loading && <p style={{ color: "#32323399" }}>Loading projects...</p>}
+          {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && (
             <p style={{ color: "#cc3333" }}>
               Error: {error}
             </p>
           )}
           {!loading && !error && incompleteSiteVisits.length === 0 && (
-            <p style={{ color: "#32323399" }}>No projects need site visits.</p>
+            <p style={{ color: UI.textMuted }}>No projects need site visits.</p>
           )}
           {!loading && !error && incompleteSiteVisits.length > 0 && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: "16px", flex: 1, overflow: "hidden", minWidth: 0 }}>
@@ -615,7 +618,8 @@ export default function SiteVisitManager() {
                     const isSelected = selectedProjectIds.has(project.id);
                     const isAlreadyGrouped = group !== null;
                     // Use group color if project is in a group, blue if selected, otherwise use MONUMENT
-                    const cardBackground = group ? group.color : (isSelected ? "#0066cc" : MONUMENT);
+                    const cardBackground = group ? group.color : (isSelected ? BANNER.onHold : PROJECT_CARD.bg);
+                    const cardTextColor = !group && !isSelected ? PROJECT_CARD.text : WHITE;
                     
                     const classificationInfo = project.classification
                       ? CLASSIFICATION_BADGE_MAP[project.classification]
@@ -665,65 +669,11 @@ export default function SiteVisitManager() {
                         >
                               {/* On Hold Diagonal Band */}
                               {(project.on_hold === 'true' || project.on_hold === true) && (
-                                <div
-                                  style={{
-                                    position: "absolute",
-                                    top: "50%",
-                                    left: "50%",
-                                    transform: "translate(-50%, -50%) rotate(-45deg)",
-                                    width: "280px",
-                                    height: "40px",
-                                    background: "#0066cc",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    zIndex: 10,
-                                    boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-                                  }}
-                                >
-                                  <span
-                                    style={{
-                                      color: WHITE,
-                                      fontWeight: 700,
-                                      fontSize: "1.1rem",
-                                      letterSpacing: "2px",
-                                      textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                                    }}
-                                  >
-                                    ON HOLD
-                                  </span>
-                                </div>
+                                <OnHoldSash />
                               )}
                               {/* Cancelled Diagonal Band */}
                               {project.status === "Cancelled" && (
-                                <div
-                                  style={{
-                                    position: "absolute",
-                                    top: "50%",
-                                    left: "50%",
-                                    transform: "translate(-50%, -50%) rotate(-45deg)",
-                                    width: "280px",
-                                    height: "40px",
-                                    background: "#cc0000",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    zIndex: 10,
-                                    boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-                                  }}
-                                >
-                                  <span
-                                    style={{
-                                      color: WHITE,
-                                      fontWeight: 700,
-                                      fontSize: "1.1rem",
-                                      letterSpacing: "2px",
-                                      textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-                                    }}
-                                  >
-                                    CANCELLED
-                                  </span>
-                                </div>
+                                <CancelledSash />
                               )}
                               {/* Stream Acronym - Left Bottom */}
                               {streamInfo && (
@@ -776,10 +726,10 @@ export default function SiteVisitManager() {
                                   zIndex: (project.on_hold === 'true' || project.on_hold === true) ? 1 : "auto",
                                 }}
                               >
-                                <div style={{ fontWeight: 600, fontSize: "1.1rem", color: WHITE }}>
+                                <div style={{ fontWeight: 600, fontSize: "1.1rem", color: cardTextColor }}>
                                   {suburb}
                                 </div>
-                                <div style={{ fontSize: "0.95rem", color: WHITE, fontWeight: 400 }}>
+                                <div style={{ fontSize: "0.95rem", color: cardTextColor, fontWeight: 400 }}>
                                   {street}
                                 </div>
                                 {startDateLabel ? (

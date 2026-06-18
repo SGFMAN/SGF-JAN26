@@ -26,11 +26,13 @@ import ProjectPageMobile from "../mobile/ProjectPageMobile";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
-const MONUMENT = "#323233";
+import { UI, MENU } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
-const SECTION_GREY = "#a1a1a3"; // Moderately lightened version
-const LIGHT_MONUMENT = "#42464d"; // More blue and slightly lighter version of monument
-const WHITE = "#fff";
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 
 const API_URL = "";
 
@@ -652,7 +654,7 @@ export default function ProjectPage() {
                       margin: 0,
                       fontSize: "2.4rem",
                       fontWeight: 700,
-                      color: WHITE,
+                      color: PAGE_TEXT,
                       letterSpacing: "1px",
                       cursor: canCopyAddressHeading ? "pointer" : "default",
                     }}
@@ -800,7 +802,16 @@ export default function ProjectPage() {
         >
           {/* Toggle Switch - Only show for Construction Phase projects */}
           {project && project.status === "Construction Phase" && (
-            <div style={{ marginBottom: "12px", width: "100%" }}>
+            <div
+              style={{
+                marginBottom: "4px",
+                width: "100%",
+                border: `2px solid ${UI.outline}`,
+                borderRadius: "10px",
+                padding: "4px",
+                boxSizing: "border-box",
+              }}
+            >
               <div
                 style={{
                   display: "flex",
@@ -862,7 +873,20 @@ export default function ProjectPage() {
             </div>
           )}
 
-          {/* Menu Buttons */}
+          <div
+            style={{
+              background: MENU.green,
+              borderRadius: "10px",
+              padding: "4px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "4px",
+              border: `2px solid ${UI.outline}`,
+              flex: 1,
+              minHeight: 0,
+              overflowY: "auto",
+            }}
+          >
           {(project && project.status === "Construction Phase" && showProjectMenu
             ? CONSTRUCTION_MENU_OPTIONS
             : MENU_OPTIONS
@@ -873,8 +897,8 @@ export default function ProjectPage() {
               <button
                 key={item.key}
                 style={{
-                  background: activeView === item.key ? WHITE : "transparent",
-                  color: activeView === item.key ? MONUMENT : "#404049",
+                  background: activeView === item.key ? MENU.greenActive : "transparent",
+                  color: activeView === item.key ? MENU.activeText : UI.textSecondary,
                   border: "none",
                   borderRadius: "10px",
                   padding: "8px 8px",
@@ -887,8 +911,6 @@ export default function ProjectPage() {
                   transition: "background 0.18s, color 0.15s",
                   marginBottom: "0px",
                   lineHeight: "1.4",
-                  outline: activeView === item.key ? `2px solid ${MONUMENT}` : "none",
-                  boxShadow: activeView === item.key ? "0 2px 4px rgba(50,50,51,.04)" : "none",
                   display: "block",
                   width: "100%",
                   position: "relative",
@@ -900,13 +922,13 @@ export default function ProjectPage() {
               </button>
             );
           })}
-          <div style={{ flex: 1 }} />
+          </div>
           <Link
             to={isPortalProjectPath ? "/portal" : "/projects"}
             style={{
               background: WHITE,
               color: MONUMENT,
-              border: "none",
+              border: `2px solid ${UI.outline}`,
               borderRadius: "10px",
               padding: "13px 8px",
               fontSize: "1.05rem",
@@ -943,7 +965,7 @@ export default function ProjectPage() {
             flexDirection: "column",
           }}
         >
-          {loading && <p style={{ color: "#32323399" }}>Loading project...</p>}
+          {loading && <p style={{ color: UI.textMuted }}>Loading project...</p>}
           {error && (
             <p style={{ color: "#cc3333" }}>
               Error: {error}
@@ -1098,7 +1120,7 @@ export default function ProjectPage() {
               style={{
                 display: "block",
                 fontSize: "0.9rem",
-                color: "#32323399",
+                color: UI.textMuted,
                 marginBottom: "6px",
                 fontWeight: 500,
               }}
@@ -1129,7 +1151,7 @@ export default function ProjectPage() {
                 type="button"
                 onClick={resetLinkRenoDupWizard}
                 style={{
-                  background: "#e0e0e0",
+                  background: UI.border,
                   color: MONUMENT,
                   border: "none",
                   borderRadius: "10px",

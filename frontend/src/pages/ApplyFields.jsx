@@ -5,10 +5,12 @@ import { CLASSIFICATION_OPTIONS } from "../utils/classifications";
 import { projectPath } from "../utils/projectUrl";
 import logo from "../images/logo.png";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d"; // More blue and slightly lighter version of monument
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const YEAR_FILTER_OPTIONS = ["2024", "2025", "2026"];
@@ -513,7 +515,7 @@ export default function ApplyFields() {
             style={{
               background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
               color: stateFilter === "VIC" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : MONUMENT}`,
+              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -523,7 +525,7 @@ export default function ApplyFields() {
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -544,7 +546,7 @@ export default function ApplyFields() {
             style={{
               background: stateFilter === "QLD" ? "#D54358" : WHITE,
               color: stateFilter === "QLD" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : MONUMENT}`,
+              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -554,7 +556,7 @@ export default function ApplyFields() {
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -575,7 +577,7 @@ export default function ApplyFields() {
             style={{
               background: stateFilter === "All" ? MONUMENT : WHITE,
               color: stateFilter === "All" ? WHITE : MONUMENT,
-              border: `2px solid ${MONUMENT}`,
+              border: `2px solid ${UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -585,7 +587,7 @@ export default function ApplyFields() {
             }}
             onMouseEnter={(e) => {
               if (stateFilter !== "All") {
-                e.currentTarget.style.background = "#f0f0f0";
+                e.currentTarget.style.background = UI.inputBg;
               }
             }}
             onMouseLeave={(e) => {
@@ -609,7 +611,7 @@ export default function ApplyFields() {
                 style={{
                   background: yearFilter === year ? MONUMENT : WHITE,
                   color: yearFilter === year ? WHITE : MONUMENT,
-                  border: `2px solid ${MONUMENT}`,
+                  border: `2px solid ${UI.outline}`,
                   borderRadius: "8px",
                   padding: "10px 20px",
                   fontSize: "1rem",
@@ -620,7 +622,7 @@ export default function ApplyFields() {
                 }}
                 onMouseEnter={(e) => {
                   if (yearFilter !== year) {
-                    e.currentTarget.style.background = "#f0f0f0";
+                    e.currentTarget.style.background = UI.inputBg;
                   }
                 }}
                 onMouseLeave={(e) => {
@@ -641,7 +643,7 @@ export default function ApplyFields() {
               style={{
                 background: yearFilter === "All" ? MONUMENT : WHITE,
                 color: yearFilter === "All" ? WHITE : MONUMENT,
-                border: `2px solid ${MONUMENT}`,
+                border: `2px solid ${UI.outline}`,
                 borderRadius: "8px",
                 padding: "10px 20px",
                 fontSize: "1rem",
@@ -651,7 +653,7 @@ export default function ApplyFields() {
               }}
               onMouseEnter={(e) => {
                 if (yearFilter !== "All") {
-                  e.currentTarget.style.background = "#f0f0f0";
+                  e.currentTarget.style.background = UI.inputBg;
                 }
               }}
               onMouseLeave={(e) => {
@@ -714,7 +716,7 @@ export default function ApplyFields() {
               cursor: "pointer",
               transition: "background 0.18s, color 0.15s",
               marginBottom: "0px",
-              outline: `2px solid ${MONUMENT}`,
+              outline: `2px solid ${UI.outline}`,
               boxShadow: "0 2px 4px rgba(50,50,51,.04)",
               display: "block",
             }}
@@ -746,7 +748,7 @@ export default function ApplyFields() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -782,7 +784,7 @@ export default function ApplyFields() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -800,7 +802,7 @@ export default function ApplyFields() {
                   border: "none",
                   fontSize: "1rem",
                   color: selectedField ? MONUMENT : "#999",
-                  background: selectedField ? WHITE : "#f5f5f5",
+                  background: selectedField ? WHITE : UI.inputBg,
                   boxSizing: "border-box",
                   cursor: selectedField ? "pointer" : "not-allowed",
                 }}
@@ -819,7 +821,7 @@ export default function ApplyFields() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -837,7 +839,7 @@ export default function ApplyFields() {
                   border: "none",
                   fontSize: "1rem",
                   color: selectedField ? MONUMENT : "#999",
-                  background: selectedField ? WHITE : "#f5f5f5",
+                  background: selectedField ? WHITE : UI.inputBg,
                   boxSizing: "border-box",
                   cursor: selectedField ? "pointer" : "not-allowed",
                 }}
@@ -909,7 +911,7 @@ export default function ApplyFields() {
                   maxWidth: "400px",
                   padding: "12px 16px",
                   borderRadius: "8px",
-                  border: `2px solid ${MONUMENT}`,
+                  border: `2px solid ${UI.outline}`,
                   fontSize: "1rem",
                   color: MONUMENT,
                   background: WHITE,
@@ -987,10 +989,10 @@ export default function ApplyFields() {
                 </div>
               )}
             </div>
-            {loading && <p style={{ color: "#32323399" }}>Loading projects...</p>}
+            {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
             {error && <p style={{ color: "#cc3333" }}>Error: {error}</p>}
             {!loading && !error && filteredProjects.length === 0 && (
-              <p style={{ color: "#32323399" }}>
+              <p style={{ color: UI.textMuted }}>
                 {selectedField && selectedValue
                   ? "No projects match the selected filter."
                   : searchQuery.trim()

@@ -3,9 +3,11 @@ import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import pdfjsWorker from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { AI_PLAN_RASTER_DPI, pdfViewportScaleFromDpi } from "../constants/aiPlanRaster";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 

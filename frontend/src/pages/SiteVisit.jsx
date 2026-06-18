@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 /** Matches backend `normalizeSiteVisitPhotoSet`: `5. PHOTOS` subfolders. */
@@ -508,7 +510,7 @@ export default function SiteVisit({ project, onUpdate }) {
                   boxSizing: "border-box",
                 }}
               >
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Status
                 </div>
                 <select
@@ -537,7 +539,7 @@ export default function SiteVisit({ project, onUpdate }) {
 
               {(siteVisitStatus === "Booked" || siteVisitStatus === "Complete") && project.site_visit_date && (
                 <div style={{ marginBottom: "24px" }}>
-                  <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                     {siteVisitStatus === "Complete" ? "Completed Date" : "Date"}
                   </div>
                   <div
@@ -559,7 +561,7 @@ export default function SiteVisit({ project, onUpdate }) {
 
               {(siteVisitStatus === "Booked" || siteVisitStatus === "Complete") && project.site_visit_time && (
                 <div style={{ marginBottom: "24px" }}>
-                  <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                     {siteVisitStatus === "Complete" ? "Completed Time" : "Time"}
                   </div>
                   <div
@@ -582,7 +584,7 @@ export default function SiteVisit({ project, onUpdate }) {
               {/* Scheduled Site Visit Date and Period */}
               {project.site_visit_scheduled_date && (
                 <div style={{ marginBottom: "24px" }}>
-                  <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                     Scheduled Site Visit Date
                   </div>
                   <div
@@ -609,7 +611,7 @@ export default function SiteVisit({ project, onUpdate }) {
 
               {project.site_visit_scheduled_period && (
                 <div style={{ marginBottom: "24px" }}>
-                  <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                  <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                     Scheduled Site Visit Time Period
                   </div>
                   <div
@@ -677,7 +679,7 @@ export default function SiteVisit({ project, onUpdate }) {
                   marginTop: "16px",
                 }}
               >
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Notes
                 </div>
                 <textarea
@@ -797,7 +799,7 @@ export default function SiteVisit({ project, onUpdate }) {
                     <span
                       style={{
                         gridColumn: "1 / -1",
-                        color: "#32323399",
+                        color: UI.textMuted,
                         fontSize: "0.875rem",
                       }}
                     >
@@ -807,7 +809,7 @@ export default function SiteVisit({ project, onUpdate }) {
                     <span
                       style={{
                         gridColumn: "1 / -1",
-                        color: "#32323399",
+                        color: UI.textMuted,
                         fontSize: "0.875rem",
                       }}
                     >
@@ -1075,7 +1077,7 @@ export default function SiteVisit({ project, onUpdate }) {
             <p
               style={{
                 fontSize: "1rem",
-                color: "#32323399",
+                color: UI.textMuted,
                 marginBottom: "24px",
                 lineHeight: "1.5",
               }}

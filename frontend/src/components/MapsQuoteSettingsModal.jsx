@@ -8,9 +8,11 @@ import {
 } from "../utils/mapsQuoteItems";
 import { searchPricingCatalog } from "../utils/pricingCatalogSearch";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 
 const rowStyle = {
   display: "flex",
@@ -270,7 +272,7 @@ export default function MapsQuoteSettingsModal({ onClose }) {
                     ...searchRowStyle,
                     width: "100%",
                     margin: 0,
-                    background: alreadyAdded ? "#f0f0f0" : isHover ? "#f4f4f6" : "transparent",
+                    background: alreadyAdded ? UI.inputBg : isHover ? "#f4f4f6" : "transparent",
                     borderTop: "none",
                     borderLeft: "none",
                     borderRight: "none",

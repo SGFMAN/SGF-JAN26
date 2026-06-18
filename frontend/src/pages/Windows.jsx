@@ -5,9 +5,11 @@ import {
   parseEmailGeneralJson,
 } from "../utils/emailGeneralSettings";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const WINDOW_COLOUR_OPTIONS = [
@@ -689,7 +691,7 @@ Date Required: ${dateRequiredText}`;
           <div style={{ flex: "1", minWidth: "200px" }}>
             {/* Window Status */}
             <div style={{ marginBottom: "24px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Window Status
               </div>
               <select
@@ -788,7 +790,7 @@ Date Required: ${dateRequiredText}`;
                 
                 {project.window_colour && (
                   <div style={{ marginBottom: "16px" }}>
-                    <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                    <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                       Window Colour
                     </div>
                     <div
@@ -809,7 +811,7 @@ Date Required: ${dateRequiredText}`;
 
                 {project.window_reveal && (
                   <div style={{ marginBottom: "16px" }}>
-                    <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                    <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                       Reveal
                     </div>
                     <div
@@ -832,7 +834,7 @@ Date Required: ${dateRequiredText}`;
 
                 {project.window_glazing && (
                   <div style={{ marginBottom: "16px" }}>
-                    <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                    <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                       Glazing
                     </div>
                     <div
@@ -853,7 +855,7 @@ Date Required: ${dateRequiredText}`;
 
                 {project.window_bal_rating && (
                   <div style={{ marginBottom: "16px" }}>
-                    <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                    <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                       BAL Rating
                     </div>
                     <div
@@ -874,7 +876,7 @@ Date Required: ${dateRequiredText}`;
 
                 {project.window_date_required && (
                   <div style={{ marginBottom: "16px" }}>
-                    <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                    <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                       Date Required
                     </div>
                     <div
@@ -895,7 +897,7 @@ Date Required: ${dateRequiredText}`;
 
                 {project.window_ordered_date && (
                   <div style={{ marginBottom: "16px" }}>
-                    <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                    <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                       Date Ordered
                     </div>
                     <div
@@ -939,7 +941,7 @@ Date Required: ${dateRequiredText}`;
                       style={{
                         display: "block",
                         fontSize: "0.9rem",
-                        color: "#32323399",
+                        color: UI.textMuted,
                         marginBottom: "6px",
                         fontWeight: "500",
                       }}
@@ -969,7 +971,7 @@ Date Required: ${dateRequiredText}`;
                     style={{
                       display: "block",
                       fontSize: "0.9rem",
-                      color: "#32323399",
+                      color: UI.textMuted,
                       marginBottom: "6px",
                       fontWeight: "500",
                     }}
@@ -988,7 +990,7 @@ Date Required: ${dateRequiredText}`;
                       padding: "32px 16px",
                       textAlign: "center",
                       cursor: "pointer",
-                      background: isDragging ? "#f5f5f5" : WHITE,
+                      background: isDragging ? UI.inputBg : WHITE,
                       transition: "background 0.2s, border-color 0.2s",
                       maxWidth: "300px",
                       boxSizing: "border-box",
@@ -999,7 +1001,7 @@ Date Required: ${dateRequiredText}`;
                         <div style={{ color: MONUMENT, fontWeight: "500", marginBottom: "8px" }}>
                           {selectedFile.name}
                         </div>
-                        <div style={{ fontSize: "0.9rem", color: "#32323399" }}>
+                        <div style={{ fontSize: "0.9rem", color: UI.textMuted }}>
                           Click to select a different file
                         </div>
                       </div>
@@ -1008,7 +1010,7 @@ Date Required: ${dateRequiredText}`;
                         <div style={{ color: MONUMENT, fontWeight: "500", marginBottom: "8px" }}>
                           Drag and drop PDF file here
                         </div>
-                        <div style={{ fontSize: "0.9rem", color: "#32323399" }}>
+                        <div style={{ fontSize: "0.9rem", color: UI.textMuted }}>
                           or click to browse
                         </div>
                       </div>
@@ -1045,7 +1047,7 @@ Date Required: ${dateRequiredText}`;
                     </button>
                   ) : null}
                   {isReceiving ? (
-                    <div style={{ fontSize: "0.9rem", color: "#32323399" }}>Uploading…</div>
+                    <div style={{ fontSize: "0.9rem", color: UI.textMuted }}>Uploading…</div>
                   ) : null}
                 </div>
               </div>
@@ -1126,7 +1128,7 @@ Date Required: ${dateRequiredText}`;
                     style={{
                       display: "block",
                       fontSize: "0.9rem",
-                      color: "#32323399",
+                      color: UI.textMuted,
                       marginBottom: "6px",
                       fontWeight: "500",
                     }}
@@ -1162,7 +1164,7 @@ Date Required: ${dateRequiredText}`;
                     style={{
                       display: "block",
                       fontSize: "0.9rem",
-                      color: "#32323399",
+                      color: UI.textMuted,
                       marginBottom: "6px",
                       fontWeight: "500",
                     }}
@@ -1217,7 +1219,7 @@ Date Required: ${dateRequiredText}`;
                     style={{
                       display: "block",
                       fontSize: "0.9rem",
-                      color: "#32323399",
+                      color: UI.textMuted,
                       marginBottom: "6px",
                       fontWeight: "500",
                     }}
@@ -1252,7 +1254,7 @@ Date Required: ${dateRequiredText}`;
                     style={{
                       display: "block",
                       fontSize: "0.9rem",
-                      color: "#32323399",
+                      color: UI.textMuted,
                       marginBottom: "6px",
                       fontWeight: "500",
                     }}
@@ -1287,7 +1289,7 @@ Date Required: ${dateRequiredText}`;
                     style={{
                       display: "block",
                       fontSize: "0.9rem",
-                      color: "#32323399",
+                      color: UI.textMuted,
                       marginBottom: "6px",
                       fontWeight: "500",
                     }}
@@ -1545,11 +1547,11 @@ Date Required: ${dateRequiredText}`;
 
             <div style={{ marginBottom: "20px", fontSize: "0.9rem", color: MONUMENT, lineHeight: 1.5 }}>
               <div>
-                <span style={{ color: "#32323399", fontWeight: 500 }}>From</span>{" "}
+                <span style={{ color: UI.textMuted, fontWeight: 500 }}>From</span>{" "}
                 {windowOrderEmailFrom || "—"}
               </div>
               <div style={{ marginTop: "12px" }}>
-                <div style={{ fontSize: "0.85rem", color: "#32323399", fontWeight: 500, marginBottom: "6px" }}>
+                <div style={{ fontSize: "0.85rem", color: UI.textMuted, fontWeight: 500, marginBottom: "6px" }}>
                   To
                 </div>
                 <input
@@ -1568,7 +1570,7 @@ Date Required: ${dateRequiredText}`;
                     boxSizing: "border-box",
                   }}
                 />
-                <div style={{ marginTop: "8px", fontSize: "0.82rem", color: "#32323399", lineHeight: 1.4 }}>
+                <div style={{ marginTop: "8px", fontSize: "0.82rem", color: UI.textMuted, lineHeight: 1.4 }}>
                   Tip: separate multiple emails with commas.
                 </div>
               </div>
@@ -1576,7 +1578,7 @@ Date Required: ${dateRequiredText}`;
 
             {/* Email Body Section */}
             <div style={{ marginBottom: "24px", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "12px", fontWeight: 500 }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "12px", fontWeight: 500 }}>
                 Email Body
               </div>
               <textarea
@@ -1670,7 +1672,7 @@ Date Required: ${dateRequiredText}`;
             <h3 id="windows-order-number-title" style={{ margin: "0 0 12px 0", color: MONUMENT, fontSize: "1.2rem" }}>
               Enter order number
             </h3>
-            <p style={{ margin: "0 0 16px 0", color: "#32323399", fontSize: "0.9rem", lineHeight: 1.45 }}>
+            <p style={{ margin: "0 0 16px 0", color: UI.textMuted, fontSize: "0.9rem", lineHeight: 1.45 }}>
               An order number is required before uploading the window order PDF.
             </p>
             <input

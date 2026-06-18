@@ -1,10 +1,12 @@
 import React from "react";
 import { Link } from "react-router-dom";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 
 /** Layout tokens — keep in sync with AllProjects.jsx */
 export const SGF_PANEL_HEIGHT_PX = 758;
@@ -86,7 +88,7 @@ function bulkSelectionLabel(selection) {
 
 function sidebarButtonStyle(disabled) {
   return {
-    background: disabled ? "#e0e0e0" : WHITE,
+    background: disabled ? UI.border : WHITE,
     color: MONUMENT,
     border: "none",
     borderRadius: "10px",

@@ -1,8 +1,10 @@
 import React, { useState, useRef } from "react";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 export default function NewProject_5_PDFUpload({
@@ -408,7 +410,7 @@ export default function NewProject_5_PDFUpload({
             type="button"
             onClick={onBack}
             style={{
-              background: "#e0e0e0",
+              background: UI.border,
               color: MONUMENT,
               border: "none",
               borderRadius: "10px",
@@ -425,7 +427,7 @@ export default function NewProject_5_PDFUpload({
             type="button"
             onClick={handleCancel}
             style={{
-              background: "#e0e0e0",
+              background: UI.border,
               color: MONUMENT,
               border: "none",
               borderRadius: "10px",

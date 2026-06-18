@@ -15,9 +15,11 @@ import craig2 from "../images/craig2.jpg";
 import craig3 from "../images/craig3.jpg";
 import "./Overview.css";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 function OverviewStatusTile({ label, value, background, onClick }) {
@@ -1391,7 +1393,7 @@ export default function Overview({ project }) {
 
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   To (comma-separated)
                 </label>
                 <input
@@ -1412,7 +1414,7 @@ export default function Overview({ project }) {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   From
                 </label>
                 <input
@@ -1433,7 +1435,7 @@ export default function Overview({ project }) {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Subject
                 </label>
                 <input
@@ -1454,7 +1456,7 @@ export default function Overview({ project }) {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Body (HTML)
                 </label>
                 <textarea
@@ -1474,8 +1476,8 @@ export default function Overview({ project }) {
                     fontFamily: "monospace",
                   }}
                 />
-                <div style={{ marginTop: "8px", padding: "12px", background: "#f5f5f5", borderRadius: "8px", border: `1px solid ${SECTION_GREY}` }}>
-                  <div style={{ fontSize: "0.85rem", color: "#32323399", marginBottom: "8px", fontWeight: 500 }}>Preview:</div>
+                <div style={{ marginTop: "8px", padding: "12px", background: UI.inputBg, borderRadius: "8px", border: `1px solid ${SECTION_GREY}` }}>
+                  <div style={{ fontSize: "0.85rem", color: UI.textMuted, marginBottom: "8px", fontWeight: 500 }}>Preview:</div>
                   <div
                     style={{
                       fontSize: "0.9rem",

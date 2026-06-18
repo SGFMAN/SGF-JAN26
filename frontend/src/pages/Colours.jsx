@@ -6,9 +6,11 @@ import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 import { resolveNewProjectClientFrom, findSalespersonUserInList } from "../utils/streamNewProjectEmail";
 import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const COLOURS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
@@ -1111,7 +1113,7 @@ export default function Colours({ project, onUpdate }) {
           {/* Column 1 */}
           <div style={{ flex: "1", minWidth: "200px" }}>
             <div style={{ marginBottom: "24px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Status
               </div>
               <select
@@ -1225,7 +1227,7 @@ export default function Colours({ project, onUpdate }) {
           {/* Column 2 */}
           <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column" }}>
             <div style={{ marginBottom: "24px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: "500" }}>
                 Colours PDF
               </div>
               
@@ -1255,7 +1257,7 @@ export default function Colours({ project, onUpdate }) {
                 <div style={{ fontSize: "1rem", color: MONUMENT, fontWeight: 500 }}>
                   Drag and drop PDF file here
                 </div>
-                <div style={{ fontSize: "0.85rem", color: "#32323399" }}>
+                <div style={{ fontSize: "0.85rem", color: UI.textMuted }}>
                   or click to browse
                 </div>
                 {selectedFile && (
@@ -1303,7 +1305,7 @@ export default function Colours({ project, onUpdate }) {
 
           {/* Column 3 - AI exterior render */}
           <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", gap: "12px" }}>
-            <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: "500" }}>
+            <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: "500" }}>
               AI exterior render
             </div>
             <p style={{ margin: 0, fontSize: "0.85rem", color: SECTION_GREY, lineHeight: 1.45 }}>
@@ -1366,7 +1368,7 @@ export default function Colours({ project, onUpdate }) {
 
           {/* Column 4 - Notes */}
           <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", height: "100%" }}>
-            <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", flexShrink: 0 }}>
+            <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", flexShrink: 0 }}>
               Notes
             </div>
             <textarea
@@ -1635,7 +1637,7 @@ export default function Colours({ project, onUpdate }) {
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               {/* Email Template Type Dropdown */}
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Email Type
                 </label>
                 <select
@@ -1662,7 +1664,7 @@ export default function Colours({ project, onUpdate }) {
 
               {/* Attachments Section */}
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Attachments
                 </label>
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -1714,7 +1716,7 @@ export default function Colours({ project, onUpdate }) {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   To (comma-separated)
                 </label>
                 <input
@@ -1735,7 +1737,7 @@ export default function Colours({ project, onUpdate }) {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   From
                 </label>
                 <input
@@ -1756,7 +1758,7 @@ export default function Colours({ project, onUpdate }) {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Subject
                 </label>
                 <input
@@ -1777,7 +1779,7 @@ export default function Colours({ project, onUpdate }) {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Body
                 </label>
                 <div
@@ -1891,7 +1893,7 @@ export default function Colours({ project, onUpdate }) {
 
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               <div>
-                <label style={{ display: "block", marginBottom: "6px", fontSize: "0.9rem", color: "#32323399", fontWeight: 500 }}>
+                <label style={{ display: "block", marginBottom: "6px", fontSize: "0.9rem", color: UI.textMuted, fontWeight: 500 }}>
                   To
                 </label>
                 <input
@@ -1912,7 +1914,7 @@ export default function Colours({ project, onUpdate }) {
               </div>
 
               <div>
-                <label style={{ display: "block", marginBottom: "6px", fontSize: "0.9rem", color: "#32323399", fontWeight: 500 }}>
+                <label style={{ display: "block", marginBottom: "6px", fontSize: "0.9rem", color: UI.textMuted, fontWeight: 500 }}>
                   From
                 </label>
                 <input
@@ -1933,7 +1935,7 @@ export default function Colours({ project, onUpdate }) {
               </div>
 
               <div>
-                <label style={{ display: "block", marginBottom: "6px", fontSize: "0.9rem", color: "#32323399", fontWeight: 500 }}>
+                <label style={{ display: "block", marginBottom: "6px", fontSize: "0.9rem", color: UI.textMuted, fontWeight: 500 }}>
                   Subject
                 </label>
                 <input
@@ -1954,7 +1956,7 @@ export default function Colours({ project, onUpdate }) {
               </div>
 
               <div>
-                <label style={{ display: "block", marginBottom: "6px", fontSize: "0.9rem", color: "#32323399", fontWeight: 500 }}>
+                <label style={{ display: "block", marginBottom: "6px", fontSize: "0.9rem", color: UI.textMuted, fontWeight: 500 }}>
                   Body
                 </label>
                 <div

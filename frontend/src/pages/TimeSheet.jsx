@@ -6,10 +6,12 @@ import TimeSheetOld from "./timeSheet/TimeSheetOld";
 import TimeSheetUserTemplate from "./timeSheet/TimeSheetUserTemplate";
 import { getPayCycleWednesdayForDate, getPayPeriodDays } from "../utils/timeSheetPayCycle";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const SIDEBAR_VIEWS = [
@@ -21,7 +23,7 @@ const SIDEBAR_VIEWS = [
 function sidebarButtonStyle(isActive) {
   return {
     background: isActive ? WHITE : "transparent",
-    color: isActive ? MONUMENT : "#404049",
+    color: isActive ? MONUMENT : UI.textSecondary,
     border: "none",
     borderRadius: "10px",
     padding: "8px 8px",
@@ -32,7 +34,7 @@ function sidebarButtonStyle(isActive) {
     cursor: "pointer",
     transition: "background 0.18s, color 0.15s",
     lineHeight: "1.4",
-    outline: isActive ? `2px solid ${MONUMENT}` : "none",
+    outline: isActive ? `2px solid ${UI.outline}` : "none",
     boxShadow: isActive ? "0 2px 4px rgba(50,50,51,.04)" : "none",
     display: "block",
     width: "100%",
@@ -133,7 +135,7 @@ export default function TimeSheet() {
             margin: 0,
             fontSize: "2.4rem",
             fontWeight: 700,
-            color: WHITE,
+            color: PAGE_TEXT,
             letterSpacing: "1px",
           }}
         >

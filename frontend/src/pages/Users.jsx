@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 export default function Users() {
@@ -20,6 +22,8 @@ export default function Users() {
   const [showEditUserModal, setShowEditUserModal] = useState(false);
   const [showDeleteUserModal, setShowDeleteUserModal] = useState(false);
   const [isDeletingUser, setIsDeletingUser] = useState(false);
+  const [detailsPassword, setDetailsPassword] = useState("");
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
   
   // Positions state
   const [positions, setPositions] = useState([]);
@@ -36,6 +40,11 @@ export default function Users() {
     fetchUsers();
     fetchPositions();
   }, []);
+
+  useEffect(() => {
+    const user = users.find((u) => u.id === parseInt(selectedUserId, 10));
+    setDetailsPassword(user?.password || "admin");
+  }, [selectedUserId, users]);
 
   async function fetchUsers() {
     try {
@@ -236,6 +245,58 @@ export default function Users() {
       alert(error.message || "Failed to create user");
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleSavePassword() {
+    const user = users.find((u) => u.id === parseInt(selectedUserId, 10));
+    if (!user) {
+      return;
+    }
+
+    const trimmedPassword = detailsPassword.trim();
+    if (!trimmedPassword) {
+      alert("Password cannot be empty");
+      return;
+    }
+
+    if (trimmedPassword === (user.password || "admin")) {
+      return;
+    }
+
+    setIsSavingPassword(true);
+    try {
+      const userPositionIds = user.positions && Array.isArray(user.positions)
+        ? user.positions.map((p) => p.id)
+        : [];
+
+      const response = await fetch(`${API_URL}/api/users/${user.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: user.name,
+          email: user.email || null,
+          phone: user.phone || null,
+          password: trimmedPassword,
+          positionIds: userPositionIds,
+          primaryPositionId: user.primary_position_id || null,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(errorData.error || "Failed to update password");
+      }
+
+      await fetchUsers();
+      setSelectedUserId(selectedUserId);
+    } catch (error) {
+      console.error("Error updating password:", error);
+      alert(error.message || "Failed to update password");
+    } finally {
+      setIsSavingPassword(false);
     }
   }
 
@@ -470,7 +531,7 @@ export default function Users() {
             style={{
               display: "block",
               fontSize: "0.9rem",
-              color: "#32323399",
+              color: UI.textMuted,
               marginBottom: "6px",
               fontWeight: 500,
             }}
@@ -580,7 +641,7 @@ export default function Users() {
               style={{
                 display: "block",
                 fontSize: "0.9rem",
-                color: "#32323399",
+                color: UI.textMuted,
                 marginBottom: "6px",
                 fontWeight: 500,
               }}
@@ -692,7 +753,7 @@ export default function Users() {
             {/* Line 1: Name and Phone */}
             <div style={{ marginBottom: "16px", display: "flex", gap: "16px" }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Name
                 </div>
                 <div style={{
@@ -709,7 +770,7 @@ export default function Users() {
                 </div>
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Phone
                 </div>
                 <div style={{
@@ -729,7 +790,7 @@ export default function Users() {
 
             {/* Line 2: Email */}
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                 Email
               </div>
               <div style={{
@@ -748,26 +809,73 @@ export default function Users() {
 
             {/* Password */}
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                 Password
               </div>
-              <div style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: "none",
-                fontSize: "1rem",
-                color: MONUMENT,
-                background: WHITE,
-                boxSizing: "border-box",
-              }}>
-                {selectedUser.password || "admin"}
+              <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                <input
+                  type="text"
+                  value={detailsPassword}
+                  onChange={(e) => setDetailsPassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      handleSavePassword();
+                    }
+                  }}
+                  disabled={isSavingPassword}
+                  placeholder="Enter password"
+                  style={{
+                    flex: 1,
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  onClick={handleSavePassword}
+                  disabled={
+                    isSavingPassword ||
+                    !detailsPassword.trim() ||
+                    detailsPassword.trim() === (selectedUser.password || "admin")
+                  }
+                  style={{
+                    background: WHITE,
+                    color: MONUMENT,
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "10px 16px",
+                    fontSize: "0.95rem",
+                    fontWeight: 500,
+                    cursor:
+                      isSavingPassword ||
+                      !detailsPassword.trim() ||
+                      detailsPassword.trim() === (selectedUser.password || "admin")
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity:
+                      isSavingPassword ||
+                      !detailsPassword.trim() ||
+                      detailsPassword.trim() === (selectedUser.password || "admin")
+                        ? 0.6
+                        : 1,
+                    whiteSpace: "nowrap",
+                    height: "42px",
+                  }}
+                >
+                  {isSavingPassword ? "Saving…" : "Save"}
+                </button>
               </div>
             </div>
 
             {/* Line 3: Positions */}
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                 Positions
               </div>
               <div style={{
@@ -777,7 +885,7 @@ export default function Users() {
                 border: "1px solid #e0e0e0",
                 fontSize: "1rem",
                 color: MONUMENT,
-                background: "#f9f9f9",
+                background: UI.inputBg,
                 boxSizing: "border-box",
                 minHeight: "42px",
               }}>
@@ -816,7 +924,7 @@ export default function Users() {
             </div>
           </div>
         ) : (
-          <div style={{ color: "#32323399", fontSize: "0.95rem" }}>
+          <div style={{ color: UI.textMuted, fontSize: "0.95rem" }}>
             Select a user to view details
           </div>
         )}
@@ -863,7 +971,7 @@ export default function Users() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -882,7 +990,7 @@ export default function Users() {
                   border: "none",
                   fontSize: "1rem",
                   color: MONUMENT,
-                  background: "#f0f0f0",
+                  background: UI.inputBg,
                   boxSizing: "border-box",
                 }}
                 autoComplete="off"
@@ -895,7 +1003,7 @@ export default function Users() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -914,7 +1022,7 @@ export default function Users() {
                   border: "none",
                   fontSize: "1rem",
                   color: MONUMENT,
-                  background: "#f0f0f0",
+                  background: UI.inputBg,
                   boxSizing: "border-box",
                 }}
                 autoComplete="off"
@@ -926,7 +1034,7 @@ export default function Users() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -945,7 +1053,7 @@ export default function Users() {
                   border: "none",
                   fontSize: "1rem",
                   color: MONUMENT,
-                  background: "#f0f0f0",
+                  background: UI.inputBg,
                   boxSizing: "border-box",
                 }}
                 autoComplete="off"
@@ -957,7 +1065,7 @@ export default function Users() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -976,7 +1084,7 @@ export default function Users() {
                   border: "none",
                   fontSize: "1rem",
                   color: MONUMENT,
-                  background: "#f0f0f0",
+                  background: UI.inputBg,
                   boxSizing: "border-box",
                 }}
                 autoComplete="off"
@@ -988,7 +1096,7 @@ export default function Users() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "12px",
                   fontWeight: 500,
                 }}
@@ -1002,7 +1110,7 @@ export default function Users() {
                   border: "1px solid #e0e0e0",
                   borderRadius: "8px",
                   padding: "12px",
-                  background: "#f9f9f9",
+                  background: UI.inputBg,
                 }}
               >
                 {positions.length === 0 ? (
@@ -1045,7 +1153,7 @@ export default function Users() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "12px",
                   fontWeight: 500,
                 }}
@@ -1059,7 +1167,7 @@ export default function Users() {
                   border: "1px solid #e0e0e0",
                   borderRadius: "8px",
                   padding: "12px",
-                  background: "#f9f9f9",
+                  background: UI.inputBg,
                 }}
               >
                 {positions.length === 0 ? (
@@ -1189,7 +1297,7 @@ export default function Users() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -1208,7 +1316,7 @@ export default function Users() {
                   border: "none",
                   fontSize: "1rem",
                   color: MONUMENT,
-                  background: "#f0f0f0",
+                  background: UI.inputBg,
                   boxSizing: "border-box",
                 }}
                 autoComplete="off"
@@ -1221,7 +1329,7 @@ export default function Users() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -1240,7 +1348,7 @@ export default function Users() {
                   border: "none",
                   fontSize: "1rem",
                   color: MONUMENT,
-                  background: "#f0f0f0",
+                  background: UI.inputBg,
                   boxSizing: "border-box",
                 }}
                 autoComplete="off"
@@ -1252,7 +1360,7 @@ export default function Users() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -1271,7 +1379,7 @@ export default function Users() {
                   border: "none",
                   fontSize: "1rem",
                   color: MONUMENT,
-                  background: "#f0f0f0",
+                  background: UI.inputBg,
                   boxSizing: "border-box",
                 }}
                 autoComplete="off"
@@ -1283,7 +1391,7 @@ export default function Users() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -1302,7 +1410,7 @@ export default function Users() {
                   border: "none",
                   fontSize: "1rem",
                   color: MONUMENT,
-                  background: "#f0f0f0",
+                  background: UI.inputBg,
                   boxSizing: "border-box",
                 }}
                 autoComplete="off"
@@ -1314,7 +1422,7 @@ export default function Users() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "12px",
                   fontWeight: 500,
                 }}
@@ -1328,7 +1436,7 @@ export default function Users() {
                   border: "1px solid #e0e0e0",
                   borderRadius: "8px",
                   padding: "12px",
-                  background: "#f9f9f9",
+                  background: UI.inputBg,
                 }}
               >
                 {positions.length === 0 ? (
@@ -1371,7 +1479,7 @@ export default function Users() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "12px",
                   fontWeight: 500,
                 }}
@@ -1385,7 +1493,7 @@ export default function Users() {
                   border: "1px solid #e0e0e0",
                   borderRadius: "8px",
                   padding: "12px",
-                  background: "#f9f9f9",
+                  background: UI.inputBg,
                 }}
               >
                 {positions.length === 0 ? (
@@ -1611,7 +1719,7 @@ export default function Users() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -1630,7 +1738,7 @@ export default function Users() {
                   border: "none",
                   fontSize: "1rem",
                   color: MONUMENT,
-                  background: "#f0f0f0",
+                  background: UI.inputBg,
                   boxSizing: "border-box",
                 }}
                 autoComplete="off"
@@ -1730,7 +1838,7 @@ export default function Users() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -1749,7 +1857,7 @@ export default function Users() {
                   border: "none",
                   fontSize: "1rem",
                   color: MONUMENT,
-                  background: "#f0f0f0",
+                  background: UI.inputBg,
                   boxSizing: "border-box",
                 }}
                 autoComplete="off"

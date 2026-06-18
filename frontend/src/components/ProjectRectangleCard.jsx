@@ -2,10 +2,14 @@ import React, { useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { CLASSIFICATION_BADGE_MAP } from "../utils/classifications";
 import { projectPath } from "../utils/projectUrl";
+import { OnHoldSash, CancelledSash } from "./ProjectStatusSash";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI, PROJECT_CARD } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const CARD_TEXT = PROJECT_CARD.text;
+const PAGE_TEXT = UI.pageText;
+const OUTLINE = UI.outline;
 
 const CARD_W = 200;
 const CARD_H = 100;
@@ -56,84 +60,38 @@ export default function ProjectRectangleCard({ project, fitColumn = false, onInt
 
   const face = (
     <div
+      className="project-folder-card"
       style={{
-        background: MONUMENT,
-        borderRadius: "8px",
         width: `${CARD_W}px`,
         height: `${CARD_H}px`,
-        color: SECTION_GREY,
-        cursor: "pointer",
-        transition: "opacity 0.2s",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        alignItems: "center",
-        position: "relative",
-        overflow: "hidden",
+        borderRadius: "8px",
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
-      onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
     >
-      {onHold && (
-        <div
-          style={{
-            position: "absolute",
-            top: "50%",
-            left: "50%",
-            transform: "translate(-50%, -50%) rotate(-45deg)",
-            width: "280px",
-            height: "40px",
-            background: "#0066cc",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 10,
-            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-          }}
-        >
-          <span
-            style={{
-              color: WHITE,
-              fontWeight: 700,
-              fontSize: "1.1rem",
-              letterSpacing: "2px",
-              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-            }}
-          >
-            ON HOLD
-          </span>
-        </div>
-      )}
-      {cancelled && (
-        <div
-          style={{
-            position: "absolute",
-            top: "50%",
-            left: "50%",
-            transform: "translate(-50%, -50%) rotate(-45deg)",
-            width: "280px",
-            height: "40px",
-            background: "#cc0000",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 10,
-            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-          }}
-        >
-          <span
-            style={{
-              color: WHITE,
-              fontWeight: 700,
-              fontSize: "1.1rem",
-              letterSpacing: "2px",
-              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-            }}
-          >
-            CANCELLED
-          </span>
-        </div>
-      )}
+      <div
+        className="project-folder-card__face"
+        style={{
+          background: PROJECT_CARD.bg,
+          borderRadius: "8px",
+          border: `2px solid ${OUTLINE}`,
+          boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)",
+          width: "100%",
+          height: "100%",
+          color: SECTION_GREY,
+          cursor: "pointer",
+          transition: "opacity 0.2s",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          alignItems: "center",
+          position: "relative",
+          overflow: "hidden",
+          boxSizing: "border-box",
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+        onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+      >
+      {onHold && <OnHoldSash />}
+      {cancelled && <CancelledSash />}
       {streamInfo && (
         <div
           style={{
@@ -183,23 +141,13 @@ export default function ProjectRectangleCard({ project, fitColumn = false, onInt
           zIndex: onHold ? 1 : "auto",
         }}
       >
-        <div style={{ fontWeight: 600, fontSize: "1.1rem", color: WHITE }}>
+        <div style={{ fontWeight: 600, fontSize: "1.1rem", color: CARD_TEXT }}>
           {(project.suburb || "Unknown Suburb").toUpperCase()}
         </div>
-        <div style={{ fontSize: "0.95rem", color: WHITE, fontWeight: 400 }}>
+        <div style={{ fontSize: "0.95rem", color: CARD_TEXT, fontWeight: 400 }}>
           {project.street || "No address"}
         </div>
       </div>
-      <div
-        style={{
-          fontSize: "0.9rem",
-          color: "#323233cc",
-          textAlign: "center",
-          position: "relative",
-          zIndex: onHold ? 1 : "auto",
-        }}
-      >
-        Status: {project.status}
       </div>
     </div>
   );
@@ -207,6 +155,7 @@ export default function ProjectRectangleCard({ project, fitColumn = false, onInt
   const inner = fitColumn ? (
     <div
       ref={measureRef}
+      className="project-folder-card-scaler"
       style={{
         width: "100%",
         height: CARD_H * scale,

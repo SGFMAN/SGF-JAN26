@@ -20,10 +20,12 @@ import {
   SALES_YEAR_VIEW,
 } from "../utils/salesTotalsCompute";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d";
-const WHITE = "#fff";
+import { UI, MENU } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 // Stream color mapping
@@ -639,7 +641,7 @@ export default function SalesAnalytics() {
               margin: 0,
               fontSize: "2.4rem",
               fontWeight: 700,
-              color: WHITE,
+              color: PAGE_TEXT,
               letterSpacing: "1px",
             }}
           >
@@ -847,12 +849,12 @@ export default function SalesAnalytics() {
           }}
         >
           {/* Bar Graph - Light Blue */}
-          <div style={{ background: "#A6C9EC", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+          <div style={{ background: MENU.blue, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
             <button
               onClick={() => setSelectedView("bar")}
               style={{
-                background: selectedView === "bar" ? "#4D93D9" : "transparent",
-                color: selectedView === "bar" ? WHITE : "#404049",
+                background: selectedView === "bar" ? MENU.blueActive : "transparent",
+                color: selectedView === "bar" ? MENU.activeText : UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -874,12 +876,12 @@ export default function SalesAnalytics() {
           </div>
           
           {/* Pie Chart - Light Green */}
-          <div style={{ background: "#CEEAB0", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+          <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
             <button
               onClick={() => setSelectedView("pie")}
               style={{
-                background: selectedView === "pie" ? "#92D050" : "transparent",
-                color: selectedView === "pie" ? WHITE : "#404049",
+                background: selectedView === "pie" ? MENU.greenActive : "transparent",
+                color: selectedView === "pie" ? MENU.activeText : UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -901,12 +903,12 @@ export default function SalesAnalytics() {
           </div>
 
           {/* Rates — cumulative planned vs actual */}
-          <div style={{ background: "#E8D4F5", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+          <div style={{ background: "#E8D4F5", borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
             <button
               onClick={() => setSelectedView("rates")}
               style={{
                 background: selectedView === "rates" ? "#8E44AD" : "transparent",
-                color: selectedView === "rates" ? WHITE : "#404049",
+                color: selectedView === "rates" ? MENU.activeText : UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -928,12 +930,12 @@ export default function SalesAnalytics() {
           </div>
 
           {/* Targets — monthly job counts (VIC / QLD / Green) */}
-          <div style={{ background: "#FFF3E0", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+          <div style={{ background: "#FFF3E0", borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
             <button
               onClick={() => setSelectedView("targets")}
               style={{
                 background: selectedView === "targets" ? "#E65100" : "transparent",
-                color: selectedView === "targets" ? WHITE : "#404049",
+                color: selectedView === "targets" ? MENU.activeText : UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -957,12 +959,12 @@ export default function SalesAnalytics() {
           <div style={{ flex: 1 }} />
           
           {/* Back to Sales - Light Red */}
-          <div style={{ background: "#F79198", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+          <div style={{ background: MENU.red, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
             <Link
               to="/sales-totals"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -1005,7 +1007,7 @@ export default function SalesAnalytics() {
             minWidth: 0,
           }}
         >
-          {loading && <p style={{ color: "#32323399" }}>Loading projects...</p>}
+          {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && (
             <p style={{ color: "#cc3333" }}>
               Error: {error}
@@ -1088,7 +1090,7 @@ export default function SalesAnalytics() {
                             <div style={{ fontSize: "0.9rem", fontWeight: 600, color: MONUMENT }}>
                               {slice.name}
                             </div>
-                            <div style={{ fontSize: "0.8rem", color: "#32323399" }}>
+                            <div style={{ fontSize: "0.8rem", color: UI.textMuted }}>
                               {formatCurrency(slice.value)} ({slice.percentage.toFixed(1)}%)
                             </div>
                           </div>

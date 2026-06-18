@@ -7,8 +7,10 @@ import {
   coerceNewProjectTeamEmailToArray,
   emailGeneralJsonForPersist,
 } from "../utils/emailGeneralSettings";
-const MONUMENT = "#323233";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const NEW_PROJECT_SECTION_BLUE = {
   backgroundColor: "#e8f2fc",
   border: "1px solid #4d93d9",
@@ -1011,7 +1013,7 @@ export default function StreamSettings() {
           minWidth: "240px",
           alignSelf: "stretch",
           backgroundColor: "#E5E5E7",
-          border: `2px solid ${MONUMENT}`,
+          border: `2px solid ${UI.outline}`,
           borderRadius: "10px",
           padding: "14px 16px",
           color: MONUMENT,
@@ -1032,7 +1034,7 @@ export default function StreamSettings() {
               width: "fit-content",
               minWidth: "100%",
               background: emailNavScope === EMAIL_NAV_GENERAL ? WHITE : "transparent",
-              color: emailNavScope === EMAIL_NAV_GENERAL ? MONUMENT : "#404049",
+              color: emailNavScope === EMAIL_NAV_GENERAL ? MONUMENT : UI.textSecondary,
               border: "none",
               borderRadius: "10px",
               padding: "10px 8px",
@@ -1042,7 +1044,7 @@ export default function StreamSettings() {
               letterSpacing: "0.3px",
               cursor: "pointer",
               transition: "background 0.18s, color 0.15s",
-              outline: emailNavScope === EMAIL_NAV_GENERAL ? `2px solid ${MONUMENT}` : "none",
+              outline: emailNavScope === EMAIL_NAV_GENERAL ? `2px solid ${UI.outline}` : "none",
               boxShadow: emailNavScope === EMAIL_NAV_GENERAL ? "0 2px 4px rgba(50,50,51,.04)" : "none",
             }}
           >
@@ -1063,7 +1065,7 @@ export default function StreamSettings() {
                 width: "fit-content",
                 minWidth: "100%",
                 background: isSelected ? WHITE : "transparent",
-                color: isSelected ? MONUMENT : "#404049",
+                color: isSelected ? MONUMENT : UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "10px 8px",
@@ -1073,7 +1075,7 @@ export default function StreamSettings() {
                 letterSpacing: "0.3px",
                 cursor: "pointer",
                 transition: "background 0.18s, color 0.15s",
-                outline: isSelected ? `2px solid ${MONUMENT}` : "none",
+                outline: isSelected ? `2px solid ${UI.outline}` : "none",
                 boxShadow: isSelected ? "0 2px 4px rgba(50,50,51,.04)" : "none",
               }}
             >
@@ -1088,7 +1090,7 @@ export default function StreamSettings() {
         style={{
           alignSelf: "stretch",
           backgroundColor: "#E5E5E7",
-          border: `2px solid ${MONUMENT}`,
+          border: `2px solid ${UI.outline}`,
           borderRadius: "10px",
           padding: "14px 12px",
           color: MONUMENT,
@@ -1112,7 +1114,7 @@ export default function StreamSettings() {
                   style={{
                     width: "100%",
                     background: isOpen ? WHITE : "transparent",
-                    color: isOpen ? MONUMENT : "#404049",
+                    color: isOpen ? MONUMENT : UI.textSecondary,
                     border: "none",
                     borderRadius: "10px",
                     padding: "10px 8px",
@@ -1121,7 +1123,7 @@ export default function StreamSettings() {
                     textAlign: "left",
                     letterSpacing: "0.2px",
                     cursor: "pointer",
-                    outline: isOpen ? `2px solid ${MONUMENT}` : "none",
+                    outline: isOpen ? `2px solid ${UI.outline}` : "none",
                   }}
                 >
                   {section.label} {isOpen ? "▾" : "▸"}
@@ -1138,7 +1140,7 @@ export default function StreamSettings() {
                   style={{
                     width: "100%",
                     background: isOpen ? WHITE : "transparent",
-                    color: isOpen ? MONUMENT : "#404049",
+                    color: isOpen ? MONUMENT : UI.textSecondary,
                     border: "none",
                     borderRadius: "10px",
                     padding: "10px 8px",
@@ -1147,7 +1149,7 @@ export default function StreamSettings() {
                     textAlign: "left",
                     letterSpacing: "0.2px",
                     cursor: "pointer",
-                    outline: isOpen ? `2px solid ${MONUMENT}` : "none",
+                    outline: isOpen ? `2px solid ${UI.outline}` : "none",
                   }}
                 >
                   {section.label} {isOpen ? "▾" : "▸"}
@@ -1160,7 +1162,7 @@ export default function StreamSettings() {
         style={{
           alignSelf: "stretch",
           backgroundColor: "#E5E5E7",
-          border: `2px solid ${MONUMENT}`,
+          border: `2px solid ${UI.outline}`,
           borderRadius: "10px",
           padding: "16px",
           color: MONUMENT,
@@ -1176,15 +1178,15 @@ export default function StreamSettings() {
         </h3>
 
         {loading ? (
-          <div style={{ fontSize: "0.95rem", color: "#32323399" }}>Loading stream settings…</div>
+          <div style={{ fontSize: "0.95rem", color: UI.textMuted }}>Loading stream settings…</div>
         ) : emailNavScope === EMAIL_NAV_GENERAL ? (
           !globalEmailSection ? (
-            <div style={{ fontSize: "0.95rem", color: "#32323399" }}>Select a section in column 2.</div>
+            <div style={{ fontSize: "0.95rem", color: UI.textMuted }}>Select a section in column 2.</div>
           ) : globalEmailSection === "colours" ? (
             <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}>
               <div style={{ ...columnPanelStyle, minHeight: "100%" }}>
                 <h4 style={{ ...columnTitleStyle, marginBottom: "10px" }}>Colours</h4>
-                <p style={{ margin: 0, fontSize: "0.88rem", color: "#32323399", lineHeight: 1.45 }}>
+                <p style={{ margin: 0, fontSize: "0.88rem", color: UI.textMuted, lineHeight: 1.45 }}>
                   Colour email options will go here.
                 </p>
               </div>
@@ -1313,7 +1315,7 @@ export default function StreamSettings() {
             <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}>
               <div style={{ ...columnPanelStyle, minHeight: "100%" }}>
                 <h4 style={{ ...columnTitleStyle, marginBottom: "10px" }}>Deposit Balance</h4>
-                <p style={{ margin: "0 0 12px", fontSize: "0.86rem", color: "#32323399", lineHeight: 1.45 }}>
+                <p style={{ margin: "0 0 12px", fontSize: "0.86rem", color: UI.textMuted, lineHeight: 1.45 }}>
                   VIC vs QLD follows the project&apos;s state when sending deposit balance emails. Client emails go to
                   the active contacts ticked in Client Info (no To field here).
                 </p>
@@ -1588,7 +1590,7 @@ export default function StreamSettings() {
                     New Project
                   </h4>
                 </div>
-                <p style={{ margin: "0 0 12px", fontSize: "0.86rem", color: "#32323399", lineHeight: 1.45 }}>
+                <p style={{ margin: "0 0 12px", fontSize: "0.86rem", color: UI.textMuted, lineHeight: 1.45 }}>
                   One set of addresses for all streams. VIC vs QLD follows the project&apos;s state when sending.
                   Under Email to Client and Email to Team, set From separately for Sales Manager and Other in each state
                   column. At send time, users with the VIC or QLD Sales Manager position use the Sales Manager From;
@@ -1962,7 +1964,7 @@ export default function StreamSettings() {
             </div>
           ) : null
         ) : !activeSection ? (
-          <div style={{ fontSize: "0.95rem", color: "#32323399" }}>Select a section in column 2.</div>
+          <div style={{ fontSize: "0.95rem", color: UI.textMuted }}>Select a section in column 2.</div>
         ) : (
           <div style={{ flex: 1, minHeight: 0 }}>
             {activeSection === "drawings" ? (

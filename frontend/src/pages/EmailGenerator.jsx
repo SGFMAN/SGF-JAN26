@@ -2,10 +2,12 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import logo from "../images/logo.png";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 export default function EmailGenerator() {
@@ -626,7 +628,7 @@ export default function EmailGenerator() {
                     style={{
                       display: "block",
                       fontSize: "0.9rem",
-                      color: "#32323399",
+                      color: UI.textMuted,
                       marginBottom: "6px",
                       fontWeight: 500,
                     }}
@@ -1050,7 +1052,7 @@ export default function EmailGenerator() {
                   style={{
                     display: "block",
                     fontSize: "0.9rem",
-                    color: "#32323399",
+                    color: UI.textMuted,
                     marginBottom: "6px",
                     fontWeight: 500,
                   }}
@@ -1064,7 +1066,7 @@ export default function EmailGenerator() {
                     border: `1px solid ${SECTION_GREY}`,
                     fontSize: "1rem",
                     color: MONUMENT,
-                    background: "#f9f9f9",
+                    background: UI.inputBg,
                     minHeight: "40px",
                   }}
                 >
@@ -1077,7 +1079,7 @@ export default function EmailGenerator() {
                   style={{
                     display: "block",
                     fontSize: "0.9rem",
-                    color: "#32323399",
+                    color: UI.textMuted,
                     marginBottom: "6px",
                     fontWeight: 500,
                   }}
@@ -1091,7 +1093,7 @@ export default function EmailGenerator() {
                     border: `1px solid ${SECTION_GREY}`,
                     fontSize: "0.95rem",
                     color: MONUMENT,
-                    background: "#f9f9f9",
+                    background: UI.inputBg,
                     minHeight: "200px",
                     whiteSpace: "pre-wrap",
                     lineHeight: "1.6",

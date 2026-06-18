@@ -22,10 +22,12 @@ import {
 
 const SALES_TOTALS_EMAIL_FROM = "info@superiorgrannyflats.com.au";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d";
-const WHITE = "#fff";
+import { UI, MENU } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 // Stream color mapping (same as Sales page)
@@ -410,7 +412,7 @@ export default function SalesTotals() {
               margin: 0,
               fontSize: "2.4rem",
               fontWeight: 700,
-              color: WHITE,
+              color: PAGE_TEXT,
               letterSpacing: "1px",
             }}
           >
@@ -493,12 +495,12 @@ export default function SalesTotals() {
           }}
         >
           {/* Analytics - Light Blue */}
-          <div style={{ background: "#A6C9EC", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+          <div style={{ background: MENU.blue, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
             <Link
               to="/sales-analytics"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -519,7 +521,7 @@ export default function SalesTotals() {
           </div>
 
           {/* PDF - Light Grey */}
-          <div style={{ background: "#e8e8ea", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+          <div style={{ background: "#e8e8ea", borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
             <button
               type="button"
               onClick={handleOpenPdfEmail}
@@ -527,7 +529,7 @@ export default function SalesTotals() {
               style={{
                 width: "100%",
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -548,12 +550,12 @@ export default function SalesTotals() {
           <div style={{ flex: 1 }} />
           
           {/* Back to Sales - Light Red */}
-          <div style={{ background: "#F79198", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+          <div style={{ background: MENU.red, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
             <Link
               to="/sales"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -595,7 +597,7 @@ export default function SalesTotals() {
             justifyContent: "space-between",
           }}
         >
-          {loading && <p style={{ color: "#32323399" }}>Loading projects...</p>}
+          {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && <p style={{ color: "#cc3333" }}>Error: {error}</p>}
           {!loading && !error && (
             <SalesTotalsDashboard
@@ -838,7 +840,7 @@ export default function SalesTotals() {
                 style={{
                   fontSize: "0.9rem",
                   color: MONUMENT,
-                  background: "#f5f5f5",
+                  background: UI.inputBg,
                   borderRadius: "8px",
                   padding: "10px 12px",
                 }}
@@ -847,7 +849,7 @@ export default function SalesTotals() {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   To (comma-separated)
                 </label>
                 <input
@@ -869,7 +871,7 @@ export default function SalesTotals() {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   From
                 </label>
                 <input
@@ -890,7 +892,7 @@ export default function SalesTotals() {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Subject
                 </label>
                 <input
@@ -911,7 +913,7 @@ export default function SalesTotals() {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Body
                 </label>
                 <div

@@ -17,10 +17,12 @@ import {
 } from "../utils/emailGeneralSettings";
 import logo from "../images/logo.png";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d";
-const WHITE = "#fff";
+import { UI, MENU } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const PURPLE = "#7c3aed";
 const PURPLE_HOVER = "#6d28d9";
 
@@ -1330,7 +1332,7 @@ export default function Hotlist() {
               margin: 0,
               fontSize: "2.4rem",
               fontWeight: 700,
-              color: WHITE,
+              color: PAGE_TEXT,
               letterSpacing: "1px",
             }}
           >
@@ -1419,12 +1421,12 @@ export default function Hotlist() {
         >
           {/* Menu Buttons */}
           {/* Hot List - Light Blue */}
-          <div style={{ background: "#A6C9EC", borderRadius: "10px", padding: "4px", border: "2px solid #000" }}>
+          <div style={{ background: MENU.blue, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
             <Link
               to="/hotlist"
               style={{
-                background: "#4D93D9",
-                color: WHITE,
+                background: MENU.blueActive,
+                color: MENU.activeText,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -1445,12 +1447,12 @@ export default function Hotlist() {
           </div>
           
           {/* All Projects, Design Phase, Construction Phase, Finished Projects, Cancelled, On Hold - Light Green */}
-          <div style={{ background: "#CEEAB0", borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: "2px solid #000" }}>
+          <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: `2px solid ${UI.outline}` }}>
             <Link
               to="/all-projects"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -1472,7 +1474,7 @@ export default function Hotlist() {
               to="/projects"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -1494,7 +1496,7 @@ export default function Hotlist() {
               to="/construction-phase"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -1516,7 +1518,7 @@ export default function Hotlist() {
               to="/finished-projects"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -1538,7 +1540,7 @@ export default function Hotlist() {
               to="/cancelled"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -1560,7 +1562,7 @@ export default function Hotlist() {
               to="/on-hold"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -1581,12 +1583,12 @@ export default function Hotlist() {
           </div>
           
           {/* Managers and Sales - Light Red */}
-          <div style={{ background: "#F79198", borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: "2px solid #000" }}>
+          <div style={{ background: MENU.red, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: `2px solid ${UI.outline}` }}>
             <Link
               to="/managers"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -1608,7 +1610,7 @@ export default function Hotlist() {
               to="/sales"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -1633,7 +1635,7 @@ export default function Hotlist() {
               to="/settings"
               style={{
                 background: "transparent",
-                color: "#404049",
+                color: UI.textSecondary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -2093,19 +2095,19 @@ export default function Hotlist() {
                   {soldPreviewItem ? ` | ${soldPreviewItem.street || ""}, ${soldPreviewItem.suburb || ""}` : ""}
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>To</label>
+                  <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>To</label>
                   <input value={soldEmailTo} onChange={(e) => setSoldEmailTo(e.target.value)} style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: `1px solid ${SECTION_GREY}`, fontSize: "1rem", boxSizing: "border-box" }} />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>From</label>
+                  <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>From</label>
                   <input value={soldEmailFrom} onChange={(e) => setSoldEmailFrom(e.target.value)} style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: `1px solid ${SECTION_GREY}`, fontSize: "1rem", boxSizing: "border-box" }} />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>Subject</label>
+                  <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>Subject</label>
                   <input value={soldEmailSubject} onChange={(e) => setSoldEmailSubject(e.target.value)} style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: `1px solid ${SECTION_GREY}`, fontSize: "1rem", boxSizing: "border-box" }} />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>Email Preview</label>
+                  <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>Email Preview</label>
                   <div contentEditable suppressContentEditableWarning onInput={(e) => setSoldEmailBody(e.currentTarget.innerHTML)} dangerouslySetInnerHTML={{ __html: soldEmailBody || "" }} style={{ width: "100%", minHeight: "220px", maxHeight: "42vh", overflowY: "auto", padding: "12px", borderRadius: "8px", border: `1px solid ${SECTION_GREY}`, background: WHITE, fontSize: "1rem", color: MONUMENT, boxSizing: "border-box" }} />
                 </div>
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "4px" }}>

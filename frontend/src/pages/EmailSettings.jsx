@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const LIGHT_MONUMENT = "#5c5c5e";
 const API_URL = "";
 
@@ -26,7 +28,7 @@ const SMTP_CARD = {
 const LAB = {
   display: "block",
   fontSize: "0.75rem",
-  color: "#32323399",
+  color: UI.textMuted,
   marginBottom: "4px",
   fontWeight: 500,
 };

@@ -5,10 +5,12 @@ import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stat
 import { CLASSIFICATION_BADGE_MAP as CLASSIFICATION_MAP } from "../utils/classifications";
 import { portalProjectPath } from "../utils/projectUrl";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d";
-const WHITE = "#fff";
+import { UI, MENU, PROJECT_CARD } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 
 const API_URL = "";
 
@@ -63,11 +65,6 @@ function isQLDProject(project) {
   return false;
 }
 
-function getProjectCostSafeText(project) {
-  // Portal doesn't currently expose project_cost; keep hook for future parity.
-  void project;
-  return "";
-}
 
 export default function PortalProjects() {
   const [projects, setProjects] = useState([]);
@@ -224,7 +221,7 @@ export default function PortalProjects() {
             style={{
               background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
               color: stateFilter === "VIC" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : MONUMENT}`,
+              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -244,7 +241,7 @@ export default function PortalProjects() {
             style={{
               background: stateFilter === "QLD" ? "#D54358" : WHITE,
               color: stateFilter === "QLD" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : MONUMENT}`,
+              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -264,7 +261,7 @@ export default function PortalProjects() {
             style={{
               background: stateFilter === "All" ? MONUMENT : WHITE,
               color: stateFilter === "All" ? WHITE : MONUMENT,
-              border: `2px solid ${MONUMENT}`,
+              border: `2px solid ${UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -314,20 +311,20 @@ export default function PortalProjects() {
           {/* Keep sidebar shell, but only show the allowed portal navigation */}
           <div
             style={{
-              background: "#CEEAB0",
+              background: MENU.green,
               borderRadius: "10px",
               padding: "4px",
               display: "flex",
               flexDirection: "column",
               gap: "4px",
-              border: "2px solid #000",
+              border: `2px solid ${UI.outline}`,
             }}
           >
             <Link
               to="/portal"
               style={{
-                background: "#92D050",
-                color: WHITE,
+                background: MENU.greenActive,
+                color: MENU.activeText,
                 border: "none",
                 borderRadius: "10px",
                 padding: "8px 8px",
@@ -384,7 +381,7 @@ export default function PortalProjects() {
                 style={{
                   background: sortMode === "suburb" ? MONUMENT : WHITE,
                   color: sortMode === "suburb" ? WHITE : MONUMENT,
-                  border: `2px solid ${MONUMENT}`,
+                  border: `2px solid ${UI.outline}`,
                   borderRadius: "8px",
                   padding: "10px 14px",
                   fontSize: "0.9rem",
@@ -401,7 +398,7 @@ export default function PortalProjects() {
                 style={{
                   background: sortMode === "class" ? MONUMENT : WHITE,
                   color: sortMode === "class" ? WHITE : MONUMENT,
-                  border: `2px solid ${MONUMENT}`,
+                  border: `2px solid ${UI.outline}`,
                   borderRadius: "8px",
                   padding: "10px 14px",
                   fontSize: "0.9rem",
@@ -418,7 +415,7 @@ export default function PortalProjects() {
                 style={{
                   background: sortMode === "stream" ? MONUMENT : WHITE,
                   color: sortMode === "stream" ? WHITE : MONUMENT,
-                  border: `2px solid ${MONUMENT}`,
+                  border: `2px solid ${UI.outline}`,
                   borderRadius: "8px",
                   padding: "10px 14px",
                   fontSize: "0.9rem",
@@ -439,7 +436,7 @@ export default function PortalProjects() {
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   marginTop: 0,
                   fontWeight: 500,
@@ -456,7 +453,7 @@ export default function PortalProjects() {
                   width: "420px",
                   padding: "12px 16px",
                   borderRadius: "8px",
-                  border: `2px solid ${MONUMENT}`,
+                  border: `2px solid ${UI.outline}`,
                   fontSize: "1rem",
                   color: MONUMENT,
                   background: WHITE,
@@ -475,7 +472,7 @@ export default function PortalProjects() {
                   fontWeight: 500,
                   color: MONUMENT,
                   background: WHITE,
-                  border: `2px solid ${MONUMENT}`,
+                  border: `2px solid ${UI.outline}`,
                   borderRadius: "8px",
                   cursor: "pointer",
                   height: "42px",
@@ -488,11 +485,11 @@ export default function PortalProjects() {
             )}
           </div>
 
-          {loading && <p style={{ color: "#32323399" }}>Loading projects...</p>}
+          {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && <p style={{ color: "#cc3333" }}>Error: {error}</p>}
 
           {!loading && !error && filteredProjects.length === 0 && (
-            <p style={{ color: "#32323399" }}>No Design Phase projects available.</p>
+            <p style={{ color: UI.textMuted }}>No Design Phase projects available.</p>
           )}
 
           {!loading && !error && filteredProjects.length > 0 && (
@@ -567,24 +564,36 @@ export default function PortalProjects() {
                       }}
                     >
                       <div
+                        className="project-folder-card"
                         style={{
-                          background: MONUMENT,
-                          borderRadius: "8px",
                           width: "200px",
                           height: "100px",
-                          color: SECTION_GREY,
-                          cursor: "pointer",
-                          transition: "opacity 0.2s",
-                          display: "flex",
-                          flexDirection: "column",
-                          justifyContent: "center",
-                          alignItems: "center",
-                          position: "relative",
-                          overflow: "hidden",
+                          borderRadius: "8px",
                         }}
-                        onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
-                        onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
                       >
+                        <div
+                          className="project-folder-card__face"
+                          style={{
+                            background: PROJECT_CARD.bg,
+                            borderRadius: "8px",
+                            border: `2px solid ${UI.outline}`,
+                            boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)",
+                            width: "100%",
+                            height: "100%",
+                            color: SECTION_GREY,
+                            cursor: "pointer",
+                            transition: "opacity 0.2s",
+                            display: "flex",
+                            flexDirection: "column",
+                            justifyContent: "center",
+                            alignItems: "center",
+                            position: "relative",
+                            overflow: "hidden",
+                            boxSizing: "border-box",
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+                          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                        >
                         {/* Stream Acronym - Left Bottom */}
                         {streamInfo && (
                           <div
@@ -638,24 +647,13 @@ export default function PortalProjects() {
                             zIndex: "auto",
                           }}
                         >
-                          <div style={{ fontWeight: 600, fontSize: "1.1rem", color: WHITE }}>
+                          <div style={{ fontWeight: 600, fontSize: "1.1rem", color: PROJECT_CARD.text }}>
                             {(suburb || "UNKNOWN SUBURB").toUpperCase()}
                           </div>
-                          <div style={{ fontSize: "0.95rem", color: WHITE, fontWeight: 400 }}>
+                          <div style={{ fontSize: "0.95rem", color: PROJECT_CARD.text, fontWeight: 400 }}>
                             {street || "No address"}
                           </div>
                         </div>
-
-                        <div
-                          style={{
-                            fontSize: "0.9rem",
-                            color: "#323233cc",
-                            textAlign: "center",
-                            position: "relative",
-                          }}
-                        >
-                          Status: Design Phase
-                          {getProjectCostSafeText(project)}
                         </div>
                       </div>
                     </Link>

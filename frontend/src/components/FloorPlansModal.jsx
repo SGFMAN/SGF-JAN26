@@ -5,9 +5,11 @@ import FloorPlanDefine3DModal from "./FloorPlanDefine3DModal";
 import FloorPlanScaleModal from "./FloorPlanScaleModal";
 import ModalBackdrop from "./ModalBackdrop";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 
 const EMPTY_FORM = {
   name: "",
@@ -37,7 +39,7 @@ function FloorPlanFilePreview({ src, fileType = "image", alt = "Floor plan previ
     minHeight: "160px",
     borderRadius: "8px",
     border: "1px solid #eee",
-    background: "#f5f5f5",
+    background: UI.inputBg,
     ...style,
   };
   if (fileType === "pdf") {
@@ -423,7 +425,7 @@ export default function FloorPlansModal({ onClose }) {
                         alignItems: "center",
                         justifyContent: "center",
                         color: "#888",
-                        background: "#f5f5f5",
+                        background: UI.inputBg,
                         borderRadius: "8px",
                       }}
                     >

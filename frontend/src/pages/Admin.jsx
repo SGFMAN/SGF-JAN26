@@ -88,9 +88,11 @@ function replaceDepositBalanceTokens(text, project) {
   return replaced;
 }
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const STREAM_OPTIONS = [
@@ -547,7 +549,7 @@ export default function Admin({ project, onUpdate }) {
           {/* Column 1 */}
           <div style={{ flex: "1", minWidth: "200px" }}>
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Stream
               </div>
               <select
@@ -577,7 +579,7 @@ export default function Admin({ project, onUpdate }) {
               </select>
             </div>
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", display: "flex", gap: "12px", alignItems: "baseline" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", display: "flex", gap: "12px", alignItems: "baseline" }}>
                 <div style={{ flex: "1", minWidth: 0 }}>Start Date</div>
                 <div style={{ flex: "0 0 auto", width: "5.5rem", textAlign: "center" }}>Project Days</div>
               </div>
@@ -630,7 +632,7 @@ export default function Admin({ project, onUpdate }) {
               </div>
             </div>
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Salesperson
               </div>
               <select
@@ -668,7 +670,7 @@ export default function Admin({ project, onUpdate }) {
           {/* Column 2 */}
           <div style={{ flex: "1", minWidth: "200px" }}>
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Project Cost
               </div>
               <input
@@ -692,7 +694,7 @@ export default function Admin({ project, onUpdate }) {
               />
             </div>
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 {isDepositFullyPaid() ? "Total Deposit - PAID" : "Total Deposit"}
               </div>
               <div
@@ -713,7 +715,7 @@ export default function Admin({ project, onUpdate }) {
             </div>
             {!isDepositFullyPaid() && (
               <div style={{ marginBottom: "16px" }}>
-                <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                   Deposit Paid
                 </div>
                 <div style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
@@ -801,7 +803,7 @@ export default function Admin({ project, onUpdate }) {
                     : "Deposit Balance Paid — Email 2 of 2 (Internal Team)"}
                 </h2>
                 {depositEmailStep === DEPOSIT_EMAIL_STEP_INTERNAL ? (
-                  <p style={{ margin: "8px 0 0", fontSize: "0.88rem", color: "#32323399" }}>
+                  <p style={{ margin: "8px 0 0", fontSize: "0.88rem", color: UI.textMuted }}>
                     The client email was sent. Review and send the internal team email.
                   </p>
                 ) : null}
@@ -831,7 +833,7 @@ export default function Admin({ project, onUpdate }) {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>To (comma-separated)</label>
+                  <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>To (comma-separated)</label>
                   <input
                     type="text"
                     value={depositEmailTo}
@@ -849,7 +851,7 @@ export default function Admin({ project, onUpdate }) {
                   />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>From</label>
+                  <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>From</label>
                   <input
                     type="text"
                     value={depositEmailFrom}
@@ -867,7 +869,7 @@ export default function Admin({ project, onUpdate }) {
                   />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>Subject</label>
+                  <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>Subject</label>
                   <input
                     type="text"
                     value={depositEmailSubject}
@@ -885,7 +887,7 @@ export default function Admin({ project, onUpdate }) {
                   />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "0.9rem", color: "#32323399", marginBottom: "6px", fontWeight: 500 }}>Body</label>
+                  <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>Body</label>
                   <div
                     ref={depositEmailBodyRef}
                     contentEditable

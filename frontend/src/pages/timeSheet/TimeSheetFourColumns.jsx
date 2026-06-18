@@ -25,8 +25,10 @@ import {
 } from "../../utils/timeSheetProjects";
 import TimeStepper from "./TimeStepper";
 
-const MONUMENT = "#323233";
-const WHITE = "#fff";
+import { UI } from "../../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const BLACK = "#000000";
 const ROW_GAP_MIN = 8;
 const API_URL = "";
@@ -224,7 +226,7 @@ export default function TimeSheetFourColumns({
   const headerCell = {
     fontSize: "0.72rem",
     fontWeight: 600,
-    color: "#32323399",
+    color: UI.textMuted,
     textAlign: "center",
   };
 

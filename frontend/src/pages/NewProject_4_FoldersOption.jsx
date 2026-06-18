@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { buildJobFolderNameSegment, normalizeAddressHyphensForFilesystem } from "../utils/projectFolderPath";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 export default function NewProject_4_FoldersOption({ isOpen, onClose, formData, onFormDataChange, onBack, onYes, onNo }) {
@@ -226,7 +228,7 @@ export default function NewProject_4_FoldersOption({ isOpen, onClose, formData, 
                 style={{
                   display: "block",
                   fontSize: "0.9rem",
-                  color: "#32323399",
+                  color: UI.textMuted,
                   marginBottom: "6px",
                   fontWeight: 500,
                 }}
@@ -247,7 +249,7 @@ export default function NewProject_4_FoldersOption({ isOpen, onClose, formData, 
                 }}
               >
                 {loading ? (
-                  <span style={{ color: "#32323399" }}>Calculating path...</span>
+                  <span style={{ color: UI.textMuted }}>Calculating path...</span>
                 ) : (
                   folderPath || "Path information not available"
                 )}
@@ -305,7 +307,7 @@ export default function NewProject_4_FoldersOption({ isOpen, onClose, formData, 
               type="button"
               onClick={onBack}
               style={{
-                background: "#e0e0e0",
+                background: UI.border,
                 color: MONUMENT,
                 border: "none",
                 borderRadius: "10px",
@@ -319,7 +321,7 @@ export default function NewProject_4_FoldersOption({ isOpen, onClose, formData, 
                 e.currentTarget.style.background = "#d0d0d0";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = "#e0e0e0";
+                e.currentTarget.style.background = UI.border;
               }}
             >
               Back
@@ -328,7 +330,7 @@ export default function NewProject_4_FoldersOption({ isOpen, onClose, formData, 
               type="button"
               onClick={handleNo}
               style={{
-                background: "#e0e0e0",
+                background: UI.border,
                 color: MONUMENT,
                 border: "none",
                 borderRadius: "10px",
@@ -342,7 +344,7 @@ export default function NewProject_4_FoldersOption({ isOpen, onClose, formData, 
                 e.currentTarget.style.background = "#d0d0d0";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = "#e0e0e0";
+                e.currentTarget.style.background = UI.border;
               }}
             >
               No

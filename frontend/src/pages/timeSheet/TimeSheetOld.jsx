@@ -1,6 +1,7 @@
 import React from "react";
 
-const MONUMENT = "#323233";
+import { UI } from "../../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
 
 export default function TimeSheetOld() {
   return (

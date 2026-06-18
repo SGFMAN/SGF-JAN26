@@ -1,9 +1,11 @@
 import React, { useState } from "react";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
 
-const MONUMENT = "#323233";
-const WHITE = "#fff";
-const SECTION_GREY = "#a1a1a3";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
+const SECTION_GREY = UI.panelBg;
 
 // Initial Polytec - Doors & Panels colors organized by category
 const INITIAL_POLYTEC_COLOURS = {
@@ -170,11 +172,11 @@ export default function ColourSettings() {
                 borderRadius: "8px",
                 cursor: "pointer",
                 transition: "all 0.2s",
-                backgroundColor: selectedGroup === "colorbond" ? "#f9f9f9" : "transparent",
+                backgroundColor: selectedGroup === "colorbond" ? UI.inputBg : "transparent",
               }}
               onMouseEnter={(e) => {
                 if (selectedGroup !== "colorbond") {
-                  e.currentTarget.style.backgroundColor = "#f5f5f5";
+                  e.currentTarget.style.backgroundColor = UI.inputBg;
                 }
               }}
               onMouseLeave={(e) => {
@@ -197,11 +199,11 @@ export default function ColourSettings() {
                 borderRadius: "8px",
                 cursor: "pointer",
                 transition: "all 0.2s",
-                backgroundColor: selectedGroup === "polytec" ? "#f9f9f9" : "transparent",
+                backgroundColor: selectedGroup === "polytec" ? UI.inputBg : "transparent",
               }}
               onMouseEnter={(e) => {
                 if (selectedGroup !== "polytec") {
-                  e.currentTarget.style.backgroundColor = "#f5f5f5";
+                  e.currentTarget.style.backgroundColor = UI.inputBg;
                 }
               }}
               onMouseLeave={(e) => {
@@ -305,7 +307,7 @@ export default function ColourSettings() {
                               transition: "background 0.2s",
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#f9f9f9";
+                              e.currentTarget.style.background = UI.inputBg;
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.background = "transparent";
@@ -321,7 +323,7 @@ export default function ColourSettings() {
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
-                                backgroundColor: "#f5f5f5",
+                                backgroundColor: UI.inputBg,
                                 position: "relative",
                                 overflow: "hidden",
                               }}
@@ -514,7 +516,7 @@ export default function ColourSettings() {
                   transition: "background 0.2s",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "#f5f5f5";
+                  e.currentTarget.style.backgroundColor = UI.inputBg;
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = WHITE;

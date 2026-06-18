@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const SUPPORTING_DOCUMENTS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
@@ -115,7 +117,7 @@ export default function SupportingDocuments({ project, onUpdate }) {
       {project && (
         <div style={{ marginTop: "24px" }}>
           <div style={{ marginBottom: "16px" }}>
-            <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+            <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
               Supporting Documents Status
             </div>
             <select
@@ -146,7 +148,7 @@ export default function SupportingDocuments({ project, onUpdate }) {
 
           {supportingDocumentsStatus === "Sent" && project?.supporting_documents_sent_date && (
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Sent Date & Time
               </div>
               <div
@@ -169,7 +171,7 @@ export default function SupportingDocuments({ project, onUpdate }) {
 
           {supportingDocumentsStatus === "Complete" && project?.supporting_documents_complete_date && (
             <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: "#32323399", marginBottom: "6px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Complete Date & Time
               </div>
               <div

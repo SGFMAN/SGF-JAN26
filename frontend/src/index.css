@@ -3,6 +3,34 @@
   line-height: 1.5;
   font-weight: 400;
 
+  /* Classic UI theme defaults (overridden by UiThemeProvider) */
+  --sgf-page-bg: #42464d;
+  --sgf-page-text: #ffffff;
+  --sgf-text-primary: #323233;
+  --sgf-panel-bg: #a1a1a3;
+  --sgf-card-bg: #ffffff;
+  --sgf-text-muted: rgba(50, 50, 51, 0.6);
+  --sgf-text-secondary: #404049;
+  --sgf-input-bg: #f0f0f0;
+  --sgf-border: #e0e0e0;
+  --sgf-outline: #000000;
+  --sgf-button-primary: #323233;
+  --sgf-button-primary-text: #ffffff;
+  --sgf-menu-blue: #A6C9EC;
+  --sgf-menu-blue-active: #4D93D9;
+  --sgf-menu-green: #CEEAB0;
+  --sgf-menu-green-active: #92D050;
+  --sgf-menu-red: #F79198;
+  --sgf-menu-purple: #B19CD9;
+  --sgf-menu-group-border: var(--sgf-outline);
+  --sgf-menu-active-text: #ffffff;
+  --sgf-on-hold-banner: #0066cc;
+  --sgf-on-hold-banner-text: #ffffff;
+  --sgf-cancelled-banner: #cc0000;
+  --sgf-cancelled-banner-text: #ffffff;
+  --sgf-project-card-bg: #323233;
+  --sgf-project-card-text: #ffffff;
+
   color-scheme: light dark;
   color: rgba(255, 255, 255, 0.87);
   background-color: #242424;
@@ -156,4 +184,11 @@ button:focus-visible {
     0 0 14px rgba(232, 197, 71, 1),
     0 0 32px rgba(212, 175, 55, 0.65),
     0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+/* Themed outline around the left menu panel and main display area */
+.sidebar-menu,
+.content-section {
+  border: 2px solid var(--sgf-outline);
+  box-sizing: border-box;
 }

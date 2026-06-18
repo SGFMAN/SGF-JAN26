@@ -3,9 +3,11 @@ import FloorPlanDefine3DCanvas from "./FloorPlanDefine3DCanvas";
 import ModalBackdrop from "./ModalBackdrop";
 import { getApiHeaders } from "../utils/auth";
 
-const MONUMENT = "#323233";
-const WHITE = "#fff";
-const SECTION_GREY = "#a1a1a3";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
+const SECTION_GREY = UI.panelBg;
 
 const TOOL_BUTTONS = [
   { id: "external-walls", label: "External Walls" },
@@ -27,7 +29,7 @@ function menuButtonStyle(active, toolId) {
     fontSize: "0.92rem",
     fontWeight: 600,
     borderRadius: "8px",
-    border: active ? `2px solid ${MONUMENT}` : "1px solid #ddd",
+    border: active ? `2px solid ${UI.outline}` : "1px solid #ddd",
     background: active ? activeBg : WHITE,
     color: MONUMENT,
     cursor: "pointer",

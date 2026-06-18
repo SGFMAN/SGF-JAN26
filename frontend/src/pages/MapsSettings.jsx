@@ -2,8 +2,10 @@ import React, { useState } from "react";
 import FloorPlansModal from "../components/FloorPlansModal";
 import MapsQuoteSettingsModal from "../components/MapsQuoteSettingsModal";
 
-const MONUMENT = "#323233";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 
 const settingsButtonStyle = {
   padding: "12px 24px",

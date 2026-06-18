@@ -43,10 +43,12 @@ import {
   saveBoundaryForRecentQuery,
 } from "../utils/mapsRecentSearches";
 
-const MONUMENT = "#323233";
-const SECTION_GREY = "#a1a1a3";
-const LIGHT_MONUMENT = "#42464d";
-const WHITE = "#fff";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
+const SECTION_GREY = UI.panelBg;
+const LIGHT_MONUMENT = UI.pageBg;
+const WHITE = UI.cardBg;
+const PAGE_TEXT = UI.pageText;
 const EXPLORER_BG = "#f3f3f3";
 const EXPLORER_BORDER = "#d1d1d1";
 
@@ -1007,7 +1009,7 @@ export default function Maps() {
               margin: 0,
               fontSize: "2.4rem",
               fontWeight: 700,
-              color: WHITE,
+              color: PAGE_TEXT,
               letterSpacing: "1px",
             }}
           >
@@ -1251,7 +1253,7 @@ export default function Maps() {
                   fontWeight: 600,
                   borderRadius: "10px",
                   border: `1px solid ${EXPLORER_BORDER}`,
-                  background: loading ? "#e0e0e0" : WHITE,
+                  background: loading ? UI.border : WHITE,
                   color: MONUMENT,
                   cursor: loading ? "not-allowed" : "pointer",
                   letterSpacing: "0.3px",

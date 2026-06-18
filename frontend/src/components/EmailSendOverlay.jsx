@@ -2,7 +2,8 @@ import React, { createContext, useCallback, useContext, useRef, useState } from 
 
 const EmailSendOverlayContext = createContext(null);
 
-const MONUMENT = "#323233";
+import { UI } from "../utils/uiThemeTokens.js";
+const MONUMENT = UI.textPrimary;
 
 /**
  * Full-screen blocking overlay with a percentage bar while an email request is in flight.
