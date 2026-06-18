@@ -401,10 +401,6 @@ const upload = multer({
   }
 });
 
-// App mode cache (refreshed every 1-2 seconds or on update)
-let appModeCache = { mode: "USE", lastCheck: 0 };
-const APP_MODE_CACHE_TTL = 30000; // 30 seconds — reduces DB reads on every API call
-
 // Helper: whether the request user has Admin checked in Permissions
 async function isAdminRequest(req) {
   try {
@@ -418,179 +414,12 @@ async function isAdminRequest(req) {
   }
 }
 
-// Helper function to get current app mode (with caching)
-async function getAppMode() {
-  if (!pool) return "USE";
-  const now = Date.now();
-  if (now - appModeCache.lastCheck < APP_MODE_CACHE_TTL) {
-    return appModeCache.mode;
-  }
-  try {
-    const result = await pool.query(
-      "SELECT app_mode FROM settings WHERE id = 1"
-    );
-    const mode = result.rows.length > 0 && result.rows[0].app_mode 
-      ? result.rows[0].app_mode 
-      : "USE";
-    appModeCache = { mode, lastCheck: now };
-    return mode;
-  } catch (e) {
-    console.error("Error fetching app mode:", e);
-    return "USE";
-  }
-}
-
-// Middleware to check app mode and block non-admins in EDIT mode
-async function appModeMiddleware(req, res, next) {
-  // Skip static file requests (assets, images, etc.)
-  if (req.path.startsWith("/assets/") || 
-      req.path.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$/i) ||
-      req.path === "/vite.svg") {
-    return next();
-  }
-  
-  // Always allow health check
-  if (req.path === "/health") {
-    return next();
-  }
-  
-  const mode = await getAppMode();
-  
-  // If USE mode, allow all traffic
-  if (mode === "USE") {
-    return next();
-  }
-  
-  // EDIT mode - check if admin
-  const isAdmin = await isAdminRequest(req);
-  
-  // Allow admin requests (admins can access everything)
-  if (isAdmin) {
-    return next();
-  }
-  
-  // In EDIT mode, block ALL requests from non-admins
-  // This includes login endpoints - users cannot log in during maintenance
-  // Admin will use localhost:5173 (dev server) to switch back to USE mode
-  
-  // Block all other requests in EDIT mode
-  if (req.path.startsWith("/api/")) {
-    // Allow the WWW portal (read-only) to work without admin access
-    if (req.path.startsWith("/api/portal/")) {
-      return next();
-    }
-    // API request - return 503 JSON
-    return res.status(503).json({
-      ok: false,
-      maintenance: true,
-      message: "SGF Central is under maintenance. Please try again shortly."
-    });
-  } else {
-    // Non-API request - return 503 HTML
-    return res.status(503).send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>SGF Central - Under Maintenance</title>
-        <style>
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            margin: 0;
-            background: #42464d;
-            color: #fff;
-          }
-          .container {
-            text-align: center;
-            padding: 40px;
-            max-width: 600px;
-          }
-          h1 {
-            font-size: 2.5rem;
-            margin-bottom: 20px;
-            color: #fff;
-          }
-          p {
-            font-size: 1.2rem;
-            line-height: 1.6;
-            color: #e0e0e0;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <h1>Under Construction</h1>
-          <p>SGF Central is under maintenance. Please try again shortly.</p>
-        </div>
-      </body>
-      </html>
-    `);
-  }
-}
-
 // ------------------------------------------------------------
 // Serve the built frontend (Vite dist) on the same port
 // ------------------------------------------------------------
 const frontendDist = path.join(__dirname, "..", "frontend", "dist");
 
-// Apply app mode middleware for API routes
-app.use(appModeMiddleware);
-
-// Handle root route and index.html BEFORE express.static
-// This ensures we can block non-admins in EDIT mode
-app.get(["/", "/index.html"], async (req, res) => {
-  const mode = await getAppMode();
-  if (mode === "EDIT") {
-    const isAdmin = await isAdminRequest(req);
-    if (!isAdmin) {
-      return res.status(503).send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>SGF Central - Under Maintenance</title>
-          <style>
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              min-height: 100vh;
-              margin: 0;
-              background: #42464d;
-              color: #fff;
-            }
-            .container {
-              text-align: center;
-              padding: 40px;
-              max-width: 600px;
-            }
-            h1 {
-              font-size: 2.5rem;
-              margin-bottom: 20px;
-              color: #fff;
-            }
-            p {
-              font-size: 1.2rem;
-              line-height: 1.6;
-              color: #e0e0e0;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <h1>Under Construction</h1>
-            <p>SGF Central is under maintenance. Please try again shortly.</p>
-          </div>
-        </body>
-        </html>
-      `);
-    }
-  }
+app.get(["/", "/index.html"], (req, res) => {
   res.sendFile(path.join(frontendDist, "index.html"));
 });
 
@@ -611,61 +440,13 @@ app.get("/playground.html", async (req, res) => {
 // This comes AFTER the root route handler so index.html is handled above
 app.use(express.static(frontendDist, { index: false })); // index: false prevents serving index.html automatically
 
-// SPA fallback: for any other non-API route, return index.html (after checking app mode)
-app.get(/^\/(?!api).*/, async (req, res) => {
+// SPA fallback: for any other non-API route, return index.html
+app.get(/^\/(?!api).*/, (req, res) => {
   // Allow approval page and colours portal without authentication (secret pages for clients)
   if (req.path.startsWith("/approve-concept/") || req.path.startsWith("/colours-portal/") || req.path.startsWith("/3d-vis-portal/")) {
     return res.sendFile(path.join(frontendDist, "index.html"));
   }
-  
-  const mode = await getAppMode();
-  if (mode === "EDIT") {
-    const isAdmin = await isAdminRequest(req);
-    if (!isAdmin) {
-      return res.status(503).send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>SGF Central - Under Maintenance</title>
-          <style>
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              min-height: 100vh;
-              margin: 0;
-              background: #42464d;
-              color: #fff;
-            }
-            .container {
-              text-align: center;
-              padding: 40px;
-              max-width: 600px;
-            }
-            h1 {
-              font-size: 2.5rem;
-              margin-bottom: 20px;
-              color: #fff;
-            }
-            p {
-              font-size: 1.2rem;
-              line-height: 1.6;
-              color: #e0e0e0;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <h1>Under Construction</h1>
-            <p>SGF Central is under maintenance. Please try again shortly.</p>
-          </div>
-        </body>
-        </html>
-      `);
-    }
-  }
+
   res.sendFile(path.join(frontendDist, "index.html"));
 });
 
@@ -1561,17 +1342,6 @@ async function ensureSchema() {
     // Column might already exist, which is fine
     if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
       console.log(`Error adding column admin_password:`, e.message);
-    }
-  }
-  // Add app_mode column if it doesn't exist
-  try {
-    await pool.query(`ALTER TABLE settings ADD COLUMN app_mode TEXT DEFAULT 'USE'`);
-    // Set default to USE if null
-    await pool.query(`UPDATE settings SET app_mode = 'USE' WHERE id = 1 AND app_mode IS NULL`);
-  } catch (e) {
-    // Column might already exist, which is fine
-    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
-      console.log(`Error adding column app_mode:`, e.message);
     }
   }
   // Public https (or http) base for outbound email links — set once in File Settings or PUBLIC_APP_URL
@@ -3413,7 +3183,7 @@ app.get("/api/access-permissions", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const usersResult = await pool.query(
-      `SELECT id, name FROM users ORDER BY name ASC, id ASC`
+      `SELECT id, name, COALESCE(password, 'admin') AS password FROM users ORDER BY name ASC, id ASC`
     );
     const grantsResult = await pool.query(
       `SELECT user_id, access_area, granted FROM user_access_permissions`
@@ -3680,58 +3450,6 @@ app.delete("/api/positions/:id", async (req, res) => {
     res.json({ success: true, deleted: r.rows[0] });
   } catch (e) {
     res.status(500).json({ error: e.message || "Failed to delete position" });
-  }
-});
-
-// Get app mode (admin only)
-app.get("/api/admin/app-mode", async (req, res) => {
-  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
-  
-  // Check if admin
-  const isAdmin = await isAdminRequest(req);
-  if (!isAdmin) {
-    return res.status(403).json({ error: "Admin access required" });
-  }
-  
-  try {
-    const mode = await getAppMode();
-    res.json({ mode });
-  } catch (e) {
-    console.error("Error fetching app mode:", e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Update app mode (admin only)
-app.put("/api/admin/app-mode", async (req, res) => {
-  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
-  
-  // Check if admin
-  const isAdmin = await isAdminRequest(req);
-  if (!isAdmin) {
-    return res.status(403).json({ error: "Admin access required" });
-  }
-  
-  try {
-    const { mode } = req.body || {};
-    
-    // Validate mode
-    if (mode !== "USE" && mode !== "EDIT") {
-      return res.status(400).json({ error: "Mode must be 'USE' or 'EDIT'" });
-    }
-    
-    await pool.query(
-      `UPDATE settings SET app_mode = $1, updated_at = NOW() WHERE id = 1`,
-      [mode]
-    );
-    
-    // Update cache immediately
-    appModeCache = { mode, lastCheck: Date.now() };
-    
-    res.json({ mode });
-  } catch (e) {
-    console.error("Error updating app mode:", e);
-    res.status(500).json({ error: e.message });
   }
 });
 

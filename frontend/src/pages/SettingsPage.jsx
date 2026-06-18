@@ -5,7 +5,6 @@ import Permissions from "./Permissions";
 import FileSettings from "./FileSettings";
 import EmailTemplate from "./EmailTemplate";
 import EmailSettings from "./EmailSettings";
-import AccountSettings from "./AccountSettings";
 import ColourSettings from "./ColourSettings";
 import StreamSettings from "./StreamSettings";
 import MapsSettings from "./MapsSettings";
@@ -20,7 +19,6 @@ const PAGE_TEXT = UI.pageText;
 
 // Sidebar menu entries (alphabetical by label)
 const menuOptions = [
-  { key: "account", label: "Account Settings" },
   { key: "colourSettings", label: "Colour Settings" },
   { key: "streamSettings", label: "Email Settings" },
   { key: "emailTemplates", label: "Email Templates" },
@@ -46,8 +44,6 @@ export default function SettingsPage() {
         return <Users />;
       case "permissions":
         return <Permissions />;
-      case "account":
-        return <AccountSettings />;
       case "colourSettings":
         return <ColourSettings />;
       case "maps":

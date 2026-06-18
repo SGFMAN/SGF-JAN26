@@ -103,9 +103,8 @@ export default function Permissions() {
     }
   }, []);
 
-  const columnTemplate = areas.length
-    ? `minmax(160px, 1.4fr) repeat(${areas.length}, 72px)`
-    : "minmax(160px, 1fr)";
+  const checkboxCols = areas.length > 0 ? ` repeat(${areas.length}, 72px)` : "";
+  const columnTemplate = `max-content max-content${checkboxCols}`;
 
   return (
     <div
@@ -158,9 +157,10 @@ export default function Permissions() {
             style={{
               display: "grid",
               gridTemplateColumns: columnTemplate,
-              columnGap: "12px",
+              columnGap: "16px",
               rowGap: "0",
-              minWidth: "max-content",
+              width: "max-content",
+              maxWidth: "100%",
             }}
           >
             <div
@@ -174,9 +174,26 @@ export default function Permissions() {
                 fontWeight: 700,
                 color: MONUMENT,
                 textAlign: "left",
+                whiteSpace: "nowrap",
               }}
             >
               User
+            </div>
+            <div
+              style={{
+                position: "sticky",
+                top: 0,
+                zIndex: 2,
+                background: UI.panelBg,
+                padding: "0 0 10px 0",
+                fontSize: "0.9rem",
+                fontWeight: 700,
+                color: MONUMENT,
+                textAlign: "left",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Password
             </div>
             {areas.map((area) => (
               <div
@@ -201,16 +218,32 @@ export default function Permissions() {
               <React.Fragment key={user.id}>
                 <div
                   style={{
-                    padding: "9px 4px 9px 0",
+                    padding: "9px 0",
                     fontSize: "1rem",
                     fontWeight: 500,
                     color: MONUMENT,
                     textAlign: "left",
                     lineHeight: 1.35,
+                    whiteSpace: "nowrap",
                     borderTop: rowIndex === 0 ? "none" : `1px solid ${UI.outline}`,
                   }}
                 >
                   {user.name || `User #${user.id}`}
+                </div>
+                <div
+                  style={{
+                    padding: "9px 0",
+                    fontSize: "0.95rem",
+                    fontWeight: 400,
+                    color: MONUMENT,
+                    textAlign: "left",
+                    lineHeight: 1.35,
+                    fontFamily: "monospace",
+                    whiteSpace: "nowrap",
+                    borderTop: rowIndex === 0 ? "none" : `1px solid ${UI.outline}`,
+                  }}
+                >
+                  {user.password || "admin"}
                 </div>
                 {areas.map((area) => {
                   const checked = matrix[user.id]?.[area.key] === true;

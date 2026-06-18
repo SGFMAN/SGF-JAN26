@@ -5,7 +5,6 @@ import { UI } from "../utils/uiThemeTokens";
 import { applyUiThemeToDocument } from "../themes/applyUiTheme";
 import { UI_THEME_COLOR_KEYS, UI_THEME_LIST, UI_THEMES } from "../themes/uiThemes";
 
-const API_URL = "";
 const AUTO_SAVE_DELAY_MS = 600;
 const THEME_COLOR_SAVE_DELAY_MS = 400;
 
@@ -396,8 +395,8 @@ function ColourThemeContent() {
 
 const MENU_OPTIONS = [
   { key: "account", label: "Account" },
-  { key: "timeSheet", label: "Time Sheet" },
   { key: "colourTheme", label: "Colour Theme" },
+  { key: "timeSheet", label: "Time Sheet" },
 ];
 
 const PLACEHOLDER_CONTENT = {
@@ -439,7 +438,7 @@ function AccountSettingsContent({ open }) {
       setLoading(true);
       setSaveStatus("");
       try {
-        const response = await fetch(`${API_URL}/api/users`);
+        const response = await fetch("/api/users");
         if (!response.ok) {
           throw new Error("Failed to load account");
         }
@@ -496,7 +495,7 @@ function AccountSettingsContent({ open }) {
             ? userRecord.positions.map((p) => p.id)
             : [];
 
-        const response = await fetch(`${API_URL}/api/users/${userRecord.id}`, {
+        const response = await fetch(`/api/users/${userRecord.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -562,11 +561,11 @@ function AccountSettingsContent({ open }) {
         </label>
         <input
           id="account-password"
-          type="text"
+          type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Enter password"
-          autoComplete="off"
+          autoComplete="new-password"
           style={{
             width: "100%",
             padding: "10px 12px",

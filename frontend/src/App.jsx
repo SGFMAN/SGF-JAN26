@@ -34,7 +34,6 @@ import SecretLevel from "./pages/SecretLevel";
 import Maps from "./pages/Maps";
 import MapsRecent from "./pages/MapsRecent";
 import TimeSheet from "./pages/TimeSheet";
-import AppModeBanner from "./components/AppModeBanner";
 import { EmailSendOverlayProvider } from "./components/EmailSendOverlay";
 import PortalProjects from "./pages/PortalProjects";
 import RequireAuth from "./components/RequireAuth";
@@ -55,7 +54,6 @@ export default function App() {
     <BrowserRouter>
       <UiThemeProvider>
       <EmailSendOverlayProvider>
-      {!isCloudflarePublicHost && <AppModeBanner />}
       <LoggedInUserButton />
       <Routes>
         {isCloudflarePublicHost ? (
