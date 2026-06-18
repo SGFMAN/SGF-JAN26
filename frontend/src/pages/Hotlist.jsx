@@ -8,6 +8,7 @@ import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
 import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
 import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
+import SalesSidebarLink from "../components/SalesSidebarLink";
 import { isUserAdmin } from "../utils/auth";
 import { projectPath } from "../utils/projectUrl";
 import {
@@ -1606,28 +1607,7 @@ export default function Hotlist() {
             >
               Managers
             </Link>
-            <Link
-              to="/sales"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Sales
-            </Link>
+            <SalesSidebarLink />
           </div>
           <div style={{ flex: 1 }} />
           {isAdmin && (

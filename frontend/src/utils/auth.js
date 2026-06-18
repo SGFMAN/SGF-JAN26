@@ -1,5 +1,6 @@
-const API_URL = "";
+import { clearUserAccessCache, hasUserAccess } from "./userAccess";
 
+const API_URL = "";
 const AUTH_USER_ID_KEY = "loggedInUserId";
 const AUTH_PASSWORD_TYPE_KEY = "passwordType";
 const AUTH_USER_NAME_KEY = "loggedInUserName";
@@ -40,6 +41,7 @@ export function isAuthenticated() {
  * Store login session for the current browser tab.
  */
 export function setAuthSession(userId, passwordType, userName) {
+  clearUserAccessCache();
   const storage = getAuthStorage();
   storage.setItem(AUTH_USER_ID_KEY, String(userId));
   storage.setItem(AUTH_PASSWORD_TYPE_KEY, passwordType || "global");
@@ -60,6 +62,7 @@ export function setAuthSession(userId, passwordType, userName) {
  * Clear the current login session.
  */
 export function clearAuthSession() {
+  clearUserAccessCache();
   const storage = getAuthStorage();
   storage.removeItem(AUTH_USER_ID_KEY);
   storage.removeItem(AUTH_PASSWORD_TYPE_KEY);
@@ -89,34 +92,11 @@ export function getApiHeaders(additionalHeaders = {}) {
 }
 
 /**
- * Check if the logged-in user has Admin position AND logged in with admin access.
+ * Whether the logged-in user has Admin checked in Settings → Permissions.
  */
 export async function isUserAdmin() {
-  const userId = getLoggedInUserId();
-  if (!userId) {
+  if (!getLoggedInUserId()) {
     return false;
   }
-
-  const passwordType = getPasswordType();
-  if (passwordType !== "admin") {
-    return false;
-  }
-
-  try {
-    const response = await fetch(`${API_URL}/api/users`);
-    if (!response.ok) {
-      return false;
-    }
-    const users = await response.json();
-    const user = users.find((u) => u.id === parseInt(userId, 10));
-
-    if (!user || !user.positions || !Array.isArray(user.positions)) {
-      return false;
-    }
-
-    return user.positions.some((position) => position.name === "Admin");
-  } catch (error) {
-    console.error("Error checking admin status:", error);
-    return false;
-  }
+  return hasUserAccess("admin");
 }

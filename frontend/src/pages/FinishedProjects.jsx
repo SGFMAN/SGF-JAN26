@@ -4,6 +4,7 @@ import NewProject from "./NewProject_1_Address";
 import NewProject2 from "./NewProject_2_ClientDetails";
 import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
 import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
+import SalesSidebarLink from "../components/SalesSidebarLink";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import { CLASSIFICATION_OPTIONS as CLASSIFICATION_SORT_ORDER } from "../utils/classifications";
@@ -545,28 +546,7 @@ export default function FinishedProjects() {
             >
               Managers
             </Link>
-            <Link
-              to="/sales"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Sales
-            </Link>
+            <SalesSidebarLink />
           </div>
           <div style={{ flex: 1 }} />
           {isAdmin && (

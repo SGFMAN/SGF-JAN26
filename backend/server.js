@@ -58,6 +58,13 @@ const {
   getFloorPlanImagePath,
 } = require("./mapFloorPlans");
 const { ensureMapQuoteItemsTable, listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
+const {
+  ACCESS_AREAS,
+  ACCESS_AREA_KEYS,
+  ensureUserAccessPermissionsTable,
+  buildAccessPermissionsMatrix,
+  userHasAccessGrant,
+} = require("./userAccessPermissions");
 const { generateMapsProposalPdf, OUTPUT_FILENAME, PROPOSAL_DIR } = require("./mapsProposalPdf");
 const {
   ensureProjectAccessTokens,
@@ -398,49 +405,15 @@ const upload = multer({
 let appModeCache = { mode: "USE", lastCheck: 0 };
 const APP_MODE_CACHE_TTL = 30000; // 30 seconds — reduces DB reads on every API call
 
-// Helper function to check if request is from admin
+// Helper: whether the request user has Admin checked in Permissions
 async function isAdminRequest(req) {
   try {
-    const host = req.headers.host || req.headers["host"] || "";
-    const origin = req.headers.origin || req.headers["origin"] || "";
-    const referer = req.headers.referer || req.headers["referer"] || "";
-    const isLocalhost =
-      host.includes("localhost") ||
-      host.includes("127.0.0.1") ||
-      origin.includes("localhost:5173") ||
-      origin.includes("127.0.0.1:5173") ||
-      /https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(origin) ||
-      /https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.).*(:5173)/i.test(origin) ||
-      /https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.).*(:5173)/i.test(referer);
-
-    if (isLocalhost) {
-      return true;
-    }
-
     if (!pool) return false;
-    const userId = req.headers["x-user-id"] || req.headers["X-User-Id"];
-    const passwordType = req.headers["x-password-type"] || req.headers["X-Password-Type"];
-    
-    if (!userId || passwordType !== "admin") {
-      console.log("Admin check failed:", { userId, passwordType, headers: Object.keys(req.headers) });
-      return false;
-    }
-    
-    // Check if user has Admin position
-    const userResult = await pool.query(
-      `SELECT u.id 
-       FROM users u
-       INNER JOIN user_positions up ON u.id = up.user_id
-       INNER JOIN positions p ON up.position_id = p.id
-       WHERE u.id = $1 AND p.name = 'Admin'`,
-      [parseInt(userId)]
-    );
-    
-    const isAdmin = userResult.rows.length > 0;
-    console.log("Admin check result:", { userId, isAdmin });
-    return isAdmin;
+    const userId = Number(req.headers["x-user-id"] || req.headers["X-User-Id"]);
+    if (!Number.isFinite(userId)) return false;
+    return userHasAccessGrant(pool, userId, "admin");
   } catch (e) {
-    console.error("Error checking admin status:", e);
+    console.error("Error checking admin access:", e);
     return false;
   }
 }
@@ -1051,6 +1024,7 @@ async function ensureSchema() {
     console.log(`Schema ${SCHEMA_VERSION} already applied — skipping migrations`);
     await ensureProjectAccessTokens(pool);
     await ensureMapQuoteItemsTable(pool);
+    await ensureUserAccessPermissionsTable(pool);
     await ensureMapFloorPlansDollarValueColumn(pool);
     await addMissingColumns(pool, "projects", ["construction_payments_paid"]);
     await addMissingColumns(pool, "users", ["password"]);
@@ -1184,16 +1158,6 @@ async function ensureSchema() {
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       position_id INTEGER NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
       PRIMARY KEY (user_id, position_id)
-    );
-  `);
-  // Per-user app access areas (Permissions matrix in Settings)
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS user_access_permissions (
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      access_area TEXT NOT NULL,
-      granted BOOLEAN NOT NULL DEFAULT FALSE,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (user_id, access_area)
     );
   `);
   // Create substatuses table to store all possible substatuses and their details
@@ -1670,6 +1634,7 @@ async function ensureSchema() {
     );
   `);
   await ensureProjectAccessTokens(pool);
+  await ensureUserAccessPermissionsTable(pool);
   await markSchemaUpToDate(pool);
   console.log(`Schema ${SCHEMA_VERSION} applied`);
 }
@@ -3335,11 +3300,10 @@ app.post("/api/auth/login", async (req, res) => {
     }
 
     const positions = Array.isArray(user.positions) ? user.positions : [];
-    const hasAdminPosition = positions.some((position) => position.name === "Admin");
 
     res.json({
       userId: user.id,
-      passwordType: hasAdminPosition ? "admin" : "global",
+      passwordType: "global",
       user: {
         id: user.id,
         name: user.name,
@@ -3444,31 +3408,6 @@ app.post("/api/users", async (req, res) => {
   }
 });
 
-const ACCESS_AREAS = [
-  { key: "admin", label: "Admin" },
-  { key: "sales", label: "Sales" },
-];
-
-const ACCESS_AREA_KEYS = new Set(ACCESS_AREAS.map((area) => area.key));
-
-function buildAccessPermissionsMatrix(userRows, grantRows) {
-  const matrix = {};
-  for (const user of userRows) {
-    matrix[user.id] = {};
-    for (const area of ACCESS_AREAS) {
-      matrix[user.id][area.key] = false;
-    }
-  }
-  for (const row of grantRows) {
-    const userId = row.user_id;
-    const area = row.access_area;
-    if (matrix[userId] && ACCESS_AREA_KEYS.has(area)) {
-      matrix[userId][area] = row.granted === true;
-    }
-  }
-  return matrix;
-}
-
 // Access permissions matrix (Settings → Permissions)
 app.get("/api/access-permissions", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
@@ -3486,6 +3425,36 @@ app.get("/api/access-permissions", async (req, res) => {
     });
   } catch (e) {
     console.error("Error fetching access permissions:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/access-permissions/me", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  try {
+    const userId = Number(req.headers["x-user-id"] || req.headers["X-User-Id"]);
+    if (!Number.isFinite(userId)) {
+      return res.json({ grants: {} });
+    }
+
+    const grantsResult = await pool.query(
+      `SELECT access_area, granted FROM user_access_permissions WHERE user_id = $1`,
+      [userId]
+    );
+
+    const grants = {};
+    for (const area of ACCESS_AREAS) {
+      grants[area.key] = false;
+    }
+    for (const row of grantsResult.rows) {
+      if (ACCESS_AREA_KEYS.has(row.access_area)) {
+        grants[row.access_area] = row.granted === true;
+      }
+    }
+
+    res.json({ grants });
+  } catch (e) {
+    console.error("Error fetching user access permissions:", e);
     res.status(500).json({ error: e.message });
   }
 });

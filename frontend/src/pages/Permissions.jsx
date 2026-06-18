@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
-import { getApiHeaders } from "../utils/auth";
+import { getApiHeaders, getLoggedInUserId } from "../utils/auth";
+import { clearUserAccessCache } from "../utils/userAccess";
 import { UI } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
@@ -20,10 +21,10 @@ export default function Permissions() {
 
   const loadPermissions = useCallback(async () => {
     const response = await fetch(`${API_URL}/api/access-permissions`);
+    const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error("Failed to load permissions");
+      throw new Error(data.error || "Failed to load permissions");
     }
-    const data = await response.json();
     setAreas(Array.isArray(data.areas) ? data.areas : []);
     setUsers(Array.isArray(data.users) ? data.users : []);
     setMatrix(data.matrix && typeof data.matrix === "object" ? data.matrix : {});
@@ -85,6 +86,10 @@ export default function Permissions() {
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.error || "Failed to save permission");
+      }
+
+      if (String(userId) === String(getLoggedInUserId())) {
+        clearUserAccessCache();
       }
     } catch (err) {
       setMatrix((prev) => ({

@@ -17,6 +17,8 @@ import ContractManager from "./pages/ContractManager";
 import ColourManager from "./pages/ColourManager";
 import StatusManager from "./pages/StatusManager";
 import AdminDrawingManagerRoute from "./components/AdminDrawingManagerRoute";
+import AdminAccessRoute from "./components/AdminAccessRoute";
+import SalesAccessRoute from "./components/SalesAccessRoute";
 import QpManager from "./pages/QpManager";
 import ProjectClaim from "./pages/ProjectClaim";
 import Sales from "./pages/Sales";
@@ -75,8 +77,8 @@ export default function App() {
             <Route path="/projects" element={<Auth><HomePage /></Auth>} />
             <Route path="/variations" element={<Navigate to="/projects" replace />} />
             <Route path="/project/:token" element={<Auth><ProjectPage /></Auth>} />
-            <Route path="/settings" element={<Auth><SettingsPage /></Auth>} />
-            <Route path="/apply-fields" element={<Auth><ApplyFields /></Auth>} />
+            <Route path="/settings" element={<Auth><AdminAccessRoute><SettingsPage /></AdminAccessRoute></Auth>} />
+            <Route path="/apply-fields" element={<Auth><AdminAccessRoute><ApplyFields /></AdminAccessRoute></Auth>} />
             <Route path="/finished-projects" element={<Auth><FinishedProjects /></Auth>} />
             <Route path="/construction-phase" element={<Auth><InConstruction /></Auth>} />
             <Route path="/in-construction" element={<Navigate to="/construction-phase" replace />} />
@@ -94,16 +96,16 @@ export default function App() {
             <Route path="/managers/drawing-manager" element={<Auth><AdminDrawingManagerRoute /></Auth>} />
             <Route path="/managers/qp-manager" element={<Auth><QpManager /></Auth>} />
             <Route path="/managers/project-claim" element={<Auth><ProjectClaim /></Auth>} />
-            <Route path="/sales" element={<Auth><Sales /></Auth>} />
-            <Route path="/sales-totals" element={<Auth><SalesTotals /></Auth>} />
-            <Route path="/sales-analytics" element={<Auth><SalesAnalytics /></Auth>} />
-            <Route path="/email-generator" element={<Auth><EmailGenerator /></Auth>} />
+            <Route path="/sales" element={<Auth><SalesAccessRoute><Sales /></SalesAccessRoute></Auth>} />
+            <Route path="/sales-totals" element={<Auth><SalesAccessRoute><SalesTotals /></SalesAccessRoute></Auth>} />
+            <Route path="/sales-analytics" element={<Auth><SalesAccessRoute><SalesAnalytics /></SalesAccessRoute></Auth>} />
+            <Route path="/email-generator" element={<Auth><AdminAccessRoute><EmailGenerator /></AdminAccessRoute></Auth>} />
             <Route path="/secret-area" element={<Auth><SecretArea /></Auth>} />
             <Route path="/secret-area/level-editor" element={<Auth><SecretLevelEditor /></Auth>} />
             <Route path="/secret-area/level" element={<Auth><SecretLevel /></Auth>} />
-            <Route path="/maps" element={<Auth><Maps /></Auth>} />
-            <Route path="/maps/recent" element={<Auth><MapsRecent /></Auth>} />
-            <Route path="/maps/sold-projects" element={<Auth><Maps /></Auth>} />
+            <Route path="/maps" element={<Auth><AdminAccessRoute><Maps /></AdminAccessRoute></Auth>} />
+            <Route path="/maps/recent" element={<Auth><AdminAccessRoute><MapsRecent /></AdminAccessRoute></Auth>} />
+            <Route path="/maps/sold-projects" element={<Auth><AdminAccessRoute><Maps /></AdminAccessRoute></Auth>} />
             <Route path="/time-sheet" element={<Auth><TimeSheet /></Auth>} />
             <Route path="/benbox" element={<Navigate to="/maps" replace />} />
             <Route path="/faq" element={<Navigate to="/maps" replace />} />

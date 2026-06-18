@@ -7,6 +7,7 @@ import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
 import NewProject_4_FoldersOption from "./NewProject_4_FoldersOption";
 import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
 import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
+import SalesSidebarLink from "../components/SalesSidebarLink";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import {
@@ -968,28 +969,7 @@ export default function HomePage() {
             >
               Managers
             </Link>
-            <Link
-              to="/sales"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Sales
-            </Link>
+            <SalesSidebarLink />
             <Link
               to="/time-sheet"
               style={{
