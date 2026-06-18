@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getApiHeaders, getLoggedInUserId } from "../utils/auth";
 import { clearUserAccessCache } from "../utils/userAccess";
@@ -7,17 +7,35 @@ import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 
 const API_URL = "";
+const ONLINE_POLL_MS = 5_000;
 
 export default function Permissions() {
   const [areas, setAreas] = useState([]);
   const [users, setUsers] = useState([]);
   const [matrix, setMatrix] = useState({});
+  const [onlineUserIds, setOnlineUserIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [saveError, setSaveError] = useState(null);
   const matrixRef = useRef(matrix);
 
   matrixRef.current = matrix;
+
+  const onlineUserIdSet = useMemo(
+    () => new Set(onlineUserIds.map((id) => String(id))),
+    [onlineUserIds]
+  );
+
+  const loadOnlineUsers = useCallback(async () => {
+    const response = await fetch(`${API_URL}/api/access-permissions/online`, {
+      headers: getApiHeaders(),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to load online users");
+    }
+    setOnlineUserIds(Array.isArray(data.onlineUserIds) ? data.onlineUserIds : []);
+  }, []);
 
   const loadPermissions = useCallback(async () => {
     const response = await fetch(`${API_URL}/api/access-permissions`);
@@ -56,6 +74,28 @@ export default function Permissions() {
       cancelled = true;
     };
   }, [loadPermissions]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshOnline = async () => {
+      try {
+        await loadOnlineUsers();
+      } catch {
+        if (!cancelled) {
+          setOnlineUserIds([]);
+        }
+      }
+    };
+
+    refreshOnline();
+    const intervalId = window.setInterval(refreshOnline, ONLINE_POLL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [loadOnlineUsers]);
 
   const handleToggle = useCallback(async (userId, accessArea, nextGranted) => {
     const previousGranted = matrixRef.current[userId]?.[accessArea] === true;
@@ -104,7 +144,7 @@ export default function Permissions() {
   }, []);
 
   const checkboxCols = areas.length > 0 ? ` repeat(${areas.length}, 72px)` : "";
-  const columnTemplate = `max-content max-content${checkboxCols}`;
+  const columnTemplate = `max-content max-content 72px${checkboxCols}`;
 
   return (
     <div
@@ -195,6 +235,21 @@ export default function Permissions() {
             >
               Password
             </div>
+            <div
+              style={{
+                position: "sticky",
+                top: 0,
+                zIndex: 2,
+                background: UI.panelBg,
+                padding: "0 4px 10px",
+                fontSize: "0.9rem",
+                fontWeight: 700,
+                color: MONUMENT,
+                textAlign: "center",
+              }}
+            >
+              Logged on
+            </div>
             {areas.map((area) => (
               <div
                 key={area.key}
@@ -244,6 +299,30 @@ export default function Permissions() {
                   }}
                 >
                   {user.password || "admin"}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "9px 4px",
+                    borderTop: rowIndex === 0 ? "none" : `1px solid ${UI.outline}`,
+                  }}
+                >
+                  {onlineUserIdSet.has(String(user.id)) ? (
+                    <span
+                      title="Logged on"
+                      aria-label={`${user.name || "User"} is logged on`}
+                      style={{
+                        width: "10px",
+                        height: "10px",
+                        borderRadius: "50%",
+                        background: "#33cc33",
+                        boxShadow: "0 0 0 2px rgba(51, 204, 51, 0.25)",
+                        display: "inline-block",
+                      }}
+                    />
+                  ) : null}
                 </div>
                 {areas.map((area) => {
                   const checked = matrix[user.id]?.[area.key] === true;

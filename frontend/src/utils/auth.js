@@ -62,6 +62,15 @@ export function setAuthSession(userId, passwordType, userName) {
  * Clear the current login session.
  */
 export function clearAuthSession() {
+  const userId = getLoggedInUserId();
+  if (userId) {
+    fetch("/api/auth/logout", {
+      method: "POST",
+      headers: getApiHeaders(),
+      keepalive: true,
+    }).catch(() => {});
+  }
+
   clearUserAccessCache();
   const storage = getAuthStorage();
   storage.removeItem(AUTH_USER_ID_KEY);

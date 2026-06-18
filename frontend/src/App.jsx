@@ -36,6 +36,7 @@ import { EmailSendOverlayProvider } from "./components/EmailSendOverlay";
 import PortalProjects from "./pages/PortalProjects";
 import RequireAuth from "./components/RequireAuth";
 import LoggedInUserButton from "./components/LoggedInUserButton";
+import PresenceHeartbeat from "./components/PresenceHeartbeat";
 import { UiThemeProvider } from "./context/UiThemeProvider";
 
 function Auth({ children }) {
@@ -52,6 +53,7 @@ export default function App() {
     <BrowserRouter>
       <UiThemeProvider>
       <EmailSendOverlayProvider>
+      <PresenceHeartbeat />
       <LoggedInUserButton />
       <Routes>
         {isCloudflarePublicHost ? (

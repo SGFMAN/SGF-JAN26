@@ -65,6 +65,11 @@ const {
   buildAccessPermissionsMatrix,
   userHasAccessGrant,
 } = require("./userAccessPermissions");
+const {
+  touchUserPresence,
+  clearUserPresence,
+  getOnlineUserIds,
+} = require("./userPresence");
 const { generateMapsProposalPdf, OUTPUT_FILENAME, PROPOSAL_DIR } = require("./mapsProposalPdf");
 const {
   ensureProjectAccessTokens,
@@ -341,6 +346,16 @@ function projectDirectoryFromColoursOrDrawings(coloursPdfLocation, drawingsPdfLo
   return null;
 }
 app.use(cors({ origin: true }));
+
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api")) {
+    const userId = req.headers["x-user-id"] || req.headers["X-User-Id"];
+    if (userId) {
+      touchUserPresence(userId);
+    }
+  }
+  next();
+});
 
 // Block API until migrations complete (health always allowed)
 app.use((req, res, next) => {
@@ -3084,6 +3099,8 @@ app.post("/api/auth/login", async (req, res) => {
 
     const positions = Array.isArray(user.positions) ? user.positions : [];
 
+    touchUserPresence(user.id);
+
     res.json({
       userId: user.id,
       passwordType: "global",
@@ -3098,6 +3115,23 @@ app.post("/api/auth/login", async (req, res) => {
     console.error("Error during login:", e);
     res.status(500).json({ error: e.message });
   }
+});
+
+app.post("/api/auth/presence", (req, res) => {
+  const userId = req.headers["x-user-id"] || req.headers["X-User-Id"];
+  if (!userId) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+  touchUserPresence(userId);
+  res.json({ ok: true });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  const userId = req.headers["x-user-id"] || req.headers["X-User-Id"];
+  if (userId) {
+    clearUserPresence(userId);
+  }
+  res.json({ ok: true });
 });
 
 // List users
@@ -3210,6 +3244,10 @@ app.get("/api/access-permissions", async (req, res) => {
     console.error("Error fetching access permissions:", e);
     res.status(500).json({ error: e.message });
   }
+});
+
+app.get("/api/access-permissions/online", (req, res) => {
+  res.json({ onlineUserIds: getOnlineUserIds() });
 });
 
 app.get("/api/access-permissions/me", async (req, res) => {
