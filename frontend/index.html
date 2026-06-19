@@ -8,50 +8,6 @@
     <meta name="theme-color" content="#323233" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SGF Central</title>
-    <script>
-      (function () {
-        var path = window.location.pathname;
-        if (!path || path === "/") return;
-
-        var CHANNEL = "sgf-central-coordinator";
-        var TAB_ID_KEY = "sgf-tab-id";
-        var DELEGATED_KEY = "sgf-tab-delegated";
-        var tabId = sessionStorage.getItem(TAB_ID_KEY);
-        if (!tabId) {
-          tabId = (window.crypto && window.crypto.randomUUID)
-            ? window.crypto.randomUUID()
-            : "tab-" + Date.now() + "-" + Math.random().toString(36).slice(2);
-          sessionStorage.setItem(TAB_ID_KEY, tabId);
-        }
-
-        if (typeof BroadcastChannel === "undefined") return;
-
-        var channel = new BroadcastChannel(CHANNEL);
-        var handled = false;
-
-        channel.onmessage = function (event) {
-          var data = event.data;
-          if (!data || data.tabId === tabId || handled) return;
-          if (data.type !== "pong-open") return;
-
-          handled = true;
-          channel.postMessage({
-            type: "navigate",
-            tabId: tabId,
-            pathname: window.location.pathname,
-            search: window.location.search,
-            hash: window.location.hash,
-          });
-          sessionStorage.setItem(DELEGATED_KEY, "1");
-          channel.close();
-        };
-
-        channel.postMessage({ type: "ping-open", tabId: tabId });
-        window.setTimeout(function () {
-          channel.close();
-        }, 600);
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -1,14 +1,10 @@
 {
   "name": "SGF Central",
   "short_name": "SGF Central",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "/portal",
   "display": "standalone",
   "background_color": "#42464d",
   "theme_color": "#323233",
-  "launch_handler": {
-    "client_mode": ["focus-existing", "navigate-existing"]
-  },
   "icons": [
     {
       "src": "/pwa-192.png",
