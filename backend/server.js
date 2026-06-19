@@ -3236,6 +3236,56 @@ app.patch("/api/messages/:id/read", async (req, res) => {
   }
 });
 
+app.get("/api/messages/unread-count", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const userId = getRequestUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT COUNT(*)::int AS count
+       FROM user_messages
+       WHERE to_user_id = $1 AND read_at IS NULL`,
+      [userId]
+    );
+    res.json({ count: result.rows[0]?.count ?? 0 });
+  } catch (e) {
+    console.error("Error fetching unread message count:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete("/api/messages/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const userId = getRequestUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  const messageId = Number(req.params.id);
+  if (!Number.isFinite(messageId)) {
+    return res.status(400).json({ error: "Invalid message id" });
+  }
+
+  try {
+    const result = await pool.query(
+      `DELETE FROM user_messages
+       WHERE id = $1 AND to_user_id = $2 AND read_at IS NOT NULL
+       RETURNING id`,
+      [messageId, userId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Message not found or not yet read" });
+    }
+    res.json({ ok: true, id: result.rows[0].id });
+  } catch (e) {
+    console.error("Error deleting message:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // List users
 app.get("/api/users", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });

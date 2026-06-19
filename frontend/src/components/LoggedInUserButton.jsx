@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { getLoggedInUserId, getLoggedInUserName, isAuthenticated } from "../utils/auth";
+import { useUnreadMessageCount } from "../hooks/useUnreadMessageCount";
 import UserSettingsModal from "./UserSettingsModal";
 import MessagesModal from "./MessagesModal";
 import { UI, MENU } from "../utils/uiThemeTokens";
@@ -41,6 +42,7 @@ export default function LoggedInUserButton() {
   const [userName, setUserName] = useState(() => getLoggedInUserName());
 
   const show = isAuthenticated() && location.pathname !== "/";
+  const { hasUnread, refresh: refreshUnreadCount } = useUnreadMessageCount({ enabled: show });
 
   useEffect(() => {
     if (!show) return;
@@ -87,6 +89,12 @@ export default function LoggedInUserButton() {
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
+  useEffect(() => {
+    if (!messagesOpen) {
+      refreshUnreadCount();
+    }
+  }, [messagesOpen, refreshUnreadCount]);
+
   function closePanel() {
     setSlideIn(false);
     window.setTimeout(() => setOpen(false), PANEL_TRANSITION_MS);
@@ -102,11 +110,7 @@ export default function LoggedInUserButton() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        title={userName || "Account"}
-        aria-label={userName ? `Account: ${userName}` : "Account"}
+      <div
         style={{
           position: "fixed",
           top: "16px",
@@ -114,22 +118,56 @@ export default function LoggedInUserButton() {
           zIndex: 10001,
           width: "40px",
           height: "40px",
-          borderRadius: "50%",
-          border: "none",
-          background: bgColor,
-          color: "#fff",
-          fontSize: "1.1rem",
-          fontWeight: 600,
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
-          padding: 0,
         }}
       >
-        {initial}
-      </button>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title={userName || "Account"}
+          aria-label={
+            hasUnread
+              ? `${userName || "Account"} — unread messages`
+              : userName
+                ? `Account: ${userName}`
+                : "Account"
+          }
+          style={{
+            width: "40px",
+            height: "40px",
+            borderRadius: "50%",
+            border: "none",
+            background: bgColor,
+            color: "#fff",
+            fontSize: "1.1rem",
+            fontWeight: 600,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
+            padding: 0,
+          }}
+        >
+          {initial}
+        </button>
+        {hasUnread && (
+          <span
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              top: "0",
+              right: "0",
+              width: "11px",
+              height: "11px",
+              borderRadius: "50%",
+              background: "#e53935",
+              border: "2px solid #fff",
+              boxSizing: "border-box",
+              pointerEvents: "none",
+            }}
+          />
+        )}
+      </div>
 
       {open && (
         <>
@@ -251,7 +289,10 @@ export default function LoggedInUserButton() {
               </button>
               <button
                 type="button"
-                onClick={() => setMessagesOpen(true)}
+                onClick={() => {
+                  closePanel();
+                  setMessagesOpen(true);
+                }}
                 style={{
                   marginTop: "10px",
                   background: MENU.blueActive,
@@ -279,7 +320,11 @@ export default function LoggedInUserButton() {
         userName={userName}
       />
 
-      <MessagesModal open={messagesOpen} onClose={() => setMessagesOpen(false)} />
+      <MessagesModal
+        open={messagesOpen}
+        onClose={() => setMessagesOpen(false)}
+        onInboxChange={refreshUnreadCount}
+      />
     </>
   );
 }

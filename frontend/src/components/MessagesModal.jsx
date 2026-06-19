@@ -17,12 +17,6 @@ function formatMessageDate(iso) {
   });
 }
 
-function previewText(body, max = 80) {
-  const text = (body || "").trim().replace(/\s+/g, " ");
-  if (text.length <= max) return text;
-  return `${text.slice(0, max)}…`;
-}
-
 const actionButtonStyle = {
   border: "none",
   borderRadius: "10px",
@@ -32,7 +26,7 @@ const actionButtonStyle = {
   cursor: "pointer",
 };
 
-export default function MessagesModal({ open, onClose }) {
+export default function MessagesModal({ open, onClose, onInboxChange }) {
   const loggedInUserId = getLoggedInUserId();
   const [view, setView] = useState("inbox");
   const [messages, setMessages] = useState([]);
@@ -45,6 +39,8 @@ export default function MessagesModal({ open, onClose }) {
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [toUserId, setToUserId] = useState("");
   const [composeBody, setComposeBody] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const recipientOptions = useMemo(
     () =>
@@ -72,13 +68,14 @@ export default function MessagesModal({ open, onClose }) {
         throw new Error(data.error || "Failed to load inbox");
       }
       setMessages(Array.isArray(data) ? data : []);
+      onInboxChange?.();
     } catch (err) {
       setInboxError(err.message || "Failed to load inbox");
       setMessages([]);
     } finally {
       setLoadingInbox(false);
     }
-  }, []);
+  }, [onInboxChange]);
 
   const loadUsers = useCallback(async () => {
     setLoadingUsers(true);
@@ -107,12 +104,16 @@ export default function MessagesModal({ open, onClose }) {
   }, [open, loadInbox, loadUsers, resetCompose]);
 
   async function openMessage(message) {
+    setDeleteError("");
     setSelectedMessage(message);
     setView("read");
 
     if (message.read_at) {
       return;
     }
+
+    const optimisticReadAt = new Date().toISOString();
+    setSelectedMessage({ ...message, read_at: optimisticReadAt });
 
     try {
       const response = await fetch(`${API_URL}/api/messages/${message.id}/read`, {
@@ -122,11 +123,54 @@ export default function MessagesModal({ open, onClose }) {
       if (!response.ok) return;
       const updated = await response.json();
       setMessages((prev) =>
-        prev.map((item) => (item.id === updated.id ? { ...item, ...updated, from_user_name: message.from_user_name } : item))
+        prev.map((item) =>
+          item.id === updated.id
+            ? { ...item, ...updated, from_user_name: message.from_user_name }
+            : item
+        )
       );
-      setSelectedMessage((prev) => (prev?.id === updated.id ? { ...prev, ...updated } : prev));
+      setSelectedMessage((prev) =>
+        prev?.id === updated.id ? { ...prev, ...updated } : prev
+      );
+      onInboxChange?.();
     } catch {
       // ignore — message still readable
+    }
+  }
+
+  function handleOk() {
+    setSelectedMessage(null);
+    setView("inbox");
+  }
+
+  function backToInbox() {
+    setSelectedMessage(null);
+    setView("inbox");
+  }
+
+  async function handleDelete() {
+    if (!selectedMessage?.read_at) {
+      return;
+    }
+
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      const response = await fetch(`${API_URL}/api/messages/${selectedMessage.id}`, {
+        method: "DELETE",
+        headers: getApiHeaders(),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to delete message");
+      }
+      setSelectedMessage(null);
+      setView("inbox");
+      await loadInbox();
+    } catch (err) {
+      setDeleteError(err.message || "Failed to delete message");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -377,10 +421,7 @@ export default function MessagesModal({ open, onClose }) {
             <>
               <button
                 type="button"
-                onClick={() => {
-                  setSelectedMessage(null);
-                  setView("inbox");
-                }}
+                onClick={backToInbox}
                 style={{
                   alignSelf: "flex-start",
                   border: "none",
@@ -416,6 +457,40 @@ export default function MessagesModal({ open, onClose }) {
                 >
                   {selectedMessage.body}
                 </div>
+              </div>
+
+              {deleteError && (
+                <p style={{ margin: 0, color: "#cc3333", fontSize: "0.9rem" }}>{deleteError}</p>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button
+                  type="button"
+                  onClick={handleOk}
+                  disabled={deleting}
+                  style={{
+                    ...actionButtonStyle,
+                    background: MENU.greenActive,
+                    color: MENU.activeText,
+                  }}
+                >
+                  OK
+                </button>
+                {selectedMessage.read_at && (
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    style={{
+                      ...actionButtonStyle,
+                      background: "#cc3333",
+                      color: "#fff",
+                      opacity: deleting ? 0.7 : 1,
+                    }}
+                  >
+                    {deleting ? "Deleting…" : "Delete"}
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -461,7 +536,7 @@ export default function MessagesModal({ open, onClose }) {
                             display: "flex",
                             justifyContent: "space-between",
                             gap: "12px",
-                            marginBottom: "6px",
+                            alignItems: "center",
                           }}
                         >
                           <span style={{ fontWeight: unread ? 700 : 600, color: UI.textPrimary }}>
@@ -470,15 +545,6 @@ export default function MessagesModal({ open, onClose }) {
                           <span style={{ fontSize: "0.8rem", color: UI.textMuted, flexShrink: 0 }}>
                             {formatMessageDate(message.created_at)}
                           </span>
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "0.9rem",
-                            color: UI.textSecondary,
-                            fontWeight: unread ? 500 : 400,
-                          }}
-                        >
-                          {previewText(message.body)}
                         </div>
                       </button>
                     );
