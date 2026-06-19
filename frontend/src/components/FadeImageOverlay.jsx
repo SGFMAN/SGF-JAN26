@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { getLoggedInUserId, isAuthenticated } from "../utils/auth";
 import { hasUserAccess } from "../utils/userAccess";
-import craig3 from "../images/craig3.jpg";
+
+const FADE_IMAGE_SRC = "/images/craig3.jpg";
 
 const CHECK_INTERVAL_MS = 8000;
 const WAIT_MS = 5000;
@@ -82,7 +83,7 @@ export default function FadeImageOverlay() {
 
   return (
     <img
-      src={craig3}
+      src={FADE_IMAGE_SRC}
       alt=""
       aria-hidden="true"
       style={{

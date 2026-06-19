@@ -156,11 +156,23 @@ export default function Permissions() {
     }
   }, []);
 
-  const fadeArea = useMemo(() => areas.find((area) => area.key === "fade") ?? null, [areas]);
-  const roleAreas = useMemo(() => areas.filter((area) => area.key !== "fade"), [areas]);
+  const permissionAreas = useMemo(() => {
+    const byKey = Object.fromEntries(areas.map((area) => [area.key, area]));
+    return ["admin", "fade", "managers", "sales"]
+      .map((key) => byKey[key])
+      .filter(Boolean);
+  }, [areas]);
 
-  const checkboxCols = roleAreas.length > 0 ? ` repeat(${roleAreas.length}, 72px)` : "";
-  const columnTemplate = `max-content max-content 72px 72px${checkboxCols}`;
+  const grantedCountByArea = useMemo(() => {
+    const counts = {};
+    for (const area of permissionAreas) {
+      counts[area.key] = users.filter((user) => matrix[user.id]?.[area.key] === true).length;
+    }
+    return counts;
+  }, [users, matrix, permissionAreas]);
+
+  const checkboxCols = permissionAreas.length > 0 ? ` repeat(${permissionAreas.length}, 72px)` : "";
+  const columnTemplate = `max-content max-content 72px${checkboxCols}`;
 
   return (
     <div
@@ -251,23 +263,6 @@ export default function Permissions() {
             >
               Password
             </div>
-            {fadeArea && (
-              <div
-                style={{
-                  position: "sticky",
-                  top: 0,
-                  zIndex: 2,
-                  background: UI.panelBg,
-                  padding: "0 4px 10px",
-                  fontSize: "0.9rem",
-                  fontWeight: 700,
-                  color: MONUMENT,
-                  textAlign: "center",
-                }}
-              >
-                {fadeArea.label}
-              </div>
-            )}
             <div
               style={{
                 position: "sticky",
@@ -294,7 +289,7 @@ export default function Permissions() {
                 {onlineCount} / {users.length}
               </div>
             </div>
-            {roleAreas.map((area) => (
+            {permissionAreas.map((area) => (
               <div
                 key={area.key}
                 style={{
@@ -309,7 +304,18 @@ export default function Permissions() {
                   textAlign: "center",
                 }}
               >
-                {area.label}
+                <div>{area.label}</div>
+                <div
+                  style={{
+                    marginTop: "4px",
+                    fontSize: "0.8rem",
+                    fontWeight: 500,
+                    color: UI.textMuted,
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {grantedCountByArea[area.key] ?? 0} / {users.length}
+                </div>
               </div>
             ))}
 
@@ -344,30 +350,6 @@ export default function Permissions() {
                 >
                   {user.password || "admin"}
                 </div>
-                {fadeArea && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      padding: "7px 4px",
-                      borderTop: rowIndex === 0 ? "none" : `1px solid ${UI.outline}`,
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={matrix[user.id]?.[fadeArea.key] === true}
-                      onChange={(e) => handleToggle(user.id, fadeArea.key, e.target.checked)}
-                      aria-label={`${user.name || "User"} — ${fadeArea.label}`}
-                      style={{
-                        width: "18px",
-                        height: "18px",
-                        cursor: "pointer",
-                        accentColor: MONUMENT,
-                      }}
-                    />
-                  </div>
-                )}
                 <div
                   style={{
                     display: "flex",
@@ -392,7 +374,7 @@ export default function Permissions() {
                     />
                   ) : null}
                 </div>
-                {roleAreas.map((area) => {
+                {permissionAreas.map((area) => {
                   const checked = matrix[user.id]?.[area.key] === true;
                   return (
                     <div

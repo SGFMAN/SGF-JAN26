@@ -11,7 +11,6 @@ import {
   findSalespersonUserInList,
 } from "../utils/streamNewProjectEmail";
 import craig1 from "../images/craig1.jpg";
-import craig2 from "../images/craig2.jpg";
 import craig3 from "../images/craig3.jpg";
 import "./Overview.css";
 
@@ -68,7 +67,7 @@ export default function Overview({ project }) {
   const typewriterIntervalRef = useRef(null);
   const fullResultsRef = useRef([]);
   
-  const craigImages = [craig1, craig2, craig3];
+  const craigImages = [craig1, craig3];
 
   useEffect(() => {
     fetchEmailTemplates();

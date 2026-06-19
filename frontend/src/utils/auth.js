@@ -6,8 +6,32 @@ const AUTH_PASSWORD_TYPE_KEY = "passwordType";
 const AUTH_USER_NAME_KEY = "loggedInUserName";
 
 function getAuthStorage() {
-  return sessionStorage;
+  return localStorage;
 }
+
+function migrateLegacySessionStorageAuth() {
+  const storage = getAuthStorage();
+  if (storage.getItem(AUTH_USER_ID_KEY)) {
+    return;
+  }
+
+  const legacyUserId = sessionStorage.getItem(AUTH_USER_ID_KEY);
+  if (!legacyUserId) {
+    return;
+  }
+
+  storage.setItem(AUTH_USER_ID_KEY, legacyUserId);
+  const legacyPasswordType = sessionStorage.getItem(AUTH_PASSWORD_TYPE_KEY);
+  if (legacyPasswordType) {
+    storage.setItem(AUTH_PASSWORD_TYPE_KEY, legacyPasswordType);
+  }
+  const legacyUserName = sessionStorage.getItem(AUTH_USER_NAME_KEY);
+  if (legacyUserName) {
+    storage.setItem(AUTH_USER_NAME_KEY, legacyUserName);
+  }
+}
+
+migrateLegacySessionStorageAuth();
 
 /**
  * Get the logged-in user ID from session storage.
@@ -48,14 +72,6 @@ export function setAuthSession(userId, passwordType, userName) {
   if (userName) {
     storage.setItem(AUTH_USER_NAME_KEY, String(userName));
   }
-  // Clear legacy persistent login from older versions.
-  try {
-    localStorage.removeItem(AUTH_USER_ID_KEY);
-    localStorage.removeItem(AUTH_PASSWORD_TYPE_KEY);
-    localStorage.removeItem(AUTH_USER_NAME_KEY);
-  } catch {
-    // ignore
-  }
 }
 
 /**
@@ -77,9 +93,9 @@ export function clearAuthSession() {
   storage.removeItem(AUTH_PASSWORD_TYPE_KEY);
   storage.removeItem(AUTH_USER_NAME_KEY);
   try {
-    localStorage.removeItem(AUTH_USER_ID_KEY);
-    localStorage.removeItem(AUTH_PASSWORD_TYPE_KEY);
-    localStorage.removeItem(AUTH_USER_NAME_KEY);
+    sessionStorage.removeItem(AUTH_USER_ID_KEY);
+    sessionStorage.removeItem(AUTH_PASSWORD_TYPE_KEY);
+    sessionStorage.removeItem(AUTH_USER_NAME_KEY);
   } catch {
     // ignore
   }

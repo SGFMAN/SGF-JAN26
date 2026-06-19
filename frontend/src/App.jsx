@@ -38,6 +38,7 @@ import RequireAuth from "./components/RequireAuth";
 import LoggedInUserButton from "./components/LoggedInUserButton";
 import PresenceHeartbeat from "./components/PresenceHeartbeat";
 import FadeImageOverlay from "./components/FadeImageOverlay";
+import AppTabCoordinator from "./components/AppTabCoordinator";
 import { UiThemeProvider } from "./context/UiThemeProvider";
 
 function Auth({ children }) {
@@ -54,6 +55,7 @@ export default function App() {
     <BrowserRouter>
       <UiThemeProvider>
       <EmailSendOverlayProvider>
+      <AppTabCoordinator />
       <PresenceHeartbeat />
       <FadeImageOverlay />
       <LoggedInUserButton />

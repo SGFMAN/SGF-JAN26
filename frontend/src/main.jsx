@@ -4,7 +4,9 @@ import './index.css'
 import './responsive.css'
 import './mobile/mobile.css'
 import App from './App.jsx'
+import DelegatedTabMessage from './components/DelegatedTabMessage.jsx'
 import { getApiHeaders } from './utils/auth'
+import { clearDelegatedTabLaunch, isDelegatedTabLaunch } from './utils/tabCoordinator'
 
 // Intercept fetch to add admin headers to all API calls
 const originalFetch = window.fetch;
@@ -42,8 +44,13 @@ window.fetch = function(url, options = {}) {
   return originalFetch.call(this, url, options);
 };
 
+const isDelegatedTab = isDelegatedTabLaunch();
+if (isDelegatedTab) {
+  clearDelegatedTabLaunch();
+}
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App />
+    {isDelegatedTab ? <DelegatedTabMessage /> : <App />}
   </StrictMode>,
 )
