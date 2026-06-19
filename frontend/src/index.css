@@ -192,3 +192,10 @@ button:focus-visible {
   border: 2px solid var(--sgf-outline);
   box-sizing: border-box;
 }
+
+body.cooper-smith-flipped {
+  transform: rotate(180deg);
+  transform-origin: center center;
+  width: 100vw;
+  min-height: 100vh;
+}

@@ -37,6 +37,7 @@ import PortalProjects from "./pages/PortalProjects";
 import RequireAuth from "./components/RequireAuth";
 import LoggedInUserButton from "./components/LoggedInUserButton";
 import PresenceHeartbeat from "./components/PresenceHeartbeat";
+import CooperSmithScreenFlip from "./components/CooperSmithScreenFlip";
 import { UiThemeProvider } from "./context/UiThemeProvider";
 
 function Auth({ children }) {
@@ -54,6 +55,7 @@ export default function App() {
       <UiThemeProvider>
       <EmailSendOverlayProvider>
       <PresenceHeartbeat />
+      <CooperSmithScreenFlip />
       <LoggedInUserButton />
       <Routes>
         {isCloudflarePublicHost ? (
