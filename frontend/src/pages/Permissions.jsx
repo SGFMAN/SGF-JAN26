@@ -26,6 +26,11 @@ export default function Permissions() {
     [onlineUserIds]
   );
 
+  const onlineCount = useMemo(
+    () => users.filter((user) => onlineUserIdSet.has(String(user.id))).length,
+    [users, onlineUserIdSet]
+  );
+
   const loadOnlineUsers = useCallback(async () => {
     const response = await fetch(`${API_URL}/api/access-permissions/online`, {
       headers: getApiHeaders(),
@@ -256,7 +261,18 @@ export default function Permissions() {
                 textAlign: "center",
               }}
             >
-              Logged on
+              <div>Logged on</div>
+              <div
+                style={{
+                  marginTop: "4px",
+                  fontSize: "0.8rem",
+                  fontWeight: 500,
+                  color: UI.textMuted,
+                  lineHeight: 1.2,
+                }}
+              >
+                {onlineCount} / {users.length}
+              </div>
             </div>
             {areas.map((area) => (
               <div

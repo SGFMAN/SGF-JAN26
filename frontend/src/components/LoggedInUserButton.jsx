@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { getLoggedInUserId, getLoggedInUserName, isAuthenticated } from "../utils/auth";
 import UserSettingsModal from "./UserSettingsModal";
+import MessagesModal from "./MessagesModal";
 import { UI, MENU } from "../utils/uiThemeTokens";
 
 const API_URL = "";
@@ -36,6 +37,7 @@ export default function LoggedInUserButton() {
   const [open, setOpen] = useState(false);
   const [slideIn, setSlideIn] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [messagesOpen, setMessagesOpen] = useState(false);
   const [userName, setUserName] = useState(() => getLoggedInUserName());
 
   const show = isAuthenticated() && location.pathname !== "/";
@@ -247,6 +249,25 @@ export default function LoggedInUserButton() {
               >
                 My Settings...
               </button>
+              <button
+                type="button"
+                onClick={() => setMessagesOpen(true)}
+                style={{
+                  marginTop: "10px",
+                  background: MENU.blueActive,
+                  color: MENU.activeText,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "10px 16px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  width: "100%",
+                  textAlign: "center",
+                }}
+              >
+                Messages
+              </button>
             </div>
           </aside>
         </>
@@ -257,6 +278,8 @@ export default function LoggedInUserButton() {
         onClose={() => setSettingsOpen(false)}
         userName={userName}
       />
+
+      <MessagesModal open={messagesOpen} onClose={() => setMessagesOpen(false)} />
     </>
   );
 }

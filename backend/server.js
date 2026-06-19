@@ -70,6 +70,7 @@ const {
   clearUserPresence,
   getOnlineUserIds,
 } = require("./userPresence");
+const { ensureUserMessagesTable } = require("./userMessages");
 const { generateMapsProposalPdf, OUTPUT_FILENAME, PROPOSAL_DIR } = require("./mapsProposalPdf");
 const {
   ensureProjectAccessTokens,
@@ -834,6 +835,7 @@ async function ensureSchema() {
     await ensureProjectAccessTokens(pool);
     await ensureMapQuoteItemsTable(pool);
     await ensureUserAccessPermissionsTable(pool);
+    await ensureUserMessagesTable(pool);
     await ensureMapFloorPlansDollarValueColumn(pool);
     await addMissingColumns(pool, "projects", ["construction_payments_paid"]);
     await addMissingColumns(pool, "users", ["password"]);
@@ -1433,6 +1435,7 @@ async function ensureSchema() {
   `);
   await ensureProjectAccessTokens(pool);
   await ensureUserAccessPermissionsTable(pool);
+  await ensureUserMessagesTable(pool);
   await markSchemaUpToDate(pool);
   console.log(`Schema ${SCHEMA_VERSION} applied`);
 }
@@ -3132,6 +3135,105 @@ app.post("/api/auth/logout", (req, res) => {
     clearUserPresence(userId);
   }
   res.json({ ok: true });
+});
+
+function getRequestUserId(req) {
+  const userId = Number(req.headers["x-user-id"] || req.headers["X-User-Id"]);
+  return Number.isFinite(userId) ? userId : null;
+}
+
+// User-to-user messages (inbox)
+app.get("/api/messages/inbox", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const userId = getRequestUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT m.id, m.from_user_id, m.to_user_id, m.body, m.read_at, m.created_at,
+              u.name AS from_user_name
+       FROM user_messages m
+       JOIN users u ON u.id = m.from_user_id
+       WHERE m.to_user_id = $1
+       ORDER BY m.created_at DESC`,
+      [userId]
+    );
+    res.json(result.rows);
+  } catch (e) {
+    console.error("Error fetching message inbox:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/messages", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const fromUserId = getRequestUserId(req);
+  if (!fromUserId) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  const toUserId = Number(req.body?.toUserId);
+  const body = String(req.body?.body ?? "").trim();
+
+  if (!Number.isFinite(toUserId)) {
+    return res.status(400).json({ error: "toUserId required" });
+  }
+  if (!body) {
+    return res.status(400).json({ error: "Message body required" });
+  }
+  if (toUserId === fromUserId) {
+    return res.status(400).json({ error: "Cannot message yourself" });
+  }
+
+  try {
+    const userCheck = await pool.query(`SELECT id FROM users WHERE id = $1`, [toUserId]);
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Recipient not found" });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO user_messages (from_user_id, to_user_id, body)
+       VALUES ($1, $2, $3)
+       RETURNING id, from_user_id, to_user_id, body, read_at, created_at`,
+      [fromUserId, toUserId, body]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (e) {
+    console.error("Error sending message:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.patch("/api/messages/:id/read", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const userId = getRequestUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  const messageId = Number(req.params.id);
+  if (!Number.isFinite(messageId)) {
+    return res.status(400).json({ error: "Invalid message id" });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE user_messages
+       SET read_at = COALESCE(read_at, NOW())
+       WHERE id = $1 AND to_user_id = $2
+       RETURNING id, from_user_id, to_user_id, body, read_at, created_at`,
+      [messageId, userId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Message not found" });
+    }
+    res.json(result.rows[0]);
+  } catch (e) {
+    console.error("Error marking message read:", e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // List users
