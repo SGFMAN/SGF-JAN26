@@ -1,52 +1,42 @@
 import { useEffect, useState } from "react";
-import { getLoggedInUserId, getLoggedInUserName, isAuthenticated } from "../utils/auth";
+import { getApiHeaders, getLoggedInUserId, isAuthenticated } from "../utils/auth";
 
-const TARGET_USER = "cooper smith";
+const API_URL = "";
 const FLIP_INTERVAL_MS = 5000;
-
-function isCooperSmith(name) {
-  return (name || "").trim().toLowerCase() === TARGET_USER;
-}
+const CHECK_INTERVAL_MS = 8000;
 
 export default function CooperSmithScreenFlip() {
   const [active, setActive] = useState(false);
   const [flipped, setFlipped] = useState(false);
 
   useEffect(() => {
-    if (!isAuthenticated()) {
-      setActive(false);
-      return;
-    }
-
-    const storedName = getLoggedInUserName();
-    if (isCooperSmith(storedName)) {
-      setActive(true);
-      return;
-    }
-
-    const userId = getLoggedInUserId();
-    if (!userId) {
-      setActive(false);
-      return;
-    }
-
     let cancelled = false;
-    (async () => {
+
+    async function checkTarget() {
+      if (!isAuthenticated() || !getLoggedInUserId()) {
+        if (!cancelled) setActive(false);
+        return;
+      }
+
       try {
-        const response = await fetch("/api/users");
-        if (!response.ok || cancelled) return;
-        const users = await response.json();
-        const user = users.find((u) => String(u.id) === String(userId));
+        const response = await fetch(`${API_URL}/api/prank/cooper-screen-flip`, {
+          headers: getApiHeaders(),
+        });
+        const data = await response.json().catch(() => ({}));
         if (!cancelled) {
-          setActive(isCooperSmith(user?.name));
+          setActive(Boolean(data.enabled));
         }
       } catch {
         if (!cancelled) setActive(false);
       }
-    })();
+    }
+
+    checkTarget();
+    const intervalId = window.setInterval(checkTarget, CHECK_INTERVAL_MS);
 
     return () => {
       cancelled = true;
+      window.clearInterval(intervalId);
     };
   }, []);
 
@@ -64,19 +54,19 @@ export default function CooperSmithScreenFlip() {
   }, [active]);
 
   useEffect(() => {
-    const body = document.body;
+    const root = document.documentElement;
     if (!active) {
-      body.classList.remove("cooper-smith-flipped");
-      body.style.transition = "";
+      root.classList.remove("cooper-smith-flipped");
+      root.style.transition = "";
       return undefined;
     }
 
-    body.style.transition = "transform 0.35s ease-in-out";
-    body.classList.toggle("cooper-smith-flipped", flipped);
+    root.style.transition = "transform 0.35s ease-in-out";
+    root.classList.toggle("cooper-smith-flipped", flipped);
 
     return () => {
-      body.classList.remove("cooper-smith-flipped");
-      body.style.transition = "";
+      root.classList.remove("cooper-smith-flipped");
+      root.style.transition = "";
     };
   }, [active, flipped]);
 
