@@ -156,8 +156,11 @@ export default function Permissions() {
     }
   }, []);
 
-  const checkboxCols = areas.length > 0 ? ` repeat(${areas.length}, 72px)` : "";
-  const columnTemplate = `max-content max-content 72px${checkboxCols}`;
+  const fadeArea = useMemo(() => areas.find((area) => area.key === "fade") ?? null, [areas]);
+  const roleAreas = useMemo(() => areas.filter((area) => area.key !== "fade"), [areas]);
+
+  const checkboxCols = roleAreas.length > 0 ? ` repeat(${roleAreas.length}, 72px)` : "";
+  const columnTemplate = `max-content max-content 72px 72px${checkboxCols}`;
 
   return (
     <div
@@ -248,6 +251,23 @@ export default function Permissions() {
             >
               Password
             </div>
+            {fadeArea && (
+              <div
+                style={{
+                  position: "sticky",
+                  top: 0,
+                  zIndex: 2,
+                  background: UI.panelBg,
+                  padding: "0 4px 10px",
+                  fontSize: "0.9rem",
+                  fontWeight: 700,
+                  color: MONUMENT,
+                  textAlign: "center",
+                }}
+              >
+                {fadeArea.label}
+              </div>
+            )}
             <div
               style={{
                 position: "sticky",
@@ -274,7 +294,7 @@ export default function Permissions() {
                 {onlineCount} / {users.length}
               </div>
             </div>
-            {areas.map((area) => (
+            {roleAreas.map((area) => (
               <div
                 key={area.key}
                 style={{
@@ -324,6 +344,30 @@ export default function Permissions() {
                 >
                   {user.password || "admin"}
                 </div>
+                {fadeArea && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: "7px 4px",
+                      borderTop: rowIndex === 0 ? "none" : `1px solid ${UI.outline}`,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={matrix[user.id]?.[fadeArea.key] === true}
+                      onChange={(e) => handleToggle(user.id, fadeArea.key, e.target.checked)}
+                      aria-label={`${user.name || "User"} — ${fadeArea.label}`}
+                      style={{
+                        width: "18px",
+                        height: "18px",
+                        cursor: "pointer",
+                        accentColor: MONUMENT,
+                      }}
+                    />
+                  </div>
+                )}
                 <div
                   style={{
                     display: "flex",
@@ -348,7 +392,7 @@ export default function Permissions() {
                     />
                   ) : null}
                 </div>
-                {areas.map((area) => {
+                {roleAreas.map((area) => {
                   const checked = matrix[user.id]?.[area.key] === true;
                   return (
                     <div

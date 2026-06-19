@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { getApiHeaders, getLoggedInUserId, isAuthenticated } from "../utils/auth";
+import { getLoggedInUserId, isAuthenticated } from "../utils/auth";
+import { hasUserAccess } from "../utils/userAccess";
 import craig3 from "../images/craig3.jpg";
 
-const API_URL = "";
 const CHECK_INTERVAL_MS = 8000;
 const WAIT_MS = 5000;
 const FADE_MS = 1500;
@@ -14,7 +14,7 @@ function wait(ms) {
   });
 }
 
-export default function CooperSmithScreenFlip() {
+export default function FadeImageOverlay() {
   const [active, setActive] = useState(false);
   const [opacity, setOpacity] = useState(0);
 
@@ -28,12 +28,9 @@ export default function CooperSmithScreenFlip() {
       }
 
       try {
-        const response = await fetch(`${API_URL}/api/prank/cooper-screen-flip`, {
-          headers: getApiHeaders(),
-        });
-        const data = await response.json().catch(() => ({}));
+        const enabled = await hasUserAccess("fade");
         if (!cancelled) {
-          setActive(Boolean(data.enabled));
+          setActive(enabled);
         }
       } catch {
         if (!cancelled) setActive(false);

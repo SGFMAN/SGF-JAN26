@@ -70,7 +70,6 @@ const {
   clearUserPresence,
   getOnlineUserIds,
 } = require("./userPresence");
-const { isCooperSmithUserId } = require("./cooperPrank");
 const { ensureUserMessagesTable } = require("./userMessages");
 const { generateMapsProposalPdf, OUTPUT_FILENAME, PROPOSAL_DIR } = require("./mapsProposalPdf");
 const {
@@ -3136,22 +3135,6 @@ app.post("/api/auth/logout", (req, res) => {
     clearUserPresence(userId);
   }
   res.json({ ok: true });
-});
-
-app.get("/api/prank/cooper-screen-flip", async (req, res) => {
-  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
-  const userId = getRequestUserId(req);
-  if (!userId) {
-    return res.json({ enabled: false });
-  }
-
-  try {
-    const enabled = await isCooperSmithUserId(pool, userId);
-    res.json({ enabled });
-  } catch (e) {
-    console.error("Error checking cooper screen flip:", e);
-    res.json({ enabled: false });
-  }
 });
 
 function getRequestUserId(req) {
