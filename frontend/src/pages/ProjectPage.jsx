@@ -26,7 +26,8 @@ import ProjectPageMobile from "../mobile/ProjectPageMobile";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
-import { UI, MENU } from "../utils/uiThemeTokens.js";
+import { UI, MENU, STREAM } from "../utils/uiThemeTokens.js";
+import { streamColorHover } from "../utils/streamColors.js";
 const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
 const SECTION_GREY = UI.panelBg;
@@ -747,16 +748,16 @@ export default function ProjectPage() {
                       padding: "8px 16px",
                       fontSize: "1rem",
                       fontWeight: 500,
-                      color: WHITE,
-                      background: "#dc3545",
+                      color: PAGE_TEXT,
+                      background: STREAM.qldRed,
                       border: "none",
                       borderRadius: "8px",
                       cursor: "pointer",
                       transition: "background 0.2s",
                       minWidth: "100px",
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "#b02a37")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "#dc3545")}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = streamColorHover(STREAM.qldRed))}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = STREAM.qldRed)}
                     type="button"
                   >
                     Delete Project
@@ -1175,7 +1176,7 @@ export default function ProjectPage() {
                 }}
                 style={{
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   border: "none",
                   borderRadius: "10px",
                   padding: "10px 20px",
@@ -1305,8 +1306,8 @@ export default function ProjectPage() {
                 onClick={handleDeleteProject}
                 disabled={isDeleting}
                 style={{
-                  background: "#dc3545",
-                  color: WHITE,
+                  background: STREAM.qldRed,
+                  color: PAGE_TEXT,
                   border: "none",
                   borderRadius: "8px",
                   padding: "10px 20px",
@@ -1315,6 +1316,12 @@ export default function ProjectPage() {
                   cursor: isDeleting ? "not-allowed" : "pointer",
                   transition: "background 0.17s",
                   opacity: isDeleting ? 0.6 : 1,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isDeleting) e.currentTarget.style.background = streamColorHover(STREAM.qldRed);
+                }}
+                onMouseLeave={(e) => {
+                  if (!isDeleting) e.currentTarget.style.background = STREAM.qldRed;
                 }}
                 type="button"
               >

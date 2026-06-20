@@ -5,12 +5,14 @@ import {
   isCancelledStatus,
 } from "../utils/projectStatus";
 import { Link } from "react-router-dom";
-import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
+import { getStateFilter } from "../utils/stateFilter";
 import { projectPath } from "../utils/projectUrl";
 import { isUserAdmin } from "../utils/auth";
 import logo from "../images/logo.png";
 
-import { UI } from "../utils/uiThemeTokens.js";
+import StateFilterButtons from "../components/StateFilterButtons";
+import { UI, MENU } from "../utils/uiThemeTokens.js";
+import { managerSentCompleteColor, INDICATOR } from "../utils/managerStatusColors.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
@@ -100,13 +102,7 @@ const data = await response.json();
 
   // Get status color
   function getStatusColor(status) {
-    if (status === "Complete") {
-      return "#33cc33"; // Green
-    } else if (status === "Sent") {
-      return "#ff9900"; // Orange
-    } else {
-      return "#cc3333"; // Red (for "Not Sent" or other)
-    }
+    return managerSentCompleteColor(status);
   }
 
   // Get effective value with default
@@ -211,7 +207,7 @@ const data = await response.json();
               margin: 0,
               fontSize: "2.4rem",
               fontWeight: 700,
-              color: WHITE,
+              color: PAGE_TEXT,
               letterSpacing: "1px",
             }}
           >
@@ -228,97 +224,7 @@ const data = await response.json();
             alignItems: "center",
           }}
         >
-          {/* State Filter Buttons */}
-          <button
-            onClick={() => {
-              const newFilter = "VIC";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
-              color: stateFilter === "VIC" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            VIC Only
-          </button>
-          <button
-            onClick={() => {
-              const newFilter = "QLD";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "QLD" ? "#D54358" : WHITE,
-              color: stateFilter === "QLD" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            QLD Only
-          </button>
-          <button
-            onClick={() => {
-              const newFilter = "All";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "All" ? MONUMENT : WHITE,
-              color: stateFilter === "All" ? WHITE : MONUMENT,
-              border: `2px solid ${UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "All") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "All") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            All Projects
-          </button>
+          <StateFilterButtons stateFilter={stateFilter} setStateFilter={setStateFilter} />
         </div>
       </div>
 
@@ -539,7 +445,7 @@ const data = await response.json();
 
           {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && (
-            <p style={{ color: "#cc3333" }}>
+            <p style={{ color: INDICATOR.red }}>
               Error: {error}
             </p>
           )}
@@ -571,7 +477,7 @@ const data = await response.json();
                   gap: "16px",
                   padding: "12px 16px",
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   borderRadius: "8px",
                   fontWeight: 600,
                   fontSize: "0.9rem",
@@ -616,9 +522,7 @@ const data = await response.json();
                 }
                 
                 // Determine project days background color
-                const projectDaysBgColor = projectDays 
-                  ? (parseInt(projectDays) < 30 ? "#cc3333" : "#33cc33")
-                  : WHITE;
+                const projectDaysBgColor = projectDays ? MENU.purple : WHITE;
 
                 return (
                   <div
@@ -666,7 +570,7 @@ const data = await response.json();
                       ) : (
                         <span
                           title="Needs drawings PDF and colours PDF paths on the project"
-                          style={{ fontSize: "0.82rem", color: "#32323377" }}
+                          style={{ fontSize: "0.82rem", color: "var(--sgf-text-primary)" }}
                         >
                           Render (paths needed)
                         </span>
@@ -701,7 +605,7 @@ const data = await response.json();
                         padding: "8px 10px",
                         borderRadius: "6px",
                         background: projectDaysBgColor,
-                        color: WHITE,
+                        color: projectDays ? PAGE_TEXT : MONUMENT,
                         fontSize: "0.9rem",
                         fontWeight: 500,
                         display: "flex",

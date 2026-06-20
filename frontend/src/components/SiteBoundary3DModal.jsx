@@ -272,7 +272,7 @@ export default function SiteBoundary3DModal({
           3d Visualisation
         </h2>
         {siteFallM != null && status === "ready" && (
-          <span style={{ marginLeft: "auto", fontSize: "0.85rem", color: "rgba(255,255,255,0.75)" }}>
+          <span style={{ marginLeft: "auto", fontSize: "0.85rem", color: "var(--sgf-page-text)" }}>
             Site fall: {siteFallM.toFixed(2)} m (above {SITE_THICKNESS_M} m slab)
           </span>
         )}
@@ -325,7 +325,7 @@ export default function SiteBoundary3DModal({
               padding: "8px 12px",
               borderRadius: "8px",
               background: "rgba(0,0,0,0.45)",
-              color: "rgba(255,255,255,0.85)",
+              color: "var(--sgf-page-text)",
               fontSize: "0.8rem",
               pointerEvents: "none",
             }}

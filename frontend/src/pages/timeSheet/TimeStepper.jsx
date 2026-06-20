@@ -1,7 +1,6 @@
 import React from "react";
+import { UI, PROJECT_CARD } from "../../utils/uiThemeTokens";
 
-const BLACK = "#000000";
-const WHITE = "#ffffff";
 const VALUE_WIDTH = "78px";
 
 export default function TimeStepper({
@@ -13,8 +12,8 @@ export default function TimeStepper({
   dark = false,
 }) {
   const buttonStyle = {
-    background: dark ? WHITE : "#e0e0e0",
-    color: BLACK,
+    background: dark ? UI.cardBg : UI.inputBg,
+    color: UI.textPrimary,
     border: "none",
     borderRadius: "3px",
     width: "20px",
@@ -70,7 +69,7 @@ export default function TimeStepper({
             maxWidth: VALUE_WIDTH,
             fontSize: "0.76rem",
             fontWeight: 600,
-            color: dark ? WHITE : BLACK,
+            color: dark ? PROJECT_CARD.text : UI.textPrimary,
             textAlign: "left",
             lineHeight: 1.2,
             whiteSpace: "nowrap",

@@ -7,7 +7,7 @@ import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
 import HotlistSidebarSection from "../components/HotlistSidebarSection";
 import ManagersSalesMenuGroup from "../components/ManagersSalesMenuGroup";
 import { isUserAdmin } from "../utils/auth";
-import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
+import { getStateFilter } from "../utils/stateFilter";
 import { CLASSIFICATION_OPTIONS as CLASSIFICATION_SORT_ORDER } from "../utils/classifications";
 import ProjectRectangleCard from "../components/ProjectRectangleCard";
 import ProjectListGroupHeader from "../components/ProjectListGroupHeader";
@@ -15,7 +15,9 @@ import { getProjectListGroupKey } from "../utils/projectListGrouping";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
-import { UI, MENU } from "../utils/uiThemeTokens.js";
+import StateFilterButtons from "../components/StateFilterButtons";
+import { UI, MENU, STREAM } from "../utils/uiThemeTokens.js";
+import { streamColorHover } from "../utils/streamColors.js";
 const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
 const SECTION_GREY = UI.panelBg;
@@ -217,113 +219,23 @@ export default function FinishedProjects() {
             alignItems: "center",
           }}
         >
-          {/* State Filter Buttons */}
-          <button
-            onClick={() => {
-              const newFilter = "VIC";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
-              color: stateFilter === "VIC" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            VIC Only
-          </button>
-          <button
-            onClick={() => {
-              const newFilter = "QLD";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "QLD" ? "#D54358" : WHITE,
-              color: stateFilter === "QLD" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            QLD Only
-          </button>
-          <button
-            onClick={() => {
-              const newFilter = "All";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "All" ? MONUMENT : WHITE,
-              color: stateFilter === "All" ? WHITE : MONUMENT,
-              border: `2px solid ${UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "All") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "All") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            All Projects
-          </button>
+          <StateFilterButtons stateFilter={stateFilter} setStateFilter={setStateFilter} />
           {isAdmin && (
             <button
               onClick={() => setIsNewProjectOpen(true)}
               style={{
-                background: "#33cc33",
-                color: WHITE,
+                background: STREAM.streamGreen,
+                color: PAGE_TEXT,
                 border: "none",
                 borderRadius: "8px",
                 padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "#2bb32b")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "#33cc33")}
+                fontSize: "1rem",
+                fontWeight: 500,
+                cursor: "pointer",
+                transition: "background 0.2s",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = streamColorHover(STREAM.streamGreen))}
+              onMouseLeave={(e) => (e.currentTarget.style.background = STREAM.streamGreen)}
           >
             + New Project
           </button>
@@ -507,7 +419,7 @@ export default function FinishedProjects() {
           {isAdmin && (
             <div
               style={{
-                background: MENU.purple,
+                background: MENU.purpleLight,
                 borderRadius: "10px",
                 padding: "4px",
                 display: "flex",
@@ -657,7 +569,7 @@ export default function FinishedProjects() {
                 onClick={() => setSortMode("suburb")}
                 style={{
                   background: sortMode === "suburb" ? MONUMENT : WHITE,
-                  color: sortMode === "suburb" ? WHITE : MONUMENT,
+                  color: sortMode === "suburb" ? PAGE_TEXT : MONUMENT,
                   border: `2px solid ${UI.outline}`,
                   borderRadius: "8px",
                   padding: "10px 14px",
@@ -674,7 +586,7 @@ export default function FinishedProjects() {
                 onClick={() => setSortMode("class")}
                 style={{
                   background: sortMode === "class" ? MONUMENT : WHITE,
-                  color: sortMode === "class" ? WHITE : MONUMENT,
+                  color: sortMode === "class" ? PAGE_TEXT : MONUMENT,
                   border: `2px solid ${UI.outline}`,
                   borderRadius: "8px",
                   padding: "10px 14px",
@@ -691,7 +603,7 @@ export default function FinishedProjects() {
                 onClick={() => setSortMode("stream")}
                 style={{
                   background: sortMode === "stream" ? MONUMENT : WHITE,
-                  color: sortMode === "stream" ? WHITE : MONUMENT,
+                  color: sortMode === "stream" ? PAGE_TEXT : MONUMENT,
                   border: `2px solid ${UI.outline}`,
                   borderRadius: "8px",
                   padding: "10px 14px",

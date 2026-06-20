@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
+import { getStateFilter } from "../utils/stateFilter";
 import { isUserAdmin } from "../utils/auth";
 import {
   isDesignPhaseStatus,
@@ -10,7 +10,13 @@ import {
 import logo from "../images/logo.png";
 import { projectPath } from "../utils/projectUrl";
 
-import { UI } from "../utils/uiThemeTokens.js";
+import StateFilterButtons from "../components/StateFilterButtons";
+import { UI, MENU, STREAM } from "../utils/uiThemeTokens.js";
+import {
+  managerSentCompleteColor,
+  managerDrawingsStatusColor,
+  INDICATOR,
+} from "../utils/managerStatusColors.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
@@ -102,29 +108,18 @@ export default function ContractManager() {
   const WATER_DECLARATION_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
 
   function getDrawingsStatusColor(status) {
-    const value = status || "Not Assigned";
-    if (value === "Drawings Complete") return "#33cc33";
-    if (value === "Concept Stage" || value === "Working Drawing Stage") return "#ff9900";
-    return "#cc3333";
+    return managerDrawingsStatusColor(status);
   }
 
   // Get status color
   function getStatusColor(status, fieldName = "") {
     if (status === "Not Required") {
       return "#999999"; // Grey
-    } else if (status === "Complete") {
-      return "#33cc33"; // Green
-    } else if (status === "Sent") {
-      return "#ff9900"; // Orange
-    } else if (fieldName === "water_authority" && (status === "Barwon Water" || status === "Greater Western Water" || status === "South East Water")) {
-      // For water authority, show specific authorities in blue
-      return "#0066cc"; // Blue
-    } else if (fieldName === "water_authority" && status !== "Not Required" && status !== "Not Sent") {
-      // For other water authority values, use a neutral color
-      return WHITE;
-    } else {
-      return "#cc3333"; // Red (for "Not Sent" or other)
     }
+    if (fieldName === "water_authority") {
+      return STREAM.vicBlue;
+    }
+    return managerSentCompleteColor(status);
   }
 
   // Get effective value with default
@@ -270,7 +265,7 @@ export default function ContractManager() {
               margin: 0,
               fontSize: "2.4rem",
               fontWeight: 700,
-              color: WHITE,
+              color: PAGE_TEXT,
               letterSpacing: "1px",
             }}
           >
@@ -287,97 +282,7 @@ export default function ContractManager() {
             alignItems: "center",
           }}
         >
-          {/* State Filter Buttons */}
-          <button
-            onClick={() => {
-              const newFilter = "VIC";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
-              color: stateFilter === "VIC" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            VIC Only
-          </button>
-          <button
-            onClick={() => {
-              const newFilter = "QLD";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "QLD" ? "#D54358" : WHITE,
-              color: stateFilter === "QLD" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            QLD Only
-          </button>
-          <button
-            onClick={() => {
-              const newFilter = "All";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "All" ? MONUMENT : WHITE,
-              color: stateFilter === "All" ? WHITE : MONUMENT,
-              border: `2px solid ${UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "All") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "All") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            All Projects
-          </button>
+          <StateFilterButtons stateFilter={stateFilter} setStateFilter={setStateFilter} />
         </div>
       </div>
 
@@ -598,7 +503,7 @@ export default function ContractManager() {
 
           {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && (
-            <p style={{ color: "#cc3333" }}>
+            <p style={{ color: INDICATOR.red }}>
               Error: {error}
             </p>
           )}
@@ -629,7 +534,7 @@ export default function ContractManager() {
                   gap: "16px",
                   padding: "12px 16px",
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   borderRadius: "8px",
                   fontWeight: 600,
                   fontSize: "0.9rem",
@@ -682,9 +587,7 @@ export default function ContractManager() {
                 }
                 
                 // Determine project days background color
-                const projectDaysBgColor = projectDays 
-                  ? (parseInt(projectDays) < 30 ? "#cc3333" : "#33cc33")
-                  : WHITE;
+                const projectDaysBgColor = projectDays ? MENU.purple : WHITE;
 
                 return (
                   <div
@@ -784,7 +687,7 @@ export default function ContractManager() {
                         borderRadius: "6px",
                         border: "none",
                         fontSize: "0.9rem",
-                        color: getStatusColor(waterAuthority, "water_authority") === WHITE ? MONUMENT : WHITE,
+                        color: waterAuthority === "Not Required" ? MONUMENT : PAGE_TEXT,
                         background: getStatusColor(waterAuthority, "water_authority"),
                         cursor: "pointer",
                         fontWeight: 500,
@@ -845,7 +748,7 @@ export default function ContractManager() {
                         padding: "8px 10px",
                         borderRadius: "6px",
                         background: projectDaysBgColor,
-                        color: WHITE,
+                        color: projectDays ? PAGE_TEXT : MONUMENT,
                         fontSize: "0.9rem",
                         fontWeight: 500,
                         display: "flex",

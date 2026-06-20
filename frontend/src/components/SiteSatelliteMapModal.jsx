@@ -219,7 +219,7 @@ export default function SiteSatelliteMapModal({ open, onClose, addressQuery }) {
                 margin: 0,
                 fontSize: "1.15rem",
                 fontWeight: 700,
-                color: "#323233",
+                color: "var(--sgf-text-primary)",
               }}
             >
               Site map
@@ -247,7 +247,7 @@ export default function SiteSatelliteMapModal({ open, onClose, addressQuery }) {
               borderRadius: "10px",
               border: "1px solid #d1d1d1",
               background: "#fff",
-              color: "#323233",
+              color: "var(--sgf-text-primary)",
               fontWeight: 600,
               cursor: "pointer",
               fontSize: "0.95rem",
@@ -319,7 +319,7 @@ export default function SiteSatelliteMapModal({ open, onClose, addressQuery }) {
                 background: "rgba(255,255,255,0.55)",
                 fontSize: "1rem",
                 fontWeight: 600,
-                color: "#323233",
+                color: "var(--sgf-text-primary)",
                 pointerEvents: "none",
               }}
             >

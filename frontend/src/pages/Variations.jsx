@@ -475,7 +475,7 @@ export default function Variations({ project }) {
             }}
           >
             {selectedItems.length === 0 ? (
-              <div style={{ fontSize: "0.9rem", color: "#32323388" }}>No items yet.</div>
+              <div style={{ fontSize: "0.9rem", color: "var(--sgf-text-primary)" }}>No items yet.</div>
             ) : (
               selectedItems.map((item) => {
                 const qty = Number.isFinite(item.quantity) && item.quantity >= 1 ? item.quantity : 1;

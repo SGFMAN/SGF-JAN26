@@ -5,14 +5,14 @@ import { useMap } from "react-leaflet";
 export const BUILDINGS_PANE = "sgfBuildingsPane";
 
 const BUILDING_OUTLINE_STYLE = {
-  color: "#ffffff",
+  color: "var(--sgf-page-text)",
   weight: 2,
   opacity: 1,
   fillOpacity: 0,
 };
 
 const DRAFT_LINE_STYLE = {
-  color: "#ffffff",
+  color: "var(--sgf-page-text)",
   weight: 2,
   opacity: 0.9,
   dashArray: "6 4",

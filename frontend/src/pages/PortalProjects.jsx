@@ -4,6 +4,7 @@ import logo from "../images/logo.png";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import { CLASSIFICATION_BADGE_MAP as CLASSIFICATION_MAP } from "../utils/classifications";
 import { portalProjectPath } from "../utils/projectUrl";
+import { getProjectStreamBadge } from "../utils/streamBadges";
 
 import { UI, MENU, PROJECT_CARD } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -26,19 +27,6 @@ const STREAM_SORT_ORDER = [
   "Create Cash Flow",
   "Fresh Start Advisory",
 ];
-
-const STREAM_MAP = {
-  "SGF - VIC": { acronym: "VIC", color: "#4D93D9" },
-  "SGF - QLD": { acronym: "QLD", color: "#D54358" },
-  "Dual Dwelling": { acronym: "DDI", color: "#92D050" },
-  "ATA": { acronym: "ATA", color: "#92D050" },
-  "Pumped on Property": { acronym: "POP", color: "#92D050" },
-  "Pumped On Property": { acronym: "POP", color: "#92D050" },
-  "Henderson": { acronym: "HEN", color: "#92D050" },
-  "Creat Cash Flow": { acronym: "CCF", color: "#92D050" },
-  "Create Cash Flow": { acronym: "CCF", color: "#92D050" },
-  "Fresh Start Advisory": { acronym: "FSA", color: "#92D050" },
-};
 
 function normalizeState(projectState) {
   return (projectState || "").toString().trim().toUpperCase();
@@ -193,8 +181,8 @@ export default function PortalProjects() {
             margin: 0,
             fontSize: "2.4rem",
             fontWeight: 700,
-            color: WHITE,
-            letterSpacing: "1px",
+              color: PAGE_TEXT,
+              letterSpacing: "1px",
           }}
         >
           Design Phase
@@ -220,7 +208,7 @@ export default function PortalProjects() {
             }}
             style={{
               background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
-              color: stateFilter === "VIC" ? WHITE : MONUMENT,
+              color: stateFilter === "VIC" ? PAGE_TEXT : MONUMENT,
               border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
@@ -240,7 +228,7 @@ export default function PortalProjects() {
             }}
             style={{
               background: stateFilter === "QLD" ? "#D54358" : WHITE,
-              color: stateFilter === "QLD" ? WHITE : MONUMENT,
+              color: stateFilter === "QLD" ? PAGE_TEXT : MONUMENT,
               border: `2px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
@@ -260,7 +248,7 @@ export default function PortalProjects() {
             }}
             style={{
               background: stateFilter === "All" ? MONUMENT : WHITE,
-              color: stateFilter === "All" ? WHITE : MONUMENT,
+              color: stateFilter === "All" ? PAGE_TEXT : MONUMENT,
               border: `2px solid ${UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
@@ -346,7 +334,7 @@ export default function PortalProjects() {
 
           <div style={{ flex: 1 }} />
 
-          <div style={{ fontSize: "0.9rem", color: "#404049cc", fontWeight: 600, textAlign: "center" }}>
+          <div style={{ fontSize: "0.9rem", color: "var(--sgf-text-primary)", fontWeight: 600, textAlign: "center" }}>
             Read-only
           </div>
         </div>
@@ -380,7 +368,7 @@ export default function PortalProjects() {
                 onClick={() => setSortMode("suburb")}
                 style={{
                   background: sortMode === "suburb" ? MONUMENT : WHITE,
-                  color: sortMode === "suburb" ? WHITE : MONUMENT,
+                  color: sortMode === "suburb" ? PAGE_TEXT : MONUMENT,
                   border: `2px solid ${UI.outline}`,
                   borderRadius: "8px",
                   padding: "10px 14px",
@@ -397,7 +385,7 @@ export default function PortalProjects() {
                 onClick={() => setSortMode("class")}
                 style={{
                   background: sortMode === "class" ? MONUMENT : WHITE,
-                  color: sortMode === "class" ? WHITE : MONUMENT,
+                  color: sortMode === "class" ? PAGE_TEXT : MONUMENT,
                   border: `2px solid ${UI.outline}`,
                   borderRadius: "8px",
                   padding: "10px 14px",
@@ -414,7 +402,7 @@ export default function PortalProjects() {
                 onClick={() => setSortMode("stream")}
                 style={{
                   background: sortMode === "stream" ? MONUMENT : WHITE,
-                  color: sortMode === "stream" ? WHITE : MONUMENT,
+                  color: sortMode === "stream" ? PAGE_TEXT : MONUMENT,
                   border: `2px solid ${UI.outline}`,
                   borderRadius: "8px",
                   padding: "10px 14px",
@@ -509,7 +497,7 @@ export default function PortalProjects() {
                 const streamName = (project.stream || "").trim();
 
                 const classificationInfo = classificationName ? CLASSIFICATION_MAP[classificationName] : null;
-                const streamInfo = streamName ? STREAM_MAP[streamName] : null;
+                const streamInfo = getProjectStreamBadge(project);
 
                 const groupKey =
                   sortMode === "suburb"
@@ -621,7 +609,7 @@ export default function PortalProjects() {
                               right: "8px",
                               fontSize: "0.85rem",
                               fontWeight: 700,
-                              color: classificationInfo.color,
+                              color: PROJECT_CARD.text,
                               zIndex: 5,
                               textShadow: "0 1px 2px rgba(0,0,0,0.3)",
                             }}

@@ -1146,7 +1146,7 @@ export default function Colours({ project, onUpdate }) {
                   onClick={handleOpenSendModal}
                   style={{
                     background: MONUMENT,
-                    color: WHITE,
+                    color: PAGE_TEXT,
                     border: "none",
                     borderRadius: "8px",
                     padding: "10px 20px",
@@ -1182,7 +1182,7 @@ export default function Colours({ project, onUpdate }) {
                   style={{
                     width: "100%",
                     background: MONUMENT,
-                    color: WHITE,
+                    color: PAGE_TEXT,
                     border: "none",
                     borderRadius: "8px",
                     padding: "12px 20px",
@@ -1206,7 +1206,7 @@ export default function Colours({ project, onUpdate }) {
                   style={{
                     width: "100%",
                     background: MONUMENT,
-                    color: WHITE,
+                    color: PAGE_TEXT,
                     border: "none",
                     borderRadius: "8px",
                     padding: "12px 20px",
@@ -1285,7 +1285,7 @@ export default function Colours({ project, onUpdate }) {
                     marginTop: "16px",
                     width: "100%",
                     background: MONUMENT,
-                    color: WHITE,
+                    color: PAGE_TEXT,
                     border: "none",
                     borderRadius: "8px",
                     padding: "10px 20px",
@@ -1572,7 +1572,7 @@ export default function Colours({ project, onUpdate }) {
                   borderRadius: "8px",
                   border: "none",
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   cursor: "pointer",
                 }}
               >

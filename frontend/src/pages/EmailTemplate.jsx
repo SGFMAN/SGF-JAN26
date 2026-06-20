@@ -595,7 +595,7 @@ export default function EmailTemplate() {
                               <div
                                 style={{
                                   fontWeight: 500,
-                                  color: isSel ? WHITE : MONUMENT,
+                                  color: isSel ? PAGE_TEXT : MONUMENT,
                                   fontSize: "0.95rem",
                                 }}
                               >
@@ -624,7 +624,7 @@ export default function EmailTemplate() {
             <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: "6px", color: MONUMENT }}>
               {selectedTemplateId ? "Edit Template" : "New Template"}
             </h2>
-            <div style={{ fontSize: "0.88rem", color: "#323233cc", lineHeight: 1.45, marginBottom: "8px" }}>
+            <div style={{ fontSize: "0.88rem", color: "var(--sgf-text-primary)", lineHeight: 1.45, marginBottom: "8px" }}>
               <div>
                 <span style={{ color: UI.textMuted }}>Name:</span> {templateName}
               </div>
@@ -1087,7 +1087,7 @@ export default function EmailTemplate() {
                   borderRadius: "8px",
                   border: "none",
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   cursor: "pointer",
                 }}
               >
@@ -1165,7 +1165,7 @@ export default function EmailTemplate() {
                   borderRadius: "8px",
                   border: "none",
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   cursor: "pointer",
                 }}
               >

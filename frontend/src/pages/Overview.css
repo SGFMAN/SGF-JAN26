@@ -18,7 +18,7 @@
 .overview-header h2 {
   font-size: clamp(1rem, 2.5vw, 1.15rem);
   margin: 0;
-  color: #323233;
+  color: var(--sgf-text-primary);
 }
 
 .overview-stack {
@@ -40,7 +40,7 @@
 .overview-progress-section h2 {
   font-size: clamp(1.1rem, 2.8vw, 1.3rem);
   font-weight: 600;
-  color: #323233;
+  color: var(--sgf-text-primary);
   margin: 0 0 20px;
 }
 
@@ -69,7 +69,7 @@
 
 .overview-status-label {
   font-size: clamp(0.45rem, 10cqw, 0.75rem);
-  color: #32323399;
+  color: var(--sgf-text-primary);
   margin-bottom: 3px;
   font-weight: 500;
   text-align: center;
@@ -89,7 +89,7 @@
   padding: 2px 3px;
   border-radius: 8px;
   border: none;
-  color: #fff;
+  color: var(--sgf-page-text);
   box-sizing: border-box;
   width: 100%;
   flex: 1 1 auto;
@@ -307,7 +307,7 @@
   border: none;
   font-size: 1.5rem;
   cursor: pointer;
-  color: #323233;
+  color: var(--sgf-text-primary);
   width: 40px;
   height: 40px;
   display: flex;
@@ -350,7 +350,7 @@
   border-radius: 8px;
   border: 1px solid #a1a1a3;
   font-size: 1rem;
-  color: #323233;
+  color: var(--sgf-text-primary);
   box-sizing: border-box;
 }
 

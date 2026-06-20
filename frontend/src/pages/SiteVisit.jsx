@@ -638,7 +638,7 @@ export default function SiteVisit({ project, onUpdate }) {
                     onClick={() => setShowCompleteModal(true)}
                     style={{
                       background: MONUMENT,
-                      color: WHITE,
+                      color: PAGE_TEXT,
                       border: "none",
                       borderRadius: "10px",
                       padding: "10px 20px",
@@ -655,7 +655,7 @@ export default function SiteVisit({ project, onUpdate }) {
                     onClick={handleCancelSiteVisit}
                     style={{
                       background: "#dc3545",
-                      color: WHITE,
+                      color: PAGE_TEXT,
                       border: "none",
                       borderRadius: "10px",
                       padding: "10px 20px",
@@ -746,7 +746,7 @@ export default function SiteVisit({ project, onUpdate }) {
                     fontWeight: 600,
                     cursor: "pointer",
                     background: siteVisitPhotoTab === SITE_VISIT_PHOTO_TAB_PRE ? MONUMENT : SECTION_GREY,
-                    color: siteVisitPhotoTab === SITE_VISIT_PHOTO_TAB_PRE ? WHITE : MONUMENT,
+                    color: siteVisitPhotoTab === SITE_VISIT_PHOTO_TAB_PRE ? PAGE_TEXT : MONUMENT,
                     boxSizing: "border-box",
                   }}
                 >
@@ -770,7 +770,7 @@ export default function SiteVisit({ project, onUpdate }) {
                     background:
                       siteVisitPhotoTab === SITE_VISIT_PHOTO_TAB_CONSTRUCTION ? MONUMENT : SECTION_GREY,
                     color:
-                      siteVisitPhotoTab === SITE_VISIT_PHOTO_TAB_CONSTRUCTION ? WHITE : MONUMENT,
+                      siteVisitPhotoTab === SITE_VISIT_PHOTO_TAB_CONSTRUCTION ? PAGE_TEXT : MONUMENT,
                     boxSizing: "border-box",
                   }}
                 >
@@ -1025,7 +1025,7 @@ export default function SiteVisit({ project, onUpdate }) {
               <div
                 style={{
                   marginTop: "14px",
-                  color: "rgba(255,255,255,0.88)",
+                  color: "var(--sgf-page-text)",
                   fontSize: "0.875rem",
                   textAlign: "center",
                   wordBreak: "break-word",
@@ -1108,7 +1108,7 @@ export default function SiteVisit({ project, onUpdate }) {
                 disabled={isCompleting}
                 style={{
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   border: "none",
                   borderRadius: "10px",
                   padding: "10px 20px",

@@ -7,7 +7,7 @@ import {
 } from "../utils/projectStatus";
 import { Link } from "react-router-dom";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
-import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
+import { getStateFilter } from "../utils/stateFilter";
 import { projectPath } from "../utils/projectUrl";
 import {
   resolveNewProjectClientFrom,
@@ -24,7 +24,8 @@ import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 import { isLatestRevisionWorkingDrawingsApproved } from "../utils/drawingsStatusRules";
 import logo from "../images/logo.png";
 
-import { UI, BANNER } from "../utils/uiThemeTokens.js";
+import StateFilterButtons from "../components/StateFilterButtons";
+import { UI, BANNER, INDICATOR } from "../utils/uiThemeTokens.js";
 import { getThemeBannerColors, readStoredUiThemeId } from "../themes/applyUiTheme";
 import { getLoggedInUserId } from "../utils/auth";
 const MONUMENT = UI.textPrimary;
@@ -405,7 +406,7 @@ export default function DrawingManager() {
    * Many clients support tables + inline CSS; Outlook may simplify some styles.
    */
   function buildEmailListHtml(projectRows) {
-    const DEPOSIT_ORANGE = "#ff8800";
+    const DEPOSIT_ORANGE = INDICATOR.orange;
     const banner = getThemeBannerColors(readStoredUiThemeId(getLoggedInUserId()));
     const EMAIL_W = 960;
     const PROJECT_W = 320;
@@ -789,7 +790,7 @@ export default function DrawingManager() {
   const columnHeaderStyle = {
     padding: "8px 12px",
     background: MONUMENT,
-    color: WHITE,
+    color: PAGE_TEXT,
     borderRadius: "8px",
     fontWeight: 600,
     fontSize: "0.85rem",
@@ -878,7 +879,7 @@ export default function DrawingManager() {
                 <span
                   style={{
                     padding: "4px 8px",
-                    background: "#ff8800",
+                    background: INDICATOR.orange,
                     color: WHITE,
                     borderRadius: "4px",
                     fontSize: "0.75rem",
@@ -1004,7 +1005,7 @@ export default function DrawingManager() {
               maxWidth: "96px",
               padding: "6px 10px",
               background: "#4D93D9",
-              color: WHITE,
+              color: PAGE_TEXT,
               border: "none",
               borderRadius: "6px",
               fontSize: "0.8rem",
@@ -1068,7 +1069,7 @@ export default function DrawingManager() {
               margin: 0,
               fontSize: "2.4rem",
               fontWeight: 700,
-              color: WHITE,
+              color: PAGE_TEXT,
               letterSpacing: "1px",
             }}
           >
@@ -1085,97 +1086,7 @@ export default function DrawingManager() {
             alignItems: "center",
           }}
         >
-          {/* State Filter Buttons */}
-          <button
-            onClick={() => {
-              const newFilter = "VIC";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
-              color: stateFilter === "VIC" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            VIC Only
-          </button>
-          <button
-            onClick={() => {
-              const newFilter = "QLD";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "QLD" ? "#D54358" : WHITE,
-              color: stateFilter === "QLD" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            QLD Only
-          </button>
-          <button
-            onClick={() => {
-              const newFilter = "All";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "All" ? MONUMENT : WHITE,
-              color: stateFilter === "All" ? WHITE : MONUMENT,
-              border: `2px solid ${UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "All") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "All") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            All
-          </button>
+          <StateFilterButtons stateFilter={stateFilter} setStateFilter={setStateFilter} />
         </div>
       </div>
 
@@ -1390,7 +1301,7 @@ export default function DrawingManager() {
                   style={{
                     padding: "10px 20px",
                     background: "#4D93D9",
-                    color: WHITE,
+                    color: PAGE_TEXT,
                     border: "none",
                     borderRadius: "8px",
                     fontSize: "0.9rem",
@@ -1413,7 +1324,7 @@ export default function DrawingManager() {
 
           {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && (
-            <p style={{ color: "#cc3333" }}>
+            <p style={{ color: INDICATOR.red }}>
               Error: {error}
             </p>
           )}

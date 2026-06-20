@@ -324,7 +324,7 @@ export default function ThreeDVisPortal() {
             Select Your Colours
           </h1>
           {projectName && (
-            <p style={{ fontSize: "1rem", margin: "4px 0 0 0", color: "#ffffff99" }}>
+            <p style={{ fontSize: "1rem", margin: "4px 0 0 0", color: "var(--sgf-page-text)" }}>
               Project: {projectName}
             </p>
           )}

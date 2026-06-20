@@ -469,7 +469,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                 }}
                 style={{
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   border: "none",
                   borderRadius: "10px",
                   padding: "10px 20px",
@@ -499,7 +499,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                   marginTop: "12px",
                   display: "block",
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   border: "none",
                   borderRadius: "10px",
                   padding: "10px 20px",

@@ -3616,7 +3616,7 @@ export default function ThreeDVis({
               onClick={onBack}
               style={{
                 background: MONUMENT,
-                color: WHITE,
+                color: PAGE_TEXT,
                 border: "none",
                 borderRadius: "8px",
                 padding: "10px 20px",

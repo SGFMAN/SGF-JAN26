@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { isUserAdmin } from "../utils/auth";
-import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
+import { getStateFilter } from "../utils/stateFilter";
 import { CLASSIFICATION_BADGE_MAP } from "../utils/classifications";
 import logo from "../images/logo.png";
 
+import StateFilterButtons from "../components/StateFilterButtons";
 import { UI, BANNER, PROJECT_CARD } from "../utils/uiThemeTokens.js";
+import { getProjectStreamBadge } from "../utils/streamBadges";
 import { OnHoldSash, CancelledSash } from "../components/ProjectStatusSash";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
@@ -238,97 +240,7 @@ export default function SiteVisitManager() {
             alignItems: "center",
           }}
         >
-          {/* State Filter Buttons */}
-          <button
-            onClick={() => {
-              const newFilter = "VIC";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
-              color: stateFilter === "VIC" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            VIC Only
-          </button>
-          <button
-            onClick={() => {
-              const newFilter = "QLD";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "QLD" ? "#D54358" : WHITE,
-              color: stateFilter === "QLD" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            QLD Only
-          </button>
-          <button
-            onClick={() => {
-              const newFilter = "All";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "All" ? MONUMENT : WHITE,
-              color: stateFilter === "All" ? WHITE : MONUMENT,
-              border: `2px solid ${UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "All") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "All") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            All Projects
-          </button>
+          <StateFilterButtons stateFilter={stateFilter} setStateFilter={setStateFilter} />
         </div>
       </div>
 
@@ -581,20 +493,7 @@ export default function SiteVisitManager() {
                       ? CLASSIFICATION_BADGE_MAP[project.classification]
                       : null;
                     
-                    // Stream mapping - colored by stream type
-                    const streamMap = {
-                      "SGF - VIC": { acronym: "VIC", color: "#4D93D9" }, // Blue
-                      "SGF - QLD": { acronym: "QLD", color: "#D54358" }, // Red
-                      "Dual Dwelling": { acronym: "DDI", color: "#92D050" }, // Green
-                      "ATA": { acronym: "ATA", color: "#92D050" }, // Green
-                      "Pumped on Property": { acronym: "POP", color: "#92D050" }, // Green
-                      "Pumped On Property": { acronym: "POP", color: "#92D050" }, // Green
-                      "Henderson": { acronym: "HEN", color: "#92D050" }, // Green
-                      "Creat Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green
-                      "Create Cash Flow": { acronym: "CCF", color: "#92D050" }, // Green
-                      "Fresh Start Advisory": { acronym: "FSA", color: "#92D050" }, // Green
-                    };
-                    const streamInfo = project.stream ? streamMap[project.stream] : null;
+                    const streamInfo = getProjectStreamBadge(project);
                     
                     return (
                       <div
@@ -657,7 +556,7 @@ export default function SiteVisitManager() {
                                     right: "8px",
                                     fontSize: "0.85rem",
                                     fontWeight: 700,
-                                    color: classificationInfo.color,
+                                    color: PROJECT_CARD.text,
                                     zIndex: ((project.on_hold === 'true' || project.on_hold === true) || project.status === "Cancelled") ? 11 : 5,
                                     textShadow: "0 1px 2px rgba(0,0,0,0.3)",
                                   }}
@@ -692,7 +591,7 @@ export default function SiteVisitManager() {
                                   <div
                                     style={{
                                       fontSize: "0.68rem",
-                                      color: "rgba(255,255,255,0.92)",
+                                      color: "var(--sgf-page-text)",
                                       fontWeight: 500,
                                       letterSpacing: "0.02em",
                                       marginTop: "2px",
@@ -709,7 +608,7 @@ export default function SiteVisitManager() {
                               <div 
                                 style={{ 
                                   fontSize: "0.9rem", 
-                                  color: "#323233cc", 
+                                  color: "var(--sgf-text-primary)", 
                                   textAlign: "center",
                                   position: "relative",
                                   zIndex: (project.on_hold === 'true' || project.on_hold === true) ? 1 : "auto",

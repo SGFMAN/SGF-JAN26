@@ -17,9 +17,11 @@ import {
   resolveHotlistSoldFromEmail,
   resolveHotlistSoldToEmail,
 } from "../utils/emailGeneralSettings";
+import { getHotlistAgreementRowBackground, getHotlistStreamAccent } from "../utils/streamColors";
 import logo from "../images/logo.png";
 
-import { UI, MENU } from "../utils/uiThemeTokens.js";
+import { UI, MENU, STREAM } from "../utils/uiThemeTokens.js";
+import { streamColorHover } from "../utils/streamColors.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
@@ -44,9 +46,9 @@ const HOTLIST_PROJECT_STREAM_OPTIONS = [
 
 /** Section headers: bar colours match agreement-sent row tints; darker outline marks headings. */
 const HOTLIST_SECTION_HEADING = {
-  vic: { label: "SGF - VIC", bar: "#4D93D9", outline: "#2a5f96" },
-  qld: { label: "SGF - QLD", bar: "#D54358", outline: "#8c1e30" },
-  green: { label: "Green Streams", bar: "#92D050", outline: "#4d7a24" },
+  vic: { label: "SGF - VIC", group: "vic" },
+  qld: { label: "SGF - QLD", group: "qld" },
+  green: { label: "Green Streams", group: "green" },
 };
 
 function normalizeHotlistProjectStream(s) {
@@ -870,11 +872,7 @@ export default function Hotlist() {
 
   function getAgreementRowBackground(item) {
     if (!isAgreementSent(item)) return WHITE;
-    const st = (item.stream || "").trim();
-    if (st === "SGF - VIC") return "#4D93D9";
-    if (st === "SGF - QLD") return "#D54358";
-    if (isGreenStreamHotlistItem(item)) return "#92D050";
-    return "#6b7280";
+    return getHotlistAgreementRowBackground(item, { isGreenStream: isGreenStreamHotlistItem });
   }
 
   function sortHotlistItems(items) {
@@ -913,6 +911,7 @@ export default function Hotlist() {
 
   function renderHotlistSectionHeader(sectionKey, itemCount) {
     const cfg = HOTLIST_SECTION_HEADING[sectionKey];
+    const streamAccent = getHotlistStreamAccent(cfg.group);
     const open = hotlistSectionOpen[sectionKey];
     return (
       <button
@@ -925,8 +924,8 @@ export default function Hotlist() {
           gap: "12px",
           padding: "12px 16px",
           margin: 0,
-          background: cfg.bar,
-          border: `2px solid ${cfg.outline}`,
+          background: streamAccent.bar,
+          border: `2px solid ${streamAccent.outline}`,
           borderRadius: "10px",
           cursor: "pointer",
           textAlign: "left",
@@ -935,13 +934,13 @@ export default function Hotlist() {
           boxShadow: "inset 0 1px 0 rgba(255,255,255,0.2)",
         }}
       >
-        <span style={{ flex: 1, fontSize: "1.15rem", fontWeight: 700, color: WHITE }}>
+        <span style={{ flex: 1, fontSize: "1.15rem", fontWeight: 700, color: PAGE_TEXT }}>
           {cfg.label}
-          <span style={{ fontWeight: 500, color: "rgba(255,255,255,0.88)", fontSize: "0.9rem", marginLeft: "8px" }}>
+          <span style={{ fontWeight: 500, color: PAGE_TEXT, fontSize: "0.9rem", marginLeft: "8px" }}>
             ({itemCount})
           </span>
         </span>
-        <span style={{ fontSize: "0.85rem", fontWeight: 700, color: WHITE, flexShrink: 0 }}>{open ? "▼" : "▶"}</span>
+        <span style={{ fontSize: "0.85rem", fontWeight: 700, color: PAGE_TEXT, flexShrink: 0 }}>{open ? "▼" : "▶"}</span>
       </button>
     );
   }
@@ -953,12 +952,15 @@ export default function Hotlist() {
     const useLightText = itemIsAgreementSent;
     const accent =
       columnAccent === "qld"
-        ? { agreementBg: "#D54358", agreementHover: "#c4364b" }
+        ? getHotlistStreamAccent("qld")
         : columnAccent === "green"
-          ? { agreementBg: "#92D050", agreementHover: "#7ab842" }
+          ? getHotlistStreamAccent("green")
           : columnAccent === "neutral"
-            ? { agreementBg: MONUMENT, agreementHover: "#1a1a1a" }
-            : { agreementBg: "#4D93D9", agreementHover: "#3d7bc9" };
+            ? {
+                agreementBg: MONUMENT,
+                agreementHover: `color-mix(in srgb, ${MONUMENT} 82%, black)`,
+              }
+            : getHotlistStreamAccent("vic");
 
     const streamVal = item.stream || "";
     const streamKnown = HOTLIST_PROJECT_STREAM_OPTIONS.includes(streamVal);
@@ -983,31 +985,31 @@ export default function Hotlist() {
             style={{
               fontSize: "1rem",
               fontWeight: 600,
-              color: useLightText ? WHITE : MONUMENT,
+              color: useLightText ? PAGE_TEXT : MONUMENT,
             }}
           >
             {displayName}
           </span>
           {item.state ? (
             <>
-              <span style={{ color: useLightText ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
-              <span style={{ fontSize: "0.9rem", color: useLightText ? "rgba(255,255,255,0.9)" : "#666" }}>
+              <span style={{ color: useLightText ? PAGE_TEXT : MONUMENT, opacity: 0.55 }}>|</span>
+              <span style={{ fontSize: "0.9rem", color: useLightText ? PAGE_TEXT : MONUMENT }}>
                 {item.state}
               </span>
             </>
           ) : null}
           {item.client_name ? (
             <>
-              <span style={{ color: useLightText ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
-              <span style={{ fontSize: "0.9rem", color: useLightText ? "rgba(255,255,255,0.9)" : "#666" }}>
+              <span style={{ color: useLightText ? PAGE_TEXT : MONUMENT, opacity: 0.55 }}>|</span>
+              <span style={{ fontSize: "0.9rem", color: useLightText ? PAGE_TEXT : MONUMENT }}>
                 {item.client_name}
               </span>
             </>
           ) : null}
           {item.email ? (
             <>
-              <span style={{ color: useLightText ? "rgba(255,255,255,0.7)" : "#ccc" }}>|</span>
-              <span style={{ fontSize: "0.9rem", color: useLightText ? "rgba(255,255,255,0.8)" : "#888" }}>
+              <span style={{ color: useLightText ? PAGE_TEXT : MONUMENT, opacity: 0.55 }}>|</span>
+              <span style={{ fontSize: "0.9rem", color: useLightText ? PAGE_TEXT : MONUMENT }}>
                 {item.email}
               </span>
             </>
@@ -1049,7 +1051,7 @@ export default function Hotlist() {
             onClick={() => openHotlistNotesModal(item)}
             style={{
               background: useLightText ? "rgba(255,255,255,0.22)" : "#e8e8ea",
-              color: useLightText ? WHITE : MONUMENT,
+              color: useLightText ? PAGE_TEXT : MONUMENT,
               border: useLightText ? "1px solid rgba(255,255,255,0.5)" : `1px solid ${MONUMENT}44`,
               borderRadius: "8px",
               padding: "8px 16px",
@@ -1076,7 +1078,7 @@ export default function Hotlist() {
                   height: "8px",
                   marginLeft: "7px",
                   borderRadius: "50%",
-                  background: useLightText ? WHITE : MONUMENT,
+                  background: useLightText ? PAGE_TEXT : MONUMENT,
                   verticalAlign: "middle",
                   boxShadow: useLightText ? "0 0 0 1px rgba(255,255,255,0.35)" : "0 0 0 1px rgba(50,50,51,0.2)",
                 }}
@@ -1089,7 +1091,7 @@ export default function Hotlist() {
               onClick={() => handleAgreementSentClick(item)}
               style={{
                 background: accent.agreementBg,
-                color: WHITE,
+                color: PAGE_TEXT,
                 border: `1px solid ${accent.agreementBg}`,
                 borderRadius: "8px",
                 padding: "8px 16px",
@@ -1108,9 +1110,9 @@ export default function Hotlist() {
             type="button"
             onClick={() => handleSoldClick(item)}
             style={{
-              background: "#33cc33",
-              color: WHITE,
-              border: "1px solid #33cc33",
+              background: STREAM.streamGreen,
+              color: PAGE_TEXT,
+              border: `1px solid ${STREAM.streamGreen}`,
               borderRadius: "8px",
               padding: "8px 16px",
               fontSize: "0.9rem",
@@ -1118,8 +1120,8 @@ export default function Hotlist() {
               cursor: "pointer",
               transition: "background 0.2s",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "#2bb32b")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "#33cc33")}
+            onMouseEnter={(e) => (e.currentTarget.style.background = streamColorHover(STREAM.streamGreen))}
+            onMouseLeave={(e) => (e.currentTarget.style.background = STREAM.streamGreen)}
           >
             Sold
           </button>
@@ -1128,7 +1130,7 @@ export default function Hotlist() {
             onClick={() => handleMakeJobFileClick(item)}
             style={{
               background: PURPLE,
-              color: WHITE,
+              color: PAGE_TEXT,
               border: `1px solid ${PURPLE}`,
               borderRadius: "8px",
               padding: "8px 16px",
@@ -1147,7 +1149,7 @@ export default function Hotlist() {
             onClick={() => handleEmailClick(item)}
             style={{
               background: "#FFA500",
-              color: WHITE,
+              color: PAGE_TEXT,
               border: "1px solid #FFA500",
               borderRadius: "8px",
               padding: "8px 16px",
@@ -1166,7 +1168,7 @@ export default function Hotlist() {
             onClick={() => handleEditItemClick(item)}
             style={{
               background: MONUMENT,
-              color: WHITE,
+              color: PAGE_TEXT,
               border: "none",
               borderRadius: "8px",
               padding: "8px 16px",
@@ -1185,7 +1187,7 @@ export default function Hotlist() {
             onClick={() => handleDeleteItem(item.id)}
             style={{
               background: "#cc3333",
-              color: WHITE,
+              color: PAGE_TEXT,
               border: "none",
               borderRadius: "8px",
               padding: "8px 16px",
@@ -1372,8 +1374,8 @@ export default function Hotlist() {
             position: "absolute",
             top: "20px",
             right: "20px",
-            background: "#33cc33",
-            color: WHITE,
+            background: STREAM.streamGreen,
+            color: PAGE_TEXT,
             border: "none",
             borderRadius: "8px",
             padding: "10px 20px",
@@ -1382,8 +1384,8 @@ export default function Hotlist() {
             cursor: "pointer",
             transition: "background 0.2s",
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = "#2bb32b")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "#33cc33")}
+          onMouseEnter={(e) => (e.currentTarget.style.background = streamColorHover(STREAM.streamGreen))}
+          onMouseLeave={(e) => (e.currentTarget.style.background = STREAM.streamGreen)}
         >
           + New Address
         </button>
@@ -1565,7 +1567,7 @@ export default function Hotlist() {
           {isAdmin && (
             <div
               style={{
-                background: MENU.purple,
+                background: MENU.purpleLight,
                 borderRadius: "10px",
                 padding: "4px",
                 display: "flex",
@@ -1769,7 +1771,7 @@ export default function Hotlist() {
                   onClick={handleCloseNotesModal}
                   style={{
                     background: MONUMENT,
-                    color: WHITE,
+                    color: PAGE_TEXT,
                     border: "none",
                     borderRadius: "8px",
                     padding: "6px 12px",
@@ -1924,7 +1926,7 @@ export default function Hotlist() {
                       borderRadius: "8px",
                       border: "none",
                       background: MONUMENT,
-                      color: WHITE,
+                      color: PAGE_TEXT,
                       fontWeight: 600,
                       cursor: "pointer",
                     }}
@@ -2209,7 +2211,7 @@ export default function Hotlist() {
                 onClick={handleSoldAttachmentNext}
                 style={{
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   border: "none",
                   borderRadius: "8px",
                   padding: "10px 20px",

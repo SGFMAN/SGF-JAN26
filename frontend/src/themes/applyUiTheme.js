@@ -20,6 +20,7 @@ const CSS_VAR_MAP = {
   menuGreenActive: "--sgf-menu-green-active",
   menuRed: "--sgf-menu-red",
   menuPurple: "--sgf-menu-purple",
+  menuPurpleLight: "--sgf-menu-purple-light",
   menuGroupBorder: "--sgf-outline",
   menuActiveText: "--sgf-menu-active-text",
   onHoldBanner: "--sgf-on-hold-banner",
@@ -28,6 +29,14 @@ const CSS_VAR_MAP = {
   cancelledBannerText: "--sgf-cancelled-banner-text",
   projectCardBackground: "--sgf-project-card-bg",
   projectCardText: "--sgf-project-card-text",
+  vicBlue: "--sgf-vic-blue",
+  vicBlueLight: "--sgf-vic-blue-light",
+  qldRed: "--sgf-qld-red",
+  qldRedLight: "--sgf-qld-red-light",
+  streamGreen: "--sgf-stream-green",
+  streamGreenLight: "--sgf-stream-green-light",
+  indicatorOrangeDark: "--sgf-indicator-orange-dark",
+  indicatorOrangeLight: "--sgf-indicator-orange-light",
 };
 
 export function applyUiThemeToDocument(themeId = DEFAULT_UI_THEME_ID, allColorOverrides) {

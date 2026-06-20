@@ -20,7 +20,8 @@ import {
   SALES_YEAR_VIEW,
 } from "../utils/salesTotalsCompute";
 
-import { UI, MENU } from "../utils/uiThemeTokens.js";
+import { STREAM_GROUP_COLORS } from "../utils/streamColors";
+import { UI, MENU, STREAM } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
@@ -28,12 +29,7 @@ const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
-// Stream color mapping
-const STREAM_COLORS = {
-  "SGF - VIC": { darker: "#4D93D9", lighter: "#A6C9EC" },
-  "SGF - QLD": { darker: "#D54358", lighter: "#F79198" },
-  "Green Streams": { darker: "#92D050", lighter: "#CEEAB0" },
-};
+const { vic: VIC_COLORS, qld: QLD_COLORS, green: GREEN_COLORS } = STREAM_GROUP_COLORS;
 
 // Green streams (for total calculation)
 const GREEN_STREAMS = [
@@ -191,9 +187,9 @@ function CumulativeRatesLineChart({
   const baselineY = yAt(0);
 
   const ratesAreaColors = {
-    vic: STREAM_COLORS["SGF - VIC"].darker,
-    qld: STREAM_COLORS["SGF - QLD"].darker,
-    green: STREAM_COLORS["Green Streams"].darker,
+    vic: VIC_COLORS.darker,
+    qld: QLD_COLORS.darker,
+    green: GREEN_COLORS.darker,
   };
 
   /** Bottom → top: Green, QLD, VIC (matches bar stack order). Each layer is a solid triangle under that stream's projected slope. */
@@ -308,7 +304,7 @@ function CumulativeRatesLineChart({
           y1={yAt(0)}
           x2={xAt(12)}
           y2={yAt(projectedYearEndActual)}
-          stroke="#4D93D9"
+          stroke={STREAM.vicBlue}
           strokeWidth={3.5}
           strokeLinecap="round"
         />
@@ -324,7 +320,7 @@ function CumulativeRatesLineChart({
           cx={xAt(12)}
           cy={yAt(projectedYearEndActual)}
           r={6}
-          fill="#4D93D9"
+          fill={STREAM.vicBlue}
           stroke={WHITE}
           strokeWidth={1.5}
         />
@@ -378,7 +374,7 @@ function CumulativeRatesLineChart({
           Planned — {combinedAnnualTargetJobs} jobs / yr ({combinedMonthlyTargetJobs}/mo × 12)
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <span style={{ width: 36, height: 4, background: "#4D93D9", borderRadius: 2 }} />
+          <span style={{ width: 36, height: 4, background: STREAM.vicBlue, borderRadius: 2 }} />
           Actual run rate — YTD {cumThroughEffective} jobs over {monthsElapsed} mo → slope to{" "}
           {Math.round(projectedYearEndActual)} projected / yr
         </div>
@@ -532,19 +528,19 @@ export default function SalesAnalytics() {
         name: "SGF - VIC",
         value: vic,
         percentage: total > 0 ? (vic / total) * 100 : 0,
-        color: STREAM_COLORS["SGF - VIC"].darker,
+        color: VIC_COLORS.darker,
       },
       {
         name: "SGF - QLD",
         value: qld,
         percentage: total > 0 ? (qld / total) * 100 : 0,
-        color: STREAM_COLORS["SGF - QLD"].darker,
+        color: QLD_COLORS.darker,
       },
       {
         name: "Green Streams",
         value: green,
         percentage: total > 0 ? (green / total) * 100 : 0,
-        color: STREAM_COLORS["Green Streams"].darker,
+        color: GREEN_COLORS.darker,
       },
     ];
   }, [pieValueBreakdown]);
@@ -764,8 +760,8 @@ export default function SalesAnalytics() {
                 border: showBarVic ? "2px solid #2A5588" : "2px solid rgba(50,50,51,0.25)",
                 fontSize: "0.9rem",
                 fontWeight: 700,
-                color: showBarVic ? WHITE : MONUMENT,
-                background: showBarVic ? STREAM_COLORS["SGF - VIC"].darker : "rgba(255,255,255,0.75)",
+                color: showBarVic ? PAGE_TEXT : MONUMENT,
+                background: showBarVic ? VIC_COLORS.darker : "rgba(255,255,255,0.75)",
                 cursor: "pointer",
                 outline: "none",
                 minWidth: "44px",
@@ -783,8 +779,8 @@ export default function SalesAnalytics() {
                 border: showBarQld ? "2px solid #6B1F2A" : "2px solid rgba(50,50,51,0.25)",
                 fontSize: "0.9rem",
                 fontWeight: 700,
-                color: showBarQld ? WHITE : MONUMENT,
-                background: showBarQld ? STREAM_COLORS["SGF - QLD"].darker : "rgba(255,255,255,0.75)",
+                color: showBarQld ? PAGE_TEXT : MONUMENT,
+                background: showBarQld ? QLD_COLORS.darker : "rgba(255,255,255,0.75)",
                 cursor: "pointer",
                 outline: "none",
                 minWidth: "44px",
@@ -802,8 +798,8 @@ export default function SalesAnalytics() {
                 border: showBarGreen ? "2px solid #4A7020" : "2px solid rgba(50,50,51,0.25)",
                 fontSize: "0.9rem",
                 fontWeight: 700,
-                color: showBarGreen ? WHITE : MONUMENT,
-                background: showBarGreen ? STREAM_COLORS["Green Streams"].darker : "rgba(255,255,255,0.75)",
+                color: showBarGreen ? PAGE_TEXT : MONUMENT,
+                background: showBarGreen ? GREEN_COLORS.darker : "rgba(255,255,255,0.75)",
                 cursor: "pointer",
                 outline: "none",
                 minWidth: "44px",
@@ -1127,8 +1123,8 @@ export default function SalesAnalytics() {
                         border: ratesIncludeVic ? "2px solid #2A5588" : "2px solid rgba(50,50,51,0.25)",
                         fontSize: "0.9rem",
                         fontWeight: 700,
-                        color: ratesIncludeVic ? WHITE : MONUMENT,
-                        background: ratesIncludeVic ? STREAM_COLORS["SGF - VIC"].darker : "rgba(255,255,255,0.75)",
+                        color: ratesIncludeVic ? PAGE_TEXT : MONUMENT,
+                        background: ratesIncludeVic ? VIC_COLORS.darker : "rgba(255,255,255,0.75)",
                         cursor: "pointer",
                         outline: "none",
                         minWidth: "44px",
@@ -1146,8 +1142,8 @@ export default function SalesAnalytics() {
                         border: ratesIncludeQld ? "2px solid #6B1F2A" : "2px solid rgba(50,50,51,0.25)",
                         fontSize: "0.9rem",
                         fontWeight: 700,
-                        color: ratesIncludeQld ? WHITE : MONUMENT,
-                        background: ratesIncludeQld ? STREAM_COLORS["SGF - QLD"].darker : "rgba(255,255,255,0.75)",
+                        color: ratesIncludeQld ? PAGE_TEXT : MONUMENT,
+                        background: ratesIncludeQld ? QLD_COLORS.darker : "rgba(255,255,255,0.75)",
                         cursor: "pointer",
                         outline: "none",
                         minWidth: "44px",
@@ -1165,8 +1161,8 @@ export default function SalesAnalytics() {
                         border: ratesIncludeGreen ? "2px solid #4A7020" : "2px solid rgba(50,50,51,0.25)",
                         fontSize: "0.9rem",
                         fontWeight: 700,
-                        color: ratesIncludeGreen ? WHITE : MONUMENT,
-                        background: ratesIncludeGreen ? STREAM_COLORS["Green Streams"].darker : "rgba(255,255,255,0.75)",
+                        color: ratesIncludeGreen ? PAGE_TEXT : MONUMENT,
+                        background: ratesIncludeGreen ? GREEN_COLORS.darker : "rgba(255,255,255,0.75)",
                         cursor: "pointer",
                         outline: "none",
                         minWidth: "44px",
@@ -1229,15 +1225,15 @@ export default function SalesAnalytics() {
                     <div style={{ fontSize: "0.95rem", fontWeight: 700, color: MONUMENT, marginBottom: "6px" }}>
                       Jobs per month (by region)
                     </div>
-                    <div style={{ fontSize: "0.78rem", color: "#323233aa", marginBottom: "18px", lineHeight: 1.45 }}>
+                    <div style={{ fontSize: "0.78rem", color: "var(--sgf-text-primary)", marginBottom: "18px", lineHeight: 1.45 }}>
                       These values feed the Rates planned line, bar-chart target outlines, and adjusted targets. They
                       save automatically in this browser.
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "16px 28px", alignItems: "flex-end" }}>
                       {[
-                        { key: "vic", label: "VIC", accent: STREAM_COLORS["SGF - VIC"].darker },
-                        { key: "qld", label: "QLD", accent: STREAM_COLORS["SGF - QLD"].darker },
-                        { key: "greenStreams", label: "Green", accent: STREAM_COLORS["Green Streams"].darker },
+                        { key: "vic", label: "VIC", accent: VIC_COLORS.darker },
+                        { key: "qld", label: "QLD", accent: QLD_COLORS.darker },
+                        { key: "greenStreams", label: "Green", accent: GREEN_COLORS.darker },
                       ].map(({ key, label, accent }) => (
                         <label
                           key={key}
@@ -1388,7 +1384,7 @@ export default function SalesAnalytics() {
                             height: greenStreamBarHeight,
                             count: month.greenStreamSalesCount,
                             value: month.greenStreamTotalValue,
-                            bg: "#92D050",
+                            bg: GREEN_COLORS.darker,
                             title: `Green streams: ${month.greenStreamSalesCount} - ${formatCurrency(month.greenStreamTotalValue)}`,
                           });
                         }
@@ -1398,7 +1394,7 @@ export default function SalesAnalytics() {
                             height: qldBarHeight,
                             count: month.qldSalesCount,
                             value: month.qldTotalValue,
-                            bg: "#D54358",
+                            bg: QLD_COLORS.darker,
                             title: `QLD: ${month.qldSalesCount} - ${formatCurrency(month.qldTotalValue)}`,
                           });
                         }
@@ -1408,7 +1404,7 @@ export default function SalesAnalytics() {
                             height: vicBarHeight,
                             count: month.vicSalesCount,
                             value: month.vicTotalValue,
-                            bg: "#4D93D9",
+                            bg: VIC_COLORS.darker,
                             title: `VIC: ${month.vicSalesCount} - ${formatCurrency(month.vicTotalValue)}`,
                           });
                         }

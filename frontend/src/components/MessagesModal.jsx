@@ -484,7 +484,7 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
                     style={{
                       ...actionButtonStyle,
                       background: "#cc3333",
-                      color: "#fff",
+                      color: "var(--sgf-page-text)",
                       opacity: deleting ? 0.7 : 1,
                     }}
                   >

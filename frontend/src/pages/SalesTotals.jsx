@@ -6,6 +6,7 @@ import SalesTotalsDashboard from "../components/SalesTotalsDashboard";
 import SalesMonthLists from "../components/SalesMonthLists";
 import { captureElementsToPdfBlob } from "../utils/captureElementPdf";
 import { filterProjectsForSalesMonth } from "../utils/salesMonths";
+import { buildSalesStreamColors } from "../utils/streamColors";
 import {
   computeSalesTotalsData,
   filterProjectsByPeriod,
@@ -30,18 +31,7 @@ const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
-// Stream color mapping (same as Sales page)
-const STREAM_COLORS = {
-  "SGF - VIC": { darker: "#4D93D9", lighter: "#A6C9EC" },
-  "SGF - QLD": { darker: "#D54358", lighter: "#F79198" },
-  "Dual Dwelling": { darker: "#92D050", lighter: "#CEEAB0" },
-  "ATA": { darker: "#92D050", lighter: "#CEEAB0" },
-  "Pumped On Property": { darker: "#92D050", lighter: "#CEEAB0" },
-  "Henderson": { darker: "#92D050", lighter: "#CEEAB0" },
-  "Create Cash Flow": { darker: "#92D050", lighter: "#CEEAB0" },
-  "Fresh Start Advisory": { darker: "#92D050", lighter: "#CEEAB0" },
-  "Home Office / Studio": { darker: "#FF8C42", lighter: "#FFD4B3" },
-};
+const STREAM_COLORS = buildSalesStreamColors();
 
 export default function SalesTotals() {
   const [projects, setProjects] = useState([]);

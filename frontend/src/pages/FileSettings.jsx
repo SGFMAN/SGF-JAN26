@@ -244,7 +244,7 @@ export default function FileSettings() {
             <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
               Logo Attachment
             </h3>
-            <p style={{ fontSize: "0.85rem", color: "#323233cc", margin: 0, lineHeight: 1.45 }}>
+            <p style={{ fontSize: "0.85rem", color: "var(--sgf-text-primary)", margin: 0, lineHeight: 1.45 }}>
               Full path to the image embedded at the end of outgoing HTML emails only (inline in the message). Leave blank for no email logo.
             </p>
             <div>
@@ -276,7 +276,7 @@ export default function FileSettings() {
             <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
               Letter Head
             </h3>
-            <p style={{ fontSize: "0.85rem", color: "#323233cc", margin: 0, lineHeight: 1.45 }}>
+            <p style={{ fontSize: "0.85rem", color: "var(--sgf-text-primary)", margin: 0, lineHeight: 1.45 }}>
               Full path to the image used at the top of Variation PDFs. Emails keep using Logo Attachment above. If blank, the variation PDF falls back to the email logo path, then no image.
             </p>
             <div>

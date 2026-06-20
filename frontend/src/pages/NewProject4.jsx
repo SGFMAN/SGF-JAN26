@@ -1010,7 +1010,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
               onClick={onNext}
               style={{
                 background: MONUMENT,
-                color: WHITE,
+                color: PAGE_TEXT,
                 border: "none",
                 borderRadius: "10px",
                 padding: "10px 20px",
@@ -1111,7 +1111,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
                 onClick={handleDepositModalOk}
                 style={{
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   border: "none",
                   borderRadius: "8px",
                   padding: "8px 16px",

@@ -9,31 +9,39 @@
   --sgf-text-primary: #323233;
   --sgf-panel-bg: #a1a1a3;
   --sgf-card-bg: #ffffff;
-  --sgf-text-muted: rgba(50, 50, 51, 0.6);
-  --sgf-text-secondary: #404049;
+  --sgf-text-muted: var(--sgf-text-primary);
+  --sgf-text-secondary: var(--sgf-text-primary);
   --sgf-input-bg: #f0f0f0;
   --sgf-border: #e0e0e0;
   --sgf-outline: #000000;
   --sgf-button-primary: #323233;
-  --sgf-button-primary-text: #ffffff;
-  --sgf-menu-blue: #A6C9EC;
-  --sgf-menu-blue-active: #4D93D9;
-  --sgf-menu-green: #CEEAB0;
-  --sgf-menu-green-active: #92D050;
-  --sgf-menu-red: #F79198;
-  --sgf-menu-purple: #B19CD9;
+  --sgf-button-primary-text: var(--sgf-page-text);
+  --sgf-menu-blue: var(--sgf-vic-blue-light);
+  --sgf-menu-blue-active: var(--sgf-vic-blue-light);
+  --sgf-menu-green: var(--sgf-stream-green-light);
+  --sgf-menu-green-active: var(--sgf-stream-green);
+  --sgf-menu-red: var(--sgf-qld-red-light);
+  --sgf-menu-purple: #73658d;
+  --sgf-menu-purple-light: #B19CD9;
   --sgf-menu-group-border: var(--sgf-outline);
-  --sgf-menu-active-text: #ffffff;
-  --sgf-on-hold-banner: #0066cc;
-  --sgf-on-hold-banner-text: #ffffff;
-  --sgf-cancelled-banner: #cc0000;
-  --sgf-cancelled-banner-text: #ffffff;
+  --sgf-menu-active-text: var(--sgf-page-text);
+  --sgf-on-hold-banner: var(--sgf-vic-blue);
+  --sgf-on-hold-banner-text: var(--sgf-page-text);
+  --sgf-cancelled-banner: var(--sgf-qld-red);
+  --sgf-cancelled-banner-text: var(--sgf-page-text);
   --sgf-project-card-bg: #323233;
-  --sgf-project-card-text: #ffffff;
+  --sgf-project-card-text: var(--sgf-page-text);
+  --sgf-vic-blue: #4D93D9;
+  --sgf-vic-blue-light: #A6C9EC;
+  --sgf-qld-red: #D54358;
+  --sgf-qld-red-light: #F79198;
+  --sgf-stream-green: #92D050;
+  --sgf-stream-green-light: #CEEAB0;
+  --sgf-indicator-orange-dark: #a65800;
+  --sgf-indicator-orange-light: #ff8800;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  color: var(--sgf-page-text);
+  background-color: var(--sgf-page-bg);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -43,22 +51,25 @@
 
 a {
   font-weight: 500;
-  color: #646cff;
+  color: var(--sgf-text-primary);
   text-decoration: inherit;
 }
 a:hover {
-  color: #535bf2;
+  color: var(--sgf-text-primary);
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  color: var(--sgf-page-text);
+  background-color: var(--sgf-page-bg);
 }
 
 #root {
   width: 100%;
   min-height: 100vh;
+  color: var(--sgf-page-text);
 }
 
 h1 {
@@ -73,29 +84,40 @@ button {
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
-  background-color: #1a1a1a;
+  color: inherit;
+  background-color: transparent;
   cursor: pointer;
   transition: border-color 0.25s;
 }
 button:hover {
-  border-color: #646cff;
+  border-color: var(--sgf-outline);
 }
 button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+/* Main layout: Text - Light on page/panel chrome, Text - Dark on card content */
+.page-container {
+  color: var(--sgf-page-text);
+}
+
+.sidebar-menu {
+  color: var(--sgf-page-text);
+}
+
+.content-section {
+  color: var(--sgf-text-primary);
+}
+
+.content-section input,
+.content-section select,
+.content-section textarea {
+  color: var(--sgf-text-primary);
+}
+
+[role="dialog"] {
+  color: var(--sgf-text-primary);
 }
 
 /* Project page: address copied toast — linear motion up; opacity fades only at edges */

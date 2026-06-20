@@ -1,5 +1,7 @@
 import React from "react";
 
+import { STREAM_GROUP_COLORS } from "../utils/streamColors";
+
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
@@ -257,10 +259,10 @@ export default function SalesMonthLists({ monthFilteredProjects, pageTitle, onPr
             stream={COLUMN1_STREAM}
             streamProjects={vicProjects}
             gridSize={35}
-            cellColorLight="#C5DDF5"
-            cellColorExtraLight="#E3F2FC"
-            darkerColor="#4D93D9"
-            hoverColor="#4D93D9"
+            cellColorLight={STREAM_GROUP_COLORS.vic.lighter}
+            cellColorExtraLight={STREAM_GROUP_COLORS.vic.lighter}
+            darkerColor={STREAM_GROUP_COLORS.vic.darker}
+            hoverColor={STREAM_GROUP_COLORS.vic.darker}
             onProjectClick={onProjectClick}
           />
         </div>
@@ -270,10 +272,10 @@ export default function SalesMonthLists({ monthFilteredProjects, pageTitle, onPr
             stream={COLUMN2_STREAM}
             streamProjects={qldProjects}
             gridSize={35}
-            cellColorLight="#F9B5C0"
-            cellColorExtraLight="#FCD4DC"
-            darkerColor="#D54358"
-            hoverColor="#D54358"
+            cellColorLight={STREAM_GROUP_COLORS.qld.lighter}
+            cellColorExtraLight={STREAM_GROUP_COLORS.qld.lighter}
+            darkerColor={STREAM_GROUP_COLORS.qld.darker}
+            hoverColor={STREAM_GROUP_COLORS.qld.darker}
             onProjectClick={onProjectClick}
           />
         </div>
@@ -285,10 +287,10 @@ export default function SalesMonthLists({ monthFilteredProjects, pageTitle, onPr
                 stream={stream}
                 streamProjects={getStreamProjects(monthFilteredProjects, stream)}
                 gridSize={11}
-                cellColorLight="#D9F0C1"
-                cellColorExtraLight="#E8F7D8"
-                darkerColor="#92D050"
-                hoverColor="#92D050"
+                cellColorLight={STREAM_GROUP_COLORS.green.lighter}
+                cellColorExtraLight={STREAM_GROUP_COLORS.green.lighter}
+                darkerColor={STREAM_GROUP_COLORS.green.darker}
+                hoverColor={STREAM_GROUP_COLORS.green.darker}
                 onProjectClick={onProjectClick}
               />
             </div>
@@ -302,10 +304,10 @@ export default function SalesMonthLists({ monthFilteredProjects, pageTitle, onPr
                 stream={stream}
                 streamProjects={getStreamProjects(monthFilteredProjects, stream)}
                 gridSize={11}
-                cellColorLight="#D9F0C1"
-                cellColorExtraLight="#E8F7D8"
-                darkerColor="#92D050"
-                hoverColor="#92D050"
+                cellColorLight={STREAM_GROUP_COLORS.green.lighter}
+                cellColorExtraLight={STREAM_GROUP_COLORS.green.lighter}
+                darkerColor={STREAM_GROUP_COLORS.green.darker}
+                hoverColor={STREAM_GROUP_COLORS.green.darker}
                 onProjectClick={onProjectClick}
               />
             </div>

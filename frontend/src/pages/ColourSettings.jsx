@@ -258,7 +258,7 @@ export default function ColourSettings() {
                         <div style={{ fontSize: "0.9rem", fontWeight: 500, color: MONUMENT }}>
                           {colour.name}
                         </div>
-                        <div style={{ fontSize: "0.75rem", color: "#666" }}>
+                        <div style={{ fontSize: "0.75rem", color: "var(--sgf-text-primary)" }}>
                           R: {colour.r} G: {colour.g} B: {colour.b}
                         </div>
                       </div>
@@ -342,7 +342,7 @@ export default function ColourSettings() {
                                 <div
                                   style={{
                                     fontSize: "6px",
-                                    color: "#999",
+                                    color: "var(--sgf-text-primary)",
                                     fontWeight: 600,
                                     textAlign: "center",
                                     lineHeight: "1",
@@ -374,7 +374,7 @@ export default function ColourSettings() {
               alignItems: "center", 
               justifyContent: "center", 
               height: "100%",
-              color: "#999",
+              color: "var(--sgf-text-primary)",
               fontSize: "0.9rem"
             }}>
               Select a color group from the left to view colors

@@ -146,7 +146,7 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
               fontSize: "0.95rem",
               marginBottom: "10px",
               fontWeight: 500,
-              color: "#323233dd",
+              color: "var(--sgf-text-primary)",
             }}
           >
             Paste address (optional)
@@ -291,7 +291,7 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
             onClick={handleNext}
             style={{
               background: MONUMENT,
-              color: WHITE,
+              color: PAGE_TEXT,
               border: "none",
               borderRadius: "10px",
               padding: "10px 20px",

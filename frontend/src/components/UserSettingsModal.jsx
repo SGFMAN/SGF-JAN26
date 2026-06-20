@@ -4,7 +4,6 @@ import { useUiTheme } from "../context/UiThemeProvider";
 import { UI } from "../utils/uiThemeTokens";
 import { applyUiThemeToDocument } from "../themes/applyUiTheme";
 import { UI_THEME_COLOR_KEYS, UI_THEME_LIST, UI_THEMES } from "../themes/uiThemes";
-import TimeSheetSettingsContent from "./TimeSheetSettingsContent";
 
 const AUTO_SAVE_DELAY_MS = 600;
 const THEME_COLOR_SAVE_DELAY_MS = 400;
@@ -397,7 +396,6 @@ function ColourThemeContent() {
 const MENU_OPTIONS = [
   { key: "account", label: "Account" },
   { key: "colourTheme", label: "Colour Theme" },
-  { key: "timeSheet", label: "Time Sheet" },
 ];
 
 function firstNameFromFullName(fullName) {
@@ -604,9 +602,6 @@ function renderSectionContent(selected, open) {
   if (selected === "colourTheme") {
     return <ColourThemeContent />;
   }
-  if (selected === "timeSheet") {
-    return <TimeSheetSettingsContent />;
-  }
   return null;
 }
 
@@ -773,9 +768,6 @@ export default function UserSettingsModal({ open, onClose, userName }) {
               padding: "24px",
               overflowY: "auto",
               minWidth: 0,
-              display: selected === "timeSheet" ? "flex" : "block",
-              flexDirection: selected === "timeSheet" ? "column" : undefined,
-              minHeight: selected === "timeSheet" ? 0 : undefined,
             }}
           >
             {renderSectionContent(selected, open)}

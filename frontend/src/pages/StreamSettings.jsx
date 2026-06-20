@@ -1237,13 +1237,13 @@ export default function StreamSettings() {
                       style={{
                         fontSize: "0.82rem",
                         fontWeight: 700,
-                        color: "#1e4d7a",
+                        color: "var(--sgf-text-primary)",
                         letterSpacing: "0.02em",
                       }}
                     >
                       Sold email
                     </span>
-                    <span aria-hidden style={{ fontSize: "0.75rem", color: "#1e4d7a", flexShrink: 0 }}>
+                    <span aria-hidden style={{ fontSize: "0.75rem", color: "var(--sgf-text-primary)", flexShrink: 0 }}>
                       {hotListSoldSectionOpen ? "▾" : "▸"}
                     </span>
                   </button>
@@ -1390,13 +1390,13 @@ export default function StreamSettings() {
                                       style={{
                                         fontSize: "0.82rem",
                                         fontWeight: 700,
-                                        color: "#1e4d7a",
+                                        color: "var(--sgf-text-primary)",
                                         letterSpacing: "0.02em",
                                       }}
                                     >
                                       {section.title}
                                     </span>
-                                    <span aria-hidden style={{ fontSize: "0.75rem", color: "#1e4d7a", flexShrink: 0 }}>
+                                    <span aria-hidden style={{ fontSize: "0.75rem", color: "var(--sgf-text-primary)", flexShrink: 0 }}>
                                       {sectionExpanded ? "▾" : "▸"}
                                     </span>
                                   </button>
@@ -1487,13 +1487,13 @@ export default function StreamSettings() {
                         style={{
                           fontSize: "0.82rem",
                           fontWeight: 700,
-                          color: "#1e4d7a",
+                          color: "var(--sgf-text-primary)",
                           letterSpacing: "0.02em",
                         }}
                       >
                         Ordering Windows
                       </span>
-                      <span aria-hidden style={{ fontSize: "0.75rem", color: "#1e4d7a", flexShrink: 0 }}>
+                      <span aria-hidden style={{ fontSize: "0.75rem", color: "var(--sgf-text-primary)", flexShrink: 0 }}>
                         {windowsOrderingSectionOpen ? "▾" : "▸"}
                       </span>
                     </button>
@@ -1669,13 +1669,13 @@ export default function StreamSettings() {
                                       style={{
                                         fontSize: "0.82rem",
                                         fontWeight: 700,
-                                        color: "#1e4d7a",
+                                        color: "var(--sgf-text-primary)",
                                         letterSpacing: "0.02em",
                                       }}
                                     >
                                       {section.title}
                                     </span>
-                                    <span aria-hidden style={{ fontSize: "0.75rem", color: "#1e4d7a", flexShrink: 0 }}>
+                                    <span aria-hidden style={{ fontSize: "0.75rem", color: "var(--sgf-text-primary)", flexShrink: 0 }}>
                                       {sectionExpanded ? "▾" : "▸"}
                                     </span>
                                   </button>
@@ -2051,13 +2051,13 @@ export default function StreamSettings() {
                                       style={{
                                         fontSize: "0.82rem",
                                         fontWeight: 700,
-                                        color: "#1e4d7a",
+                                        color: "var(--sgf-text-primary)",
                                         letterSpacing: "0.02em",
                                       }}
                                     >
                                       {section.title}
                                     </span>
-                                    <span aria-hidden style={{ fontSize: "0.75rem", color: "#1e4d7a", flexShrink: 0 }}>
+                                    <span aria-hidden style={{ fontSize: "0.75rem", color: "var(--sgf-text-primary)", flexShrink: 0 }}>
                                       {sectionExpanded ? "▾" : "▸"}
                                     </span>
                                   </button>

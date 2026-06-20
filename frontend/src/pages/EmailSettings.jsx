@@ -59,7 +59,7 @@ const BTN_SECONDARY = {
 
 const BTN_PRIMARY = {
   background: MONUMENT,
-  color: WHITE,
+  color: PAGE_TEXT,
   border: "1px solid rgba(0,0,0,0.2)",
   borderRadius: "8px",
   padding: "8px 14px",

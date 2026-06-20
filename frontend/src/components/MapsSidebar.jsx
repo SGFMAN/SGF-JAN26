@@ -217,5 +217,5 @@ export default function MapsSidebar({
   );
 }
 
-export { MONUMENT, SECTION_GREY, LIGHT_MONUMENT, WHITE };
+export { MONUMENT, SECTION_GREY, LIGHT_MONUMENT, WHITE, PAGE_TEXT };
 

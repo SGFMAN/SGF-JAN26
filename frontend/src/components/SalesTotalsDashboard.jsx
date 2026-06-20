@@ -5,6 +5,7 @@ import {
   formatStreamName,
 } from "../utils/salesTotalsCompute";
 
+import { STREAM_GROUP_COLORS } from "../utils/streamColors";
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
@@ -140,7 +141,7 @@ export default function SalesTotalsDashboard({
               <div
                 style={{
                   background: colors.darker,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   padding: "10px 12px",
                   borderRadius: "8px",
                   marginBottom: "12px",
@@ -184,10 +185,10 @@ export default function SalesTotalsDashboard({
 
         <div
           style={{
-            background: "#CEEAB0",
+            background: STREAM_GROUP_COLORS.green.lighter,
             borderRadius: "12px",
             padding: "16px",
-            border: "2px solid #92D050",
+            border: `2px solid ${STREAM_GROUP_COLORS.green.darker}`,
             boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
             display: "flex",
             flexDirection: "column",
@@ -195,8 +196,8 @@ export default function SalesTotalsDashboard({
         >
           <div
             style={{
-              background: "#92D050",
-              color: WHITE,
+              background: STREAM_GROUP_COLORS.green.darker,
+              color: PAGE_TEXT,
               padding: "10px 12px",
               borderRadius: "8px",
               marginBottom: "12px",
@@ -259,7 +260,7 @@ export default function SalesTotalsDashboard({
               );
             })}
           </div>
-          <div style={{ marginTop: "auto", borderTop: "1px solid #92D050", paddingTop: "12px" }}>
+          <div style={{ marginTop: "auto", borderTop: `1px solid ${STREAM_GROUP_COLORS.green.darker}`, paddingTop: "12px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: "10px" }}>
               <div>
                 <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginBottom: "4px" }}>Total Value</div>
@@ -329,7 +330,7 @@ export default function SalesTotalsDashboard({
         }}
       >
         <div {...stateCardProps("VIC")}>
-          <div style={{ ...TOTALS_CARD.headerBar, background: "#4D93D9", color: WHITE }}>VIC TOTAL</div>
+          <div style={{ ...TOTALS_CARD.headerBar, background: STREAM_GROUP_COLORS.vic.darker, color: PAGE_TEXT }}>VIC TOTAL</div>
           <div style={TOTALS_CARD.grid}>
             <div>
               <div style={TOTALS_CARD.label}>Total Sales</div>
@@ -357,7 +358,7 @@ export default function SalesTotalsDashboard({
         </div>
 
         <div {...stateCardProps("QLD")}>
-          <div style={{ ...TOTALS_CARD.headerBar, background: "#D54358", color: WHITE }}>QLD TOTAL</div>
+          <div style={{ ...TOTALS_CARD.headerBar, background: STREAM_GROUP_COLORS.qld.darker, color: PAGE_TEXT }}>QLD TOTAL</div>
           <div style={TOTALS_CARD.grid}>
             <div>
               <div style={TOTALS_CARD.label}>Total Sales</div>

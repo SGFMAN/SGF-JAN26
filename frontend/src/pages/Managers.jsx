@@ -65,7 +65,7 @@ export default function Managers() {
               margin: 0,
               fontSize: "2.4rem",
               fontWeight: 700,
-              color: WHITE,
+              color: PAGE_TEXT,
               letterSpacing: "1px",
             }}
           >

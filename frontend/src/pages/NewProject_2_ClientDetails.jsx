@@ -183,7 +183,7 @@ export default function NewProject2({ isOpen, onClose, formData, onFormDataChang
             onClick={onNext}
             style={{
               background: MONUMENT,
-              color: WHITE,
+              color: PAGE_TEXT,
               border: "none",
               borderRadius: "10px",
               padding: "10px 20px",

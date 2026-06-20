@@ -15,53 +15,29 @@ export default function TimeSheetSettingsContent() {
 
   if (!loggedInUserId) {
     return (
-      <>
-        <h3
-          style={{
-            margin: "0 0 16px 0",
-            fontSize: "1.2rem",
-            fontWeight: 600,
-            color: UI.textPrimary,
-          }}
-        >
-          Time Sheet
-        </h3>
-        <p style={{ margin: 0, color: UI.textMuted }}>Could not determine the logged-in user.</p>
-      </>
+      <p style={{ margin: 0, color: UI.textMuted }}>Could not determine the logged-in user.</p>
     );
   }
 
   return (
-    <>
-      <h3
-        style={{
-          margin: "0 0 16px 0",
-          fontSize: "1.2rem",
-          fontWeight: 600,
-          color: UI.textPrimary,
-        }}
-      >
-        Time Sheet
-      </h3>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          minHeight: "480px",
-          height: "100%",
-        }}
-      >
-        <TimeSheetFourColumns
-          users={[]}
-          selectedUserId={loggedInUserId}
-          onUserChange={() => {}}
-          loadingUsers={false}
-          showDates
-          periodDays={currentPeriodDays}
-          cycleKey={currentCycleWednesday.toISOString().slice(0, 10)}
-          hideUserSelect
-        />
-      </div>
-    </>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        minHeight: "480px",
+        height: "100%",
+      }}
+    >
+      <TimeSheetFourColumns
+        users={[]}
+        selectedUserId={loggedInUserId}
+        onUserChange={() => {}}
+        loadingUsers={false}
+        showDates
+        periodDays={currentPeriodDays}
+        cycleKey={currentCycleWednesday.toISOString().slice(0, 10)}
+        hideUserSelect
+      />
+    </div>
   );
 }

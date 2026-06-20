@@ -72,7 +72,7 @@ export default function ProjectPageMobile({
           activeView === "overview" ? " project-page-mobile__content--overview" : ""
         }`}
       >
-        {loading && <p style={{ color: "#32323399", margin: 0 }}>Loading project…</p>}
+        {loading && <p style={{ color: "var(--sgf-text-primary)", margin: 0 }}>Loading project…</p>}
         {error && <p style={{ color: "#cc3333", margin: 0 }}>Error: {error}</p>}
         {!loading && !error && project && (
           <>

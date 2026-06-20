@@ -38,11 +38,17 @@ import {
   parseDrawingsHistory,
 } from "../utils/drawingsStatusRules";
 
-import { UI } from "../utils/uiThemeTokens.js";
+import { UI, STREAM } from "../utils/uiThemeTokens.js";
+import { streamColorHover } from "../utils/streamColors.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
+const STREAM_GREEN = STREAM.streamGreen;
+const STREAM_GREEN_LIGHT = STREAM.streamGreenLight;
+const VIC_BLUE = STREAM.vicBlue;
+const VIC_BLUE_LIGHT = STREAM.vicBlueLight;
+const QLD_RED = STREAM.qldRed;
 const API_URL = "";
 /** Above `EmailSendOverlay` (2147483000) so folder / upload errors are never hidden behind it. */
 const DRAWINGS_ALERT_MODAL_Z = 2147483646;
@@ -2959,9 +2965,9 @@ export default function Drawings({
                     // Determine background color based on approval status
                     let backgroundColor = WHITE;
                     if (drawing.workingDrawingsApproved) {
-                      backgroundColor = "#e3f2fd"; // Light blue
+                      backgroundColor = VIC_BLUE_LIGHT;
                     } else if (drawing.conceptApproved) {
-                      backgroundColor = "#e8f5e9"; // Light green
+                      backgroundColor = STREAM_GREEN_LIGHT;
                     }
 
                     // Calculate original index for current revision check (since we reversed the array)
@@ -3005,7 +3011,8 @@ export default function Drawings({
                                 fontSize: "0.72rem",
                                 fontWeight: 500,
                                 letterSpacing: "0.04em",
-                                color: "rgba(30, 86, 140, 0.42)",
+                                color: VIC_BLUE,
+                                opacity: 0.75,
                                 background: "transparent",
                                 border: "none",
                                 borderRadius: 0,
@@ -3024,7 +3031,8 @@ export default function Drawings({
                                 fontSize: "0.72rem",
                                 fontWeight: 500,
                                 letterSpacing: "0.04em",
-                                color: "rgba(28, 95, 42, 0.42)",
+                                color: STREAM_GREEN,
+                                opacity: 0.75,
                                 background: "transparent",
                                 border: "none",
                                 borderRadius: 0,
@@ -3050,8 +3058,8 @@ export default function Drawings({
                             <div
                               style={{
                                 flexShrink: 0,
-                                background: "#33cc33",
-                                color: WHITE,
+                                background: STREAM_GREEN,
+                                color: PAGE_TEXT,
                                 padding: "4px 10px",
                                 borderRadius: "6px",
                                 fontSize: "0.8rem",
@@ -3132,9 +3140,9 @@ export default function Drawings({
                     const currentDrawing = drawingsHistory[currentIndex];
                     let backgroundColor = WHITE;
                     if (currentDrawing.workingDrawingsApproved) {
-                      backgroundColor = "#e3f2fd";
+                      backgroundColor = VIC_BLUE_LIGHT;
                     } else if (currentDrawing.conceptApproved) {
-                      backgroundColor = "#e8f5e9";
+                      backgroundColor = STREAM_GREEN_LIGHT;
                     }
                     return (
                       <div
@@ -3159,9 +3167,9 @@ export default function Drawings({
                               }
                             }}
                             style={{
-                              background: "#28a745",
-                              color: WHITE,
-                              border: `1px solid #28a745`,
+                              background: STREAM_GREEN,
+                              color: PAGE_TEXT,
+                              border: `1px solid ${STREAM_GREEN}`,
                               borderRadius: "6px",
                               padding: "6px 8px",
                               fontSize: "0.8rem",
@@ -3172,10 +3180,10 @@ export default function Drawings({
                               width: "100px",
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#218838";
+                              e.currentTarget.style.background = streamColorHover(STREAM_GREEN);
                             }}
                             onMouseLeave={(e) => {
-                              e.currentTarget.style.background = "#28a745";
+                              e.currentTarget.style.background = STREAM_GREEN;
                             }}
                           >
                             View<br />Drawings
@@ -3212,9 +3220,9 @@ export default function Drawings({
                           type="button"
                           onClick={handleEmailDrawingsToClient}
                           style={{
-                            background: "#4D93D9",
-                            color: WHITE,
-                            border: "1px solid #4D93D9",
+                            background: VIC_BLUE,
+                            color: PAGE_TEXT,
+                            border: `1px solid ${VIC_BLUE}`,
                             borderRadius: "6px",
                             padding: "6px 8px",
                             fontSize: "0.8rem",
@@ -3225,10 +3233,10 @@ export default function Drawings({
                             width: "100px",
                           }}
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.background = "#3d7bc9";
+                            e.currentTarget.style.background = streamColorHover(VIC_BLUE);
                           }}
                           onMouseLeave={(e) => {
-                            e.currentTarget.style.background = "#4D93D9";
+                            e.currentTarget.style.background = VIC_BLUE;
                           }}
                         >
                           Send to<br />Client
@@ -3348,9 +3356,9 @@ export default function Drawings({
                           disabled={!hasDrawings}
                           style={{
                             flex: 1,
-                            background: !hasDrawings ? UI.border : "#e8f5e9",
-                            color: !hasDrawings ? "#999" : "#1b5e20",
-                            border: !hasDrawings ? "1px solid #ccc" : "1px solid rgba(40, 167, 69, 0.55)",
+                            background: !hasDrawings ? UI.border : STREAM_GREEN_LIGHT,
+                            color: !hasDrawings ? "#999" : MONUMENT,
+                            border: !hasDrawings ? "1px solid #ccc" : `1px solid ${STREAM_GREEN}`,
                             borderRadius: "10px",
                             padding: "8px 8px",
                             fontSize: "0.95rem",
@@ -3369,9 +3377,9 @@ export default function Drawings({
                           disabled={!canApproveWorkingDrawings}
                           style={{
                             flex: 1,
-                            background: !canApproveWorkingDrawings ? UI.border : "#e3f2fd",
-                            color: !canApproveWorkingDrawings ? "#999" : "#0d47a1",
-                            border: !canApproveWorkingDrawings ? "1px solid #ccc" : "1px solid rgba(77, 147, 217, 0.65)",
+                            background: !canApproveWorkingDrawings ? UI.border : VIC_BLUE_LIGHT,
+                            color: !canApproveWorkingDrawings ? "#999" : MONUMENT,
+                            border: !canApproveWorkingDrawings ? "1px solid #ccc" : `1px solid ${VIC_BLUE}`,
                             borderRadius: "10px",
                             padding: "8px 8px",
                             fontSize: "0.95rem",
@@ -3440,7 +3448,7 @@ export default function Drawings({
                     <div style={{ color: WHITE, fontWeight: 600, fontSize: "1rem", letterSpacing: "0.02em" }}>
                       Checking job folder…
                     </div>
-                    <div style={{ color: "#ffffffb3", fontSize: "0.88rem", marginTop: "10px" }}>
+                    <div style={{ color: "var(--sgf-page-text)", fontSize: "0.88rem", marginTop: "10px" }}>
                       Verifying path on disk
                     </div>
                   </div>
@@ -3450,7 +3458,7 @@ export default function Drawings({
                     <div style={{ color: WHITE, fontWeight: "500", marginBottom: "8px" }}>
                       {selectedFile.name}
                     </div>
-                    <div style={{ fontSize: "0.9rem", color: "#ffffff99" }}>
+                    <div style={{ fontSize: "0.9rem", color: "var(--sgf-page-text)" }}>
                       Click to select a different file
                     </div>
                   </div>
@@ -3459,7 +3467,7 @@ export default function Drawings({
                     <div style={{ color: WHITE, fontWeight: "500", marginBottom: "8px" }}>
                       Drag and drop PDF file here
                     </div>
-                    <div style={{ fontSize: "0.9rem", color: "#ffffff99" }}>
+                    <div style={{ fontSize: "0.9rem", color: "var(--sgf-page-text)" }}>
                       or click to browse
                     </div>
                   </div>
@@ -3480,9 +3488,9 @@ export default function Drawings({
                 <button
                   onClick={handleClearDrawingData}
                   style={{
-                    background: "#ff6b6b",
-                    color: WHITE,
-                    border: `1px solid #ff6b6b`,
+                    background: QLD_RED,
+                    color: PAGE_TEXT,
+                    border: `1px solid ${QLD_RED}`,
                     borderRadius: "10px",
                     padding: "8px 8px",
                     fontSize: "0.95rem",
@@ -3624,8 +3632,8 @@ export default function Drawings({
               <button
                 onClick={handleSendEmailToClient}
                 style={{
-                  background: "#4D93D9",
-                  color: WHITE,
+                  background: VIC_BLUE,
+                  color: PAGE_TEXT,
                   border: "none",
                   borderRadius: "8px",
                   padding: "10px 20px",
@@ -3634,8 +3642,8 @@ export default function Drawings({
                   cursor: "pointer",
                   transition: "background 0.2s",
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "#3d7bc9")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = "#4D93D9")}
+                onMouseEnter={(e) => (e.currentTarget.style.background = streamColorHover(VIC_BLUE))}
+                onMouseLeave={(e) => (e.currentTarget.style.background = VIC_BLUE)}
               >
                 Send
               </button>
@@ -3680,7 +3688,7 @@ export default function Drawings({
                   onClick={closeDrawingsFolderMissingModal}
                   style={{
                     background: "#4D93D9",
-                    color: WHITE,
+                    color: PAGE_TEXT,
                     border: "none",
                     borderRadius: "8px",
                     padding: "10px 22px",
@@ -3743,7 +3751,7 @@ export default function Drawings({
                   onClick={closeDrawingsPathErrorModal}
                   style={{
                     background: "#4D93D9",
-                    color: WHITE,
+                    color: PAGE_TEXT,
                     border: "none",
                     borderRadius: "8px",
                     padding: "10px 22px",
@@ -3836,7 +3844,7 @@ export default function Drawings({
                 onClick={() => handleConfirmDraftspersonForUpload()}
                 style={{
                   background: "#4D93D9",
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   border: "none",
                   borderRadius: "8px",
                   padding: "10px 20px",
@@ -4205,7 +4213,7 @@ export default function Drawings({
                     onClick={handleSendSalesNotes}
                     style={{
                       background: "#4D93D9",
-                      color: WHITE,
+                      color: PAGE_TEXT,
                       border: "none",
                       borderRadius: "8px",
                       padding: "10px 20px",

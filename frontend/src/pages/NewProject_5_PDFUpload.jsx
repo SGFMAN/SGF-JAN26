@@ -451,7 +451,7 @@ export default function NewProject_5_PDFUpload({
             }
             style={{
               background: MONUMENT,
-              color: WHITE,
+              color: PAGE_TEXT,
               border: "none",
               borderRadius: "10px",
               padding: "10px 20px",

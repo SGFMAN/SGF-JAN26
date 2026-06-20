@@ -612,7 +612,7 @@ export default function Users() {
               style={{
                 flex: 1,
                 background: "#dc3545",
-                color: WHITE,
+                color: PAGE_TEXT,
                 border: "none",
                 borderRadius: "8px",
                 padding: "10px 20px",
@@ -722,7 +722,7 @@ export default function Users() {
                 style={{
                   flex: 1,
                   background: "#dc3545",
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   border: "none",
                   borderRadius: "8px",
                   padding: "10px 20px",
@@ -1236,7 +1236,7 @@ export default function Users() {
                 disabled={isSubmitting}
                 style={{
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   border: "none",
                   borderRadius: "8px",
                   padding: "10px 20px",
@@ -1562,7 +1562,7 @@ export default function Users() {
                 disabled={isSubmitting}
                 style={{
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   border: "none",
                   borderRadius: "8px",
                   padding: "10px 20px",
@@ -1658,7 +1658,7 @@ export default function Users() {
                 disabled={isDeletingUser}
                 style={{
                   background: "#dc3545",
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   border: "none",
                   borderRadius: "8px",
                   padding: "10px 20px",
@@ -1777,7 +1777,7 @@ export default function Users() {
                 disabled={isSubmittingPosition}
                 style={{
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   border: "none",
                   borderRadius: "8px",
                   padding: "10px 20px",
@@ -1896,7 +1896,7 @@ export default function Users() {
                 disabled={isSubmittingPosition}
                 style={{
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   border: "none",
                   borderRadius: "8px",
                   padding: "10px 20px",
@@ -1992,7 +1992,7 @@ export default function Users() {
                 disabled={isDeletingPosition}
                 style={{
                   background: "#dc3545",
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   border: "none",
                   borderRadius: "8px",
                   padding: "10px 20px",

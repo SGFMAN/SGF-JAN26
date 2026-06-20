@@ -177,7 +177,7 @@ function RequestedReceivedControls({
   const buttonStyle = {
     border: "none",
     background: MONUMENT,
-    color: WHITE,
+    color: PAGE_TEXT,
     borderRadius: "8px",
     padding: "8px 16px",
     fontSize: "0.95rem",
@@ -187,7 +187,7 @@ function RequestedReceivedControls({
   };
   const textStyle = {
     fontSize: "0.82rem",
-    color: "#323233cc",
+    color: "var(--sgf-text-primary)",
     lineHeight: 1.35,
     maxWidth: "100%",
     wordBreak: "break-word",
@@ -1274,7 +1274,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                       style={{
                         border: "none",
                         background: MONUMENT,
-                        color: WHITE,
+                        color: PAGE_TEXT,
                         borderRadius: "8px",
                         padding: "8px 14px",
                         cursor: isSaving ? "not-allowed" : "pointer",
@@ -1361,7 +1361,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                       style={{
                         border: "none",
                         background: MONUMENT,
-                        color: WHITE,
+                        color: PAGE_TEXT,
                         borderRadius: "8px",
                         padding: "8px 14px",
                         cursor: isSaving ? "not-allowed" : "pointer",
@@ -1605,7 +1605,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                         style={{
                           border: "none",
                           background: MONUMENT,
-                          color: WHITE,
+                          color: PAGE_TEXT,
                           borderRadius: "8px",
                           padding: "8px 14px",
                           fontSize: "0.95rem",
@@ -1682,7 +1682,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                             style={{
                               border: "none",
                               background: MONUMENT,
-                              color: WHITE,
+                              color: PAGE_TEXT,
                               borderRadius: "8px",
                               padding: "8px 16px",
                               fontSize: "0.95rem",
@@ -1694,7 +1694,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                             Requested
                           </button>
                           {project?.planning_written_advice_requested_at ? (
-                            <div style={{ fontSize: "0.82rem", color: "#323233cc", lineHeight: 1.35, maxWidth: "100%", wordBreak: "break-word" }}>
+                            <div style={{ fontSize: "0.82rem", color: "var(--sgf-text-primary)", lineHeight: 1.35, maxWidth: "100%", wordBreak: "break-word" }}>
                               {formatWrittenAdviceDateTime(project.planning_written_advice_requested_at)}
                             </div>
                           ) : null}
@@ -1707,7 +1707,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                             style={{
                               border: "none",
                               background: MONUMENT,
-                              color: WHITE,
+                              color: PAGE_TEXT,
                               borderRadius: "8px",
                               padding: "8px 16px",
                               fontSize: "0.95rem",
@@ -1719,7 +1719,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                             Received
                           </button>
                           {project?.planning_written_advice_received_at ? (
-                            <div style={{ fontSize: "0.82rem", color: "#323233cc", lineHeight: 1.35, maxWidth: "100%", wordBreak: "break-word" }}>
+                            <div style={{ fontSize: "0.82rem", color: "var(--sgf-text-primary)", lineHeight: 1.35, maxWidth: "100%", wordBreak: "break-word" }}>
                               {formatWrittenAdviceDateTime(project.planning_written_advice_received_at)}
                             </div>
                           ) : null}
@@ -1793,7 +1793,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                             style={{
                               border: "none",
                               background: MONUMENT,
-                              color: WHITE,
+                              color: PAGE_TEXT,
                               borderRadius: "8px",
                               padding: "8px 16px",
                               fontSize: "0.95rem",
@@ -1805,7 +1805,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                             Requested
                           </button>
                           {project?.planning_town_planning_requested_at ? (
-                            <div style={{ fontSize: "0.82rem", color: "#323233cc", lineHeight: 1.35, maxWidth: "100%", wordBreak: "break-word" }}>
+                            <div style={{ fontSize: "0.82rem", color: "var(--sgf-text-primary)", lineHeight: 1.35, maxWidth: "100%", wordBreak: "break-word" }}>
                               {formatWrittenAdviceDateTime(project.planning_town_planning_requested_at)}
                             </div>
                           ) : null}
@@ -1818,7 +1818,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                             style={{
                               border: "none",
                               background: MONUMENT,
-                              color: WHITE,
+                              color: PAGE_TEXT,
                               borderRadius: "8px",
                               padding: "8px 16px",
                               fontSize: "0.95rem",
@@ -1830,7 +1830,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                             Received
                           </button>
                           {project?.planning_town_planning_received_at ? (
-                            <div style={{ fontSize: "0.82rem", color: "#323233cc", lineHeight: 1.35, maxWidth: "100%", wordBreak: "break-word" }}>
+                            <div style={{ fontSize: "0.82rem", color: "var(--sgf-text-primary)", lineHeight: 1.35, maxWidth: "100%", wordBreak: "break-word" }}>
                               {formatWrittenAdviceDateTime(project.planning_town_planning_received_at)}
                             </div>
                           ) : null}
@@ -1914,7 +1914,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                                 style={{
                                   border: "none",
                                   background: MONUMENT,
-                                  color: WHITE,
+                                  color: PAGE_TEXT,
                                   borderRadius: "8px",
                                   padding: "8px 16px",
                                   fontSize: "0.95rem",
@@ -1929,7 +1929,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                                 <div
                                   style={{
                                     fontSize: "0.82rem",
-                                    color: "#323233cc",
+                                    color: "var(--sgf-text-primary)",
                                     lineHeight: 1.35,
                                     maxWidth: "100%",
                                     wordBreak: "break-word",
@@ -1947,7 +1947,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                                 style={{
                                   border: "none",
                                   background: MONUMENT,
-                                  color: WHITE,
+                                  color: PAGE_TEXT,
                                   borderRadius: "8px",
                                   padding: "8px 16px",
                                   fontSize: "0.95rem",
@@ -1962,7 +1962,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                                 <div
                                   style={{
                                     fontSize: "0.82rem",
-                                    color: "#323233cc",
+                                    color: "var(--sgf-text-primary)",
                                     lineHeight: 1.35,
                                     maxWidth: "100%",
                                     wordBreak: "break-word",
@@ -2003,7 +2003,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                                 style={{
                                   border: "none",
                                   background: MONUMENT,
-                                  color: WHITE,
+                                  color: PAGE_TEXT,
                                   borderRadius: "8px",
                                   padding: "8px 16px",
                                   fontSize: "0.95rem",
@@ -2018,7 +2018,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                                 <div
                                   style={{
                                     fontSize: "0.82rem",
-                                    color: "#323233cc",
+                                    color: "var(--sgf-text-primary)",
                                     lineHeight: 1.35,
                                     maxWidth: "100%",
                                     wordBreak: "break-word",
@@ -2036,7 +2036,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                                 style={{
                                   border: "none",
                                   background: MONUMENT,
-                                  color: WHITE,
+                                  color: PAGE_TEXT,
                                   borderRadius: "8px",
                                   padding: "8px 16px",
                                   fontSize: "0.95rem",
@@ -2051,7 +2051,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                                 <div
                                   style={{
                                     fontSize: "0.82rem",
-                                    color: "#323233cc",
+                                    color: "var(--sgf-text-primary)",
                                     lineHeight: 1.35,
                                     maxWidth: "100%",
                                     wordBreak: "break-word",
@@ -2532,7 +2532,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                 style={{
                   border: "none",
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   borderRadius: "8px",
                   padding: "8px 14px",
                   cursor: isSaving ? "not-allowed" : "pointer",

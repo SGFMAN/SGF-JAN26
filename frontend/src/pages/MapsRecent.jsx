@@ -4,6 +4,7 @@ import logo from "../images/logo.png";
 import MapsSidebar, {
   LIGHT_MONUMENT,
   MONUMENT,
+  PAGE_TEXT,
   SECTION_GREY,
   sgfContentPanelStyle,
   sgfPageHeadingStyle,
@@ -66,7 +67,7 @@ export default function MapsRecent() {
               margin: 0,
               fontSize: "2.4rem",
               fontWeight: 700,
-              color: WHITE,
+              color: PAGE_TEXT,
               letterSpacing: "1px",
             }}
           >
@@ -121,7 +122,7 @@ export default function MapsRecent() {
                   border: `1px solid ${EXPLORER_BORDER}`,
                   cursor: "pointer",
                   background: recentSort === "chrono" ? MONUMENT : WHITE,
-                  color: recentSort === "chrono" ? WHITE : MONUMENT,
+                  color: recentSort === "chrono" ? PAGE_TEXT : MONUMENT,
                 }}
               >
                 Recent
@@ -137,7 +138,7 @@ export default function MapsRecent() {
                   border: `1px solid ${EXPLORER_BORDER}`,
                   cursor: "pointer",
                   background: recentSort === "alpha" ? MONUMENT : WHITE,
-                  color: recentSort === "alpha" ? WHITE : MONUMENT,
+                  color: recentSort === "alpha" ? PAGE_TEXT : MONUMENT,
                 }}
               >
                 A–Z

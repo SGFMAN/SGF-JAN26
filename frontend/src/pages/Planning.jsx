@@ -714,7 +714,7 @@ export default function Planning({ project, onUpdate }) {
                   borderRadius: "8px",
                   border: "none",
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   cursor: isSendingEmail ? "not-allowed" : "pointer",
                   opacity: isSendingEmail ? 0.7 : 1,
                 }}

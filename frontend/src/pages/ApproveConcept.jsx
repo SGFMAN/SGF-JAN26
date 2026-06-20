@@ -106,10 +106,10 @@ export default function ApproveConcept() {
             <h1 style={{ fontSize: "2rem", marginBottom: "20px", color: WHITE }}>
               Concept Approved
             </h1>
-            <p style={{ fontSize: "1.2rem", marginBottom: "40px", color: "#ffffff99" }}>
+            <p style={{ fontSize: "1.2rem", marginBottom: "40px", color: "var(--sgf-page-text)" }}>
               Thank you for confirming your concept approval for {projectName || "this project"}.
             </p>
-            <p style={{ fontSize: "1rem", color: "#ffffff99" }}>
+            <p style={{ fontSize: "1rem", color: "var(--sgf-page-text)" }}>
               Your approval has been recorded and the team has been notified.
             </p>
           </>
@@ -119,11 +119,11 @@ export default function ApproveConcept() {
               Confirm Concept Approval
             </h1>
             {projectName && (
-              <p style={{ fontSize: "1.2rem", marginBottom: "40px", color: "#ffffff99" }}>
+              <p style={{ fontSize: "1.2rem", marginBottom: "40px", color: "var(--sgf-page-text)" }}>
                 Project: {projectName}
               </p>
             )}
-            <p style={{ fontSize: "1rem", marginBottom: "40px", color: "#ffffff99" }}>
+            <p style={{ fontSize: "1rem", marginBottom: "40px", color: "var(--sgf-page-text)" }}>
               Please confirm that you approve the concept drawings for this project.
             </p>
 
@@ -147,7 +147,7 @@ export default function ApproveConcept() {
               disabled={isApproving}
               style={{
                 background: "#4D93D9",
-                color: WHITE,
+                color: PAGE_TEXT,
                 border: "none",
                 borderRadius: "8px",
                 padding: "16px 48px",

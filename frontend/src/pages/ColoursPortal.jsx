@@ -409,7 +409,7 @@ export default function ColoursPortal() {
         alignItems: "center", 
         justifyContent: "center",
         background: "#323233",
-        color: "#fff"
+        color: "var(--sgf-page-text)"
       }}>
         Loading...
       </div>
@@ -424,7 +424,7 @@ export default function ColoursPortal() {
         alignItems: "center", 
         justifyContent: "center",
         background: "#323233",
-        color: "#fff"
+        color: "var(--sgf-page-text)"
       }}>
         {error || "Project not found"}
       </div>

@@ -104,7 +104,7 @@ export default function ProjectRectangleCard({ project, fitColumn = false, onInt
             right: "8px",
             fontSize: "0.85rem",
             fontWeight: 700,
-            color: classificationInfo.color,
+            color: CARD_TEXT,
             zIndex: onHold || cancelled ? 11 : 5,
             textShadow: "0 1px 2px rgba(0,0,0,0.3)",
           }}

@@ -25,11 +25,10 @@ import {
 } from "../../utils/timeSheetProjects";
 import TimeStepper from "./TimeStepper";
 
-import { UI } from "../../utils/uiThemeTokens.js";
-const MONUMENT = UI.textPrimary;
-const WHITE = UI.cardBg;
+import { UI, PROJECT_CARD } from "../../utils/uiThemeTokens.js";
+
 const PAGE_TEXT = UI.pageText;
-const BLACK = "#000000";
+const PANEL_BG = UI.panelBg;
 const ROW_GAP_MIN = 8;
 const API_URL = "";
 
@@ -217,8 +216,8 @@ export default function TimeSheetFourColumns({
     padding: "5px 6px",
     borderRadius: "4px",
     border: "none",
-    color: MONUMENT,
-    background: WHITE,
+    color: PROJECT_CARD.text,
+    background: UI.cardBg,
     boxSizing: "border-box",
     cursor: hasUser ? "pointer" : "not-allowed",
     opacity: hasUser ? 1 : 0.65,
@@ -227,7 +226,7 @@ export default function TimeSheetFourColumns({
   const headerCell = {
     fontSize: "0.72rem",
     fontWeight: 600,
-    color: UI.textMuted,
+    color: PAGE_TEXT,
     textAlign: "center",
   };
 
@@ -242,7 +241,7 @@ export default function TimeSheetFourColumns({
           gridTemplateColumns: rowColumns,
           columnGap: "12px",
           alignItems: "center",
-          backgroundColor: MONUMENT,
+          backgroundColor: PROJECT_CARD.bg,
           padding: "5px 10px",
           borderRadius: "4px",
           flex: "0 0 auto",
@@ -261,14 +260,14 @@ export default function TimeSheetFourColumns({
             style={{
               fontWeight: 600,
               fontSize: "0.82rem",
-              color: WHITE,
+              color: PROJECT_CARD.text,
               lineHeight: 1.2,
             }}
           >
             {shortWeekday(day.weekday)}
           </span>
           {showDates && day.dateLabel && (
-            <span style={{ fontSize: "0.68rem", color: "#ffffff99", marginTop: "1px" }}>
+            <span style={{ fontSize: "0.68rem", color: PROJECT_CARD.text, marginTop: "1px" }}>
               {shortDate(day.dateLabel)}
             </span>
           )}
@@ -351,7 +350,7 @@ export default function TimeSheetFourColumns({
     return (
       <div
         style={{
-          background: WHITE,
+          background: PANEL_BG,
           borderRadius: "12px",
           padding: "14px 18px",
           boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
@@ -371,7 +370,7 @@ export default function TimeSheetFourColumns({
             margin: "0 0 8px",
             fontSize: "0.95rem",
             fontWeight: 600,
-            color: MONUMENT,
+            color: PAGE_TEXT,
           }}
         >
           {title}
@@ -407,7 +406,7 @@ export default function TimeSheetFourColumns({
             flexDirection: "column",
             flex: "1 1 0",
             minHeight: 0,
-            backgroundColor: BLACK,
+            backgroundColor: PANEL_BG,
             borderRadius: "6px",
             ...uniformGapStyle,
           }}
@@ -470,8 +469,8 @@ export default function TimeSheetFourColumns({
                   borderRadius: "8px",
                   border: "none",
                   fontSize: "0.95rem",
-                  color: MONUMENT,
-                  background: WHITE,
+                  color: UI.textPrimary,
+                  background: UI.cardBg,
                   boxSizing: "border-box",
                   cursor: "pointer",
                   display: "block",
@@ -500,8 +499,8 @@ export default function TimeSheetFourColumns({
               border: "none",
               fontSize: "0.9rem",
               fontWeight: 600,
-              color: WHITE,
-              background: hasUser ? MONUMENT : "#32323355",
+              color: UI.buttonPrimaryText,
+              background: hasUser ? UI.buttonPrimary : UI.textMuted,
               cursor: hasUser ? "pointer" : "not-allowed",
               whiteSpace: "nowrap",
             }}

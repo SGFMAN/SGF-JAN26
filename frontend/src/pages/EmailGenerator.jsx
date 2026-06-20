@@ -500,7 +500,7 @@ export default function EmailGenerator() {
               margin: 0,
               fontSize: "2.4rem",
               fontWeight: 700,
-              color: WHITE,
+              color: PAGE_TEXT,
               letterSpacing: "1px",
             }}
           >
@@ -684,7 +684,7 @@ export default function EmailGenerator() {
                   onClick={() => setShowAnswerModal(true)}
                   style={{
                     background: MONUMENT,
-                    color: WHITE,
+                    color: PAGE_TEXT,
                     border: "none",
                     borderRadius: "8px",
                     padding: "12px 24px",
@@ -707,7 +707,7 @@ export default function EmailGenerator() {
                   onClick={() => setShowReviewModal(true)}
                   style={{
                     background: MONUMENT,
-                    color: WHITE,
+                    color: PAGE_TEXT,
                     border: "none",
                     borderRadius: "8px",
                     padding: "12px 24px",

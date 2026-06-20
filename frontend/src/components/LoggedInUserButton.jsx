@@ -4,6 +4,7 @@ import { getLoggedInUserId, getLoggedInUserName, isAuthenticated } from "../util
 import { useUnreadMessageCount } from "../hooks/useUnreadMessageCount";
 import UserSettingsModal from "./UserSettingsModal";
 import MessagesModal from "./MessagesModal";
+import TimeSheetModal from "./TimeSheetModal";
 import { UI, MENU } from "../utils/uiThemeTokens";
 
 const API_URL = "";
@@ -39,6 +40,7 @@ export default function LoggedInUserButton() {
   const [slideIn, setSlideIn] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [messagesOpen, setMessagesOpen] = useState(false);
+  const [timeSheetOpen, setTimeSheetOpen] = useState(false);
   const [userName, setUserName] = useState(() => getLoggedInUserName());
 
   const show = isAuthenticated() && location.pathname !== "/";
@@ -137,7 +139,7 @@ export default function LoggedInUserButton() {
             borderRadius: "50%",
             border: "none",
             background: bgColor,
-            color: "#fff",
+            color: "var(--sgf-page-text)",
             fontSize: "1.1rem",
             fontWeight: 600,
             cursor: "pointer",
@@ -233,7 +235,7 @@ export default function LoggedInUserButton() {
                     height: "56px",
                     borderRadius: "50%",
                     background: bgColor,
-                    color: "#fff",
+                    color: "var(--sgf-page-text)",
                     fontSize: "1.5rem",
                     fontWeight: 600,
                     display: "flex",
@@ -309,6 +311,28 @@ export default function LoggedInUserButton() {
               >
                 Messages
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  closePanel();
+                  setTimeSheetOpen(true);
+                }}
+                style={{
+                  marginTop: "10px",
+                  background: MENU.purpleLight,
+                  color: MENU.activeText,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "10px 16px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  width: "100%",
+                  textAlign: "center",
+                }}
+              >
+                Time Sheet
+              </button>
             </div>
           </aside>
         </>
@@ -324,6 +348,11 @@ export default function LoggedInUserButton() {
         open={messagesOpen}
         onClose={() => setMessagesOpen(false)}
         onInboxChange={refreshUnreadCount}
+      />
+
+      <TimeSheetModal
+        open={timeSheetOpen}
+        onClose={() => setTimeSheetOpen(false)}
       />
     </>
   );

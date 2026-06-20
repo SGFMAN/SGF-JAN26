@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { isDesignPhaseStatus, isHotlistStatus, isCancelledStatus } from "../utils/projectStatus";
 import { Link } from "react-router-dom";
-import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
+import { getStateFilter } from "../utils/stateFilter";
 import { isUserAdmin } from "../utils/auth";
 import logo from "../images/logo.png";
 import { projectPath } from "../utils/projectUrl";
 
-import { UI } from "../utils/uiThemeTokens.js";
+import StateFilterButtons from "../components/StateFilterButtons";
+import { UI, INDICATOR } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
@@ -684,7 +685,7 @@ export default function StatusManager() {
               margin: 0,
               fontSize: "2.4rem",
               fontWeight: 700,
-              color: WHITE,
+              color: PAGE_TEXT,
               letterSpacing: "1px",
             }}
           >
@@ -701,97 +702,7 @@ export default function StatusManager() {
             alignItems: "center",
           }}
         >
-          {/* State Filter Buttons */}
-          <button
-            onClick={() => {
-              const newFilter = "VIC";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
-              color: stateFilter === "VIC" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "VIC") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            VIC Only
-          </button>
-          <button
-            onClick={() => {
-              const newFilter = "QLD";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "QLD" ? "#D54358" : WHITE,
-              color: stateFilter === "QLD" ? WHITE : MONUMENT,
-              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "QLD") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            QLD Only
-          </button>
-          <button
-            onClick={() => {
-              const newFilter = "All";
-              setStateFilter(newFilter);
-              saveStateFilter(newFilter);
-            }}
-            style={{
-              background: stateFilter === "All" ? MONUMENT : WHITE,
-              color: stateFilter === "All" ? WHITE : MONUMENT,
-              border: `2px solid ${UI.outline}`,
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (stateFilter !== "All") {
-                e.currentTarget.style.background = UI.inputBg;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (stateFilter !== "All") {
-                e.currentTarget.style.background = WHITE;
-              }
-            }}
-          >
-            All Projects
-          </button>
+          <StateFilterButtons stateFilter={stateFilter} setStateFilter={setStateFilter} />
         </div>
       </div>
 
@@ -991,7 +902,7 @@ export default function StatusManager() {
               Loading projects...
             </div>
           ) : error ? (
-            <div style={{ textAlign: "center", padding: "40px", color: "#cc3333" }}>
+            <div style={{ textAlign: "center", padding: "40px", color: INDICATOR.red }}>
               Error: {error}
             </div>
           ) : (
@@ -1024,7 +935,7 @@ export default function StatusManager() {
                           borderRadius: "8px",
                           border: "none",
                           background: showAllStatuses ? MONUMENT : SECTION_GREY,
-                          color: showAllStatuses ? WHITE : MONUMENT,
+                          color: showAllStatuses ? PAGE_TEXT : MONUMENT,
                           fontSize: "0.9rem",
                           fontWeight: 500,
                           cursor: "pointer",
@@ -1054,7 +965,7 @@ export default function StatusManager() {
                           borderRadius: "8px",
                           border: "none",
                           background: MONUMENT,
-                          color: WHITE,
+                          color: PAGE_TEXT,
                           fontSize: "0.9rem",
                           fontWeight: 500,
                           cursor: "pointer",
@@ -1074,7 +985,7 @@ export default function StatusManager() {
                         gap: "16px",
                         padding: "12px 16px",
                         background: MONUMENT,
-                        color: WHITE,
+                        color: PAGE_TEXT,
                         borderRadius: "8px",
                         fontWeight: 600,
                         fontSize: "0.9rem",
@@ -1119,9 +1030,9 @@ export default function StatusManager() {
                 const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "Unnamed Project";
                 
                 // Status color functions (same as Overview.jsx)
-                const COLOR_RED = "#cc3333";
-                const COLOR_ORANGE = "#ff8800";
-                const COLOR_GREEN = "#33cc33";
+                const COLOR_RED = INDICATOR.red;
+                const COLOR_ORANGE = INDICATOR.orange;
+                const COLOR_GREEN = INDICATOR.green;
                 
                 const getDepositStatusColor = () => {
                   if (!project.deposit || !project.project_cost) return COLOR_RED;
@@ -1654,7 +1565,7 @@ export default function StatusManager() {
                           borderRadius: "6px",
                           border: "1px solid #ddd",
                           background: WHITE,
-                          color: "#cc3333",
+                          color: INDICATOR.red,
                           fontSize: "0.85rem",
                           fontWeight: 500,
                           cursor: "pointer",

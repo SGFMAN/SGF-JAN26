@@ -23,7 +23,7 @@ export default function SalesAccessRoute({ children }) {
           alignItems: "center",
           justifyContent: "center",
           background: "#42464d",
-          color: "#fff",
+          color: "var(--sgf-page-text)",
           fontSize: "1rem",
         }}
       >

@@ -486,7 +486,7 @@ export default function ApplyFields() {
               margin: 0,
               fontSize: "2.4rem",
               fontWeight: 700,
-              color: WHITE,
+              color: PAGE_TEXT,
               letterSpacing: "1px",
             }}
           >
@@ -514,7 +514,7 @@ export default function ApplyFields() {
             }}
             style={{
               background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
-              color: stateFilter === "VIC" ? WHITE : MONUMENT,
+              color: stateFilter === "VIC" ? PAGE_TEXT : MONUMENT,
               border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
@@ -545,7 +545,7 @@ export default function ApplyFields() {
             }}
             style={{
               background: stateFilter === "QLD" ? "#D54358" : WHITE,
-              color: stateFilter === "QLD" ? WHITE : MONUMENT,
+              color: stateFilter === "QLD" ? PAGE_TEXT : MONUMENT,
               border: `2px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
@@ -576,7 +576,7 @@ export default function ApplyFields() {
             }}
             style={{
               background: stateFilter === "All" ? MONUMENT : WHITE,
-              color: stateFilter === "All" ? WHITE : MONUMENT,
+              color: stateFilter === "All" ? PAGE_TEXT : MONUMENT,
               border: `2px solid ${UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
@@ -610,7 +610,7 @@ export default function ApplyFields() {
                 }}
                 style={{
                   background: yearFilter === year ? MONUMENT : WHITE,
-                  color: yearFilter === year ? WHITE : MONUMENT,
+                  color: yearFilter === year ? PAGE_TEXT : MONUMENT,
                   border: `2px solid ${UI.outline}`,
                   borderRadius: "8px",
                   padding: "10px 20px",
@@ -642,7 +642,7 @@ export default function ApplyFields() {
               }}
               style={{
                 background: yearFilter === "All" ? MONUMENT : WHITE,
-                color: yearFilter === "All" ? WHITE : MONUMENT,
+                color: yearFilter === "All" ? PAGE_TEXT : MONUMENT,
                 border: `2px solid ${UI.outline}`,
                 borderRadius: "8px",
                 padding: "10px 20px",

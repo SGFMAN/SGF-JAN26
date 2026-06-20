@@ -771,7 +771,7 @@ export default function NewProject_3_ProjectCost({
               onClick={onNext}
               style={{
                 background: MONUMENT,
-                color: WHITE,
+                color: PAGE_TEXT,
                 border: "none",
                 borderRadius: "10px",
                 padding: "10px 20px",
@@ -872,7 +872,7 @@ export default function NewProject_3_ProjectCost({
                 onClick={handleDepositModalOk}
                 style={{
                   background: MONUMENT,
-                  color: WHITE,
+                  color: PAGE_TEXT,
                   border: "none",
                   borderRadius: "8px",
                   padding: "8px 16px",
