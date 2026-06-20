@@ -2,8 +2,8 @@ import { UI, STREAM, MENU } from "../utils/uiThemeTokens.js";
 import { setStateFilter as saveStateFilter } from "../utils/stateFilter";
 
 const WHITE = UI.cardBg;
-const PAGE_TEXT = UI.pageText;
 const MONUMENT = UI.textPrimary;
+const OUTLINE_BORDER = `2px solid ${UI.outline}`;
 
 const btnBase = {
   borderRadius: "8px",
@@ -11,36 +11,53 @@ const btnBase = {
   fontSize: "1rem",
   fontWeight: 500,
   cursor: "pointer",
-  transition: "background 0.2s, color 0.2s",
+  transition: "background 0.2s, border-color 0.2s, color 0.2s",
 };
 
-export default function StateFilterButtons({ stateFilter, setStateFilter }) {
+function stateFilterButtonStyle(selected, accent, accentLight) {
+  return {
+    background: selected ? accentLight : WHITE,
+    color: MONUMENT,
+    border: selected ? `2px solid ${accent}` : OUTLINE_BORDER,
+  };
+}
+
+export default function StateFilterButtons({ stateFilter, setStateFilter, buttonWidth, buttonStyle = {} }) {
   const select = (filter) => {
     setStateFilter(filter);
     saveStateFilter(filter);
   };
 
+  const sizeStyle = buttonWidth
+    ? { width: buttonWidth, minWidth: buttonWidth, maxWidth: buttonWidth, boxSizing: "border-box" }
+    : {};
+
+  const baseStyle = buttonWidth || Object.keys(buttonStyle).length > 0 ? { ...buttonStyle } : btnBase;
+
+  const hoverUnselected = (e, selected) => {
+    if (!selected) {
+      e.currentTarget.style.background = UI.inputBg;
+    }
+  };
+
+  const hoverLeaveUnselected = (e, selected) => {
+    if (!selected) {
+      e.currentTarget.style.background = WHITE;
+    }
+  };
+
   return (
-    <>
+    <div style={{ display: "contents" }}>
       <button
         type="button"
         onClick={() => select("VIC")}
         style={{
-          ...btnBase,
-          background: stateFilter === "VIC" ? STREAM.vicBlue : WHITE,
-          color: stateFilter === "VIC" ? PAGE_TEXT : MONUMENT,
-          border: `2px solid ${STREAM.vicBlue}`,
+          ...baseStyle,
+          ...sizeStyle,
+          ...stateFilterButtonStyle(stateFilter === "VIC", STREAM.vicBlue, STREAM.vicBlueLight),
         }}
-        onMouseEnter={(e) => {
-          if (stateFilter !== "VIC") {
-            e.currentTarget.style.background = UI.inputBg;
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (stateFilter !== "VIC") {
-            e.currentTarget.style.background = WHITE;
-          }
-        }}
+        onMouseEnter={(e) => hoverUnselected(e, stateFilter === "VIC")}
+        onMouseLeave={(e) => hoverLeaveUnselected(e, stateFilter === "VIC")}
       >
         VIC Only
       </button>
@@ -48,21 +65,12 @@ export default function StateFilterButtons({ stateFilter, setStateFilter }) {
         type="button"
         onClick={() => select("QLD")}
         style={{
-          ...btnBase,
-          background: stateFilter === "QLD" ? STREAM.qldRed : WHITE,
-          color: stateFilter === "QLD" ? PAGE_TEXT : MONUMENT,
-          border: `2px solid ${STREAM.qldRed}`,
+          ...baseStyle,
+          ...sizeStyle,
+          ...stateFilterButtonStyle(stateFilter === "QLD", STREAM.qldRed, STREAM.qldRedLight),
         }}
-        onMouseEnter={(e) => {
-          if (stateFilter !== "QLD") {
-            e.currentTarget.style.background = UI.inputBg;
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (stateFilter !== "QLD") {
-            e.currentTarget.style.background = WHITE;
-          }
-        }}
+        onMouseEnter={(e) => hoverUnselected(e, stateFilter === "QLD")}
+        onMouseLeave={(e) => hoverLeaveUnselected(e, stateFilter === "QLD")}
       >
         QLD Only
       </button>
@@ -70,24 +78,15 @@ export default function StateFilterButtons({ stateFilter, setStateFilter }) {
         type="button"
         onClick={() => select("All")}
         style={{
-          ...btnBase,
-          background: stateFilter === "All" ? MENU.purple : WHITE,
-          color: stateFilter === "All" ? PAGE_TEXT : MONUMENT,
-          border: `2px solid ${MENU.purple}`,
+          ...baseStyle,
+          ...sizeStyle,
+          ...stateFilterButtonStyle(stateFilter === "All", MENU.purple, MENU.purpleLight),
         }}
-        onMouseEnter={(e) => {
-          if (stateFilter !== "All") {
-            e.currentTarget.style.background = UI.inputBg;
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (stateFilter !== "All") {
-            e.currentTarget.style.background = WHITE;
-          }
-        }}
+        onMouseEnter={(e) => hoverUnselected(e, stateFilter === "All")}
+        onMouseLeave={(e) => hoverLeaveUnselected(e, stateFilter === "All")}
       >
         All Projects
       </button>
-    </>
+    </div>
   );
 }

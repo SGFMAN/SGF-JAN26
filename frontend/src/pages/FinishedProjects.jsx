@@ -1,23 +1,26 @@
 import React, { useState, useEffect, Fragment, useMemo } from "react";
 import { Link } from "react-router-dom";
-import NewProject from "./NewProject_1_Address";
-import NewProject2 from "./NewProject_2_ClientDetails";
-import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
-import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
 import HotlistSidebarSection from "../components/HotlistSidebarSection";
 import ManagersSalesMenuGroup from "../components/ManagersSalesMenuGroup";
+import ProjectListToolbar from "../components/ProjectListToolbar";
+import {
+  ProjectListNewProjectButton,
+  useProjectListNewProject,
+} from "../components/ProjectListNewProject";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter } from "../utils/stateFilter";
-import { CLASSIFICATION_OPTIONS as CLASSIFICATION_SORT_ORDER } from "../utils/classifications";
+import {
+  applyProjectListFilters,
+  buildProjectListHeadingCount,
+  getAvailableFieldValues,
+} from "../utils/projectListFilters";
 import ProjectRectangleCard from "../components/ProjectRectangleCard";
 import ProjectListGroupHeader from "../components/ProjectListGroupHeader";
 import { getProjectListGroupKey } from "../utils/projectListGrouping";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
-import StateFilterButtons from "../components/StateFilterButtons";
-import { UI, MENU, STREAM } from "../utils/uiThemeTokens.js";
-import { streamColorHover } from "../utils/streamColors.js";
+import { UI, MENU } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
 const SECTION_GREY = UI.panelBg;
@@ -27,48 +30,26 @@ const PAGE_TEXT = UI.pageText;
 
 const API_URL = "";
 
-const STREAM_SORT_ORDER = [
-  "SGF - VIC",
-  "SGF - QLD",
-  "Dual Dwelling",
-  "ATA",
-  "Pumped on Property",
-  "Pumped On Property",
-  "Henderson",
-  "Creat Cash Flow",
-  "Create Cash Flow",
-  "Fresh Start Advisory",
-];
-
 export default function FinishedProjects() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedField, setSelectedField] = useState("");
+  const [selectedValue, setSelectedValue] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [sortMode, setSortMode] = useState("suburb");
-  const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
-  const [newProjectStep, setNewProjectStep] = useState(1);
-  const [newProjectFormData, setNewProjectFormData] = useState({
-    suburb: "",
-    street: "",
-    state: "",
-    stream: "",
-    deposit: "",
-    customDeposit: "",
-    projectCost: "",
-    salesperson: "",
-    clientName: "",
-    email: "",
-    phone: "",
-  });
 
   useEffect(() => {
     // Check admin status first so buttons show up quickly
     checkAdminStatus();
     fetchProjects();
   }, []);
+
+  useEffect(() => {
+    setSelectedValue("");
+  }, [selectedField]);
 
   async function checkAdminStatus() {
     const admin = await isUserAdmin();
@@ -94,88 +75,61 @@ export default function FinishedProjects() {
     }
   }
 
-  const finishedFilteredProjects = useMemo(() => {
-    let list = projects.filter(
-      (project) =>
-        (project.status === "Complete" || project.status === "Cancelled") && project.status !== "Hotlist"
-    );
-    if (stateFilter !== "All") {
-      list = list.filter((project) => {
-        const projectState = (project.state || "").toUpperCase();
-        return projectState === stateFilter.toUpperCase();
-      });
-    }
-    let filtered = searchQuery.trim()
-      ? list.filter((project) => {
-          const query = searchQuery.toLowerCase();
-          const suburb = (project.suburb || "").toLowerCase();
-          const street = (project.street || "").toLowerCase();
-          const name = (project.name || "").toLowerCase();
-          return suburb.includes(query) || street.includes(query) || name.includes(query);
-        })
-      : list;
-    filtered = filtered.slice();
-    filtered.sort((a, b) => {
-      const suburbA = (a.suburb || "").toLowerCase();
-      const suburbB = (b.suburb || "").toLowerCase();
-      const streetA = (a.street || "").toLowerCase();
-      const streetB = (b.street || "").toLowerCase();
+  const scopeFilter = (project) =>
+    (project.status === "Complete" || project.status === "Cancelled") &&
+    project.status !== "Hotlist";
 
-      if (sortMode === "class") {
-        const classA = a.classification || "";
-        const classB = b.classification || "";
-        const idxA = CLASSIFICATION_SORT_ORDER.indexOf(classA);
-        const idxB = CLASSIFICATION_SORT_ORDER.indexOf(classB);
-        const safeIdxA = idxA === -1 ? Number.MAX_SAFE_INTEGER : idxA;
-        const safeIdxB = idxB === -1 ? Number.MAX_SAFE_INTEGER : idxB;
-        if (safeIdxA !== safeIdxB) return safeIdxA - safeIdxB;
-        if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
-        return streetA.localeCompare(streetB);
-      }
-
-      if (sortMode === "stream") {
-        const streamA = a.stream || "";
-        const streamB = b.stream || "";
-        const idxA = STREAM_SORT_ORDER.indexOf(streamA);
-        const idxB = STREAM_SORT_ORDER.indexOf(streamB);
-        const safeIdxA = idxA === -1 ? Number.MAX_SAFE_INTEGER : idxA;
-        const safeIdxB = idxB === -1 ? Number.MAX_SAFE_INTEGER : idxB;
-        if (safeIdxA !== safeIdxB) return safeIdxA - safeIdxB;
-        if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
-        return streetA.localeCompare(streetB);
-      }
-
-      if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
-      return streetA.localeCompare(streetB);
-    });
-    return filtered;
-  }, [projects, stateFilter, searchQuery, sortMode]);
-
-  const hasFinishedProjects = useMemo(
-    () =>
-      projects.some(
-        (p) =>
-          (p.status === "Complete" || p.status === "Cancelled") && p.status !== "Hotlist"
-      ),
+  const scopeProjects = useMemo(
+    () => projects.filter(scopeFilter),
     [projects]
   );
 
+  const availableValues = useMemo(
+    () => getAvailableFieldValues(projects, selectedField, scopeFilter),
+    [projects, selectedField]
+  );
+
+  const finishedFilteredProjects = useMemo(
+    () =>
+      applyProjectListFilters(projects, {
+        scopeFilter,
+        stateFilter,
+        selectedField,
+        selectedValue,
+        searchQuery,
+        sortMode,
+      }),
+    [projects, stateFilter, selectedField, selectedValue, searchQuery, sortMode]
+  );
+
+  const headingCount = buildProjectListHeadingCount({
+    totalCount: scopeProjects.length,
+    filteredCount: finishedFilteredProjects.length,
+    searchQuery,
+    selectedField,
+    selectedValue,
+    stateFilter,
+  });
+
+  const hasFinishedProjects = scopeProjects.length > 0;
+
+  const { openNewProject, newProjectModals } = useProjectListNewProject(fetchProjects);
+
   return (
     <div
-      className="page-container"
+      className="page-container project-list-page"
       style={{
         position: "fixed",
         inset: 0,
         background: LIGHT_MONUMENT,
         minHeight: "100vh",
         width: "100vw",
-        overflowY: "auto",
       }}
     >
       {/* Section 1: Heading */}
       <div
         style={{
-          margin: "32px auto 24px auto",
+          margin: "32px auto 14px auto",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
           display: "flex",
@@ -206,41 +160,10 @@ export default function FinishedProjects() {
               letterSpacing: "1px",
             }}
           >
-            Finished Projects
+            Finished Projects{headingCount ? ` ${headingCount}` : ""}
           </h1>
         </div>
-        <div
-          style={{
-            position: "absolute",
-            top: "20px",
-            right: "20px",
-            display: "flex",
-            gap: "10px",
-            alignItems: "center",
-          }}
-        >
-          <StateFilterButtons stateFilter={stateFilter} setStateFilter={setStateFilter} />
-          {isAdmin && (
-            <button
-              onClick={() => setIsNewProjectOpen(true)}
-              style={{
-                background: STREAM.streamGreen,
-                color: PAGE_TEXT,
-                border: "none",
-                borderRadius: "8px",
-                padding: "10px 20px",
-                fontSize: "1rem",
-                fontWeight: 500,
-                cursor: "pointer",
-                transition: "background 0.2s",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = streamColorHover(STREAM.streamGreen))}
-              onMouseLeave={(e) => (e.currentTarget.style.background = STREAM.streamGreen)}
-          >
-            + New Project
-          </button>
-          )}
-        </div>
+        <ProjectListNewProjectButton isAdmin={isAdmin} onClick={openNewProject} />
       </div>
 
       {/* Sections 2 & 3 */}
@@ -250,7 +173,8 @@ export default function FinishedProjects() {
           display: "flex",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          margin: "50px auto 0 auto",
+          marginLeft: "auto",
+          marginRight: "auto",
           gap: "32px",
         }}
       >
@@ -262,7 +186,6 @@ export default function FinishedProjects() {
             borderRadius: "16px",
             width: "200px",
             minWidth: "200px",
-            height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             padding: "32px 12px",
             boxSizing: "border-box",
@@ -531,275 +454,85 @@ export default function FinishedProjects() {
             background: SECTION_GREY,
             borderRadius: "18px",
             flex: 1,
-            minHeight: "758px",
-            height: "758px",
+            minWidth: 0,
+            minHeight: 0,
             boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
             padding: "24px 32px",
             boxSizing: "border-box",
-            overflow: "auto",
             color: MONUMENT,
             display: "flex",
             flexDirection: "column",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
-            <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: 0 }}>
-              Finished Projects {(() => {
-                const currentProjects = projects.filter(
-                  (p) =>
-                    (p.status === "Complete" || p.status === "Cancelled") && p.status !== "Hotlist"
-                );
-                const totalCount = currentProjects.length;
-                if (searchQuery.trim()) {
-                  return finishedFilteredProjects.length > 0
-                    ? `(${finishedFilteredProjects.length} found)`
-                    : "";
-                }
-                if (stateFilter !== "All") {
-                  return finishedFilteredProjects.length > 0
-                    ? `(${finishedFilteredProjects.length} total)`
-                    : "";
-                }
-                return totalCount > 0 ? `(${totalCount} total)` : "";
-              })()}
-            </h2>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={() => setSortMode("suburb")}
-                style={{
-                  background: sortMode === "suburb" ? MONUMENT : WHITE,
-                  color: sortMode === "suburb" ? PAGE_TEXT : MONUMENT,
-                  border: `2px solid ${UI.outline}`,
-                  borderRadius: "8px",
-                  padding: "10px 14px",
-                  fontSize: "0.9rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "background 0.2s, color 0.2s",
-                }}
-              >
-                Sort by Suburb
-              </button>
-              <button
-                type="button"
-                onClick={() => setSortMode("class")}
-                style={{
-                  background: sortMode === "class" ? MONUMENT : WHITE,
-                  color: sortMode === "class" ? PAGE_TEXT : MONUMENT,
-                  border: `2px solid ${UI.outline}`,
-                  borderRadius: "8px",
-                  padding: "10px 14px",
-                  fontSize: "0.9rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "background 0.2s, color 0.2s",
-                }}
-              >
-                Sort By Class
-              </button>
-              <button
-                type="button"
-                onClick={() => setSortMode("stream")}
-                style={{
-                  background: sortMode === "stream" ? MONUMENT : WHITE,
-                  color: sortMode === "stream" ? PAGE_TEXT : MONUMENT,
-                  border: `2px solid ${UI.outline}`,
-                  borderRadius: "8px",
-                  padding: "10px 14px",
-                  fontSize: "0.9rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "background 0.2s, color 0.2s",
-                }}
-              >
-                Sort By Stream
-              </button>
-            </div>
-          </div>
+          <ProjectListToolbar
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            selectedField={selectedField}
+            setSelectedField={setSelectedField}
+            selectedValue={selectedValue}
+            setSelectedValue={setSelectedValue}
+            stateFilter={stateFilter}
+            setStateFilter={setStateFilter}
+            sortMode={sortMode}
+            setSortMode={setSortMode}
+            availableValues={availableValues}
+            onClearFilters={() => {
+              setSelectedField("");
+              setSelectedValue("");
+              setSearchQuery("");
+            }}
+          />
 
-          {/* Search Bar */}
-          <div style={{ marginBottom: "20px", marginTop: 0 }}>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.9rem",
-                color: UI.textMuted,
-                marginBottom: "6px",
-                marginTop: 0,
-                fontWeight: 500,
-              }}
-            >
-              Search
-            </label>
-            <input
-              type="text"
-              placeholder="Search projects..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{
-                width: "100%",
-                maxWidth: "420px",
-                padding: "12px 16px",
-                borderRadius: "8px",
-                border: `2px solid ${UI.outline}`,
-                fontSize: "1rem",
-                color: MONUMENT,
-                background: WHITE,
-                boxSizing: "border-box",
-                outline: "none",
-              }}
-            />
-          </div>
-
+          <div className="project-list-scroll">
           {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && (
             <p style={{ color: "#cc3333" }}>
               Error: {error}
             </p>
           )}
-          {!loading && !error && (() => {
-            const finishedProjects = projects.filter((project) => (project.status === "Complete" || project.status === "Cancelled") && project.status !== "Hotlist");
-            if (finishedProjects.length === 0) {
-              return <p style={{ color: UI.textMuted }}>No finished projects found.</p>;
-            }
-            return null;
-          })()}
-          {!loading && !error && hasFinishedProjects && (() => {
-            const filteredProjects = finishedFilteredProjects;
+          {!loading && !error && finishedFilteredProjects.length === 0 && (
+            <p style={{ color: UI.textMuted }}>
+              {selectedField && selectedValue
+                ? "No projects match the selected filter."
+                : searchQuery.trim()
+                  ? "No projects match your search."
+                  : hasFinishedProjects
+                    ? "No projects match your filters."
+                    : "No finished projects found."}
+            </p>
+          )}
+          {!loading && !error && finishedFilteredProjects.length > 0 && (
+            <div
+              className="projects-grid"
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "20px",
+                alignItems: "flex-start",
+              }}
+            >
+              {finishedFilteredProjects.map((project, index) => {
+                const prevProject = index > 0 ? finishedFilteredProjects[index - 1] : null;
+                const groupKey = getProjectListGroupKey(project, sortMode);
+                const prevGroupKey = getProjectListGroupKey(prevProject, sortMode);
+                const showGroupHeader = groupKey && groupKey !== prevGroupKey;
 
-            if (filteredProjects.length === 0) {
-              return <p style={{ color: UI.textMuted }}>No projects match your search.</p>;
-            }
-
-            return (
-              <div
-                className="projects-grid"
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "20px",
-                  alignItems: "flex-start",
-                }}
-              >
-                {filteredProjects.map((project, index) => {
-                  const prevProject = index > 0 ? filteredProjects[index - 1] : null;
-                  const groupKey = getProjectListGroupKey(project, sortMode);
-                  const prevGroupKey = getProjectListGroupKey(prevProject, sortMode);
-                  const showGroupHeader = groupKey && groupKey !== prevGroupKey;
-
-                  return (
-                    <Fragment key={project.id}>
-                      {showGroupHeader && (
-                        <ProjectListGroupHeader label={groupKey} isFirst={index === 0} />
-                      )}
-                      <ProjectRectangleCard project={project} />
-                    </Fragment>
-                  );
-                })}
-              </div>
-            );
-          })()}
+                return (
+                  <Fragment key={project.id}>
+                    {showGroupHeader && (
+                      <ProjectListGroupHeader label={groupKey} isFirst={index === 0} />
+                    )}
+                    <ProjectRectangleCard project={project} />
+                  </Fragment>
+                );
+              })}
+            </div>
+          )}
+          </div>
         </div>
       </div>
 
-      {/* New Project Modals */}
-      <NewProject
-        isOpen={isNewProjectOpen && newProjectStep === 1}
-        onClose={() => {
-          setIsNewProjectOpen(false);
-          setNewProjectStep(1);
-          setNewProjectFormData({
-            suburb: "",
-            street: "",
-            state: "",
-            stream: "",
-            deposit: "",
-            customDeposit: "",
-            projectCost: "",
-            salesperson: "",
-            clientName: "",
-            email: "",
-            phone: "",
-          });
-        }}
-        formData={newProjectFormData}
-        onFormDataChange={setNewProjectFormData}
-        onNext={() => setNewProjectStep(2)}
-      />
-      <NewProject2
-        isOpen={isNewProjectOpen && newProjectStep === 2}
-        onClose={() => {
-          setIsNewProjectOpen(false);
-          setNewProjectStep(1);
-          setNewProjectFormData({
-            suburb: "",
-            street: "",
-            state: "",
-            stream: "",
-            deposit: "",
-            customDeposit: "",
-            projectCost: "",
-            salesperson: "",
-            clientName: "",
-            email: "",
-            phone: "",
-          });
-        }}
-        formData={newProjectFormData}
-        onFormDataChange={setNewProjectFormData}
-        onBack={() => setNewProjectStep(1)}
-        onNext={() => setNewProjectStep(3)}
-      />
-      <NewProject_5_PDFUpload
-        isOpen={isNewProjectOpen && newProjectStep === 3}
-        onClose={() => {
-          setIsNewProjectOpen(false);
-          setNewProjectStep(1);
-          setNewProjectFormData({
-            suburb: "",
-            street: "",
-            state: "",
-            stream: "",
-            deposit: "",
-            customDeposit: "",
-            projectCost: "",
-            salesperson: "",
-            clientName: "",
-            email: "",
-            phone: "",
-          });
-        }}
-        formData={newProjectFormData}
-        onFormDataChange={setNewProjectFormData}
-        onBack={() => setNewProjectStep(2)}
-        onNext={() => setNewProjectStep(4)}
-      />
-      <NewProject_3_ProjectCost
-        isOpen={isNewProjectOpen && newProjectStep === 4}
-        onClose={() => {
-          setIsNewProjectOpen(false);
-          setNewProjectStep(1);
-          setNewProjectFormData({
-            suburb: "",
-            street: "",
-            state: "",
-            stream: "",
-            deposit: "",
-            customDeposit: "",
-            projectCost: "",
-            salesperson: "",
-            clientName: "",
-            email: "",
-            phone: "",
-          });
-          // Refresh the projects list after creating a new project
-          fetchProjects();
-        }}
-        formData={newProjectFormData}
-        onFormDataChange={setNewProjectFormData}
-        onBack={() => setNewProjectStep(3)}
-      />
+      {newProjectModals}
     </div>
   );
 }

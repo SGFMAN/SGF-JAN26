@@ -1,9 +1,19 @@
-import React, { useState, useEffect, Fragment } from "react";
+import React, { useState, useEffect, Fragment, useMemo } from "react";
 import { Link } from "react-router-dom";
 import HotlistSidebarSection from "../components/HotlistSidebarSection";
 import ManagersSalesMenuGroup from "../components/ManagersSalesMenuGroup";
+import ProjectListToolbar from "../components/ProjectListToolbar";
+import {
+  ProjectListNewProjectButton,
+  useProjectListNewProject,
+} from "../components/ProjectListNewProject";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter } from "../utils/stateFilter";
+import {
+  applyProjectListFilters,
+  buildProjectListHeadingCount,
+  getAvailableFieldValues,
+} from "../utils/projectListFilters";
 import ProjectRectangleCard from "../components/ProjectRectangleCard";
 import ProjectListGroupHeader from "../components/ProjectListGroupHeader";
 import { getProjectListGroupKey } from "../utils/projectListGrouping";
@@ -11,7 +21,6 @@ import { isOnHoldFlag, isHotlistStatus } from "../utils/projectStatus";
 import logo from "../images/logo.png";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
-import StateFilterButtons from "../components/StateFilterButtons";
 import { UI, MENU } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
@@ -27,13 +36,20 @@ export default function OnHold() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedField, setSelectedField] = useState("");
+  const [selectedValue, setSelectedValue] = useState("");
   const [stateFilter, setStateFilter] = useState(getStateFilter());
+  const [sortMode, setSortMode] = useState("suburb");
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     checkAdminStatus();
     fetchProjects();
   }, []);
+
+  useEffect(() => {
+    setSelectedValue("");
+  }, [selectedField]);
 
   async function checkAdminStatus() {
     const admin = await isUserAdmin();
@@ -59,59 +75,52 @@ export default function OnHold() {
     }
   }
 
-  // Filter projects based on search query and state filter
-  function getFilteredProjects() {
-    // On Hold page: projects with the on_hold flag (not a status). Exclude Hotlist workflow only.
-    let filtered = projects.filter(
-      (project) => isOnHoldFlag(project) && !isHotlistStatus(project.status)
-    );
+  const scopeFilter = (project) =>
+    isOnHoldFlag(project) && !isHotlistStatus(project.status);
 
-    // Filter by state if specified
-    if (stateFilter !== "All") {
-      filtered = filtered.filter(project => {
-        const projectState = (project.state || "").toUpperCase();
-        return projectState === stateFilter.toUpperCase();
-      });
-    }
+  const scopeProjects = useMemo(
+    () => projects.filter(scopeFilter),
+    [projects]
+  );
 
-    // Filter by search query if specified
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(project => {
-        const suburb = (project.suburb || "").toLowerCase();
-        const street = (project.street || "").toLowerCase();
-        const name = (project.name || "").toLowerCase();
-        return suburb.includes(query) || street.includes(query) || name.includes(query);
-      });
-    }
+  const availableValues = useMemo(
+    () => getAvailableFieldValues(projects, selectedField, scopeFilter),
+    [projects, selectedField]
+  );
 
-    // Sort alphabetically by suburb, then by street
-    filtered.sort((a, b) => {
-      const suburbA = (a.suburb || "").toLowerCase();
-      const suburbB = (b.suburb || "").toLowerCase();
-      if (suburbA !== suburbB) {
-        return suburbA.localeCompare(suburbB);
-      }
-      const streetA = (a.street || "").toLowerCase();
-      const streetB = (b.street || "").toLowerCase();
-      return streetA.localeCompare(streetB);
-    });
+  const filteredProjects = useMemo(
+    () =>
+      applyProjectListFilters(projects, {
+        scopeFilter,
+        stateFilter,
+        selectedField,
+        selectedValue,
+        searchQuery,
+        sortMode,
+      }),
+    [projects, stateFilter, selectedField, selectedValue, searchQuery, sortMode]
+  );
 
-    return filtered;
-  }
+  const headingCount = buildProjectListHeadingCount({
+    totalCount: scopeProjects.length,
+    filteredCount: filteredProjects.length,
+    searchQuery,
+    selectedField,
+    selectedValue,
+    stateFilter,
+  });
 
-  const filteredProjects = getFilteredProjects();
+  const { openNewProject, newProjectModals } = useProjectListNewProject(fetchProjects);
 
   return (
     <div
-      className="page-container"
+      className="page-container project-list-page"
       style={{
         position: "fixed",
         inset: 0,
         background: LIGHT_MONUMENT,
         minHeight: "100vh",
         width: "100vw",
-        overflowY: "auto",
       }}
     >
       {/* Section 1: Heading */}
@@ -148,21 +157,10 @@ export default function OnHold() {
               letterSpacing: "1px",
             }}
           >
-            On Hold
+            On Hold{headingCount ? ` ${headingCount}` : ""}
           </h1>
         </div>
-        <div
-          style={{
-            position: "absolute",
-            top: "20px",
-            right: "20px",
-            display: "flex",
-            gap: "10px",
-            alignItems: "center",
-          }}
-        >
-          <StateFilterButtons stateFilter={stateFilter} setStateFilter={setStateFilter} />
-        </div>
+        <ProjectListNewProjectButton isAdmin={isAdmin} onClick={openNewProject} />
       </div>
 
       {/* Sections 2 & 3 */}
@@ -172,7 +170,8 @@ export default function OnHold() {
           display: "flex",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          margin: "50px auto 0 auto",
+          marginLeft: "auto",
+          marginRight: "auto",
           gap: "32px",
         }}
       >
@@ -184,7 +183,6 @@ export default function OnHold() {
             borderRadius: "16px",
             width: "200px",
             minWidth: "200px",
-            height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             padding: "32px 12px",
             boxSizing: "border-box",
@@ -455,93 +453,36 @@ export default function OnHold() {
             background: SECTION_GREY,
             borderRadius: "18px",
             flex: 1,
-            minHeight: "758px",
-            height: "758px",
+            minWidth: 0,
+            minHeight: 0,
             boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
             padding: "24px 32px",
             boxSizing: "border-box",
-            overflow: "auto",
             color: MONUMENT,
             display: "flex",
             flexDirection: "column",
           }}
         >
-          <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "16px" }}>
-            On Hold {(() => {
-              const totalCount = projects.filter(
-                (project) => isOnHoldFlag(project) && !isHotlistStatus(project.status)
-              ).length;
-              if (searchQuery.trim()) {
-                return `(${filteredProjects.length} found)`;
-              } else if (stateFilter !== "All") {
-                return `(${filteredProjects.length} total)`;
-              }
-              return totalCount > 0 ? `(${totalCount} total)` : "";
-            })()}
-          </h2>
-          
-          {/* Search Bar - All on one line */}
-          <div style={{ display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "nowrap", alignItems: "flex-start", marginTop: 0, position: "relative" }}>
-            {/* Search Bar */}
-            <div style={{ flex: "0 0 auto" }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: UI.textMuted,
-                  marginBottom: "6px",
-                  marginTop: 0,
-                  fontWeight: 500,
-                }}
-              >
-                Search
-              </label>
-              <input
-                type="text"
-                placeholder="Search projects..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={{
-                  width: "420px",
-                  padding: "12px 16px",
-                  borderRadius: "8px",
-                  border: `2px solid ${UI.outline}`,
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                  outline: "none",
-                }}
-              />
-            </div>
+          <ProjectListToolbar
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            selectedField={selectedField}
+            setSelectedField={setSelectedField}
+            selectedValue={selectedValue}
+            setSelectedValue={setSelectedValue}
+            stateFilter={stateFilter}
+            setStateFilter={setStateFilter}
+            sortMode={sortMode}
+            setSortMode={setSortMode}
+            availableValues={availableValues}
+            onClearFilters={() => {
+              setSelectedField("");
+              setSelectedValue("");
+              setSearchQuery("");
+            }}
+          />
 
-            {/* Clear Filters Button */}
-            {searchQuery.trim() && (
-              <div style={{ flex: "0 0 auto", marginLeft: "10px", marginTop: "28px" }}>
-                <button
-                  onClick={() => {
-                    setSearchQuery("");
-                  }}
-                  style={{
-                    padding: "10px 20px",
-                    fontSize: "1rem",
-                    fontWeight: 500,
-                    color: MONUMENT,
-                    background: WHITE,
-                    border: `2px solid ${UI.outline}`,
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    height: "42px",
-                    width: "200px",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  Clear Filters
-                </button>
-              </div>
-            )}
-          </div>
-
+          <div className="project-list-scroll">
           {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && (
             <p style={{ color: "#cc3333" }}>
@@ -550,9 +491,11 @@ export default function OnHold() {
           )}
           {!loading && !error && filteredProjects.length === 0 && (
             <p style={{ color: UI.textMuted }}>
-              {searchQuery.trim()
-                ? "No projects match your search."
-                : "No on hold projects found."}
+              {selectedField && selectedValue
+                ? "No projects match the selected filter."
+                : searchQuery.trim()
+                  ? "No projects match your search."
+                  : "No on hold projects found."}
             </p>
           )}
           {!loading && !error && filteredProjects.length > 0 && (
@@ -567,8 +510,8 @@ export default function OnHold() {
             >
               {filteredProjects.map((project, index) => {
                 const prevProject = index > 0 ? filteredProjects[index - 1] : null;
-                const groupKey = getProjectListGroupKey(project, "suburb");
-                const prevGroupKey = getProjectListGroupKey(prevProject, "suburb");
+                const groupKey = getProjectListGroupKey(project, sortMode);
+                const prevGroupKey = getProjectListGroupKey(prevProject, sortMode);
                 const showGroupHeader = groupKey && groupKey !== prevGroupKey;
 
                 return (
@@ -582,8 +525,10 @@ export default function OnHold() {
               })}
             </div>
           )}
+          </div>
         </div>
       </div>
+      {newProjectModals}
     </div>
   );
 }

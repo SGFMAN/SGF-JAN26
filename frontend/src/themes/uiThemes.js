@@ -5,7 +5,7 @@ export const UI_THEME_COLOR_KEYS = [
   { key: "pageText", label: "Text - Light" },
   { key: "textPrimary", label: "Text - Dark" },
   { key: "panelBackground", label: "Panel" },
-  { key: "cardBackground", label: "Card" },
+  { key: "cardBackground", label: "Main 3" },
   { key: "inputBackground", label: "Input" },
   { key: "border", label: "Border" },
   { key: "outline", label: "Outline" },

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
+import { useSalesAccess } from "../hooks/useSalesAccess";
 import {
   getProjectClientEmailsForDrawings,
   getStreamExtraDrawingEmails,
@@ -38,7 +39,7 @@ import {
   parseDrawingsHistory,
 } from "../utils/drawingsStatusRules";
 
-import { UI, STREAM } from "../utils/uiThemeTokens.js";
+import { UI, STREAM, MENU, INDICATOR } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
@@ -60,6 +61,8 @@ export default function Drawings({
   showClearDrawingData = false,
 }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
+  const { hasSales, ready: salesAccessReady } = useSalesAccess();
+  const canApproveDrawings = salesAccessReady && hasSales;
   const [drawingsStatus, setDrawingsStatus] = useState(project?.drawings_status || "Not Assigned");
   const [draftsperson, setDraftsperson] = useState(normalizeDraftspersonField(project?.draftsperson));
   const [drawingsHolder, setDrawingsHolder] = useState(project?.drawings_holder || "design team");
@@ -691,6 +694,7 @@ export default function Drawings({
   }
 
   async function handleMarkConceptConfirmed() {
+    if (!canApproveDrawings) return;
     if (!project?.id) return;
     let drawingsHistory = [];
     try {
@@ -709,6 +713,7 @@ export default function Drawings({
   }
 
   async function handleMarkWorkingDrawingsConfirmed() {
+    if (!canApproveDrawings) return;
     if (!project?.id) return;
     let drawingsHistory = [];
     try {
@@ -2868,32 +2873,21 @@ export default function Drawings({
     }
   }
 
-  // Get holder display text and color
+  // Holder label for "who has the drawings" (always Indicator Orange in the UI)
   const getHolderDisplay = () => {
     const holder = drawingsHolder || "design team";
     const displayText = holder.charAt(0).toUpperCase() + holder.slice(1);
-    let color = "#4D93D9"; // Default blue
-    if (holder === "sales team") {
-      color = "#FFA500"; // Orange
-    } else if (holder === "client") {
-      color = "#28a745"; // Green
-    }
-    return { text: displayText, color };
+    return { text: displayText };
   };
 
   const holderDisplay = getHolderDisplay();
 
   return (
     <div>
-      <div style={{ marginBottom: "8px", display: "flex", gap: "24px", alignItems: "flex-start" }}>
-        <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: 0, color: MONUMENT, flex: "2.5", minWidth: "200px" }}>
+      <div style={{ marginBottom: "8px" }}>
+        <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: 0, color: MONUMENT }}>
           Drawings
         </h2>
-        <div style={{ flex: "0.5", minWidth: "200px" }}>
-          <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", marginTop: "20px" }}>
-            Status
-          </div>
-        </div>
       </div>
       {project && (
         <div style={{ marginTop: "18px", display: "flex", gap: "24px", flexWrap: "wrap", alignItems: "stretch" }}>
@@ -3194,9 +3188,9 @@ export default function Drawings({
                             type="button"
                             onClick={handleSendDrawingsMailto}
                             style={{
-                              background: "#20c997",
-                              color: WHITE,
-                              border: "1px solid #20c997",
+                              background: MENU.purple,
+                              color: MENU.activeText,
+                              border: `1px solid ${MENU.purple}`,
                               borderRadius: "6px",
                               padding: "6px 8px",
                               fontSize: "0.75rem",
@@ -3207,10 +3201,10 @@ export default function Drawings({
                               width: "118px",
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#1aa179";
+                              e.currentTarget.style.background = streamColorHover(MENU.purple);
                             }}
                             onMouseLeave={(e) => {
-                              e.currentTarget.style.background = "#20c997";
+                              e.currentTarget.style.background = MENU.purple;
                             }}
                           >
                             Send Drawings to..
@@ -3243,10 +3237,10 @@ export default function Drawings({
                         </button>
                         <div style={{ 
                           fontSize: "0.8rem", 
-                          color: WHITE,
+                          color: PAGE_TEXT,
                           textAlign: "center",
-                          background: "#FFA500",
-                          border: `1px solid #FFA500`,
+                          background: INDICATOR.orange,
+                          border: `1px solid ${INDICATOR.orange}`,
                           borderRadius: "6px",
                           padding: "6px 8px",
                           width: "100px",
@@ -3329,6 +3323,7 @@ export default function Drawings({
                   {drawingsStatus || "—"}
                 </div>
               </div>
+              {canApproveDrawings && (
               <div style={{ display: "flex", flexDirection: "column", gap: "12px", alignItems: "flex-start", width: "100%", marginBottom: "24px" }}>
                 {(() => {
                   // Get drawings history to check if there are any drawings
@@ -3398,6 +3393,7 @@ export default function Drawings({
                   );
                 })()}
               </div>
+              )}
             </div>
 
             {/* Drawings PDF Upload Drop Zone */}

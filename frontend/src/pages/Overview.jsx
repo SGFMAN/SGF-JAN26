@@ -14,7 +14,7 @@ import craig1 from "../images/craig1.jpg";
 import craig3 from "../images/craig3.jpg";
 import "./Overview.css";
 
-import { UI } from "../utils/uiThemeTokens.js";
+import { UI, STREAM, INDICATOR } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
@@ -457,10 +457,10 @@ export default function Overview({ project }) {
     return isDepositFullyPaid() ? "Full Deposit" : "Partial Deposit";
   }
 
-  // Color constants
-  const COLOR_RED = "#cc3333";    // Default/incomplete
-  const COLOR_ORANGE = "#ff8800"; // In progress
-  const COLOR_GREEN = "#33cc33";  // Complete
+  // Color constants — Stream Green / Indicator Orange / QLD Red
+  const COLOR_RED = STREAM.qldRed;
+  const COLOR_ORANGE = INDICATOR.orange;
+  const COLOR_GREEN = STREAM.streamGreen;
 
   // Get deposit status color
   function getDepositStatusColor() {
@@ -1196,7 +1196,7 @@ export default function Overview({ project }) {
             type="button"
             onClick={handleOpenFaqModal}
             style={{
-              background: "#FF9800",
+              background: INDICATOR.orange,
               color: WHITE,
               border: "none",
               borderRadius: "8px",
@@ -1206,8 +1206,8 @@ export default function Overview({ project }) {
               cursor: "pointer",
               transition: "background 0.2s",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "#F57C00")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "#FF9800")}
+            onMouseEnter={(e) => (e.currentTarget.style.background = INDICATOR.orangeDark)}
+            onMouseLeave={(e) => (e.currentTarget.style.background = INDICATOR.orange)}
           >
             Ask Virtual Construction Manager
           </button>
@@ -1352,23 +1352,24 @@ export default function Overview({ project }) {
       )}
       {project && (
         <div className="overview-stack">
-          <div className="overview-progress-section">
-            <h2>Design Phase Progress</h2>
-
-            <div className="overview-status-grid">
-              {designPhaseStatusTiles.map((tile) => (
-                <OverviewStatusTile
-                  key={tile.key}
-                  label={tile.label}
-                  value={tile.value}
-                  background={tile.color}
-                  onClick={() =>
-                    navigate(projectPath(project, { view: tile.view, t: Date.now() }), {
-                      replace: false,
-                    })
-                  }
-                />
-              ))}
+          <div className="overview-progress-block">
+            <h2 className="overview-progress-heading">Design Phase Progress</h2>
+            <div className="overview-progress-section">
+              <div className="overview-status-grid">
+                {designPhaseStatusTiles.map((tile) => (
+                  <OverviewStatusTile
+                    key={tile.key}
+                    label={tile.label}
+                    value={tile.value}
+                    background={tile.color}
+                    onClick={() =>
+                      navigate(projectPath(project, { view: tile.view, t: Date.now() }), {
+                        replace: false,
+                      })
+                    }
+                  />
+                ))}
+              </div>
             </div>
           </div>
         </div>

@@ -214,3 +214,55 @@ button:focus-visible {
   border: 2px solid var(--sgf-outline);
   box-sizing: border-box;
 }
+
+/* Project list pages: panel fits viewport; scroll inside the rounded content box */
+.page-container.project-list-page {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.page-container.project-list-page > div:first-of-type {
+  flex-shrink: 0;
+}
+
+.page-container.project-list-page .sections-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 50px;
+  margin-bottom: 32px;
+  overflow: hidden;
+  align-items: stretch;
+}
+
+.page-container.project-list-page .sidebar-menu {
+  height: auto;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.page-container.project-list-page .content-section {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  overflow: hidden;
+}
+
+.page-container.project-list-page .project-list-toolbar {
+  flex-shrink: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.page-container.project-list-page .project-list-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  margin-right: -8px;
+  padding-right: 8px;
+}

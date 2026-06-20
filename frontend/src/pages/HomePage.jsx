@@ -25,7 +25,7 @@ import MobileProjectsHome from "../mobile/MobileProjectsHome";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
 import StateFilterButtons from "../components/StateFilterButtons";
-import { UI, MENU, STREAM } from "../utils/uiThemeTokens.js";
+import { UI, MENU, STREAM, INDICATOR } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
 const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
@@ -119,6 +119,29 @@ const FIELD_DEFINITIONS = {
     defaultValue: "",
   },
 };
+
+const FILTER_SELECT_EXTRA = "3.25rem";
+
+function filterSelectWidth(...labelGroups) {
+  const labels = labelGroups.flat().map(String);
+  const maxLen = Math.max(0, ...labels.map((label) => label.length));
+  return `calc(${maxLen}ch + ${FILTER_SELECT_EXTRA})`;
+}
+
+const FILTER_BY_FIELD_LABELS = [
+  "All fields",
+  ...Object.values(FIELD_DEFINITIONS).map((def) => def.label),
+];
+
+const DESIGN_PHASE_ACTION_BUTTON_LABELS = [
+  "VIC Only",
+  "QLD Only",
+  "All Projects",
+  "+ New Project",
+  "Sort by Suburb",
+  "Sort By Class",
+  "Sort By Stream",
+];
 
 const CLASSIFICATION_SORT_ORDER = FIELD_DEFINITIONS.classification.values;
 const STREAM_SORT_ORDER = [
@@ -577,20 +600,94 @@ export default function HomePage() {
   const availableValues = getAvailableValues();
   const filteredProjects = getFilteredProjects();
 
+  const designPhaseHeadingCount = (() => {
+    const currentProjects = projects.filter((project) => {
+      if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
+      return isDesignPhaseStatus(project.status);
+    });
+    const totalCount = currentProjects.length;
+
+    if (selectedField && selectedValue) {
+      return `(${filteredProjects.length} found)`;
+    }
+    if (searchQuery.trim()) {
+      return `(${filteredProjects.length} found)`;
+    }
+    if (stateFilter !== "All") {
+      return `(${filteredProjects.length} total)`;
+    }
+    return totalCount > 0 ? `(${totalCount} total)` : "";
+  })();
+
+  const filterByFieldWidth = filterSelectWidth(FILTER_BY_FIELD_LABELS);
+  const filterByValueWidth = filterSelectWidth("All values", availableValues);
+  const designPhaseActionButtonWidth = filterSelectWidth(DESIGN_PHASE_ACTION_BUTTON_LABELS);
+
+  const filterLabelStyle = {
+    display: "block",
+    fontSize: "0.9rem",
+    color: UI.textMuted,
+    marginBottom: "6px",
+    marginTop: 0,
+    fontWeight: 500,
+    lineHeight: 1.35,
+    minHeight: "1.215rem",
+  };
+
+  const filterControlStyle = {
+    height: "48px",
+    padding: "0 16px",
+    borderRadius: "8px",
+    border: `2px solid ${UI.outline}`,
+    fontSize: "1rem",
+    boxSizing: "border-box",
+    outline: "none",
+  };
+
+  const toolbarButtonStyle = {
+    ...filterControlStyle,
+    width: designPhaseActionButtonWidth,
+    minWidth: designPhaseActionButtonWidth,
+    maxWidth: designPhaseActionButtonWidth,
+    fontSize: "0.9rem",
+    fontWeight: 500,
+    whiteSpace: "nowrap",
+    textAlign: "center",
+    cursor: "pointer",
+  };
+
+  const sortButtonStyle = (mode) => {
+    const selected = sortMode === mode;
+    return {
+      ...toolbarButtonStyle,
+      background: selected ? INDICATOR.orangeLight : WHITE,
+      color: MONUMENT,
+      border: selected ? `2px solid ${INDICATOR.orangeDark}` : `2px solid ${UI.outline}`,
+      transition: "background 0.2s, border-color 0.2s, color 0.2s",
+    };
+  };
+
+  const newProjectButtonStyle = {
+    ...toolbarButtonStyle,
+    background: STREAM.streamGreen,
+    color: PAGE_TEXT,
+    border: `2px solid ${UI.outline}`,
+    transition: "background 0.2s",
+  };
+
   if (isMobile) {
     return <MobileProjectsHome />;
   }
 
   return (
     <div
-      className="page-container sgf-desktop-only"
+      className="page-container project-list-page sgf-desktop-only"
       style={{
         position: "fixed",
         inset: 0,
         background: LIGHT_MONUMENT,
         minHeight: "100vh",
         width: "100vw",
-        overflowY: "auto",
       }}
     >
       {/* Section 1: Heading */}
@@ -627,41 +724,29 @@ export default function HomePage() {
               letterSpacing: "1px",
             }}
           >
-            Design Phase
+            Design Phase{designPhaseHeadingCount ? ` ${designPhaseHeadingCount}` : ""}
           </h1>
         </div>
-        <div
-          style={{
-            position: "absolute",
-            top: "20px",
-            right: "68px",
-            display: "flex",
-            gap: "10px",
-            alignItems: "center",
-          }}
-        >
-          <StateFilterButtons stateFilter={stateFilter} setStateFilter={setStateFilter} />
-          {isAdmin && (
-            <button
-              onClick={() => setIsNewProjectOpen(true)}
-              style={{
-                background: STREAM.streamGreen,
-                color: PAGE_TEXT,
-                border: "none",
-                borderRadius: "8px",
-                padding: "10px 20px",
-                fontSize: "1rem",
-                fontWeight: 500,
-                cursor: "pointer",
-                transition: "background 0.2s",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = streamColorHover(STREAM.streamGreen))}
-              onMouseLeave={(e) => (e.currentTarget.style.background = STREAM.streamGreen)}
-            >
-              + New Project
-            </button>
-          )}
-        </div>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setIsNewProjectOpen(true)}
+            style={{
+              ...newProjectButtonStyle,
+              position: "absolute",
+              top: "20px",
+              right: "32px",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = streamColorHover(STREAM.streamGreen);
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = STREAM.streamGreen;
+            }}
+          >
+            + New Project
+          </button>
+        )}
       </div>
 
       {/* Sections 2 & 3 */}
@@ -671,7 +756,8 @@ export default function HomePage() {
           display: "flex",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          margin: "50px auto 0 auto",
+          marginLeft: "auto",
+          marginRight: "auto",
           gap: "32px",
         }}
       >
@@ -683,7 +769,6 @@ export default function HomePage() {
             borderRadius: "16px",
             width: "200px",
             minWidth: "200px",
-            height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             padding: "32px 12px",
             boxSizing: "border-box",
@@ -950,144 +1035,22 @@ export default function HomePage() {
             background: SECTION_GREY,
             borderRadius: "18px",
             flex: 1,
-            minHeight: "758px",
-            height: "758px",
+            minWidth: 0,
+            minHeight: 0,
             boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
             padding: "24px 32px",
             boxSizing: "border-box",
-            overflow: "auto",
             color: MONUMENT,
             display: "flex",
             flexDirection: "column",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-            <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: 0 }}>
-              Design Phase {(() => {
-                const currentProjects = projects.filter((project) => {
-                  if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
-                  return isDesignPhaseStatus(project.status);
-                });
-                const totalCount = currentProjects.length;
-                
-                if (selectedField && selectedValue) {
-                  return `(${filteredProjects.length} found)`;
-                } else if (searchQuery.trim()) {
-                  return `(${filteredProjects.length} found)`;
-                } else if (stateFilter !== "All") {
-                  return `(${filteredProjects.length} total)`;
-                }
-                return totalCount > 0 ? `(${totalCount} total)` : "";
-              })()}
-            </h2>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <button
-                type="button"
-                onClick={() => setSortMode("suburb")}
-                style={{
-                  background: sortMode === "suburb" ? MONUMENT : WHITE,
-                  color: sortMode === "suburb" ? PAGE_TEXT : MONUMENT,
-                  border: `2px solid ${UI.outline}`,
-                  borderRadius: "8px",
-                  padding: "10px 14px",
-                  fontSize: "0.9rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "background 0.2s, color 0.2s",
-                }}
-              >
-                Sort by Suburb
-              </button>
-              <button
-                type="button"
-                onClick={() => setSortMode("class")}
-                style={{
-                  background: sortMode === "class" ? MONUMENT : WHITE,
-                  color: sortMode === "class" ? PAGE_TEXT : MONUMENT,
-                  border: `2px solid ${UI.outline}`,
-                  borderRadius: "8px",
-                  padding: "10px 14px",
-                  fontSize: "0.9rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "background 0.2s, color 0.2s",
-                }}
-              >
-                Sort By Class
-              </button>
-              <button
-                type="button"
-                onClick={() => setSortMode("stream")}
-                style={{
-                  background: sortMode === "stream" ? MONUMENT : WHITE,
-                  color: sortMode === "stream" ? PAGE_TEXT : MONUMENT,
-                  border: `2px solid ${UI.outline}`,
-                  borderRadius: "8px",
-                  padding: "10px 14px",
-                  fontSize: "0.9rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "background 0.2s, color 0.2s",
-                }}
-              >
-                Sort By Stream
-              </button>
-              <button
-                onClick={() => {
-                  // Generate email list from filtered projects
-                  const projectList = filteredProjects
-                    .map((project, index) => {
-                      const suburb = project.suburb || "";
-                      const street = project.street || "";
-                      const projectName =
-                        suburb && street
-                          ? `${suburb} - ${street}`
-                          : suburb || street || project.name || "Unknown Project";
-                      return `${index + 1}. ${projectName}`;
-                    })
-                    .join("\n");
-
-                  const emailBody = `Design Phase Projects List:\n\n${projectList}\n\nTotal: ${filteredProjects.length} projects`;
-                  const mailtoLink = `mailto:?subject=Design Phase Projects List&body=${encodeURIComponent(emailBody)}`;
-                  window.location.href = mailtoLink;
-                }}
-                style={{
-                  padding: "10px 20px",
-                  background: STREAM.vicBlue,
-                  color: PAGE_TEXT,
-                  border: "none",
-                  borderRadius: "8px",
-                  fontSize: "0.9rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "background 0.2s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = streamColorHover(STREAM.vicBlue);
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = STREAM.vicBlue;
-                }}
-              >
-                Email List
-              </button>
-            </div>
-          </div>
-          
+          <div className="project-list-toolbar" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: "16px", marginBottom: "20px" }}>
           {/* Search Bar and Filter Dropdowns - All on one line */}
-          <div style={{ display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "nowrap", alignItems: "flex-start", marginTop: 0, position: "relative" }}>
+          <div style={{ display: "flex", gap: "8px", flex: "1 1 auto", flexWrap: "nowrap", alignItems: "stretch", marginTop: 0, position: "relative", minWidth: 0 }}>
             {/* Search Bar */}
-            <div style={{ flex: "0 0 auto" }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: UI.textMuted,
-                  marginBottom: "6px",
-                  marginTop: 0,
-                  fontWeight: 500,
-                }}
-              >
+            <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column" }}>
+              <label style={filterLabelStyle}>
                 Search
               </label>
               <input
@@ -1096,47 +1059,30 @@ export default function HomePage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 style={{
-                  width: "420px",
-                  padding: "12px 16px",
-                  borderRadius: "8px",
-                  border: `2px solid ${UI.outline}`,
-                  fontSize: "1rem",
+                  ...filterControlStyle,
+                  width: "360px",
                   color: MONUMENT,
                   background: WHITE,
-                  boxSizing: "border-box",
-                  outline: "none",
                 }}
               />
             </div>
 
             {/* Filter by Field */}
-            <div style={{ flex: "0 0 auto", marginLeft: "10px" }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: UI.textMuted,
-                  marginBottom: "6px",
-                  marginTop: 0,
-                  fontWeight: 500,
-                }}
-              >
+            <div style={{ flex: "0 0 auto", marginLeft: "10px", display: "flex", flexDirection: "column" }}>
+              <label style={filterLabelStyle}>
                 Filter by Field
               </label>
               <select
                 value={selectedField}
                 onChange={(e) => setSelectedField(e.target.value)}
                 style={{
-                  width: "420px",
-                  padding: "12px 16px",
-                  borderRadius: "8px",
-                  border: `2px solid ${UI.outline}`,
-                  fontSize: "1rem",
+                  ...filterControlStyle,
+                  width: filterByFieldWidth,
+                  minWidth: filterByFieldWidth,
+                  maxWidth: filterByFieldWidth,
                   color: MONUMENT,
                   background: WHITE,
-                  boxSizing: "border-box",
                   cursor: "pointer",
-                  outline: "none",
                 }}
               >
                 <option value="">All fields</option>
@@ -1149,17 +1095,8 @@ export default function HomePage() {
             </div>
 
             {/* Filter by Value - Always visible */}
-            <div style={{ flex: "0 0 auto", marginLeft: "880px", position: "absolute" }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: UI.textMuted,
-                  marginBottom: "6px",
-                  marginTop: 0,
-                  fontWeight: 500,
-                }}
-              >
+            <div style={{ flex: "0 0 auto", marginLeft: "10px", display: "flex", flexDirection: "column" }}>
+              <label style={filterLabelStyle}>
                 Filter by Value
               </label>
               <select
@@ -1167,16 +1104,13 @@ export default function HomePage() {
                 onChange={(e) => setSelectedValue(e.target.value)}
                 disabled={!selectedField}
                 style={{
-                  width: "420px",
-                  padding: "12px 16px",
-                  borderRadius: "8px",
-                  border: `2px solid ${UI.outline}`,
-                  fontSize: "1rem",
+                  ...filterControlStyle,
+                  width: filterByValueWidth,
+                  minWidth: filterByValueWidth,
+                  maxWidth: filterByValueWidth,
                   color: selectedField ? MONUMENT : "#999",
                   background: selectedField ? WHITE : UI.inputBg,
-                  boxSizing: "border-box",
                   cursor: selectedField ? "pointer" : "not-allowed",
-                  outline: "none",
                 }}
               >
                 <option value="">All values</option>
@@ -1190,25 +1124,25 @@ export default function HomePage() {
 
             {/* Clear Filters Button */}
             {(selectedField || searchQuery.trim()) && (
-              <div style={{ flex: "0 0 auto", marginLeft: "1320px", position: "absolute", marginTop: "28px" }}>
+              <div style={{ flex: "0 0 auto", marginLeft: "10px", display: "flex", flexDirection: "column" }}>
+                <label style={{ ...filterLabelStyle, visibility: "hidden" }} aria-hidden="true">
+                  Clear
+                </label>
                 <button
+                  type="button"
                   onClick={() => {
                     setSelectedField("");
                     setSelectedValue("");
                     setSearchQuery("");
                   }}
                   style={{
-                    padding: "10px 20px",
-                    fontSize: "1rem",
-                    fontWeight: 500,
-                    color: MONUMENT,
-                    background: WHITE,
+                    ...filterControlStyle,
+                    background: MENU.purpleLight,
+                    color: PAGE_TEXT,
                     border: `2px solid ${UI.outline}`,
-                    borderRadius: "8px",
                     cursor: "pointer",
-                    height: "42px",
-                    width: "200px",
-                    boxSizing: "border-box",
+                    fontWeight: 500,
+                    whiteSpace: "nowrap",
                   }}
                 >
                   Clear Filters
@@ -1217,6 +1151,42 @@ export default function HomePage() {
             )}
           </div>
 
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", flex: "0 0 auto", flexShrink: 0 }}>
+              <div style={{ display: "flex", flexDirection: "row", gap: "10px" }}>
+                <StateFilterButtons
+                  stateFilter={stateFilter}
+                  setStateFilter={setStateFilter}
+                  buttonWidth={designPhaseActionButtonWidth}
+                  buttonStyle={toolbarButtonStyle}
+                />
+              </div>
+              <div style={{ display: "flex", flexDirection: "row", gap: "10px" }}>
+                <button
+                  type="button"
+                  onClick={() => setSortMode("suburb")}
+                  style={sortButtonStyle("suburb")}
+                >
+                  Sort by Suburb
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSortMode("class")}
+                  style={sortButtonStyle("class")}
+                >
+                  Sort By Class
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSortMode("stream")}
+                  style={sortButtonStyle("stream")}
+                >
+                  Sort By Stream
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="project-list-scroll">
           {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && (
             <p style={{ color: "#cc3333" }}>
@@ -1346,6 +1316,7 @@ export default function HomePage() {
               </div>
             );
           })()}
+          </div>
         </div>
       </div>
       <NewProject
