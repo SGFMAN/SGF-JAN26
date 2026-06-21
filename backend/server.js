@@ -578,6 +578,65 @@ function parseEmailGeneralJsonColumn(raw) {
   };
 }
 
+const UI_BUTTON_STYLE_COLOR_KEYS = [
+  "colorSelected",
+  "colorUnselected",
+  "outlineSelected",
+  "outlineUnselected",
+  "textSelected",
+  "textUnselected",
+];
+
+function normalizeUiButtonStyleRecord(raw, fallbackId = null) {
+  if (!raw || typeof raw !== "object") return null;
+  const id = Number(raw.id ?? fallbackId);
+  if (!Number.isFinite(id) || id < 1) return null;
+  const trim = (v, fb = "") => String(v ?? fb).trim();
+  const record = {
+    id,
+    width: trim(raw.width, "120px"),
+    height: trim(raw.height, "48px"),
+    fontSize: trim(raw.fontSize, "0.9rem"),
+  };
+  for (const key of UI_BUTTON_STYLE_COLOR_KEYS) {
+    record[key] = trim(raw[key], "textPrimary");
+  }
+  return record;
+}
+
+function normalizeUiButtonStylesStore(parsed) {
+  if (!parsed || typeof parsed !== "object") {
+    return { nextId: 1, buttons: {} };
+  }
+  const rawButtons = parsed.buttons && typeof parsed.buttons === "object" ? parsed.buttons : {};
+  const buttons = {};
+  for (const [key, value] of Object.entries(rawButtons)) {
+    const record = normalizeUiButtonStyleRecord(value, key);
+    if (record) buttons[String(record.id)] = record;
+  }
+  const ids = Object.values(buttons)
+    .map((b) => Number(b.id))
+    .filter((n) => Number.isFinite(n));
+  const maxId = ids.length ? Math.max(...ids) : 0;
+  const nextId = Math.max(Number(parsed.nextId) || 1, maxId + 1);
+  return { nextId, buttons };
+}
+
+function parseUiButtonStylesJsonColumn(raw) {
+  if (raw == null || raw === "") return { nextId: 1, buttons: {} };
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    return normalizeUiButtonStylesStore(raw);
+  }
+  if (typeof raw === "string") {
+    try {
+      return normalizeUiButtonStylesStore(JSON.parse(raw));
+    } catch {
+      return { nextId: 1, buttons: {} };
+    }
+  }
+  return { nextId: 1, buttons: {} };
+}
+
 /** Match template From → slot (same order as former secondary → vic → QLD → 5–16 → primary). */
 const SMTP_FROM_ADDRESS_MATCH_ORDER = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 1];
 
@@ -1314,6 +1373,14 @@ async function ensureSchema() {
   } catch (e) {
     if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
       console.log(`Error adding column email_general_json:`, e.message);
+    }
+  }
+  // UI Settings → Buttons (global JSON; numbered button style presets)
+  try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN ui_button_styles_json TEXT`);
+  } catch (e) {
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column ui_button_styles_json:`, e.message);
     }
   }
   // Drawing Settings page: notification emails (VIC / QLD / Investor Streams)
@@ -3748,6 +3815,42 @@ app.get("/api/settings", async (req, res) => {
     console.error("Error fetching settings:", e);
     console.error("Error stack:", e.stack);
     res.status(500).json({ error: e.message });
+  }
+});
+
+// UI button style presets (Settings → UI → Buttons) — shared app-wide
+app.get("/api/ui-button-styles", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const userId = getRequestUserId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  try {
+    const r = await pool.query("SELECT ui_button_styles_json FROM settings WHERE id = 1");
+    const store = parseUiButtonStylesJsonColumn(r.rows[0]?.ui_button_styles_json);
+    return res.json({ ok: true, store });
+  } catch (e) {
+    console.error("Error fetching UI button styles:", e);
+    return res.status(500).json({ error: e.message || "Failed to fetch UI button styles" });
+  }
+});
+
+app.put("/api/ui-button-styles", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) return res.status(403).json({ error: "Admin access required" });
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const store = normalizeUiButtonStylesStore(body.store ?? body);
+    const json = JSON.stringify(store);
+    await pool.query(
+      `INSERT INTO settings (id, ui_button_styles_json, updated_at)
+       VALUES (1, $1, NOW())
+       ON CONFLICT (id) DO UPDATE SET ui_button_styles_json = EXCLUDED.ui_button_styles_json, updated_at = NOW()`,
+      [json]
+    );
+    return res.json({ ok: true, store });
+  } catch (e) {
+    console.error("Error saving UI button styles:", e);
+    return res.status(500).json({ error: e.message || "Failed to save UI button styles" });
   }
 });
 

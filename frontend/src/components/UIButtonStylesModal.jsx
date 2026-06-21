@@ -11,6 +11,7 @@ import {
   normalizeToPaletteKey,
   resolvePaletteColor,
   saveUiButtonStyle,
+  ensureUiButtonStylesLoaded,
 } from "../utils/uiButtonStyles.js";
 import { useUiTheme } from "../context/UiThemeProvider.jsx";
 import { UI_THEME_COLOR_KEYS } from "../themes/uiThemes.js";
@@ -173,7 +174,7 @@ export default function UIButtonStylesModal({ isOpen, onClose }) {
 
   useEffect(() => {
     if (isOpen) {
-      refreshList();
+      void ensureUiButtonStylesLoaded().then(() => refreshList());
       setEditingId(null);
       setForm({ ...EMPTY_BUTTON_STYLE });
       setColorPickerField(null);

@@ -8,6 +8,7 @@ import {
   writeStoredUiThemeId,
 } from "../themes/applyUiTheme";
 import { DEFAULT_UI_THEME_ID, getUiTheme } from "../themes/uiThemes";
+import { ensureUiButtonStylesLoaded } from "../utils/uiButtonStyles.js";
 
 const UiThemeContext = createContext(null);
 
@@ -22,6 +23,7 @@ export function UiThemeProvider({ children }) {
     setThemeIdState(stored);
     setColorOverrides(storedOverrides);
     applyUiThemeToDocument(stored, storedOverrides);
+    void ensureUiButtonStylesLoaded();
 
     function onThemeChange(event) {
       const nextId = event?.detail?.themeId;

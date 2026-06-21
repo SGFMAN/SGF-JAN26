@@ -46,7 +46,7 @@ export default function UISettings() {
             Buttons
           </button>
           <p style={{ margin: 0, fontSize: "0.9rem", color: UI.textMuted, maxWidth: "480px", lineHeight: 1.45 }}>
-            Define reusable button styles numbered 1, 2, 3… All colours must come from the UI theme palette (Page, Text - Light, VIC Blue, Menu Purple, etc.).
+            Define reusable button styles numbered 1, 2, 3… Styles are saved to the server so every user sees the same buttons. Colours must come from the UI theme palette.
           </p>
         </div>
       </div>
