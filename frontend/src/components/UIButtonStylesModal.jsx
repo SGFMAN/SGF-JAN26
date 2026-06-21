@@ -209,18 +209,28 @@ export default function UIButtonStylesModal({ isOpen, onClose }) {
     setForm({ ...EMPTY_BUTTON_STYLE });
   };
 
-  const handleSave = () => {
-    const saved = saveUiButtonStyle(editingId != null ? { ...form, id: editingId } : form);
-    setEditingId(saved.id);
-    refreshList();
+  const handleSave = async () => {
+    try {
+      const saved = await saveUiButtonStyle(editingId != null ? { ...form, id: editingId } : form);
+      setEditingId(saved.id);
+      refreshList();
+    } catch (err) {
+      console.error(err);
+      window.alert(err?.message || "Failed to save button style to the server.");
+    }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (editingId == null) return;
     if (!window.confirm(`Delete Button ${editingId}?`)) return;
-    deleteUiButtonStyle(editingId);
-    handleNew();
-    refreshList();
+    try {
+      await deleteUiButtonStyle(editingId);
+      handleNew();
+      refreshList();
+    } catch (err) {
+      console.error(err);
+      window.alert(err?.message || "Failed to delete button style on the server.");
+    }
   };
 
   const previewStyleUnselected = buildButtonInlineStyle(

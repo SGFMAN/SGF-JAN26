@@ -12,6 +12,11 @@ const API_URL = "";
 let memoryStore = null;
 let loadPromise = null;
 
+export function resetUiButtonStylesCache() {
+  memoryStore = null;
+  loadPromise = null;
+}
+
 export const UI_BUTTON_FONT_SIZE_OPTIONS = [
   { value: "0.75rem", label: "0.75rem" },
   { value: "0.8rem", label: "0.8rem" },
@@ -156,11 +161,17 @@ async function persistUiButtonStylesToApi(store) {
 function writeUiButtonStylesStore(store, { persist = true } = {}) {
   memoryStore = normalizeStore(store);
   dispatchStylesChange();
-  if (!persist) return memoryStore;
-  void persistUiButtonStylesToApi(memoryStore).catch((err) => {
-    console.error("Failed to persist UI button styles:", err);
-  });
-  return memoryStore;
+  if (!persist) return Promise.resolve(memoryStore);
+  return persistUiButtonStylesToApi(memoryStore)
+    .then((saved) => {
+      memoryStore = saved;
+      dispatchStylesChange();
+      return memoryStore;
+    })
+    .catch((err) => {
+      console.error("Failed to persist UI button styles:", err);
+      throw err;
+    });
 }
 
 export function readUiButtonStylesStore() {
@@ -168,9 +179,10 @@ export function readUiButtonStylesStore() {
   return { nextId: 1, buttons: {} };
 }
 
-/** Load button styles from the database (call once after login). */
-export async function ensureUiButtonStylesLoaded() {
+/** Load button styles from the database (call after login and on app start when authenticated). */
+export async function ensureUiButtonStylesLoaded({ force = false } = {}) {
   if (!getLoggedInUserId()) return readUiButtonStylesStore();
+  if (force) resetUiButtonStylesCache();
   if (memoryStore) return memoryStore;
   if (loadPromise) return loadPromise;
 
@@ -190,8 +202,6 @@ export async function ensureUiButtonStylesLoaded() {
       const localHasData = Object.keys(localStore.buttons).length > 0;
 
       if (serverEmpty && localHasData) {
-        memoryStore = localStore;
-        dispatchStylesChange();
         const admin = await isUserAdmin();
         if (admin) {
           try {
@@ -201,8 +211,6 @@ export async function ensureUiButtonStylesLoaded() {
             console.warn("Could not migrate local button styles to server:", err);
             store = localStore;
           }
-        } else {
-          store = localStore;
         }
       } else if (!serverEmpty) {
         clearLegacyLocalStore();
@@ -213,8 +221,7 @@ export async function ensureUiButtonStylesLoaded() {
       return memoryStore;
     } catch (err) {
       console.warn("Failed to load UI button styles from server:", err);
-      const fallback = readLegacyLocalStore();
-      memoryStore = Object.keys(fallback.buttons).length ? fallback : { nextId: 1, buttons: {} };
+      memoryStore = { nextId: 1, buttons: {} };
       dispatchStylesChange();
       return memoryStore;
     } finally {
@@ -244,7 +251,7 @@ export function resolvePaletteColor(value, colors = getActiveThemeColors()) {
   return colors[key] ?? colors.textPrimary ?? "#323233";
 }
 
-export function saveUiButtonStyle(style) {
+export async function saveUiButtonStyle(style) {
   const store = readUiButtonStylesStore();
   let id = style?.id != null && style.id !== "" ? Number(style.id) : null;
 
@@ -270,15 +277,15 @@ export function saveUiButtonStyle(style) {
   };
 
   store.buttons[String(id)] = record;
-  writeUiButtonStylesStore(store);
+  await writeUiButtonStylesStore(store);
   clearLegacyLocalStore();
   return record;
 }
 
-export function deleteUiButtonStyle(id) {
+export async function deleteUiButtonStyle(id) {
   const store = readUiButtonStylesStore();
   delete store.buttons[String(id)];
-  writeUiButtonStylesStore(store);
+  await writeUiButtonStylesStore(store);
   clearLegacyLocalStore();
 }
 

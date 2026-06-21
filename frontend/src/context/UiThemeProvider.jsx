@@ -8,7 +8,7 @@ import {
   writeStoredUiThemeId,
 } from "../themes/applyUiTheme";
 import { DEFAULT_UI_THEME_ID, getUiTheme } from "../themes/uiThemes";
-import { ensureUiButtonStylesLoaded } from "../utils/uiButtonStyles.js";
+import { ensureUiButtonStylesLoaded, resetUiButtonStylesCache } from "../utils/uiButtonStyles.js";
 
 const UiThemeContext = createContext(null);
 
@@ -23,7 +23,20 @@ export function UiThemeProvider({ children }) {
     setThemeIdState(stored);
     setColorOverrides(storedOverrides);
     applyUiThemeToDocument(stored, storedOverrides);
-    void ensureUiButtonStylesLoaded();
+
+    const loadButtonStyles = () => {
+      if (!getLoggedInUserId()) {
+        resetUiButtonStylesCache();
+        return;
+      }
+      void ensureUiButtonStylesLoaded({ force: true });
+    };
+
+    loadButtonStyles();
+
+    function onAuthSessionChange() {
+      loadButtonStyles();
+    }
 
     function onThemeChange(event) {
       const nextId = event?.detail?.themeId;
@@ -36,7 +49,11 @@ export function UiThemeProvider({ children }) {
     }
 
     window.addEventListener("sgf-ui-theme-change", onThemeChange);
-    return () => window.removeEventListener("sgf-ui-theme-change", onThemeChange);
+    window.addEventListener("sgf-auth-session-change", onAuthSessionChange);
+    return () => {
+      window.removeEventListener("sgf-ui-theme-change", onThemeChange);
+      window.removeEventListener("sgf-auth-session-change", onAuthSessionChange);
+    };
   }, []);
 
   const setThemeId = useCallback(

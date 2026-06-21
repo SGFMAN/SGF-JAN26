@@ -56,6 +56,11 @@ export function setAuthSession(userId, passwordType, userName) {
   } catch {
     // ignore
   }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("sgf-auth-session-change", { detail: { userId: String(userId) } })
+    );
+  }
 }
 
 /**
@@ -82,6 +87,9 @@ export function clearAuthSession() {
     localStorage.removeItem(AUTH_USER_NAME_KEY);
   } catch {
     // ignore
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("sgf-auth-session-change", { detail: { userId: null } }));
   }
 }
 
