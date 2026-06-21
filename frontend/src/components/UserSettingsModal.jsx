@@ -1,32 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
-import { getLoggedInUserId } from "../utils/auth";
+import { getApiHeaders, getLoggedInUserId } from "../utils/auth";
 import { useUiTheme } from "../context/UiThemeProvider";
 import { UI } from "../utils/uiThemeTokens";
-import { applyUiThemeToDocument } from "../themes/applyUiTheme";
-import { UI_THEME_COLOR_KEYS, UI_THEME_LIST, UI_THEMES } from "../themes/uiThemes";
+import { UI_THEME_LIST } from "../themes/uiThemes";
+import { getThemeDisplayName } from "../utils/uiThemeSettings.js";
 
 const AUTO_SAVE_DELAY_MS = 600;
-const THEME_COLOR_SAVE_DELAY_MS = 400;
 
-function hexColorInputValue(color) {
-  if (typeof color !== "string") return "#000000";
-  const trimmed = color.trim();
-  if (/^#[0-9a-f]{6}$/i.test(trimmed)) return trimmed;
-  if (/^#[0-9a-f]{3}$/i.test(trimmed)) {
-    const r = trimmed[1];
-    const g = trimmed[2];
-    const b = trimmed[3];
-    return `#${r}${r}${g}${g}${b}${b}`;
-  }
-  const match = trimmed.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
-  if (match) {
-    const hex = (n) => Math.max(0, Math.min(255, Number(n))).toString(16).padStart(2, "0");
-    return `#${hex(match[1])}${hex(match[2])}${hex(match[3])}`;
-  }
-  return "#000000";
-}
-
-function ThemeColorSwatchGrid({ colors, highlightKey, onSwatchContextMenu, compact }) {
+function ThemeColorSwatchGrid({ colors, compact }) {
   return (
     <div
       style={{
@@ -35,308 +16,70 @@ function ThemeColorSwatchGrid({ colors, highlightKey, onSwatchContextMenu, compa
         gap: compact ? "6px" : "8px",
       }}
     >
-      {UI_THEME_COLOR_KEYS.map(({ key, label }) => (
-        <div key={key}>
+      {Object.entries(colors)
+        .filter(([key]) =>
+          [
+            "pageBackground",
+            "pageText",
+            "textPrimary",
+            "panelBackground",
+            "cardBackground",
+            "vicBlue",
+            "vicBlueLight",
+            "qldRed",
+            "qldRedLight",
+            "streamGreen",
+            "streamGreenLight",
+            "menuPurple",
+            "indicatorOrangeLight",
+            "outline",
+            "projectCardBackground",
+          ].includes(key)
+        )
+        .slice(0, 15)
+        .map(([key, value]) => (
           <div
-            role="button"
-            tabIndex={0}
-            title={`${label} — right-click to edit`}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onSwatchContextMenu?.(key, label);
-            }}
+            key={key}
             style={{
               height: compact ? "24px" : "28px",
               borderRadius: "6px",
-              background: colors[key],
-              border:
-                highlightKey === key
-                  ? `2px solid ${UI.textPrimary}`
-                  : `1px solid ${UI.border}`,
-              marginBottom: "4px",
-              cursor: onSwatchContextMenu ? "context-menu" : "default",
+              background: value,
+              border: `1px solid ${UI.border}`,
               boxSizing: "border-box",
             }}
+            title={key}
           />
-          <span style={{ fontSize: compact ? "0.65rem" : "0.7rem", color: UI.textMuted }}>{label}</span>
-        </div>
-      ))}
+        ))}
     </div>
-  );
-}
-
-function ColourThemeEditor({ editing, onBack, onEditColor }) {
-  const { themeId: activeThemeId, getThemeColors, setThemeColor, clearThemeColor, colorOverrides } =
-    useUiTheme();
-  const themeMeta = UI_THEMES[editing.themeId] || UI_THEMES.classic;
-  const [draftValue, setDraftValue] = useState("");
-  const [saveStatus, setSaveStatus] = useState("");
-  const skipNextSave = useRef(true);
-  const hasStoredOverride = Boolean(colorOverrides[editing.themeId]?.[editing.colorKey]);
-  const defaultValue = themeMeta.colors[editing.colorKey];
-
-  useEffect(() => {
-    skipNextSave.current = true;
-    const current = getThemeColors(editing.themeId)[editing.colorKey];
-    setDraftValue(current ?? defaultValue ?? "");
-    setSaveStatus("");
-    const timer = window.setTimeout(() => {
-      skipNextSave.current = false;
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [editing.themeId, editing.colorKey, getThemeColors, defaultValue]);
-
-  useEffect(() => {
-    if (skipNextSave.current || !draftValue.trim()) return;
-    setSaveStatus("Saving…");
-    const timer = window.setTimeout(() => {
-      setThemeColor(editing.themeId, editing.colorKey, draftValue.trim());
-      setSaveStatus("Saved");
-      window.setTimeout(() => setSaveStatus(""), 1500);
-    }, THEME_COLOR_SAVE_DELAY_MS);
-    return () => window.clearTimeout(timer);
-  }, [draftValue, editing.themeId, editing.colorKey, setThemeColor]);
-
-  useEffect(() => {
-    if (skipNextSave.current || !draftValue.trim()) return;
-    if (activeThemeId !== editing.themeId) return;
-    const previewOverrides = {
-      ...colorOverrides,
-      [editing.themeId]: {
-        ...(colorOverrides[editing.themeId] || {}),
-        [editing.colorKey]: draftValue.trim(),
-      },
-    };
-    applyUiThemeToDocument(editing.themeId, previewOverrides);
-  }, [draftValue, activeThemeId, editing.themeId, editing.colorKey, colorOverrides]);
-
-  const previewColors = getThemeColors(editing.themeId, { [editing.colorKey]: draftValue.trim() });
-
-  function handlePickerChange(hex) {
-    setDraftValue(hex);
-  }
-
-  function handleReset() {
-    clearThemeColor(editing.themeId, editing.colorKey);
-    setDraftValue(defaultValue ?? "");
-    setSaveStatus("Reset");
-    window.setTimeout(() => setSaveStatus(""), 1500);
-  }
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={onBack}
-        style={{
-          background: "transparent",
-          border: "none",
-          color: UI.textSecondary,
-          cursor: "pointer",
-          padding: "0 0 12px 0",
-          fontSize: "0.9rem",
-          fontWeight: 500,
-        }}
-      >
-        ← Back to themes
-      </button>
-      <h3
-        style={{
-          margin: "0 0 4px 0",
-          fontSize: "1.2rem",
-          fontWeight: 600,
-          color: UI.textPrimary,
-        }}
-      >
-        {themeMeta.name} — {editing.label}
-      </h3>
-      <p style={{ margin: "0 0 16px 0", fontSize: "0.85rem", color: UI.textMuted, lineHeight: 1.45 }}>
-        {activeThemeId === editing.themeId
-          ? "Live preview updates across the app."
-          : "Select this theme to preview changes app-wide."}
-      </p>
-
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "16px",
-          alignItems: "flex-start",
-          marginBottom: "20px",
-          padding: "16px",
-          background: UI.cardBg,
-          borderRadius: "12px",
-          border: `1px solid ${UI.border}`,
-        }}
-      >
-        <div>
-          <label
-            htmlFor="theme-color-picker"
-            style={{
-              display: "block",
-              fontSize: "0.85rem",
-              color: UI.textMuted,
-              marginBottom: "8px",
-              fontWeight: 500,
-            }}
-          >
-            Colour picker
-          </label>
-          <input
-            id="theme-color-picker"
-            type="color"
-            value={hexColorInputValue(draftValue)}
-            onChange={(e) => handlePickerChange(e.target.value)}
-            style={{
-              width: "72px",
-              height: "48px",
-              padding: 0,
-              border: `1px solid ${UI.border}`,
-              borderRadius: "8px",
-              cursor: "pointer",
-              background: "transparent",
-            }}
-          />
-        </div>
-        <div style={{ flex: "1 1 200px", minWidth: "180px" }}>
-          <label
-            htmlFor="theme-color-value"
-            style={{
-              display: "block",
-              fontSize: "0.85rem",
-              color: UI.textMuted,
-              marginBottom: "8px",
-              fontWeight: 500,
-            }}
-          >
-            Value (hex or rgba)
-          </label>
-          <input
-            id="theme-color-value"
-            type="text"
-            value={draftValue}
-            onChange={(e) => setDraftValue(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              borderRadius: "8px",
-              border: `1px solid ${UI.border}`,
-              fontSize: "0.95rem",
-              color: UI.textPrimary,
-              background: UI.inputBg,
-              boxSizing: "border-box",
-              fontFamily: "monospace",
-            }}
-          />
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              marginTop: "10px",
-              flexWrap: "wrap",
-            }}
-          >
-            {hasStoredOverride ? (
-              <button
-                type="button"
-                onClick={handleReset}
-                style={{
-                  background: "transparent",
-                  border: `1px solid ${UI.border}`,
-                  borderRadius: "8px",
-                  padding: "6px 12px",
-                  fontSize: "0.85rem",
-                  color: UI.textSecondary,
-                  cursor: "pointer",
-                }}
-              >
-                Reset to default
-              </button>
-            ) : null}
-            {saveStatus ? (
-              <span
-                style={{
-                  fontSize: "0.85rem",
-                  color: saveStatus === "Saved" || saveStatus === "Reset" ? "#2e7d32" : UI.textMuted,
-                }}
-              >
-                {saveStatus}
-              </span>
-            ) : null}
-          </div>
-        </div>
-        <div
-          style={{
-            width: "80px",
-            height: "80px",
-            borderRadius: "10px",
-            background: draftValue || UI.border,
-            border: `1px solid ${UI.outline}`,
-            flexShrink: 0,
-          }}
-          title="Preview"
-        />
-      </div>
-
-      <h4
-        style={{
-          margin: "0 0 10px 0",
-          fontSize: "1rem",
-          fontWeight: 600,
-          color: UI.textPrimary,
-        }}
-      >
-        {themeMeta.name} colours
-      </h4>
-      <ThemeColorSwatchGrid
-        colors={previewColors}
-        highlightKey={editing.colorKey}
-        onSwatchContextMenu={(key, label) => onEditColor(key, label)}
-      />
-    </>
   );
 }
 
 function ColourThemeContent() {
   const { themeId, setThemeId, getThemeColors } = useUiTheme();
-  const [editing, setEditing] = useState(null);
+  const [saving, setSaving] = useState(false);
 
-  if (editing) {
-    return (
-      <ColourThemeEditor
-        editing={editing}
-        onBack={() => setEditing(null)}
-        onEditColor={(colorKey, label) =>
-          setEditing({ themeId: editing.themeId, colorKey, label })
-        }
-      />
-    );
+  async function handleSelect(nextThemeId) {
+    if (nextThemeId === themeId) return;
+    setSaving(true);
+    try {
+      await setThemeId(nextThemeId);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <>
-      <h3
-        style={{
-          margin: "0 0 8px 0",
-          fontSize: "1.2rem",
-          fontWeight: 600,
-          color: UI.textPrimary,
-        }}
-      >
+      <h3 style={{ margin: "0 0 8px 0", fontSize: "1.2rem", fontWeight: 600, color: UI.textPrimary }}>
         Colour Theme
       </h3>
-      <p
-        style={{
-          margin: "0 0 20px 0",
-          fontSize: "0.9rem",
-          color: UI.textMuted,
-          lineHeight: 1.45,
-        }}
-      >
-        Changes core UI colours only. Right-click any swatch to customise a colour — changes save
-        automatically.
+      <p style={{ margin: "0 0 8px 0", fontSize: "0.95rem", color: UI.textPrimary, fontWeight: 500 }}>
+        Your palette: {getThemeDisplayName(themeId)}
+      </p>
+      <p style={{ margin: "0 0 20px 0", fontSize: "0.9rem", color: UI.textMuted, lineHeight: 1.45 }}>
+        Choose which colour palette you use. Palette colours are shared across the team; your choice is saved to your
+        account.
+        {saving ? " Saving…" : ""}
       </p>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -347,16 +90,18 @@ function ColourThemeContent() {
             <button
               key={theme.id}
               type="button"
-              onClick={() => setThemeId(theme.id)}
+              onClick={() => handleSelect(theme.id)}
+              disabled={saving}
               style={{
                 textAlign: "left",
                 background: UI.cardBg,
                 border: isSelected ? `2px solid ${UI.textPrimary}` : `1px solid ${UI.border}`,
                 borderRadius: "12px",
                 padding: "16px",
-                cursor: "pointer",
+                cursor: saving ? "wait" : "pointer",
                 boxSizing: "border-box",
                 width: "100%",
+                opacity: saving && !isSelected ? 0.7 : 1,
               }}
             >
               <div
@@ -367,24 +112,13 @@ function ColourThemeContent() {
                   marginBottom: "6px",
                 }}
               >
-                <span style={{ fontSize: "1.05rem", fontWeight: 600, color: UI.textPrimary }}>
-                  {theme.name}
-                </span>
+                <span style={{ fontSize: "1.05rem", fontWeight: 600, color: UI.textPrimary }}>{theme.name}</span>
                 {isSelected ? (
-                  <span style={{ fontSize: "0.85rem", fontWeight: 600, color: UI.textPrimary }}>
-                    Selected
-                  </span>
+                  <span style={{ fontSize: "0.85rem", fontWeight: 600, color: UI.textPrimary }}>Selected</span>
                 ) : null}
               </div>
-              <p style={{ margin: "0 0 12px 0", fontSize: "0.85rem", color: UI.textMuted }}>
-                {theme.description}
-              </p>
-              <ThemeColorSwatchGrid
-                colors={colors}
-                onSwatchContextMenu={(key, label) => {
-                  setEditing({ themeId: theme.id, colorKey: key, label });
-                }}
-              />
+              <p style={{ margin: "0 0 12px 0", fontSize: "0.85rem", color: UI.textMuted }}>{theme.description}</p>
+              <ThemeColorSwatchGrid colors={colors} compact />
             </button>
           );
         })}
@@ -405,6 +139,7 @@ function firstNameFromFullName(fullName) {
 }
 
 function AccountSettingsContent({ open }) {
+  const { themeId } = useUiTheme();
   const [userRecord, setUserRecord] = useState(null);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(true);
@@ -430,7 +165,7 @@ function AccountSettingsContent({ open }) {
       setLoading(true);
       setSaveStatus("");
       try {
-        const response = await fetch("/api/users");
+        const response = await fetch("/api/users", { headers: getApiHeaders() });
         if (!response.ok) {
           throw new Error("Failed to load account");
         }
@@ -489,7 +224,7 @@ function AccountSettingsContent({ open }) {
 
         const response = await fetch(`/api/users/${userRecord.id}`, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: getApiHeaders(),
           body: JSON.stringify({
             name: userRecord.name,
             email: userRecord.email || null,
@@ -497,6 +232,7 @@ function AccountSettingsContent({ open }) {
             password: trimmed,
             positionIds: userPositionIds,
             primaryPositionId: userRecord.primary_position_id || null,
+            uiThemeId: themeId,
           }),
         });
 
@@ -516,7 +252,7 @@ function AccountSettingsContent({ open }) {
     }, AUTO_SAVE_DELAY_MS);
 
     return () => window.clearTimeout(timer);
-  }, [password, userRecord, open]);
+  }, [password, userRecord, open, themeId]);
 
   if (loading) {
     return <p style={{ margin: 0, color: UI.textMuted }}>Loading…</p>;
@@ -528,17 +264,31 @@ function AccountSettingsContent({ open }) {
 
   return (
     <>
-      <h3
-        style={{
-          margin: "0 0 20px 0",
-          fontSize: "1.2rem",
-          fontWeight: 600,
-          color: UI.textPrimary,
-        }}
-      >
+      <h3 style={{ margin: "0 0 20px 0", fontSize: "1.2rem", fontWeight: 600, color: UI.textPrimary }}>
         Account
       </h3>
       <div style={{ maxWidth: "400px" }}>
+        <div style={{ marginBottom: "16px" }}>
+          <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>Palette</div>
+          <div
+            style={{
+              width: "100%",
+              padding: "10px 12px",
+              borderRadius: "8px",
+              border: `1px solid ${UI.border}`,
+              fontSize: "1rem",
+              color: UI.textPrimary,
+              background: UI.cardBg,
+              boxSizing: "border-box",
+            }}
+          >
+            {getThemeDisplayName(themeId)}
+          </div>
+          <p style={{ margin: "8px 0 0 0", fontSize: "0.85rem", color: UI.textMuted, lineHeight: 1.4 }}>
+            Change your palette under Colour Theme in this menu.
+          </p>
+        </div>
+
         <label
           htmlFor="account-password"
           style={{
@@ -580,14 +330,7 @@ function AccountSettingsContent({ open }) {
             {saveStatus}
           </p>
         ) : null}
-        <p
-          style={{
-            margin: "12px 0 0 0",
-            fontSize: "0.85rem",
-            color: UI.textMuted,
-            lineHeight: 1.4,
-          }}
-        >
+        <p style={{ margin: "12px 0 0 0", fontSize: "0.85rem", color: UI.textMuted, lineHeight: 1.4 }}>
           This is the password you use to log in. Changes save automatically.
         </p>
       </div>
@@ -710,13 +453,7 @@ export default function UserSettingsModal({ open, onClose, userName }) {
               boxSizing: "border-box",
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "10px",
-              }}
-            >
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {MENU_OPTIONS.map((option) => (
                 <button
                   key={option.key}

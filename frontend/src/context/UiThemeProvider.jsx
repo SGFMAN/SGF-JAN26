@@ -1,14 +1,15 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { getLoggedInUserId } from "../utils/auth";
-import {
-  applyUiThemeToDocument,
-  readStoredUiThemeColorOverrides,
-  readStoredUiThemeId,
-  writeStoredUiThemeColorOverrides,
-  writeStoredUiThemeId,
-} from "../themes/applyUiTheme";
+import { applyUiThemeToDocument } from "../themes/applyUiTheme";
 import { DEFAULT_UI_THEME_ID, getUiTheme } from "../themes/uiThemes";
 import { ensureUiButtonStylesLoaded, resetUiButtonStylesCache } from "../utils/uiButtonStyles.js";
+import {
+  ensureUiThemeSettingsLoaded,
+  getGlobalColorOverrides,
+  resetUiThemeSettingsCache,
+  saveGlobalColorOverrides,
+  saveUserThemeId,
+} from "../utils/uiThemeSettings.js";
 
 const UiThemeContext = createContext(null);
 
@@ -17,25 +18,29 @@ export function UiThemeProvider({ children }) {
   const [colorOverrides, setColorOverrides] = useState({});
 
   useEffect(() => {
-    const userId = getLoggedInUserId();
-    const stored = readStoredUiThemeId(userId);
-    const storedOverrides = readStoredUiThemeColorOverrides(userId);
-    setThemeIdState(stored);
-    setColorOverrides(storedOverrides);
-    applyUiThemeToDocument(stored, storedOverrides);
-
-    const loadButtonStyles = () => {
+    async function loadAllSettings() {
       if (!getLoggedInUserId()) {
         resetUiButtonStylesCache();
+        resetUiThemeSettingsCache();
+        setThemeIdState(DEFAULT_UI_THEME_ID);
+        setColorOverrides({});
         return;
       }
-      void ensureUiButtonStylesLoaded({ force: true });
-    };
 
-    loadButtonStyles();
+      const [{ themeId: loadedThemeId, colorOverrides: loadedOverrides }] = await Promise.all([
+        ensureUiThemeSettingsLoaded({ force: true }),
+        ensureUiButtonStylesLoaded({ force: true }),
+      ]);
+
+      setThemeIdState(loadedThemeId);
+      setColorOverrides(loadedOverrides);
+      applyUiThemeToDocument(loadedThemeId, loadedOverrides);
+    }
+
+    void loadAllSettings();
 
     function onAuthSessionChange() {
-      loadButtonStyles();
+      void loadAllSettings();
     }
 
     function onThemeChange(event) {
@@ -57,11 +62,15 @@ export function UiThemeProvider({ children }) {
   }, []);
 
   const setThemeId = useCallback(
-    (nextThemeId) => {
+    async (nextThemeId) => {
       const theme = getUiTheme(nextThemeId);
       setThemeIdState(theme.id);
       applyUiThemeToDocument(theme.id, colorOverrides);
-      writeStoredUiThemeId(getLoggedInUserId(), theme.id);
+      try {
+        await saveUserThemeId(theme.id);
+      } catch (err) {
+        console.error("Failed to save palette preference:", err);
+      }
     },
     [colorOverrides]
   );
@@ -75,41 +84,45 @@ export function UiThemeProvider({ children }) {
   );
 
   const setThemeColor = useCallback(
-    (targetThemeId, colorKey, value) => {
-      setColorOverrides((prev) => {
-        const userId = getLoggedInUserId();
-        const themePatch = { ...(prev[targetThemeId] || {}), [colorKey]: value };
-        const next = { ...prev, [targetThemeId]: themePatch };
-        writeStoredUiThemeColorOverrides(userId, next);
-        if (targetThemeId === themeId) {
-          applyUiThemeToDocument(targetThemeId, next);
-        }
-        return next;
-      });
+    async (targetThemeId, colorKey, value) => {
+      const themePatch = { ...(colorOverrides[targetThemeId] || {}), [colorKey]: value };
+      const next = { ...colorOverrides, [targetThemeId]: themePatch };
+      setColorOverrides(next);
+      if (targetThemeId === themeId) {
+        applyUiThemeToDocument(targetThemeId, next);
+      }
+      try {
+        await saveGlobalColorOverrides(next);
+      } catch (err) {
+        console.error("Failed to save palette colour:", err);
+        throw err;
+      }
     },
-    [themeId]
+    [colorOverrides, themeId]
   );
 
   const clearThemeColor = useCallback(
-    (targetThemeId, colorKey) => {
-      setColorOverrides((prev) => {
-        const userId = getLoggedInUserId();
-        const themePatch = { ...(prev[targetThemeId] || {}) };
-        delete themePatch[colorKey];
-        const next = { ...prev };
-        if (Object.keys(themePatch).length === 0) {
-          delete next[targetThemeId];
-        } else {
-          next[targetThemeId] = themePatch;
-        }
-        writeStoredUiThemeColorOverrides(userId, next);
-        if (targetThemeId === themeId) {
-          applyUiThemeToDocument(targetThemeId, next);
-        }
-        return next;
-      });
+    async (targetThemeId, colorKey) => {
+      const themePatch = { ...(colorOverrides[targetThemeId] || {}) };
+      delete themePatch[colorKey];
+      const next = { ...colorOverrides };
+      if (Object.keys(themePatch).length === 0) {
+        delete next[targetThemeId];
+      } else {
+        next[targetThemeId] = themePatch;
+      }
+      setColorOverrides(next);
+      if (targetThemeId === themeId) {
+        applyUiThemeToDocument(targetThemeId, next);
+      }
+      try {
+        await saveGlobalColorOverrides(next);
+      } catch (err) {
+        console.error("Failed to reset palette colour:", err);
+        throw err;
+      }
     },
-    [themeId]
+    [colorOverrides, themeId]
   );
 
   const value = useMemo(
@@ -135,3 +148,5 @@ export function useUiTheme() {
   }
   return ctx;
 }
+
+export { getGlobalColorOverrides };

@@ -1,8 +1,8 @@
 import { getApiHeaders, getLoggedInUserId, isUserAdmin } from "./auth.js";
 import {
-  readStoredUiThemeColorOverrides,
-  readStoredUiThemeId,
-} from "../themes/applyUiTheme.js";
+  getCachedUserThemeId,
+  getGlobalColorOverrides,
+} from "./uiThemeSettings.js";
 import { UI_THEME_COLOR_KEYS, getUiTheme } from "../themes/uiThemes.js";
 
 const STORAGE_KEY = "sgfUiButtonStyles";
@@ -53,9 +53,8 @@ export const EMPTY_BUTTON_STYLE = {
 };
 
 export function getActiveThemeColors() {
-  const userId = getLoggedInUserId();
-  const themeId = readStoredUiThemeId(userId);
-  const overrides = readStoredUiThemeColorOverrides(userId);
+  const themeId = getCachedUserThemeId();
+  const overrides = getGlobalColorOverrides();
   return getUiTheme(themeId, overrides?.[themeId] || {}).colors;
 }
 

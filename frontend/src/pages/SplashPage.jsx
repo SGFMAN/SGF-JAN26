@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import logo from "../images/logo.png";
 import { setAuthSession } from "../utils/auth";
-import { applyUiThemeToDocument, readStoredUiThemeColorOverrides, readStoredUiThemeId } from "../themes/applyUiTheme";
 import { UI } from "../utils/uiThemeTokens";
 
 const API_URL = "";
@@ -64,10 +63,6 @@ export default function SplashPage() {
 
       const data = await response.json();
       setAuthSession(data.userId, data.passwordType, data.user?.name);
-      applyUiThemeToDocument(
-        readStoredUiThemeId(data.userId),
-        readStoredUiThemeColorOverrides(data.userId)
-      );
 
       const redirectTo = location.state?.from?.pathname || "/projects";
       navigate(redirectTo, { replace: true });

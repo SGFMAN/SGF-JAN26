@@ -1,4 +1,8 @@
 import { getLoggedInUserId } from "../utils/auth";
+import {
+  getCachedUserThemeId,
+  getGlobalColorOverrides,
+} from "../utils/uiThemeSettings.js";
 import { DEFAULT_UI_THEME_ID, getUiTheme } from "./uiThemes";
 
 const CSS_VAR_MAP = {
@@ -42,7 +46,7 @@ const CSS_VAR_MAP = {
 export function applyUiThemeToDocument(themeId = DEFAULT_UI_THEME_ID, allColorOverrides) {
   if (typeof document === "undefined") return;
 
-  const resolvedOverrides = allColorOverrides ?? readStoredUiThemeColorOverrides();
+  const resolvedOverrides = allColorOverrides ?? getGlobalColorOverrides();
   const themeOverrides = resolvedOverrides?.[themeId] || {};
   const theme = getUiTheme(themeId, themeOverrides);
   const root = document.documentElement;
@@ -62,56 +66,31 @@ export function applyUiThemeToDocument(themeId = DEFAULT_UI_THEME_ID, allColorOv
   }
 }
 
-export function getUiThemeStorageKey(userId) {
-  return `sgfUiTheme_${userId || "guest"}`;
-}
-
+/** @deprecated Use getCachedUserThemeId() after ensureUiThemeSettingsLoaded(). */
 export function readStoredUiThemeId(userId) {
-  try {
-    const stored = localStorage.getItem(getUiThemeStorageKey(userId));
-    if (stored && getUiTheme(stored).id === stored) {
-      return stored;
-    }
-  } catch {
-    // ignore
+  if (userId && userId === getLoggedInUserId()) {
+    return getCachedUserThemeId();
   }
   return DEFAULT_UI_THEME_ID;
 }
 
-export function writeStoredUiThemeId(userId, themeId) {
-  try {
-    localStorage.setItem(getUiThemeStorageKey(userId), themeId);
-  } catch {
-    // ignore
-  }
+/** @deprecated Theme is saved via saveUserThemeId(). */
+export function writeStoredUiThemeId(_userId, _themeId) {
+  // no-op — persisted to database
 }
 
-export function getUiThemeColorOverridesStorageKey(userId) {
-  return `sgfUiThemeColors_${userId || "guest"}`;
+/** @deprecated Use getGlobalColorOverrides() after ensureUiThemeSettingsLoaded(). */
+export function readStoredUiThemeColorOverrides(_userId) {
+  return getGlobalColorOverrides();
 }
 
-export function readStoredUiThemeColorOverrides(userId) {
-  try {
-    const key = getUiThemeColorOverridesStorageKey(userId ?? getLoggedInUserId());
-    const raw = localStorage.getItem(key);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
+/** @deprecated Palette colours are global and saved via saveGlobalColorOverrides(). */
+export function writeStoredUiThemeColorOverrides(_userId, _overrides) {
+  // no-op — persisted to database
 }
 
-export function writeStoredUiThemeColorOverrides(userId, overrides) {
-  try {
-    localStorage.setItem(getUiThemeColorOverridesStorageKey(userId), JSON.stringify(overrides));
-  } catch {
-    // ignore
-  }
-}
-
-export function getThemeBannerColors(themeId = DEFAULT_UI_THEME_ID, userId) {
-  const allOverrides = readStoredUiThemeColorOverrides(userId);
+export function getThemeBannerColors(themeId = DEFAULT_UI_THEME_ID, _userId) {
+  const allOverrides = getGlobalColorOverrides();
   const { colors } = getUiTheme(themeId, allOverrides?.[themeId] || {});
   return {
     onHold: colors.onHoldBanner,

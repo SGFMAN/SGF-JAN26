@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from "react";
 
 import { UI } from "../utils/uiThemeTokens.js";
+import { UI_THEME_LIST } from "../themes/uiThemes.js";
+import { getThemeDisplayName } from "../utils/uiThemeSettings.js";
+import { getApiHeaders } from "../utils/auth.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
@@ -23,7 +26,9 @@ export default function Users() {
   const [showDeleteUserModal, setShowDeleteUserModal] = useState(false);
   const [isDeletingUser, setIsDeletingUser] = useState(false);
   const [detailsPassword, setDetailsPassword] = useState("");
+  const [detailsUiThemeId, setDetailsUiThemeId] = useState("classic");
   const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [isSavingPalette, setIsSavingPalette] = useState(false);
   
   // Positions state
   const [positions, setPositions] = useState([]);
@@ -44,6 +49,7 @@ export default function Users() {
   useEffect(() => {
     const user = users.find((u) => u.id === parseInt(selectedUserId, 10));
     setDetailsPassword(user?.password || "admin");
+    setDetailsUiThemeId(user?.ui_theme_id || "classic");
   }, [selectedUserId, users]);
 
   async function fetchUsers() {
@@ -248,6 +254,45 @@ export default function Users() {
     }
   }
 
+  async function handleSavePalette() {
+    const user = users.find((u) => u.id === parseInt(selectedUserId, 10));
+    if (!user) return;
+
+    if ((user.ui_theme_id || "classic") === detailsUiThemeId) return;
+
+    setIsSavingPalette(true);
+    try {
+      const userPositionIds =
+        user.positions && Array.isArray(user.positions) ? user.positions.map((p) => p.id) : [];
+
+      const response = await fetch(`${API_URL}/api/users/${user.id}`, {
+        method: "PUT",
+        headers: getApiHeaders(),
+        body: JSON.stringify({
+          name: user.name,
+          email: user.email || null,
+          phone: user.phone || null,
+          password: user.password || "admin",
+          positionIds: userPositionIds,
+          primaryPositionId: user.primary_position_id || null,
+          uiThemeId: detailsUiThemeId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(errorData.error || "Failed to update palette");
+      }
+
+      await fetchUsers();
+    } catch (error) {
+      console.error("Error updating palette:", error);
+      alert(error.message || "Failed to update palette");
+    } finally {
+      setIsSavingPalette(false);
+    }
+  }
+
   async function handleSavePassword() {
     const user = users.find((u) => u.id === parseInt(selectedUserId, 10));
     if (!user) {
@@ -272,9 +317,7 @@ export default function Users() {
 
       const response = await fetch(`${API_URL}/api/users/${user.id}`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: getApiHeaders(),
         body: JSON.stringify({
           name: user.name,
           email: user.email || null,
@@ -282,6 +325,7 @@ export default function Users() {
           password: trimmedPassword,
           positionIds: userPositionIds,
           primaryPositionId: user.primary_position_id || null,
+          uiThemeId: user.ui_theme_id || detailsUiThemeId || "classic",
         }),
       });
 
@@ -805,6 +849,71 @@ export default function Users() {
               }}>
                 {selectedUser.email || "—"}
               </div>
+            </div>
+
+            {/* Palette */}
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
+                Palette
+              </div>
+              <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                <select
+                  value={detailsUiThemeId || "classic"}
+                  onChange={(e) => setDetailsUiThemeId(e.target.value)}
+                  disabled={isSavingPalette}
+                  style={{
+                    flex: 1,
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                    cursor: isSavingPalette ? "wait" : "pointer",
+                  }}
+                >
+                  {UI_THEME_LIST.map((theme) => (
+                    <option key={theme.id} value={theme.id}>
+                      {theme.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleSavePalette}
+                  disabled={
+                    isSavingPalette ||
+                    (selectedUser.ui_theme_id || "classic") === (detailsUiThemeId || "classic")
+                  }
+                  style={{
+                    background: WHITE,
+                    color: MONUMENT,
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "10px 16px",
+                    fontSize: "0.95rem",
+                    fontWeight: 500,
+                    cursor:
+                      isSavingPalette ||
+                      (selectedUser.ui_theme_id || "classic") === (detailsUiThemeId || "classic")
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity:
+                      isSavingPalette ||
+                      (selectedUser.ui_theme_id || "classic") === (detailsUiThemeId || "classic")
+                        ? 0.6
+                        : 1,
+                    whiteSpace: "nowrap",
+                    height: "42px",
+                  }}
+                >
+                  {isSavingPalette ? "Saving…" : "Save"}
+                </button>
+              </div>
+              <p style={{ margin: "8px 0 0 0", fontSize: "0.85rem", color: UI.textMuted }}>
+                Current: {getThemeDisplayName(selectedUser.ui_theme_id || "classic")}
+              </p>
             </div>
 
             {/* Password */}

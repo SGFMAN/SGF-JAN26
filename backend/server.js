@@ -637,6 +637,57 @@ function parseUiButtonStylesJsonColumn(raw) {
   return { nextId: 1, buttons: {} };
 }
 
+const UI_THEME_IDS = new Set([
+  "classic",
+  "dark",
+  "light",
+  "bladeRunner",
+  "autumn",
+  "winter",
+  "summer",
+  "spring",
+  "christmas",
+  "rainbow",
+  "oldTime",
+  "retro",
+]);
+
+function normalizeUiThemeId(value) {
+  const id = String(value || "").trim();
+  return UI_THEME_IDS.has(id) ? id : "classic";
+}
+
+function normalizeUiThemeColorOverrides(parsed) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  const out = {};
+  for (const [themeId, themePatch] of Object.entries(parsed)) {
+    if (!UI_THEME_IDS.has(themeId)) continue;
+    if (!themePatch || typeof themePatch !== "object" || Array.isArray(themePatch)) continue;
+    const colors = {};
+    for (const [colorKey, colorValue] of Object.entries(themePatch)) {
+      const v = String(colorValue ?? "").trim();
+      if (v) colors[colorKey] = v;
+    }
+    if (Object.keys(colors).length > 0) out[themeId] = colors;
+  }
+  return out;
+}
+
+function parseUiThemeColorOverridesColumn(raw) {
+  if (raw == null || raw === "") return {};
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    return normalizeUiThemeColorOverrides(raw);
+  }
+  if (typeof raw === "string") {
+    try {
+      return normalizeUiThemeColorOverrides(JSON.parse(raw));
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 /** Match template From → slot (same order as former secondary → vic → QLD → 5–16 → primary). */
 const SMTP_FROM_ADDRESS_MATCH_ORDER = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 1];
 
@@ -897,8 +948,8 @@ async function ensureSchema() {
     await ensureUserMessagesTable(pool);
     await ensureMapFloorPlansDollarValueColumn(pool);
     await addMissingColumns(pool, "projects", ["construction_payments_paid"]);
-    await addMissingColumns(pool, "settings", ["ui_button_styles_json"]);
-    await addMissingColumns(pool, "users", ["password"]);
+    await addMissingColumns(pool, "settings", ["ui_button_styles_json", "ui_theme_color_overrides_json"]);
+    await addMissingColumns(pool, "users", ["password", "ui_theme_id"]);
     await pool.query(`UPDATE users SET password = 'admin' WHERE password IS NULL OR password = ''`);
     return;
   }
@@ -1376,12 +1427,18 @@ async function ensureSchema() {
       console.log(`Error adding column email_general_json:`, e.message);
     }
   }
-  // UI Settings → Buttons (global JSON; numbered button style presets)
   try {
     await pool.query(`ALTER TABLE settings ADD COLUMN ui_button_styles_json TEXT`);
   } catch (e) {
     if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
       console.log(`Error adding column ui_button_styles_json:`, e.message);
+    }
+  }
+  try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN ui_theme_color_overrides_json TEXT`);
+  } catch (e) {
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column ui_theme_color_overrides_json:`, e.message);
     }
   }
   // Drawing Settings page: notification emails (VIC / QLD / Investor Streams)
@@ -3380,7 +3437,7 @@ app.get("/api/users", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const usersResult = await pool.query(
-      `SELECT u.id, u.name, u.email, u.phone, u.primary_position_id,
+      `SELECT u.id, u.name, u.email, u.phone, u.primary_position_id, u.ui_theme_id,
               COALESCE(u.password, 'admin') AS password,
               u.created_at, u.updated_at,
               COALESCE(
@@ -3391,7 +3448,7 @@ app.get("/api/users", async (req, res) => {
        FROM users u
        LEFT JOIN user_positions up ON up.user_id = u.id
        LEFT JOIN positions p ON p.id = up.position_id
-       GROUP BY u.id, u.name, u.email, u.phone, u.primary_position_id, u.password, u.created_at, u.updated_at
+       GROUP BY u.id, u.name, u.email, u.phone, u.primary_position_id, u.ui_theme_id, u.password, u.created_at, u.updated_at
        ORDER BY u.name ASC, u.id ASC`
     );
     res.json(usersResult.rows);
@@ -3581,8 +3638,13 @@ app.put("/api/users/:id", async (req, res) => {
   }
 
   try {
-    const { name, email, phone, positionIds, primaryPositionId, password } = req.body || {};
+    const { name, email, phone, positionIds, primaryPositionId, password, uiThemeId, ui_theme_id } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
+
+    const resolvedUiThemeId =
+      uiThemeId != null || ui_theme_id != null
+        ? normalizeUiThemeId(uiThemeId ?? ui_theme_id)
+        : null;
 
     await pool.query('BEGIN');
 
@@ -3591,8 +3653,9 @@ app.put("/api/users/:id", async (req, res) => {
       `UPDATE users 
        SET name = $1, email = $2, phone = $3, primary_position_id = $4,
            password = COALESCE($5, password, 'admin'),
+           ui_theme_id = COALESCE($6, ui_theme_id),
            updated_at = NOW()
-       WHERE id = $6 
+       WHERE id = $7 
        RETURNING *`,
       [
         name.trim(),
@@ -3600,6 +3663,7 @@ app.put("/api/users/:id", async (req, res) => {
         phone ? phone.trim() : null,
         primaryPositionId ? parseInt(primaryPositionId) : null,
         password != null && String(password).trim() !== "" ? String(password) : null,
+        resolvedUiThemeId,
         id,
       ]
     );
@@ -3852,6 +3916,77 @@ app.put("/api/ui-button-styles", async (req, res) => {
   } catch (e) {
     console.error("Error saving UI button styles:", e);
     return res.status(500).json({ error: e.message || "Failed to save UI button styles" });
+  }
+});
+
+// Global UI theme palette colour overrides (Settings → UI → Palette)
+app.get("/api/ui-theme-colors", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const userId = getRequestUserId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  try {
+    const r = await pool.query("SELECT ui_theme_color_overrides_json FROM settings WHERE id = 1");
+    const overrides = parseUiThemeColorOverridesColumn(r.rows[0]?.ui_theme_color_overrides_json);
+    return res.json({ ok: true, overrides });
+  } catch (e) {
+    console.error("Error fetching UI theme colours:", e);
+    return res.status(500).json({ error: e.message || "Failed to fetch UI theme colours" });
+  }
+});
+
+app.put("/api/ui-theme-colors", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) return res.status(403).json({ error: "Admin access required" });
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const overrides = normalizeUiThemeColorOverrides(body.overrides ?? body);
+    const json = JSON.stringify(overrides);
+    await pool.query(
+      `INSERT INTO settings (id, ui_theme_color_overrides_json, updated_at)
+       VALUES (1, $1, NOW())
+       ON CONFLICT (id) DO UPDATE SET ui_theme_color_overrides_json = EXCLUDED.ui_theme_color_overrides_json, updated_at = NOW()`,
+      [json]
+    );
+    return res.json({ ok: true, overrides });
+  } catch (e) {
+    console.error("Error saving UI theme colours:", e);
+    return res.status(500).json({ error: e.message || "Failed to save UI theme colours" });
+  }
+});
+
+// Per-user colour palette (theme) preference
+app.get("/api/users/me/ui-preferences", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const userId = getRequestUserId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  try {
+    const r = await pool.query(`SELECT ui_theme_id FROM users WHERE id = $1`, [userId]);
+    if (!r.rows.length) return res.status(404).json({ error: "User not found" });
+    const uiThemeId = normalizeUiThemeId(r.rows[0].ui_theme_id);
+    return res.json({ ok: true, uiThemeId });
+  } catch (e) {
+    console.error("Error fetching UI preferences:", e);
+    return res.status(500).json({ error: e.message || "Failed to fetch UI preferences" });
+  }
+});
+
+app.put("/api/users/me/ui-preferences", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const userId = getRequestUserId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const uiThemeId = normalizeUiThemeId(body.uiThemeId ?? body.ui_theme_id);
+    const r = await pool.query(
+      `UPDATE users SET ui_theme_id = $1, updated_at = NOW() WHERE id = $2 RETURNING ui_theme_id`,
+      [uiThemeId, userId]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: "User not found" });
+    return res.json({ ok: true, uiThemeId: normalizeUiThemeId(r.rows[0].ui_theme_id) });
+  } catch (e) {
+    console.error("Error saving UI preferences:", e);
+    return res.status(500).json({ error: e.message || "Failed to save UI preferences" });
   }
 });
 
