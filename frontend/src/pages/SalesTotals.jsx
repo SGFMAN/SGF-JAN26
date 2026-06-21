@@ -485,7 +485,7 @@ export default function SalesTotals() {
           }}
         >
           {/* Analytics - Light Blue */}
-          <div style={{ background: MENU.blue, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
+          <div style={{ background: MENU.blue, borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
             <Link
               to="/sales-analytics"
               style={{
@@ -511,7 +511,7 @@ export default function SalesTotals() {
           </div>
 
           {/* PDF - Light Grey */}
-          <div style={{ background: "#e8e8ea", borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
+          <div style={{ background: "#e8e8ea", borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
             <button
               type="button"
               onClick={handleOpenPdfEmail}
@@ -540,7 +540,7 @@ export default function SalesTotals() {
           <div style={{ flex: 1 }} />
           
           {/* Back to Sales - Light Red */}
-          <div style={{ background: MENU.red, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
+          <div style={{ background: MENU.red, borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
             <Link
               to="/sales"
               style={{

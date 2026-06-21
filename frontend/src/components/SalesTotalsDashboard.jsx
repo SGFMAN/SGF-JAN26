@@ -16,7 +16,7 @@ const TOTALS_CARD = {
     background: MONUMENT,
     borderRadius: "12px",
     padding: "20px",
-    border: `2px solid ${UI.outline}`,
+    border: `1px solid ${UI.outline}`,
     boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
     display: "flex",
     flexDirection: "column",

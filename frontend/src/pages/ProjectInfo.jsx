@@ -1,15 +1,32 @@
 import React, { useState, useEffect, useRef } from "react";
 import { PROJECT_STATUS_OPTIONS as STATUS_OPTIONS } from "../utils/projectStatus";
 import { CLASSIFICATION_OPTIONS } from "../utils/classifications";
-import SiteSatelliteMapModal from "../components/SiteSatelliteMapModal";
 
-import { UI } from "../utils/uiThemeTokens.js";
+import { UI, MENU, INDICATOR } from "../utils/uiThemeTokens.js";
+import { streamColorHover } from "../utils/streamColors.js";
+import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 const MONUMENT = UI.textPrimary;
-const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
-const PAGE_TEXT = UI.pageText;
+const FIELD_OUTLINE = `1px solid ${UI.outline}`;
 const API_URL = "";
 const SPECS_OPTIONS = ["Affordable", "Superior"];
+
+const RENOVATION_DUPLICATE_BUTTON_ID = 4;
+const PROPOSAL_BUTTON_ID = 3;
+
+/** Align action buttons with sidebar Back to Main (same as Drawings page). */
+const PROJECT_PANEL_HEIGHT_PX = 758;
+const SIDEBAR_BELOW_GREEN_MENU_PX = 101;
+const PROJECT_INFO_HEADER_OFFSET_PX = 74;
+const PROJECT_INFO_BODY_MAX_HEIGHT_PX =
+  PROJECT_PANEL_HEIGHT_PX - SIDEBAR_BELOW_GREEN_MENU_PX - PROJECT_INFO_HEADER_OFFSET_PX;
+const PROJECT_INFO_ACTION_ZONE_HEIGHT_PX = SIDEBAR_BELOW_GREEN_MENU_PX - 24;
+const PROJECT_INFO_COL1_WIDTH_PX = 380;
+
+function mergeProjectInfoButtonStyle(styleId, fallback) {
+  const saved = buildSavedButtonStyle(styleId, true);
+  return saved ? { ...saved, lineHeight: "1.2" } : fallback;
+}
 
 function getLongestText(arr, include = "") {
   return arr.concat(include ? [include] : []).reduce(
@@ -36,8 +53,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
   const [projectInfoNotes, setProjectInfoNotes] = useState(project?.project_info_notes || "");
   const [onHold, setOnHold] = useState(project?.on_hold === 'true' || project?.on_hold === true);
   const [qpNumber, setQpNumber] = useState(project?.qp_number || "");
-  const [siteMapModalOpen, setSiteMapModalOpen] = useState(false);
-  const [siteMapAddressQuery, setSiteMapAddressQuery] = useState("");
+  const [, setUiButtonStyleRevision] = useState(0);
 
   // Use ref to track latest values for saving
   const valuesRef = useRef({ status, street, suburb, state, specs, classification, projectInfoNotes, onHold, qpNumber });
@@ -75,6 +91,16 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
         clearTimeout(projectInfoSaveTimerRef.current);
         projectInfoSaveTimerRef.current = null;
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => setUiButtonStyleRevision((n) => n + 1);
+    window.addEventListener("sgf-ui-button-styles-change", refresh);
+    window.addEventListener("sgf-ui-theme-change", refresh);
+    return () => {
+      window.removeEventListener("sgf-ui-button-styles-change", refresh);
+      window.removeEventListener("sgf-ui-theme-change", refresh);
     };
   }, []);
 
@@ -248,20 +274,102 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
     valuesRef.current.projectInfoNotes = newValue;
   }
 
+  const renovationDuplicateButtonStyle = mergeProjectInfoButtonStyle(RENOVATION_DUPLICATE_BUTTON_ID, {
+    padding: "10px 12px",
+    borderRadius: "8px",
+    border: FIELD_OUTLINE,
+    fontSize: "0.9rem",
+    fontWeight: 500,
+    color: MONUMENT,
+    background: INDICATOR.orange,
+    cursor: "pointer",
+    boxSizing: "border-box",
+    transition: "background 0.17s",
+    flexShrink: 0,
+  });
+  const proposalButtonStyle = mergeProjectInfoButtonStyle(PROPOSAL_BUTTON_ID, {
+    background: MENU.purple,
+    color: MENU.activeText,
+    border: FIELD_OUTLINE,
+    borderRadius: "10px",
+    padding: "10px 20px",
+    fontSize: "0.9rem",
+    fontWeight: 500,
+    cursor: "pointer",
+    transition: "background 0.17s, border-color 0.17s",
+  });
+  const renovationUsesSavedStyle = Boolean(buildSavedButtonStyle(RENOVATION_DUPLICATE_BUTTON_ID, true));
+  const proposalUsesSavedStyle = Boolean(buildSavedButtonStyle(PROPOSAL_BUTTON_ID, true));
+
+  const showLinkRenovationButton =
+    (project?.classification || "").trim() !== "Renovation" &&
+    typeof onRequestLinkRenovationDuplicate === "function" &&
+    !(
+      Array.isArray(project?.duplicate_linked_project_ids) &&
+      project.duplicate_linked_project_ids.length > 0
+    ) &&
+    (project?.duplicate_source_project_id == null ||
+      String(project.duplicate_source_project_id).trim() === "");
+
+  const projectInfoFieldBoxStyle = {
+    border: FIELD_OUTLINE,
+    borderRadius: "8px",
+    padding: "12px",
+    background: WHITE,
+    boxSizing: "border-box",
+  };
+
+  const projectInfoLabelStyle = {
+    fontSize: "0.9rem",
+    color: UI.textMuted,
+    marginBottom: "6px",
+    flexShrink: 0,
+  };
+
   return (
-    <>
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%" }}>
       <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, flexShrink: 0 }}>
         Project Info
       </h2>
       {project && (
-        <div style={{ marginTop: "24px", display: "flex", gap: "24px", flexWrap: "wrap", alignItems: "stretch", flex: 1, minHeight: 0 }}>
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+          <div
+            style={{
+              marginTop: "24px",
+              display: "flex",
+              gap: "20px",
+              flexWrap: "nowrap",
+              alignItems: "stretch",
+              flex: "1 1 auto",
+              minHeight: 0,
+              maxHeight: `${PROJECT_INFO_BODY_MAX_HEIGHT_PX}px`,
+              overflow: "hidden",
+            }}
+          >
           {/* Column 1 */}
-          <div style={{ flex: "1", minWidth: "200px" }}>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
-                Status
-              </div>
+          <div
+            style={{
+              flex: `0 0 ${PROJECT_INFO_COL1_WIDTH_PX}px`,
+              width: `${PROJECT_INFO_COL1_WIDTH_PX}px`,
+              maxWidth: `${PROJECT_INFO_COL1_WIDTH_PX}px`,
+              display: "flex",
+              flexDirection: "column",
+              height: "100%",
+              minHeight: 0,
+            }}
+          >
+            <div
+              style={{
+                ...projectInfoFieldBoxStyle,
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                minHeight: 0,
+                overflowY: "auto",
+              }}
+            >
+            <div style={{ marginBottom: "16px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px" }}>
+              <div style={{ ...projectInfoLabelStyle, marginBottom: 0, whiteSpace: "nowrap" }}>Status</div>
               <select
                 ref={statusSelectRef}
                 name="status"
@@ -269,17 +377,16 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                 value={status}
                 onChange={handleStatusChange}
                 style={{
-                  width: "100%",
-                  maxWidth: "300px",
+                  width: `${getLongestText(STATUS_OPTIONS, status).length + 2.5}ch`,
                   padding: "10px 12px",
                   borderRadius: "8px",
-                  border: "none",
+                  border: FIELD_OUTLINE,
                   fontSize: "1rem",
                   color: MONUMENT,
                   background: WHITE,
                   boxSizing: "border-box",
                   cursor: "pointer",
-                  display: "block",
+                  flexShrink: 0,
                 }}
               >
                 {STATUS_OPTIONS.map((option) => (
@@ -288,9 +395,15 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                   </option>
                 ))}
               </select>
-            </div>
-            <div style={{ marginBottom: "16px" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={onHold}
@@ -301,9 +414,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                     cursor: "pointer",
                   }}
                 />
-                <div style={{ fontSize: "0.9rem", color: UI.textMuted }}>
-                  On Hold
-                </div>
+                <span style={{ fontSize: "0.9rem", color: UI.textMuted, whiteSpace: "nowrap" }}>On Hold</span>
               </label>
             </div>
             <div style={{ marginBottom: "16px" }}>
@@ -318,10 +429,9 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                 onChange={handleStreetChange}
                 style={{
                   width: "100%",
-                  maxWidth: "300px",
                   padding: "10px 12px",
                   borderRadius: "8px",
-                  border: "none",
+                  border: FIELD_OUTLINE,
                   fontSize: "1rem",
                   color: MONUMENT,
                   background: WHITE,
@@ -329,52 +439,148 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                 }}
               />
             </div>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
-                Suburb
+            <div style={{ marginBottom: "16px", width: "100%" }}>
+              <div style={{ display: "flex", gap: "12px", alignItems: "flex-end" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
+                    Suburb
+                  </div>
+                  <input
+                    type="text"
+                    name="suburb"
+                    data-field="suburb"
+                    value={suburb}
+                    onChange={handleSuburbChange}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: FIELD_OUTLINE,
+                      fontSize: "1rem",
+                      color: MONUMENT,
+                      background: WHITE,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+                <div style={{ flex: "0 0 auto" }}>
+                  <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
+                    State
+                  </div>
+                  <input
+                    type="text"
+                    name="state"
+                    data-field="state"
+                    value={state}
+                    onChange={handleStateChange}
+                    style={{
+                      width: `${getLongestText(["VIC", "QLD", "NSW", "SA", "WA", "TAS", "NT", "ACT"], state).length + 2.5}ch`,
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: FIELD_OUTLINE,
+                      fontSize: "1rem",
+                      color: MONUMENT,
+                      background: WHITE,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
               </div>
-              <input
-                type="text"
-                name="suburb"
-                data-field="suburb"
-                value={suburb}
-                onChange={handleSuburbChange}
-                style={{
-                  width: "100%",
-                  maxWidth: "300px",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
-              />
             </div>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
-                State
+            <div
+              style={{
+                marginBottom: "16px",
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "12px",
+                alignItems: "flex-end",
+              }}
+            >
+              <div style={{ flexShrink: 0, width: "max-content" }}>
+                <div style={projectInfoLabelStyle}>Specs</div>
+                <select
+                  name="specs"
+                  value={specs}
+                  onChange={handleSpecsChange}
+                  style={{
+                    width: `${getLongestText([...SPECS_OPTIONS, "Select specs..."], specs).length + 2.5}ch`,
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: FIELD_OUTLINE,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="">Select specs...</option>
+                  {SPECS_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <input
-                type="text"
-                name="state"
-                data-field="state"
-                value={state}
-                onChange={handleStateChange}
-                style={{
-                  width: "100%",
-                  maxWidth: "300px",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
-              />
+              <div style={{ flexShrink: 0, width: "max-content" }}>
+                <div style={projectInfoLabelStyle}>Classification</div>
+                <select
+                  name="classification"
+                  value={classification}
+                  onChange={handleClassificationChange}
+                  style={{
+                    width: `${getLongestText([...CLASSIFICATION_OPTIONS, "Select classification..."], classification).length + 2.5}ch`,
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: FIELD_OUTLINE,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="">Select classification...</option>
+                  {CLASSIFICATION_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
+            {(project?.classification || "").trim() === "Renovation" &&
+              typeof onRequestRenovationDuplicate === "function" &&
+              !(
+                Array.isArray(project?.duplicate_linked_project_ids) &&
+                project.duplicate_linked_project_ids.length > 0
+              ) &&
+              (project?.duplicate_source_project_id == null ||
+                String(project.duplicate_source_project_id).trim() === "") && (
+              <div style={{ marginBottom: "16px" }}>
+                <button
+                  type="button"
+                  onClick={() => onRequestRenovationDuplicate()}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${MONUMENT}`,
+                    fontSize: "0.95rem",
+                    fontWeight: 600,
+                    color: WHITE,
+                    background: MONUMENT,
+                    cursor: "pointer",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  Duplicate & Link SSD
+                </button>
+                <div style={{ fontSize: "0.75rem", color: UI.textMuted, marginTop: "6px", lineHeight: 1.35 }}>
+                  New job number and sales entry; re-use the same Windows job folder (no new folder).
+                </div>
+              </div>
+            )}
             {isQldState(state) && (
               <div style={{ marginBottom: "16px" }}>
                 <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
@@ -389,10 +595,9 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                   placeholder="Queensland project number"
                   style={{
                     width: "100%",
-                    maxWidth: "300px",
                     padding: "10px 12px",
                     borderRadius: "8px",
-                    border: "none",
+                    border: FIELD_OUTLINE,
                     fontSize: "1rem",
                     color: MONUMENT,
                     background: WHITE,
@@ -401,316 +606,217 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                 />
               </div>
             )}
-            <div style={{ marginTop: "24px" }}>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,application/pdf"
-                style={{ display: "none" }}
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file || !project?.id) return;
-
-                  // Check if it's a PDF
-                  if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-                    alert("Please select a PDF file.");
-                    e.target.value = ""; // Reset input
-                    return;
-                  }
-
-                  // Create FormData to upload the file
-                  const formData = new FormData();
-                  formData.append("file", file);
-                  formData.append("projectId", project.id.toString());
-
-                  try {
-                    const response = await fetch(`${API_URL}/api/files/locate-proposal`, {
-                      method: "POST",
-                      body: formData,
-                    });
-
-                    if (!response.ok) {
-                      const errorData = await response.json().catch(() => ({}));
-                      throw new Error(errorData.error || "Failed to save proposal location");
-                    }
-
-                    // Refresh project data
-                    if (onUpdate) {
-                      onUpdate();
-                    }
-                  } catch (error) {
-                    console.error("Error saving proposal:", error);
-                    alert(error.message || "Failed to save proposal location");
-                  }
-
-                  // Reset input
-                  e.target.value = "";
-                }}
-              />
-              <button
-                type="button"
-                onClick={async () => {
-                  if (project?.proposal_pdf_location) {
-                    try {
-                      const pdfUrl = `${API_URL}/api/files/proposal/${project.id}`;
-                      const response = await fetch(pdfUrl);
-                      if (!response.ok) {
-                        fileInputRef.current?.click();
-                      } else {
-                        window.open(pdfUrl, "_blank");
-                      }
-                    } catch (error) {
-                      console.error("Error checking proposal PDF:", error);
-                      fileInputRef.current?.click();
-                    }
-                  } else {
-                    fileInputRef.current?.click();
-                  }
-                }}
-                style={{
-                  background: MONUMENT,
-                  color: PAGE_TEXT,
-                  border: "none",
-                  borderRadius: "10px",
-                  padding: "10px 20px",
-                  fontSize: "1rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "background 0.17s",
-                }}
-              >
-                {project?.proposal_pdf_location ? "Show Proposal" : "Locate Proposal"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const q = [street, suburb, state]
-                    .map((s) => String(s || "").trim())
-                    .filter(Boolean)
-                    .join(", ");
-                  if (!q) {
-                    alert("Add street, suburb, and state first so the map can find the site.");
-                    return;
-                  }
-                  setSiteMapAddressQuery(q);
-                  setSiteMapModalOpen(true);
-                }}
-                style={{
-                  marginTop: "12px",
-                  display: "block",
-                  background: MONUMENT,
-                  color: PAGE_TEXT,
-                  border: "none",
-                  borderRadius: "10px",
-                  padding: "10px 20px",
-                  fontSize: "1rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "background 0.17s",
-                }}
-              >
-                Show Site Map
-              </button>
             </div>
           </div>
 
-          {/* Column 2 - Specs and Classification */}
-          <div style={{ flex: "1", minWidth: "200px" }}>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
-                Specs
-              </div>
-              <select
-                name="specs"
-                value={specs}
-                onChange={handleSpecsChange}
-                style={{
-                  width: "100%",
-                  maxWidth: "300px",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                  cursor: "pointer",
-                  display: "block",
-                }}
-              >
-                <option value="">Select specs...</option>
-                {SPECS_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
-                Classification
-              </div>
-              <select
-                name="classification"
-                value={classification}
-                onChange={handleClassificationChange}
-                style={{
-                  width: "100%",
-                  maxWidth: "300px",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                  cursor: "pointer",
-                  display: "block",
-                }}
-              >
-                <option value="">Select classification...</option>
-                {CLASSIFICATION_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {(project?.classification || "").trim() === "Renovation" &&
-              typeof onRequestRenovationDuplicate === "function" &&
-              !(
-                Array.isArray(project?.duplicate_linked_project_ids) &&
-                project.duplicate_linked_project_ids.length > 0
-              ) &&
-              (project?.duplicate_source_project_id == null ||
-                String(project.duplicate_source_project_id).trim() === "") && (
-              <div style={{ marginTop: "12px" }}>
-                <button
-                  type="button"
-                  onClick={() => onRequestRenovationDuplicate()}
-                  style={{
-                    width: "100%",
-                    maxWidth: "300px",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: `1px solid ${MONUMENT}`,
-                    fontSize: "0.95rem",
-                    fontWeight: 600,
-                    color: WHITE,
-                    background: MONUMENT,
-                    cursor: "pointer",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  Duplicate & Link SSD
-                </button>
-                <div style={{ fontSize: "0.75rem", color: UI.textMuted, marginTop: "6px", maxWidth: "300px", lineHeight: 1.35 }}>
-                  New job number and sales entry; re-use the same Windows job folder (no new folder).
-                </div>
-              </div>
-            )}
-            {(project?.classification || "").trim() !== "Renovation" &&
-              typeof onRequestLinkRenovationDuplicate === "function" &&
-              !(
-                Array.isArray(project?.duplicate_linked_project_ids) &&
-                project.duplicate_linked_project_ids.length > 0
-              ) &&
-              (project?.duplicate_source_project_id == null ||
-                String(project.duplicate_source_project_id).trim() === "") && (
-              <div style={{ marginTop: "12px" }}>
-                <button
-                  type="button"
-                  onClick={() => onRequestLinkRenovationDuplicate()}
-                  style={{
-                    width: "100%",
-                    maxWidth: "300px",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: `1px solid ${MONUMENT}`,
-                    fontSize: "0.95rem",
-                    fontWeight: 600,
-                    color: WHITE,
-                    background: MONUMENT,
-                    cursor: "pointer",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  Duplicate & Link Renovation
-                </button>
-                <div style={{ fontSize: "0.75rem", color: UI.textMuted, marginTop: "6px", maxWidth: "300px", lineHeight: 1.35 }}>
-                  New renovation job linked to this folder; renovation proposal PDF goes in 12. RENOVATION only.
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Column 3 - Project Log */}
-          <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", height: "100%" }}>
-            <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
-              Project Log
-            </div>
+          {/* Column 2 - Notes */}
+          <div
+            style={{
+              flex: "0 0 300px",
+              width: "300px",
+              maxWidth: "300px",
+              display: "flex",
+              flexDirection: "column",
+              height: "100%",
+              minHeight: 0,
+            }}
+          >
             <div
               style={{
-                width: "100%",
-                maxWidth: "300px",
+                ...projectInfoFieldBoxStyle,
                 flex: 1,
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: "none",
-                fontSize: "0.9rem",
-                color: MONUMENT,
-                background: WHITE,
-                boxSizing: "border-box",
-                overflowY: "auto",
-                fontFamily: "monospace",
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
+                display: "flex",
+                flexDirection: "column",
                 minHeight: 0,
               }}
             >
-              {project?.project_log || "No log entries yet."}
+              <div style={projectInfoLabelStyle}>Notes</div>
+              <textarea
+                name="project_info_notes"
+                value={projectInfoNotes}
+                onChange={handleProjectInfoNotesChange}
+                onBlur={() => void saveAllFields()}
+                placeholder="Add project notes..."
+                style={{
+                  width: "100%",
+                  flex: 1,
+                  padding: 0,
+                  border: "none",
+                  outline: "none",
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: "transparent",
+                  boxSizing: "border-box",
+                  resize: "none",
+                  fontFamily: "inherit",
+                  overflowY: "auto",
+                  minHeight: 0,
+                }}
+              />
             </div>
           </div>
 
-          {/* Column 4 - Notes */}
-          <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", height: "100%" }}>
-            <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", flexShrink: 0 }}>
-              Notes
-            </div>
-            <textarea
-              name="project_info_notes"
-              value={projectInfoNotes}
-              onChange={handleProjectInfoNotesChange}
-              onBlur={() => void saveAllFields()}
-              placeholder="Add project notes..."
+          {/* Column 3 - Project Log */}
+          <div
+            style={{
+              flex: "1 1 0",
+              minWidth: "120px",
+              display: "flex",
+              flexDirection: "column",
+              height: "100%",
+              minHeight: 0,
+            }}
+          >
+            <div
               style={{
-                width: "100%",
-                maxWidth: "300px",
+                ...projectInfoFieldBoxStyle,
                 flex: 1,
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: "none",
-                fontSize: "1rem",
-                color: MONUMENT,
-                background: WHITE,
-                boxSizing: "border-box",
-                resize: "none",
-                fontFamily: "inherit",
-                overflowY: "auto",
+                display: "flex",
+                flexDirection: "column",
                 minHeight: 0,
-                height: "100%",
+              }}
+            >
+              <div style={projectInfoLabelStyle}>Project Log</div>
+              <div
+                style={{
+                  width: "100%",
+                  flex: 1,
+                  padding: 0,
+                  fontSize: "0.9rem",
+                  color: MONUMENT,
+                  background: "transparent",
+                  boxSizing: "border-box",
+                  overflowY: "auto",
+                  fontFamily: "monospace",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  minHeight: 0,
+                }}
+              >
+                {project?.project_log || "No log entries yet."}
+              </div>
+            </div>
+          </div>
+
+          </div>
+
+          <div
+            style={{
+              flexShrink: 0,
+              minHeight: `${PROJECT_INFO_ACTION_ZONE_HEIGHT_PX}px`,
+              marginTop: "auto",
+              display: "flex",
+              alignItems: "flex-end",
+              flexWrap: "wrap",
+              gap: "12px",
+              paddingBottom: "12px",
+            }}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,application/pdf"
+              style={{ display: "none" }}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file || !project?.id) return;
+
+                if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+                  alert("Please select a PDF file.");
+                  e.target.value = "";
+                  return;
+                }
+
+                const formData = new FormData();
+                formData.append("file", file);
+                formData.append("projectId", project.id.toString());
+
+                try {
+                  const response = await fetch(`${API_URL}/api/files/locate-proposal`, {
+                    method: "POST",
+                    body: formData,
+                  });
+
+                  if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error || "Failed to save proposal location");
+                  }
+
+                  if (onUpdate) {
+                    onUpdate();
+                  }
+                } catch (error) {
+                  console.error("Error saving proposal:", error);
+                  alert(error.message || "Failed to save proposal location");
+                }
+
+                e.target.value = "";
               }}
             />
+            <button
+              type="button"
+              onClick={async () => {
+                if (project?.proposal_pdf_location) {
+                  try {
+                    const pdfUrl = `${API_URL}/api/files/proposal/${project.id}`;
+                    const response = await fetch(pdfUrl);
+                    if (!response.ok) {
+                      fileInputRef.current?.click();
+                    } else {
+                      window.open(pdfUrl, "_blank");
+                    }
+                  } catch (error) {
+                    console.error("Error checking proposal PDF:", error);
+                    fileInputRef.current?.click();
+                  }
+                } else {
+                  fileInputRef.current?.click();
+                }
+              }}
+              style={proposalButtonStyle}
+              onMouseEnter={
+                proposalUsesSavedStyle
+                  ? undefined
+                  : (e) => {
+                      e.currentTarget.style.background = streamColorHover(MENU.purple);
+                    }
+              }
+              onMouseLeave={
+                proposalUsesSavedStyle
+                  ? undefined
+                  : (e) => {
+                      e.currentTarget.style.background = MENU.purple;
+                    }
+              }
+            >
+              {project?.proposal_pdf_location ? "Show Proposal" : "Locate Proposal"}
+            </button>
+            {showLinkRenovationButton && (
+              <button
+                type="button"
+                onClick={() => onRequestLinkRenovationDuplicate()}
+                style={renovationDuplicateButtonStyle}
+                onMouseEnter={
+                  renovationUsesSavedStyle
+                    ? undefined
+                    : (e) => {
+                        e.currentTarget.style.background = streamColorHover(INDICATOR.orange);
+                      }
+                }
+                onMouseLeave={
+                  renovationUsesSavedStyle
+                    ? undefined
+                    : (e) => {
+                        e.currentTarget.style.background = INDICATOR.orange;
+                      }
+                }
+              >
+                Link Renovation
+              </button>
+            )}
           </div>
-
         </div>
       )}
     </div>
-    <SiteSatelliteMapModal
-      open={siteMapModalOpen}
-      onClose={() => setSiteMapModalOpen(false)}
-      addressQuery={siteMapAddressQuery}
-    />
-    </>
   );
 }

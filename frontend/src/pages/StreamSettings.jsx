@@ -1013,7 +1013,7 @@ export default function StreamSettings() {
           minWidth: "240px",
           alignSelf: "stretch",
           backgroundColor: "#E5E5E7",
-          border: `2px solid ${UI.outline}`,
+          border: `1px solid ${UI.outline}`,
           borderRadius: "10px",
           padding: "14px 16px",
           color: MONUMENT,
@@ -1044,7 +1044,7 @@ export default function StreamSettings() {
               letterSpacing: "0.3px",
               cursor: "pointer",
               transition: "background 0.18s, color 0.15s",
-              outline: emailNavScope === EMAIL_NAV_GENERAL ? `2px solid ${UI.outline}` : "none",
+              outline: emailNavScope === EMAIL_NAV_GENERAL ? `1px solid ${UI.outline}` : "none",
               boxShadow: emailNavScope === EMAIL_NAV_GENERAL ? "0 2px 4px rgba(50,50,51,.04)" : "none",
             }}
           >
@@ -1075,7 +1075,7 @@ export default function StreamSettings() {
                 letterSpacing: "0.3px",
                 cursor: "pointer",
                 transition: "background 0.18s, color 0.15s",
-                outline: isSelected ? `2px solid ${UI.outline}` : "none",
+                outline: isSelected ? `1px solid ${UI.outline}` : "none",
                 boxShadow: isSelected ? "0 2px 4px rgba(50,50,51,.04)" : "none",
               }}
             >
@@ -1090,7 +1090,7 @@ export default function StreamSettings() {
         style={{
           alignSelf: "stretch",
           backgroundColor: "#E5E5E7",
-          border: `2px solid ${UI.outline}`,
+          border: `1px solid ${UI.outline}`,
           borderRadius: "10px",
           padding: "14px 12px",
           color: MONUMENT,
@@ -1123,7 +1123,7 @@ export default function StreamSettings() {
                     textAlign: "left",
                     letterSpacing: "0.2px",
                     cursor: "pointer",
-                    outline: isOpen ? `2px solid ${UI.outline}` : "none",
+                    outline: isOpen ? `1px solid ${UI.outline}` : "none",
                   }}
                 >
                   {section.label} {isOpen ? "▾" : "▸"}
@@ -1149,7 +1149,7 @@ export default function StreamSettings() {
                     textAlign: "left",
                     letterSpacing: "0.2px",
                     cursor: "pointer",
-                    outline: isOpen ? `2px solid ${UI.outline}` : "none",
+                    outline: isOpen ? `1px solid ${UI.outline}` : "none",
                   }}
                 >
                   {section.label} {isOpen ? "▾" : "▸"}
@@ -1162,7 +1162,7 @@ export default function StreamSettings() {
         style={{
           alignSelf: "stretch",
           backgroundColor: "#E5E5E7",
-          border: `2px solid ${UI.outline}`,
+          border: `1px solid ${UI.outline}`,
           borderRadius: "10px",
           padding: "16px",
           color: MONUMENT,

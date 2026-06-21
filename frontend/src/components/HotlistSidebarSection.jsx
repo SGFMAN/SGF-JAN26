@@ -32,7 +32,7 @@ export default function HotlistSidebarSection({ active = false }) {
         background: MENU.blue,
         borderRadius: "10px",
         padding: "4px",
-        border: `2px solid ${UI.outline}`,
+        border: `1px solid ${UI.outline}`,
       }}
     >
       <Link

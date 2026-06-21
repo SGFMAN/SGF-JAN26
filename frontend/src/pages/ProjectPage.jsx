@@ -18,15 +18,16 @@ import Admin from "./Admin";
 import Robes from "./Robes";
 import Variations from "./Variations";
 import Payments from "./Payments";
-import { isUserAdmin } from "../utils/auth";
+import { isUserAdmin, getApiHeaders } from "../utils/auth";
 import { computeProjectFolderPathFromRecord } from "../utils/projectFolderPath";
 import { projectPath, portalProjectPath } from "../utils/projectUrl";
 import useIsMobile from "../hooks/useIsMobile";
 import ProjectPageMobile from "../mobile/ProjectPageMobile";
 import logo from "../images/logo.png";
+import { mergeDestructiveButtonStyle, destructiveButtonUsesSavedStyle } from "../utils/uiButtonStyles.js";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
-import { UI, MENU, STREAM } from "../utils/uiThemeTokens.js";
+import { UI, MENU, STREAM, outlineBorder } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
 const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
@@ -36,6 +37,24 @@ const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 
 const API_URL = "";
+
+const DELETE_PROJECT_BUTTON_FALLBACK = {
+  padding: "8px 16px",
+  fontSize: "1rem",
+  fontWeight: 500,
+  color: PAGE_TEXT,
+  background: STREAM.qldRed,
+  border: "none",
+  borderRadius: "8px",
+  cursor: "pointer",
+  transition: "background 0.2s",
+  minWidth: "100px",
+};
+
+const DELETE_PROJECT_MODAL_BUTTON_FALLBACK = {
+  ...DELETE_PROJECT_BUTTON_FALLBACK,
+  padding: "10px 20px",
+};
 
 function isPortalAllowedVerifyDrawingsFolderPost(pathAndSearch, method, portalProjectId) {
   if (method !== "POST") return false;
@@ -171,6 +190,7 @@ export default function ProjectPage() {
   const [allProjects, setAllProjects] = useState([]);
   const [showProjectMenu, setShowProjectMenu] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [, setUiButtonStyleRevision] = useState(0);
   const updateTimeoutRef = useRef(null);
   const [renovationDupOpen, setRenovationDupOpen] = useState(false);
   const [renovationDupStep, setRenovationDupStep] = useState(3);
@@ -201,6 +221,16 @@ export default function ProjectPage() {
     const admin = await isUserAdmin();
     setIsAdmin(admin);
   }
+
+  useEffect(() => {
+    const refresh = () => setUiButtonStyleRevision((n) => n + 1);
+    window.addEventListener("sgf-ui-button-styles-change", refresh);
+    window.addEventListener("sgf-ui-theme-change", refresh);
+    return () => {
+      window.removeEventListener("sgf-ui-button-styles-change", refresh);
+      window.removeEventListener("sgf-ui-theme-change", refresh);
+    };
+  }, []);
 
   // Check for view parameter in URL to preserve active view
   useEffect(() => {
@@ -405,6 +435,7 @@ export default function ProjectPage() {
     try {
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "DELETE",
+        headers: getApiHeaders(),
       });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: response.statusText }));
@@ -554,6 +585,10 @@ export default function ProjectPage() {
       />
     );
   }
+
+  const deleteProjectButtonStyle = mergeDestructiveButtonStyle(DELETE_PROJECT_BUTTON_FALLBACK);
+  const deleteProjectModalButtonStyle = mergeDestructiveButtonStyle(DELETE_PROJECT_MODAL_BUTTON_FALLBACK);
+  const deleteUsesSavedStyle = destructiveButtonUsesSavedStyle();
 
   return (
     <div
@@ -744,20 +779,21 @@ export default function ProjectPage() {
                 {isAdmin && (
                   <button
                     onClick={() => setShowDeleteModal(true)}
-                    style={{
-                      padding: "8px 16px",
-                      fontSize: "1rem",
-                      fontWeight: 500,
-                      color: PAGE_TEXT,
-                      background: STREAM.qldRed,
-                      border: "none",
-                      borderRadius: "8px",
-                      cursor: "pointer",
-                      transition: "background 0.2s",
-                      minWidth: "100px",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = streamColorHover(STREAM.qldRed))}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = STREAM.qldRed)}
+                    style={deleteProjectButtonStyle}
+                    onMouseEnter={
+                      deleteUsesSavedStyle
+                        ? undefined
+                        : (e) => {
+                            e.currentTarget.style.background = streamColorHover(STREAM.qldRed);
+                          }
+                    }
+                    onMouseLeave={
+                      deleteUsesSavedStyle
+                        ? undefined
+                        : (e) => {
+                            e.currentTarget.style.background = STREAM.qldRed;
+                          }
+                    }
                     type="button"
                   >
                     Delete Project
@@ -807,7 +843,7 @@ export default function ProjectPage() {
               style={{
                 marginBottom: "4px",
                 width: "100%",
-                border: `2px solid ${UI.outline}`,
+                border: outlineBorder,
                 borderRadius: "10px",
                 padding: "4px",
                 boxSizing: "border-box",
@@ -882,7 +918,7 @@ export default function ProjectPage() {
               display: "flex",
               flexDirection: "column",
               gap: "4px",
-              border: `2px solid ${UI.outline}`,
+              border: outlineBorder,
               flex: 1,
               minHeight: 0,
               overflowY: "auto",
@@ -929,7 +965,7 @@ export default function ProjectPage() {
             style={{
               background: WHITE,
               color: MONUMENT,
-              border: `2px solid ${UI.outline}`,
+              border: outlineBorder,
               borderRadius: "10px",
               padding: "13px 8px",
               fontSize: "1.05rem",
@@ -960,7 +996,10 @@ export default function ProjectPage() {
             boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
             padding: "24px 32px",
             boxSizing: "border-box",
-            overflow: "auto",
+            overflow:
+              activeView === "drawings" || activeView === "project-info" || activeView === "client-info"
+                ? "hidden"
+                : "auto",
             color: MONUMENT,
             display: "flex",
             flexDirection: "column",
@@ -976,29 +1015,61 @@ export default function ProjectPage() {
             <>
               {activeView === "overview" && <Overview project={project} />}
               {activeView === "project-info" && (
-                <ProjectInfo
-                  project={project}
-                  onUpdate={isPortalProjectPath ? () => {} : updateProject}
-                  onRequestRenovationDuplicate={isPortalProjectPath ? undefined : beginRenovationDuplicateWizard}
-                  onRequestLinkRenovationDuplicate={isPortalProjectPath ? undefined : beginLinkRenovationDuplicateWizard}
-                />
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    flex: 1,
+                    minHeight: 0,
+                    alignSelf: "stretch",
+                    overflow: "hidden",
+                  }}
+                >
+                  <ProjectInfo
+                    project={project}
+                    onUpdate={isPortalProjectPath ? () => {} : updateProject}
+                    onRequestRenovationDuplicate={isPortalProjectPath ? undefined : beginRenovationDuplicateWizard}
+                    onRequestLinkRenovationDuplicate={
+                      isPortalProjectPath ? undefined : beginLinkRenovationDuplicateWizard
+                    }
+                  />
+                </div>
               )}
               {activeView === "client-info" && (
-                <ClientInfo project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    flex: 1,
+                    minHeight: 0,
+                    alignSelf: "stretch",
+                    overflow: "hidden",
+                  }}
+                >
+                  <ClientInfo project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
+                </div>
               )}
               {activeView === "robes" && <Robes project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />}
               {activeView === "drawings" && (
-                <Drawings
-                  project={project}
-                  onUpdate={isPortalProjectPath ? () => {} : updateProject}
-                  drawingsPdfSrcOverride={
-                    isPortalProjectPath ? `${API_URL}/api/portal/projects/${token}/drawing` : undefined
-                  }
-                  showClearDrawingData={isAdmin && !isPortalProjectPath}
-                />
+                <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, alignSelf: "stretch", overflow: "hidden" }}>
+                  <Drawings
+                    project={project}
+                    onUpdate={isPortalProjectPath ? () => {} : updateProject}
+                    drawingsPdfSrcOverride={
+                      isPortalProjectPath ? `${API_URL}/api/portal/projects/${token}/drawing` : undefined
+                    }
+                    showClearDrawingData={isAdmin && !isPortalProjectPath}
+                  />
+                </div>
               )}
               {activeView === "colours" && <Colours project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />}
-              {activeView === "windows" && <Windows project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />}
+              {activeView === "windows" && (
+                <Windows
+                  project={project}
+                  onUpdate={isPortalProjectPath ? () => {} : updateProject}
+                  showResetWindowData={isAdmin && !isPortalProjectPath}
+                />
+              )}
               {activeView === "site-visit" && (
                 <SiteVisit project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
               )}
@@ -1306,23 +1377,24 @@ export default function ProjectPage() {
                 onClick={handleDeleteProject}
                 disabled={isDeleting}
                 style={{
-                  background: STREAM.qldRed,
-                  color: PAGE_TEXT,
-                  border: "none",
-                  borderRadius: "8px",
-                  padding: "10px 20px",
-                  fontSize: "1rem",
-                  fontWeight: 500,
-                  cursor: isDeleting ? "not-allowed" : "pointer",
-                  transition: "background 0.17s",
+                  ...deleteProjectModalButtonStyle,
+                  cursor: isDeleting ? "not-allowed" : deleteProjectModalButtonStyle.cursor || "pointer",
                   opacity: isDeleting ? 0.6 : 1,
                 }}
-                onMouseEnter={(e) => {
-                  if (!isDeleting) e.currentTarget.style.background = streamColorHover(STREAM.qldRed);
-                }}
-                onMouseLeave={(e) => {
-                  if (!isDeleting) e.currentTarget.style.background = STREAM.qldRed;
-                }}
+                onMouseEnter={
+                  deleteUsesSavedStyle || isDeleting
+                    ? undefined
+                    : (e) => {
+                        e.currentTarget.style.background = streamColorHover(STREAM.qldRed);
+                      }
+                }
+                onMouseLeave={
+                  deleteUsesSavedStyle || isDeleting
+                    ? undefined
+                    : (e) => {
+                        e.currentTarget.style.background = STREAM.qldRed;
+                      }
+                }
                 type="button"
               >
                 {isDeleting ? "Deleting..." : "Delete Project"}

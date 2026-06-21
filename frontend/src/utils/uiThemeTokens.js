@@ -68,5 +68,8 @@ export const INDICATOR = {
   red: "var(--sgf-qld-red)",
 };
 
-/** Standard 2px outline border for menus, folders, and filter chips. */
-export const outlineBorder = `2px solid var(--sgf-outline)`;
+/** Standard 1px outline border — matches form fields; use on menus, buttons, and filter chips. */
+export const outlineBorder = `1px solid ${UI.outline}`;
+
+/** Alias for form controls (Project Info, Client Info, etc.). */
+export const fieldOutlineBorder = outlineBorder;

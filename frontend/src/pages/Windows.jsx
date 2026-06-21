@@ -4,13 +4,41 @@ import {
   generalEmailStateCode,
   parseEmailGeneralJson,
 } from "../utils/emailGeneralSettings";
+import { getApiHeaders } from "../utils/auth";
 
-import { UI } from "../utils/uiThemeTokens.js";
+import { UI, INDICATOR } from "../utils/uiThemeTokens.js";
+import { streamColorHover } from "../utils/streamColors.js";
+import {
+  buildSavedButtonStyle,
+  mergeDestructiveButtonStyle,
+  destructiveButtonUsesSavedStyle,
+} from "../utils/uiButtonStyles.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
+const FIELD_OUTLINE = `1px solid ${UI.outline}`;
 const API_URL = "";
+
+const ORDER_WINDOWS_BUTTON_ID = 4;
+const RED_DANGER = "#c62828";
+
+const RESET_WINDOW_DATA_BUTTON_FALLBACK = {
+  padding: "10px 20px",
+  fontSize: "1rem",
+  fontWeight: 500,
+  color: WHITE,
+  background: RED_DANGER,
+  border: "none",
+  borderRadius: "8px",
+  cursor: "pointer",
+  transition: "background 0.2s",
+};
+
+function mergeWindowsButtonStyle(styleId, fallback) {
+  const saved = buildSavedButtonStyle(styleId, true);
+  return saved ? { ...saved } : fallback;
+}
 
 const WINDOW_COLOUR_OPTIONS = [
   "Monument",
@@ -38,8 +66,6 @@ const BAL_RATING_OPTIONS = [
 
 const DATE_REQUIRED_OPTIONS = ["Normal", "Urgent"];
 
-const RED_DANGER = "#c62828";
-
 function resolveWindowsOrderingEmails(settings, project) {
   const code = generalEmailStateCode(project);
   const windows = parseEmailGeneralJson(settings?.email_general_json).windows || {};
@@ -63,7 +89,7 @@ function resolveWindowsOrderingEmails(settings, project) {
   return { code: "", from: "", to: [] };
 }
 
-export default function Windows({ project, onUpdate }) {
+export default function Windows({ project, onUpdate, showResetWindowData = false }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [windowColour, setWindowColour] = useState(project?.window_colour || "");
@@ -90,6 +116,7 @@ export default function Windows({ project, onUpdate }) {
   const [showWindowOrderModal, setShowWindowOrderModal] = useState(false);
   /** Bust iframe cache after locate/upload refresh. */
   const [windowOrderIframeNonce, setWindowOrderIframeNonce] = useState(0);
+  const [, setUiButtonStyleRevision] = useState(0);
 
   // Get window status or default to "Not Ordered"
   const windowStatus = project?.window_status || "Not Ordered";
@@ -122,6 +149,16 @@ export default function Windows({ project, onUpdate }) {
     };
   }, [showWindowOrderModal]);
 
+  useEffect(() => {
+    const refresh = () => setUiButtonStyleRevision((n) => n + 1);
+    window.addEventListener("sgf-ui-button-styles-change", refresh);
+    window.addEventListener("sgf-ui-theme-change", refresh);
+    return () => {
+      window.removeEventListener("sgf-ui-button-styles-change", refresh);
+      window.removeEventListener("sgf-ui-theme-change", refresh);
+    };
+  }, []);
+
   function closeWindowOrderModal() {
     setShowWindowOrderModal(false);
   }
@@ -132,7 +169,7 @@ export default function Windows({ project, onUpdate }) {
   }
 
   async function handleResetWindowData() {
-    if (!project?.id) return;
+    if (!showResetWindowData || !project?.id) return;
     if (
       !confirm(
         "Reset all window data for this project? This clears status, colours, order details, order number, dates, and the window order PDF path."
@@ -143,6 +180,7 @@ export default function Windows({ project, onUpdate }) {
     try {
       const response = await fetch(`${API_URL}/api/projects/${project.id}/reset-window-data`, {
         method: "POST",
+        headers: getApiHeaders(),
       });
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
@@ -680,6 +718,21 @@ Date Required: ${dateRequiredText}`;
 
   // Upload now happens automatically after the order number modal is confirmed.
 
+  const orderWindowsButtonStyle = mergeWindowsButtonStyle(ORDER_WINDOWS_BUTTON_ID, {
+    padding: "10px 20px",
+    fontSize: "1rem",
+    fontWeight: 500,
+    color: MONUMENT,
+    background: INDICATOR.orange,
+    border: FIELD_OUTLINE,
+    borderRadius: "8px",
+    cursor: "pointer",
+    transition: "background 0.17s",
+  });
+  const resetWindowDataButtonStyle = mergeDestructiveButtonStyle(RESET_WINDOW_DATA_BUTTON_FALLBACK);
+  const orderWindowsUsesSavedStyle = Boolean(buildSavedButtonStyle(ORDER_WINDOWS_BUTTON_ID, true));
+  const resetWindowDataUsesSavedStyle = destructiveButtonUsesSavedStyle();
+
   return (
     <div>
       <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT }}>
@@ -740,44 +793,63 @@ Date Required: ${dateRequiredText}`;
               </select>
             </div>
 
-            {/* Order Windows Button */}
-            {windowStatus !== "Complete" && (
-              <button
-                onClick={handleOpenOrderModal}
-                style={{
-                  padding: "10px 20px",
-                  fontSize: "1rem",
-                  fontWeight: "500",
-                  color: WHITE,
-                  background: MONUMENT,
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  marginBottom: "24px",
-                }}
-              >
-                {windowStatus === "Ordered" ? "Reorder Windows" : "Order Windows"}
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => void handleResetWindowData()}
+            {/* Order / reset actions */}
+            <div
               style={{
-                padding: "10px 20px",
-                fontSize: "1rem",
-                fontWeight: "500",
-                color: WHITE,
-                background: RED_DANGER,
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "flex-start",
+                gap: "8px",
                 marginBottom: "24px",
-                display: "block",
               }}
             >
-              Reset Window Data
-            </button>
+              {windowStatus !== "Complete" && (
+                <button
+                  onClick={handleOpenOrderModal}
+                  style={orderWindowsButtonStyle}
+                  onMouseEnter={
+                    orderWindowsUsesSavedStyle
+                      ? undefined
+                      : (e) => {
+                          e.currentTarget.style.background = streamColorHover(INDICATOR.orange);
+                        }
+                  }
+                  onMouseLeave={
+                    orderWindowsUsesSavedStyle
+                      ? undefined
+                      : (e) => {
+                          e.currentTarget.style.background = INDICATOR.orange;
+                        }
+                  }
+                >
+                  {windowStatus === "Ordered" ? "Reorder Windows" : "Order Windows"}
+                </button>
+              )}
+
+              {showResetWindowData && (
+                <button
+                  type="button"
+                  onClick={() => void handleResetWindowData()}
+                  style={resetWindowDataButtonStyle}
+                  onMouseEnter={
+                    resetWindowDataUsesSavedStyle
+                      ? undefined
+                      : (e) => {
+                          e.currentTarget.style.background = streamColorHover(RED_DANGER);
+                        }
+                  }
+                  onMouseLeave={
+                    resetWindowDataUsesSavedStyle
+                      ? undefined
+                      : (e) => {
+                          e.currentTarget.style.background = RED_DANGER;
+                        }
+                  }
+                >
+                  Reset Window Data
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Column 2 - Order Details */}

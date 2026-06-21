@@ -15,21 +15,35 @@ import craig3 from "../images/craig3.jpg";
 import "./Overview.css";
 
 import { UI, STREAM, INDICATOR } from "../utils/uiThemeTokens.js";
+import { getOverviewIndicatorStyle } from "../utils/uiButtonStyles.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
-function OverviewStatusTile({ label, value, background, onClick }) {
+/** Match Project Info box headings (Notes, Project Log, Status, etc.). */
+const overviewStatusLabelStyle = {
+  fontSize: "0.9rem",
+  color: UI.textMuted,
+  flexShrink: 0,
+};
+
+function OverviewStatusTile({ label, value, indicatorStyle, onClick }) {
   return (
     <div className="overview-status-item">
-      <div className="overview-status-label">{label}</div>
+      <div className="overview-status-label" style={overviewStatusLabelStyle}>
+        {label}
+      </div>
       <div
         role="button"
         tabIndex={0}
         className="overview-status-card"
-        style={{ background }}
+        style={{
+          background: indicatorStyle.background,
+          color: indicatorStyle.color,
+          border: indicatorStyle.border ?? "none",
+        }}
         onClick={onClick}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -61,6 +75,7 @@ export default function Overview({ project }) {
   const [isPrintingText, setIsPrintingText] = useState(false); // Track if text is actively being printed
   const [fullResults, setFullResults] = useState([]); // Store full results before typewriter effect
   const [faqModalOpen, setFaqModalOpen] = useState(false);
+  const [, setUiButtonStyleRevision] = useState(0);
   const [currentCraigImage, setCurrentCraigImage] = useState(0);
   const craigAnimationRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -71,6 +86,16 @@ export default function Overview({ project }) {
 
   useEffect(() => {
     fetchEmailTemplates();
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => setUiButtonStyleRevision((n) => n + 1);
+    window.addEventListener("sgf-ui-button-styles-change", refresh);
+    window.addEventListener("sgf-ui-theme-change", refresh);
+    return () => {
+      window.removeEventListener("sgf-ui-button-styles-change", refresh);
+      window.removeEventListener("sgf-ui-theme-change", refresh);
+    };
   }, []);
 
   // Animate Craig only when text is actively being printed
@@ -457,49 +482,50 @@ export default function Overview({ project }) {
     return isDepositFullyPaid() ? "Full Deposit" : "Partial Deposit";
   }
 
-  // Color constants — Stream Green / Indicator Orange / QLD Red
-  const COLOR_RED = STREAM.qldRed;
-  const COLOR_ORANGE = INDICATOR.orange;
-  const COLOR_GREEN = STREAM.streamGreen;
+  // Indicator styles — Button 2 red, Button 4 orange, Button 5 green (selected colours)
+  const indicatorFallbacks = { red: STREAM.qldRed, orange: INDICATOR.orange, green: STREAM.streamGreen, text: PAGE_TEXT };
+  const indicatorRed = () => getOverviewIndicatorStyle("red", indicatorFallbacks);
+  const indicatorOrange = () => getOverviewIndicatorStyle("orange", indicatorFallbacks);
+  const indicatorGreen = () => getOverviewIndicatorStyle("green", indicatorFallbacks);
 
   // Get deposit status color
-  function getDepositStatusColor() {
+  function getDepositStatusIndicator() {
     const status = getDepositStatus();
-    if (status === "Full Deposit") return COLOR_GREEN;
-    return COLOR_RED;
+    if (status === "Full Deposit") return indicatorGreen();
+    return indicatorRed();
   }
 
   // Get drawings status color
-  function getDrawingsStatusColor() {
+  function getDrawingsStatusIndicator() {
     const status = project?.drawings_status || "Not Assigned";
-    if (status === "Concept Stage") return COLOR_ORANGE;
-    if (status === "Working Drawing Stage") return COLOR_ORANGE;
-    if (status === "Drawings Complete") return COLOR_GREEN;
-    return COLOR_RED;
+    if (status === "Concept Stage") return indicatorOrange();
+    if (status === "Working Drawing Stage") return indicatorOrange();
+    if (status === "Drawings Complete") return indicatorGreen();
+    return indicatorRed();
   }
 
   // Get colours status color
-  function getColoursStatusColor() {
+  function getColoursStatusIndicator() {
     const status = project?.colours_status || "Not Sent";
-    if (status === "Sent") return COLOR_ORANGE;
-    if (status === "Complete") return COLOR_GREEN;
-    return COLOR_RED;
+    if (status === "Sent") return indicatorOrange();
+    if (status === "Complete") return indicatorGreen();
+    return indicatorRed();
   }
 
   // Get window status color
-  function getWindowStatusColor() {
+  function getWindowStatusIndicator() {
     const status = project?.window_status || "Not Ordered";
-    if (status === "Ordered") return COLOR_ORANGE;
-    if (status === "Complete") return COLOR_GREEN;
-    return COLOR_RED;
+    if (status === "Ordered") return indicatorOrange();
+    if (status === "Complete") return indicatorGreen();
+    return indicatorRed();
   }
 
   // Get site visit status color
-  function getSiteVisitStatusColor() {
+  function getSiteVisitStatusIndicator() {
     const status = project?.site_visit_status || "Not Complete";
-    if (status === "Booked") return COLOR_ORANGE;
-    if (status === "Complete") return COLOR_GREEN;
-    return COLOR_RED;
+    if (status === "Booked") return indicatorOrange();
+    if (status === "Complete") return indicatorGreen();
+    return indicatorRed();
   }
 
   // Get contract status text
@@ -521,63 +547,55 @@ export default function Overview({ project }) {
     return "Documents Missing";
   }
 
-  // Get contract status color (must check all three statuses for green)
-  function getContractStatusColor() {
+  function getContractStatusIndicator() {
     const contractStatus = project?.contract_status || "Not Sent";
     const supportingDocsStatus = project?.supporting_documents_status || "Not Sent";
     const waterDeclStatus = project?.water_declaration_status || "Not Required";
 
-    // For green: all three must be complete
     if (
       contractStatus === "Complete" &&
       supportingDocsStatus === "Complete" &&
       (waterDeclStatus === "Complete" || waterDeclStatus === "Not Required")
     ) {
-      return COLOR_GREEN;
+      return indicatorGreen();
     }
 
-    // For orange: contract status must be "Sent"
-    if (contractStatus === "Sent") return COLOR_ORANGE;
+    if (contractStatus === "Sent") return indicatorOrange();
 
-    // Default: red
-    return COLOR_RED;
+    return indicatorRed();
   }
 
-  // Get planning permit status color
-  function getPlanningPermitStatusColor() {
+  function getPlanningPermitStatusIndicator() {
     const status = project?.planning_status || "Not Selected";
     if (status === "No Planning Required" || status === "Planning Permit Issued") {
-      return COLOR_GREEN;
+      return indicatorGreen();
     }
-    return COLOR_RED;
+    return indicatorRed();
   }
 
-  // Get energy report status color
-  function getEnergyReportStatusColor() {
+  function getEnergyReportStatusIndicator() {
     const status = project?.energy_report_status || "Not Submitted";
-    if (status === "Complete") return COLOR_GREEN;
-    if (status === "Sent") return COLOR_ORANGE;
-    return COLOR_RED;
+    if (status === "Complete") return indicatorGreen();
+    if (status === "Sent") return indicatorOrange();
+    return indicatorRed();
   }
 
-  // Get footing certification status color
-  function getFootingCertificationStatusColor() {
+  function getFootingCertificationStatusIndicator() {
     const status = project?.footing_certification_status || "Not Submitted";
-    if (status === "Complete") return COLOR_GREEN;
-    if (status === "Sent") return COLOR_ORANGE;
-    return COLOR_RED;
+    if (status === "Complete") return indicatorGreen();
+    if (status === "Sent") return indicatorOrange();
+    return indicatorRed();
   }
 
-  // Get building permit status color
-  function getBuildingPermitStatusColor() {
+  function getBuildingPermitStatusIndicator() {
     const status = project?.building_permit_status || "Not Submitted";
-    if (status === "Complete") return COLOR_GREEN;
-    if (status === "Sent") return COLOR_ORANGE;
-    return COLOR_RED;
+    if (status === "Complete") return indicatorGreen();
+    if (status === "Sent") return indicatorOrange();
+    return indicatorRed();
   }
 
-  function getPicStatusColor() {
-    return (project?.pic || "No") === "Yes" ? COLOR_GREEN : COLOR_RED;
+  function getPicStatusIndicator() {
+    return (project?.pic || "No") === "Yes" ? indicatorGreen() : indicatorRed();
   }
 
   // Get survey and soils status text
@@ -594,23 +612,19 @@ export default function Overview({ project }) {
     return "In Progress";
   }
 
-  // Get survey and soils status color
-  function getSurveySoilsStatusColor() {
+  function getSurveySoilsStatusIndicator() {
     const surveyStatus = project?.survey_status || "Not Booked";
     const soilStatus = project?.soil_status || "Not Booked";
     
-    // Both "Not Booked" = Red
     if (surveyStatus === "Not Booked" && soilStatus === "Not Booked") {
-      return COLOR_RED;
+      return indicatorRed();
     }
     
-    // Both "Complete" = Green
     if (surveyStatus === "Complete" && soilStatus === "Complete") {
-      return COLOR_GREEN;
+      return indicatorGreen();
     }
     
-    // All other combinations = Orange (partially done)
-    return COLOR_ORANGE;
+    return indicatorOrange();
   }
 
   // Check if design phase is complete (all required statuses must be green)
@@ -671,9 +685,8 @@ export default function Overview({ project }) {
     return isDesignPhaseComplete() ? "Complete" : "Incomplete";
   }
 
-  // Get design phase progress color
-  function getDesignPhaseProgressColor() {
-    return isDesignPhaseComplete() ? COLOR_GREEN : COLOR_RED;
+  function getDesignPhaseProgressIndicator() {
+    return isDesignPhaseComplete() ? indicatorGreen() : indicatorRed();
   }
 
   // Get construction phase progress text (placeholder - always Incomplete for now)
@@ -682,10 +695,9 @@ export default function Overview({ project }) {
     return "Incomplete";
   }
 
-  // Get construction phase progress color
-  function getConstructionPhaseProgressColor() {
+  function getConstructionPhaseProgressIndicator() {
     // TODO: Define logic for Construction Phase completion
-    return COLOR_RED;
+    return indicatorRed();
   }
 
   // Search function to find matching rules based on question
@@ -1099,86 +1111,86 @@ export default function Overview({ project }) {
     return [
       {
         key: "deposit",
-        label: "Deposit Status",
+        label: "Deposit",
         value: getDepositStatus(),
-        color: getDepositStatusColor(),
+        indicatorStyle: getDepositStatusIndicator(),
         view: "admin",
       },
       {
         key: "drawings",
-        label: "Drawings Status",
+        label: "Drawings",
         value: project.drawings_status || "Not Assigned",
-        color: getDrawingsStatusColor(),
+        indicatorStyle: getDrawingsStatusIndicator(),
         view: "drawings",
       },
       {
         key: "site-visit",
-        label: "Site Visit Status",
+        label: "Site Visit",
         value: project.site_visit_status || "Not Complete",
-        color: getSiteVisitStatusColor(),
+        indicatorStyle: getSiteVisitStatusIndicator(),
         view: "site-visit",
       },
       {
         key: "colours",
-        label: "Colour Status",
+        label: "Colours",
         value: project.colours_status || "Not Sent",
-        color: getColoursStatusColor(),
+        indicatorStyle: getColoursStatusIndicator(),
         view: "colours",
       },
       {
         key: "windows",
-        label: "Window Status",
+        label: "Windows",
         value: project.window_status || "Not Ordered",
-        color: getWindowStatusColor(),
+        indicatorStyle: getWindowStatusIndicator(),
         view: "windows",
       },
       {
         key: "contract",
-        label: "Contract Status",
+        label: "Contract",
         value: getContractStatusText(),
-        color: getContractStatusColor(),
+        indicatorStyle: getContractStatusIndicator(),
         view: "contract",
       },
       {
         key: "survey-soils",
         label: "Survey & Soils",
         value: getSurveySoilsStatusText(),
-        color: getSurveySoilsStatusColor(),
+        indicatorStyle: getSurveySoilsStatusIndicator(),
         view: "survey-soil",
       },
       {
         key: "planning",
-        label: "Planning Permit Status",
+        label: "Planning Permit",
         value: project.planning_status || "Not Selected",
-        color: getPlanningPermitStatusColor(),
+        indicatorStyle: getPlanningPermitStatusIndicator(),
         view: "planning",
       },
       {
         key: "energy",
-        label: "Energy Report Status",
+        label: "Energy Report",
         value: project.energy_report_status || "Not Submitted",
-        color: getEnergyReportStatusColor(),
+        indicatorStyle: getEnergyReportStatusIndicator(),
         view: "planning",
       },
       {
         key: "footing",
-        label: "Footing Certification Status",
+        label: "Footing Certification",
         value: project.footing_certification_status || "Not Submitted",
-        color: getFootingCertificationStatusColor(),
+        indicatorStyle: getFootingCertificationStatusIndicator(),
         view: "planning",
       },
       {
         key: "building-permit",
-        label: "Building Permit Status",
+        label: "Building Permit",
         value: project.building_permit_status || "Not Submitted",
-        color: getBuildingPermitStatusColor(),
+        indicatorStyle: getBuildingPermitStatusIndicator(),
         view: "planning",
       },
       {
         key: "pic",
         label: "PIC",
         value: project.pic === "Yes" ? "Yes" : "No",
-        color: getPicStatusColor(),
+        indicatorStyle: getPicStatusIndicator(),
         view: "planning",
       },
     ];
@@ -1361,7 +1373,7 @@ export default function Overview({ project }) {
                     key={tile.key}
                     label={tile.label}
                     value={tile.value}
-                    background={tile.color}
+                    indicatorStyle={tile.indicatorStyle}
                     onClick={() =>
                       navigate(projectPath(project, { view: tile.view, t: Date.now() }), {
                         replace: false,

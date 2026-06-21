@@ -1811,6 +1811,23 @@ app.put("/api/projects/:id", async (req, res) => {
     return res.status(400).json({ error: "invalid id" });
   }
 
+  const body = req.body || {};
+  const isClearingDrawingData =
+    Object.prototype.hasOwnProperty.call(body, "drawings_history") &&
+    Object.prototype.hasOwnProperty.call(body, "drawings_pdf_location") &&
+    Object.prototype.hasOwnProperty.call(body, "drawings_status") &&
+    (body.drawings_history === "[]" ||
+      (Array.isArray(body.drawings_history) && body.drawings_history.length === 0)) &&
+    (body.drawings_pdf_location === null || body.drawings_pdf_location === "") &&
+    body.drawings_status === "Not Assigned";
+
+  if (isClearingDrawingData) {
+    const isAdmin = await isAdminRequest(req);
+    if (!isAdmin) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+  }
+
   try {
     // Normalize date field if provided: 'year' field stores the full DATE (YYYY-MM-DD format)
     // If only a year is provided, convert to full date. The year is ALWAYS derived from the date field.
@@ -2936,6 +2953,10 @@ app.post("/api/projects/:id/geocode", async (req, res) => {
 /** Clear / default all fields used by the Windows page (PUT cannot null these via COALESCE). */
 app.post("/api/projects/:id/reset-window-data", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     return res.status(400).json({ error: "invalid id" });
@@ -9470,6 +9491,11 @@ app.get("/api/files/robe-colours/:id", async (req, res) => {
 // Delete project
 app.delete("/api/projects/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+
+  const isAdmin = await isAdminRequest(req);
+  if (!isAdmin) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
 
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {

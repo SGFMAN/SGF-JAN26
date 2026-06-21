@@ -845,7 +845,7 @@ export default function SalesAnalytics() {
           }}
         >
           {/* Bar Graph - Light Blue */}
-          <div style={{ background: MENU.blue, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
+          <div style={{ background: MENU.blue, borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
             <button
               onClick={() => setSelectedView("bar")}
               style={{
@@ -872,7 +872,7 @@ export default function SalesAnalytics() {
           </div>
           
           {/* Pie Chart - Light Green */}
-          <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
+          <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
             <button
               onClick={() => setSelectedView("pie")}
               style={{
@@ -899,7 +899,7 @@ export default function SalesAnalytics() {
           </div>
 
           {/* Rates — cumulative planned vs actual */}
-          <div style={{ background: "#E8D4F5", borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
+          <div style={{ background: "#E8D4F5", borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
             <button
               onClick={() => setSelectedView("rates")}
               style={{
@@ -926,7 +926,7 @@ export default function SalesAnalytics() {
           </div>
 
           {/* Targets — monthly job counts (VIC / QLD / Green) */}
-          <div style={{ background: "#FFF3E0", borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
+          <div style={{ background: "#FFF3E0", borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
             <button
               onClick={() => setSelectedView("targets")}
               style={{
@@ -955,7 +955,7 @@ export default function SalesAnalytics() {
           <div style={{ flex: 1 }} />
           
           {/* Back to Sales - Light Red */}
-          <div style={{ background: MENU.red, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
+          <div style={{ background: MENU.red, borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
             <Link
               to="/sales-totals"
               style={{

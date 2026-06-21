@@ -273,7 +273,7 @@ function ColourThemeEditor({ editing, onBack, onEditColor }) {
             height: "80px",
             borderRadius: "10px",
             background: draftValue || UI.border,
-            border: `2px solid ${UI.outline}`,
+            border: `1px solid ${UI.outline}`,
             flexShrink: 0,
           }}
           title="Preview"

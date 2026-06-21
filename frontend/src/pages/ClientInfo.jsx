@@ -1,11 +1,27 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 
-import { UI } from "../utils/uiThemeTokens.js";
+import { UI, MENU, INDICATOR } from "../utils/uiThemeTokens.js";
+import { streamColorHover } from "../utils/streamColors.js";
+import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 const MONUMENT = UI.textPrimary;
-const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
-const PAGE_TEXT = UI.pageText;
+const FIELD_OUTLINE = `1px solid ${UI.outline}`;
+const SEND_CLIENT_DETAILS_BUTTON_ID = 4;
+const EMAIL_CLIENT_BUTTON_ID = 3;
 const API_URL = "";
+
+/** Align action buttons with sidebar Back to Main (same as Project Info / Drawings). */
+const PROJECT_PANEL_HEIGHT_PX = 758;
+const SIDEBAR_BELOW_GREEN_MENU_PX = 101;
+const CLIENT_INFO_HEADER_OFFSET_PX = 74;
+const CLIENT_INFO_BODY_MAX_HEIGHT_PX =
+  PROJECT_PANEL_HEIGHT_PX - SIDEBAR_BELOW_GREEN_MENU_PX - CLIENT_INFO_HEADER_OFFSET_PX;
+const CLIENT_INFO_ACTION_ZONE_HEIGHT_PX = SIDEBAR_BELOW_GREEN_MENU_PX - 24;
+
+function mergeClientInfoButtonStyle(styleId, fallback) {
+  const saved = buildSavedButtonStyle(styleId, true);
+  return saved ? { ...saved } : fallback;
+}
 
 export default function ClientInfo({ project, onUpdate }) {
   const [client1Name, setClient1Name] = useState(project?.client1_name || "");
@@ -27,6 +43,7 @@ export default function ClientInfo({ project, onUpdate }) {
 
   // Client Notes state
   const [clientNotes, setClientNotes] = useState(project?.client_notes || "");
+  const [, setUiButtonStyleRevision] = useState(0);
 
   // Use ref to track latest values for saving
   const valuesRef = useRef({
@@ -61,6 +78,16 @@ export default function ClientInfo({ project, onUpdate }) {
     setClient3Active(project?.client3_active === "true");
     setClientNotes(project?.client_notes || "");
   }, [project?.id]);
+
+  useEffect(() => {
+    const refresh = () => setUiButtonStyleRevision((n) => n + 1);
+    window.addEventListener("sgf-ui-button-styles-change", refresh);
+    window.addEventListener("sgf-ui-theme-change", refresh);
+    return () => {
+      window.removeEventListener("sgf-ui-button-styles-change", refresh);
+      window.removeEventListener("sgf-ui-theme-change", refresh);
+    };
+  }, []);
 
   const buildClientInfoPayload = useCallback(() => {
     const currentValues = valuesRef.current;
@@ -357,12 +384,39 @@ export default function ClientInfo({ project, onUpdate }) {
   
   const activeContactCount = getActiveCount();
 
+  const sendClientDetailsButtonStyle = mergeClientInfoButtonStyle(SEND_CLIENT_DETAILS_BUTTON_ID, {
+    padding: "10px 20px",
+    borderRadius: "10px",
+    border: FIELD_OUTLINE,
+    fontSize: "0.9rem",
+    fontWeight: 500,
+    color: MONUMENT,
+    background: INDICATOR.orange,
+    cursor: "pointer",
+    boxSizing: "border-box",
+    transition: "background 0.17s",
+    flexShrink: 0,
+  });
+  const emailClientButtonStyle = mergeClientInfoButtonStyle(EMAIL_CLIENT_BUTTON_ID, {
+    background: MENU.purple,
+    color: MENU.activeText,
+    border: FIELD_OUTLINE,
+    borderRadius: "10px",
+    padding: "10px 20px",
+    fontSize: "0.9rem",
+    fontWeight: 500,
+    cursor: "pointer",
+    transition: "background 0.17s, border-color 0.17s",
+    flexShrink: 0,
+  });
+  const sendClientDetailsUsesSavedStyle = Boolean(buildSavedButtonStyle(SEND_CLIENT_DETAILS_BUTTON_ID, true));
+  const emailClientUsesSavedStyle = Boolean(buildSavedButtonStyle(EMAIL_CLIENT_BUTTON_ID, true));
+
   const inputStyle = {
     width: "100%",
-    maxWidth: "300px",
     padding: "10px 12px",
     borderRadius: "8px",
-    border: "none",
+    border: FIELD_OUTLINE,
     fontSize: "1rem",
     color: MONUMENT,
     background: WHITE,
@@ -375,256 +429,230 @@ export default function ClientInfo({ project, onUpdate }) {
     marginBottom: "6px",
   };
 
-  const columnStyle = {
-    flex: "1",
+  const contactBoxStyle = {
+    border: FIELD_OUTLINE,
+    borderRadius: "8px",
+    padding: "12px",
+    background: WHITE,
+    boxSizing: "border-box",
+  };
+
+  const contactColumnStyle = {
+    flex: "0 0 300px",
+    width: "300px",
+    maxWidth: "300px",
     minWidth: "200px",
   };
 
+  const renderContactColumn = (contactNum, active, onActiveChange, name, onNameChange, email, onEmailChange, phone, onPhoneChange, nameField, emailField, phoneField) => (
+    <div style={{ ...contactColumnStyle, display: "flex", flexDirection: "column" }}>
+      <div style={{ ...contactBoxStyle, flex: 1, display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
+          <input
+            type="checkbox"
+            checked={active}
+            onChange={onActiveChange}
+            style={{
+              width: "18px",
+              height: "18px",
+              cursor: "pointer",
+            }}
+          />
+          <h3 style={{ fontSize: "1rem", fontWeight: 600, color: MONUMENT, margin: 0 }}>
+            Contact {contactNum}
+          </h3>
+        </div>
+        <div style={{ marginBottom: "16px" }}>
+          <div style={labelStyle}>Contact</div>
+          <input
+            type="text"
+            name={nameField}
+            value={name}
+            onChange={onNameChange}
+            onBlur={flushSave}
+            style={inputStyle}
+          />
+        </div>
+        <div style={{ marginBottom: "16px" }}>
+          <div style={labelStyle}>Email</div>
+          <input
+            type="email"
+            name={emailField}
+            value={email}
+            onChange={onEmailChange}
+            onBlur={flushSave}
+            style={inputStyle}
+          />
+        </div>
+        <div style={{ marginBottom: 0 }}>
+          <div style={labelStyle}>Phone</div>
+          <input
+            type="tel"
+            name={phoneField}
+            value={phone}
+            onChange={onPhoneChange}
+            onBlur={flushSave}
+            style={inputStyle}
+          />
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%" }}>
-      <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%" }}>
+      <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, flexShrink: 0 }}>
         Client Info
       </h2>
       {project && (
-        <>
-          <div style={{ marginTop: "24px", display: "flex", gap: "24px", paddingBottom: "80px", alignItems: "stretch", flex: 1, minHeight: 0 }}>
-            {/* Contact 1 Column */}
-            <div style={columnStyle}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
-                <input
-                  type="checkbox"
-                  checked={client1Active}
-                  onChange={handleClient1ActiveChange}
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+          <div
+            style={{
+              marginTop: "24px",
+              display: "flex",
+              gap: "20px",
+              alignItems: "stretch",
+              flex: "1 1 auto",
+              minHeight: 0,
+              maxHeight: `${CLIENT_INFO_BODY_MAX_HEIGHT_PX}px`,
+              overflow: "hidden",
+              minWidth: 0,
+            }}
+          >
+              {renderContactColumn(
+                1,
+                client1Active,
+                handleClient1ActiveChange,
+                client1Name,
+                handleClient1NameChange,
+                client1Email,
+                handleClient1EmailChange,
+                client1Phone,
+                handleClient1PhoneChange,
+                "client1Name",
+                "client1Email",
+                "client1Phone"
+              )}
+              {renderContactColumn(
+                2,
+                client2Active,
+                handleClient2ActiveChange,
+                client2Name,
+                handleClient2NameChange,
+                client2Email,
+                handleClient2EmailChange,
+                client2Phone,
+                handleClient2PhoneChange,
+                "client2Name",
+                "client2Email",
+                "client2Phone"
+              )}
+              {renderContactColumn(
+                3,
+                client3Active,
+                handleClient3ActiveChange,
+                client3Name,
+                handleClient3NameChange,
+                client3Email,
+                handleClient3EmailChange,
+                client3Phone,
+                handleClient3PhoneChange,
+                "client3Name",
+                "client3Email",
+                "client3Phone"
+              )}
+
+            {/* Notes — same row height as contact boxes; fills remaining width */}
+            <div style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column" }}>
+              <div
+                style={{
+                  ...contactBoxStyle,
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  minHeight: 0,
+                }}
+              >
+                <div style={{ ...labelStyle, flexShrink: 0 }}>Notes</div>
+                <textarea
+                  name="client_notes"
+                  value={clientNotes}
+                  onChange={handleClientNotesChange}
+                  onBlur={flushSave}
+                  placeholder="Add client notes..."
                   style={{
-                    width: "18px",
-                    height: "18px",
-                    cursor: "pointer",
+                    width: "100%",
+                    flex: 1,
+                    padding: 0,
+                    borderRadius: 0,
+                    border: "none",
+                    outline: "none",
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: "transparent",
+                    boxSizing: "border-box",
+                    resize: "none",
+                    fontFamily: "inherit",
+                    overflowY: "auto",
+                    minHeight: 0,
+                    marginTop: "0",
                   }}
                 />
-                <h3 style={{ fontSize: "1rem", fontWeight: 600, color: MONUMENT, margin: 0 }}>
-                  Contact 1
-                </h3>
               </div>
-              <div style={{ marginBottom: "16px" }}>
-                <div style={labelStyle}>Contact</div>
-                <input
-                  type="text"
-                  name="client1Name"
-                  value={client1Name}
-                  onChange={handleClient1NameChange}
-                  onBlur={flushSave}
-                  style={inputStyle}
-                />
-              </div>
-              <div style={{ marginBottom: "16px" }}>
-                <div style={labelStyle}>Email</div>
-                <input
-                  type="email"
-                  name="client1Email"
-                  value={client1Email}
-                  onChange={handleClient1EmailChange}
-                  onBlur={flushSave}
-                  style={inputStyle}
-                />
-              </div>
-              <div style={{ marginBottom: "16px" }}>
-                <div style={labelStyle}>Phone</div>
-                <input
-                  type="tel"
-                  name="client1Phone"
-                  value={client1Phone}
-                  onChange={handleClient1PhoneChange}
-                  onBlur={flushSave}
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-
-          {/* Contact 2 Column */}
-          <div style={columnStyle}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
-              <input
-                type="checkbox"
-                checked={client2Active}
-                onChange={handleClient2ActiveChange}
-                style={{
-                  width: "18px",
-                  height: "18px",
-                  cursor: "pointer",
-                }}
-              />
-              <h3 style={{ fontSize: "1rem", fontWeight: 600, color: MONUMENT, margin: 0 }}>
-                Contact 2
-              </h3>
-            </div>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={labelStyle}>Contact</div>
-              <input
-                type="text"
-                name="client2Name"
-                value={client2Name}
-                onChange={handleClient2NameChange}
-                onBlur={flushSave}
-                style={inputStyle}
-              />
-            </div>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={labelStyle}>Email</div>
-              <input
-                type="email"
-                name="client2Email"
-                value={client2Email}
-                onChange={handleClient2EmailChange}
-                onBlur={flushSave}
-                style={inputStyle}
-              />
-            </div>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={labelStyle}>Phone</div>
-              <input
-                type="tel"
-                name="client2Phone"
-                value={client2Phone}
-                onChange={handleClient2PhoneChange}
-                onBlur={flushSave}
-                style={inputStyle}
-              />
             </div>
           </div>
 
-          {/* Contact 3 Column */}
-          <div style={columnStyle}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
-              <input
-                type="checkbox"
-                checked={client3Active}
-                onChange={handleClient3ActiveChange}
-                style={{
-                  width: "18px",
-                  height: "18px",
-                  cursor: "pointer",
-                }}
-              />
-              <h3 style={{ fontSize: "1rem", fontWeight: 600, color: MONUMENT, margin: 0 }}>
-                Contact 3
-              </h3>
-            </div>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={labelStyle}>Contact</div>
-              <input
-                type="text"
-                name="client3Name"
-                value={client3Name}
-                onChange={handleClient3NameChange}
-                onBlur={flushSave}
-                style={inputStyle}
-              />
-            </div>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={labelStyle}>Email</div>
-              <input
-                type="email"
-                name="client3Email"
-                value={client3Email}
-                onChange={handleClient3EmailChange}
-                onBlur={flushSave}
-                style={inputStyle}
-              />
-            </div>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={labelStyle}>Phone</div>
-              <input
-                type="tel"
-                name="client3Phone"
-                value={client3Phone}
-                onChange={handleClient3PhoneChange}
-                onBlur={flushSave}
-                style={inputStyle}
-              />
-            </div>
-          </div>
-
-          {/* Column 4 - Notes */}
-          <div style={{ ...columnStyle, display: "flex", flexDirection: "column", height: "100%" }}>
-            <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", flexShrink: 0 }}>
-              Notes
-            </div>
-            <textarea
-              name="client_notes"
-              value={clientNotes}
-              onChange={handleClientNotesChange}
-              onBlur={flushSave}
-              placeholder="Add client notes..."
-              style={{
-                width: "100%",
-                maxWidth: "300px",
-                flex: 1,
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: "none",
-                fontSize: "1rem",
-                color: MONUMENT,
-                background: WHITE,
-                boxSizing: "border-box",
-                resize: "none",
-                fontFamily: "inherit",
-                overflowY: "auto",
-                minHeight: 0,
-                height: "100%",
-              }}
-            />
-          </div>
-          </div>
-          <div style={{ position: "absolute", bottom: "14px", left: "0px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div
+            style={{
+              flexShrink: 0,
+              minHeight: `${CLIENT_INFO_ACTION_ZONE_HEIGHT_PX}px`,
+              marginTop: "auto",
+              display: "flex",
+              alignItems: "flex-end",
+              flexWrap: "wrap",
+              gap: "12px",
+              paddingBottom: "12px",
+            }}
+          >
             <button
+              type="button"
               onClick={handleEmailClientDetails}
-              style={{
-                background: WHITE,
-                color: MONUMENT,
-                border: "none",
-                borderRadius: "10px",
-                padding: "12px 8px",
-                fontSize: "1.05rem",
-                fontWeight: 500,
-                textAlign: "center",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.17s",
-                width: "200px",
-                display: "block",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = UI.inputBg;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = WHITE;
-              }}
+              style={sendClientDetailsButtonStyle}
+              onMouseEnter={
+                sendClientDetailsUsesSavedStyle
+                  ? undefined
+                  : (e) => {
+                      e.currentTarget.style.background = streamColorHover(INDICATOR.orange);
+                    }
+              }
+              onMouseLeave={
+                sendClientDetailsUsesSavedStyle
+                  ? undefined
+                  : (e) => {
+                      e.currentTarget.style.background = INDICATOR.orange;
+                    }
+              }
             >
-              Email Client Details
+              Send Client Details
             </button>
             <button
+              type="button"
               onClick={handleEmailClients}
-              style={{
-                background: WHITE,
-                color: MONUMENT,
-                border: "none",
-                borderRadius: "10px",
-                padding: "12px 8px",
-                fontSize: "1.05rem",
-                fontWeight: 500,
-                textAlign: "center",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.17s",
-                width: "200px",
-                display: "block",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = UI.inputBg;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = WHITE;
-              }}
+              style={emailClientButtonStyle}
+              onMouseEnter={
+                emailClientUsesSavedStyle
+                  ? undefined
+                  : (e) => {
+                      e.currentTarget.style.background = streamColorHover(MENU.purple);
+                    }
+              }
+              onMouseLeave={
+                emailClientUsesSavedStyle
+                  ? undefined
+                  : (e) => {
+                      e.currentTarget.style.background = MENU.purple;
+                    }
+              }
             >
               {activeContactCount === 0
                 ? "Email Client"
@@ -633,7 +661,7 @@ export default function ClientInfo({ project, onUpdate }) {
                 : "Email Clients"}
             </button>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

@@ -5,12 +5,11 @@ import { getProjectStreamBadge } from "../utils/streamBadges";
 import { projectPath } from "../utils/projectUrl";
 import { OnHoldSash, CancelledSash } from "./ProjectStatusSash";
 
-import { UI, PROJECT_CARD } from "../utils/uiThemeTokens.js";
+import { UI, PROJECT_CARD, outlineBorder } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const CARD_TEXT = PROJECT_CARD.text;
 const PAGE_TEXT = UI.pageText;
-const OUTLINE = UI.outline;
 
 const CARD_W = 200;
 const CARD_H = 100;
@@ -60,7 +59,7 @@ export default function ProjectRectangleCard({ project, fitColumn = false, onInt
         style={{
           background: PROJECT_CARD.bg,
           borderRadius: "8px",
-          border: `2px solid ${OUTLINE}`,
+          border: outlineBorder,
           boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)",
           width: "100%",
           height: "100%",

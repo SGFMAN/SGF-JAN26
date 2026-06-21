@@ -17,11 +17,12 @@ import {
   resolveHotlistSoldFromEmail,
   resolveHotlistSoldToEmail,
 } from "../utils/emailGeneralSettings";
-import { getHotlistAgreementRowBackground, getHotlistStreamAccent } from "../utils/streamColors";
+import { getHotlistAgreementRowBackground, getHotlistStreamAccent, getStreamGroupColors } from "../utils/streamColors";
 import logo from "../images/logo.png";
 
-import { UI, MENU, STREAM } from "../utils/uiThemeTokens.js";
+import { UI, MENU, STREAM, outlineBorder } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
+import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
@@ -31,6 +32,16 @@ const PURPLE = "#7c3aed";
 const PURPLE_HOVER = "#6d28d9";
 
 const API_URL = "";
+
+/** Align flyout tops with the sidebar Hot List button (32px sidebar pad + 4px section pad − 24px content pad). */
+const HOTLIST_FLYOUT_TOP_OFFSET_PX = 12;
+
+const NEW_ADDRESS_BUTTON_ID = 5;
+
+function mergeHotlistActionButtonStyle(styleId, fallback) {
+  const saved = buildSavedButtonStyle(styleId, true);
+  return saved ? { ...saved } : fallback;
+}
 
 /** Same values as `NewProject_3_ProjectCost` — stored on `projects.stream`. */
 const HOTLIST_PROJECT_STREAM_OPTIONS = [
@@ -154,6 +165,17 @@ export default function Hotlist() {
   const notesModalTextRef = useRef("");
   const notesDebounceRef = useRef(null);
   const notesTextAreaRef = useRef(null);
+  const [, setUiButtonStyleRevision] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => setUiButtonStyleRevision((n) => n + 1);
+    window.addEventListener("sgf-ui-button-styles-change", refresh);
+    window.addEventListener("sgf-ui-theme-change", refresh);
+    return () => {
+      window.removeEventListener("sgf-ui-button-styles-change", refresh);
+      window.removeEventListener("sgf-ui-theme-change", refresh);
+    };
+  }, []);
 
   useEffect(() => {
     notesModalTextRef.current = notesModalText;
@@ -909,6 +931,47 @@ export default function Hotlist() {
     [hotlistItems, agreementSentItems]
   );
 
+  function renderHotlistFlyoutSection(sectionKey, itemCount, children) {
+    const open = hotlistSectionOpen[sectionKey];
+    const cfg = HOTLIST_SECTION_HEADING[sectionKey];
+    const panelBg = getStreamGroupColors(cfg.group).lighter;
+    return (
+      <div
+        style={{
+          border: outlineBorder,
+          borderRadius: "10px",
+          overflow: "hidden",
+          boxSizing: "border-box",
+          display: "flex",
+          flexDirection: "column",
+          flex: open ? "1 1 0" : "0 0 auto",
+          minHeight: 0,
+          background: panelBg,
+        }}
+      >
+        {renderHotlistSectionHeader(sectionKey, itemCount)}
+        {open ? (
+          <div
+            style={{
+              padding: "8px 0",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              boxSizing: "border-box",
+              flex: 1,
+              minHeight: 0,
+              overflowY: "auto",
+              overflowX: "hidden",
+              background: panelBg,
+            }}
+          >
+            {children}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderHotlistSectionHeader(sectionKey, itemCount) {
     const cfg = HOTLIST_SECTION_HEADING[sectionKey];
     const streamAccent = getHotlistStreamAccent(cfg.group);
@@ -916,6 +979,7 @@ export default function Hotlist() {
     return (
       <button
         type="button"
+        className="hotlist-flyout-header"
         onClick={() => toggleHotlistSection(sectionKey)}
         style={{
           width: "100%",
@@ -925,13 +989,14 @@ export default function Hotlist() {
           padding: "12px 16px",
           margin: 0,
           background: streamAccent.bar,
-          border: `2px solid ${streamAccent.outline}`,
-          borderRadius: "10px",
+          border: "none",
+          borderRadius: 0,
           cursor: "pointer",
           textAlign: "left",
           boxSizing: "border-box",
           fontFamily: "inherit",
-          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.2)",
+          flexShrink: 0,
+          outline: "none",
         }}
       >
         <span style={{ flex: 1, fontSize: "1.15rem", fontWeight: 700, color: PAGE_TEXT }}>
@@ -970,14 +1035,16 @@ export default function Hotlist() {
         key={item.id}
         style={{
           background: rowBg,
+          border: outlineBorder,
           borderRadius: "10px",
           padding: "8px 16px",
           display: "flex",
           alignItems: "center",
           justifyContent: "flex-start",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
           flexWrap: "wrap",
           gap: "8px",
+          margin: "0 8px",
+          boxSizing: "border-box",
         }}
       >
         <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", minWidth: "120px" }}>
@@ -1206,6 +1273,24 @@ export default function Hotlist() {
     );
   }
 
+  const newAddressButtonStyle = {
+    ...mergeHotlistActionButtonStyle(NEW_ADDRESS_BUTTON_ID, {
+      background: STREAM.streamGreen,
+      color: PAGE_TEXT,
+      border: `1px solid ${STREAM.streamGreen}`,
+      borderRadius: "8px",
+      padding: "10px 20px",
+      fontSize: "1rem",
+      fontWeight: 500,
+      cursor: "pointer",
+      transition: "background 0.2s",
+    }),
+    position: "absolute",
+    top: "20px",
+    right: "20px",
+  };
+  const newAddressUsesSavedStyle = Boolean(buildSavedButtonStyle(NEW_ADDRESS_BUTTON_ID, true));
+
   return (
     <>
       <style>
@@ -1271,14 +1356,13 @@ export default function Hotlist() {
         `}
       </style>
       <div
-        className="page-container"
+        className="page-container project-list-page"
         style={{
           position: "fixed",
           inset: 0,
           background: LIGHT_MONUMENT,
           minHeight: "100vh",
           width: "100vw",
-          overflowY: "auto",
         }}
       >
       {/* Section 1: Heading */}
@@ -1370,22 +1454,21 @@ export default function Hotlist() {
         </div>
         <button
           onClick={handleNewItemClick}
-          style={{
-            position: "absolute",
-            top: "20px",
-            right: "20px",
-            background: STREAM.streamGreen,
-            color: PAGE_TEXT,
-            border: "none",
-            borderRadius: "8px",
-            padding: "10px 20px",
-            fontSize: "1rem",
-            fontWeight: 500,
-            cursor: "pointer",
-            transition: "background 0.2s",
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = streamColorHover(STREAM.streamGreen))}
-          onMouseLeave={(e) => (e.currentTarget.style.background = STREAM.streamGreen)}
+          style={newAddressButtonStyle}
+          onMouseEnter={
+            newAddressUsesSavedStyle
+              ? undefined
+              : (e) => {
+                  e.currentTarget.style.background = streamColorHover(STREAM.streamGreen);
+                }
+          }
+          onMouseLeave={
+            newAddressUsesSavedStyle
+              ? undefined
+              : (e) => {
+                  e.currentTarget.style.background = STREAM.streamGreen;
+                }
+          }
         >
           + New Address
         </button>
@@ -1398,7 +1481,8 @@ export default function Hotlist() {
           display: "flex",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          margin: "50px auto 0 auto",
+          marginLeft: "auto",
+          marginRight: "auto",
           gap: "32px",
         }}
       >
@@ -1410,7 +1494,6 @@ export default function Hotlist() {
             borderRadius: "16px",
             width: "200px",
             minWidth: "200px",
-            height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             padding: "32px 12px",
             boxSizing: "border-box",
@@ -1426,7 +1509,7 @@ export default function Hotlist() {
           <HotlistSidebarSection active />
           
           {/* All Projects, Design Phase, Construction Phase, Finished Projects, Cancelled, On Hold - Light Green */}
-          <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: `2px solid ${UI.outline}` }}>
+          <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: `1px solid ${UI.outline}` }}>
             <Link
               to="/all-projects"
               style={{
@@ -1573,7 +1656,7 @@ export default function Hotlist() {
                 display: "flex",
                 flexDirection: "column",
                 gap: "4px",
-                border: `2px solid ${UI.outline}`,
+                border: `1px solid ${UI.outline}`,
               }}
             >
               <Link
@@ -1651,18 +1734,19 @@ export default function Hotlist() {
 
         {/* Section 3: Project List */}
         <div
-          className="project-list"
+          className="content-section"
           style={{
-            flex: 1,
             background: SECTION_GREY,
-            borderRadius: "16px",
-            padding: "32px",
-            boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
-            minHeight: "758px",
+            borderRadius: "18px",
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
+            padding: "24px 32px",
             boxSizing: "border-box",
+            color: MONUMENT,
             display: "flex",
             flexDirection: "column",
-            gap: "24px",
           }}
         >
           {loading ? (
@@ -1673,51 +1757,48 @@ export default function Hotlist() {
             <div style={{ color: MONUMENT, fontSize: "1rem" }}>No hotlist items yet. Click "+ New Address" to add one.</div>
           ) : (
             <div
+              className="hotlist-flyout-stack"
               style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "32px",
                 flex: 1,
                 minHeight: 0,
-                overflowY: "auto",
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+                gap: "16px",
+                paddingTop: `${HOTLIST_FLYOUT_TOP_OFFSET_PX}px`,
+                boxSizing: "border-box",
               }}
             >
-              <div style={{ display: "flex", flexDirection: "column", gap: "12px", width: "100%" }}>
-                {renderHotlistSectionHeader("vic", sgfVicItems.length)}
-                {hotlistSectionOpen.vic ? (
-                  sgfVicItems.length === 0 ? (
-                    <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No items</div>
-                  ) : (
-                    sgfVicItems.map((item) => renderHotlistRow(item, "vic"))
-                  )
-                ) : null}
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "12px", width: "100%" }}>
-                {renderHotlistSectionHeader("qld", sgfQldItems.length)}
-                {hotlistSectionOpen.qld ? (
-                  sgfQldItems.length === 0 ? (
-                    <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No items</div>
-                  ) : (
-                    sgfQldItems.map((item) => renderHotlistRow(item, "qld"))
-                  )
-                ) : null}
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "12px", width: "100%" }}>
-                {renderHotlistSectionHeader(
-                  "green",
-                  unassignedItems.length + greenStreamItems.length
-                )}
-                {hotlistSectionOpen.green ? (
-                  unassignedItems.length === 0 && greenStreamItems.length === 0 ? (
-                    <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No items</div>
-                  ) : (
-                    <>
-                      {unassignedItems.map((item) => renderHotlistRow(item, "neutral"))}
-                      {greenStreamItems.map((item) => renderHotlistRow(item, "green"))}
-                    </>
-                  )
-                ) : null}
-              </div>
+              {renderHotlistFlyoutSection(
+                "vic",
+                sgfVicItems.length,
+                sgfVicItems.length === 0 ? (
+                  <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No items</div>
+                ) : (
+                  sgfVicItems.map((item) => renderHotlistRow(item, "vic"))
+                )
+              )}
+              {renderHotlistFlyoutSection(
+                "qld",
+                sgfQldItems.length,
+                sgfQldItems.length === 0 ? (
+                  <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No items</div>
+                ) : (
+                  sgfQldItems.map((item) => renderHotlistRow(item, "qld"))
+                )
+              )}
+              {renderHotlistFlyoutSection(
+                "green",
+                unassignedItems.length + greenStreamItems.length,
+                unassignedItems.length === 0 && greenStreamItems.length === 0 ? (
+                  <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No items</div>
+                ) : (
+                  <>
+                    {unassignedItems.map((item) => renderHotlistRow(item, "neutral"))}
+                    {greenStreamItems.map((item) => renderHotlistRow(item, "green"))}
+                  </>
+                )
+              )}
             </div>
           )}
         </div>

@@ -202,7 +202,7 @@ export default function Sales() {
           }}
         >
           {/* TOTALS - Light Blue */}
-          <div style={{ background: MENU.blue, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
+          <div style={{ background: MENU.blue, borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
             <Link
               to="/sales-totals"
               style={{
@@ -228,7 +228,7 @@ export default function Sales() {
           </div>
           
           {/* Months - Light Green */}
-          <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: `2px solid ${UI.outline}` }}>
+          <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: `1px solid ${UI.outline}` }}>
             {SALES_MONTHS.map((month) => (
               <button
                 key={month}
@@ -258,7 +258,7 @@ export default function Sales() {
           <div style={{ flex: 1 }} />
           
           {/* Back to Main - Light Red */}
-          <div style={{ background: MENU.red, borderRadius: "10px", padding: "4px", border: `2px solid ${UI.outline}` }}>
+          <div style={{ background: MENU.red, borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
             <Link
               to="/projects"
               style={{

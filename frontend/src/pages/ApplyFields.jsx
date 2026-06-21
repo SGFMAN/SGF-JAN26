@@ -515,7 +515,7 @@ export default function ApplyFields() {
             style={{
               background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
               color: stateFilter === "VIC" ? PAGE_TEXT : MONUMENT,
-              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
+              border: `1px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -546,7 +546,7 @@ export default function ApplyFields() {
             style={{
               background: stateFilter === "QLD" ? "#D54358" : WHITE,
               color: stateFilter === "QLD" ? PAGE_TEXT : MONUMENT,
-              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
+              border: `1px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -577,7 +577,7 @@ export default function ApplyFields() {
             style={{
               background: stateFilter === "All" ? MONUMENT : WHITE,
               color: stateFilter === "All" ? PAGE_TEXT : MONUMENT,
-              border: `2px solid ${UI.outline}`,
+              border: `1px solid ${UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -611,7 +611,7 @@ export default function ApplyFields() {
                 style={{
                   background: yearFilter === year ? MONUMENT : WHITE,
                   color: yearFilter === year ? PAGE_TEXT : MONUMENT,
-                  border: `2px solid ${UI.outline}`,
+                  border: `1px solid ${UI.outline}`,
                   borderRadius: "8px",
                   padding: "10px 20px",
                   fontSize: "1rem",
@@ -643,7 +643,7 @@ export default function ApplyFields() {
               style={{
                 background: yearFilter === "All" ? MONUMENT : WHITE,
                 color: yearFilter === "All" ? PAGE_TEXT : MONUMENT,
-                border: `2px solid ${UI.outline}`,
+                border: `1px solid ${UI.outline}`,
                 borderRadius: "8px",
                 padding: "10px 20px",
                 fontSize: "1rem",
@@ -716,7 +716,7 @@ export default function ApplyFields() {
               cursor: "pointer",
               transition: "background 0.18s, color 0.15s",
               marginBottom: "0px",
-              outline: `2px solid ${UI.outline}`,
+              outline: `1px solid ${UI.outline}`,
               boxShadow: "0 2px 4px rgba(50,50,51,.04)",
               display: "block",
             }}
@@ -911,7 +911,7 @@ export default function ApplyFields() {
                   maxWidth: "400px",
                   padding: "12px 16px",
                   borderRadius: "8px",
-                  border: `2px solid ${UI.outline}`,
+                  border: `1px solid ${UI.outline}`,
                   fontSize: "1rem",
                   color: MONUMENT,
                   background: WHITE,

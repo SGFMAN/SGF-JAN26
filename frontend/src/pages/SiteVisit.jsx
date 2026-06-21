@@ -1,11 +1,56 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 
-import { UI } from "../utils/uiThemeTokens.js";
+import { UI, MENU, outlineBorder } from "../utils/uiThemeTokens.js";
+import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
+const FIELD_OUTLINE = outlineBorder;
 const API_URL = "";
+
+const SITE_VISIT_PHOTO_TAB_BUTTON_ID = 3;
+
+const siteVisitTabButtonBase = {
+  padding: "8px 14px",
+  borderRadius: "8px",
+  fontSize: "0.9rem",
+  fontWeight: 600,
+  cursor: "pointer",
+  boxSizing: "border-box",
+  transition: "background 0.17s, border-color 0.17s, color 0.17s",
+};
+
+function siteVisitTabButtonFallback(selected) {
+  return selected
+    ? {
+        background: MENU.purple,
+        color: MENU.activeText,
+        border: FIELD_OUTLINE,
+      }
+    : {
+        background: WHITE,
+        color: MONUMENT,
+        border: FIELD_OUTLINE,
+      };
+}
+
+function mergeSiteVisitTabButtonStyle(selected, fallback) {
+  const saved = buildSavedButtonStyle(SITE_VISIT_PHOTO_TAB_BUTTON_ID, selected);
+  return saved ? { ...saved } : fallback;
+}
+
+function siteVisitTabHoverHandlers(usesSavedStyle, selected) {
+  if (usesSavedStyle || selected) return {};
+  return {
+    onMouseEnter: (e) => {
+      e.currentTarget.style.background = UI.inputBg;
+    },
+    onMouseLeave: (e) => {
+      e.currentTarget.style.background = WHITE;
+    },
+  };
+}
 
 /** Matches backend `normalizeSiteVisitPhotoSet`: `5. PHOTOS` subfolders. */
 const SITE_VISIT_PHOTO_TAB_PRE = "pre";
@@ -219,8 +264,19 @@ export default function SiteVisit({ project, onUpdate }) {
   /** null = closed; otherwise index into `siteVisitPhotoFiles` */
   const [photoViewerIndex, setPhotoViewerIndex] = useState(null);
   const [siteVisitNotes, setSiteVisitNotes] = useState(project?.site_visit_notes || "");
+  const [, setUiButtonStyleRevision] = useState(0);
   
   const valuesRef = useRef({ siteVisitNotes });
+
+  useEffect(() => {
+    const refresh = () => setUiButtonStyleRevision((n) => n + 1);
+    window.addEventListener("sgf-ui-button-styles-change", refresh);
+    window.addEventListener("sgf-ui-theme-change", refresh);
+    return () => {
+      window.removeEventListener("sgf-ui-button-styles-change", refresh);
+      window.removeEventListener("sgf-ui-theme-change", refresh);
+    };
+  }, []);
 
   useEffect(() => {
     if (photoViewerIndex === null) return undefined;
@@ -473,23 +529,42 @@ export default function SiteVisit({ project, onUpdate }) {
     }
   }
 
+  const preConstructionTabSelected = siteVisitPhotoTab === SITE_VISIT_PHOTO_TAB_PRE;
+  const constructionTabSelected = siteVisitPhotoTab === SITE_VISIT_PHOTO_TAB_CONSTRUCTION;
+  const preConstructionTabButtonStyle = mergeSiteVisitTabButtonStyle(preConstructionTabSelected, {
+    ...siteVisitTabButtonBase,
+    ...siteVisitTabButtonFallback(preConstructionTabSelected),
+  });
+  const constructionTabButtonStyle = mergeSiteVisitTabButtonStyle(constructionTabSelected, {
+    ...siteVisitTabButtonBase,
+    ...siteVisitTabButtonFallback(constructionTabSelected),
+  });
+  const preConstructionTabUsesSavedStyle = Boolean(
+    buildSavedButtonStyle(SITE_VISIT_PHOTO_TAB_BUTTON_ID, preConstructionTabSelected)
+  );
+  const constructionTabUsesSavedStyle = Boolean(
+    buildSavedButtonStyle(SITE_VISIT_PHOTO_TAB_BUTTON_ID, constructionTabSelected)
+  );
+
   return (
     <>
-      <div>
-        <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT }}>
+      <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, alignSelf: "stretch" }}>
+        <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, flexShrink: 0 }}>
           Site Visit
         </h2>
         {project && (
           <div
             style={{
               marginTop: "24px",
+              flex: 1,
+              minHeight: 0,
               display: "grid",
-              gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+              gridTemplateColumns: "minmax(0, 1fr) minmax(0, 2fr)",
               gap: "24px",
               alignItems: "stretch",
             }}
           >
-            {/* Column 1 — visit details + notes (notes flex to match column 2 height) */}
+            {/* Column 1 (1/3) — status, date, time + notes */}
             <div
               style={{
                 display: "flex",
@@ -500,41 +575,123 @@ export default function SiteVisit({ project, onUpdate }) {
                 boxSizing: "border-box",
               }}
             >
+              {/* Status, Date, Time — auto-width; wrap within column */}
               <div
                 style={{
-                  marginBottom: "24px",
-                  width: "50%",
-                  maxWidth: "50%",
+                  marginBottom: "16px",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "12px",
+                  alignItems: "flex-start",
                   minWidth: 0,
-                  alignSelf: "flex-start",
-                  boxSizing: "border-box",
+                  width: "100%",
+                  flexShrink: 0,
                 }}
               >
-                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
-                  Status
+                <div style={{ flexShrink: 0, width: "max-content", maxWidth: "100%" }}>
+                  <div
+                    style={{
+                      fontSize: "0.9rem",
+                      color: UI.textMuted,
+                      marginBottom: "6px",
+                      fontWeight: 500,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Status
+                  </div>
+                  <select
+                    value={siteVisitStatus}
+                    onChange={(e) => handleStatusChange(e.target.value)}
+                    style={{
+                      fontSize: "1rem",
+                      color: MONUMENT,
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: FIELD_OUTLINE,
+                      background: WHITE,
+                      width: "max-content",
+                      maxWidth: "100%",
+                      boxSizing: "border-box",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {SITE_VISIT_STATUS_OPTIONS.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <select
-                  value={siteVisitStatus}
-                  onChange={(e) => handleStatusChange(e.target.value)}
-                  style={{
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: "none",
-                    background: WHITE,
-                    width: "100%",
-                    maxWidth: "100%",
-                    boxSizing: "border-box",
-                    cursor: "pointer",
-                  }}
-                >
-                  {SITE_VISIT_STATUS_OPTIONS.map((status) => (
-                    <option key={status} value={status}>
-                      {status}
-                    </option>
-                  ))}
-                </select>
+
+                {project.site_visit_scheduled_date && (
+                  <div style={{ flexShrink: 0, width: "max-content", maxWidth: "100%", minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: "0.9rem",
+                        color: UI.textMuted,
+                        marginBottom: "6px",
+                        fontWeight: 500,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Date
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "1rem",
+                        color: MONUMENT,
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: FIELD_OUTLINE,
+                        background: WHITE,
+                        width: "max-content",
+                        maxWidth: "100%",
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      {new Date(project.site_visit_scheduled_date + "T00:00:00").toLocaleDateString("en-AU", {
+                        weekday: "long",
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {project.site_visit_scheduled_period && (
+                  <div style={{ flexShrink: 0, width: "max-content", maxWidth: "100%" }}>
+                    <div
+                      style={{
+                        fontSize: "0.9rem",
+                        color: UI.textMuted,
+                        marginBottom: "6px",
+                        fontWeight: 500,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Time
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "1rem",
+                        color: MONUMENT,
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: FIELD_OUTLINE,
+                        background: WHITE,
+                        width: "max-content",
+                        maxWidth: "100%",
+                        boxSizing: "border-box",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {project.site_visit_scheduled_period}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {(siteVisitStatus === "Booked" || siteVisitStatus === "Complete") && project.site_visit_date && (
@@ -548,6 +705,7 @@ export default function SiteVisit({ project, onUpdate }) {
                       color: MONUMENT,
                       padding: "10px 12px",
                       borderRadius: "8px",
+                      border: FIELD_OUTLINE,
                       background: WHITE,
                       width: "100%",
                       maxWidth: "100%",
@@ -570,6 +728,7 @@ export default function SiteVisit({ project, onUpdate }) {
                       color: MONUMENT,
                       padding: "10px 12px",
                       borderRadius: "8px",
+                      border: FIELD_OUTLINE,
                       background: WHITE,
                       width: "100%",
                       maxWidth: "100%",
@@ -581,58 +740,8 @@ export default function SiteVisit({ project, onUpdate }) {
                 </div>
               )}
 
-              {/* Scheduled Site Visit Date and Period */}
-              {project.site_visit_scheduled_date && (
-                <div style={{ marginBottom: "24px" }}>
-                  <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
-                    Scheduled Site Visit Date
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "1rem",
-                      color: MONUMENT,
-                      padding: "10px 12px",
-                      borderRadius: "8px",
-                      background: WHITE,
-                      width: "100%",
-                      maxWidth: "100%",
-                      boxSizing: "border-box",
-                    }}
-                  >
-                    {new Date(project.site_visit_scheduled_date + "T00:00:00").toLocaleDateString("en-AU", {
-                      weekday: "long",
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric"
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {project.site_visit_scheduled_period && (
-                <div style={{ marginBottom: "24px" }}>
-                  <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
-                    Scheduled Site Visit Time Period
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "1rem",
-                      color: MONUMENT,
-                      padding: "10px 12px",
-                      borderRadius: "8px",
-                      background: WHITE,
-                      width: "100%",
-                      maxWidth: "100%",
-                      boxSizing: "border-box",
-                    }}
-                  >
-                    {project.site_visit_scheduled_period}
-                  </div>
-                </div>
-              )}
-
               {siteVisitStatus !== "Complete" && siteVisitStatus === "Booked" && (
-                <div style={{ marginTop: "24px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                <div style={{ marginBottom: "16px", display: "flex", gap: "12px", flexWrap: "wrap", flexShrink: 0 }}>
                   <button
                     type="button"
                     onClick={() => setShowCompleteModal(true)}
@@ -676,10 +785,9 @@ export default function SiteVisit({ project, onUpdate }) {
                   flexDirection: "column",
                   flex: 1,
                   minHeight: 0,
-                  marginTop: "16px",
                 }}
               >
-                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500, flexShrink: 0 }}>
                   Notes
                 </div>
                 <textarea
@@ -690,22 +798,22 @@ export default function SiteVisit({ project, onUpdate }) {
                   style={{
                     width: "100%",
                     flex: 1,
-                    minHeight: "220px",
+                    minHeight: 0,
                     padding: "12px",
                     borderRadius: "8px",
-                    border: `1px solid ${SECTION_GREY}`,
+                    border: FIELD_OUTLINE,
                     fontSize: "1rem",
                     color: MONUMENT,
                     background: WHITE,
                     boxSizing: "border-box",
                     fontFamily: "inherit",
-                    resize: "vertical",
+                    resize: "none",
                   }}
                 />
               </div>
             </div>
 
-            {/* Column 2 — site photos (two folders under 5. PHOTOS); 5 across; scroll = 4 rows */}
+            {/* Column 2 (2/3) — site photos */}
             <div
               style={{
                 display: "flex",
@@ -733,46 +841,26 @@ export default function SiteVisit({ project, onUpdate }) {
                 <button
                   type="button"
                   role="tab"
-                  aria-selected={siteVisitPhotoTab === SITE_VISIT_PHOTO_TAB_PRE}
+                  aria-selected={preConstructionTabSelected}
                   onClick={() => {
                     setPhotoViewerIndex(null);
                     setSiteVisitPhotoTab(SITE_VISIT_PHOTO_TAB_PRE);
                   }}
-                  style={{
-                    padding: "8px 14px",
-                    borderRadius: "8px",
-                    border: "none",
-                    fontSize: "0.9rem",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    background: siteVisitPhotoTab === SITE_VISIT_PHOTO_TAB_PRE ? MONUMENT : SECTION_GREY,
-                    color: siteVisitPhotoTab === SITE_VISIT_PHOTO_TAB_PRE ? PAGE_TEXT : MONUMENT,
-                    boxSizing: "border-box",
-                  }}
+                  style={preConstructionTabButtonStyle}
+                  {...siteVisitTabHoverHandlers(preConstructionTabUsesSavedStyle, preConstructionTabSelected)}
                 >
                   Pre-construction
                 </button>
                 <button
                   type="button"
                   role="tab"
-                  aria-selected={siteVisitPhotoTab === SITE_VISIT_PHOTO_TAB_CONSTRUCTION}
+                  aria-selected={constructionTabSelected}
                   onClick={() => {
                     setPhotoViewerIndex(null);
                     setSiteVisitPhotoTab(SITE_VISIT_PHOTO_TAB_CONSTRUCTION);
                   }}
-                  style={{
-                    padding: "8px 14px",
-                    borderRadius: "8px",
-                    border: "none",
-                    fontSize: "0.9rem",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    background:
-                      siteVisitPhotoTab === SITE_VISIT_PHOTO_TAB_CONSTRUCTION ? MONUMENT : SECTION_GREY,
-                    color:
-                      siteVisitPhotoTab === SITE_VISIT_PHOTO_TAB_CONSTRUCTION ? PAGE_TEXT : MONUMENT,
-                    boxSizing: "border-box",
-                  }}
+                  style={constructionTabButtonStyle}
+                  {...siteVisitTabHoverHandlers(constructionTabUsesSavedStyle, constructionTabSelected)}
                 >
                   Construction
                 </button>
@@ -789,10 +877,12 @@ export default function SiteVisit({ project, onUpdate }) {
                   boxSizing: "border-box",
                   overflowY: "auto",
                   overflowX: "hidden",
-                  paddingRight: "4px",
-                  flexShrink: 0,
-                  /* 4 square rows: cell side (W - 4*gap) / 5; + 3 row gaps */
-                  maxHeight: "calc(4 * (100cqw - 32px) / 5 + 24px)",
+                  padding: "8px",
+                  flex: 1,
+                  minHeight: 0,
+                  border: FIELD_OUTLINE,
+                  borderRadius: "8px",
+                  background: WHITE,
                 }}
               >
                   {siteVisitPhotosLoading ? (

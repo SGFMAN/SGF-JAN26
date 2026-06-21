@@ -822,7 +822,7 @@ export default function StatusManager() {
               transition: "background 0.18s, color 0.15s",
               marginBottom: "0px",
               lineHeight: "1.4",
-              outline: `2px solid ${UI.outline}`,
+              outline: `1px solid ${UI.outline}`,
               boxShadow: "0 2px 4px rgba(50,50,51,.04)",
               display: "block",
             }}

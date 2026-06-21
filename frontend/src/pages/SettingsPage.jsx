@@ -8,6 +8,7 @@ import EmailSettings from "./EmailSettings";
 import ColourSettings from "./ColourSettings";
 import StreamSettings from "./StreamSettings";
 import MapsSettings from "./MapsSettings";
+import UISettings from "./UISettings";
 import logo from "../images/logo.png";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -25,6 +26,7 @@ const menuOptions = [
   { key: "file", label: "File Settings" },
   { key: "maps", label: "Maps" },
   { key: "emailSettings", label: "SMTP Settings" },
+  { key: "ui", label: "UI" },
   { key: "users", label: "Users" },
   { key: "permissions", label: "Permissions" },
 ];
@@ -64,6 +66,8 @@ export default function SettingsPage() {
             <StreamSettings />
           </div>
         );
+      case "ui":
+        return <UISettings />;
       default:
         return (
           <div>
@@ -174,7 +178,7 @@ export default function SettingsPage() {
                 cursor: "pointer",
                 transition: "background 0.18s, color 0.15s",
                 marginBottom: "2px",
-                outline: selected === option.key ? `2px solid ${UI.outline}` : "none",
+                outline: selected === option.key ? `1px solid ${UI.outline}` : "none",
                 boxShadow: selected === option.key ? "0 2px 4px rgba(50,50,51,.04)" : "none"
               }}
             >

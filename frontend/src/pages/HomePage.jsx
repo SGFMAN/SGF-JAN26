@@ -25,14 +25,16 @@ import MobileProjectsHome from "../mobile/MobileProjectsHome";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
 import StateFilterButtons from "../components/StateFilterButtons";
-import { UI, MENU, STREAM, INDICATOR } from "../utils/uiThemeTokens.js";
+import { UI, MENU, STREAM, INDICATOR, outlineBorder } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
+import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
+const SORT_BUTTON_STYLE_ID = 4;
 
 const API_URL = "";
 
@@ -256,6 +258,7 @@ export default function HomePage() {
   const [selectedValue, setSelectedValue] = useState("");
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [sortMode, setSortMode] = useState("suburb"); // default view
+  const [, setUiButtonStyleRevision] = useState(0);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [newProjectStep, setNewProjectStep] = useState(1);
   const [createdProjectForEmail, setCreatedProjectForEmail] = useState(null);
@@ -304,6 +307,16 @@ export default function HomePage() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [location.pathname]);
+
+  useEffect(() => {
+    const refresh = () => setUiButtonStyleRevision((n) => n + 1);
+    window.addEventListener("sgf-ui-button-styles-change", refresh);
+    window.addEventListener("sgf-ui-theme-change", refresh);
+    return () => {
+      window.removeEventListener("sgf-ui-button-styles-change", refresh);
+      window.removeEventListener("sgf-ui-theme-change", refresh);
+    };
+  }, []);
 
   async function checkAdminStatus() {
     const admin = await isUserAdmin();
@@ -638,7 +651,7 @@ export default function HomePage() {
     height: "48px",
     padding: "0 16px",
     borderRadius: "8px",
-    border: `2px solid ${UI.outline}`,
+    border: outlineBorder,
     fontSize: "1rem",
     boxSizing: "border-box",
     outline: "none",
@@ -658,20 +671,40 @@ export default function HomePage() {
 
   const sortButtonStyle = (mode) => {
     const selected = sortMode === mode;
-    return {
-      ...toolbarButtonStyle,
+    const savedStyle = buildSavedButtonStyle(SORT_BUTTON_STYLE_ID, selected);
+    const fallback = {
       background: selected ? INDICATOR.orangeLight : WHITE,
       color: MONUMENT,
-      border: selected ? `2px solid ${INDICATOR.orangeDark}` : `2px solid ${UI.outline}`,
-      transition: "background 0.2s, border-color 0.2s, color 0.2s",
+      border: selected ? `1px solid ${INDICATOR.orangeDark}` : outlineBorder,
+    };
+    return {
+      style: {
+        ...toolbarButtonStyle,
+        ...(savedStyle ?? fallback),
+        transition: "background 0.2s, border-color 0.2s, color 0.2s",
+      },
+      savedStyle,
+      selected,
     };
   };
+
+  const sortButtonHoverHandlers = ({ savedStyle, selected }) =>
+    savedStyle
+      ? {}
+      : {
+          onMouseEnter: (e) => {
+            if (!selected) e.currentTarget.style.background = UI.inputBg;
+          },
+          onMouseLeave: (e) => {
+            if (!selected) e.currentTarget.style.background = WHITE;
+          },
+        };
 
   const newProjectButtonStyle = {
     ...toolbarButtonStyle,
     background: STREAM.streamGreen,
     color: PAGE_TEXT,
-    border: `2px solid ${UI.outline}`,
+    border: outlineBorder,
     transition: "background 0.2s",
   };
 
@@ -783,7 +816,7 @@ export default function HomePage() {
           {/* Menu Buttons */}
           <HotlistSidebarSection />
                     {/* All Projects, Design Phase, Construction Phase, Finished Projects, Cancelled, On Hold - Light Green */}
-          <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: `2px solid ${UI.outline}` }}>
+          <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: outlineBorder }}>
             <Link
               to="/all-projects"
               style={{
@@ -930,7 +963,7 @@ export default function HomePage() {
                 display: "flex",
                 flexDirection: "column",
                 gap: "4px",
-                border: `2px solid ${UI.outline}`,
+                border: outlineBorder,
               }}
             >
               <Link
@@ -1139,7 +1172,7 @@ export default function HomePage() {
                     ...filterControlStyle,
                     background: MENU.purpleLight,
                     color: PAGE_TEXT,
-                    border: `2px solid ${UI.outline}`,
+                    border: outlineBorder,
                     cursor: "pointer",
                     fontWeight: 500,
                     whiteSpace: "nowrap",
@@ -1161,27 +1194,25 @@ export default function HomePage() {
                 />
               </div>
               <div style={{ display: "flex", flexDirection: "row", gap: "10px" }}>
-                <button
-                  type="button"
-                  onClick={() => setSortMode("suburb")}
-                  style={sortButtonStyle("suburb")}
-                >
-                  Sort by Suburb
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSortMode("class")}
-                  style={sortButtonStyle("class")}
-                >
-                  Sort By Class
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSortMode("stream")}
-                  style={sortButtonStyle("stream")}
-                >
-                  Sort By Stream
-                </button>
+                {["suburb", "class", "stream"].map((mode) => {
+                  const button = sortButtonStyle(mode);
+                  const labels = {
+                    suburb: "Sort by Suburb",
+                    class: "Sort By Class",
+                    stream: "Sort By Stream",
+                  };
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setSortMode(mode)}
+                      style={button.style}
+                      {...sortButtonHoverHandlers(button)}
+                    >
+                      {labels[mode]}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>

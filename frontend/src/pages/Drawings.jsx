@@ -39,8 +39,10 @@ import {
   parseDrawingsHistory,
 } from "../utils/drawingsStatusRules";
 
+import { getApiHeaders } from "../utils/auth";
 import { UI, STREAM, MENU, INDICATOR } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
+import { buildSavedButtonStyle, mergeDestructiveButtonStyle, destructiveButtonUsesSavedStyle } from "../utils/uiButtonStyles.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
@@ -53,6 +55,41 @@ const QLD_RED = STREAM.qldRed;
 const API_URL = "";
 /** Above `EmailSendOverlay` (2147483000) so folder / upload errors are never hidden behind it. */
 const DRAWINGS_ALERT_MODAL_Z = 2147483646;
+
+const VIEW_DRAWINGS_BUTTON_ID = 5;
+const SEND_DRAWINGS_TO_BUTTON_ID = 3;
+const SEND_TO_CLIENT_BUTTON_ID = 1;
+const HOLDER_BUTTON_ID = 4;
+
+const DESTRUCTIVE_BUTTON_FALLBACK = {
+  background: QLD_RED,
+  color: PAGE_TEXT,
+  border: `1px solid ${QLD_RED}`,
+  borderRadius: "6px",
+  padding: "6px 8px",
+  fontSize: "0.8rem",
+  fontWeight: 500,
+  cursor: "pointer",
+  transition: "background 0.18s, color 0.15s",
+  lineHeight: "1.2",
+  width: "100px",
+  boxSizing: "border-box",
+  textAlign: "center",
+};
+
+/** Sidebar green menu bottom aligns 101px above the 758px panel (gap + Back to Main + padding). */
+const PROJECT_PANEL_HEIGHT_PX = 758;
+const SIDEBAR_BELOW_GREEN_MENU_PX = 101;
+/** Content header: 24px pad + ~26px title + 10px row margin from panel top. */
+const DRAWINGS_HEADER_OFFSET_PX = 60;
+const DRAWINGS_LIST_MAX_HEIGHT_PX =
+  PROJECT_PANEL_HEIGHT_PX - SIDEBAR_BELOW_GREEN_MENU_PX - DRAWINGS_HEADER_OFFSET_PX;
+const DRAWINGS_ACTION_ZONE_HEIGHT_PX = SIDEBAR_BELOW_GREEN_MENU_PX - 24;
+
+function mergeActionButtonStyle(styleId, fallback) {
+  const saved = buildSavedButtonStyle(styleId, true);
+  return saved ? { ...saved, lineHeight: "1.2" } : fallback;
+}
 
 export default function Drawings({
   project,
@@ -112,9 +149,20 @@ export default function Drawings({
   const [showDrawingsFolderMissingModal, setShowDrawingsFolderMissingModal] = useState(false);
   const [showDrawingsPathErrorModal, setShowDrawingsPathErrorModal] = useState(false);
   const [drawingsPathErrorMessage, setDrawingsPathErrorMessage] = useState("");
+  const [, setUiButtonStyleRevision] = useState(0);
 
   const valuesRef = useRef({ drawingsStatus, draftsperson });
   
+  useEffect(() => {
+    const refresh = () => setUiButtonStyleRevision((n) => n + 1);
+    window.addEventListener("sgf-ui-button-styles-change", refresh);
+    window.addEventListener("sgf-ui-theme-change", refresh);
+    return () => {
+      window.removeEventListener("sgf-ui-button-styles-change", refresh);
+      window.removeEventListener("sgf-ui-theme-change", refresh);
+    };
+  }, []);
+
   useEffect(() => {
     valuesRef.current = { drawingsStatus, draftsperson };
   }, [drawingsStatus, draftsperson]);
@@ -733,6 +781,7 @@ export default function Drawings({
   }
 
   async function handleClearDrawingData() {
+    if (!showClearDrawingData) return;
     if (!project?.id) {
       alert("Error: Project ID is missing");
       return;
@@ -749,9 +798,7 @@ export default function Drawings({
 
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: getApiHeaders(),
         body: JSON.stringify({
           name: projectName,
           status: project?.status || null,
@@ -2881,43 +2928,241 @@ export default function Drawings({
   };
 
   const holderDisplay = getHolderDisplay();
+  const drawingsHistory = parseDrawingsHistory(project?.drawings_history);
+
+  const renderDrawingsActionBar = () => {
+    if (!drawingsHistory.length && !showClearDrawingData) return null;
+
+    const viewDrawingsStyle = mergeActionButtonStyle(VIEW_DRAWINGS_BUTTON_ID, {
+      background: STREAM_GREEN,
+      color: PAGE_TEXT,
+      border: `1px solid ${STREAM_GREEN}`,
+      borderRadius: "6px",
+      padding: "6px 8px",
+      fontSize: "0.8rem",
+      fontWeight: 500,
+      cursor: "pointer",
+      transition: "background 0.18s, color 0.15s",
+      lineHeight: "1.2",
+      width: "100px",
+    });
+    const sendDrawingsToStyle = mergeActionButtonStyle(SEND_DRAWINGS_TO_BUTTON_ID, {
+      background: MENU.purple,
+      color: MENU.activeText,
+      border: `1px solid ${MENU.purple}`,
+      borderRadius: "6px",
+      padding: "6px 8px",
+      fontSize: "0.75rem",
+      fontWeight: 500,
+      cursor: "pointer",
+      transition: "background 0.18s, color 0.15s",
+      lineHeight: "1.2",
+      width: "118px",
+    });
+    const sendToClientStyle = mergeActionButtonStyle(SEND_TO_CLIENT_BUTTON_ID, {
+      background: VIC_BLUE,
+      color: PAGE_TEXT,
+      border: `1px solid ${VIC_BLUE}`,
+      borderRadius: "6px",
+      padding: "6px 8px",
+      fontSize: "0.8rem",
+      fontWeight: 500,
+      cursor: "pointer",
+      transition: "background 0.18s, color 0.15s",
+      lineHeight: "1.2",
+      width: "100px",
+    });
+    const holderStyle = mergeActionButtonStyle(HOLDER_BUTTON_ID, {
+      fontSize: "0.8rem",
+      color: PAGE_TEXT,
+      textAlign: "center",
+      background: INDICATOR.orange,
+      border: `1px solid ${INDICATOR.orange}`,
+      borderRadius: "6px",
+      padding: "6px 8px",
+      width: "100px",
+      lineHeight: "1.2",
+      fontWeight: 500,
+      boxSizing: "border-box",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+    });
+    const clearDrawingDataStyle = {
+      ...mergeDestructiveButtonStyle(DESTRUCTIVE_BUTTON_FALLBACK),
+      alignSelf: "stretch",
+    };
+
+    const viewUsesSavedStyle = Boolean(buildSavedButtonStyle(VIEW_DRAWINGS_BUTTON_ID, true));
+    const sendToUsesSavedStyle = Boolean(buildSavedButtonStyle(SEND_DRAWINGS_TO_BUTTON_ID, true));
+    const clientUsesSavedStyle = Boolean(buildSavedButtonStyle(SEND_TO_CLIENT_BUTTON_ID, true));
+    const clearUsesSavedStyle = destructiveButtonUsesSavedStyle();
+
+    return (
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-start",
+          gap: "8px",
+          alignItems: "stretch",
+          flexShrink: 0,
+        }}
+      >
+        {project?.drawings_pdf_location && (
+          <button
+            onClick={() => {
+              if (project?.drawings_pdf_location) {
+                setShowDrawingsModal(true);
+              } else {
+                alert("No drawings PDF has been set for this project yet.");
+              }
+            }}
+            style={viewDrawingsStyle}
+            onMouseEnter={
+              viewUsesSavedStyle
+                ? undefined
+                : (e) => {
+                    e.currentTarget.style.background = streamColorHover(STREAM_GREEN);
+                  }
+            }
+            onMouseLeave={
+              viewUsesSavedStyle
+                ? undefined
+                : (e) => {
+                    e.currentTarget.style.background = STREAM_GREEN;
+                  }
+            }
+          >
+            View<br />Drawings
+          </button>
+        )}
+        {project?.drawings_pdf_location && (
+          <button
+            type="button"
+            onClick={handleSendDrawingsMailto}
+            style={sendDrawingsToStyle}
+            onMouseEnter={
+              sendToUsesSavedStyle
+                ? undefined
+                : (e) => {
+                    e.currentTarget.style.background = streamColorHover(MENU.purple);
+                  }
+            }
+            onMouseLeave={
+              sendToUsesSavedStyle
+                ? undefined
+                : (e) => {
+                    e.currentTarget.style.background = MENU.purple;
+                  }
+            }
+          >
+            Send Drawings to..
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={handleEmailDrawingsToClient}
+          style={sendToClientStyle}
+          onMouseEnter={
+            clientUsesSavedStyle
+              ? undefined
+              : (e) => {
+                  e.currentTarget.style.background = streamColorHover(VIC_BLUE);
+                }
+          }
+          onMouseLeave={
+            clientUsesSavedStyle
+              ? undefined
+              : (e) => {
+                  e.currentTarget.style.background = VIC_BLUE;
+                }
+          }
+        >
+          Send to<br />Client
+        </button>
+        <div style={holderStyle}>
+          {project?.drawings_holder_date ? (
+            <>
+              {holderDisplay.text}
+              <br />
+              {(() => {
+                const holderDate = new Date(project.drawings_holder_date);
+                const today = new Date();
+                const diffTime = Math.abs(today - holderDate);
+                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                return `${diffDays} day${diffDays !== 1 ? "s" : ""}`;
+              })()}
+            </>
+          ) : (
+            "-"
+          )}
+        </div>
+        {showClearDrawingData && (
+          <button
+            type="button"
+            onClick={handleClearDrawingData}
+            style={clearDrawingDataStyle}
+            onMouseEnter={
+              clearUsesSavedStyle
+                ? undefined
+                : (e) => {
+                    e.currentTarget.style.background = streamColorHover(QLD_RED);
+                  }
+            }
+            onMouseLeave={
+              clearUsesSavedStyle
+                ? undefined
+                : (e) => {
+                    e.currentTarget.style.background = QLD_RED;
+                  }
+            }
+          >
+            Clear<br />Drawing Data
+          </button>
+        )}
+      </div>
+    );
+  };
 
   return (
-    <div>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%" }}>
       <div style={{ marginBottom: "8px" }}>
         <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: 0, color: MONUMENT }}>
           Drawings
         </h2>
       </div>
       {project && (
-        <div style={{ marginTop: "18px", display: "flex", gap: "24px", flexWrap: "wrap", alignItems: "stretch" }}>
-          <div style={{ flex: "2.5", minWidth: "200px" }}>
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+        <div
+          style={{
+            marginTop: "10px",
+            display: "flex",
+            gap: "24px",
+            flex: "1 1 auto",
+            minHeight: 0,
+            maxHeight: `${DRAWINGS_LIST_MAX_HEIGHT_PX}px`,
+            overflow: "hidden",
+            alignItems: "stretch",
+          }}
+        >
+          <div style={{ flex: "2.5", minWidth: "200px", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div
               style={{
                 background: WHITE,
                 border: `1px solid ${SECTION_GREY}`,
                 borderRadius: "8px",
                 padding: "16px",
-                minHeight: "600px",
-                height: "600px",
+                flex: "1 1 auto",
+                minHeight: 0,
+                maxHeight: "100%",
                 overflowY: "auto",
                 overflowX: "hidden",
                 display: "flex",
                 flexDirection: "column",
-                marginTop: "-18px",
               }}
             >
             {(() => {
-              let drawingsHistory = [];
-              try {
-                const historyValue = project?.drawings_history;
-                if (historyValue) {
-                  drawingsHistory = typeof historyValue === 'string' ? JSON.parse(historyValue) : historyValue;
-                }
-              } catch (e) {
-                console.error("Error parsing drawings_history:", e);
-              }
-
               if (!drawingsHistory || drawingsHistory.length === 0) {
                 return (
                   <div style={{ color: UI.textMuted, fontSize: "0.9rem", fontStyle: "italic" }}>
@@ -3005,8 +3250,7 @@ export default function Drawings({
                                 fontSize: "0.72rem",
                                 fontWeight: 500,
                                 letterSpacing: "0.04em",
-                                color: VIC_BLUE,
-                                opacity: 0.75,
+                                color: MONUMENT,
                                 background: "transparent",
                                 border: "none",
                                 borderRadius: 0,
@@ -3025,8 +3269,7 @@ export default function Drawings({
                                 fontSize: "0.72rem",
                                 fontWeight: 500,
                                 letterSpacing: "0.04em",
-                                color: STREAM_GREEN,
-                                opacity: 0.75,
+                                color: MONUMENT,
                                 background: "transparent",
                                 border: "none",
                                 borderRadius: 0,
@@ -3128,144 +3371,6 @@ export default function Drawings({
                     );
                   })}
                   </div>
-                  {/* Action Buttons - fixed at bottom, no go zone */}
-                  {drawingsHistory.length > 0 && (() => {
-                    const currentIndex = drawingsHistory.length - 1;
-                    const currentDrawing = drawingsHistory[currentIndex];
-                    let backgroundColor = WHITE;
-                    if (currentDrawing.workingDrawingsApproved) {
-                      backgroundColor = VIC_BLUE_LIGHT;
-                    } else if (currentDrawing.conceptApproved) {
-                      backgroundColor = STREAM_GREEN_LIGHT;
-                    }
-                    return (
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "flex-end",
-                          gap: "8px",
-                          alignItems: "center",
-                          padding: "8px 12px",
-                          flexShrink: 0,
-                          borderTop: `1px solid ${SECTION_GREY}`,
-                          background: WHITE,
-                        }}
-                      >
-                        {project?.drawings_pdf_location && (
-                          <button
-                            onClick={() => {
-                              if (project?.drawings_pdf_location) {
-                                setShowDrawingsModal(true);
-                              } else {
-                                alert("No drawings PDF has been set for this project yet.");
-                              }
-                            }}
-                            style={{
-                              background: STREAM_GREEN,
-                              color: PAGE_TEXT,
-                              border: `1px solid ${STREAM_GREEN}`,
-                              borderRadius: "6px",
-                              padding: "6px 8px",
-                              fontSize: "0.8rem",
-                              fontWeight: 500,
-                              cursor: "pointer",
-                              transition: "background 0.18s, color 0.15s",
-                              lineHeight: "1.2",
-                              width: "100px",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = streamColorHover(STREAM_GREEN);
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = STREAM_GREEN;
-                            }}
-                          >
-                            View<br />Drawings
-                          </button>
-                        )}
-                        {project?.drawings_pdf_location && (
-                          <button
-                            type="button"
-                            onClick={handleSendDrawingsMailto}
-                            style={{
-                              background: MENU.purple,
-                              color: MENU.activeText,
-                              border: `1px solid ${MENU.purple}`,
-                              borderRadius: "6px",
-                              padding: "6px 8px",
-                              fontSize: "0.75rem",
-                              fontWeight: 500,
-                              cursor: "pointer",
-                              transition: "background 0.18s, color 0.15s",
-                              lineHeight: "1.2",
-                              width: "118px",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = streamColorHover(MENU.purple);
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = MENU.purple;
-                            }}
-                          >
-                            Send Drawings to..
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={handleEmailDrawingsToClient}
-                          style={{
-                            background: VIC_BLUE,
-                            color: PAGE_TEXT,
-                            border: `1px solid ${VIC_BLUE}`,
-                            borderRadius: "6px",
-                            padding: "6px 8px",
-                            fontSize: "0.8rem",
-                            fontWeight: 500,
-                            cursor: "pointer",
-                            transition: "background 0.18s, color 0.15s",
-                            lineHeight: "1.2",
-                            width: "100px",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = streamColorHover(VIC_BLUE);
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = VIC_BLUE;
-                          }}
-                        >
-                          Send to<br />Client
-                        </button>
-                        <div style={{ 
-                          fontSize: "0.8rem", 
-                          color: PAGE_TEXT,
-                          textAlign: "center",
-                          background: INDICATOR.orange,
-                          border: `1px solid ${INDICATOR.orange}`,
-                          borderRadius: "6px",
-                          padding: "6px 8px",
-                          width: "100px",
-                          lineHeight: "1.2",
-                          fontWeight: 500,
-                        }}>
-                          {project?.drawings_holder_date ? (
-                            <>
-                              {holderDisplay.text}
-                              <br />
-                              {(() => {
-                                const holderDate = new Date(project.drawings_holder_date);
-                                const today = new Date();
-                                const diffTime = Math.abs(today - holderDate);
-                                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                                return `${diffDays} day${diffDays !== 1 ? 's' : ''}`;
-                              })()}
-                            </>
-                          ) : (
-                            "-"
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
                 </>
               );
             })()}
@@ -3273,9 +3378,9 @@ export default function Drawings({
           </div>
 
           {/* Column 4 - Status, Buttons, and Drop Zone */}
-          <div style={{ flex: "0.5", minWidth: "200px", display: "flex", flexDirection: "column", minHeight: "600px" }}>
-            <div style={{ display: "flex", flexDirection: "column", flex: "0 0 auto" }}>
-              <div style={{ marginBottom: "24px", marginTop: "-18px" }}>
+          <div style={{ flex: "0.5", minWidth: "200px", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
+            <div style={{ display: "flex", flexDirection: "column", flexShrink: 0 }}>
+              <div style={{ marginBottom: "24px" }}>
                 <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                   Draftsperson
                 </div>
@@ -3396,12 +3501,21 @@ export default function Drawings({
               )}
             </div>
 
-            {/* Drawings PDF Upload Drop Zone */}
-            <div style={{ display: "flex", flexDirection: "column", width: "100%", marginTop: "24px" }}>
-              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: "500" }}>
+            {/* Drawings PDF Upload Drop Zone — bottom-aligned with drawing list box */}
+            <div
+              style={{
+                marginTop: "auto",
+                display: "flex",
+                flexDirection: "column",
+                width: "100%",
+                flex: "1 1 auto",
+                minHeight: 0,
+              }}
+            >
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: "500", flexShrink: 0 }}>
                 Drawings PDF
               </div>
-              <div style={{ position: "relative", width: "100%" }}>
+              <div style={{ position: "relative", width: "100%", flex: "1 1 auto", minHeight: "200px", display: "flex" }}>
               <div
                 onDragEnter={handleDragEnter}
                 onDragOver={handleDragOver}
@@ -3421,6 +3535,7 @@ export default function Drawings({
                   justifyContent: "center",
                   alignItems: "center",
                   width: "100%",
+                  flex: "1 1 auto",
                   minHeight: "200px",
                   boxSizing: "border-box",
                   position: "relative",
@@ -3478,32 +3593,20 @@ export default function Drawings({
               </div>
               </div>
             </div>
-
-            {showClearDrawingData && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "12px", width: "100%" }}>
-                <button
-                  onClick={handleClearDrawingData}
-                  style={{
-                    background: QLD_RED,
-                    color: PAGE_TEXT,
-                    border: `1px solid ${QLD_RED}`,
-                    borderRadius: "10px",
-                    padding: "8px 8px",
-                    fontSize: "0.95rem",
-                    fontWeight: 500,
-                    textAlign: "center",
-                    letterSpacing: "0.5px",
-                    cursor: "pointer",
-                    transition: "background 0.18s, color 0.15s",
-                    display: "block",
-                    width: "100%",
-                  }}
-                >
-                  Clear Drawing Data
-                </button>
-              </div>
-            )}
           </div>
+        </div>
+        <div
+          style={{
+            flexShrink: 0,
+            minHeight: `${DRAWINGS_ACTION_ZONE_HEIGHT_PX}px`,
+            marginTop: "auto",
+            display: "flex",
+            alignItems: "flex-end",
+            paddingBottom: "12px",
+          }}
+        >
+          {renderDrawingsActionBar()}
+        </div>
         </div>
       )}
 

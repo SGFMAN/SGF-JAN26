@@ -6,7 +6,7 @@ import { CLASSIFICATION_BADGE_MAP as CLASSIFICATION_MAP } from "../utils/classif
 import { portalProjectPath } from "../utils/projectUrl";
 import { getProjectStreamBadge } from "../utils/streamBadges";
 
-import { UI, MENU, PROJECT_CARD } from "../utils/uiThemeTokens.js";
+import { UI, MENU, PROJECT_CARD, outlineBorder } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
@@ -209,7 +209,7 @@ export default function PortalProjects() {
             style={{
               background: stateFilter === "VIC" ? "#4D93D9" : WHITE,
               color: stateFilter === "VIC" ? PAGE_TEXT : MONUMENT,
-              border: `2px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
+              border: `1px solid ${stateFilter === "VIC" ? "#4D93D9" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -229,7 +229,7 @@ export default function PortalProjects() {
             style={{
               background: stateFilter === "QLD" ? "#D54358" : WHITE,
               color: stateFilter === "QLD" ? PAGE_TEXT : MONUMENT,
-              border: `2px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
+              border: `1px solid ${stateFilter === "QLD" ? "#D54358" : UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -249,7 +249,7 @@ export default function PortalProjects() {
             style={{
               background: stateFilter === "All" ? MONUMENT : WHITE,
               color: stateFilter === "All" ? PAGE_TEXT : MONUMENT,
-              border: `2px solid ${UI.outline}`,
+              border: `1px solid ${UI.outline}`,
               borderRadius: "8px",
               padding: "10px 20px",
               fontSize: "1rem",
@@ -305,7 +305,7 @@ export default function PortalProjects() {
               display: "flex",
               flexDirection: "column",
               gap: "4px",
-              border: `2px solid ${UI.outline}`,
+              border: `1px solid ${UI.outline}`,
             }}
           >
             <Link
@@ -369,7 +369,7 @@ export default function PortalProjects() {
                 style={{
                   background: sortMode === "suburb" ? MONUMENT : WHITE,
                   color: sortMode === "suburb" ? PAGE_TEXT : MONUMENT,
-                  border: `2px solid ${UI.outline}`,
+                  border: `1px solid ${UI.outline}`,
                   borderRadius: "8px",
                   padding: "10px 14px",
                   fontSize: "0.9rem",
@@ -386,7 +386,7 @@ export default function PortalProjects() {
                 style={{
                   background: sortMode === "class" ? MONUMENT : WHITE,
                   color: sortMode === "class" ? PAGE_TEXT : MONUMENT,
-                  border: `2px solid ${UI.outline}`,
+                  border: `1px solid ${UI.outline}`,
                   borderRadius: "8px",
                   padding: "10px 14px",
                   fontSize: "0.9rem",
@@ -403,7 +403,7 @@ export default function PortalProjects() {
                 style={{
                   background: sortMode === "stream" ? MONUMENT : WHITE,
                   color: sortMode === "stream" ? PAGE_TEXT : MONUMENT,
-                  border: `2px solid ${UI.outline}`,
+                  border: `1px solid ${UI.outline}`,
                   borderRadius: "8px",
                   padding: "10px 14px",
                   fontSize: "0.9rem",
@@ -441,7 +441,7 @@ export default function PortalProjects() {
                   width: "420px",
                   padding: "12px 16px",
                   borderRadius: "8px",
-                  border: `2px solid ${UI.outline}`,
+                  border: `1px solid ${UI.outline}`,
                   fontSize: "1rem",
                   color: MONUMENT,
                   background: WHITE,
@@ -460,7 +460,7 @@ export default function PortalProjects() {
                   fontWeight: 500,
                   color: MONUMENT,
                   background: WHITE,
-                  border: `2px solid ${UI.outline}`,
+                  border: `1px solid ${UI.outline}`,
                   borderRadius: "8px",
                   cursor: "pointer",
                   height: "42px",
@@ -564,7 +564,7 @@ export default function PortalProjects() {
                           style={{
                             background: PROJECT_CARD.bg,
                             borderRadius: "8px",
-                            border: `2px solid ${UI.outline}`,
+                            border: outlineBorder,
                             boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)",
                             width: "100%",
                             height: "100%",

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import StateFilterButtons from "./StateFilterButtons";
 import {
   FIELD_DEFINITIONS,
@@ -6,11 +6,13 @@ import {
   PROJECT_LIST_ACTION_BUTTON_LABELS,
   filterSelectWidth,
 } from "../utils/projectListFilters";
-import { UI, MENU, INDICATOR } from "../utils/uiThemeTokens.js";
+import { UI, MENU, INDICATOR, outlineBorder } from "../utils/uiThemeTokens.js";
+import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
+const SORT_BUTTON_STYLE_ID = 4;
 
 export default function ProjectListToolbar({
   searchQuery,
@@ -26,6 +28,18 @@ export default function ProjectListToolbar({
   availableValues = [],
   onClearFilters,
 }) {
+  const [, setStyleRevision] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => setStyleRevision((n) => n + 1);
+    window.addEventListener("sgf-ui-button-styles-change", refresh);
+    window.addEventListener("sgf-ui-theme-change", refresh);
+    return () => {
+      window.removeEventListener("sgf-ui-button-styles-change", refresh);
+      window.removeEventListener("sgf-ui-theme-change", refresh);
+    };
+  }, []);
+
   const filterByFieldWidth = filterSelectWidth(FILTER_BY_FIELD_LABELS);
   const filterByValueWidth = filterSelectWidth("All values", availableValues);
   const actionButtonWidth = filterSelectWidth(PROJECT_LIST_ACTION_BUTTON_LABELS);
@@ -45,7 +59,7 @@ export default function ProjectListToolbar({
     height: "48px",
     padding: "0 16px",
     borderRadius: "8px",
-    border: `2px solid ${UI.outline}`,
+    border: outlineBorder,
     fontSize: "1rem",
     boxSizing: "border-box",
     outline: "none",
@@ -65,14 +79,34 @@ export default function ProjectListToolbar({
 
   const sortButtonStyle = (mode) => {
     const selected = sortMode === mode;
-    return {
-      ...toolbarButtonStyle,
+    const savedStyle = buildSavedButtonStyle(SORT_BUTTON_STYLE_ID, selected);
+    const fallback = {
       background: selected ? INDICATOR.orangeLight : WHITE,
       color: MONUMENT,
-      border: selected ? `2px solid ${INDICATOR.orangeDark}` : `2px solid ${UI.outline}`,
-      transition: "background 0.2s, border-color 0.2s, color 0.2s",
+      border: selected ? `1px solid ${INDICATOR.orangeDark}` : outlineBorder,
+    };
+    return {
+      style: {
+        ...toolbarButtonStyle,
+        ...(savedStyle ?? fallback),
+        transition: "background 0.2s, border-color 0.2s, color 0.2s",
+      },
+      savedStyle,
+      selected,
     };
   };
+
+  const sortButtonHoverHandlers = ({ savedStyle, selected }) =>
+    savedStyle
+      ? {}
+      : {
+          onMouseEnter: (e) => {
+            if (!selected) e.currentTarget.style.background = UI.inputBg;
+          },
+          onMouseLeave: (e) => {
+            if (!selected) e.currentTarget.style.background = WHITE;
+          },
+        };
 
   return (
     <div
@@ -175,7 +209,7 @@ export default function ProjectListToolbar({
                 ...filterControlStyle,
                 background: MENU.purpleLight,
                 color: PAGE_TEXT,
-                border: `2px solid ${UI.outline}`,
+                border: outlineBorder,
                 cursor: "pointer",
                 fontWeight: 500,
                 whiteSpace: "nowrap",
@@ -197,15 +231,24 @@ export default function ProjectListToolbar({
           />
         </div>
         <div style={{ display: "flex", flexDirection: "row", gap: "10px" }}>
-          <button type="button" onClick={() => setSortMode("suburb")} style={sortButtonStyle("suburb")}>
-            Sort by Suburb
-          </button>
-          <button type="button" onClick={() => setSortMode("class")} style={sortButtonStyle("class")}>
-            Sort By Class
-          </button>
-          <button type="button" onClick={() => setSortMode("stream")} style={sortButtonStyle("stream")}>
-            Sort By Stream
-          </button>
+          {[
+            { mode: "suburb", label: "Sort by Suburb" },
+            { mode: "class", label: "Sort By Class" },
+            { mode: "stream", label: "Sort By Stream" },
+          ].map(({ mode, label }) => {
+            const button = sortButtonStyle(mode);
+            return (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setSortMode(mode)}
+                style={button.style}
+                {...sortButtonHoverHandlers(button)}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

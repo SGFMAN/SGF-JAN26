@@ -26,7 +26,7 @@ export default function ManagersSalesMenuGroup() {
         display: "flex",
         flexDirection: "column",
         gap: "4px",
-        border: `2px solid ${UI.outline}`,
+        border: `1px solid ${UI.outline}`,
       }}
     >
       <ManagersSidebarLink />

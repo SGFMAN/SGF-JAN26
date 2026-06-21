@@ -201,7 +201,7 @@ export default function FinishedProjects() {
           <HotlistSidebarSection />
           
           {/* All Projects, Design Phase, Construction Phase, Finished Projects, Cancelled, On Hold - Light Green */}
-          <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: `2px solid ${UI.outline}` }}>
+          <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: `1px solid ${UI.outline}` }}>
             <Link
               to="/all-projects"
               style={{
@@ -348,7 +348,7 @@ export default function FinishedProjects() {
                 display: "flex",
                 flexDirection: "column",
                 gap: "4px",
-                border: `2px solid ${UI.outline}`,
+                border: `1px solid ${UI.outline}`,
               }}
             >
               <Link

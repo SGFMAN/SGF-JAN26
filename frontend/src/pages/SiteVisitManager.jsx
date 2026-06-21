@@ -6,7 +6,7 @@ import { CLASSIFICATION_BADGE_MAP } from "../utils/classifications";
 import logo from "../images/logo.png";
 
 import StateFilterButtons from "../components/StateFilterButtons";
-import { UI, BANNER, PROJECT_CARD } from "../utils/uiThemeTokens.js";
+import { UI, BANNER, PROJECT_CARD, outlineBorder } from "../utils/uiThemeTokens.js";
 import { getProjectStreamBadge } from "../utils/streamBadges";
 import { OnHoldSash, CancelledSash } from "../components/ProjectStatusSash";
 const MONUMENT = UI.textPrimary;
@@ -294,7 +294,7 @@ export default function SiteVisitManager() {
               transition: "background 0.18s, color 0.15s",
               marginBottom: "0px",
               lineHeight: "1.4",
-              outline: `2px solid ${UI.outline}`,
+              outline: `1px solid ${UI.outline}`,
               boxShadow: "0 2px 4px rgba(50,50,51,.04)",
               display: "block",
             }}
@@ -509,6 +509,8 @@ export default function SiteVisitManager() {
                             borderRadius: "8px",
                             width: "200px",
                             height: "100px",
+                            border: outlineBorder,
+                            boxSizing: "border-box",
                             color: SECTION_GREY,
                             cursor: "pointer",
                             transition: "opacity 0.2s",

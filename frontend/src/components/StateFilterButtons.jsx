@@ -1,9 +1,15 @@
-import { UI, STREAM, MENU } from "../utils/uiThemeTokens.js";
+import { useEffect, useState } from "react";
+import { UI, STREAM, MENU, outlineBorder } from "../utils/uiThemeTokens.js";
 import { setStateFilter as saveStateFilter } from "../utils/stateFilter";
+import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 
 const WHITE = UI.cardBg;
 const MONUMENT = UI.textPrimary;
-const OUTLINE_BORDER = `2px solid ${UI.outline}`;
+const OUTLINE_BORDER = outlineBorder;
+
+const VIC_BUTTON_STYLE_ID = 1;
+const QLD_BUTTON_STYLE_ID = 2;
+const ALL_BUTTON_STYLE_ID = 3;
 
 const btnBase = {
   borderRadius: "8px",
@@ -18,11 +24,23 @@ function stateFilterButtonStyle(selected, accent, accentLight) {
   return {
     background: selected ? accentLight : WHITE,
     color: MONUMENT,
-    border: selected ? `2px solid ${accent}` : OUTLINE_BORDER,
+    border: selected ? `1px solid ${accent}` : OUTLINE_BORDER,
   };
 }
 
 export default function StateFilterButtons({ stateFilter, setStateFilter, buttonWidth, buttonStyle = {} }) {
+  const [, setStyleRevision] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => setStyleRevision((n) => n + 1);
+    window.addEventListener("sgf-ui-button-styles-change", refresh);
+    window.addEventListener("sgf-ui-theme-change", refresh);
+    return () => {
+      window.removeEventListener("sgf-ui-button-styles-change", refresh);
+      window.removeEventListener("sgf-ui-theme-change", refresh);
+    };
+  }, []);
+
   const select = (filter) => {
     setStateFilter(filter);
     saveStateFilter(filter);
@@ -33,6 +51,38 @@ export default function StateFilterButtons({ stateFilter, setStateFilter, button
     : {};
 
   const baseStyle = buttonWidth || Object.keys(buttonStyle).length > 0 ? { ...buttonStyle } : btnBase;
+
+  const buildFilterButtonStyle = (styleId, selected, fallback) => {
+    const savedStyle = buildSavedButtonStyle(styleId, selected);
+    return {
+      style: {
+        ...baseStyle,
+        ...(savedStyle ?? fallback),
+        ...sizeStyle,
+      },
+      savedStyle,
+    };
+  };
+
+  const vicSelected = stateFilter === "VIC";
+  const qldSelected = stateFilter === "QLD";
+  const allSelected = stateFilter === "All";
+
+  const vicButton = buildFilterButtonStyle(
+    VIC_BUTTON_STYLE_ID,
+    vicSelected,
+    stateFilterButtonStyle(vicSelected, STREAM.vicBlue, STREAM.vicBlueLight)
+  );
+  const qldButton = buildFilterButtonStyle(
+    QLD_BUTTON_STYLE_ID,
+    qldSelected,
+    stateFilterButtonStyle(qldSelected, STREAM.qldRed, STREAM.qldRedLight)
+  );
+  const allButton = buildFilterButtonStyle(
+    ALL_BUTTON_STYLE_ID,
+    allSelected,
+    stateFilterButtonStyle(allSelected, MENU.purple, MENU.purpleLight)
+  );
 
   const hoverUnselected = (e, selected) => {
     if (!selected) {
@@ -46,45 +96,23 @@ export default function StateFilterButtons({ stateFilter, setStateFilter, button
     }
   };
 
+  const hoverHandlers = (savedStyle, selected) =>
+    savedStyle
+      ? {}
+      : {
+          onMouseEnter: (e) => hoverUnselected(e, selected),
+          onMouseLeave: (e) => hoverLeaveUnselected(e, selected),
+        };
+
   return (
     <div style={{ display: "contents" }}>
-      <button
-        type="button"
-        onClick={() => select("VIC")}
-        style={{
-          ...baseStyle,
-          ...sizeStyle,
-          ...stateFilterButtonStyle(stateFilter === "VIC", STREAM.vicBlue, STREAM.vicBlueLight),
-        }}
-        onMouseEnter={(e) => hoverUnselected(e, stateFilter === "VIC")}
-        onMouseLeave={(e) => hoverLeaveUnselected(e, stateFilter === "VIC")}
-      >
+      <button type="button" onClick={() => select("VIC")} style={vicButton.style} {...hoverHandlers(vicButton.savedStyle, vicSelected)}>
         VIC Only
       </button>
-      <button
-        type="button"
-        onClick={() => select("QLD")}
-        style={{
-          ...baseStyle,
-          ...sizeStyle,
-          ...stateFilterButtonStyle(stateFilter === "QLD", STREAM.qldRed, STREAM.qldRedLight),
-        }}
-        onMouseEnter={(e) => hoverUnselected(e, stateFilter === "QLD")}
-        onMouseLeave={(e) => hoverLeaveUnselected(e, stateFilter === "QLD")}
-      >
+      <button type="button" onClick={() => select("QLD")} style={qldButton.style} {...hoverHandlers(qldButton.savedStyle, qldSelected)}>
         QLD Only
       </button>
-      <button
-        type="button"
-        onClick={() => select("All")}
-        style={{
-          ...baseStyle,
-          ...sizeStyle,
-          ...stateFilterButtonStyle(stateFilter === "All", MENU.purple, MENU.purpleLight),
-        }}
-        onMouseEnter={(e) => hoverUnselected(e, stateFilter === "All")}
-        onMouseLeave={(e) => hoverLeaveUnselected(e, stateFilter === "All")}
-      >
+      <button type="button" onClick={() => select("All")} style={allButton.style} {...hoverHandlers(allButton.savedStyle, allSelected)}>
         All Projects
       </button>
     </div>

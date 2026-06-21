@@ -211,7 +211,7 @@ button:focus-visible {
 /* Themed outline around the left menu panel and main display area */
 .sidebar-menu,
 .content-section {
-  border: 2px solid var(--sgf-outline);
+  border: 1px solid var(--sgf-outline);
   box-sizing: border-box;
 }
 
@@ -265,4 +265,9 @@ button:focus-visible {
   overflow-x: hidden;
   margin-right: -8px;
   padding-right: 8px;
+}
+
+.hotlist-flyout-header:focus,
+.hotlist-flyout-header:focus-visible {
+  outline: none;
 }

@@ -44,7 +44,7 @@
 
 .overview-progress-section {
   background: var(--sgf-card-bg);
-  border: 2px solid var(--sgf-outline);
+  border: 1px solid var(--sgf-outline);
   border-radius: 12px;
   padding: clamp(16px, 2.5vw, 24px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
@@ -62,9 +62,11 @@
 
 .overview-status-item {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: 2.4em 3.25rem;
+  gap: 6px;
   height: 100%;
+  align-content: start;
   container-type: inline-size;
   container-name: overview-tile;
 }
@@ -76,22 +78,15 @@
 }
 
 .overview-status-label {
-  font-size: clamp(0.45rem, 10cqw, 0.75rem);
-  color: var(--sgf-text-primary);
-  margin-bottom: 3px;
-  font-weight: 500;
   text-align: center;
-  flex: 0 0 2.8em;
-  height: 2.8em;
-  min-height: 2.8em;
-  max-height: 2.8em;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1.08;
-  padding: 0 1px;
-  overflow: hidden;
+  line-height: 1.2;
+  font-weight: inherit;
   word-break: break-word;
+  align-self: start;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
 }
 
 .overview-status-card {
@@ -101,9 +96,10 @@
   color: var(--sgf-page-text);
   box-sizing: border-box;
   width: 100%;
-  flex: 0 0 3.25rem;
   height: 3.25rem;
   min-height: 3.25rem;
+  max-height: 3.25rem;
+  align-self: end;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -139,9 +135,9 @@
   }
 
   .overview-status-card {
-    flex: 0 0 3.25rem;
     height: 3.25rem;
     min-height: 3.25rem;
+    max-height: 3.25rem;
   }
 
   .overview-status-card__text {
@@ -158,14 +154,10 @@
     grid-auto-rows: 1fr;
   }
 
-  .overview-status-label {
-    font-size: clamp(0.44rem, 9cqw, 0.68rem);
-  }
-
   .overview-status-card {
-    flex: 0 0 3.25rem;
     height: 3.25rem;
     min-height: 3.25rem;
+    max-height: 3.25rem;
   }
 
   .overview-status-card__text {
@@ -227,20 +219,19 @@
 
 .project-page-mobile__content--overview .overview-status-item {
   container-type: size;
+  grid-template-rows: minmax(2.4em, auto) minmax(3.25rem, 1fr);
 }
 
 .project-page-mobile__content--overview .overview-status-label {
-  max-height: 24%;
-  margin-bottom: 1px;
-  font-size: clamp(0.4rem, 8cqw, 0.55rem);
-  line-height: 1.05;
+  text-align: center;
 }
 
 .project-page-mobile__content--overview .overview-status-card {
   padding: 1px 2px;
-  flex: 1 1 auto;
   height: auto;
-  min-height: 0;
+  min-height: 3.25rem;
+  max-height: none;
+  align-self: stretch;
 }
 
 .project-page-mobile__content--overview .overview-status-card__text {
@@ -276,9 +267,10 @@
   }
 
   .overview-status-card {
-    flex: 1 1 auto;
-    height: auto;
-    min-height: 2.75rem;
+    height: 3.25rem;
+    min-height: 3.25rem;
+    max-height: 3.25rem;
+    align-self: end;
   }
 
   .overview-status-card__text {

@@ -1,24 +1,29 @@
 import React, { useState, useEffect, useRef } from "react";
-import ThreeDVis from "./ThreeDVis";
-import ElevationPickerModal from "../components/ElevationPickerModal";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
-import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 import { resolveNewProjectClientFrom, findSalespersonUserInList } from "../utils/streamNewProjectEmail";
 import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
 
-import { UI } from "../utils/uiThemeTokens.js";
+import { UI, MENU } from "../utils/uiThemeTokens.js";
+import { streamColorHover } from "../utils/streamColors.js";
+import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
+const FIELD_OUTLINE = `1px solid ${UI.outline}`;
+const EMAIL_CLIENT_BUTTON_ID = 3;
 const API_URL = "";
+
+function mergeColoursButtonStyle(styleId, fallback) {
+  const saved = buildSavedButtonStyle(styleId, true);
+  return saved ? { ...saved } : fallback;
+}
 
 const COLOURS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
 const COLOUR_OPTIONS = ["Select", "Monument", "Paperbark", "Wallaby"];
 
 export default function Colours({ project, onUpdate }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
-  const [show3DVis, setShow3DVis] = useState(false);
   const [coloursStatus, setColoursStatus] = useState(project?.colours_status || "Not Sent");
   const [notes, setNotes] = useState(project?.colours_notes || "");
   const [roofColour, setRoofColour] = useState(project?.roof_colour || "Select");
@@ -42,17 +47,7 @@ export default function Colours({ project, onUpdate }) {
   const [emailFrom, setEmailFrom] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const emailBodyRef = useRef(null);
-  const [showPortalEmailModal, setShowPortalEmailModal] = useState(false);
-  const [portalEmailTo, setPortalEmailTo] = useState("");
-  const [portalEmailFrom, setPortalEmailFrom] = useState("");
-  const [portalEmailSubject, setPortalEmailSubject] = useState("");
-  const [portalEmailBody, setPortalEmailBody] = useState("");
-  const portalEmailBodyRef = useRef(null);
-  const [showElevationPicker, setShowElevationPicker] = useState(false);
-  const [showAiRenderModal, setShowAiRenderModal] = useState(false);
-  const [aiRenderBusy, setAiRenderBusy] = useState(false);
-  const [aiRenderError, setAiRenderError] = useState(null);
-  const [aiRenderPreviewUrl, setAiRenderPreviewUrl] = useState(null);
+  const [, setUiButtonStyleRevision] = useState(0);
 
   const valuesRef = useRef({ coloursStatus, notes, roofColour, claddingColour, baseboardsColour, roofStyle, fasciaGutterColour, balustradeColour, frontDoorColour, windowFramesColour, windowSurroundsColour });
   
@@ -87,12 +82,14 @@ export default function Colours({ project, onUpdate }) {
   }, [project?.id]);
 
   useEffect(() => {
-    setShowElevationPicker(false);
-    setShowAiRenderModal(false);
-    setAiRenderBusy(false);
-    setAiRenderError(null);
-    setAiRenderPreviewUrl(null);
-  }, [project?.id]);
+    const refresh = () => setUiButtonStyleRevision((n) => n + 1);
+    window.addEventListener("sgf-ui-button-styles-change", refresh);
+    window.addEventListener("sgf-ui-theme-change", refresh);
+    return () => {
+      window.removeEventListener("sgf-ui-button-styles-change", refresh);
+      window.removeEventListener("sgf-ui-theme-change", refresh);
+    };
+  }, []);
 
   // Update contentEditable when emailBody changes and modal is open
   useEffect(() => {
@@ -103,15 +100,6 @@ export default function Colours({ project, onUpdate }) {
       }
     }
   }, [showSendModal, emailBody]);
-
-  // Update portal email body contentEditable
-  useEffect(() => {
-    if (showPortalEmailModal && portalEmailBodyRef.current && portalEmailBody) {
-      if (portalEmailBodyRef.current.innerHTML !== portalEmailBody) {
-        portalEmailBodyRef.current.innerHTML = portalEmailBody;
-      }
-    }
-  }, [showPortalEmailModal, portalEmailBody]);
 
   async function saveField(fieldName, value, shouldUpdate = true) {
     if (!project?.id) {
@@ -465,175 +453,6 @@ export default function Colours({ project, onUpdate }) {
     setEmailTo("");
     setEmailFrom("");
     setEmailSubject("");
-  }
-
-  async function handleOpenPortalEmailModal() {
-    // Load "COLOURS - Portal" template
-    try {
-      const [response, settingsResponse, usersResponse] = await Promise.all([
-        fetch(`${API_URL}/api/email-templates`),
-        fetch(`${API_URL}/api/settings`),
-        fetch(`${API_URL}/api/users`),
-      ]);
-      if (response.ok) {
-        const templates = await response.json();
-        const settings = settingsResponse.ok ? await settingsResponse.json() : {};
-        const users = usersResponse.ok ? await usersResponse.json() : [];
-        const salespersonUser = findSalespersonUserInList(users, project?.salesperson);
-        const template = templates.find(t => t.name === "COLOURS - Portal");
-        if (template) {
-          // Get active client emails for "To" field
-          const activeClients = getActiveClients();
-          const activeClientEmails = activeClients
-            .map(client => client.email)
-            .filter(email => email && email.trim());
-          const toAddresses = activeClientEmails.join(", ");
-          
-          // Set To, From, Subject from template
-          setPortalEmailTo(toAddresses);
-          setPortalEmailFrom(resolveNewProjectClientFrom(settings, project, salespersonUser));
-          
-          // Replace tokens in subject
-          let subject = template.subject || "";
-          const suburb = (project?.suburb || "").toUpperCase();
-          const street = project?.street || "";
-          
-          // Get active client names (first names only)
-          const activeClientFirstNames = activeClients
-            .map(client => {
-              if (client.name && client.name.trim()) {
-                return client.name.trim().split(/\s+/)[0];
-              }
-              return null;
-            })
-            .filter(name => name);
-          
-          // Format client first names with commas and "&"
-          let clientName = "";
-          if (activeClientFirstNames.length === 0) {
-            clientName = "";
-          } else if (activeClientFirstNames.length === 1) {
-            clientName = activeClientFirstNames[0];
-          } else if (activeClientFirstNames.length === 2) {
-            clientName = `${activeClientFirstNames[0]} & ${activeClientFirstNames[1]}`;
-          } else {
-            const allButLast = activeClientFirstNames.slice(0, -1).join(", ");
-            const last = activeClientFirstNames[activeClientFirstNames.length - 1];
-            clientName = `${allButLast} & ${last}`;
-          }
-          
-          // Format project name
-          const projectName = `${street || ""}, ${suburb || ""}`.trim().replace(/^,\s*|,\s*$/g, "");
-          
-          // Get colour consultant names
-          let colourConsultantName = "";
-          try {
-            const usersResponse = await fetch(`${API_URL}/api/users`);
-            if (usersResponse.ok) {
-              const allUsers = await usersResponse.json();
-              const colourConsultants = allUsers.filter((user) => {
-                if (!user.positions || !Array.isArray(user.positions)) return false;
-                return user.positions.some((position) => {
-                  const positionName = position.name ? position.name.toLowerCase() : "";
-                  return positionName === "colour consultant";
-                });
-              });
-              
-              if (colourConsultants.length > 0) {
-                const consultantNames = colourConsultants.map(c => c.name || "").filter(n => n);
-                if (consultantNames.length === 1) {
-                  colourConsultantName = consultantNames[0];
-                } else if (consultantNames.length === 2) {
-                  colourConsultantName = `${consultantNames[0]} & ${consultantNames[1]}`;
-                } else if (consultantNames.length >= 3) {
-                  const allButLast = consultantNames.slice(0, -1).join(", ");
-                  const last = consultantNames[consultantNames.length - 1];
-                  colourConsultantName = `${allButLast} & ${last}`;
-                }
-              }
-            }
-          } catch (error) {
-            console.error("Error fetching colour consultants:", error);
-          }
-          
-          // Replace tokens in subject
-          subject = subject.replace(/\{SUBURB\}/g, suburb)
-                           .replace(/\{STREET\}/g, street)
-                           .replace(/\{ClientName\}/g, clientName)
-                           .replace(/\{ProjectName\}/g, projectName)
-                           .replace(/\{ColourConsultant\}/g, colourConsultantName);
-          setPortalEmailSubject(subject);
-          
-          // Replace tokens in body
-          if (template.body) {
-            let body = template.body;
-            body = body.replace(/\{SUBURB\}/g, suburb)
-                       .replace(/\{STREET\}/g, street)
-                       .replace(/\{ClientName\}/g, clientName)
-                       .replace(/\{ProjectName\}/g, projectName)
-                       .replace(/\{ColourConsultant\}/g, colourConsultantName);
-            setPortalEmailBody(body);
-          } else {
-            setPortalEmailBody("");
-          }
-          
-          setShowPortalEmailModal(true);
-        } else {
-          alert('Email template "COLOURS - Portal" not found. Please create it in Settings → Email Templates.');
-        }
-      }
-    } catch (error) {
-      console.error("Error loading portal email template:", error);
-      alert("Failed to load email template");
-    }
-  }
-
-  async function handleSendPortalEmail() {
-    if (!project || !project.id) {
-      alert("Error: Project ID is missing");
-      return;
-    }
-
-    const toAddresses = portalEmailTo.split(",").map(a => a.trim()).filter(a => a.length > 0);
-    if (toAddresses.length === 0) {
-      alert("Please enter at least one email address");
-      return;
-    }
-    if (!portalEmailFrom || !portalEmailFrom.trim()) {
-      alert("From address is required");
-      return;
-    }
-
-    try {
-      await runWithEmailOverlay(async () => {
-        const response = await fetch(`${API_URL}/api/emails/send-colours-portal`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            ...emailLinkBaseForApiBody(),
-            projectId: project.id,
-            toEmails: toAddresses,
-            from: portalEmailFrom,
-            subject: portalEmailSubject,
-            htmlBody: portalEmailBody,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: response.statusText }));
-          throw new Error(errorData.error || "Failed to send email");
-        }
-
-        await response.json();
-        alert("Portal email sent successfully!");
-      });
-      setShowPortalEmailModal(false);
-    } catch (error) {
-      console.error("Error sending portal email:", error);
-      alert(`Failed to send email: ${error.message}`);
-    }
   }
 
   async function handleTemplateTypeChange(e) {
@@ -1004,107 +823,22 @@ export default function Colours({ project, onUpdate }) {
     window.open(pdfUrl, "_blank");
   }
 
-  const canGenerateAiRender =
-    !!(project?.id && project?.drawings_pdf_location && project?.colours_pdf_location);
-
-  function openElevationPickerForRender() {
-    if (!project?.id || !canGenerateAiRender || aiRenderBusy) return;
-    setShowElevationPicker(true);
-  }
-
-  /** Runs after elevation rectangle is chosen; file is saved on disk as AI Render.png in the project folder. */
-  async function runAiRenderGeneration({ planPage, elevationCrop }) {
-    if (!project?.id) return;
-    setShowElevationPicker(false);
-    setShowAiRenderModal(true);
-    setAiRenderBusy(true);
-    setAiRenderError(null);
-    setAiRenderPreviewUrl(null);
-    try {
-      const response = await fetch(`${API_URL}/api/projects/${project.id}/generate-render`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          planPage,
-          elevationCrop,
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data?.error || response.statusText || "Generation failed");
-      }
-      if (data?.renderUrl) {
-        setAiRenderPreviewUrl(`${API_URL}${data.renderUrl}?t=${Date.now()}`);
-      } else {
-        throw new Error("Server did not return an image URL.");
-      }
-    } catch (e) {
-      setAiRenderError(e?.message || "Failed to generate render");
-    } finally {
-      setAiRenderBusy(false);
-    }
-  }
-
-  function openAiRenderModalViewLast() {
-    if (!project?.id) return;
-    setShowAiRenderModal(true);
-    setAiRenderBusy(false);
-    setAiRenderError(null);
-    setAiRenderPreviewUrl(`${API_URL}/api/files/ai-render/${project.id}?t=${Date.now()}`);
-  }
-
-  function closeAiRenderModal() {
-    setShowAiRenderModal(false);
-  }
-
-  function handleOpenAiRenderInNewTab() {
-    if (!project?.id) return;
-    window.open(`${API_URL}/api/files/ai-render/${project.id}`, "_blank");
-  }
-
-  if (show3DVis) {
-    return (
-      <ThreeDVis 
-        project={project} 
-        onBack={() => setShow3DVis(false)}
-        onUpdate={onUpdate}
-        roofColour={roofColour}
-        claddingColour={claddingColour}
-        baseboardsColour={baseboardsColour}
-        setRoofColour={setRoofColour}
-        setCladdingColour={setCladdingColour}
-        setBaseboardsColour={setBaseboardsColour}
-        saveColoursFromProjectPage={saveColoursFromProjectPage}
-        roofStyle={roofStyle}
-        setRoofStyle={setRoofStyle}
-        handleRoofStyleChange={handleRoofStyleChange}
-        fasciaGutterColour={fasciaGutterColour}
-        setFasciaGutterColour={setFasciaGutterColour}
-        handleFasciaGutterColourChange={handleFasciaGutterColourChange}
-        balustradeColour={balustradeColour}
-        setBalustradeColour={setBalustradeColour}
-        handleBalustradeColourChange={handleBalustradeColourChange}
-        frontDoorColour={frontDoorColour}
-        setFrontDoorColour={setFrontDoorColour}
-        handleFrontDoorColourChange={handleFrontDoorColourChange}
-        windowFramesColour={windowFramesColour}
-        setWindowFramesColour={setWindowFramesColour}
-        handleWindowFramesColourChange={handleWindowFramesColourChange}
-        windowSurroundsColour={windowSurroundsColour}
-        setWindowSurroundsColour={setWindowSurroundsColour}
-        handleWindowSurroundsColourChange={handleWindowSurroundsColourChange}
-      />
-    );
-  }
+  const emailClientButtonStyle = mergeColoursButtonStyle(EMAIL_CLIENT_BUTTON_ID, {
+    background: MENU.purple,
+    color: MENU.activeText,
+    border: FIELD_OUTLINE,
+    borderRadius: "8px",
+    padding: "10px 20px",
+    fontSize: "1rem",
+    fontWeight: 500,
+    cursor: "pointer",
+    transition: "background 0.2s",
+    flexShrink: 0,
+  });
+  const emailClientUsesSavedStyle = Boolean(buildSavedButtonStyle(EMAIL_CLIENT_BUTTON_ID, true));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <style>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
       <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT }}>
         Colours
       </h2>
@@ -1144,20 +878,21 @@ export default function Colours({ project, onUpdate }) {
                 <button
                   type="button"
                   onClick={handleOpenSendModal}
-                  style={{
-                    background: MONUMENT,
-                    color: PAGE_TEXT,
-                    border: "none",
-                    borderRadius: "8px",
-                    padding: "10px 20px",
-                    fontSize: "1rem",
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    transition: "background 0.2s",
-                    flexShrink: 0,
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1b")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
+                  style={emailClientButtonStyle}
+                  onMouseEnter={
+                    emailClientUsesSavedStyle
+                      ? undefined
+                      : (e) => {
+                          e.currentTarget.style.background = streamColorHover(MENU.purple);
+                        }
+                  }
+                  onMouseLeave={
+                    emailClientUsesSavedStyle
+                      ? undefined
+                      : (e) => {
+                          e.currentTarget.style.background = MENU.purple;
+                        }
+                  }
                 >
                   Email Client
                 </button>
@@ -1172,54 +907,6 @@ export default function Colours({ project, onUpdate }) {
                     ) : null;
                   })()}
                 </div>
-              </div>
-
-              {/* Email Online Colours Button */}
-              <div style={{ marginTop: "16px" }}>
-                <button
-                  type="button"
-                  onClick={handleOpenPortalEmailModal}
-                  style={{
-                    width: "100%",
-                    background: MONUMENT,
-                    color: PAGE_TEXT,
-                    border: "none",
-                    borderRadius: "8px",
-                    padding: "12px 20px",
-                    fontSize: "1rem",
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    transition: "background 0.2s",
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1b")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
-                >
-                  Email Online Colours
-                </button>
-              </div>
-
-              {/* 3D Visualiser Button */}
-              <div style={{ marginTop: "12px" }}>
-                <button
-                  type="button"
-                  onClick={() => setShow3DVis(true)}
-                  style={{
-                    width: "100%",
-                    background: MONUMENT,
-                    color: PAGE_TEXT,
-                    border: "none",
-                    borderRadius: "8px",
-                    padding: "12px 20px",
-                    fontSize: "1rem",
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    transition: "background 0.2s",
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1b")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
-                >
-                  3D Visualiser
-                </button>
               </div>
             </div>
           </div>
@@ -1303,70 +990,7 @@ export default function Colours({ project, onUpdate }) {
             </div>
           </div>
 
-          {/* Column 3 - AI exterior render */}
-          <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", gap: "12px" }}>
-            <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: "500" }}>
-              AI exterior render
-            </div>
-            <p style={{ margin: 0, fontSize: "0.85rem", color: SECTION_GREY, lineHeight: 1.45 }}>
-              Draw a red box on the <strong style={{ color: MONUMENT }}>drawings PDF</strong> around the elevation. The
-              server uses that crop as the only shape, then applies your project{" "}
-              <strong style={{ color: MONUMENT }}>roof / cladding / baseboard</strong> colours (saved on this page) with
-              OpenAI high input-fidelity. Output is saved next to your colours PDF as{" "}
-              <strong style={{ color: MONUMENT }}>AI Render.png</strong>.
-            </p>
-            <button
-              type="button"
-              onClick={openElevationPickerForRender}
-              disabled={!canGenerateAiRender || aiRenderBusy}
-              title={
-                canGenerateAiRender
-                  ? "Cropped drawings elevation + project roof/cladding/baseboard colours (OpenAI, preserve geometry)"
-                  : "Set drawings PDF and colours PDF paths first"
-              }
-              style={{
-                width: "100%",
-                background: !canGenerateAiRender || aiRenderBusy ? SECTION_GREY : MONUMENT,
-                color: WHITE,
-                border: "none",
-                borderRadius: "8px",
-                padding: "12px 20px",
-                fontSize: "1rem",
-                fontWeight: 500,
-                cursor: !canGenerateAiRender || aiRenderBusy ? "not-allowed" : "pointer",
-                transition: "background 0.2s",
-              }}
-              onMouseEnter={(e) => {
-                if (canGenerateAiRender && !aiRenderBusy) e.currentTarget.style.background = "#1a1a1b";
-              }}
-              onMouseLeave={(e) => {
-                if (canGenerateAiRender && !aiRenderBusy) e.currentTarget.style.background = MONUMENT;
-              }}
-            >
-              Generate AI Render
-            </button>
-            <button
-              type="button"
-              onClick={openAiRenderModalViewLast}
-              disabled={!project?.id}
-              style={{
-                width: "100%",
-                background: WHITE,
-                color: MONUMENT,
-                border: `1px solid ${SECTION_GREY}`,
-                borderRadius: "8px",
-                padding: "10px 20px",
-                fontSize: "1rem",
-                fontWeight: 500,
-                cursor: project?.id ? "pointer" : "not-allowed",
-                opacity: project?.id ? 1 : 0.65,
-              }}
-            >
-              View last render
-            </button>
-          </div>
-
-          {/* Column 4 - Notes */}
+          {/* Column 3 - Notes */}
           <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", height: "100%" }}>
             <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", flexShrink: 0 }}>
               Notes
@@ -1392,193 +1016,6 @@ export default function Colours({ project, onUpdate }) {
                 fontFamily: "inherit",
               }}
             />
-          </div>
-        </div>
-      )}
-
-      {/* Drawings PDF: navigate + define elevation rectangle before generate */}
-      {project?.id ? (
-        <ElevationPickerModal
-          open={showElevationPicker}
-          onClose={() => setShowElevationPicker(false)}
-          drawingsPdfUrl={`${API_URL}/api/files/drawings/${project.id}`}
-          onConfirm={(sel) => void runAiRenderGeneration(sel)}
-        />
-      ) : null}
-
-      {/* AI exterior render modal — opens immediately on Generate; image saved on server as AI Render.png */}
-      {showAiRenderModal && (
-        <div
-          role="presentation"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) closeAiRenderModal();
-          }}
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: "rgba(0, 0, 0, 0.55)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1001,
-            pointerEvents: "auto",
-            padding: "16px",
-            boxSizing: "border-box",
-          }}
-        >
-          <div
-            role="dialog"
-            aria-labelledby="ai-render-modal-title"
-            aria-busy={aiRenderBusy}
-            style={{
-              background: WHITE,
-              borderRadius: "14px",
-              padding: "22px",
-              width: "100%",
-              maxWidth: "920px",
-              maxHeight: "92vh",
-              overflowY: "auto",
-              boxShadow: "0 12px 40px rgba(0, 0, 0, 0.28)",
-              boxSizing: "border-box",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", gap: "12px" }}>
-              <h2 id="ai-render-modal-title" style={{ margin: 0, fontSize: "1.35rem", color: MONUMENT }}>
-                AI exterior render
-              </h2>
-              <button
-                type="button"
-                onClick={closeAiRenderModal}
-                title="Close"
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  fontSize: "1.6rem",
-                  lineHeight: 1,
-                  cursor: "pointer",
-                  color: SECTION_GREY,
-                  padding: "4px 8px",
-                  flexShrink: 0,
-                }}
-              >
-                ×
-              </button>
-            </div>
-
-            <p style={{ margin: "0 0 16px 0", fontSize: "0.88rem", color: SECTION_GREY, lineHeight: 1.45 }}>
-              Shape from your cropped elevation; colours from this project’s roof, cladding, and baseboards (saved on
-              Colours). File on disk: <strong style={{ color: MONUMENT }}>AI Render.png</strong> next to your colours
-              file.
-            </p>
-
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "18px", minHeight: "120px" }}>
-              {aiRenderBusy ? (
-                <>
-                  <div
-                    aria-hidden
-                    style={{
-                      width: "46px",
-                      height: "46px",
-                      border: `4px solid ${SECTION_GREY}`,
-                      borderTopColor: MONUMENT,
-                      borderRadius: "50%",
-                      animation: "spin 0.88s linear infinite",
-                    }}
-                  />
-                  <div style={{ fontSize: "1rem", color: MONUMENT, fontWeight: 600, textAlign: "center" }}>
-                    Generating render…
-                  </div>
-                  <div style={{ fontSize: "0.88rem", color: SECTION_GREY, textAlign: "center", maxWidth: "420px" }}>
-                    Rasterizing drawings and colours PDFs, then requesting the image from AI. This often takes a minute.
-                  </div>
-                </>
-              ) : null}
-
-              {!aiRenderBusy && aiRenderError ? (
-                <div
-                  role="alert"
-                  style={{
-                    width: "100%",
-                    padding: "12px 14px",
-                    borderRadius: "10px",
-                    fontSize: "0.9rem",
-                    background: "#fdecea",
-                    border: "1px solid #f5c2c0",
-                    color: "#842029",
-                  }}
-                >
-                  {aiRenderError}
-                </div>
-              ) : null}
-
-              {!aiRenderBusy && aiRenderPreviewUrl ? (
-                <img
-                  src={aiRenderPreviewUrl}
-                  alt="AI-generated exterior render"
-                  onError={() => {
-                    setAiRenderError((prev) =>
-                      prev || "Could not load this image. If you have not generated a render yet, use Generate AI Render."
-                    );
-                    setAiRenderPreviewUrl(null);
-                  }}
-                  style={{
-                    maxWidth: "100%",
-                    height: "auto",
-                    maxHeight: "min(68vh, 720px)",
-                    objectFit: "contain",
-                    borderRadius: "10px",
-                    border: `1px solid ${SECTION_GREY}`,
-                    display: "block",
-                  }}
-                />
-              ) : null}
-
-              {!aiRenderBusy && !aiRenderError && !aiRenderPreviewUrl ? (
-                <div style={{ fontSize: "0.9rem", color: SECTION_GREY, textAlign: "center" }}>
-                  No preview yet.
-                </div>
-              ) : null}
-            </div>
-
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", marginTop: "22px", justifyContent: "flex-end" }}>
-              <button
-                type="button"
-                onClick={handleOpenAiRenderInNewTab}
-                disabled={!project?.id || !aiRenderPreviewUrl}
-                style={{
-                  padding: "10px 18px",
-                  fontSize: "0.95rem",
-                  fontWeight: 500,
-                  borderRadius: "8px",
-                  border: `1px solid ${SECTION_GREY}`,
-                  background: WHITE,
-                  color: MONUMENT,
-                  cursor: project?.id && aiRenderPreviewUrl ? "pointer" : "not-allowed",
-                  opacity: project?.id && aiRenderPreviewUrl ? 1 : 0.55,
-                }}
-              >
-                Open in new tab
-              </button>
-              <button
-                type="button"
-                onClick={closeAiRenderModal}
-                style={{
-                  padding: "10px 22px",
-                  fontSize: "0.95rem",
-                  fontWeight: 600,
-                  borderRadius: "8px",
-                  border: "none",
-                  background: MONUMENT,
-                  color: PAGE_TEXT,
-                  cursor: "pointer",
-                }}
-              >
-                Close
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -1825,179 +1262,6 @@ export default function Colours({ project, onUpdate }) {
                 </button>
                 <button
                   onClick={handleSendToClient}
-                  style={{
-                    padding: "10px 20px",
-                    fontSize: "1rem",
-                    fontWeight: 500,
-                    color: WHITE,
-                    background: MONUMENT,
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Send Email
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Portal Email Preview Modal */}
-      {showPortalEmailModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1001,
-          }}
-        >
-          <div
-            style={{
-              background: WHITE,
-              borderRadius: "12px",
-              padding: "24px",
-              width: "90%",
-              maxWidth: "800px",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Preview & Send Email</h2>
-              <button
-                onClick={() => setShowPortalEmailModal(false)}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  fontSize: "1.5rem",
-                  cursor: "pointer",
-                  color: MONUMENT,
-                  padding: "0",
-                  width: "30px",
-                  height: "30px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                ×
-              </button>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div>
-                <label style={{ display: "block", marginBottom: "6px", fontSize: "0.9rem", color: UI.textMuted, fontWeight: 500 }}>
-                  To
-                </label>
-                <input
-                  type="text"
-                  value={portalEmailTo}
-                  onChange={(e) => setPortalEmailTo(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: `1px solid ${SECTION_GREY}`,
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    background: WHITE,
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: "block", marginBottom: "6px", fontSize: "0.9rem", color: UI.textMuted, fontWeight: 500 }}>
-                  From
-                </label>
-                <input
-                  type="text"
-                  value={portalEmailFrom}
-                  onChange={(e) => setPortalEmailFrom(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: `1px solid ${SECTION_GREY}`,
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    background: WHITE,
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: "block", marginBottom: "6px", fontSize: "0.9rem", color: UI.textMuted, fontWeight: 500 }}>
-                  Subject
-                </label>
-                <input
-                  type="text"
-                  value={portalEmailSubject}
-                  onChange={(e) => setPortalEmailSubject(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: `1px solid ${SECTION_GREY}`,
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    background: WHITE,
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: "block", marginBottom: "6px", fontSize: "0.9rem", color: UI.textMuted, fontWeight: 500 }}>
-                  Body
-                </label>
-                <div
-                  ref={portalEmailBodyRef}
-                  contentEditable
-                  onInput={(e) => setPortalEmailBody(e.currentTarget.innerHTML)}
-                  onBlur={(e) => setPortalEmailBody(e.currentTarget.innerHTML)}
-                  dangerouslySetInnerHTML={{ __html: portalEmailBody }}
-                  style={{
-                    width: "100%",
-                    minHeight: "300px",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: `1px solid ${SECTION_GREY}`,
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    background: WHITE,
-                    boxSizing: "border-box",
-                    overflowY: "auto",
-                  }}
-                />
-              </div>
-
-              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
-                <button
-                  onClick={() => setShowPortalEmailModal(false)}
-                  style={{
-                    padding: "10px 20px",
-                    fontSize: "1rem",
-                    fontWeight: 500,
-                    color: MONUMENT,
-                    background: "transparent",
-                    border: `1px solid ${SECTION_GREY}`,
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSendPortalEmail}
                   style={{
                     padding: "10px 20px",
                     fontSize: "1rem",

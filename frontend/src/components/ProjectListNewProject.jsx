@@ -42,7 +42,7 @@ export function getNewProjectButtonStyle() {
     cursor: "pointer",
     background: STREAM.streamGreen,
     color: PAGE_TEXT,
-    border: `2px solid ${UI.outline}`,
+    border: `1px solid ${UI.outline}`,
     transition: "background 0.2s",
     boxSizing: "border-box",
   };
