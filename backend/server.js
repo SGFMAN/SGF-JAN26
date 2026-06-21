@@ -897,6 +897,7 @@ async function ensureSchema() {
     await ensureUserMessagesTable(pool);
     await ensureMapFloorPlansDollarValueColumn(pool);
     await addMissingColumns(pool, "projects", ["construction_payments_paid"]);
+    await addMissingColumns(pool, "settings", ["ui_button_styles_json"]);
     await addMissingColumns(pool, "users", ["password"]);
     await pool.query(`UPDATE users SET password = 'admin' WHERE password IS NULL OR password = ''`);
     return;
