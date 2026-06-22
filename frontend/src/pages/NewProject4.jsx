@@ -975,7 +975,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
               type="button"
               onClick={onBack}
               style={{
-                background: UI.border,
+                background: UI.inputBg,
                 color: MONUMENT,
                 border: "none",
                 borderRadius: "10px",
@@ -992,7 +992,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
               type="button"
               onClick={onClose}
               style={{
-                background: UI.border,
+                background: UI.inputBg,
                 color: MONUMENT,
                 border: "none",
                 borderRadius: "10px",
@@ -1093,7 +1093,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
                 type="button"
                 onClick={handleDepositModalCancel}
                 style={{
-                  background: UI.border,
+                  background: UI.inputBg,
                   color: MONUMENT,
                   border: "none",
                   borderRadius: "8px",

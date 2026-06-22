@@ -6,7 +6,7 @@ import "leaflet/dist/leaflet.css";
 import iconUrl from "leaflet/dist/images/marker-icon.png";
 import iconRetinaUrl from "leaflet/dist/images/marker-icon-2x.png";
 import shadowUrl from "leaflet/dist/images/marker-shadow.png";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 import { MapBasemapSelector, MapBasemapTileLayer } from "../components/MapBasemapControls";
 import DraggableParcelBoundary from "../components/DraggableParcelBoundary";
 import PlanningOverlaysLayer, {
@@ -279,6 +279,7 @@ function envelopeParamFromGeometry(geometry) {
 }
 
 export default function Maps() {
+  const logo = useAppLogo();
   const [query, setQuery] = useState("");
   const [parcelLoading, setParcelLoading] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -1253,7 +1254,7 @@ export default function Maps() {
                   fontWeight: 600,
                   borderRadius: "10px",
                   border: `1px solid ${EXPLORER_BORDER}`,
-                  background: loading ? UI.border : WHITE,
+                  background: loading ? UI.inputBg : WHITE,
                   color: MONUMENT,
                   cursor: loading ? "not-allowed" : "pointer",
                   letterSpacing: "0.3px",

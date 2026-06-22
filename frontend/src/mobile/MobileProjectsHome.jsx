@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import MobileProjectCard from "./MobileProjectCard";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 import "./mobile.css";
 
 const API_URL = "";
@@ -10,6 +10,7 @@ const API_URL = "";
 const STATE_OPTIONS = ["All", "VIC", "QLD"];
 
 export default function MobileProjectsHome() {
+  const logo = useAppLogo();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

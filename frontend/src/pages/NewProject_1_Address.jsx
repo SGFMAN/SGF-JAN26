@@ -273,7 +273,7 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
             type="button"
             onClick={onClose}
             style={{
-              background: UI.border,
+              background: UI.inputBg,
               color: MONUMENT,
               border: "none",
               borderRadius: "10px",

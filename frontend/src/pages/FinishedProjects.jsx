@@ -17,7 +17,7 @@ import {
 import ProjectRectangleCard from "../components/ProjectRectangleCard";
 import ProjectListGroupHeader from "../components/ProjectListGroupHeader";
 import { getProjectListGroupKey } from "../utils/projectListGrouping";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
 import { UI, MENU } from "../utils/uiThemeTokens.js";
@@ -31,6 +31,7 @@ const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 export default function FinishedProjects() {
+  const logo = useAppLogo();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

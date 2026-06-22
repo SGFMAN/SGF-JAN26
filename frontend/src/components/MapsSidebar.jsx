@@ -88,7 +88,7 @@ function bulkSelectionLabel(selection) {
 
 function sidebarButtonStyle(disabled) {
   return {
-    background: disabled ? UI.border : WHITE,
+    background: disabled ? UI.inputBg : WHITE,
     color: MONUMENT,
     border: "none",
     borderRadius: "10px",

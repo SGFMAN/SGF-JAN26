@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import SalesTotalsDashboard from "../components/SalesTotalsDashboard";
 import SalesMonthLists from "../components/SalesMonthLists";
@@ -34,6 +34,7 @@ const API_URL = "";
 const STREAM_COLORS = buildSalesStreamColors();
 
 export default function SalesTotals() {
+  const logo = useAppLogo();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

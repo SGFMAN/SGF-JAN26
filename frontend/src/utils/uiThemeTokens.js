@@ -10,7 +10,6 @@ export const UI = {
   /** Text - Dark (same as textPrimary) */
   textSecondary: "var(--sgf-text-primary)",
   inputBg: "var(--sgf-input-bg)",
-  border: "var(--sgf-border)",
   outline: "var(--sgf-outline)",
   buttonPrimary: "var(--sgf-button-primary)",
   buttonPrimaryText: "var(--sgf-page-text)",

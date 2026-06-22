@@ -3,7 +3,7 @@ import { isDesignPhaseStatus, isHotlistStatus, isCancelledStatus } from "../util
 import { Link } from "react-router-dom";
 import { getStateFilter } from "../utils/stateFilter";
 import { isUserAdmin } from "../utils/auth";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 import { projectPath } from "../utils/projectUrl";
 
 import StateFilterButtons from "../components/StateFilterButtons";
@@ -45,6 +45,7 @@ const SUBSTATUS_DETAIL_OPTIONS = {
 };
 
 export default function StatusManager() {
+  const logo = useAppLogo();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

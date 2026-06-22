@@ -76,7 +76,7 @@ function PaletteSwatchGrid({ colors, selectedKey, onSelect }) {
               borderRadius: "6px",
               background: colors[key],
               border:
-                selectedKey === key ? `2px solid ${UI.textPrimary}` : `1px solid ${UI.border}`,
+                selectedKey === key ? `2px solid ${UI.textPrimary}` : `1px solid ${UI.outline}`,
               marginBottom: "4px",
               boxSizing: "border-box",
             }}

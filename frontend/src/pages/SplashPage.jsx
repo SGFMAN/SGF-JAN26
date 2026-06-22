@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 import { setAuthSession } from "../utils/auth";
 import { UI } from "../utils/uiThemeTokens";
 
@@ -11,6 +11,7 @@ const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 
 export default function SplashPage() {
+  const logo = useAppLogo();
   const navigate = useNavigate();
   const location = useLocation();
   const [users, setUsers] = useState([]);

@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef } from "react";
+import React, { useState, useRef } from "react";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -410,7 +410,7 @@ export default function NewProject_5_PDFUpload({
             type="button"
             onClick={onBack}
             style={{
-              background: UI.border,
+              background: UI.inputBg,
               color: MONUMENT,
               border: "none",
               borderRadius: "10px",
@@ -427,7 +427,7 @@ export default function NewProject_5_PDFUpload({
             type="button"
             onClick={handleCancel}
             style={{
-              background: UI.border,
+              background: UI.inputBg,
               color: MONUMENT,
               border: "none",
               borderRadius: "10px",

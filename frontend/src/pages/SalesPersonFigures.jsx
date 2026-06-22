@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 import {
   filterProjectsByPeriod,
   formatSalesTotalsPeriodLabel,
@@ -23,6 +23,7 @@ const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 export default function SalesPersonFigures() {
+  const logo = useAppLogo();
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -321,7 +322,7 @@ export default function SalesPersonFigures() {
                     </thead>
                     <tbody>
                       {figures.rows.map((row) => (
-                        <tr key={row.userId} style={{ borderBottom: `1px solid ${UI.border}` }}>
+                        <tr key={row.userId} style={{ borderBottom: `1px solid ${UI.outline}` }}>
                           <td style={{ padding: "12px 16px", color: MONUMENT }}>{row.name}</td>
                           <td
                             style={{

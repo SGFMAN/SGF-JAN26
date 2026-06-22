@@ -7,7 +7,7 @@ import {
   isHotlistStatus,
   isCancelledStatus,
 } from "../utils/projectStatus";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 import { projectPath } from "../utils/projectUrl";
 
 import StateFilterButtons from "../components/StateFilterButtons";
@@ -25,6 +25,7 @@ const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 export default function ContractManager() {
+  const logo = useAppLogo();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

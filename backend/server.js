@@ -666,7 +666,12 @@ function normalizeUiThemeColorOverrides(parsed) {
     const colors = {};
     for (const [colorKey, colorValue] of Object.entries(themePatch)) {
       const v = String(colorValue ?? "").trim();
-      if (v) colors[colorKey] = v;
+      if (!v) continue;
+      if (colorKey === "border") {
+        if (!colors.outline) colors.outline = v;
+        continue;
+      }
+      colors[colorKey] = v;
     }
     if (Object.keys(colors).length > 0) out[themeId] = colors;
   }

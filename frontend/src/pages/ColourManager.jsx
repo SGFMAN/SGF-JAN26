@@ -8,7 +8,7 @@ import { Link } from "react-router-dom";
 import { getStateFilter } from "../utils/stateFilter";
 import { projectPath } from "../utils/projectUrl";
 import { isUserAdmin } from "../utils/auth";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 
 import StateFilterButtons from "../components/StateFilterButtons";
 import { UI, MENU } from "../utils/uiThemeTokens.js";
@@ -21,6 +21,7 @@ const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 export default function ColourManager() {
+  const logo = useAppLogo();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

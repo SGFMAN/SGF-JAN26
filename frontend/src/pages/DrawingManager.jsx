@@ -22,7 +22,7 @@ import {
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 import { isLatestRevisionWorkingDrawingsApproved } from "../utils/drawingsStatusRules";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 
 import StateFilterButtons from "../components/StateFilterButtons";
 import { UI, BANNER, INDICATOR } from "../utils/uiThemeTokens.js";
@@ -81,6 +81,7 @@ function escapeHtmlForEmailList(s) {
 }
 
 export default function DrawingManager() {
+  const logo = useAppLogo();
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);

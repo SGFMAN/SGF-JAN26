@@ -23,7 +23,7 @@ import { computeProjectFolderPathFromRecord } from "../utils/projectFolderPath";
 import { projectPath, portalProjectPath } from "../utils/projectUrl";
 import useIsMobile from "../hooks/useIsMobile";
 import ProjectPageMobile from "../mobile/ProjectPageMobile";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 import { mergeDestructiveButtonStyle, destructiveButtonUsesSavedStyle } from "../utils/uiButtonStyles.js";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -175,6 +175,7 @@ const CONSTRUCTION_MENU_OPTIONS = [
 const MOBILE_PROJECT_VIEWS = ["overview", "project-info", "drawings"];
 
 export default function ProjectPage() {
+  const logo = useAppLogo();
   const { token } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -1223,7 +1224,7 @@ export default function ProjectPage() {
                 type="button"
                 onClick={resetLinkRenoDupWizard}
                 style={{
-                  background: UI.border,
+                  background: UI.inputBg,
                   color: MONUMENT,
                   border: "none",
                   borderRadius: "10px",

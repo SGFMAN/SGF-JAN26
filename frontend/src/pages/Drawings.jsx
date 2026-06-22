@@ -3456,7 +3456,7 @@ export default function Drawings({
                           disabled={!hasDrawings}
                           style={{
                             flex: 1,
-                            background: !hasDrawings ? UI.border : STREAM_GREEN_LIGHT,
+                            background: !hasDrawings ? UI.inputBg : STREAM_GREEN_LIGHT,
                             color: !hasDrawings ? "#999" : MONUMENT,
                             border: !hasDrawings ? "1px solid #ccc" : `1px solid ${STREAM_GREEN}`,
                             borderRadius: "10px",
@@ -3477,7 +3477,7 @@ export default function Drawings({
                           disabled={!canApproveWorkingDrawings}
                           style={{
                             flex: 1,
-                            background: !canApproveWorkingDrawings ? UI.border : VIC_BLUE_LIGHT,
+                            background: !canApproveWorkingDrawings ? UI.inputBg : VIC_BLUE_LIGHT,
                             color: !canApproveWorkingDrawings ? "#999" : MONUMENT,
                             border: !canApproveWorkingDrawings ? "1px solid #ccc" : `1px solid ${VIC_BLUE}`,
                             borderRadius: "10px",

@@ -9,7 +9,7 @@ import ColourSettings from "./ColourSettings";
 import StreamSettings from "./StreamSettings";
 import MapsSettings from "./MapsSettings";
 import UISettings from "./UISettings";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -32,6 +32,7 @@ const menuOptions = [
 ];
 
 export default function SettingsPage() {
+  const logo = useAppLogo();
   const [selected, setSelected] = useState(menuOptions[0].key);
 
   function renderContent() {

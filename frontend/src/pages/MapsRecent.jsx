@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 import MapsSidebar, {
   LIGHT_MONUMENT,
   MONUMENT,
@@ -21,6 +21,7 @@ const EXPLORER_BG = "#f3f3f3";
 const EXPLORER_BORDER = "#d1d1d1";
 
 export default function MapsRecent() {
+  const logo = useAppLogo();
   const navigate = useNavigate();
   const [recentSort, setRecentSort] = useState("chrono");
   const [recentSearches, setRecentSearches] = useState(() => loadRecentMapSearches());

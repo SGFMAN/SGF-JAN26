@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 import {
   computeMonthlySalesBreakdown,
   computePieValueBreakdown,
@@ -390,6 +390,7 @@ function CumulativeRatesLineChart({
 }
 
 export default function SalesAnalytics() {
+  const logo = useAppLogo();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

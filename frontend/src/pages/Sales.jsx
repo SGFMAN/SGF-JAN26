@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 import { projectPath } from "../utils/projectUrl";
 import SalesMonthLists from "../components/SalesMonthLists";
 import { SALES_MONTHS, filterProjectsForSalesMonth } from "../utils/salesMonths";
@@ -14,6 +14,7 @@ const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 export default function Sales() {
+  const logo = useAppLogo();
   const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);

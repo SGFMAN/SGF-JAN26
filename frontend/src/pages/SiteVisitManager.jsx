@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter } from "../utils/stateFilter";
 import { CLASSIFICATION_BADGE_MAP } from "../utils/classifications";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 
 import StateFilterButtons from "../components/StateFilterButtons";
 import { UI, BANNER, PROJECT_CARD, outlineBorder } from "../utils/uiThemeTokens.js";
@@ -48,6 +48,7 @@ const GROUP_COLORS = [
 ];
 
 export default function SiteVisitManager() {
+  const logo = useAppLogo();
   const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);

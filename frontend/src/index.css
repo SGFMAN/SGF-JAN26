@@ -12,7 +12,6 @@
   --sgf-text-muted: var(--sgf-text-primary);
   --sgf-text-secondary: var(--sgf-text-primary);
   --sgf-input-bg: #f0f0f0;
-  --sgf-border: #e0e0e0;
   --sgf-outline: #000000;
   --sgf-button-primary: #323233;
   --sgf-button-primary-text: var(--sgf-page-text);
@@ -270,4 +269,10 @@ button:focus-visible {
 .hotlist-flyout-header:focus,
 .hotlist-flyout-header:focus-visible {
   outline: none;
+}
+
+/* Retro theme: pixelated Windows 3.1 arrow pointer (paused while modals are open) */
+html[data-sgf-ui-theme="retro"]:not([data-sgf-suppress-retro-cursor]),
+html[data-sgf-ui-theme="retro"]:not([data-sgf-suppress-retro-cursor]) * {
+  cursor: var(--sgf-retro-cursor) !important;
 }

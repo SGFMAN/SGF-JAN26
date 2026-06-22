@@ -23,7 +23,12 @@ function normalizeColorOverrides(parsed) {
     const colors = {};
     for (const [key, value] of Object.entries(patch)) {
       const v = String(value ?? "").trim();
-      if (v) colors[key] = v;
+      if (!v) continue;
+      if (key === "border") {
+        if (!colors.outline) colors.outline = v;
+        continue;
+      }
+      colors[key] = v;
     }
     if (Object.keys(colors).length > 0) out[themeId] = colors;
   }

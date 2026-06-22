@@ -18,7 +18,7 @@ import {
   resolveHotlistSoldToEmail,
 } from "../utils/emailGeneralSettings";
 import { getHotlistAgreementRowBackground, getHotlistStreamAccent, getStreamGroupColors } from "../utils/streamColors";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI, MENU, STREAM, outlineBorder } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
@@ -109,6 +109,7 @@ async function resolveAccessTokenFromProjectList(projectId) {
 }
 
 export default function Hotlist() {
+  const logo = useAppLogo();
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const location = useLocation();
   const navigate = useNavigate();

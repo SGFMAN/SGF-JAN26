@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import * as THREE from "three";
 import grassImage from "../images/grass.jpg";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 import ThreeDVis from "./ThreeDVis";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -28,6 +28,7 @@ const BUILDING_PARTS = [
 ];
 
 export default function ThreeDVisPortal() {
+  const logo = useAppLogo();
   const { projectId } = useParams();
   const [project, setProject] = useState(null);
   const [projectName, setProjectName] = useState("");

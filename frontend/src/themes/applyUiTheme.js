@@ -3,6 +3,7 @@ import {
   getCachedUserThemeId,
   getGlobalColorOverrides,
 } from "../utils/uiThemeSettings.js";
+import { RETRO_THEME_ID, RETRO_WIN31_CURSOR } from "../utils/retroWin31Cursor.js";
 import { DEFAULT_UI_THEME_ID, getUiTheme } from "./uiThemes";
 
 const CSS_VAR_MAP = {
@@ -14,7 +15,6 @@ const CSS_VAR_MAP = {
   textMuted: "--sgf-text-muted",
   textSecondary: "--sgf-text-secondary",
   inputBackground: "--sgf-input-bg",
-  border: "--sgf-border",
   outline: "--sgf-outline",
   buttonPrimary: "--sgf-button-primary",
   buttonPrimaryText: "--sgf-button-primary-text",
@@ -57,12 +57,29 @@ export function applyUiThemeToDocument(themeId = DEFAULT_UI_THEME_ID, allColorOv
 
   root.dataset.sgfUiTheme = theme.id;
 
+  if (theme.id === RETRO_THEME_ID) {
+    root.style.setProperty("--sgf-retro-cursor", RETRO_WIN31_CURSOR);
+  } else {
+    root.style.removeProperty("--sgf-retro-cursor");
+  }
+
   if (typeof window !== "undefined") {
     window.dispatchEvent(
       new CustomEvent("sgf-ui-theme-change", {
         detail: { themeId: theme.id, colorOverrides: resolvedOverrides },
       })
     );
+  }
+}
+
+/** Keep the normal cursor while a modal is open (e.g. theme picker). */
+export function setRetroCursorSuppressed(suppressed) {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  if (suppressed) {
+    root.dataset.sgfSuppressRetroCursor = "true";
+  } else {
+    delete root.dataset.sgfSuppressRetroCursor;
   }
 }
 

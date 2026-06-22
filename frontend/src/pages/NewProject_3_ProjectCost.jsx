@@ -736,7 +736,7 @@ export default function NewProject_3_ProjectCost({
               type="button"
               onClick={onBack}
               style={{
-                background: UI.border,
+                background: UI.inputBg,
                 color: MONUMENT,
                 border: "none",
                 borderRadius: "10px",
@@ -753,7 +753,7 @@ export default function NewProject_3_ProjectCost({
               type="button"
               onClick={onClose}
               style={{
-                background: UI.border,
+                background: UI.inputBg,
                 color: MONUMENT,
                 border: "none",
                 borderRadius: "10px",
@@ -854,7 +854,7 @@ export default function NewProject_3_ProjectCost({
                 type="button"
                 onClick={handleDepositModalCancel}
                 style={{
-                  background: UI.border,
+                  background: UI.inputBg,
                   color: MONUMENT,
                   border: "none",
                   borderRadius: "8px",

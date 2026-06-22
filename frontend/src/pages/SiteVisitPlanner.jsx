@@ -6,7 +6,7 @@ import "react-day-picker/style.css";
 import { isUserAdmin } from "../utils/auth";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI, BANNER } from "../utils/uiThemeTokens.js";
 import { OnHoldSash, CancelledSash } from "../components/ProjectStatusSash";
@@ -67,6 +67,7 @@ function smtpSlotEmailsFromSettings(data) {
 }
 
 export default function SiteVisitPlanner() {
+  const logo = useAppLogo();
   const navigate = useNavigate();
   const location = useLocation();
   const { runWithEmailOverlay } = useEmailSendOverlay();

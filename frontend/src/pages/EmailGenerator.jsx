@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -11,6 +11,7 @@ const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 export default function EmailGenerator() {
+  const logo = useAppLogo();
   const [inputText, setInputText] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isCompiling, setIsCompiling] = useState(false);

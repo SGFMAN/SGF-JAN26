@@ -307,7 +307,7 @@ export default function NewProject_4_FoldersOption({ isOpen, onClose, formData, 
               type="button"
               onClick={onBack}
               style={{
-                background: UI.border,
+                background: UI.inputBg,
                 color: MONUMENT,
                 border: "none",
                 borderRadius: "10px",
@@ -321,7 +321,7 @@ export default function NewProject_4_FoldersOption({ isOpen, onClose, formData, 
                 e.currentTarget.style.background = "#d0d0d0";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = UI.border;
+                e.currentTarget.style.background = UI.inputBg;
               }}
             >
               Back
@@ -330,7 +330,7 @@ export default function NewProject_4_FoldersOption({ isOpen, onClose, formData, 
               type="button"
               onClick={handleNo}
               style={{
-                background: UI.border,
+                background: UI.inputBg,
                 color: MONUMENT,
                 border: "none",
                 borderRadius: "10px",
@@ -344,7 +344,7 @@ export default function NewProject_4_FoldersOption({ isOpen, onClose, formData, 
                 e.currentTarget.style.background = "#d0d0d0";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = UI.border;
+                e.currentTarget.style.background = UI.inputBg;
               }}
             >
               No

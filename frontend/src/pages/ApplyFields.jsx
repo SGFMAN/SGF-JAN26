@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import { CLASSIFICATION_OPTIONS } from "../utils/classifications";
 import { projectPath } from "../utils/projectUrl";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -135,6 +135,7 @@ const FIELD_DEFINITIONS = {
 };
 
 export default function ApplyFields() {
+  const logo = useAppLogo();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

@@ -19,7 +19,7 @@ import {
 } from "../utils/projectStatus";
 import { CLASSIFICATION_OPTIONS } from "../utils/classifications";
 import ProjectRectangleCard from "../components/ProjectRectangleCard";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 import useIsMobile from "../hooks/useIsMobile";
 import MobileProjectsHome from "../mobile/MobileProjectsHome";
 
@@ -248,6 +248,7 @@ function SaggingDuplicateChainIcon() {
 }
 
 export default function HomePage() {
+  const logo = useAppLogo();
   const location = useLocation();
   const isMobile = useIsMobile();
   const [projects, setProjects] = useState([]);

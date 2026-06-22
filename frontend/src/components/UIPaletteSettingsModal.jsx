@@ -46,7 +46,7 @@ function ThemeColorSwatchGrid({ colors, highlightKey, onSwatchClick, compact }) 
               borderRadius: "6px",
               background: colors[key],
               border:
-                highlightKey === key ? `2px solid ${UI.textPrimary}` : `1px solid ${UI.border}`,
+                highlightKey === key ? `2px solid ${UI.textPrimary}` : `1px solid ${UI.outline}`,
               marginBottom: "4px",
               cursor: onSwatchClick ? "pointer" : "default",
               boxSizing: "border-box",

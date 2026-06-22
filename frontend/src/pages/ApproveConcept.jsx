@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -9,6 +9,7 @@ const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 export default function ApproveConcept() {
+  const logo = useAppLogo();
   const { projectId } = useParams();
   const navigate = useNavigate();
   const [projectName, setProjectName] = useState("");

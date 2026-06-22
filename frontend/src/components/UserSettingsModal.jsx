@@ -4,6 +4,7 @@ import { useUiTheme } from "../context/UiThemeProvider";
 import { UI } from "../utils/uiThemeTokens";
 import { UI_THEME_LIST } from "../themes/uiThemes";
 import { getThemeDisplayName } from "../utils/uiThemeSettings.js";
+import { setRetroCursorSuppressed } from "../themes/applyUiTheme";
 
 const AUTO_SAVE_DELAY_MS = 600;
 
@@ -44,7 +45,7 @@ function ThemeColorSwatchGrid({ colors, compact }) {
               height: compact ? "24px" : "28px",
               borderRadius: "6px",
               background: value,
-              border: `1px solid ${UI.border}`,
+              border: `1px solid ${UI.outline}`,
               boxSizing: "border-box",
             }}
             title={key}
@@ -95,7 +96,7 @@ function ColourThemeContent() {
               style={{
                 textAlign: "left",
                 background: UI.cardBg,
-                border: isSelected ? `2px solid ${UI.textPrimary}` : `1px solid ${UI.border}`,
+                border: isSelected ? `2px solid ${UI.textPrimary}` : `1px solid ${UI.outline}`,
                 borderRadius: "12px",
                 padding: "16px",
                 cursor: saving ? "wait" : "pointer",
@@ -291,7 +292,7 @@ function AccountSettingsContent({ open }) {
             width: "100%",
             padding: "10px 12px",
             borderRadius: "8px",
-            border: `1px solid ${UI.border}`,
+            border: `1px solid ${UI.outline}`,
             fontSize: "1rem",
             color: UI.textPrimary,
             background: UI.cardBg,
@@ -329,6 +330,12 @@ function renderSectionContent(selected, open) {
 
 export default function UserSettingsModal({ open, onClose, userName }) {
   const [selected, setSelected] = useState(MENU_OPTIONS[0].key);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    setRetroCursorSuppressed(true);
+    return () => setRetroCursorSuppressed(false);
+  }, [open]);
 
   if (!open) {
     return null;

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { isUserAdmin } from "../utils/auth";
-import logo from "../images/logo.png";
+import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -11,6 +11,7 @@ const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 
 export default function Managers() {
+  const logo = useAppLogo();
   const navigate = useNavigate();
   const [isAdmin, setIsAdmin] = useState(false);
 
