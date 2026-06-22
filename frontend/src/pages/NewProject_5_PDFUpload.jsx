@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+﻿import React, { useState, useRef } from "react";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -208,29 +208,6 @@ export default function NewProject_5_PDFUpload({
     formData.createFolders === 1 ||
     formData.createFolders === "1";
 
-  const canCreateWithoutPdf = Boolean(onCreate) && !formData.folderPath;
-
-  async function handleCreateOnly() {
-    setIsUploading(true);
-    try {
-      const newProject = await createProjectRecord();
-      onFormDataChange({
-        ...formData,
-        createdProject: newProject,
-      });
-      if (onNext) {
-        await onNext(newProject);
-      } else {
-        onClose();
-      }
-    } catch (error) {
-      console.error("Error creating project:", error);
-      alert(`Failed to create project: ${error.message || "Unknown error"}`);
-    } finally {
-      setIsUploading(false);
-    }
-  }
-
   async function handleNext() {
     if (formData.createdProject && onNext) {
       await onNext(formData.createdProject);
@@ -244,11 +221,6 @@ export default function NewProject_5_PDFUpload({
 
     if (!selectedFile && canUseTemplateProposal && formData.folderPath && !isUploading) {
       await handleTemplateOnlyContinue();
-      return;
-    }
-
-    if (!selectedFile && canCreateWithoutPdf && !formData.createdProject && !isUploading) {
-      await handleCreateOnly();
     }
   }
 
@@ -347,7 +319,7 @@ export default function NewProject_5_PDFUpload({
               color: isDragging ? MONUMENT : "#999",
             }}
           >
-            📄
+            ≡ƒôä
           </div>
           {selectedFile ? (
             <>
@@ -388,7 +360,7 @@ export default function NewProject_5_PDFUpload({
                     fontWeight: 500,
                   }}
                 >
-                  ✓ Uploaded successfully
+                  Γ£ô Uploaded successfully
                 </div>
               ) : (
                 <div
@@ -475,8 +447,7 @@ export default function NewProject_5_PDFUpload({
               isUploading ||
               (!formData.createdProject &&
                 !selectedFile &&
-                !(canUseTemplateProposal && formData.folderPath) &&
-                !canCreateWithoutPdf)
+                !(canUseTemplateProposal && formData.folderPath))
             }
             style={{
               background: MONUMENT,
@@ -490,8 +461,7 @@ export default function NewProject_5_PDFUpload({
                 !isUploading &&
                 (formData.createdProject ||
                   selectedFile ||
-                  (canUseTemplateProposal && formData.folderPath) ||
-                  canCreateWithoutPdf)
+                  (canUseTemplateProposal && formData.folderPath))
                   ? "pointer"
                   : "not-allowed",
               transition: "background 0.17s",
@@ -499,8 +469,7 @@ export default function NewProject_5_PDFUpload({
                 !isUploading &&
                 (formData.createdProject ||
                   selectedFile ||
-                  (canUseTemplateProposal && formData.folderPath) ||
-                  canCreateWithoutPdf)
+                  (canUseTemplateProposal && formData.folderPath))
                   ? 1
                   : 0.6,
             }}
@@ -513,9 +482,7 @@ export default function NewProject_5_PDFUpload({
                   ? "Next"
                   : canUseTemplateProposal && formData.folderPath
                     ? "Next (Proposal.PDF on disk)"
-                    : canCreateWithoutPdf
-                      ? "Create project"
-                      : "Next"}
+                    : "Next"}
           </button>
         </div>
       </div>
