@@ -536,6 +536,31 @@ export default function SalesTotals() {
               {pdfGenerating ? "Generating PDF…" : "PDF & Send"}
             </button>
           </div>
+
+          {/* Sales Person Figures */}
+          <div style={{ background: "#e8e8ea", borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
+            <Link
+              to="/sales-person-figures"
+              style={{
+                background: "transparent",
+                color: UI.textSecondary,
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              Sales Person Figures
+            </Link>
+          </div>
           
           <div style={{ flex: 1 }} />
           

@@ -607,17 +607,6 @@ export default function SiteVisitManager() {
                                   </div>
                                 ) : null}
                               </div>
-                              <div 
-                                style={{ 
-                                  fontSize: "0.9rem", 
-                                  color: "var(--sgf-text-primary)", 
-                                  textAlign: "center",
-                                  position: "relative",
-                                  zIndex: (project.on_hold === 'true' || project.on_hold === true) ? 1 : "auto",
-                                }}
-                              >
-                                Status: {project.status}
-                              </div>
                             </div>
                       </div>
                     );

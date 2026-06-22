@@ -1988,7 +1988,7 @@ app.put("/api/projects/:id", async (req, res) => {
       }
     }
     
-    const { name, status, stream, suburb, street, state, year, deposit, project_cost, client_name, email, phone,
+    const { name, status, stream, suburb, street, state, year, deposit, project_cost, salesperson, client_name, email, phone,
       client1_name, client1_email, client1_phone, client1_active,
       client2_name, client2_email, client2_phone, client2_active,
       client3_name, client3_email, client3_phone, client3_active,
@@ -2304,8 +2304,9 @@ app.put("/api/projects/:id", async (req, res) => {
         planning_energy_report_requested_at = CASE $150 WHEN '__SKIP__' THEN planning_energy_report_requested_at ELSE $150 END,
         planning_energy_report_received_at = CASE $151 WHEN '__SKIP__' THEN planning_energy_report_received_at ELSE $151 END,
         planning_energy_specs_added_to_plans = COALESCE($152, planning_energy_specs_added_to_plans),
+        salesperson = COALESCE($153, salesperson),
         updated_at = NOW()
-      WHERE id = $153
+      WHERE id = $154
       RETURNING *
       `,
       [
@@ -2462,6 +2463,7 @@ app.put("/api/projects/:id", async (req, res) => {
         processJfDocDate(planning_energy_report_requested_at),
         processJfDocDate(planning_energy_report_received_at),
         processEnergySpecsAddedToPlans(planning_energy_specs_added_to_plans),
+        processValue(salesperson),
         id
       ]
     );

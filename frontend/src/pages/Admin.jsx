@@ -236,7 +236,8 @@ export default function Admin({ project, onUpdate }) {
         street: project?.street || null,
         state: project?.state || null,
         deposit: currentValues.deposit,
-        project_cost: currentValues.projectCost, // Include project_cost in all updates
+        project_cost: currentValues.projectCost,
+        salesperson: currentValues.salesperson || null,
         [fieldName]: value === "" ? null : value,
       };
       

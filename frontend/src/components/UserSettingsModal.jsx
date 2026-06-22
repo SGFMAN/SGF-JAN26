@@ -268,27 +268,6 @@ function AccountSettingsContent({ open }) {
         Account
       </h3>
       <div style={{ maxWidth: "400px" }}>
-        <div style={{ marginBottom: "16px" }}>
-          <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>Palette</div>
-          <div
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              borderRadius: "8px",
-              border: `1px solid ${UI.border}`,
-              fontSize: "1rem",
-              color: UI.textPrimary,
-              background: UI.cardBg,
-              boxSizing: "border-box",
-            }}
-          >
-            {getThemeDisplayName(themeId)}
-          </div>
-          <p style={{ margin: "8px 0 0 0", fontSize: "0.85rem", color: UI.textMuted, lineHeight: 1.4 }}>
-            Change your palette under Colour Theme in this menu.
-          </p>
-        </div>
-
         <label
           htmlFor="account-password"
           style={{

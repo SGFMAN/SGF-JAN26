@@ -23,6 +23,7 @@ import ManagersAccessRoute from "./components/ManagersAccessRoute";
 import Sales from "./pages/Sales";
 import SalesTotals from "./pages/SalesTotals";
 import SalesAnalytics from "./pages/SalesAnalytics";
+import SalesPersonFigures from "./pages/SalesPersonFigures";
 import ApproveConcept from "./pages/ApproveConcept";
 import ColoursPortal from "./pages/ColoursPortal";
 import ThreeDVisPortal from "./pages/ThreeDVisPortal";
@@ -97,6 +98,7 @@ export default function App() {
             <Route path="/sales" element={<Auth><SalesAccessRoute><Sales /></SalesAccessRoute></Auth>} />
             <Route path="/sales-totals" element={<Auth><SalesAccessRoute><SalesTotals /></SalesAccessRoute></Auth>} />
             <Route path="/sales-analytics" element={<Auth><SalesAccessRoute><SalesAnalytics /></SalesAccessRoute></Auth>} />
+            <Route path="/sales-person-figures" element={<Auth><SalesAccessRoute><SalesPersonFigures /></SalesAccessRoute></Auth>} />
             <Route path="/email-generator" element={<Auth><AdminAccessRoute><EmailGenerator /></AdminAccessRoute></Auth>} />
             <Route path="/secret-area" element={<Auth><SecretArea /></Auth>} />
             <Route path="/secret-area/level-editor" element={<Auth><SecretLevelEditor /></Auth>} />

@@ -11,6 +11,7 @@ import { UI, STREAM } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
 
 const PAGE_TEXT = UI.pageText;
+const API_URL = "";
 
 export const EMPTY_NEW_PROJECT_FORM = {
   suburb: "",
@@ -21,6 +22,8 @@ export const EMPTY_NEW_PROJECT_FORM = {
   customDeposit: "",
   projectCost: "",
   salesperson: "",
+  specs: "",
+  classification: "",
   clientName: "",
   email: "",
   phone: "",
@@ -75,6 +78,41 @@ export function ProjectListNewProjectButton({ isAdmin, onClick }) {
   );
 }
 
+async function createProjectFromForm(formData) {
+  const projectName = `${formData.street}, ${formData.suburb}`.trim() || "New Project";
+  const response = await fetch(`${API_URL}/api/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: projectName,
+      status: "Design Phase",
+      suburb: formData.suburb || null,
+      street: formData.street || null,
+      state: formData.state || null,
+      stream: formData.stream || null,
+      deposit: formData.deposit || null,
+      project_cost: formData.projectCost || null,
+      salesperson: formData.salesperson || null,
+      specs: formData.specs || null,
+      classification: formData.classification || null,
+      client_name: formData.clientName || null,
+      email: formData.email || null,
+      phone: formData.phone || null,
+      client1_name: formData.clientName || null,
+      client1_email: formData.email || null,
+      client1_phone: formData.phone || null,
+      year: new Date().toISOString().split("T")[0],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(errorData.error || "Failed to create project");
+  }
+
+  return response.json();
+}
+
 function ProjectListNewProjectModals({
   isOpen,
   step,
@@ -103,7 +141,7 @@ function ProjectListNewProjectModals({
         onBack={() => setStep(1)}
         onNext={() => setStep(3)}
       />
-      <NewProject_5_PDFUpload
+      <NewProject_3_ProjectCost
         isOpen={isOpen && step === 3}
         onClose={closeAndReset}
         formData={formData}
@@ -111,7 +149,7 @@ function ProjectListNewProjectModals({
         onBack={() => setStep(2)}
         onNext={() => setStep(4)}
       />
-      <NewProject_3_ProjectCost
+      <NewProject_5_PDFUpload
         isOpen={isOpen && step === 4}
         onClose={() => {
           closeAndReset();
@@ -120,6 +158,7 @@ function ProjectListNewProjectModals({
         formData={formData}
         onFormDataChange={setFormData}
         onBack={() => setStep(3)}
+        onCreate={createProjectFromForm}
       />
     </>
   );
