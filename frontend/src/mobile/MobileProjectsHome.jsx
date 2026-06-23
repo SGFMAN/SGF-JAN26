@@ -1,23 +1,72 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
-import MobileProjectCard from "./MobileProjectCard";
+import ProjectRectangleCard from "../components/ProjectRectangleCard";
 import useAppLogo from "../hooks/useAppLogo.js";
+import { ensureUiButtonStylesLoaded } from "../utils/uiButtonStyles.js";
+import {
+  isCancelledStatus,
+  isCompleteStatus,
+  isConstructionPhaseStatus,
+  isDesignPhaseStatus,
+  isHotlistStatus,
+  isOnHoldFlag,
+} from "../utils/projectStatus";
+import MobileStyledFilterButton, {
+  MOBILE_STATE_BUTTON_IDS,
+  MOBILE_STATUS_BUTTON_STYLE_ID,
+  useUiButtonStyleRevision,
+} from "./MobileStyledFilterButton";
 import "./mobile.css";
 
 const API_URL = "";
 
-const STATE_OPTIONS = ["All", "VIC", "QLD"];
+const STATE_OPTIONS = ["VIC", "QLD", "All"];
 
-export default function MobileProjectsHome() {
+const STATUS_FILTERS_ROW_1 = [
+  { key: "design", label: "Design" },
+  { key: "construction", label: "Construction" },
+];
+
+const STATUS_FILTERS_ROW_2 = [
+  { key: "all", label: "All" },
+  { key: "onHold", label: "On Hold" },
+  { key: "cancelled", label: "Cancelled" },
+  { key: "finished", label: "Finished" },
+];
+
+function matchesStatusFilter(project, statusFilter) {
+  if (isHotlistStatus(project.status)) return false;
+
+  switch (statusFilter) {
+    case "all":
+      return !isCancelledStatus(project.status);
+    case "design":
+      return isDesignPhaseStatus(project.status);
+    case "construction":
+      return isConstructionPhaseStatus(project.status);
+    case "onHold":
+      return isOnHoldFlag(project);
+    case "cancelled":
+      return isCancelledStatus(project.status);
+    case "finished":
+      return isCompleteStatus(project.status);
+    default:
+      return true;
+  }
+}
+
+export default function MobileProjectsHome({ preview = false, onSelectProject }) {
   const logo = useAppLogo();
+  useUiButtonStyleRevision();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
   const [stateFilter, setStateFilter] = useState(getStateFilter());
+  const [statusFilter, setStatusFilter] = useState("all");
 
   useEffect(() => {
+    void ensureUiButtonStylesLoaded();
     void fetchProjects();
   }, []);
 
@@ -45,32 +94,12 @@ export default function MobileProjectsHome() {
   }
 
   function getFilteredProjects() {
-    let filtered = projects.filter(
-      (project) => project.status !== "Hotlist" && project.status !== "Cancelled"
-    );
+    let filtered = projects.filter((project) => matchesStatusFilter(project, statusFilter));
 
     if (stateFilter !== "All") {
       filtered = filtered.filter(
         (project) => (project.state || "").toUpperCase() === stateFilter.toUpperCase()
       );
-    }
-
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      filtered = filtered.filter((project) => {
-        const suburb = (project.suburb || "").toLowerCase();
-        const street = (project.street || "").toLowerCase();
-        const name = (project.name || "").toLowerCase();
-        const client = (project.client_name || project.client1_name || "").toLowerCase();
-        const status = (project.status || "").toLowerCase();
-        return (
-          suburb.includes(query) ||
-          street.includes(query) ||
-          name.includes(query) ||
-          client.includes(query) ||
-          status.includes(query)
-        );
-      });
     }
 
     filtered.sort((a, b) => {
@@ -88,37 +117,69 @@ export default function MobileProjectsHome() {
   const filteredProjects = getFilteredProjects();
 
   return (
-    <div className="mobile-shell sgf-mobile-only">
+    <div className={`mobile-shell sgf-mobile-only${preview ? " mobile-shell--preview" : ""}`}>
       <header className="mobile-shell__header">
-        <Link to="/projects" className="mobile-shell__header-back" aria-label="SGF Central home">
-          <img src={logo} alt="SGF" style={{ width: 36, height: "auto" }} />
-        </Link>
+        {preview ? (
+          <span className="mobile-shell__header-back" aria-hidden="true">
+            <img src={logo} alt="SGF" style={{ width: 36, height: "auto" }} />
+          </span>
+        ) : (
+          <Link to="/projects" className="mobile-shell__header-back" aria-label="SGF Central home">
+            <img src={logo} alt="SGF" style={{ width: 36, height: "auto" }} />
+          </Link>
+        )}
         <h1 className="mobile-shell__header-title">Projects</h1>
       </header>
 
       <div className="mobile-shell__search-wrap">
-        <input
-          type="search"
-          className="mobile-shell__search"
-          placeholder="Search suburb, street, client, status…"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          autoComplete="off"
-          aria-label="Search projects"
-        />
-        <div className="mobile-filter-row">
-          {STATE_OPTIONS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              className={`mobile-filter-chip${
-                stateFilter === option ? " mobile-filter-chip--active" : ""
-              }`}
-              onClick={() => handleStateFilter(option)}
-            >
-              {option}
-            </button>
-          ))}
+        <div className="mobile-state-filter-row" role="group" aria-label="State filter">
+          {STATE_OPTIONS.map((option) => {
+            const selected = stateFilter === option;
+            return (
+              <MobileStyledFilterButton
+                key={option}
+                styleId={MOBILE_STATE_BUTTON_IDS[option]}
+                selected={selected}
+                stateKey={option}
+                onClick={() => handleStateFilter(option)}
+              >
+                {option}
+              </MobileStyledFilterButton>
+            );
+          })}
+        </div>
+
+        <div className="mobile-status-filters" role="group" aria-label="Status filter">
+          <div className="mobile-status-filter-row mobile-status-filter-row--2">
+            {STATUS_FILTERS_ROW_1.map(({ key, label }) => {
+              const selected = statusFilter === key;
+              return (
+                <MobileStyledFilterButton
+                  key={key}
+                  styleId={MOBILE_STATUS_BUTTON_STYLE_ID}
+                  selected={selected}
+                  onClick={() => setStatusFilter(key)}
+                >
+                  {label}
+                </MobileStyledFilterButton>
+              );
+            })}
+          </div>
+          <div className="mobile-status-filter-row mobile-status-filter-row--4">
+            {STATUS_FILTERS_ROW_2.map(({ key, label }) => {
+              const selected = statusFilter === key;
+              return (
+                <MobileStyledFilterButton
+                  key={key}
+                  styleId={MOBILE_STATUS_BUTTON_STYLE_ID}
+                  selected={selected}
+                  onClick={() => setStatusFilter(key)}
+                >
+                  {label}
+                </MobileStyledFilterButton>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -128,12 +189,17 @@ export default function MobileProjectsHome() {
           <p className="mobile-shell__status mobile-shell__status--error">Error: {error}</p>
         )}
         {!loading && !error && filteredProjects.length === 0 && (
-          <p className="mobile-shell__status">No projects match your search.</p>
+          <p className="mobile-shell__status">No projects found.</p>
         )}
         {!loading && !error && filteredProjects.length > 0 && (
-          <div className="mobile-project-list">
+          <div className="mobile-project-list mobile-project-list--grid">
             {filteredProjects.map((project) => (
-              <MobileProjectCard key={project.id} project={project} />
+              <ProjectRectangleCard
+                key={project.id}
+                project={project}
+                fitColumn
+                onInteract={preview && onSelectProject ? () => onSelectProject(project) : undefined}
+              />
             ))}
           </div>
         )}

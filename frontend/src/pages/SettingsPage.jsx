@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { Link, useLocation } from "react-router-dom";
 import Users from "./Users";
 import Permissions from "./Permissions";
 import FileSettings from "./FileSettings";
@@ -33,7 +33,15 @@ const menuOptions = [
 
 export default function SettingsPage() {
   const logo = useAppLogo();
+  const location = useLocation();
   const [selected, setSelected] = useState(menuOptions[0].key);
+
+  useEffect(() => {
+    const section = location.state?.section;
+    if (section && menuOptions.some((option) => option.key === section)) {
+      setSelected(section);
+    }
+  }, [location.state?.section]);
 
   function renderContent() {
     switch (selected) {

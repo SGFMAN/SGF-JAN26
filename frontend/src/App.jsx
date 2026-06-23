@@ -3,6 +3,7 @@ import SplashPage from "./pages/SplashPage";
 import HomePage from "./pages/HomePage";
 import ProjectPage from "./pages/ProjectPage";
 import SettingsPage from "./pages/SettingsPage";
+import MobilePreviewPage from "./pages/MobilePreviewPage";
 import ApplyFields from "./pages/ApplyFields";
 import FinishedProjects from "./pages/FinishedProjects";
 import InConstruction from "./pages/InConstruction";
@@ -79,6 +80,7 @@ export default function App() {
             <Route path="/variations" element={<Navigate to="/projects" replace />} />
             <Route path="/project/:token" element={<Auth><ProjectPage /></Auth>} />
             <Route path="/settings" element={<Auth><AdminAccessRoute><SettingsPage /></AdminAccessRoute></Auth>} />
+            <Route path="/settings/mobile" element={<Auth><AdminAccessRoute><MobilePreviewPage /></AdminAccessRoute></Auth>} />
             <Route path="/apply-fields" element={<Auth><AdminAccessRoute><ApplyFields /></AdminAccessRoute></Auth>} />
             <Route path="/finished-projects" element={<Auth><FinishedProjects /></Auth>} />
             <Route path="/construction-phase" element={<Auth><InConstruction /></Auth>} />

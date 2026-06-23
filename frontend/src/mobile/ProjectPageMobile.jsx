@@ -33,6 +33,8 @@ export default function ProjectPageMobile({
   isPortalProjectPath,
   token,
   isAdmin,
+  preview = false,
+  onBack,
 }) {
   const navigate = useNavigate();
   const backTo = isPortalProjectPath ? "/portal" : "/projects";
@@ -45,6 +47,7 @@ export default function ProjectPageMobile({
 
   function selectTab(viewKey) {
     setActiveView(viewKey);
+    if (preview) return;
     const params = new URLSearchParams(window.location.search);
     params.set("view", viewKey);
     navigate(
@@ -57,11 +60,22 @@ export default function ProjectPageMobile({
   }
 
   return (
-    <div className="mobile-shell sgf-mobile-only">
+    <div className={`mobile-shell sgf-mobile-only${preview ? " mobile-shell--preview" : ""}`}>
       <header className="mobile-shell__header">
-        <Link to={backTo} className="mobile-shell__header-back" aria-label="Back to projects">
-          ←
-        </Link>
+        {preview ? (
+          <button
+            type="button"
+            className="mobile-shell__header-back"
+            aria-label="Back to projects"
+            onClick={() => onBack?.()}
+          >
+            ←
+          </button>
+        ) : (
+          <Link to={backTo} className="mobile-shell__header-back" aria-label="Back to projects">
+            ←
+          </Link>
+        )}
         <h1 className="mobile-shell__header-title">
           {loading ? "Loading…" : error ? "Error" : getProjectTitle(project)}
         </h1>

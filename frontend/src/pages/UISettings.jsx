@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import UIButtonStylesModal from "../components/UIButtonStylesModal.jsx";
 import UIPaletteSettingsModal from "../components/UIPaletteSettingsModal.jsx";
 import { UI, MENU } from "../utils/uiThemeTokens.js";
@@ -19,6 +20,7 @@ const actionButtonStyle = {
 };
 
 export default function UISettings() {
+  const navigate = useNavigate();
   const [showButtonsModal, setShowButtonsModal] = useState(false);
   const [showPaletteModal, setShowPaletteModal] = useState(false);
 
@@ -57,6 +59,16 @@ export default function UISettings() {
             </button>
             <p style={{ margin: 0, fontSize: "0.9rem", color: UI.textMuted, maxWidth: "480px", lineHeight: 1.45 }}>
               Define reusable button styles numbered 1, 2, 3… Saved to the server so every user sees the same buttons.
+            </p>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px", alignItems: "flex-start" }}>
+            <button type="button" onClick={() => navigate("/settings/mobile")} style={actionButtonStyle}>
+              Mobile
+            </button>
+            <p style={{ margin: 0, fontSize: "0.9rem", color: UI.textMuted, maxWidth: "480px", lineHeight: 1.45 }}>
+              Preview the phone layout locally in an iPhone-sized frame — no need to deploy to your device for every
+              change.
             </p>
           </div>
         </div>
