@@ -79,7 +79,14 @@ export const MOBILE_STATE_BUTTON_IDS = {
   All: 3,
 };
 
-export const MOBILE_STATUS_BUTTON_STYLE_ID = 4;
+export const MOBILE_STATUS_BUTTON_IDS = {
+  all: 5,
+  design: 4,
+  construction: 4,
+  onHold: 4,
+  cancelled: 4,
+  finished: 4,
+};
 
 export function mobileStateFallback(selected, stateKey) {
   if (stateKey === "VIC") {

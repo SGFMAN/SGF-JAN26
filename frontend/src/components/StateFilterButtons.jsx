@@ -113,7 +113,7 @@ export default function StateFilterButtons({ stateFilter, setStateFilter, button
         QLD Only
       </button>
       <button type="button" onClick={() => select("All")} style={allButton.style} {...hoverHandlers(allButton.savedStyle, allSelected)}>
-        All Projects
+        All States
       </button>
     </div>
   );

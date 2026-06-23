@@ -14,7 +14,7 @@ import {
 } from "../utils/projectStatus";
 import MobileStyledFilterButton, {
   MOBILE_STATE_BUTTON_IDS,
-  MOBILE_STATUS_BUTTON_STYLE_ID,
+  MOBILE_STATUS_BUTTON_IDS,
   useUiButtonStyleRevision,
 } from "./MobileStyledFilterButton";
 import "./mobile.css";
@@ -23,13 +23,19 @@ const API_URL = "";
 
 const STATE_OPTIONS = ["VIC", "QLD", "All"];
 
+const STATE_OPTION_LABELS = {
+  VIC: "VIC",
+  QLD: "QLD",
+  All: "All States",
+};
+
 const STATUS_FILTERS_ROW_1 = [
+  { key: "all", label: "All Projects" },
   { key: "design", label: "Design" },
   { key: "construction", label: "Construction" },
 ];
 
 const STATUS_FILTERS_ROW_2 = [
-  { key: "all", label: "All" },
   { key: "onHold", label: "On Hold" },
   { key: "cancelled", label: "Cancelled" },
   { key: "finished", label: "Finished" },
@@ -143,20 +149,20 @@ export default function MobileProjectsHome({ preview = false, onSelectProject })
                 stateKey={option}
                 onClick={() => handleStateFilter(option)}
               >
-                {option}
+                {STATE_OPTION_LABELS[option]}
               </MobileStyledFilterButton>
             );
           })}
         </div>
 
         <div className="mobile-status-filters" role="group" aria-label="Status filter">
-          <div className="mobile-status-filter-row mobile-status-filter-row--2">
+          <div className="mobile-status-filter-row">
             {STATUS_FILTERS_ROW_1.map(({ key, label }) => {
               const selected = statusFilter === key;
               return (
                 <MobileStyledFilterButton
                   key={key}
-                  styleId={MOBILE_STATUS_BUTTON_STYLE_ID}
+                  styleId={MOBILE_STATUS_BUTTON_IDS[key]}
                   selected={selected}
                   onClick={() => setStatusFilter(key)}
                 >
@@ -165,13 +171,13 @@ export default function MobileProjectsHome({ preview = false, onSelectProject })
               );
             })}
           </div>
-          <div className="mobile-status-filter-row mobile-status-filter-row--4">
+          <div className="mobile-status-filter-row">
             {STATUS_FILTERS_ROW_2.map(({ key, label }) => {
               const selected = statusFilter === key;
               return (
                 <MobileStyledFilterButton
                   key={key}
-                  styleId={MOBILE_STATUS_BUTTON_STYLE_ID}
+                  styleId={MOBILE_STATUS_BUTTON_IDS[key]}
                   selected={selected}
                   onClick={() => setStatusFilter(key)}
                 >
