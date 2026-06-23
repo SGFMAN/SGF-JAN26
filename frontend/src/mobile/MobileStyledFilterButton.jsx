@@ -62,8 +62,11 @@ export default function MobileStyledFilterButton({
         ...(savedStyle ?? fallback),
         width: "100%",
         minWidth: 0,
-        maxWidth: "none",
+        maxWidth: "100%",
         boxSizing: "border-box",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
         transition: "background 0.2s, border-color 0.2s, color 0.2s",
       }}
       {...hoverHandlers}

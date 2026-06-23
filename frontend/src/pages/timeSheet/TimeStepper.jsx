@@ -1,8 +1,6 @@
 import React from "react";
 import { UI, PROJECT_CARD } from "../../utils/uiThemeTokens";
 
-const VALUE_WIDTH = "78px";
-
 export default function TimeStepper({
   value,
   onStepUp,
@@ -16,7 +14,7 @@ export default function TimeStepper({
     color: UI.textPrimary,
     border: "none",
     borderRadius: "3px",
-    width: "20px",
+    width: "100%",
     height: "18px",
     flexShrink: 0,
     fontSize: "0.55rem",
@@ -27,6 +25,7 @@ export default function TimeStepper({
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+    boxSizing: "border-box",
   };
 
   return (
@@ -41,46 +40,34 @@ export default function TimeStepper({
       <div
         style={{
           display: "flex",
-          flexDirection: "row",
-          alignItems: "center",
-          gap: "6px",
+          flexDirection: "column",
+          alignItems: "stretch",
+          width: "max-content",
+          maxWidth: "100%",
+          gap: "2px",
           flexShrink: 0,
         }}
       >
+        <button type="button" disabled={disabled} onClick={onStepUp} style={buttonStyle} aria-label="Increase">
+          ▲
+        </button>
         <div
           style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "2px",
-            flexShrink: 0,
-          }}
-        >
-          <button type="button" disabled={disabled} onClick={onStepUp} style={buttonStyle} aria-label="Increase">
-            ▲
-          </button>
-          <button type="button" disabled={disabled} onClick={onStepDown} style={buttonStyle} aria-label="Decrease">
-            ▼
-          </button>
-        </div>
-        <div
-          style={{
-            width: VALUE_WIDTH,
-            minWidth: VALUE_WIDTH,
-            maxWidth: VALUE_WIDTH,
-            fontSize: "0.76rem",
+            fontSize: "0.95rem",
             fontWeight: 600,
             color: dark ? PROJECT_CARD.text : UI.textPrimary,
-            textAlign: "left",
+            textAlign: "center",
             lineHeight: 1.2,
             whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            flexShrink: 0,
+            padding: "0 2px",
             boxSizing: "border-box",
           }}
         >
           {formatValue(value)}
         </div>
+        <button type="button" disabled={disabled} onClick={onStepDown} style={buttonStyle} aria-label="Decrease">
+          ▼
+        </button>
       </div>
     </div>
   );

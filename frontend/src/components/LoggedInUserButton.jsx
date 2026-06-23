@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { getLoggedInUserId, getLoggedInUserName, isAuthenticated } from "../utils/auth";
 import { useUnreadMessageCount } from "../hooks/useUnreadMessageCount";
+import { prefetchConstructionProjectsForTimeSheet } from "../utils/timeSheetProjects";
 import UserSettingsModal from "./UserSettingsModal";
 import MessagesModal from "./MessagesModal";
 import TimeSheetModal from "./TimeSheetModal";
@@ -45,6 +46,11 @@ export default function LoggedInUserButton() {
 
   const show = isAuthenticated() && location.pathname !== "/";
   const { hasUnread, refresh: refreshUnreadCount } = useUnreadMessageCount({ enabled: show });
+
+  useEffect(() => {
+    if (!show) return;
+    prefetchConstructionProjectsForTimeSheet();
+  }, [show]);
 
   useEffect(() => {
     if (!show) return;
@@ -315,7 +321,9 @@ export default function LoggedInUserButton() {
                 type="button"
                 onClick={() => {
                   closePanel();
-                  setTimeSheetOpen(true);
+                  prefetchConstructionProjectsForTimeSheet().then(() => {
+                    setTimeSheetOpen(true);
+                  });
                 }}
                 style={{
                   marginTop: "10px",

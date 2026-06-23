@@ -7,9 +7,56 @@ export const SELECT_PROJECT_LABEL = "Select...";
 export const OFFICE_PROJECT_VALUE = "office";
 export const DEFAULT_PROJECT_VALUE = SELECT_PROJECT_VALUE;
 export const MAX_WORK_HOURS_MINUTES = 8 * 60;
-export const MAX_BREAK_MINUTES = 2 * 60;
+export const MAX_BREAK_MINUTES = 60;
 export const MAX_OVERTIME_MINUTES = 8 * 60;
 export const PAY_PERIOD_DAY_COUNT = 14;
+
+/** Placeholder — not a committed duration value. */
+export const SELECT_DURATION_MINUTES = -1;
+
+export const WORK_HOUR_OPTIONS = [
+  { minutes: SELECT_DURATION_MINUTES, label: "Select" },
+  { minutes: 0, label: "None" },
+  { minutes: 60, label: "1 hour" },
+  { minutes: 120, label: "2 hour" },
+  { minutes: 180, label: "3 hour" },
+  { minutes: 240, label: "4 hour" },
+  { minutes: 300, label: "5 hour" },
+  { minutes: 360, label: "6 hour" },
+  { minutes: 420, label: "7 hour" },
+  { minutes: 480, label: "8 hour" },
+];
+
+export const BREAK_DURATION_OPTIONS = [
+  { minutes: SELECT_DURATION_MINUTES, label: "Select" },
+  { minutes: 0, label: "None" },
+  { minutes: 30, label: "30 min" },
+  { minutes: 60, label: "1 hour" },
+];
+
+/** @deprecated Use WORK_HOUR_OPTIONS */
+export const HOUR_DURATION_OPTIONS = WORK_HOUR_OPTIONS;
+
+export function snapToDurationOptions(minutes, options, fallback = 0) {
+  const allowed = options.map((option) => option.minutes);
+  const total = Number(minutes);
+  if (Number.isFinite(total) && allowed.includes(total)) return total;
+
+  let best = fallback;
+  let bestDistance = Infinity;
+  for (const allowedMinutes of allowed) {
+    const distance = Math.abs(allowedMinutes - (Number.isFinite(total) ? total : fallback));
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = allowedMinutes;
+    }
+  }
+  return best;
+}
+
+export function snapToHourDuration(minutes, fallback = 0) {
+  return snapToDurationOptions(minutes, WORK_HOUR_OPTIONS, fallback);
+}
 
 export function createDefaultDayEntry() {
   return {
@@ -80,14 +127,16 @@ function templateStorageKey(userId) {
 
 function normalizeTemplateEntry(entry) {
   return {
-    workMinutes: migrateWorkMinutes(entry),
-    breakMinutes: Math.min(
-      MAX_BREAK_MINUTES,
-      Math.max(0, entry.breakMinutes ?? DEFAULT_BREAK_MINUTES)
+    workMinutes: snapToDurationOptions(migrateWorkMinutes(entry), WORK_HOUR_OPTIONS, DEFAULT_WORK_HOURS_MINUTES),
+    breakMinutes: snapToDurationOptions(
+      entry.breakMinutes ?? DEFAULT_BREAK_MINUTES,
+      BREAK_DURATION_OPTIONS,
+      DEFAULT_BREAK_MINUTES
     ),
-    overtimeMinutes: Math.min(
-      MAX_OVERTIME_MINUTES,
-      Math.max(0, entry.overtimeMinutes ?? DEFAULT_OVERTIME_MINUTES)
+    overtimeMinutes: snapToDurationOptions(
+      entry.overtimeMinutes ?? DEFAULT_OVERTIME_MINUTES,
+      WORK_HOUR_OPTIONS,
+      DEFAULT_OVERTIME_MINUTES
     ),
     projectId: entry.projectId ?? DEFAULT_PROJECT_VALUE,
   };

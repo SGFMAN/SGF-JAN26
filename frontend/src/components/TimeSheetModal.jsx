@@ -1,8 +1,20 @@
-import React from "react";
+import React, { useMemo } from "react";
 import TimeSheetSettingsContent from "./TimeSheetSettingsContent";
-import { UI } from "../utils/uiThemeTokens";
+import { UI, TEXT } from "../utils/uiThemeTokens";
+import { TIMESHEET_GAP } from "../utils/timesheetLayout";
+import {
+  formatPeriodRange,
+  getPayCycleWednesdayForDate,
+  getPayPeriodBounds,
+} from "../utils/timeSheetPayCycle";
 
 export default function TimeSheetModal({ open, onClose }) {
+  const title = useMemo(() => {
+    const cycleWednesday = getPayCycleWednesdayForDate();
+    const { periodStart, periodEnd } = getPayPeriodBounds(cycleWednesday);
+    return `Time Sheet - ${formatPeriodRange(periodStart, periodEnd)}`;
+  }, []);
+
   if (!open) {
     return null;
   }
@@ -21,6 +33,7 @@ export default function TimeSheetModal({ open, onClose }) {
         zIndex: 10006,
         padding: "24px",
         boxSizing: "border-box",
+        overflow: "hidden",
       }}
     >
       <div
@@ -31,25 +44,24 @@ export default function TimeSheetModal({ open, onClose }) {
         style={{
           background: UI.cardBg,
           borderRadius: "16px",
-          padding: "28px 32px",
-          width: "100%",
-          maxWidth: "min(1100px, 95vw)",
-          maxHeight: "min(90vh, 820px)",
+          padding: TIMESHEET_GAP,
+          width: "max-content",
+          maxWidth: "min(1200px, 95vw)",
           boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
           boxSizing: "border-box",
           display: "flex",
           flexDirection: "column",
-          color: UI.textPrimary,
+          gap: TIMESHEET_GAP,
+          color: TEXT.dark,
+          overflow: "visible",
         }}
       >
         <div
           style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "12px",
-            marginBottom: "20px",
+            position: "relative",
             flexShrink: 0,
+            textAlign: "center",
+            minHeight: "1.5rem",
           }}
         >
           <h2
@@ -58,40 +70,34 @@ export default function TimeSheetModal({ open, onClose }) {
               margin: 0,
               fontSize: "1.5rem",
               fontWeight: 600,
-              color: UI.textPrimary,
+              color: TEXT.dark,
             }}
           >
-            Time Sheet
+            {title}
           </h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
             style={{
+              position: "absolute",
+              right: 0,
+              top: "50%",
+              transform: "translateY(-50%)",
               border: "none",
               background: "transparent",
               fontSize: "1.5rem",
               lineHeight: 1,
               cursor: "pointer",
-              color: UI.textPrimary,
-              padding: "0 4px",
+              color: TEXT.dark,
+              padding: 0,
             }}
           >
             ×
           </button>
         </div>
 
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            overflow: "auto",
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          <TimeSheetSettingsContent />
-        </div>
+        <TimeSheetSettingsContent />
       </div>
     </div>
   );

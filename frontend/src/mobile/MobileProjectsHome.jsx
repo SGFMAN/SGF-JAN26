@@ -137,7 +137,8 @@ export default function MobileProjectsHome({ preview = false, onSelectProject })
         <h1 className="mobile-shell__header-title">Projects</h1>
       </header>
 
-      <div className="mobile-shell__search-wrap">
+      <div className="mobile-shell__content">
+        <div className="mobile-shell__filters">
         <div className="mobile-state-filter-row" role="group" aria-label="State filter">
           {STATE_OPTIONS.map((option) => {
             const selected = stateFilter === option;
@@ -187,9 +188,9 @@ export default function MobileProjectsHome({ preview = false, onSelectProject })
             })}
           </div>
         </div>
-      </div>
+        </div>
 
-      <div className="mobile-shell__body">
+        <div className="mobile-shell__body">
         {loading && <p className="mobile-shell__status">Loading projects…</p>}
         {error && (
           <p className="mobile-shell__status mobile-shell__status--error">Error: {error}</p>
@@ -209,6 +210,7 @@ export default function MobileProjectsHome({ preview = false, onSelectProject })
             ))}
           </div>
         )}
+        </div>
       </div>
     </div>
   );
