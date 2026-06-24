@@ -3,7 +3,6 @@ import {
   createDefaultDayEntries,
   loadPayCycleSheet,
   OFFICE_PROJECT_VALUE,
-  SELECT_PROJECT_LABEL,
 } from "./timeSheetTime";
 import {
   formatConstructionProjectLabel,
@@ -14,15 +13,23 @@ import { formatPeriodRange, getPayPeriodBounds } from "./timeSheetPayCycle";
 
 const API_URL = "";
 
-function buildProjectLabels(projects) {
-  const labels = {
-    "": SELECT_PROJECT_LABEL,
-    [OFFICE_PROJECT_VALUE]: OFFICE_PROJECT_LABEL,
+function buildProjectInfo(projects) {
+  const info = {
+    "": { name: "", address: "" },
+    [OFFICE_PROJECT_VALUE]: { name: OFFICE_PROJECT_LABEL, address: "" },
+    office: { name: OFFICE_PROJECT_LABEL, address: "" },
   };
+
   for (const project of projects) {
-    labels[String(project.id)] = formatConstructionProjectLabel(project);
+    const suburb = (project.suburb || "").trim();
+    const street = (project.street || "").trim();
+    info[String(project.id)] = {
+      name: formatConstructionProjectLabel(project),
+      address: street && suburb ? `${street}, ${suburb}` : street || suburb || "",
+    };
   }
-  return labels;
+
+  return info;
 }
 
 export async function exportTimesheetToServer({
@@ -57,7 +64,7 @@ export async function exportTimesheetToServer({
         iso: day.iso,
       })),
       dayEntries,
-      projectLabels: buildProjectLabels(projects),
+      projectInfo: buildProjectInfo(projects),
     }),
   });
 

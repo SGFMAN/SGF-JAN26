@@ -2,25 +2,17 @@ const fs = require("fs");
 const path = require("path");
 const XLSX = require("xlsx");
 
-const WORK_HOUR_LABELS = new Map([
-  [-1, "Select"],
-  [0, "None"],
-  [60, "1 hour"],
-  [120, "2 hour"],
-  [180, "3 hour"],
-  [240, "4 hour"],
-  [300, "5 hour"],
-  [360, "6 hour"],
-  [420, "7 hour"],
-  [480, "8 hour"],
-]);
-
-const BREAK_LABELS = new Map([
-  [-1, "Select"],
-  [0, "None"],
-  [30, "30 min"],
-  [60, "1 hour"],
-]);
+const EXPORT_HEADERS = [
+  "Employee",
+  "Project Name",
+  "Project Address",
+  "Ref No.",
+  "Start",
+  "Finish",
+  "Payable",
+  "Break",
+  "Job Details",
+];
 
 function sanitizeFilenamePart(value) {
   return String(value || "")
@@ -30,44 +22,52 @@ function sanitizeFilenamePart(value) {
     .slice(0, 80) || "User";
 }
 
-function labelForMinutes(minutes, labelMap) {
+function isSunday(day) {
+  return (day.weekday || day.expectedWeekday) === "Sunday";
+}
+
+function minutesToExportHours(minutes) {
   const total = Number(minutes);
-  if (labelMap.has(total)) return labelMap.get(total);
-  if (!Number.isFinite(total) || total <= 0) return "None";
-  const hours = Math.floor(total / 60);
-  const mins = total % 60;
-  if (hours === 0) return `${mins} min`;
-  if (mins === 0) return hours === 1 ? "1 hour" : `${hours} hour`;
-  return `${hours} hr ${mins} min`;
+  if (!Number.isFinite(total) || total <= 0) return "";
+  return Math.round((total / 60) * 100) / 100;
 }
 
-function resolveProjectLabel(projectId, projectLabels = {}) {
-  if (!projectId || projectId === "") return "Select...";
-  if (projectId === "office") return "Office";
-  return projectLabels[String(projectId)] || `Project ${projectId}`;
+function resolveProjectInfo(projectId, projectInfo = {}) {
+  if (!projectId || projectId === "") {
+    return { name: "", address: "" };
+  }
+  if (projectId === "office") {
+    return projectInfo.office || { name: "Office", address: "" };
+  }
+  return (
+    projectInfo[String(projectId)] || {
+      name: `Project ${projectId}`,
+      address: "",
+    }
+  );
 }
 
-function buildTimesheetRows({ userName, periodLabel, periodDays, dayEntries, projectLabels }) {
-  const rows = [
-    [`Time Sheet - ${userName || "User"}`],
-    [periodLabel || ""],
-    [],
-    ["Week", "Day", "Date", "Hours", "Break", "Overtime", "Project"],
-  ];
-
+function buildTimesheetRows({ userName, periodDays, dayEntries, projectInfo }) {
+  const rows = [EXPORT_HEADERS];
   const days = Array.isArray(periodDays) ? periodDays : [];
   const entries = Array.isArray(dayEntries) ? dayEntries : [];
 
   days.forEach((day, index) => {
+    if (isSunday(day)) return;
+
     const entry = entries[index] || {};
+    const project = resolveProjectInfo(entry.projectId, projectInfo);
+
     rows.push([
-      index < 7 ? "Week 1" : "Week 2",
-      day.weekday || "",
-      day.dateLabel || day.iso || "",
-      labelForMinutes(entry.workMinutes, WORK_HOUR_LABELS),
-      labelForMinutes(entry.breakMinutes, BREAK_LABELS),
-      labelForMinutes(entry.overtimeMinutes, WORK_HOUR_LABELS),
-      resolveProjectLabel(entry.projectId, projectLabels),
+      userName || "User",
+      project.name,
+      project.address,
+      "",
+      "",
+      "",
+      minutesToExportHours(entry.workMinutes),
+      minutesToExportHours(entry.breakMinutes),
+      "",
     ]);
   });
 
@@ -87,7 +87,17 @@ function exportTimesheetWorkbook({ exportDir, filename, rows }) {
 
   const workbook = XLSX.utils.book_new();
   const worksheet = XLSX.utils.aoa_to_sheet(rows);
-  worksheet["!cols"] = [{ wch: 10 }, { wch: 12 }, { wch: 22 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 36 }];
+  worksheet["!cols"] = [
+    { wch: 18 },
+    { wch: 28 },
+    { wch: 32 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 18 },
+  ];
   XLSX.utils.book_append_sheet(workbook, worksheet, "Time Sheet");
   XLSX.writeFile(workbook, filePath);
 
