@@ -3,8 +3,7 @@ const path = require("path");
 
 const EXPORT_HEADERS = [
   "Employee Co./Last Name",
-  "",
-  "",
+  "{}",
   "Payroll Category",
   "Date",
   "Units",
@@ -76,7 +75,6 @@ function buildTimesheetLines({ userName, periodDays, dayEntries }) {
       [
         lastName,
         firstName,
-        "",
         PAYROLL_CATEGORY,
         formatExportDate(day),
         minutesToUnits(entry.workMinutes),
