@@ -57,7 +57,8 @@ function formatExportDate(day) {
 function minutesToUnits(minutes) {
   const total = Number(minutes);
   if (!Number.isFinite(total) || total <= 0) return "";
-  return String(Math.round((total / 60) * 100) / 100);
+  const hours = Math.round((total / 60) * 100) / 100;
+  return hours.toFixed(8);
 }
 
 function buildTimesheetLines({ userName, periodDays, dayEntries }) {
