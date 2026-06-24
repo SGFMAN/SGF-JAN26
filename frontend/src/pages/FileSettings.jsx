@@ -13,6 +13,7 @@ export default function FileSettings() {
   const [colourAttachmentsQld, setColourAttachmentsQld] = useState("");
   const [emailLogoPath, setEmailLogoPath] = useState("");
   const [letterheadPath, setLetterheadPath] = useState("");
+  const [timesheetExportPath, setTimesheetExportPath] = useState("");
 
   const [loading, setLoading] = useState(true);
   const valuesRef = useRef({
@@ -21,6 +22,7 @@ export default function FileSettings() {
     colourAttachmentsQld,
     emailLogoPath,
     letterheadPath,
+    timesheetExportPath,
   });
 
   useEffect(() => {
@@ -30,6 +32,7 @@ export default function FileSettings() {
       colourAttachmentsQld,
       emailLogoPath,
       letterheadPath,
+      timesheetExportPath,
     };
   }, [
     rootDirectory,
@@ -37,6 +40,7 @@ export default function FileSettings() {
     colourAttachmentsQld,
     emailLogoPath,
     letterheadPath,
+    timesheetExportPath,
   ]);
 
   useEffect(() => {
@@ -56,6 +60,7 @@ export default function FileSettings() {
       setColourAttachmentsQld(data.colour_attachments_qld || "");
       setEmailLogoPath(data.email_logo_path || "");
       setLetterheadPath(data.letterhead_path || "");
+      setTimesheetExportPath(data.timesheet_export_path || "");
     } catch (error) {
       console.error("Error fetching settings:", error);
       setRootDirectory("");
@@ -63,6 +68,7 @@ export default function FileSettings() {
       setColourAttachmentsQld("");
       setEmailLogoPath("");
       setLetterheadPath("");
+      setTimesheetExportPath("");
     } finally {
       setLoading(false);
     }
@@ -75,6 +81,7 @@ export default function FileSettings() {
       colour_attachments_qld: (valuesRef.current.colourAttachmentsQld || "").trim() || null,
       email_logo_path: (valuesRef.current.emailLogoPath || "").trim() || null,
       letterhead_path: (valuesRef.current.letterheadPath || "").trim() || null,
+      timesheet_export_path: (valuesRef.current.timesheetExportPath || "").trim() || null,
     };
   }
 
@@ -132,6 +139,16 @@ export default function FileSettings() {
   }
 
   async function handleLetterheadPathBlur() {
+    await saveSettings();
+  }
+
+  function handleTimesheetExportPathChange(e) {
+    const newValue = e.target.value;
+    setTimesheetExportPath(newValue);
+    valuesRef.current.timesheetExportPath = newValue;
+  }
+
+  async function handleTimesheetExportPathBlur() {
     await saveSettings();
   }
 
@@ -298,6 +315,38 @@ export default function FileSettings() {
                 onChange={handleLetterheadPathChange}
                 onBlur={handleLetterheadPathBlur}
                 placeholder="e.g. Z:\...\Letterhead.png"
+                style={inputStyle}
+                autoComplete="off"
+              />
+            </div>
+          </div>
+
+          <div style={vicCard}>
+            <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
+              Time Sheet Export
+            </h3>
+            <p style={{ fontSize: "0.85rem", color: "var(--sgf-text-primary)", margin: 0, lineHeight: 1.45 }}>
+              Folder where time sheet Excel files are saved when users click Send or Export.
+            </p>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  color: UI.textMuted,
+                  marginBottom: "6px",
+                  fontWeight: 500,
+                }}
+              >
+                Export folder path
+              </label>
+              <input
+                type="text"
+                name="timesheetExportPath"
+                value={timesheetExportPath}
+                onChange={handleTimesheetExportPathChange}
+                onBlur={handleTimesheetExportPathBlur}
+                placeholder="e.g. Z:\1.SGF PROJECT MANAGEMENT\Time Sheets"
                 style={inputStyle}
                 autoComplete="off"
               />

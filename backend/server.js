@@ -71,6 +71,11 @@ const {
   getOnlineUserIds,
 } = require("./userPresence");
 const { ensureUserMessagesTable } = require("./userMessages");
+const {
+  buildTimesheetRows,
+  exportTimesheetWorkbook,
+  buildTimesheetFilename,
+} = require("./timesheetExport");
 const { generateMapsProposalPdf, OUTPUT_FILENAME, PROPOSAL_DIR } = require("./mapsProposalPdf");
 const {
   ensureProjectAccessTokens,
@@ -1414,6 +1419,13 @@ async function ensureSchema() {
   } catch (e) {
     if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
       console.log(`Error adding column letterhead_path:`, e.message);
+    }
+  }
+  try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN timesheet_export_path TEXT`);
+  } catch (e) {
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column timesheet_export_path:`, e.message);
     }
   }
   // Per-stream settings (Stream Settings page), JSON object keyed by stream name
@@ -3821,7 +3833,7 @@ app.get("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const r = await pool.query(
-      `SELECT id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, stream_settings_json, email_general_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at FROM settings WHERE id = 1`
+      `SELECT id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, timesheet_export_path, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, stream_settings_json, email_general_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at FROM settings WHERE id = 1`
     );
     if (r.rows.length === 0) {
       const empty = {
@@ -3840,6 +3852,7 @@ app.get("/api/settings", async (req, res) => {
         send_drawings_qld: [],
         email_logo_path: null,
         letterhead_path: null,
+        timesheet_export_path: null,
         drawings_vic_design_to_salesperson_email: null,
         drawings_vic_salesperson_to_client_email: null,
         drawings_qld_design_to_salesperson_email: null,
@@ -4016,6 +4029,7 @@ app.put("/api/settings", async (req, res) => {
       send_drawings_qld,
       email_logo_path,
       letterhead_path,
+      timesheet_export_path,
       drawings_vic_design_to_salesperson_email,
       drawings_vic_salesperson_to_client_email,
       drawings_qld_design_to_salesperson_email,
@@ -4096,12 +4110,13 @@ app.put("/api/settings", async (req, res) => {
     const streamSettingsParamIndex = 22 + smtpParams.length + 1;
     const emailGeneralParam = processEmailGeneralJson(email_general_json);
     const emailGeneralParamIndex = streamSettingsParamIndex + 1;
+    const timesheetExportParamIndex = emailGeneralParamIndex + 1;
 
     const r = await pool.query(
       `INSERT INTO settings (id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, ${smtpInsertCols.join(
         ", "
-      )}, stream_settings_json, email_general_json, updated_at)
-       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, ${smtpValuePlaceholders.join(", ")}, $${streamSettingsParamIndex}, $${emailGeneralParamIndex}, NOW())
+      )}, stream_settings_json, email_general_json, timesheet_export_path, updated_at)
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, ${smtpValuePlaceholders.join(", ")}, $${streamSettingsParamIndex}, $${emailGeneralParamIndex}, $${timesheetExportParamIndex}, NOW())
        ON CONFLICT (id)
        DO UPDATE SET
          root_directory = COALESCE($1, settings.root_directory),
@@ -4129,8 +4144,9 @@ app.put("/api/settings", async (req, res) => {
          ${smtpCoalesceParts.join(",\n         ")},
          stream_settings_json = COALESCE($${streamSettingsParamIndex}, settings.stream_settings_json),
          email_general_json = COALESCE($${emailGeneralParamIndex}, settings.email_general_json),
+         timesheet_export_path = COALESCE($${timesheetExportParamIndex}, settings.timesheet_export_path),
          updated_at = NOW()
-       RETURNING id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, stream_settings_json, email_general_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at`,
+       RETURNING id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, timesheet_export_path, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, stream_settings_json, email_general_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at`,
       [
         processValue(root_directory),
         processBoolean(create_folders),
@@ -4157,6 +4173,7 @@ app.put("/api/settings", async (req, res) => {
         ...smtpParams,
         streamSettingsParam,
         emailGeneralParam,
+        processValue(timesheet_export_path),
       ]
     );
 
@@ -4186,6 +4203,57 @@ app.put("/api/settings", async (req, res) => {
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/timesheets/export", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  try {
+    const requestUserId = Number(req.headers["x-user-id"] || req.headers["X-User-Id"]);
+    if (!Number.isFinite(requestUserId)) {
+      return res.status(401).json({ error: "Login required" });
+    }
+
+    const {
+      userId,
+      userName,
+      cycleKey,
+      periodLabel,
+      periodDays,
+      dayEntries,
+      projectLabels,
+    } = req.body || {};
+
+    const exportUserId = Number(userId);
+    if (!Number.isFinite(exportUserId) || exportUserId !== requestUserId) {
+      return res.status(403).json({ error: "You can only export your own time sheet" });
+    }
+
+    const settingsResult = await pool.query(
+      "SELECT timesheet_export_path FROM settings WHERE id = 1"
+    );
+    const exportDir = String(settingsResult.rows[0]?.timesheet_export_path || "").trim();
+    if (!exportDir) {
+      return res.status(400).json({
+        error: "Time Sheet Export path is not configured. Set it in Settings → File Settings.",
+      });
+    }
+
+    const rows = buildTimesheetRows({
+      userName: String(userName || "").trim() || "User",
+      periodLabel: String(periodLabel || "").trim(),
+      periodDays: Array.isArray(periodDays) ? periodDays : [],
+      dayEntries: Array.isArray(dayEntries) ? dayEntries : [],
+      projectLabels: projectLabels && typeof projectLabels === "object" ? projectLabels : {},
+    });
+
+    const filename = buildTimesheetFilename(userName, cycleKey);
+    const filePath = exportTimesheetWorkbook({ exportDir, filename, rows });
+
+    res.json({ success: true, filePath, filename });
+  } catch (e) {
+    console.error("Time sheet export:", e);
+    res.status(500).json({ error: e.message || "Failed to export time sheet" });
   }
 });
 

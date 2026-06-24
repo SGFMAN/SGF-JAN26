@@ -28,14 +28,19 @@ function hoverOff(e) {
   e.currentTarget.style.color = TEXT.dark;
 }
 
-function MenuButton({ children, onClick }) {
+function MenuButton({ children, onClick, disabled = false }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      style={menuItemStyle}
-      onMouseEnter={hoverOn}
-      onMouseLeave={hoverOff}
+      disabled={disabled}
+      style={{
+        ...menuItemStyle,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.65 : 1,
+      }}
+      onMouseEnter={disabled ? undefined : hoverOn}
+      onMouseLeave={disabled ? undefined : hoverOff}
     >
       {children}
     </button>
@@ -60,7 +65,7 @@ function MenuGroup({ children }) {
   );
 }
 
-export default function TimeSheetSideMenu({ onSend, onReset }) {
+export default function TimeSheetSideMenu({ onSend, onReset, onExport, showExport, exporting = false }) {
   return (
     <aside
       className="sidebar-menu"
@@ -81,11 +86,22 @@ export default function TimeSheetSideMenu({ onSend, onReset }) {
       }}
     >
       <MenuGroup>
-        <MenuButton onClick={onSend}>Send</MenuButton>
+        <MenuButton onClick={onSend} disabled={exporting}>
+          {exporting ? "Sending..." : "Send"}
+        </MenuButton>
       </MenuGroup>
       <MenuGroup>
-        <MenuButton onClick={onReset}>Reset</MenuButton>
+        <MenuButton onClick={onReset} disabled={exporting}>
+          Reset
+        </MenuButton>
       </MenuGroup>
+      {showExport && (
+        <MenuGroup>
+          <MenuButton onClick={onExport} disabled={exporting}>
+            {exporting ? "Exporting..." : "Export"}
+          </MenuButton>
+        </MenuGroup>
+      )}
     </aside>
   );
 }

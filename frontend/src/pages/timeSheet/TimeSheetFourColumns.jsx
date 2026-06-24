@@ -181,6 +181,7 @@ export default function TimeSheetFourColumns({
   hideUserSelect = false,
   autoSize = false,
   resetSignal = 0,
+  exportDayEntriesRef = null,
 }) {
   const [dayEntries, setDayEntries] = useState(createDefaultDayEntries);
   const [constructionProjects, setConstructionProjects] = useState(
@@ -337,6 +338,12 @@ export default function TimeSheetFourColumns({
       savePayCycleSheet(selectedUserId, cycleKey, dayEntries);
     }
   }, [dayEntries, persistTemplate, showDates, cycleKey, selectedUserId]);
+
+  useEffect(() => {
+    if (exportDayEntriesRef) {
+      exportDayEntriesRef.current = dayEntries;
+    }
+  }, [dayEntries, exportDayEntriesRef]);
 
   function updateDayEntry(index, updater) {
     if (!hasUser) return;
