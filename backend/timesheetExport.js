@@ -3,6 +3,8 @@ const path = require("path");
 
 const EXPORT_HEADERS = [
   "Employee Co./Last Name",
+  "",
+  "",
   "Payroll Category",
   "Date",
   "Units",
@@ -22,16 +24,17 @@ function isSunday(day) {
   return (day.weekday || day.expectedWeekday) === "Sunday";
 }
 
-function formatEmployeeName(fullName) {
+function splitEmployeeName(fullName) {
   const parts = String(fullName || "")
     .trim()
     .split(/\s+/)
     .filter(Boolean);
-  if (parts.length === 0) return "User";
-  if (parts.length === 1) return parts[0];
-  const lastName = parts[parts.length - 1];
-  const firstName = parts.slice(0, -1).join(" ");
-  return `${lastName}, ${firstName}`;
+  if (parts.length === 0) return { lastName: "User", firstName: "" };
+  if (parts.length === 1) return { lastName: parts[0], firstName: "" };
+  return {
+    lastName: parts[parts.length - 1],
+    firstName: parts.slice(0, -1).join(" "),
+  };
 }
 
 function formatExportDate(day) {
@@ -63,7 +66,7 @@ function buildTimesheetLines({ userName, periodDays, dayEntries }) {
   const lines = [EXPORT_HEADERS.join("\t")];
   const days = Array.isArray(periodDays) ? periodDays : [];
   const entries = Array.isArray(dayEntries) ? dayEntries : [];
-  const employeeName = formatEmployeeName(userName);
+  const { lastName, firstName } = splitEmployeeName(userName);
 
   days.forEach((day, index) => {
     if (isSunday(day)) return;
@@ -71,7 +74,9 @@ function buildTimesheetLines({ userName, periodDays, dayEntries }) {
     const entry = entries[index] || {};
     lines.push(
       [
-        employeeName,
+        lastName,
+        firstName,
+        "",
         PAYROLL_CATEGORY,
         formatExportDate(day),
         minutesToUnits(entry.workMinutes),
