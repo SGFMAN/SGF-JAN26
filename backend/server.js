@@ -4225,7 +4225,7 @@ app.post("/api/timesheets/export", async (req, res) => {
       periodLabel,
       periodDays,
       dayEntries,
-      projectInfo,
+      projectNames,
     } = req.body || {};
 
     const exportUserId = Number(userId);
@@ -4247,10 +4247,10 @@ app.post("/api/timesheets/export", async (req, res) => {
       userName: String(userName || "").trim() || "User",
       periodDays: Array.isArray(periodDays) ? periodDays : [],
       dayEntries: Array.isArray(dayEntries) ? dayEntries : [],
-      projectInfo: projectInfo && typeof projectInfo === "object" ? projectInfo : {},
+      projectNames: projectNames && typeof projectNames === "object" ? projectNames : {},
     });
 
-    const filename = buildTimesheetFilename(userName, cycleKey);
+    const filename = buildTimesheetFilename(cycleKey);
     const filePath = exportTimesheetWorkbook({ exportDir, filename, rows });
 
     res.json({ success: true, filePath, filename });

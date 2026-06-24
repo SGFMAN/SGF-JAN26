@@ -5,13 +5,11 @@ const XLSX = require("xlsx");
 const EXPORT_HEADERS = [
   "Employee",
   "Project Name",
-  "Project Address",
-  "Ref No.",
-  "Start",
-  "Finish",
-  "Payable",
-  "Break",
-  "Job Details",
+  "Total Hours",
+  "1 x",
+  "1.5 x",
+  "2 x",
+  "3 x",
 ];
 
 function sanitizeFilenamePart(value) {
@@ -32,22 +30,13 @@ function minutesToExportHours(minutes) {
   return Math.round((total / 60) * 100) / 100;
 }
 
-function resolveProjectInfo(projectId, projectInfo = {}) {
-  if (!projectId || projectId === "") {
-    return { name: "", address: "" };
-  }
-  if (projectId === "office") {
-    return projectInfo.office || { name: "Office", address: "" };
-  }
-  return (
-    projectInfo[String(projectId)] || {
-      name: `Project ${projectId}`,
-      address: "",
-    }
-  );
+function resolveProjectName(projectId, projectNames = {}) {
+  if (!projectId || projectId === "") return "";
+  if (projectId === "office") return projectNames.office || "Office";
+  return projectNames[String(projectId)] || `Project ${projectId}`;
 }
 
-function buildTimesheetRows({ userName, periodDays, dayEntries, projectInfo }) {
+function buildTimesheetRows({ userName, periodDays, dayEntries, projectNames }) {
   const rows = [EXPORT_HEADERS];
   const days = Array.isArray(periodDays) ? periodDays : [];
   const entries = Array.isArray(dayEntries) ? dayEntries : [];
@@ -56,17 +45,14 @@ function buildTimesheetRows({ userName, periodDays, dayEntries, projectInfo }) {
     if (isSunday(day)) return;
 
     const entry = entries[index] || {};
-    const project = resolveProjectInfo(entry.projectId, projectInfo);
 
     rows.push([
       userName || "User",
-      project.name,
-      project.address,
-      "",
-      "",
-      "",
+      resolveProjectName(entry.projectId, projectNames),
       minutesToExportHours(entry.workMinutes),
-      minutesToExportHours(entry.breakMinutes),
+      "",
+      "",
+      "",
       "",
     ]);
   });
@@ -90,13 +76,11 @@ function exportTimesheetWorkbook({ exportDir, filename, rows }) {
   worksheet["!cols"] = [
     { wch: 18 },
     { wch: 28 },
-    { wch: 32 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 18 },
+    { wch: 12 },
+    { wch: 8 },
+    { wch: 8 },
+    { wch: 8 },
+    { wch: 8 },
   ];
   XLSX.utils.book_append_sheet(workbook, worksheet, "Time Sheet");
   XLSX.writeFile(workbook, filePath);
@@ -104,10 +88,9 @@ function exportTimesheetWorkbook({ exportDir, filename, rows }) {
   return filePath;
 }
 
-function buildTimesheetFilename(userName, cycleKey) {
-  const namePart = sanitizeFilenamePart(userName);
-  const cyclePart = sanitizeFilenamePart(cycleKey || "cycle");
-  return `TimeSheet_${namePart}_${cyclePart}.xlsx`;
+function buildTimesheetFilename(cycleKey) {
+  const datePart = sanitizeFilenamePart(cycleKey || "date");
+  return `Timesheet_${datePart}.xlsx`;
 }
 
 module.exports = {

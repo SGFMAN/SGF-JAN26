@@ -13,23 +13,18 @@ import { formatPeriodRange, getPayPeriodBounds } from "./timeSheetPayCycle";
 
 const API_URL = "";
 
-function buildProjectInfo(projects) {
-  const info = {
-    "": { name: "", address: "" },
-    [OFFICE_PROJECT_VALUE]: { name: OFFICE_PROJECT_LABEL, address: "" },
-    office: { name: OFFICE_PROJECT_LABEL, address: "" },
+function buildProjectNames(projects) {
+  const names = {
+    "": "",
+    [OFFICE_PROJECT_VALUE]: OFFICE_PROJECT_LABEL,
+    office: OFFICE_PROJECT_LABEL,
   };
 
   for (const project of projects) {
-    const suburb = (project.suburb || "").trim();
-    const street = (project.street || "").trim();
-    info[String(project.id)] = {
-      name: formatConstructionProjectLabel(project),
-      address: street && suburb ? `${street}, ${suburb}` : street || suburb || "",
-    };
+    names[String(project.id)] = formatConstructionProjectLabel(project);
   }
 
-  return info;
+  return names;
 }
 
 export async function exportTimesheetToServer({
@@ -64,7 +59,7 @@ export async function exportTimesheetToServer({
         iso: day.iso,
       })),
       dayEntries,
-      projectInfo: buildProjectInfo(projects),
+      projectNames: buildProjectNames(projects),
     }),
   });
 
