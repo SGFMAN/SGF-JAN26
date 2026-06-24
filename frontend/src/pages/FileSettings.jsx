@@ -326,7 +326,7 @@ export default function FileSettings() {
               Time Sheet Export
             </h3>
             <p style={{ fontSize: "0.85rem", color: "var(--sgf-text-primary)", margin: 0, lineHeight: 1.45 }}>
-              Folder where time sheet Excel files are saved when users click Send or Export.
+              Folder where time sheet files are saved when users click Send or Export.
             </p>
             <div>
               <label

@@ -72,8 +72,8 @@ const {
 } = require("./userPresence");
 const { ensureUserMessagesTable } = require("./userMessages");
 const {
-  buildTimesheetRows,
-  exportTimesheetWorkbook,
+  buildTimesheetLines,
+  exportTimesheetFile,
   buildTimesheetFilename,
 } = require("./timesheetExport");
 const { generateMapsProposalPdf, OUTPUT_FILENAME, PROPOSAL_DIR } = require("./mapsProposalPdf");
@@ -4225,7 +4225,6 @@ app.post("/api/timesheets/export", async (req, res) => {
       periodLabel,
       periodDays,
       dayEntries,
-      projectNames,
     } = req.body || {};
 
     const exportUserId = Number(userId);
@@ -4243,15 +4242,14 @@ app.post("/api/timesheets/export", async (req, res) => {
       });
     }
 
-    const rows = buildTimesheetRows({
+    const lines = buildTimesheetLines({
       userName: String(userName || "").trim() || "User",
       periodDays: Array.isArray(periodDays) ? periodDays : [],
       dayEntries: Array.isArray(dayEntries) ? dayEntries : [],
-      projectNames: projectNames && typeof projectNames === "object" ? projectNames : {},
     });
 
     const filename = buildTimesheetFilename(cycleKey);
-    const filePath = exportTimesheetWorkbook({ exportDir, filename, rows });
+    const filePath = exportTimesheetFile({ exportDir, filename, lines });
 
     res.json({ success: true, filePath, filename });
   } catch (e) {

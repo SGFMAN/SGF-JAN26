@@ -1,66 +1,88 @@
 const fs = require("fs");
 const path = require("path");
-const XLSX = require("xlsx");
 
 const EXPORT_HEADERS = [
-  "Employee",
-  "Project Name",
-  "Total Hours",
-  "1 x",
-  "1.5 x",
-  "2 x",
-  "3 x",
+  "Employee Co./Last Name",
+  "Payroll Category",
+  "Date",
+  "Units",
 ];
+
+const PAYROLL_CATEGORY = "Base Hourly";
 
 function sanitizeFilenamePart(value) {
   return String(value || "")
     .trim()
     .replace(/[<>:"/\\|?*]/g, "_")
     .replace(/\s+/g, "_")
-    .slice(0, 80) || "User";
+    .slice(0, 80) || "date";
 }
 
 function isSunday(day) {
   return (day.weekday || day.expectedWeekday) === "Sunday";
 }
 
-function minutesToExportHours(minutes) {
+function formatEmployeeName(fullName) {
+  const parts = String(fullName || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0) return "User";
+  if (parts.length === 1) return parts[0];
+  const lastName = parts[parts.length - 1];
+  const firstName = parts.slice(0, -1).join(" ");
+  return `${lastName}, ${firstName}`;
+}
+
+function formatExportDate(day) {
+  if (day.iso && /^\d{4}-\d{2}-\d{2}$/.test(day.iso)) {
+    const [year, month, dayNum] = day.iso.split("-");
+    return `${dayNum}/${month}/${year}`;
+  }
+
+  if (day.date) {
+    const date = day.date instanceof Date ? day.date : new Date(day.date);
+    if (!Number.isNaN(date.getTime())) {
+      const dayNum = String(date.getDate()).padStart(2, "0");
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const year = date.getFullYear();
+      return `${dayNum}/${month}/${year}`;
+    }
+  }
+
+  return day.dateLabel || "";
+}
+
+function minutesToUnits(minutes) {
   const total = Number(minutes);
   if (!Number.isFinite(total) || total <= 0) return "";
-  return Math.round((total / 60) * 100) / 100;
+  return String(Math.round((total / 60) * 100) / 100);
 }
 
-function resolveProjectName(projectId, projectNames = {}) {
-  if (!projectId || projectId === "") return "";
-  if (projectId === "office") return projectNames.office || "Office";
-  return projectNames[String(projectId)] || `Project ${projectId}`;
-}
-
-function buildTimesheetRows({ userName, periodDays, dayEntries, projectNames }) {
-  const rows = [EXPORT_HEADERS];
+function buildTimesheetLines({ userName, periodDays, dayEntries }) {
+  const lines = [EXPORT_HEADERS.join("\t")];
   const days = Array.isArray(periodDays) ? periodDays : [];
   const entries = Array.isArray(dayEntries) ? dayEntries : [];
+  const employeeName = formatEmployeeName(userName);
 
   days.forEach((day, index) => {
     if (isSunday(day)) return;
 
     const entry = entries[index] || {};
-
-    rows.push([
-      userName || "User",
-      resolveProjectName(entry.projectId, projectNames),
-      minutesToExportHours(entry.workMinutes),
-      "",
-      "",
-      "",
-      "",
-    ]);
+    lines.push(
+      [
+        employeeName,
+        PAYROLL_CATEGORY,
+        formatExportDate(day),
+        minutesToUnits(entry.workMinutes),
+      ].join("\t")
+    );
   });
 
-  return rows;
+  return lines;
 }
 
-function exportTimesheetWorkbook({ exportDir, filename, rows }) {
+function exportTimesheetFile({ exportDir, filename, lines }) {
   const dir = String(exportDir || "").trim();
   if (!dir) {
     throw new Error("Time Sheet Export path is not configured. Set it in Settings → File Settings.");
@@ -68,33 +90,22 @@ function exportTimesheetWorkbook({ exportDir, filename, rows }) {
 
   fs.mkdirSync(dir, { recursive: true });
 
-  const safeName = filename.endsWith(".xlsx") ? filename : `${filename}.xlsx`;
+  const safeName = filename.endsWith(".txt") ? filename : `${filename.replace(/\.xlsx$/i, "")}.txt`;
   const filePath = path.join(dir, safeName);
+  const content = `${lines.join("\r\n")}\r\n`;
 
-  const workbook = XLSX.utils.book_new();
-  const worksheet = XLSX.utils.aoa_to_sheet(rows);
-  worksheet["!cols"] = [
-    { wch: 18 },
-    { wch: 28 },
-    { wch: 12 },
-    { wch: 8 },
-    { wch: 8 },
-    { wch: 8 },
-    { wch: 8 },
-  ];
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Time Sheet");
-  XLSX.writeFile(workbook, filePath);
+  fs.writeFileSync(filePath, content, "utf8");
 
   return filePath;
 }
 
 function buildTimesheetFilename(cycleKey) {
   const datePart = sanitizeFilenamePart(cycleKey || "date");
-  return `Timesheet_${datePart}.xlsx`;
+  return `Timesheet_${datePart}.txt`;
 }
 
 module.exports = {
-  buildTimesheetRows,
-  exportTimesheetWorkbook,
+  buildTimesheetLines,
+  exportTimesheetFile,
   buildTimesheetFilename,
 };

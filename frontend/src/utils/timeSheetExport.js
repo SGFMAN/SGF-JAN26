@@ -1,31 +1,9 @@
 import { getApiHeaders, getLoggedInUserId, getLoggedInUserName } from "./auth";
-import {
-  createDefaultDayEntries,
-  loadPayCycleSheet,
-  OFFICE_PROJECT_VALUE,
-} from "./timeSheetTime";
-import {
-  formatConstructionProjectLabel,
-  getCachedConstructionProjects,
-  OFFICE_PROJECT_LABEL,
-} from "./timeSheetProjects";
+import { createDefaultDayEntries, loadPayCycleSheet } from "./timeSheetTime";
 import { formatPeriodRange, getPayPeriodBounds } from "./timeSheetPayCycle";
+import { prefetchConstructionProjectsForTimeSheet } from "./timeSheetProjects";
 
 const API_URL = "";
-
-function buildProjectNames(projects) {
-  const names = {
-    "": "",
-    [OFFICE_PROJECT_VALUE]: OFFICE_PROJECT_LABEL,
-    office: OFFICE_PROJECT_LABEL,
-  };
-
-  for (const project of projects) {
-    names[String(project.id)] = formatConstructionProjectLabel(project);
-  }
-
-  return names;
-}
 
 export async function exportTimesheetToServer({
   cycleKey,
@@ -41,9 +19,10 @@ export async function exportTimesheetToServer({
   const userName = getLoggedInUserName() || "User";
   const dayEntries =
     dayEntriesOverride ?? loadPayCycleSheet(userId, cycleKey) ?? createDefaultDayEntries();
-  const projects = getCachedConstructionProjects() ?? [];
   const { periodStart, periodEnd } = getPayPeriodBounds(cycleWednesday);
   const periodLabel = formatPeriodRange(periodStart, periodEnd);
+
+  await prefetchConstructionProjectsForTimeSheet();
 
   const response = await fetch(`${API_URL}/api/timesheets/export`, {
     method: "POST",
@@ -57,9 +36,9 @@ export async function exportTimesheetToServer({
         weekday: day.weekday,
         dateLabel: day.dateLabel,
         iso: day.iso,
+        date: day.date instanceof Date ? day.date.toISOString() : day.date,
       })),
       dayEntries,
-      projectNames: buildProjectNames(projects),
     }),
   });
 
