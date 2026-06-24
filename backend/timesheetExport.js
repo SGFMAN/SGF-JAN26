@@ -38,17 +38,16 @@ function splitEmployeeName(fullName) {
 
 function formatExportDate(day) {
   if (day.iso && /^\d{4}-\d{2}-\d{2}$/.test(day.iso)) {
-    const [year, month, dayNum] = day.iso.split("-");
-    return `${dayNum}/${month}/${year}`;
+    return day.iso;
   }
 
   if (day.date) {
     const date = day.date instanceof Date ? day.date : new Date(day.date);
     if (!Number.isNaN(date.getTime())) {
-      const dayNum = String(date.getDate()).padStart(2, "0");
-      const month = String(date.getMonth() + 1).padStart(2, "0");
       const year = date.getFullYear();
-      return `${dayNum}/${month}/${year}`;
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const dayNum = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${dayNum}`;
     }
   }
 
