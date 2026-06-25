@@ -1050,16 +1050,21 @@ export default function Users() {
             alignItems: "center",
             justifyContent: "center",
             zIndex: 1000,
+            padding: "24px",
+            boxSizing: "border-box",
           }}
         >
           <div
             style={{
               background: WHITE,
               borderRadius: "16px",
-              padding: "32px",
               maxWidth: "500px",
-              width: "90%",
+              width: "100%",
+              maxHeight: "90vh",
               boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1067,14 +1072,23 @@ export default function Users() {
               style={{
                 fontSize: "1.5rem",
                 color: MONUMENT,
-                marginTop: 0,
-                marginBottom: "24px",
+                margin: 0,
+                padding: "24px 32px 0",
                 fontWeight: 600,
+                flexShrink: 0,
               }}
             >
               New User
             </h2>
-            
+
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                overflowY: "auto",
+                padding: "24px 32px",
+              }}
+            >
             <div style={{ marginBottom: "16px" }}>
               <label
                 style={{
@@ -1313,12 +1327,16 @@ export default function Users() {
                 )}
               </div>
             </div>
+            </div>
 
             <div
               style={{
                 display: "flex",
                 justifyContent: "flex-end",
                 gap: "12px",
+                padding: "16px 32px 24px",
+                borderTop: `1px solid ${UI.inputBg}`,
+                flexShrink: 0,
               }}
             >
               <button
@@ -1375,6 +1393,8 @@ export default function Users() {
             alignItems: "center",
             justifyContent: "center",
             zIndex: 1000,
+            padding: "24px",
+            boxSizing: "border-box",
           }}
           onClick={handleCloseEditModal}
         >
@@ -1382,10 +1402,13 @@ export default function Users() {
             style={{
               background: WHITE,
               borderRadius: "16px",
-              padding: "32px",
               maxWidth: "500px",
-              width: "90%",
+              width: "100%",
+              maxHeight: "90vh",
               boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1393,14 +1416,23 @@ export default function Users() {
               style={{
                 fontSize: "1.5rem",
                 color: MONUMENT,
-                marginTop: 0,
-                marginBottom: "24px",
+                margin: 0,
+                padding: "24px 32px 0",
                 fontWeight: 600,
+                flexShrink: 0,
               }}
             >
               Edit User
             </h2>
-            
+
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                overflowY: "auto",
+                padding: "24px 32px",
+              }}
+            >
             <div style={{ marginBottom: "16px" }}>
               <label
                 style={{
@@ -1639,12 +1671,16 @@ export default function Users() {
                 )}
               </div>
             </div>
+            </div>
 
             <div
               style={{
                 display: "flex",
                 justifyContent: "flex-end",
                 gap: "12px",
+                padding: "16px 32px 24px",
+                borderTop: `1px solid ${UI.inputBg}`,
+                flexShrink: 0,
               }}
             >
               <button
