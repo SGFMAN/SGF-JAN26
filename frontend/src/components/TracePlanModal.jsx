@@ -5,10 +5,13 @@ import {
   renderPdfDocumentPage,
 } from "../utils/floorPlanCrop";
 import {
+  createEmptyLayerTraces,
   denormalizeTracePoints,
+  EXTERNAL_WALLS_LAYER_ID,
   MAX_TRACE_POINTS,
   normalizeTracePoints,
   parsePlanTracePolygon,
+  TRACE_PLAN_LAYERS,
 } from "../utils/planTracePolygon";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -19,6 +22,23 @@ const PAGE_TEXT = UI.pageText;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 12;
 const CLOSE_SNAP_PX = 14;
+const NODE_HIT_PX = 12;
+const LINE_HIT_PX = 10;
+
+function distanceToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 1e-9) {
+    const dist = Math.hypot(px - ax, py - ay);
+    return { dist, t: 0, x: ax, y: ay };
+  }
+  let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  const x = ax + t * dx;
+  const y = ay + t * dy;
+  return { dist: Math.hypot(px - x, py - y), t, x, y };
+}
 
 function hasDraftTrace(points, polygonClosed) {
   return points.length > 0 || polygonClosed;
@@ -43,14 +63,49 @@ export default function TracePlanModal({
   const [loadError, setLoadError] = useState(null);
   const [pageCount, setPageCount] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
-  const [points, setPoints] = useState([]);
-  const [polygonClosed, setPolygonClosed] = useState(false);
+  const [activeLayerId, setActiveLayerId] = useState(EXTERNAL_WALLS_LAYER_ID);
+  const [layerTraces, setLayerTraces] = useState(createEmptyLayerTraces);
   const [nearOrigin, setNearOrigin] = useState(false);
   const [saving, setSaving] = useState(false);
   const [viewTick, setViewTick] = useState(0);
   const [viewportSize, setViewportSize] = useState({ width: 800, height: 600 });
+  const [hoveredNodeIndex, setHoveredNodeIndex] = useState(-1);
+  const [draggingNodeIndex, setDraggingNodeIndex] = useState(-1);
+
+  const activeLayer = TRACE_PLAN_LAYERS.find((layer) => layer.id === activeLayerId) || TRACE_PLAN_LAYERS[0];
+  const activeTrace = layerTraces[activeLayerId] || { points: [], polygonClosed: false };
+  const { points, polygonClosed } = activeTrace;
+  const externalTrace = layerTraces[EXTERNAL_WALLS_LAYER_ID] || { points: [], polygonClosed: false };
 
   const bumpView = useCallback(() => setViewTick((n) => n + 1), []);
+
+  function patchLayerTrace(layerId, patch) {
+    setLayerTraces((prev) => ({
+      ...prev,
+      [layerId]: { ...prev[layerId], ...patch },
+    }));
+  }
+
+  function patchActiveTrace(patch) {
+    patchLayerTrace(activeLayerId, patch);
+  }
+
+  function setActivePoints(updater) {
+    setLayerTraces((prev) => {
+      const current = prev[activeLayerId];
+      const nextPoints = typeof updater === "function" ? updater(current.points) : updater;
+      return { ...prev, [activeLayerId]: { ...current, points: nextPoints } };
+    });
+  }
+
+  function selectLayer(layerId) {
+    if (layerId === activeLayerId) return;
+    interactionRef.current = null;
+    setNearOrigin(false);
+    setHoveredNodeIndex(-1);
+    setDraggingNodeIndex(-1);
+    setActiveLayerId(layerId);
+  }
 
   function resetView(source, width, height) {
     const baseFit = fitScale(source.width, source.height, width, height);
@@ -118,21 +173,19 @@ export default function TracePlanModal({
     bumpView();
   }
 
-  function applySavedTraceForPage(pageNumber, sourceCanvas) {
+  function applyLayerTracesForPage(pageNumber, sourceCanvas) {
     const saved = savedTraceRef.current;
+    const next = createEmptyLayerTraces();
     if (saved.page === pageNumber && saved.points.length >= 3) {
-      const restored = denormalizeTracePoints(
-        saved.points,
-        sourceCanvas.width,
-        sourceCanvas.height
-      );
-      setPoints(restored);
-      setPolygonClosed(true);
-      return;
+      next[EXTERNAL_WALLS_LAYER_ID] = {
+        points: denormalizeTracePoints(saved.points, sourceCanvas.width, sourceCanvas.height),
+        polygonClosed: true,
+      };
     }
-    setPoints([]);
-    setPolygonClosed(false);
+    setLayerTraces(next);
     setNearOrigin(false);
+    setHoveredNodeIndex(-1);
+    setDraggingNodeIndex(-1);
   }
 
   const loadPage = useCallback(
@@ -151,7 +204,7 @@ export default function TracePlanModal({
         resetView(sourceCanvas, width, height);
 
         if (!preserveDraft) {
-          applySavedTraceForPage(pageNumber, sourceCanvas);
+          applyLayerTracesForPage(pageNumber, sourceCanvas);
         }
 
         bumpView();
@@ -186,8 +239,8 @@ export default function TracePlanModal({
     let cancelled = false;
     setLoading(true);
     setLoadError(null);
-    setPoints([]);
-    setPolygonClosed(false);
+    setLayerTraces(createEmptyLayerTraces());
+    setActiveLayerId(EXTERNAL_WALLS_LAYER_ID);
 
     (async () => {
       try {
@@ -211,7 +264,7 @@ export default function TracePlanModal({
 
         const { width, height } = viewportSize;
         resetView(sourceCanvas, width, height);
-        applySavedTraceForPage(initialPage, sourceCanvas);
+        applyLayerTracesForPage(initialPage, sourceCanvas);
         bumpView();
       } catch (err) {
         if (!cancelled) setLoadError(err.message || "Could not load plan PDF");
@@ -254,47 +307,72 @@ export default function TracePlanModal({
     ctx.setTransform(scale, 0, 0, scale, panX, panY);
     ctx.drawImage(source, 0, 0);
 
-    if (points.length > 0) {
-      ctx.strokeStyle = "#dc2626";
-      ctx.fillStyle = polygonClosed ? "rgba(220, 38, 38, 0.2)" : "rgba(220, 38, 38, 0.1)";
-      ctx.lineWidth = 2 / scale;
+    const markerRadius = 6 / scale;
+
+    TRACE_PLAN_LAYERS.forEach((layer) => {
+      const trace = layerTraces[layer.id];
+      if (!trace || trace.points.length === 0) return;
+
+      const isActive = layer.id === activeLayerId;
+      const closed = trace.polygonClosed;
+      const layerPoints = trace.points;
+
+      ctx.strokeStyle = layer.stroke;
+      ctx.fillStyle = closed ? layer.fillClosed : layer.fillOpen;
+      ctx.lineWidth = (isActive ? 2 : 1.5) / scale;
+      ctx.globalAlpha = isActive ? 1 : 0.72;
       ctx.beginPath();
-      points.forEach((p, i) => {
+      layerPoints.forEach((p, i) => {
         if (i === 0) ctx.moveTo(p.x, p.y);
         else ctx.lineTo(p.x, p.y);
       });
-      if (polygonClosed && points.length >= 3) {
+      if (closed && layerPoints.length >= 3) {
         ctx.closePath();
         ctx.fill();
       }
       ctx.stroke();
+      ctx.globalAlpha = 1;
 
-      const markerRadius = 6 / scale;
+      if (!isActive) return;
+
       const originHighlight =
-        nearOrigin && !polygonClosed && points.length >= 2 ? 10 / scale : markerRadius;
-      points.forEach((p, i) => {
+        nearOrigin && !closed && layerPoints.length >= 2 ? 10 / scale : markerRadius;
+      layerPoints.forEach((p, i) => {
         const isOrigin = i === 0;
-        const radius = isOrigin ? originHighlight : markerRadius;
+        const isNodeActive = i === hoveredNodeIndex || i === draggingNodeIndex;
+        let radius = isOrigin ? originHighlight : markerRadius;
+        if (closed && isNodeActive) radius = 8 / scale;
         ctx.beginPath();
         ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
-        if (isOrigin && nearOrigin && !polygonClosed && points.length >= 2) {
+        if (isOrigin && nearOrigin && !closed && layerPoints.length >= 2) {
           ctx.fillStyle = "rgba(34, 197, 94, 0.35)";
           ctx.strokeStyle = "#16a34a";
           ctx.lineWidth = 3 / scale;
+        } else if (closed && isNodeActive) {
+          ctx.fillStyle = layer.stroke;
+          ctx.strokeStyle = WHITE;
+          ctx.lineWidth = 2.5 / scale;
         } else {
-          ctx.fillStyle = isOrigin ? "#16a34a" : "#dc2626";
+          ctx.fillStyle = isOrigin ? layer.origin : layer.marker;
           ctx.strokeStyle = WHITE;
           ctx.lineWidth = 2 / scale;
         }
         ctx.fill();
         ctx.stroke();
       });
-    }
-  }, [points, polygonClosed, nearOrigin, viewTick]);
+    });
+  }, [
+    layerTraces,
+    activeLayerId,
+    nearOrigin,
+    hoveredNodeIndex,
+    draggingNodeIndex,
+    viewTick,
+  ]);
 
   useEffect(() => {
     if (!loading && !loadError) redraw();
-  }, [loading, loadError, pageLoading, points, polygonClosed, nearOrigin, redraw, viewTick]);
+  }, [loading, loadError, pageLoading, layerTraces, activeLayerId, nearOrigin, redraw, viewTick]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -333,9 +411,95 @@ export default function TracePlanModal({
     return Math.hypot(screenX - origin.x, screenY - origin.y) <= CLOSE_SNAP_PX;
   }
 
+  function findNodeAtScreen(screenX, screenY) {
+    let bestIndex = -1;
+    let bestDist = NODE_HIT_PX;
+    points.forEach((p, i) => {
+      const s = sourceToScreen(p.x, p.y);
+      const d = Math.hypot(screenX - s.x, screenY - s.y);
+      if (d <= bestDist) {
+        bestDist = d;
+        bestIndex = i;
+      }
+    });
+    return bestIndex;
+  }
+
+  function findSegmentAtScreen(screenX, screenY) {
+    if (!polygonClosed || points.length < 2) return null;
+
+    let best = null;
+    const n = points.length;
+    for (let i = 0; i < n; i += 1) {
+      const j = (i + 1) % n;
+      const a = sourceToScreen(points[i].x, points[i].y);
+      const b = sourceToScreen(points[j].x, points[j].y);
+      if (Math.hypot(screenX - a.x, screenY - a.y) <= NODE_HIT_PX) continue;
+      if (Math.hypot(screenX - b.x, screenY - b.y) <= NODE_HIT_PX) continue;
+
+      const hit = distanceToSegment(screenX, screenY, a.x, a.y, b.x, b.y);
+      if (hit.dist > LINE_HIT_PX) continue;
+
+      const aSrc = points[i];
+      const bSrc = points[j];
+      const candidate = {
+        insertIndex: j,
+        dist: hit.dist,
+        sourceX: aSrc.x + hit.t * (bSrc.x - aSrc.x),
+        sourceY: aSrc.y + hit.t * (bSrc.y - aSrc.y),
+      };
+      if (!best || candidate.dist < best.dist) best = candidate;
+    }
+    return best;
+  }
+
+  function clampSourcePoint(pt) {
+    const source = sourceCanvasRef.current;
+    if (!source) return pt;
+    return {
+      x: Math.max(0, Math.min(source.width, pt.x)),
+      y: Math.max(0, Math.min(source.height, pt.y)),
+    };
+  }
+
+  function moveNode(nodeIndex, screenX, screenY) {
+    const source = sourceCanvasRef.current;
+    if (!source) return;
+    const pt = clampSourcePoint(screenToSource(screenX, screenY));
+    setActivePoints((prev) => {
+      const next = [...prev];
+      next[nodeIndex] = pt;
+      return next;
+    });
+  }
+
+  function insertNodeOnSegment(segment) {
+    if (!segment || points.length >= MAX_TRACE_POINTS) {
+      if (points.length >= MAX_TRACE_POINTS) {
+        alert(`Maximum ${MAX_TRACE_POINTS} points allowed.`);
+      }
+      return;
+    }
+    const pt = clampSourcePoint({ x: segment.sourceX, y: segment.sourceY });
+    setActivePoints((prev) => {
+      const next = [...prev];
+      next.splice(segment.insertIndex, 0, pt);
+      return next;
+    });
+  }
+
   function updateNearOrigin(screenX, screenY) {
     const next = isNearOrigin(screenX, screenY);
     setNearOrigin((prev) => (prev === next ? prev : next));
+  }
+
+  function updateHoveredNode(screenX, screenY) {
+    if (!polygonClosed) {
+      setHoveredNodeIndex((prev) => (prev === -1 ? prev : -1));
+      return;
+    }
+    const index = findNodeAtScreen(screenX, screenY);
+    setHoveredNodeIndex((prev) => (prev === index ? prev : index));
   }
 
   function addPointAtScreen(screenX, screenY) {
@@ -344,7 +508,7 @@ export default function TracePlanModal({
     if (!source) return;
 
     if (points.length >= 3 && isNearOrigin(screenX, screenY)) {
-      setPolygonClosed(true);
+      patchActiveTrace({ polygonClosed: true });
       setNearOrigin(false);
       return;
     }
@@ -356,12 +520,12 @@ export default function TracePlanModal({
 
     const pt = screenToSource(screenX, screenY);
     if (pt.x < 0 || pt.y < 0 || pt.x > source.width || pt.y > source.height) return;
-    setPoints((prev) => [...prev, pt]);
+    setActivePoints((prev) => [...prev, pt]);
     setNearOrigin(false);
   }
 
   function onMouseDown(event) {
-    if (loading || loadError || pageLoading || polygonClosed) return;
+    if (loading || loadError || pageLoading) return;
     const pt = canvasCoords(event);
     if (!pt) return;
 
@@ -378,6 +542,28 @@ export default function TracePlanModal({
     }
 
     if (event.button === 0) {
+      if (polygonClosed) {
+        const nodeIndex = findNodeAtScreen(pt.x, pt.y);
+        if (nodeIndex >= 0) {
+          interactionRef.current = {
+            type: "dragNode",
+            nodeIndex,
+            startX: pt.x,
+            startY: pt.y,
+            moved: false,
+          };
+          setDraggingNodeIndex(nodeIndex);
+          return;
+        }
+        interactionRef.current = {
+          type: "insertOrIdle",
+          startX: pt.x,
+          startY: pt.y,
+          moved: false,
+        };
+        return;
+      }
+
       interactionRef.current = {
         type: "point",
         startX: pt.x,
@@ -393,9 +579,26 @@ export default function TracePlanModal({
     if (!pt) return;
 
     if (!interaction) {
-      if (!polygonClosed && points.length >= 2) {
+      if (polygonClosed) {
+        updateHoveredNode(pt.x, pt.y);
+      } else if (points.length >= 2) {
         updateNearOrigin(pt.x, pt.y);
       }
+      return;
+    }
+
+    if (interaction.type === "dragNode") {
+      const dx = pt.x - interaction.startX;
+      const dy = pt.y - interaction.startY;
+      if (Math.hypot(dx, dy) > 2) interaction.moved = true;
+      moveNode(interaction.nodeIndex, pt.x, pt.y);
+      return;
+    }
+
+    if (interaction.type === "insertOrIdle") {
+      const dx = pt.x - interaction.startX;
+      const dy = pt.y - interaction.startY;
+      if (Math.hypot(dx, dy) > 4) interaction.moved = true;
       return;
     }
 
@@ -421,7 +624,19 @@ export default function TracePlanModal({
   function onMouseUp(event) {
     const interaction = interactionRef.current;
     interactionRef.current = null;
-    if (!interaction || loading || loadError || pageLoading || polygonClosed) return;
+    if (!interaction || loading || loadError || pageLoading) return;
+
+    if (polygonClosed) {
+      if (interaction.type === "dragNode") {
+        setDraggingNodeIndex(-1);
+        return;
+      }
+      if (interaction.type === "insertOrIdle" && !interaction.moved && event.button === 0) {
+        const segment = findSegmentAtScreen(interaction.startX, interaction.startY);
+        if (segment) insertNodeOnSegment(segment);
+      }
+      return;
+    }
 
     if (interaction.type === "point" && !interaction.moved && event.button === 0) {
       addPointAtScreen(interaction.startX, interaction.startY);
@@ -431,21 +646,46 @@ export default function TracePlanModal({
   function onMouseLeave() {
     interactionRef.current = null;
     setNearOrigin(false);
+    setHoveredNodeIndex(-1);
+    setDraggingNodeIndex(-1);
   }
 
   function undoPoint() {
     if (polygonClosed) {
-      setPolygonClosed(false);
+      patchActiveTrace({ polygonClosed: false });
       return;
     }
-    setPoints((prev) => prev.slice(0, -1));
+    setActivePoints((prev) => prev.slice(0, -1));
     setNearOrigin(false);
   }
 
-  function clearPoints() {
-    setPoints([]);
-    setPolygonClosed(false);
+  function clearActiveLayerTrace() {
+    patchActiveTrace({ points: [], polygonClosed: false });
     setNearOrigin(false);
+    setHoveredNodeIndex(-1);
+    setDraggingNodeIndex(-1);
+  }
+
+  function handleClearTrace() {
+    if (points.length === 0) return;
+    if (!window.confirm(`Clear the ${activeLayer.label} trace?`)) return;
+    clearActiveLayerTrace();
+  }
+
+  function hasUnsavedPageTraces() {
+    const saved = savedTraceRef.current;
+    return TRACE_PLAN_LAYERS.some((layer) => {
+      const trace = layerTraces[layer.id];
+      if (!hasDraftTrace(trace.points, trace.polygonClosed)) return false;
+      if (layer.id === EXTERNAL_WALLS_LAYER_ID) {
+        return !(
+          saved.page === currentPage &&
+          saved.points.length >= 3 &&
+          trace.polygonClosed
+        );
+      }
+      return true;
+    });
   }
 
   function resetZoom() {
@@ -460,18 +700,11 @@ export default function TracePlanModal({
     const target = Math.min(Math.max(1, nextPage), pageCount);
     if (target === currentPage) return;
 
-    if (hasDraftTrace(points, polygonClosed)) {
-      const saved = savedTraceRef.current;
-      const isSavedDraft =
-        saved.page === currentPage &&
-        saved.points.length >= 3 &&
-        polygonClosed;
-      if (!isSavedDraft) {
-        const proceed = window.confirm(
-          "Changing page will clear the current trace on this page. Continue?"
-        );
-        if (!proceed) return;
-      }
+    if (hasUnsavedPageTraces()) {
+      const proceed = window.confirm(
+        "Changing page will clear traces on this page. Continue?"
+      );
+      if (!proceed) return;
     }
 
     setCurrentPage(target);
@@ -479,8 +712,9 @@ export default function TracePlanModal({
   }
 
   async function handleSaveAndContinue() {
-    if (!polygonClosed || points.length < 3) {
-      alert("Close the polygon by clicking the origin point first.");
+    const external = layerTraces[EXTERNAL_WALLS_LAYER_ID];
+    if (!external.polygonClosed || external.points.length < 3) {
+      alert("Close the External Walls polygon by clicking the origin point first.");
       return;
     }
     const source = sourceCanvasRef.current;
@@ -488,7 +722,7 @@ export default function TracePlanModal({
 
     setSaving(true);
     try {
-      const normalized = normalizeTracePoints(points, source.width, source.height);
+      const normalized = normalizeTracePoints(external.points, source.width, source.height);
       await onSave(normalized, currentPage);
       onClose();
     } catch (err) {
@@ -499,6 +733,15 @@ export default function TracePlanModal({
   }
 
   const zoomPercent = Math.round(viewRef.current.zoom * 100);
+  const canvasCursor = pageLoading
+    ? "default"
+    : polygonClosed
+      ? draggingNodeIndex >= 0
+        ? "grabbing"
+        : hoveredNodeIndex >= 0
+          ? "grab"
+          : "crosshair"
+      : "crosshair";
   const navButtonStyle = {
     background: "transparent",
     border: `1px solid ${SECTION_GREY}`,
@@ -612,8 +855,14 @@ export default function TracePlanModal({
             flexShrink: 0,
           }}
         >
-          Click to place corners around the floor plan (max {MAX_TRACE_POINTS} points). Scroll to zoom.
-          Shift+drag to pan. Click the green origin point to close the polygon.
+          Select a layer from the menu, then click to place corners (max {MAX_TRACE_POINTS} points).
+          Scroll to zoom, shift+drag to pan. Click the green origin to close the shape.
+          {activeLayer.label !== "External Walls"
+            ? ` ${activeLayer.label} is not saved yet — session only.`
+            : ""}
+          {polygonClosed
+            ? " Drag nodes to move them, or click a line to add a node."
+            : ""}
           {pageCount > 1 ? " Use page navigation for multi-page plans." : ""}
         </p>
 
@@ -628,47 +877,124 @@ export default function TracePlanModal({
 
         {!loading && !loadError && (
           <div
-            ref={containerRef}
             style={{
               flex: 1,
               minHeight: 0,
               margin: "0 20px",
-              borderRadius: "8px",
-              overflow: "hidden",
-              border: `1px solid ${SECTION_GREY}`,
-              cursor: polygonClosed || pageLoading ? "default" : "crosshair",
-              position: "relative",
-              background: "#e8e8e8",
+              display: "flex",
+              gap: "12px",
             }}
           >
-            <canvas
-              ref={canvasRef}
-              width={viewportSize.width}
-              height={viewportSize.height}
-              style={{ display: "block" }}
-              onMouseDown={onMouseDown}
-              onMouseMove={onMouseMove}
-              onMouseUp={onMouseUp}
-              onMouseLeave={onMouseLeave}
-              onContextMenu={(e) => e.preventDefault()}
-            />
-            {pageLoading && (
+            <div
+              ref={containerRef}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                minHeight: 0,
+                borderRadius: "8px",
+                overflow: "hidden",
+                border: `1px solid ${SECTION_GREY}`,
+                cursor: canvasCursor,
+                position: "relative",
+                background: "#e8e8e8",
+              }}
+            >
+              <canvas
+                ref={canvasRef}
+                width={viewportSize.width}
+                height={viewportSize.height}
+                style={{ display: "block" }}
+                onMouseDown={onMouseDown}
+                onMouseMove={onMouseMove}
+                onMouseUp={onMouseUp}
+                onMouseLeave={onMouseLeave}
+                onContextMenu={(e) => e.preventDefault()}
+              />
+              {pageLoading && (
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "rgba(255,255,255,0.65)",
+                    color: MONUMENT,
+                    fontSize: "0.95rem",
+                    fontWeight: 500,
+                  }}
+                >
+                  Loading page…
+                </div>
+              )}
+            </div>
+
+            <aside
+              style={{
+                width: "168px",
+                flexShrink: 0,
+                display: "flex",
+                flexDirection: "column",
+                gap: "6px",
+                padding: "10px",
+                borderRadius: "8px",
+                border: `1px solid ${SECTION_GREY}`,
+                background: SECTION_GREY,
+                overflowY: "auto",
+              }}
+            >
               <div
                 style={{
-                  position: "absolute",
-                  inset: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "rgba(255,255,255,0.65)",
-                  color: MONUMENT,
-                  fontSize: "0.95rem",
-                  fontWeight: 500,
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  color: UI.textMuted,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                  marginBottom: "4px",
                 }}
               >
-                Loading page…
+                Trace layers
               </div>
-            )}
+              {TRACE_PLAN_LAYERS.map((layer) => {
+                const trace = layerTraces[layer.id];
+                const isActive = layer.id === activeLayerId;
+                const hasTrace = trace.points.length > 0;
+                return (
+                  <button
+                    key={layer.id}
+                    type="button"
+                    onClick={() => selectLayer(layer.id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      width: "100%",
+                      padding: "8px 10px",
+                      borderRadius: "6px",
+                      border: isActive ? `2px solid ${layer.stroke}` : `1px solid ${UI.outline}`,
+                      background: isActive ? WHITE : "transparent",
+                      color: MONUMENT,
+                      fontSize: "0.88rem",
+                      fontWeight: isActive ? 600 : 500,
+                      cursor: "pointer",
+                      textAlign: "left",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: "12px",
+                        height: "12px",
+                        borderRadius: "3px",
+                        background: layer.stroke,
+                        flexShrink: 0,
+                        opacity: hasTrace ? 1 : 0.45,
+                      }}
+                    />
+                    <span style={{ lineHeight: 1.25 }}>{layer.label}</span>
+                  </button>
+                );
+              })}
+            </aside>
           </div>
         )}
 
@@ -703,7 +1029,7 @@ export default function TracePlanModal({
             </button>
             <button
               type="button"
-              onClick={clearPoints}
+              onClick={clearActiveLayerTrace}
               disabled={points.length === 0}
               style={{
                 ...navButtonStyle,
@@ -715,23 +1041,43 @@ export default function TracePlanModal({
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={handleSaveAndContinue}
-            disabled={!polygonClosed || saving || pageLoading}
-            style={{
-              background: polygonClosed && !saving && !pageLoading ? MONUMENT : SECTION_GREY,
-              color: polygonClosed && !saving && !pageLoading ? PAGE_TEXT : UI.textMuted,
-              border: "none",
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "1rem",
-              fontWeight: 600,
-              cursor: polygonClosed && !saving && !pageLoading ? "pointer" : "not-allowed",
-            }}
-          >
-            {saving ? "Saving…" : "Save and Continue"}
-          </button>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={handleClearTrace}
+              disabled={points.length === 0 || saving || pageLoading}
+              style={{
+                background: "transparent",
+                color: MONUMENT,
+                border: `1px solid ${SECTION_GREY}`,
+                borderRadius: "8px",
+                padding: "10px 20px",
+                fontSize: "1rem",
+                fontWeight: 600,
+                cursor: points.length === 0 || saving || pageLoading ? "not-allowed" : "pointer",
+                opacity: points.length === 0 || saving || pageLoading ? 0.5 : 1,
+              }}
+            >
+              Clear trace
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveAndContinue}
+              disabled={!externalTrace.polygonClosed || saving || pageLoading}
+              style={{
+                background: externalTrace.polygonClosed && !saving && !pageLoading ? MONUMENT : SECTION_GREY,
+                color: externalTrace.polygonClosed && !saving && !pageLoading ? PAGE_TEXT : UI.textMuted,
+                border: "none",
+                borderRadius: "8px",
+                padding: "10px 20px",
+                fontSize: "1rem",
+                fontWeight: 600,
+                cursor: externalTrace.polygonClosed && !saving && !pageLoading ? "pointer" : "not-allowed",
+              }}
+            >
+              {saving ? "Saving…" : "Save and Continue"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

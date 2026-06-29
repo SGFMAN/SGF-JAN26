@@ -1110,11 +1110,12 @@ export function buildVerandahOutlineLinePositions(
  * Solid extrusion of a flat footprint from its top ring down to the bottom of the dirt (y=0).
  * @param {Float32Array} topRingPositions - n vertices × 3 (flat top, shared Y)
  * @param {number} bottomYM
- * @param {{ includeTopCap?: boolean }} [options]
+ * @param {{ includeTopCap?: boolean, includeBottomCap?: boolean }} [options]
  * @returns {{ positions: Float32Array, indices: Uint32Array } | null}
  */
 export function buildExtrudedFootprintMesh(topRingPositions, bottomYM = 0, options = {}) {
   const includeTopCap = options.includeTopCap !== false;
+  const includeBottomCap = options.includeBottomCap !== false;
   const vertexCount = topRingPositions.length / 3;
   if (vertexCount < 3) return null;
 
@@ -1156,7 +1157,7 @@ export function buildExtrudedFootprintMesh(topRingPositions, bottomYM = 0, optio
   const counterClockwise = signedArea > 0;
 
   const topTriCount = includeTopCap ? flatIndices.length : 0;
-  const bottomTriCount = flatIndices.length;
+  const bottomTriCount = includeBottomCap ? flatIndices.length : 0;
   const sideTriCount = vertexCount * 6;
   const indices = new Uint32Array(topTriCount + bottomTriCount + sideTriCount);
   let offset = 0;
@@ -1179,21 +1180,23 @@ export function buildExtrudedFootprintMesh(topRingPositions, bottomYM = 0, optio
     offset += topTriCount;
   }
 
-  for (let i = 0; i < flatIndices.length; i += 3) {
-    const a = flatIndices[i] + vertexCount;
-    const b = flatIndices[i + 1] + vertexCount;
-    const c = flatIndices[i + 2] + vertexCount;
-    if (counterClockwise) {
-      indices[offset + i] = c;
-      indices[offset + i + 1] = b;
-      indices[offset + i + 2] = a;
-    } else {
-      indices[offset + i] = a;
-      indices[offset + i + 1] = b;
-      indices[offset + i + 2] = c;
+  if (includeBottomCap) {
+    for (let i = 0; i < flatIndices.length; i += 3) {
+      const a = flatIndices[i] + vertexCount;
+      const b = flatIndices[i + 1] + vertexCount;
+      const c = flatIndices[i + 2] + vertexCount;
+      if (counterClockwise) {
+        indices[offset + i] = c;
+        indices[offset + i + 1] = b;
+        indices[offset + i + 2] = a;
+      } else {
+        indices[offset + i] = a;
+        indices[offset + i + 1] = b;
+        indices[offset + i + 2] = c;
+      }
     }
+    offset += bottomTriCount;
   }
-  offset += bottomTriCount;
 
   for (let i = 0; i < vertexCount; i += 1) {
     const j = (i + 1) % vertexCount;

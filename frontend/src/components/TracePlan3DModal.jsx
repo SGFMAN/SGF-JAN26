@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { parsePlanTracePolygon } from "../utils/planTracePolygon";
-import { tracePolygonToWallRing } from "../utils/tracePlan3D";
 import {
-  buildExtrudedFootprintMesh,
-  buildFootprintEdgeLinePositions,
-} from "../utils/siteBoundaryMesh";
-import { disposeThreeObject, fitCameraToObject } from "../utils/siteBoundary3DRender";
+  buildTraceExternalWallGeometry,
+  CAMERA_HEIGHT_STEP_M,
+  DEFAULT_CAMERA_HEIGHT_M,
+  MAX_CAMERA_HEIGHT_M,
+  MIN_CAMERA_HEIGHT_M,
+  TRACE_WALL_HEIGHT_M,
+  TRACE_WALL_THICKNESS_M,
+  tracePolygonToWallRing,
+} from "../utils/tracePlan3D";
+import { buildFootprintEdgeLinePositions } from "../utils/siteBoundaryMesh";
+import { disposeThreeObject } from "../utils/siteBoundary3DRender";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const WHITE = UI.cardBg;
@@ -15,78 +21,79 @@ const EDGE_COLOR = 0x323233;
 const GROUND_COLOR = 0x6b8f5a;
 
 function buildTraceWallGroup(normalizedPoints) {
-  const topRing = tracePolygonToWallRing(normalizedPoints);
-  if (!topRing) {
-    throw new Error("Could not build wall outline from trace");
-  }
-
-  const volume = buildExtrudedFootprintMesh(topRing, 0, { includeTopCap: false });
-  if (!volume) {
-    throw new Error("Could not extrude wall geometry");
+  const wallGeometry = buildTraceExternalWallGeometry(normalizedPoints);
+  if (!wallGeometry) {
+    throw new Error("Could not build wall geometry");
   }
 
   const group = new THREE.Group();
 
-  const wallGeometry = new THREE.BufferGeometry();
-  wallGeometry.setAttribute("position", new THREE.BufferAttribute(volume.positions, 3));
-  wallGeometry.setIndex(new THREE.BufferAttribute(volume.indices, 1));
-  wallGeometry.computeVertexNormals();
-
   const wallMesh = new THREE.Mesh(
     wallGeometry,
-    new THREE.MeshStandardMaterial({
+    new THREE.MeshBasicMaterial({
       color: WALL_COLOR,
-      side: THREE.DoubleSide,
-      roughness: 0.85,
-      metalness: 0.05,
+      side: THREE.FrontSide,
+      depthTest: true,
     })
   );
-  wallMesh.castShadow = true;
-  wallMesh.receiveShadow = true;
+  wallMesh.renderOrder = 15;
   group.add(wallMesh);
 
-  const edgePositions = buildFootprintEdgeLinePositions(topRing, 0);
-  if (edgePositions) {
-    const edgeGeometry = new THREE.BufferGeometry();
-    edgeGeometry.setAttribute("position", new THREE.BufferAttribute(edgePositions, 3));
-    const edges = new THREE.LineSegments(
-      edgeGeometry,
-      new THREE.LineBasicMaterial({ color: EDGE_COLOR, depthTest: true })
-    );
-    group.add(edges);
-  }
+  const topRing = tracePolygonToWallRing(normalizedPoints);
+  if (topRing) {
+    const edgePositions = buildFootprintEdgeLinePositions(topRing, 0, 0);
+    if (edgePositions) {
+      const edgeGeometry = new THREE.BufferGeometry();
+      edgeGeometry.setAttribute("position", new THREE.BufferAttribute(edgePositions, 3));
+      const edges = new THREE.LineSegments(
+        edgeGeometry,
+        new THREE.LineBasicMaterial({ color: EDGE_COLOR, depthTest: true })
+      );
+      group.add(edges);
+    }
 
-  const xs = [];
-  const zs = [];
-  for (let i = 0; i < topRing.length; i += 3) {
-    xs.push(topRing[i]);
-    zs.push(topRing[i + 2]);
+    const xs = [];
+    const zs = [];
+    for (let i = 0; i < topRing.length; i += 3) {
+      xs.push(topRing[i]);
+      zs.push(topRing[i + 2]);
+    }
+    const pad = 2;
+    const minX = Math.min(...xs) - pad;
+    const maxX = Math.max(...xs) + pad;
+    const minZ = Math.min(...zs) - pad;
+    const maxZ = Math.max(...zs) + pad;
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(maxX - minX, maxZ - minZ),
+      new THREE.MeshBasicMaterial({ color: GROUND_COLOR, depthTest: true })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.set((minX + maxX) / 2, -0.01, (minZ + maxZ) / 2);
+    ground.renderOrder = 10;
+    group.add(ground);
   }
-  const pad = 2;
-  const minX = Math.min(...xs) - pad;
-  const maxX = Math.max(...xs) + pad;
-  const minZ = Math.min(...zs) - pad;
-  const maxZ = Math.max(...zs) + pad;
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(maxX - minX, maxZ - minZ),
-    new THREE.MeshStandardMaterial({ color: GROUND_COLOR, roughness: 0.95 })
-  );
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set((minX + maxX) / 2, 0, (minZ + maxZ) / 2);
-  ground.receiveShadow = true;
-  group.add(ground);
 
   return group;
 }
 
+function formatHeightM(heightM) {
+  return `${(Math.round(heightM * 1000) / 1000).toFixed(1)} m`;
+}
+
 export default function TracePlan3DModal({ savedPolygon, onClose }) {
   const containerRef = useRef(null);
+  const orbitApiRef = useRef(null);
   const [error, setError] = useState("");
+  const [cameraHeightM, setCameraHeightM] = useState(DEFAULT_CAMERA_HEIGHT_M);
 
   const normalizedPoints = useMemo(() => {
     const { points } = parsePlanTracePolygon(savedPolygon);
     return points;
   }, [savedPolygon]);
+
+  useEffect(() => {
+    orbitApiRef.current?.setCameraHeight(cameraHeightM);
+  }, [cameraHeightM]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -119,6 +126,7 @@ export default function TracePlan3DModal({ savedPolygon, onClose }) {
     let rotationY = 0;
     let dragging = false;
     let lastX = 0;
+    let cameraHeight = cameraHeightM;
     const lookAtTarget = new THREE.Vector3();
     const cameraDirection = new THREE.Vector3();
     let cameraDistance = 10;
@@ -127,23 +135,48 @@ export default function TracePlan3DModal({ savedPolygon, onClose }) {
 
     const updateCameraFromOrbit = () => {
       camera.position.copy(lookAtTarget).addScaledVector(cameraDirection, cameraDistance);
+      camera.position.y = cameraHeight;
+      lookAtTarget.y = cameraHeight;
       camera.lookAt(lookAtTarget);
     };
 
-    const syncCameraOrbitFromFit = () => {
+    const fitCameraToStructure = () => {
       const box = new THREE.Box3().setFromObject(structureGroup);
-      box.getCenter(lookAtTarget);
-      lookAtTarget.y = 1.6;
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const maxHorizontal = Math.max(size.x, size.z, 1);
+      const distance = maxHorizontal * 1.15 + 5;
+
+      lookAtTarget.set(center.x, cameraHeight, center.z);
+      camera.position.set(center.x + distance * 0.75, cameraHeight, center.z + distance * 0.75);
+      camera.lookAt(lookAtTarget);
+      camera.near = 0.1;
+      camera.far = 500;
+      camera.updateProjectionMatrix();
+    };
+
+    const syncCameraOrbitFromFit = () => {
+      lookAtTarget.y = cameraHeight;
+      camera.position.y = cameraHeight;
       cameraDirection.copy(camera.position).sub(lookAtTarget);
+      cameraDirection.y = 0;
       cameraDistance = cameraDirection.length();
       if (cameraDistance < 0.001) {
-        cameraDirection.set(0.55, 0.45, 0.55).normalize();
-        cameraDistance = 18;
+        cameraDirection.set(0.75, 0, 0.75).normalize();
+        cameraDistance = 12;
       } else {
         cameraDirection.normalize();
       }
-      minCameraDistance = Math.max(2, cameraDistance * 0.15);
-      maxCameraDistance = cameraDistance * 3.5;
+      minCameraDistance = Math.max(3, cameraDistance * 0.25);
+      maxCameraDistance = cameraDistance * 2.5;
+      updateCameraFromOrbit();
+    };
+
+    orbitApiRef.current = {
+      setCameraHeight(heightM) {
+        cameraHeight = heightM;
+        updateCameraFromOrbit();
+      },
     };
 
     const onPointerDown = (event) => {
@@ -203,7 +236,7 @@ export default function TracePlan3DModal({ savedPolygon, onClose }) {
     try {
       const walls = buildTraceWallGroup(normalizedPoints);
       structureGroup.add(walls);
-      fitCameraToObject(camera, structureGroup, 1.55);
+      fitCameraToStructure();
       syncCameraOrbitFromFit();
       structureGroup.rotation.set(0, rotationY, 0);
       setError("");
@@ -220,6 +253,7 @@ export default function TracePlan3DModal({ savedPolygon, onClose }) {
 
     return () => {
       disposed = true;
+      orbitApiRef.current = null;
       if (animationId != null) cancelAnimationFrame(animationId);
       container.removeEventListener("pointerdown", onPointerDown);
       container.removeEventListener("pointermove", onPointerMove);
@@ -234,6 +268,27 @@ export default function TracePlan3DModal({ savedPolygon, onClose }) {
       }
     };
   }, [normalizedPoints]);
+
+  function adjustCameraHeight(deltaSteps) {
+    setCameraHeightM((prev) => {
+      const next = prev + deltaSteps * CAMERA_HEIGHT_STEP_M;
+      return Math.max(MIN_CAMERA_HEIGHT_M, Math.min(MAX_CAMERA_HEIGHT_M, next));
+    });
+  }
+
+  const controlButtonStyle = {
+    background: "rgba(255,255,255,0.1)",
+    border: "1px solid rgba(255,255,255,0.2)",
+    borderRadius: "6px",
+    color: WHITE,
+    width: "32px",
+    height: "32px",
+    fontSize: "1.1rem",
+    fontWeight: 600,
+    cursor: "pointer",
+    lineHeight: 1,
+    padding: 0,
+  };
 
   return (
     <div
@@ -274,6 +329,7 @@ export default function TracePlan3DModal({ savedPolygon, onClose }) {
             flexShrink: 0,
             borderBottom: "1px solid rgba(255,255,255,0.12)",
             gap: "12px",
+            flexWrap: "wrap",
           }}
         >
           <div>
@@ -281,26 +337,78 @@ export default function TracePlan3DModal({ savedPolygon, onClose }) {
               3D Visualiser
             </h2>
             <p style={{ margin: "4px 0 0", fontSize: "0.85rem", color: "rgba(255,255,255,0.65)" }}>
-              External walls · 3.2 m high — drag to rotate, scroll to zoom
+              External walls · {TRACE_WALL_HEIGHT_M} m high · {TRACE_WALL_THICKNESS_M * 1000} mm thick — drag to rotate, scroll to zoom
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
+
+          <div
             style={{
-              background: "rgba(255,255,255,0.1)",
-              border: "1px solid rgba(255,255,255,0.2)",
-              borderRadius: "8px",
-              fontSize: "1rem",
-              cursor: "pointer",
-              color: WHITE,
-              padding: "6px 12px",
-              fontWeight: 600,
-              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              marginLeft: "auto",
+              flexWrap: "wrap",
             }}
           >
-            Close
-          </button>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                color: WHITE,
+                fontSize: "0.9rem",
+              }}
+            >
+              <span style={{ color: "rgba(255,255,255,0.65)" }}>Camera height</span>
+              <button
+                type="button"
+                onClick={() => adjustCameraHeight(-1)}
+                disabled={cameraHeightM <= MIN_CAMERA_HEIGHT_M}
+                style={{
+                  ...controlButtonStyle,
+                  opacity: cameraHeightM <= MIN_CAMERA_HEIGHT_M ? 0.4 : 1,
+                  cursor: cameraHeightM <= MIN_CAMERA_HEIGHT_M ? "not-allowed" : "pointer",
+                }}
+                aria-label="Lower camera height by 500 mm"
+              >
+                −
+              </button>
+              <span style={{ minWidth: "52px", textAlign: "center", fontWeight: 600 }}>
+                {formatHeightM(cameraHeightM)}
+              </span>
+              <button
+                type="button"
+                onClick={() => adjustCameraHeight(1)}
+                disabled={cameraHeightM >= MAX_CAMERA_HEIGHT_M}
+                style={{
+                  ...controlButtonStyle,
+                  opacity: cameraHeightM >= MAX_CAMERA_HEIGHT_M ? 0.4 : 1,
+                  cursor: cameraHeightM >= MAX_CAMERA_HEIGHT_M ? "not-allowed" : "pointer",
+                }}
+                aria-label="Raise camera height by 500 mm"
+              >
+                +
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                background: "rgba(255,255,255,0.1)",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: "8px",
+                fontSize: "1rem",
+                cursor: "pointer",
+                color: WHITE,
+                padding: "6px 12px",
+                fontWeight: 600,
+                flexShrink: 0,
+              }}
+            >
+              Close
+            </button>
+          </div>
         </div>
 
         {normalizedPoints.length < 3 && (
