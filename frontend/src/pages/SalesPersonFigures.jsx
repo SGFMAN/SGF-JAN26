@@ -7,6 +7,7 @@ import {
   getAvailableCalendarYears,
   getAvailableFinancialYears,
   getCurrentFinancialYearEnd,
+  SALES_ALL_YEARS,
   SALES_YEAR_VIEW,
 } from "../utils/salesTotalsCompute";
 import {
@@ -68,6 +69,7 @@ export default function SalesPersonFigures() {
   const periodLabel = formatSalesTotalsPeriodLabel(selectedYear, yearView);
 
   useEffect(() => {
+    if (selectedYear === SALES_ALL_YEARS) return;
     if (availablePeriods.length === 0) return;
     if (!availablePeriods.includes(selectedYear)) {
       setSelectedYear(availablePeriods[0]);
@@ -90,6 +92,7 @@ export default function SalesPersonFigures() {
     setYearView((prev) => {
       const next =
         prev === SALES_YEAR_VIEW.CALENDAR ? SALES_YEAR_VIEW.FINANCIAL : SALES_YEAR_VIEW.CALENDAR;
+      if (selectedYear === SALES_ALL_YEARS) return next;
       if (next === SALES_YEAR_VIEW.FINANCIAL) {
         const fyEnd = getCurrentFinancialYearEnd();
         if (fyEnd) setSelectedYear(String(fyEnd));
@@ -185,6 +188,7 @@ export default function SalesPersonFigures() {
               outline: "none",
             }}
           >
+            <option value={SALES_ALL_YEARS}>All Years</option>
             {availablePeriods.map((year) => (
               <option key={year} value={year}>
                 {yearView === SALES_YEAR_VIEW.FINANCIAL

@@ -1,17 +1,23 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
+import TracePlanModal from "../components/TracePlanModal";
+import TracePlan3DModal from "../components/TracePlan3DModal";
 import { resolveNewProjectClientFrom, findSalespersonUserInList } from "../utils/streamNewProjectEmail";
 import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
+import { parsePlanTracePolygon, serializePlanTracePolygon } from "../utils/planTracePolygon";
 
 import { UI, MENU } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
+import { isUserAdmin } from "../utils/auth";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 const FIELD_OUTLINE = `1px solid ${UI.outline}`;
 const EMAIL_CLIENT_BUTTON_ID = 3;
+const TRACE_PLAN_BUTTON_ID = 4;
+const VISUALISER_3D_BUTTON_ID = 5;
 const API_URL = "";
 
 function mergeColoursButtonStyle(styleId, fallback) {
@@ -36,6 +42,9 @@ export default function Colours({ project, onUpdate }) {
   const [windowFramesColour, setWindowFramesColour] = useState(project?.window_frames_colour || "Select");
   const [windowSurroundsColour, setWindowSurroundsColour] = useState(project?.window_surrounds_colour || "Select");
   const [showSendModal, setShowSendModal] = useState(false);
+  const [showTracePlanModal, setShowTracePlanModal] = useState(false);
+  const [showTracePlan3DModal, setShowTracePlan3DModal] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [attachAffordable, setAttachAffordable] = useState(false);
   const [attachSuperior, setAttachSuperior] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -80,6 +89,10 @@ export default function Colours({ project, onUpdate }) {
       setAttachSuperior(false);
     }
   }, [project?.id]);
+
+  useEffect(() => {
+    (async () => setIsAdmin(await isUserAdmin()))();
+  }, []);
 
   useEffect(() => {
     const refresh = () => setUiButtonStyleRevision((n) => n + 1);
@@ -823,6 +836,48 @@ export default function Colours({ project, onUpdate }) {
     window.open(pdfUrl, "_blank");
   }
 
+  function handleOpenTracePlan() {
+    if (!isAdmin) return;
+    if (!project?.drawings_pdf_location) {
+      alert("No drawings plan PDF is available for this project yet.");
+      return;
+    }
+    setShowTracePlanModal(true);
+  }
+
+  function handleOpen3DVisualiser() {
+    if (!isAdmin) return;
+    const { points } = parsePlanTracePolygon(project?.colours_plan_trace_polygon);
+    if (points.length < 3) {
+      alert("Trace a floor plan first using Trace Plan.");
+      return;
+    }
+    setShowTracePlan3DModal(true);
+  }
+
+  async function savePlanTracePolygon(normalizedPoints, page) {
+    if (!project?.id) {
+      throw new Error("No project selected");
+    }
+    const projectName =
+      project?.street && project?.suburb
+        ? `${project.street}, ${project.suburb}`.trim()
+        : project?.name || "";
+    const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: projectName,
+        colours_plan_trace_polygon: serializePlanTracePolygon(page, normalizedPoints),
+      }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || "Failed to save plan trace");
+    }
+    if (onUpdate) onUpdate();
+  }
+
   const emailClientButtonStyle = mergeColoursButtonStyle(EMAIL_CLIENT_BUTTON_ID, {
     background: MENU.purple,
     color: MENU.activeText,
@@ -837,12 +892,53 @@ export default function Colours({ project, onUpdate }) {
   });
   const emailClientUsesSavedStyle = Boolean(buildSavedButtonStyle(EMAIL_CLIENT_BUTTON_ID, true));
 
+  const tracePlanButtonStyle = mergeColoursButtonStyle(TRACE_PLAN_BUTTON_ID, {
+    background: MENU.purple,
+    color: MENU.activeText,
+    border: FIELD_OUTLINE,
+    borderRadius: "8px",
+    padding: "10px 20px",
+    fontSize: "1rem",
+    fontWeight: 500,
+    cursor: "pointer",
+    transition: "background 0.2s",
+    flexShrink: 0,
+    minWidth: "100px",
+    boxSizing: "border-box",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+  });
+  const tracePlanUsesSavedStyle = Boolean(buildSavedButtonStyle(TRACE_PLAN_BUTTON_ID, true));
+
+  const visualiser3DButtonStyle = mergeColoursButtonStyle(VISUALISER_3D_BUTTON_ID, {
+    background: MENU.purple,
+    color: MENU.activeText,
+    border: FIELD_OUTLINE,
+    borderRadius: "8px",
+    padding: "10px 20px",
+    fontSize: "1rem",
+    fontWeight: 500,
+    cursor: "pointer",
+    transition: "background 0.2s",
+    flexShrink: 0,
+    minWidth: "100px",
+    boxSizing: "border-box",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+  });
+  const visualiser3DUsesSavedStyle = Boolean(buildSavedButtonStyle(VISUALISER_3D_BUTTON_ID, true));
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
       <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT }}>
         Colours
       </h2>
       {project && (
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         <div style={{ marginTop: "24px", display: "flex", gap: "24px", flexWrap: "wrap", flex: 1, minHeight: 0 }}>
           {/* Column 1 */}
           <div style={{ flex: "1", minWidth: "200px" }}>
@@ -1018,6 +1114,82 @@ export default function Colours({ project, onUpdate }) {
             />
           </div>
         </div>
+
+        <div
+          style={{
+            flexShrink: 0,
+            marginTop: "auto",
+            display: "flex",
+            alignItems: "flex-end",
+            gap: "12px",
+            paddingTop: "16px",
+            paddingBottom: "4px",
+          }}
+        >
+          {isAdmin && project?.drawings_pdf_location && (
+            <button
+              type="button"
+              onClick={handleOpenTracePlan}
+              style={tracePlanButtonStyle}
+              onMouseEnter={
+                tracePlanUsesSavedStyle
+                  ? undefined
+                  : (e) => {
+                      e.currentTarget.style.background = streamColorHover(MENU.purple);
+                    }
+              }
+              onMouseLeave={
+                tracePlanUsesSavedStyle
+                  ? undefined
+                  : (e) => {
+                      e.currentTarget.style.background = MENU.purple;
+                    }
+              }
+            >
+              Trace<br />Plan
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={handleOpen3DVisualiser}
+              style={visualiser3DButtonStyle}
+            onMouseEnter={
+              visualiser3DUsesSavedStyle
+                ? undefined
+                : (e) => {
+                    e.currentTarget.style.background = streamColorHover(MENU.purple);
+                  }
+            }
+            onMouseLeave={
+              visualiser3DUsesSavedStyle
+                ? undefined
+                : (e) => {
+                    e.currentTarget.style.background = MENU.purple;
+                  }
+            }
+          >
+            3D<br />Visualiser
+          </button>
+          )}
+        </div>
+        </div>
+      )}
+
+      {isAdmin && showTracePlanModal && project?.drawings_pdf_location && (
+        <TracePlanModal
+          pdfUrl={`${API_URL}/api/files/drawings/${project.id}?t=${Date.now()}`}
+          savedPolygon={project.colours_plan_trace_polygon}
+          onSave={savePlanTracePolygon}
+          onClose={() => setShowTracePlanModal(false)}
+        />
+      )}
+
+      {isAdmin && showTracePlan3DModal && (
+        <TracePlan3DModal
+          savedPolygon={project?.colours_plan_trace_polygon}
+          onClose={() => setShowTracePlan3DModal(false)}
+        />
       )}
 
       {/* Send Colours Modal */}

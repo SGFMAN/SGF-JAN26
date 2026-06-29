@@ -27,6 +27,8 @@ export const SALES_YEAR_VIEW = {
   FINANCIAL: "financial",
 };
 
+export const SALES_ALL_YEARS = "all";
+
 /** Jul–Jun FY ending year for an ISO date (e.g. 2025-08-01 → 2026). */
 export function getFinancialYearEndForDate(isoDate) {
   if (!isoDate || isoDate.length < 7) return null;
@@ -62,6 +64,7 @@ export function formatFinancialYearLabel(fyEndYear) {
 }
 
 export function formatSalesTotalsPeriodLabel(selectedYear, yearView) {
+  if (selectedYear === SALES_ALL_YEARS) return "All Years";
   if (yearView === SALES_YEAR_VIEW.FINANCIAL) {
     return formatFinancialYearLabel(selectedYear);
   }
@@ -118,6 +121,7 @@ export function filterProjectsByFinancialYear(projects, fyEndYear) {
 }
 
 export function filterProjectsByPeriod(projects, selectedYear, yearView) {
+  if (selectedYear === SALES_ALL_YEARS) return projects;
   if (yearView === SALES_YEAR_VIEW.FINANCIAL) {
     return filterProjectsByFinancialYear(projects, selectedYear);
   }

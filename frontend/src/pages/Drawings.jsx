@@ -4776,9 +4776,11 @@ export default function Drawings({
             inset: 0,
             background: "rgba(0, 0, 0, 0.5)",
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            alignItems: "stretch",
+            justifyContent: "stretch",
             zIndex: 1001,
+            padding: "16px",
+            boxSizing: "border-box",
           }}
           onClick={() => setShowDrawingsModal(false)}
         >
@@ -4786,35 +4788,43 @@ export default function Drawings({
             style={{
               background: WHITE,
               borderRadius: "12px",
-              padding: "24px",
-              width: "90%",
-              maxWidth: "1200px",
-              maxHeight: "90vh",
+              padding: "16px 20px 20px",
+              width: "100%",
+              height: "100%",
               display: "flex",
               flexDirection: "column",
               boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+              overflow: "hidden",
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "12px",
+                flexShrink: 0,
+              }}
+            >
               <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Drawings</h2>
               <button
+                type="button"
                 onClick={() => setShowDrawingsModal(false)}
+                aria-label="Close drawings viewer"
                 style={{
-                  background: "transparent",
+                  background: SECTION_GREY,
                   border: "none",
-                  fontSize: "1.5rem",
+                  borderRadius: "8px",
+                  fontSize: "1.25rem",
                   cursor: "pointer",
                   color: MONUMENT,
-                  padding: "0",
-                  width: "30px",
-                  height: "30px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
+                  padding: "6px 12px",
+                  lineHeight: 1,
+                  fontWeight: 600,
                 }}
               >
-                ×
+                Close
               </button>
             </div>
 
@@ -4828,10 +4838,11 @@ export default function Drawings({
                 })()}
                 style={{
                   width: "100%",
+                  height: "100%",
                   flex: 1,
                   border: "none",
                   borderRadius: "8px",
-                  minHeight: "600px",
+                  minHeight: 0,
                 }}
                 title="Drawings PDF"
               />
