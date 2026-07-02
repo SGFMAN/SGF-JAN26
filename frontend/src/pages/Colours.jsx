@@ -855,7 +855,7 @@ export default function Colours({ project, onUpdate }) {
     setShowTracePlan3DModal(true);
   }
 
-  async function savePlanTracePolygon(normalizedPoints, page) {
+  async function savePlanTracePolygon(normalizedPoints, page, internalWallSegments = []) {
     if (!project?.id) {
       throw new Error("No project selected");
     }
@@ -868,7 +868,11 @@ export default function Colours({ project, onUpdate }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: projectName,
-        colours_plan_trace_polygon: serializePlanTracePolygon(page, normalizedPoints),
+        colours_plan_trace_polygon: serializePlanTracePolygon(
+          page,
+          normalizedPoints,
+          internalWallSegments
+        ),
       }),
     });
     if (!response.ok) {

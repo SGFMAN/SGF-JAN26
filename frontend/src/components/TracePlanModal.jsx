@@ -7,12 +7,25 @@ import {
 import {
   createEmptyLayerTraces,
   denormalizeTracePoints,
+  denormalizeTraceSegments,
   EXTERNAL_WALLS_LAYER_ID,
+  hasLayerDraft,
+  INTERNAL_WALLS_LAYER_ID,
+  isLineTraceLayer,
   MAX_TRACE_POINTS,
   normalizeTracePoints,
+  normalizeTraceSegments,
   parsePlanTracePolygon,
   TRACE_PLAN_LAYERS,
 } from "../utils/planTracePolygon";
+import {
+  finalizeInternalWallSegment,
+  externalWallInnerBoundarySource,
+  buildInternalWallVisibleOutlines,
+  internalWallHalfThicknessSource,
+  internalWallSegmentSourceFootprintForRender,
+} from "../utils/tracePlanInternalWalls";
+import { resolveInternalWallDrawSnap } from "../utils/tracePlanInternalWallSnap";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -24,6 +37,19 @@ const MAX_ZOOM = 12;
 const CLOSE_SNAP_PX = 14;
 const NODE_HIT_PX = 12;
 const LINE_HIT_PX = 10;
+const MERGE_SNAP_PX = 14;
+const WALL_SNAP_PX = 16;
+const WALL_NODE_COINCIDE_PX = 0.75;
+
+function wallNodesMatch(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.segmentIndex === b.segmentIndex && a.vertex === b.vertex;
+}
+
+function pointsCoincide(a, b, epsilon = WALL_NODE_COINCIDE_PX) {
+  return Math.hypot(a.x - b.x, a.y - b.y) <= epsilon;
+}
 
 function distanceToSegment(px, py, ax, ay, bx, by) {
   const dx = bx - ax;
@@ -40,10 +66,6 @@ function distanceToSegment(px, py, ax, ay, bx, by) {
   return { dist: Math.hypot(px - x, py - y), t, x, y };
 }
 
-function hasDraftTrace(points, polygonClosed) {
-  return points.length > 0 || polygonClosed;
-}
-
 export default function TracePlanModal({
   pdfUrl,
   savedPolygon,
@@ -57,6 +79,8 @@ export default function TracePlanModal({
   const viewRef = useRef({ zoom: 1, panX: 0, panY: 0, baseFit: 1 });
   const interactionRef = useRef(null);
   const savedTraceRef = useRef(parsePlanTracePolygon(savedPolygon));
+  const internalWallDraftRef = useRef(null);
+  const internalWallSnapHintRef = useRef(null);
 
   const [loading, setLoading] = useState(true);
   const [pageLoading, setPageLoading] = useState(false);
@@ -71,11 +95,24 @@ export default function TracePlanModal({
   const [viewportSize, setViewportSize] = useState({ width: 800, height: 600 });
   const [hoveredNodeIndex, setHoveredNodeIndex] = useState(-1);
   const [draggingNodeIndex, setDraggingNodeIndex] = useState(-1);
+  const [snapMergeTargetIndex, setSnapMergeTargetIndex] = useState(-1);
+  const [linePreviewPoint, setLinePreviewPoint] = useState(null);
+  const [hoveredWallNode, setHoveredWallNode] = useState(null);
+  const [draggingWallNode, setDraggingWallNode] = useState(null);
 
   const activeLayer = TRACE_PLAN_LAYERS.find((layer) => layer.id === activeLayerId) || TRACE_PLAN_LAYERS[0];
-  const activeTrace = layerTraces[activeLayerId] || { points: [], polygonClosed: false };
-  const { points, polygonClosed } = activeTrace;
+  const isLineLayerActive = isLineTraceLayer(activeLayerId);
+  const activeTrace =
+    layerTraces[activeLayerId] ||
+    (isLineTraceLayer(activeLayerId)
+      ? { segments: [], draftStart: null }
+      : { points: [], polygonClosed: false });
+  const points = isLineLayerActive ? [] : (activeTrace.points ?? []);
+  const polygonClosed = isLineLayerActive ? false : Boolean(activeTrace.polygonClosed);
+  const lineDraftStart = isLineLayerActive ? activeTrace.draftStart : null;
+  internalWallDraftRef.current = lineDraftStart;
   const externalTrace = layerTraces[EXTERNAL_WALLS_LAYER_ID] || { points: [], polygonClosed: false };
+  const showOnlyInternalLayer = activeLayerId === INTERNAL_WALLS_LAYER_ID;
 
   const bumpView = useCallback(() => setViewTick((n) => n + 1), []);
 
@@ -100,11 +137,27 @@ export default function TracePlanModal({
 
   function selectLayer(layerId) {
     if (layerId === activeLayerId) return;
+    if (layerId === INTERNAL_WALLS_LAYER_ID) {
+      const ext = layerTraces[EXTERNAL_WALLS_LAYER_ID];
+      if (!ext?.polygonClosed || (ext.points?.length ?? 0) < 3) {
+        alert("Trace and close External Walls before drawing internal walls.");
+        return;
+      }
+    }
     interactionRef.current = null;
     setNearOrigin(false);
     setHoveredNodeIndex(-1);
     setDraggingNodeIndex(-1);
+    setSnapMergeTargetIndex(-1);
+    setLinePreviewPoint(null);
+    setHoveredWallNode(null);
+    setDraggingWallNode(null);
     setActiveLayerId(layerId);
+  }
+
+  function getExternalInnerBoundary() {
+    if (!externalTrace.polygonClosed || externalTrace.points.length < 3) return null;
+    return externalWallInnerBoundarySource(externalTrace.points);
   }
 
   function resetView(source, width, height) {
@@ -182,10 +235,21 @@ export default function TracePlanModal({
         polygonClosed: true,
       };
     }
+    if (saved.page === pageNumber && saved.internalWallSegments?.length) {
+      next[INTERNAL_WALLS_LAYER_ID] = {
+        segments: denormalizeTraceSegments(
+          saved.internalWallSegments,
+          sourceCanvas.width,
+          sourceCanvas.height
+        ),
+        draftStart: null,
+      };
+    }
     setLayerTraces(next);
     setNearOrigin(false);
     setHoveredNodeIndex(-1);
     setDraggingNodeIndex(-1);
+    setSnapMergeTargetIndex(-1);
   }
 
   const loadPage = useCallback(
@@ -309,11 +373,128 @@ export default function TracePlanModal({
 
     const markerRadius = 6 / scale;
 
+    const innerBoundary =
+      showOnlyInternalLayer && externalTrace.polygonClosed && externalTrace.points.length >= 3
+        ? getExternalInnerBoundary()
+        : null;
+
+    if (innerBoundary) {
+      ctx.strokeStyle = "rgba(71, 85, 105, 0.55)";
+      ctx.fillStyle = "rgba(71, 85, 105, 0.06)";
+      ctx.lineWidth = 1.25 / scale;
+      ctx.setLineDash([5 / scale, 4 / scale]);
+      ctx.beginPath();
+      innerBoundary.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    function drawLineSegments(segments, layer, isActive, { drawWallBands = false } = {}) {
+      if (!segments?.length) return;
+
+      const outerPoints = externalTrace.points;
+      const canDrawBands = drawWallBands && outerPoints.length >= 3;
+
+      ctx.globalAlpha = isActive ? 1 : 0.72;
+
+      if (canDrawBands) {
+        const halfT = internalWallHalfThicknessSource(outerPoints);
+        ctx.fillStyle = layer.fillClosed;
+        ctx.globalAlpha = isActive ? 1 : 0.72;
+
+        segments.forEach((seg, segmentIndex) => {
+          const footprint = internalWallSegmentSourceFootprintForRender(
+            seg,
+            segmentIndex,
+            segments,
+            outerPoints
+          );
+          if (!footprint) return;
+          ctx.beginPath();
+          footprint.forEach((p, i) => {
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+          });
+          ctx.closePath();
+          ctx.fill();
+        });
+
+        ctx.strokeStyle = layer.stroke;
+        ctx.lineWidth = (isActive ? 1.75 : 1.25) / scale;
+        ctx.lineCap = "square";
+        ctx.lineJoin = "miter";
+        buildInternalWallVisibleOutlines(segments, halfT).forEach(({ a, b }) => {
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        });
+        ctx.globalAlpha = 1;
+
+        ctx.strokeStyle = layer.stroke;
+        ctx.lineWidth = (isActive ? 1.25 : 1) / scale;
+        ctx.setLineDash([4 / scale, 3 / scale]);
+        segments.forEach((seg) => {
+          ctx.beginPath();
+          ctx.moveTo(seg.a.x, seg.a.y);
+          ctx.lineTo(seg.b.x, seg.b.y);
+          ctx.stroke();
+        });
+        ctx.setLineDash([]);
+      } else {
+        ctx.strokeStyle = layer.stroke;
+        ctx.lineWidth = (isActive ? 2.5 : 1.75) / scale;
+        ctx.lineCap = "round";
+        segments.forEach((seg) => {
+          ctx.beginPath();
+          ctx.moveTo(seg.a.x, seg.a.y);
+          ctx.lineTo(seg.b.x, seg.b.y);
+          ctx.stroke();
+        });
+      }
+
+      ctx.globalAlpha = 1;
+      if (!isActive) return;
+      segments.forEach((seg, segmentIndex) => {
+        ["a", "b"].forEach((vertex) => {
+          const p = seg[vertex];
+          const isHovered = wallNodesMatch(hoveredWallNode, { segmentIndex, vertex });
+          const isDragging = wallNodesMatch(draggingWallNode, { segmentIndex, vertex });
+          const isActiveNode = isHovered || isDragging;
+          const radius = isActiveNode ? 8 / scale : markerRadius;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+          ctx.fillStyle = isActiveNode ? layer.stroke : layer.marker;
+          ctx.strokeStyle = WHITE;
+          ctx.lineWidth = isActiveNode ? 2.5 / scale : 2 / scale;
+          ctx.fill();
+          ctx.stroke();
+        });
+      });
+    }
+
     TRACE_PLAN_LAYERS.forEach((layer) => {
+      if (showOnlyInternalLayer && layer.id !== INTERNAL_WALLS_LAYER_ID) return;
+
       const trace = layerTraces[layer.id];
-      if (!trace || trace.points.length === 0) return;
+      if (!trace) return;
 
       const isActive = layer.id === activeLayerId;
+
+      if (layer.mode === "lines") {
+        drawLineSegments(trace.segments, layer, isActive, {
+          drawWallBands: layer.id === INTERNAL_WALLS_LAYER_ID,
+        });
+        return;
+      }
+
+      if (!trace.points?.length) return;
+
       const closed = trace.polygonClosed;
       const layerPoints = trace.points;
 
@@ -340,11 +521,17 @@ export default function TracePlanModal({
       layerPoints.forEach((p, i) => {
         const isOrigin = i === 0;
         const isNodeActive = i === hoveredNodeIndex || i === draggingNodeIndex;
+        const isSnapMergeTarget = i === snapMergeTargetIndex;
         let radius = isOrigin ? originHighlight : markerRadius;
-        if (closed && isNodeActive) radius = 8 / scale;
+        if (closed && (isNodeActive || isSnapMergeTarget)) radius = 8 / scale;
+        if (closed && isSnapMergeTarget) radius = 10 / scale;
         ctx.beginPath();
         ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
         if (isOrigin && nearOrigin && !closed && layerPoints.length >= 2) {
+          ctx.fillStyle = "rgba(34, 197, 94, 0.35)";
+          ctx.strokeStyle = "#16a34a";
+          ctx.lineWidth = 3 / scale;
+        } else if (closed && (isSnapMergeTarget || (isNodeActive && snapMergeTargetIndex >= 0))) {
           ctx.fillStyle = "rgba(34, 197, 94, 0.35)";
           ctx.strokeStyle = "#16a34a";
           ctx.lineWidth = 3 / scale;
@@ -361,18 +548,58 @@ export default function TracePlanModal({
         ctx.stroke();
       });
     });
+
+    if (showOnlyInternalLayer && lineDraftStart && linePreviewPoint) {
+      ctx.strokeStyle = activeLayer.stroke;
+      ctx.lineWidth = 2 / scale;
+      ctx.lineCap = "round";
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath();
+      ctx.moveTo(lineDraftStart.x, lineDraftStart.y);
+      ctx.lineTo(linePreviewPoint.x, linePreviewPoint.y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      const snapHint = internalWallSnapHintRef.current;
+      if (snapHint?.kind === "l" && snapHint.junction) {
+        ctx.beginPath();
+        ctx.arc(snapHint.junction.x, snapHint.junction.y, markerRadius * 0.75, 0, Math.PI * 2);
+        ctx.fillStyle = activeLayer.marker;
+        ctx.strokeStyle = WHITE;
+        ctx.lineWidth = 2 / scale;
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      ctx.beginPath();
+      ctx.arc(lineDraftStart.x, lineDraftStart.y, markerRadius, 0, Math.PI * 2);
+      ctx.fillStyle = activeLayer.origin;
+      ctx.strokeStyle = WHITE;
+      ctx.lineWidth = 2 / scale;
+      ctx.fill();
+      ctx.stroke();
+    }
   }, [
     layerTraces,
     activeLayerId,
+    activeLayer,
     nearOrigin,
     hoveredNodeIndex,
     draggingNodeIndex,
+    snapMergeTargetIndex,
+    showOnlyInternalLayer,
+    lineDraftStart,
+    linePreviewPoint,
+    externalTrace.polygonClosed,
+    externalTrace.points,
+    hoveredWallNode,
+    draggingWallNode,
     viewTick,
   ]);
 
   useEffect(() => {
     if (!loading && !loadError) redraw();
-  }, [loading, loadError, pageLoading, layerTraces, activeLayerId, nearOrigin, redraw, viewTick]);
+  }, [loading, loadError, pageLoading, layerTraces, activeLayerId, nearOrigin, redraw, viewTick, linePreviewPoint]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -409,6 +636,85 @@ export default function TracePlanModal({
     if (points.length < 2) return false;
     const origin = sourceToScreen(points[0].x, points[0].y);
     return Math.hypot(screenX - origin.x, screenY - origin.y) <= CLOSE_SNAP_PX;
+  }
+
+  function findInternalWallNodeAtScreen(screenX, screenY) {
+    const segments = layerTraces[INTERNAL_WALLS_LAYER_ID]?.segments ?? [];
+    let best = null;
+    let bestDist = NODE_HIT_PX;
+    segments.forEach((seg, segmentIndex) => {
+      ["a", "b"].forEach((vertex) => {
+        const p = seg[vertex];
+        const s = sourceToScreen(p.x, p.y);
+        const d = Math.hypot(screenX - s.x, screenY - s.y);
+        if (d <= bestDist) {
+          bestDist = d;
+          best = { segmentIndex, vertex };
+        }
+      });
+    });
+    return best;
+  }
+
+  function moveInternalWallNode(segmentIndex, vertex, screenX, screenY) {
+    const outerPoints = externalTrace.points;
+    const segments = layerTraces[INTERNAL_WALLS_LAYER_ID]?.segments ?? [];
+    const seg = segments[segmentIndex];
+    if (!seg) return;
+
+    const fixedAnchor = seg[vertex === "a" ? "b" : "a"];
+    const draggedAnchor = seg[vertex];
+    const raw = clampSourcePoint(screenToSource(screenX, screenY));
+    const snapped = resolveSnapForInternalWall(
+      fixedAnchor,
+      raw,
+      segments,
+      outerPoints,
+      segmentIndex
+    );
+
+    setLayerTraces((prev) => {
+      const current = prev[INTERNAL_WALLS_LAYER_ID] || { segments: [], draftStart: null };
+      const segs = current.segments ?? [];
+      if (!segs[segmentIndex]?.[vertex]) return prev;
+
+      const nextSegments = segs.map((s) => {
+        const next = { a: { ...s.a }, b: { ...s.b } };
+        if (pointsCoincide(s.a, draggedAnchor)) next.a = { ...snapped };
+        if (pointsCoincide(s.b, draggedAnchor)) next.b = { ...snapped };
+        return next;
+      });
+
+      return {
+        ...prev,
+        [INTERNAL_WALLS_LAYER_ID]: { ...current, segments: nextSegments },
+      };
+    });
+  }
+
+  function finalizeDraggedInternalWallSegments(affectedIndices) {
+    const outerPoints = externalTrace.points;
+    if (outerPoints.length < 3 || !affectedIndices?.length) return;
+
+    setLayerTraces((prev) => {
+      const current = prev[INTERNAL_WALLS_LAYER_ID] || { segments: [], draftStart: null };
+      const segments = current.segments ?? [];
+      const affected = new Set(affectedIndices);
+      const nextSegments = [];
+
+      segments.forEach((seg, index) => {
+        if (!affected.has(index)) {
+          nextSegments.push(seg);
+          return;
+        }
+        nextSegments.push(...finalizeInternalWallSegment(seg.a, seg.b, outerPoints));
+      });
+
+      return {
+        ...prev,
+        [INTERNAL_WALLS_LAYER_ID]: { ...current, segments: nextSegments },
+      };
+    });
   }
 
   function findNodeAtScreen(screenX, screenY) {
@@ -462,14 +768,69 @@ export default function TracePlanModal({
     };
   }
 
-  function moveNode(nodeIndex, screenX, screenY) {
+  function internalWallSnapThresholdSource(outerPoints) {
+    const halfT = internalWallHalfThicknessSource(outerPoints) ?? 4;
+    return Math.max(WALL_SNAP_PX / viewScale(), halfT * 1.25);
+  }
+
+  function resolveSnapForInternalWall(start, end, segments, outerPoints, excludeSegmentIndex = -1) {
+    if (!start || !outerPoints?.length) {
+      internalWallSnapHintRef.current = null;
+      return clampSourcePoint(end);
+    }
+    const snap = resolveInternalWallDrawSnap(start, end, segments, outerPoints, {
+      threshold: internalWallSnapThresholdSource(outerPoints),
+      excludeSegmentIndex,
+    });
+    if (snap.kind === "l" && snap.lCorner) {
+      internalWallSnapHintRef.current = {
+        kind: "l",
+        junction: snap.lCorner.junction,
+      };
+    } else {
+      internalWallSnapHintRef.current = snap.kind === "none" ? null : { kind: snap.kind };
+    }
+    return clampSourcePoint(snap.point);
+  }
+
+  function findNearestMergeSnapTarget(excludeIndex, screenX, screenY) {
+    let bestIndex = -1;
+    let bestDist = MERGE_SNAP_PX;
+    points.forEach((p, i) => {
+      if (i === excludeIndex) return;
+      const s = sourceToScreen(p.x, p.y);
+      const d = Math.hypot(screenX - s.x, screenY - s.y);
+      if (d <= bestDist) {
+        bestDist = d;
+        bestIndex = i;
+      }
+    });
+    return bestIndex;
+  }
+
+  function moveNode(nodeIndex, screenX, screenY, snapTargetIndex = -1) {
     const source = sourceCanvasRef.current;
     if (!source) return;
-    const pt = clampSourcePoint(screenToSource(screenX, screenY));
     setActivePoints((prev) => {
       const next = [...prev];
-      next[nodeIndex] = pt;
+      if (
+        snapTargetIndex >= 0 &&
+        snapTargetIndex !== nodeIndex &&
+        snapTargetIndex < prev.length
+      ) {
+        next[nodeIndex] = { ...prev[snapTargetIndex] };
+      } else {
+        next[nodeIndex] = clampSourcePoint(screenToSource(screenX, screenY));
+      }
       return next;
+    });
+  }
+
+  function mergeNodeInto(fromIndex, toIndex) {
+    if (fromIndex === toIndex) return;
+    setActivePoints((prev) => {
+      if (prev.length <= 3) return prev;
+      return prev.filter((_, i) => i !== fromIndex);
     });
   }
 
@@ -502,7 +863,66 @@ export default function TracePlanModal({
     setHoveredNodeIndex((prev) => (prev === index ? prev : index));
   }
 
+  function commitInternalWallAtScreen(screenX, screenY) {
+    if (!isLineLayerActive || pageLoading) return;
+    const source = sourceCanvasRef.current;
+    if (!source) return;
+
+    const outerPoints = externalTrace.points;
+    if (outerPoints.length < 3) return;
+
+    const rawEnd = clampSourcePoint(screenToSource(screenX, screenY));
+    let startedDraft = false;
+
+    setLayerTraces((prev) => {
+      const current = prev[INTERNAL_WALLS_LAYER_ID] || { segments: [], draftStart: null };
+      const start = current.draftStart;
+      const segments = current.segments ?? [];
+
+      if (!start) {
+        startedDraft = true;
+        internalWallDraftRef.current = rawEnd;
+        internalWallSnapHintRef.current = null;
+        return {
+          ...prev,
+          [INTERNAL_WALLS_LAYER_ID]: { ...current, draftStart: rawEnd },
+        };
+      }
+
+      const snap = resolveInternalWallDrawSnap(start, rawEnd, segments, outerPoints, {
+        threshold: internalWallSnapThresholdSource(outerPoints),
+      });
+      const end = clampSourcePoint(snap.point);
+
+      const parts = finalizeInternalWallSegment(start, end, outerPoints);
+      if (parts.length === 0) {
+        internalWallSnapHintRef.current = null;
+        return {
+          ...prev,
+          [INTERNAL_WALLS_LAYER_ID]: { ...current, draftStart: null },
+        };
+      }
+
+      internalWallSnapHintRef.current = null;
+
+      return {
+        ...prev,
+        [INTERNAL_WALLS_LAYER_ID]: {
+          ...current,
+          segments: [...segments, ...parts],
+          draftStart: null,
+        },
+      };
+    });
+
+    internalWallDraftRef.current = startedDraft ? rawEnd : null;
+
+    if (startedDraft) setLinePreviewPoint(rawEnd);
+    else setLinePreviewPoint(null);
+  }
+
   function addPointAtScreen(screenX, screenY) {
+    if (isLineLayerActive) return;
     if (polygonClosed || pageLoading) return;
     const source = sourceCanvasRef.current;
     if (!source) return;
@@ -542,6 +962,41 @@ export default function TracePlanModal({
     }
 
     if (event.button === 0) {
+      if (isLineLayerActive) {
+        const wallNode = findInternalWallNodeAtScreen(pt.x, pt.y);
+        if (wallNode) {
+          const segments = layerTraces[INTERNAL_WALLS_LAYER_ID]?.segments ?? [];
+          const anchor = segments[wallNode.segmentIndex]?.[wallNode.vertex];
+          if (anchor) {
+            if (internalWallDraftRef.current) {
+              internalWallDraftRef.current = null;
+              patchLayerTrace(INTERNAL_WALLS_LAYER_ID, { draftStart: null });
+              setLinePreviewPoint(null);
+            }
+            const affectedIndices = segments
+              .map((seg, index) => ({ seg, index }))
+              .filter(
+                ({ seg }) => pointsCoincide(seg.a, anchor) || pointsCoincide(seg.b, anchor)
+              )
+              .map(({ index }) => index);
+            interactionRef.current = {
+              type: "dragInternalWallNode",
+              segmentIndex: wallNode.segmentIndex,
+              vertex: wallNode.vertex,
+              affectedIndices,
+              startX: pt.x,
+              startY: pt.y,
+              moved: false,
+            };
+            setDraggingWallNode(wallNode);
+            setHoveredWallNode(wallNode);
+            return;
+          }
+        }
+        commitInternalWallAtScreen(pt.x, pt.y);
+        return;
+      }
+
       if (polygonClosed) {
         const nodeIndex = findNodeAtScreen(pt.x, pt.y);
         if (nodeIndex >= 0) {
@@ -551,8 +1006,10 @@ export default function TracePlanModal({
             startX: pt.x,
             startY: pt.y,
             moved: false,
+            snapTargetIndex: -1,
           };
           setDraggingNodeIndex(nodeIndex);
+          setSnapMergeTargetIndex(-1);
           return;
         }
         interactionRef.current = {
@@ -579,6 +1036,26 @@ export default function TracePlanModal({
     if (!pt) return;
 
     if (!interaction) {
+      if (isLineLayerActive) {
+        if (internalWallDraftRef.current) {
+          const segments = layerTraces[INTERNAL_WALLS_LAYER_ID]?.segments ?? [];
+          const outerPoints = externalTrace.points;
+          const raw = clampSourcePoint(screenToSource(pt.x, pt.y));
+          const snapped = resolveSnapForInternalWall(
+            internalWallDraftRef.current,
+            raw,
+            segments,
+            outerPoints
+          );
+          setLinePreviewPoint((prev) =>
+            prev && prev.x === snapped.x && prev.y === snapped.y ? prev : snapped
+          );
+        } else {
+          const hit = findInternalWallNodeAtScreen(pt.x, pt.y);
+          setHoveredWallNode((prev) => (wallNodesMatch(prev, hit) ? prev : hit));
+        }
+        return;
+      }
       if (polygonClosed) {
         updateHoveredNode(pt.x, pt.y);
       } else if (points.length >= 2) {
@@ -587,11 +1064,22 @@ export default function TracePlanModal({
       return;
     }
 
+    if (interaction.type === "dragInternalWallNode") {
+      const dx = pt.x - interaction.startX;
+      const dy = pt.y - interaction.startY;
+      if (Math.hypot(dx, dy) > 2) interaction.moved = true;
+      moveInternalWallNode(interaction.segmentIndex, interaction.vertex, pt.x, pt.y);
+      return;
+    }
+
     if (interaction.type === "dragNode") {
       const dx = pt.x - interaction.startX;
       const dy = pt.y - interaction.startY;
       if (Math.hypot(dx, dy) > 2) interaction.moved = true;
-      moveNode(interaction.nodeIndex, pt.x, pt.y);
+      const snapTarget = findNearestMergeSnapTarget(interaction.nodeIndex, pt.x, pt.y);
+      interaction.snapTargetIndex = snapTarget;
+      setSnapMergeTargetIndex((prev) => (prev === snapTarget ? prev : snapTarget));
+      moveNode(interaction.nodeIndex, pt.x, pt.y, snapTarget);
       return;
     }
 
@@ -626,9 +1114,23 @@ export default function TracePlanModal({
     interactionRef.current = null;
     if (!interaction || loading || loadError || pageLoading) return;
 
+    if (interaction.type === "dragInternalWallNode") {
+      setDraggingWallNode(null);
+      if (interaction.moved) {
+        finalizeDraggedInternalWallSegments(interaction.affectedIndices);
+      }
+      internalWallSnapHintRef.current = null;
+      return;
+    }
+
     if (polygonClosed) {
       if (interaction.type === "dragNode") {
+        const { nodeIndex, snapTargetIndex = -1 } = interaction;
         setDraggingNodeIndex(-1);
+        setSnapMergeTargetIndex(-1);
+        if (snapTargetIndex >= 0 && snapTargetIndex !== nodeIndex) {
+          mergeNodeInto(nodeIndex, snapTargetIndex);
+        }
         return;
       }
       if (interaction.type === "insertOrIdle" && !interaction.moved && event.button === 0) {
@@ -648,9 +1150,29 @@ export default function TracePlanModal({
     setNearOrigin(false);
     setHoveredNodeIndex(-1);
     setDraggingNodeIndex(-1);
+    setSnapMergeTargetIndex(-1);
+    setLinePreviewPoint(null);
+    setHoveredWallNode(null);
+    setDraggingWallNode(null);
+    internalWallSnapHintRef.current = null;
   }
 
   function undoPoint() {
+    if (isLineLayerActive) {
+      const trace = layerTraces[INTERNAL_WALLS_LAYER_ID];
+      if (trace?.draftStart) {
+        internalWallDraftRef.current = null;
+        patchLayerTrace(INTERNAL_WALLS_LAYER_ID, { draftStart: null });
+        setLinePreviewPoint(null);
+        return;
+      }
+      if ((trace?.segments?.length ?? 0) > 0) {
+        patchLayerTrace(INTERNAL_WALLS_LAYER_ID, {
+          segments: trace.segments.slice(0, -1),
+        });
+      }
+      return;
+    }
     if (polygonClosed) {
       patchActiveTrace({ polygonClosed: false });
       return;
@@ -660,29 +1182,42 @@ export default function TracePlanModal({
   }
 
   function clearActiveLayerTrace() {
+    if (isLineLayerActive) {
+      internalWallDraftRef.current = null;
+      patchLayerTrace(activeLayerId, { segments: [], draftStart: null });
+      setLinePreviewPoint(null);
+      return;
+    }
     patchActiveTrace({ points: [], polygonClosed: false });
     setNearOrigin(false);
     setHoveredNodeIndex(-1);
     setDraggingNodeIndex(-1);
+    setSnapMergeTargetIndex(-1);
   }
 
   function handleClearTrace() {
-    if (points.length === 0) return;
+    if (!hasLayerDraft(activeLayerId, layerTraces[activeLayerId])) return;
     if (!window.confirm(`Clear the ${activeLayer.label} trace?`)) return;
     clearActiveLayerTrace();
   }
 
   function hasUnsavedPageTraces() {
     const saved = savedTraceRef.current;
+    const source = sourceCanvasRef.current;
     return TRACE_PLAN_LAYERS.some((layer) => {
       const trace = layerTraces[layer.id];
-      if (!hasDraftTrace(trace.points, trace.polygonClosed)) return false;
+      if (!hasLayerDraft(layer.id, trace)) return false;
       if (layer.id === EXTERNAL_WALLS_LAYER_ID) {
         return !(
           saved.page === currentPage &&
           saved.points.length >= 3 &&
           trace.polygonClosed
         );
+      }
+      if (layer.id === INTERNAL_WALLS_LAYER_ID && source) {
+        if (saved.page !== currentPage) return true;
+        const normalized = normalizeTraceSegments(trace.segments ?? [], source.width, source.height);
+        return JSON.stringify(normalized) !== JSON.stringify(saved.internalWallSegments ?? []);
       }
       return true;
     });
@@ -723,7 +1258,14 @@ export default function TracePlanModal({
     setSaving(true);
     try {
       const normalized = normalizeTracePoints(external.points, source.width, source.height);
-      await onSave(normalized, currentPage);
+      const internal = layerTraces[INTERNAL_WALLS_LAYER_ID];
+      const normalizedInternal = normalizeTraceSegments(internal?.segments ?? [], source.width, source.height);
+      await onSave(normalized, currentPage, normalizedInternal);
+      savedTraceRef.current = {
+        page: currentPage,
+        points: normalized,
+        internalWallSegments: normalizedInternal,
+      };
       onClose();
     } catch (err) {
       alert(err.message || "Failed to save trace");
@@ -733,9 +1275,16 @@ export default function TracePlanModal({
   }
 
   const zoomPercent = Math.round(viewRef.current.zoom * 100);
+  const activeHasDraft = hasLayerDraft(activeLayerId, layerTraces[activeLayerId]);
   const canvasCursor = pageLoading
     ? "default"
-    : polygonClosed
+    : isLineLayerActive
+      ? draggingWallNode
+        ? "grabbing"
+        : hoveredWallNode
+          ? "grab"
+          : "crosshair"
+      : polygonClosed
       ? draggingNodeIndex >= 0
         ? "grabbing"
         : hoveredNodeIndex >= 0
@@ -855,13 +1404,15 @@ export default function TracePlanModal({
             flexShrink: 0,
           }}
         >
-          Select a layer from the menu, then click to place corners (max {MAX_TRACE_POINTS} points).
-          Scroll to zoom, shift+drag to pan. Click the green origin to close the shape.
-          {activeLayer.label !== "External Walls"
+          {isLineLayerActive
+            ? "Click once for each end of a wall line — single segments only, trimmed to the inside edge of external walls. Drag nodes to adjust walls. Other layers are hidden while drawing internal walls. Scroll to zoom, shift+drag to pan."
+            : `Select a layer from the menu, then click to place corners (max ${MAX_TRACE_POINTS} points). Scroll to zoom, shift+drag to pan. Click the green origin to close the shape.${
+                polygonClosed
+                  ? " Drag nodes to move them, drop onto another node to merge, or click a line to add a node."
+                  : ""
+              }`}
+          {!activeLayer.saves
             ? ` ${activeLayer.label} is not saved yet — session only.`
-            : ""}
-          {polygonClosed
-            ? " Drag nodes to move them, or click a line to add a node."
             : ""}
           {pageCount > 1 ? " Use page navigation for multi-page plans." : ""}
         </p>
@@ -958,7 +1509,7 @@ export default function TracePlanModal({
               {TRACE_PLAN_LAYERS.map((layer) => {
                 const trace = layerTraces[layer.id];
                 const isActive = layer.id === activeLayerId;
-                const hasTrace = trace.points.length > 0;
+                const hasTrace = hasLayerDraft(layer.id, trace);
                 return (
                   <button
                     key={layer.id}
@@ -1018,11 +1569,11 @@ export default function TracePlanModal({
             <button
               type="button"
               onClick={undoPoint}
-              disabled={points.length === 0 && !polygonClosed}
+              disabled={!activeHasDraft}
               style={{
                 ...navButtonStyle,
-                opacity: points.length === 0 && !polygonClosed ? 0.5 : 1,
-                cursor: points.length === 0 && !polygonClosed ? "not-allowed" : "pointer",
+                opacity: !activeHasDraft ? 0.5 : 1,
+                cursor: !activeHasDraft ? "not-allowed" : "pointer",
               }}
             >
               Undo
@@ -1030,11 +1581,11 @@ export default function TracePlanModal({
             <button
               type="button"
               onClick={clearActiveLayerTrace}
-              disabled={points.length === 0}
+              disabled={!activeHasDraft}
               style={{
                 ...navButtonStyle,
-                opacity: points.length === 0 ? 0.5 : 1,
-                cursor: points.length === 0 ? "not-allowed" : "pointer",
+                opacity: !activeHasDraft ? 0.5 : 1,
+                cursor: !activeHasDraft ? "not-allowed" : "pointer",
               }}
             >
               Clear
@@ -1045,7 +1596,7 @@ export default function TracePlanModal({
             <button
               type="button"
               onClick={handleClearTrace}
-              disabled={points.length === 0 || saving || pageLoading}
+              disabled={!activeHasDraft || saving || pageLoading}
               style={{
                 background: "transparent",
                 color: MONUMENT,
@@ -1054,8 +1605,8 @@ export default function TracePlanModal({
                 padding: "10px 20px",
                 fontSize: "1rem",
                 fontWeight: 600,
-                cursor: points.length === 0 || saving || pageLoading ? "not-allowed" : "pointer",
-                opacity: points.length === 0 || saving || pageLoading ? 0.5 : 1,
+                cursor: !activeHasDraft || saving || pageLoading ? "not-allowed" : "pointer",
+                opacity: !activeHasDraft || saving || pageLoading ? 0.5 : 1,
               }}
             >
               Clear trace
