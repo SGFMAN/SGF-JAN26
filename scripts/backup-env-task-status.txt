@@ -1,0 +1,5 @@
+﻿TaskName=SGF-Env-Backup
+State=Ready
+NextRunTime=07/15/2026 12:00:00
+LastRunTime=11/30/1999 00:00:00
+LastTaskResult=267011
