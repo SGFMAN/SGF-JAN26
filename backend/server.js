@@ -6158,6 +6158,7 @@ function normalizeWindowsProjectPath(projectPath) {
 
 // Create folder and copy template
 app.post("/api/folders/create", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const { path: folderPath, rootDirectory, year, state } = req.body || {};
     if (!folderPath) {
@@ -6324,6 +6325,7 @@ app.post("/api/projects/:id/register-proposal-from-folder", async (req, res) => 
 
 // Locate/Upload proposal PDF (saves file and path)
 app.post("/api/files/locate-proposal", upload.single("file"), async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
@@ -6428,6 +6430,7 @@ app.post("/api/files/locate-proposal", upload.single("file"), async (req, res) =
 
 // Upload proposal PDF (original - for backward compatibility)
 app.post("/api/files/upload-proposal", upload.single("file"), async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     console.log("=== Proposal Upload Request ===");
     console.log("1. Has file:", !!req.file);
@@ -6518,6 +6521,7 @@ function folderYearFromProjectYear(y) {
 
 // Upload window order PDF (path derived on server: year = 4 digits only; always writes Windows.PDF into 8. COLOURS & WINDOWS)
 app.post("/api/files/upload-window-order", upload.single("file"), async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
@@ -6607,6 +6611,7 @@ app.post("/api/files/upload-window-order", upload.single("file"), async (req, re
 
 // Locate window order PDF (path only — same folder convention as upload / Colours)
 app.post("/api/files/locate-window-order", upload.single("file"), async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
@@ -7603,6 +7608,7 @@ Date Required: ${windowDateRequired || "N/A"}`;
 
 // Serve window order PDF (exact path from DB only — no alternate locations)
 app.get("/api/files/window-order/:id", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const { id } = req.params;
     
@@ -7647,6 +7653,7 @@ app.get("/api/files/window-order/:id", async (req, res) => {
 
 // Serve drawings PDF
 app.get("/api/files/drawings/:id", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const { id } = req.params;
     
@@ -7989,6 +7996,7 @@ async function mergePlanningJobFilesToPdf(filePathsInOrder) {
 
 // Combined JOB FILE.PDF (merge output in `7. PROPERTY INFORMATION`) — register before `/:slot` so "combined" is not treated as a slot letter
 app.get("/api/files/planning-jf/:id/combined", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const projectId = Number(req.params.id);
     if (!Number.isFinite(projectId)) {
@@ -8030,6 +8038,7 @@ app.get("/api/files/planning-jf/:id/combined", async (req, res) => {
 
 // Serve planning job file document (PDF or image) from stored full path
 app.get("/api/files/planning-jf/:id/:slot", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const projectId = Number(req.params.id);
     const slot = (req.params.slot || "").toLowerCase();
@@ -8149,6 +8158,7 @@ require("./portalRoutes")(app, pool, fs);
 
 // Serve colours PDF
 app.get("/api/files/colours/:id", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const { id } = req.params;
     
@@ -8192,6 +8202,7 @@ app.get("/api/files/colours/:id", async (req, res) => {
 
 // Serve generated AI exterior render PNG (saved next to colours PDF in project folder)
 app.get("/api/files/ai-render/:id", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const { id } = req.params;
     if (!pool) {
@@ -8473,6 +8484,7 @@ app.post(
   "/api/sitevisit/upload-photo",
   siteVisitPhotoUploadMiddleware,
   async (req, res) => {
+    if (!requireStaffUserId(req, res)) return;
     if (!pool) {
       return res.status(500).json({ error: "Database not configured" });
     }
@@ -8582,6 +8594,7 @@ app.post(
 );
 
 app.get("/api/sitevisit/photos", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const projectId = req.query.projectId;
     if (!projectId) {
@@ -8613,6 +8626,7 @@ app.get("/api/sitevisit/photos", async (req, res) => {
 });
 
 app.get("/api/sitevisit/photo-file", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const projectId = req.query.projectId;
     const name = req.query.name;
@@ -9688,6 +9702,7 @@ app.get("/api/files/variations/:id", async (req, res) => {
 
 // Serve markup PDF for a specific revision
 app.get("/api/files/markup/:id/:revisionIndex", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const { id, revisionIndex } = req.params;
     const revisionIdx = parseInt(revisionIndex, 10);
@@ -9750,6 +9765,7 @@ app.get("/api/files/markup/:id/:revisionIndex", async (req, res) => {
 
 // Serve proposal PDF from `proposal_pdf_location` (set at upload / locate / register-from-folder).
 app.get("/api/files/proposal/:id", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const { id } = req.params;
 
@@ -9790,6 +9806,7 @@ app.get("/api/files/proposal/:id", async (req, res) => {
 
 // Locate/Upload robe plan PDF (saves file and path)
 app.post("/api/files/locate-robe-plan", upload.single("file"), async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
@@ -9866,6 +9883,7 @@ app.post("/api/files/locate-robe-plan", upload.single("file"), async (req, res) 
 
 // Serve robe plan PDF
 app.get("/api/files/robe-plan/:id", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const { id } = req.params;
     
@@ -9909,6 +9927,7 @@ app.get("/api/files/robe-plan/:id", async (req, res) => {
 
 // Locate/Upload robe colours PDF (saves file and path)
 app.post("/api/files/locate-robe-colours", upload.single("file"), async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
@@ -9985,6 +10004,7 @@ app.post("/api/files/locate-robe-colours", upload.single("file"), async (req, re
 
 // Serve robe colours PDF
 app.get("/api/files/robe-colours/:id", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const { id } = req.params;
     
