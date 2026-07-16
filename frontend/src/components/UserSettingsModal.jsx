@@ -1,12 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { getApiHeaders, getLoggedInUserId } from "../utils/auth";
 import { useUiTheme } from "../context/UiThemeProvider";
 import { UI } from "../utils/uiThemeTokens";
 import { UI_THEME_LIST } from "../themes/uiThemes";
 import { getThemeDisplayName } from "../utils/uiThemeSettings.js";
 import { setRetroCursorSuppressed } from "../themes/applyUiTheme";
-
-const AUTO_SAVE_DELAY_MS = 600;
 
 function ThemeColorSwatchGrid({ colors, compact }) {
   return (
@@ -144,9 +142,8 @@ function AccountSettingsContent({ open }) {
   const [userRecord, setUserRecord] = useState(null);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState("");
-  const lastSavedPassword = useRef("");
-  const skipNextSave = useRef(true);
 
   useEffect(() => {
     if (!open) {
@@ -160,11 +157,11 @@ function AccountSettingsContent({ open }) {
     }
 
     let cancelled = false;
-    skipNextSave.current = true;
 
     (async () => {
       setLoading(true);
       setSaveStatus("");
+      setPassword("");
       try {
         const response = await fetch("/api/users", { headers: getApiHeaders() });
         if (!response.ok) {
@@ -179,7 +176,6 @@ function AccountSettingsContent({ open }) {
           // the user can type a new password to change it.
           setUserRecord(user);
           setPassword("");
-          lastSavedPassword.current = "";
         }
       } catch (error) {
         console.error("Error loading account:", error);
@@ -189,9 +185,6 @@ function AccountSettingsContent({ open }) {
       } finally {
         if (!cancelled) {
           setLoading(false);
-          window.setTimeout(() => {
-            skipNextSave.current = false;
-          }, 0);
         }
       }
     })();
@@ -201,64 +194,54 @@ function AccountSettingsContent({ open }) {
     };
   }, [open]);
 
-  useEffect(() => {
-    if (!open || !userRecord || skipNextSave.current) {
+  async function handleSavePassword() {
+    if (!userRecord || saving) {
       return;
     }
 
     const trimmed = password.trim();
     if (!trimmed) {
+      setSaveStatus("Enter a new password to change it");
       return;
     }
 
-    if (trimmed === lastSavedPassword.current) {
-      setSaveStatus("");
-      return;
-    }
-
+    setSaving(true);
     setSaveStatus("Saving…");
-    const timer = window.setTimeout(async () => {
-      try {
-        const userPositionIds =
-          userRecord.positions && Array.isArray(userRecord.positions)
-            ? userRecord.positions.map((p) => p.id)
-            : [];
+    try {
+      const userPositionIds =
+        userRecord.positions && Array.isArray(userRecord.positions)
+          ? userRecord.positions.map((p) => p.id)
+          : [];
 
-        const response = await fetch(`/api/users/${userRecord.id}`, {
-          method: "PUT",
-          headers: getApiHeaders(),
-          body: JSON.stringify({
-            name: userRecord.name,
-            email: userRecord.email || null,
-            phone: userRecord.phone || null,
-            password: trimmed,
-            positionIds: userPositionIds,
-            primaryPositionId: userRecord.primary_position_id || null,
-            uiThemeId: themeId,
-          }),
-        });
+      const response = await fetch(`/api/users/${userRecord.id}`, {
+        method: "PUT",
+        headers: getApiHeaders(),
+        body: JSON.stringify({
+          name: userRecord.name,
+          email: userRecord.email || null,
+          phone: userRecord.phone || null,
+          password: trimmed,
+          positionIds: userPositionIds,
+          primaryPositionId: userRecord.primary_position_id || null,
+          uiThemeId: themeId,
+        }),
+      });
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: "Save failed" }));
-          throw new Error(errorData.error || "Failed to save password");
-        }
-
-        setPassword("");
-        lastSavedPassword.current = "";
-        skipNextSave.current = true;
-        window.setTimeout(() => {
-          skipNextSave.current = false;
-        }, 0);
-        setSaveStatus("Saved");
-        window.setTimeout(() => setSaveStatus(""), 2000);
-      } catch (error) {
-        console.error("Error saving password:", error);
-        setSaveStatus(error.message || "Save failed");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Save failed" }));
+        throw new Error(errorData.error || "Failed to save password");
       }
-    }, AUTO_SAVE_DELAY_MS);
 
-    return () => window.clearTimeout(timer);
-  }, [password, userRecord, open, themeId]);
+      setPassword("");
+      setSaveStatus("Saved");
+      window.setTimeout(() => setSaveStatus(""), 2000);
+    } catch (error) {
+      console.error("Error saving password:", error);
+      setSaveStatus(error.message || "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   if (loading) {
     return <p style={{ margin: 0, color: UI.textMuted }}>Loading…</p>;
@@ -267,6 +250,8 @@ function AccountSettingsContent({ open }) {
   if (!userRecord) {
     return <p style={{ margin: 0, color: UI.textMuted }}>Could not load your account.</p>;
   }
+
+  const canSave = Boolean(password.trim()) && !saving;
 
   return (
     <>
@@ -286,24 +271,56 @@ function AccountSettingsContent({ open }) {
         >
           Password
         </label>
-        <input
-          id="account-password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Enter a new password"
-          autoComplete="new-password"
-          style={{
-            width: "100%",
-            padding: "10px 12px",
-            borderRadius: "8px",
-            border: `1px solid ${UI.outline}`,
-            fontSize: "1rem",
-            color: UI.textPrimary,
-            background: UI.cardBg,
-            boxSizing: "border-box",
-          }}
-        />
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <input
+            id="account-password"
+            type="password"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (saveStatus && saveStatus !== "Saved") {
+                setSaveStatus("");
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && canSave) {
+                handleSavePassword();
+              }
+            }}
+            placeholder="Enter a new password"
+            autoComplete="new-password"
+            disabled={saving}
+            style={{
+              flex: 1,
+              padding: "10px 12px",
+              borderRadius: "8px",
+              border: `1px solid ${UI.outline}`,
+              fontSize: "1rem",
+              color: UI.textPrimary,
+              background: UI.cardBg,
+              boxSizing: "border-box",
+            }}
+          />
+          <button
+            type="button"
+            onClick={handleSavePassword}
+            disabled={!canSave}
+            style={{
+              padding: "10px 16px",
+              borderRadius: "8px",
+              border: "none",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              whiteSpace: "nowrap",
+              cursor: canSave ? "pointer" : "not-allowed",
+              background: canSave ? UI.buttonPrimary : "#666",
+              color: UI.buttonPrimaryText,
+              opacity: canSave ? 1 : 0.6,
+            }}
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
         {saveStatus ? (
           <p
             style={{
@@ -316,8 +333,7 @@ function AccountSettingsContent({ open }) {
           </p>
         ) : null}
         <p style={{ margin: "12px 0 0 0", fontSize: "0.85rem", color: UI.textMuted, lineHeight: 1.4 }}>
-          Leave blank to keep your current password. Type a new one to change it —
-          changes save automatically.
+          Leave blank to keep your current password. Enter a new one and click Save to change it.
         </p>
       </div>
     </>
