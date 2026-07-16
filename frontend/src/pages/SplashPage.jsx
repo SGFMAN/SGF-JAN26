@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { setAuthSession } from "../utils/auth";
 import { UI } from "../utils/uiThemeTokens";
+import { APP_VERSION } from "../utils/appVersion";
 
 const API_URL = "";
 const MONUMENT = UI.textPrimary;
@@ -100,6 +101,30 @@ export default function SplashPage() {
           marginTop: "-50px",
         }}
       />
+
+      <div
+        style={{
+          height: 0,
+          display: "flex",
+          justifyContent: "center",
+          position: "relative",
+          zIndex: 2,
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: "-30px",
+            whiteSpace: "nowrap",
+            fontSize: "0.75rem",
+            color: "#ffffff",
+            opacity: 0.7,
+            letterSpacing: "0.02em",
+          }}
+        >
+          {APP_VERSION}
+        </div>
+      </div>
 
       <div
         style={{
