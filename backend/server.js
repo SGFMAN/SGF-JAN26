@@ -1648,6 +1648,7 @@ async function ensureSchema() {
 
 // List projects (?full=1 for all columns; default lite omits logs, notes, file paths)
 app.get("/api/projects", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const useLite = req.query.full !== "1";
@@ -1702,6 +1703,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
 // Update septic fields only (safe autosave path for Planning tab)
 app.put("/api/projects/:id/septic", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
 
   const id = Number(req.params.id);
@@ -1758,6 +1760,7 @@ app.put("/api/projects/:id/septic", async (req, res) => {
 
 // Update construction payment stage checkboxes (paid / not paid only)
 app.put("/api/projects/:id/construction-payments", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
 
   const id = Number(req.params.id);
@@ -1803,6 +1806,7 @@ app.put("/api/projects/:id/construction-payments", async (req, res) => {
 
 // Bulk create projects (for manual project addition)
 app.post("/api/projects/bulk", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const { projects } = req.body || {};
@@ -1906,6 +1910,7 @@ app.post("/api/projects/bulk", async (req, res) => {
 
 // Create project
 app.post("/api/projects", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     let { name, status, suburb, street, state, stream, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, specs, classification, year, duplicate_source_project_id, duplicateSourceProjectId } = req.body || {};
@@ -2028,6 +2033,8 @@ app.put("/api/projects/:id", async (req, res) => {
     body.drawings_status === "Not Assigned";
 
   if (isClearingDrawingData) {
+    // v1.2: clear-drawings remains Admin-only; require staff identity first (401), then Admin (403).
+    if (!requireStaffUserId(req, res)) return;
     const isAdmin = await isAdminRequest(req);
     if (!isAdmin) {
       return res.status(403).json({ error: "Admin access required" });
@@ -3121,6 +3128,7 @@ app.get("/api/maps/nearmap-tiles/:z/:x/:y.jpg", async (req, res) => {
 
 // Geocode one project and persist project_lat/project_lng (only if missing unless force=true)
 app.post("/api/projects/:id/geocode", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
@@ -3162,6 +3170,7 @@ app.post("/api/projects/:id/geocode", async (req, res) => {
 
 /** Clear / default all fields used by the Windows page (PUT cannot null these via COALESCE). */
 app.post("/api/projects/:id/reset-window-data", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) {
@@ -3205,6 +3214,7 @@ app.post("/api/projects/:id/reset-window-data", async (req, res) => {
  * On failure: emails Ben and returns 409 (client shows message; do not PUT or send usual drawing emails).
  */
 app.post("/api/projects/:id/verify-drawings-job-folder", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
@@ -4493,6 +4503,7 @@ app.post("/api/emails/smtp-test", async (req, res) => {
 
 // Per-project Drawing Manager notes (projects.drawing_manager_notes)
 app.put("/api/projects/:id/drawing-manager-notes", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
@@ -6270,6 +6281,7 @@ app.post("/api/folders/create", async (req, res) => {
 
 // Link existing Proposal.PDF on disk to project (must already exist — no template copy)
 app.post("/api/projects/:id/register-proposal-from-folder", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const id = Number(req.params.id);
@@ -6669,6 +6681,7 @@ app.post("/api/files/locate-window-order", upload.single("file"), async (req, re
 
 // Update site visit scheduled date and period for multiple projects
 app.post("/api/projects/update-site-visit-scheduled", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   
   try {
@@ -7816,6 +7829,7 @@ const PLANNING_JF_MERGE_SLOT_ORDER = ["a", "b", "c", "d", "e", "f", "g", "h", "i
 
 // Copy dropped file into `7. PROPERTY INFORMATION` with a standard name; update the slot path column.
 app.post("/api/projects/:id/planning-jf-upload", upload.single("file"), async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const projectId = Number(req.params.id);
     if (!Number.isFinite(projectId)) {
@@ -8071,6 +8085,7 @@ app.get("/api/files/planning-jf/:id/:slot", async (req, res) => {
 
 // Combine planning job-file section uploads (a–k) into one PDF in `7. PROPERTY INFORMATION`
 app.post("/api/projects/:id/planning-job-file-merge", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const projectId = Number(req.params.id);
     if (!Number.isFinite(projectId)) {
@@ -9310,6 +9325,7 @@ function buildVariationListPdfBuffer({
 
 // Create variation list PDF in project folder as "Variation TEST.pdf", email active Client Info contacts, optional approve link
 app.post("/api/projects/:id/variations/create-pdf", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   const projectId = Number(req.params.id);
   if (!Number.isFinite(projectId)) {
@@ -10012,6 +10028,7 @@ app.get("/api/files/robe-colours/:id", async (req, res) => {
 
 // Delete project
 app.delete("/api/projects/:id", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
 
   const isAdmin = await isAdminRequest(req);
@@ -10702,6 +10719,7 @@ async function buildElevationMaskPreserveMarginsEditBuilding(tw, th, elev) {
 
 /** POST cropped drawings elevation PNG → OpenAI image edit (high input fidelity) + DB colours → saves AI Render.png in project folder. */
 app.post("/api/projects/:id/generate-render", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!openaiClient) {
     return res.status(503).json({ error: "OpenAI API key not configured" });
   }
