@@ -41,10 +41,32 @@ export default function Users() {
   const [isSubmittingPosition, setIsSubmittingPosition] = useState(false);
   const [isDeletingPosition, setIsDeletingPosition] = useState(false);
 
+  // Invited Clients (Client Portal) state
+  const [invitedClients, setInvitedClients] = useState([]);
+  const [loadingInvitedClients, setLoadingInvitedClients] = useState(true);
+
   useEffect(() => {
     fetchUsers();
     fetchPositions();
+    fetchInvitedClients();
   }, []);
+
+  async function fetchInvitedClients() {
+    try {
+      setLoadingInvitedClients(true);
+      const response = await fetch(`${API_URL}/api/client-portal/members`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch invited clients");
+      }
+      const data = await response.json();
+      setInvitedClients(Array.isArray(data.members) ? data.members : []);
+    } catch (error) {
+      console.error("Error fetching invited clients:", error);
+      setInvitedClients([]);
+    } finally {
+      setLoadingInvitedClients(false);
+    }
+  }
 
   useEffect(() => {
     const user = users.find((u) => u.id === parseInt(selectedUserId, 10));
@@ -784,6 +806,49 @@ export default function Users() {
               </button>
             </div>
           </div>
+        </div>
+
+        {/* Invited Clients Section */}
+        <div style={{ width: "100%", maxWidth: "500px", marginTop: "48px" }}>
+          <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: "24px", color: MONUMENT }}>
+            Invited Clients
+          </h2>
+
+          {loadingInvitedClients ? (
+            <div style={{ color: UI.textMuted }}>Loading...</div>
+          ) : invitedClients.length === 0 ? (
+            <div style={{ color: UI.textMuted }}>No clients have been invited yet.</div>
+          ) : (
+            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              {invitedClients.map((m) => (
+                <li
+                  key={m.membershipId}
+                  style={{
+                    padding: "10px 12px",
+                    background: WHITE,
+                    borderRadius: "8px",
+                    marginBottom: "8px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "2px",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+                    <span style={{ color: MONUMENT, fontWeight: 600 }}>
+                      {m.email}
+                      {m.name ? ` — ${m.name}` : ""}
+                    </span>
+                    <span style={{ color: UI.textMuted, fontSize: "0.85rem" }}>
+                      {m.active ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  <span style={{ color: UI.textMuted, fontSize: "0.85rem" }}>
+                    {m.projectLabel}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 

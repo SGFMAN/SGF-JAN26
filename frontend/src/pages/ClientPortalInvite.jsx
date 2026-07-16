@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { UI } from "../utils/uiThemeTokens.js";
 import { getApiHeaders } from "../utils/auth";
 import "../pages/Overview.css";
@@ -8,44 +8,23 @@ const WHITE = UI.cardBg;
 const MONUMENT = UI.textPrimary;
 
 /**
- * Staff modal: invite clients to the Client Portal for this project.
+ * Staff modal: invite a client to the Client Portal for this project.
+ * Name/email default from the selected contact but remain editable.
  */
-export default function ClientPortalInvite({ project, open, onClose }) {
+export default function ClientPortalInvite({ project, open, onClose, defaultName = "", defaultEmail = "" }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [sending, setSending] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("");
   const [statusError, setStatusError] = useState("");
-  const [members, setMembers] = useState([]);
-  const [loadingMembers, setLoadingMembers] = useState(false);
 
   const projectId = project?.id;
 
-  const loadMembers = useCallback(async () => {
-    if (!projectId) return;
-    setLoadingMembers(true);
-    try {
-      const res = await fetch(`${API_URL}/api/projects/${projectId}/client-portal/members`, {
-        headers: getApiHeaders(),
-        credentials: "same-origin",
-      });
-      if (!res.ok) throw new Error("Failed to load members");
-      const data = await res.json();
-      setMembers(Array.isArray(data.members) ? data.members : []);
-    } catch (e) {
-      console.error(e);
-      setMembers([]);
-    } finally {
-      setLoadingMembers(false);
-    }
-  }, [projectId]);
-
   useEffect(() => {
     if (!open) return;
-    setStatusMessage("");
+    setEmail(defaultEmail || "");
+    setName(defaultName || "");
     setStatusError("");
-    loadMembers();
-  }, [open, loadMembers]);
+  }, [open, defaultEmail, defaultName]);
 
   useEffect(() => {
     if (!open) return;
@@ -67,7 +46,6 @@ export default function ClientPortalInvite({ project, open, onClose }) {
 
     setSending(true);
     setStatusError("");
-    setStatusMessage("");
     try {
       const res = await fetch(`${API_URL}/api/projects/${projectId}/client-portal/invite`, {
         method: "POST",
@@ -85,10 +63,7 @@ export default function ClientPortalInvite({ project, open, onClose }) {
       if (!res.ok) {
         throw new Error(data.error || "Failed to send invitation");
       }
-      setStatusMessage(`Invitation sent to ${trimmed}`);
-      setEmail("");
-      setName("");
-      await loadMembers();
+      onClose?.();
     } catch (err) {
       setStatusError(err.message || "Failed to send invitation");
     } finally {
@@ -110,6 +85,7 @@ export default function ClientPortalInvite({ project, open, onClose }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="client-portal-invite-title"
+        style={{ maxWidth: "480px" }}
       >
         <button
           type="button"
@@ -161,7 +137,36 @@ export default function ClientPortalInvite({ project, open, onClose }) {
                   fontWeight: 500,
                 }}
               >
-                Client email
+                Name
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Client name"
+                disabled={sending}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: `1px solid ${UI.outline}`,
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  marginBottom: "6px",
+                  fontWeight: 500,
+                }}
+              >
+                Email
               </label>
               <input
                 type="email"
@@ -182,38 +187,6 @@ export default function ClientPortalInvite({ project, open, onClose }) {
                 required
               />
             </div>
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Name (optional)
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Client name"
-                disabled={sending}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: `1px solid ${UI.outline}`,
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
-              />
-            </div>
-            {statusMessage ? (
-              <div style={{ color: UI.textPrimary, fontSize: "0.95rem" }}>{statusMessage}</div>
-            ) : null}
             {statusError ? (
               <div style={{ color: "#b33", fontSize: "0.95rem" }}>{statusError}</div>
             ) : null}
@@ -252,43 +225,6 @@ export default function ClientPortalInvite({ project, open, onClose }) {
               </button>
             </div>
           </form>
-
-          <div>
-            <h3 style={{ margin: "0 0 12px", fontSize: "1.05rem", fontWeight: 600 }}>
-              Invited clients
-            </h3>
-            {loadingMembers ? (
-              <div style={{ color: UI.textMuted }}>Loading…</div>
-            ) : members.length === 0 ? (
-              <div style={{ color: UI.textMuted }}>No clients invited yet.</div>
-            ) : (
-              <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-                {members.map((m) => (
-                  <li
-                    key={m.membershipId}
-                    style={{
-                      padding: "10px 12px",
-                      background: UI.inputBg,
-                      borderRadius: "8px",
-                      marginBottom: "8px",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: "12px",
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <span>
-                      <strong>{m.email}</strong>
-                      {m.name ? ` — ${m.name}` : ""}
-                    </span>
-                    <span style={{ color: UI.textMuted, fontSize: "0.85rem" }}>
-                      {m.active ? "Active" : "Inactive"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
         </div>
       </div>
     </div>

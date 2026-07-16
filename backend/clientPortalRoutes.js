@@ -307,6 +307,43 @@ module.exports = function registerClientPortalRoutes(app, pool, helpers) {
     }
   });
 
+  // --- Staff: all invited clients across projects (Settings → Users) ---
+  app.get("/api/client-portal/members", async (req, res) => {
+    if (!requireStaffUserId(req, res)) return;
+    if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+    try {
+      const r = await pool.query(
+        `SELECT m.id, m.active, m.created_at, m.project_id,
+                a.id AS client_account_id, a.email, a.name,
+                p.name AS project_name, p.street, p.suburb, p.state
+         FROM client_project_memberships m
+         JOIN client_accounts a ON a.id = m.client_account_id
+         JOIN projects p ON p.id = m.project_id
+         ORDER BY m.created_at DESC, m.id DESC`
+      );
+      res.json({
+        members: r.rows.map((row) => {
+          const addressParts = [row.street, row.suburb, row.state]
+            .map((v) => (v == null ? "" : String(v).trim()))
+            .filter(Boolean);
+          return {
+            membershipId: row.id,
+            clientAccountId: row.client_account_id,
+            email: row.email,
+            name: row.name,
+            active: row.active,
+            createdAt: row.created_at,
+            projectId: row.project_id,
+            projectLabel: addressParts.join(", ") || row.project_name || `Project ${row.project_id}`,
+          };
+        }),
+      });
+    } catch (e) {
+      console.error("GET /api/client-portal/members:", e);
+      res.status(500).json({ error: e.message || "Failed to load invited clients" });
+    }
+  });
+
   // --- Client: request magic login link (always generic success) ---
   app.post("/api/client/auth/request-link", async (req, res) => {
     if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });

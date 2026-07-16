@@ -26,7 +26,8 @@ function mergeClientInfoButtonStyle(styleId, fallback) {
 }
 
 export default function ClientInfo({ project, onUpdate }) {
-  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  // Holds the contact's default {name, email} while the invite modal is open.
+  const [inviteContact, setInviteContact] = useState(null);
   const [client1Name, setClient1Name] = useState(project?.client1_name || "");
   const [client1Email, setClient1Email] = useState(project?.client1_email || "");
   const [client1Phone, setClient1Phone] = useState(project?.client1_phone || "");
@@ -500,7 +501,7 @@ export default function ClientInfo({ project, onUpdate }) {
             style={inputStyle}
           />
         </div>
-        <div style={{ marginBottom: 0 }}>
+        <div style={{ marginBottom: "16px" }}>
           <div style={labelStyle}>Phone</div>
           <input
             type="tel"
@@ -510,6 +511,29 @@ export default function ClientInfo({ project, onUpdate }) {
             onBlur={flushSave}
             style={inputStyle}
           />
+        </div>
+        <div style={{ marginBottom: 0 }}>
+          <button
+            type="button"
+            onClick={() => setInviteContact({ name, email })}
+            style={inviteClientButtonStyle}
+            onMouseEnter={
+              inviteClientUsesSavedStyle
+                ? undefined
+                : (e) => {
+                    e.currentTarget.style.background = streamColorHover(UI.buttonPrimary);
+                  }
+            }
+            onMouseLeave={
+              inviteClientUsesSavedStyle
+                ? undefined
+                : (e) => {
+                    e.currentTarget.style.background = UI.buttonPrimary;
+                  }
+            }
+          >
+            Invite Client
+          </button>
         </div>
       </div>
     </div>
@@ -676,34 +700,15 @@ export default function ClientInfo({ project, onUpdate }) {
                 ? "Email Client"
                 : "Email Clients"}
             </button>
-            <button
-              type="button"
-              onClick={() => setInviteModalOpen(true)}
-              style={inviteClientButtonStyle}
-              onMouseEnter={
-                inviteClientUsesSavedStyle
-                  ? undefined
-                  : (e) => {
-                      e.currentTarget.style.background = streamColorHover(UI.buttonPrimary);
-                    }
-              }
-              onMouseLeave={
-                inviteClientUsesSavedStyle
-                  ? undefined
-                  : (e) => {
-                      e.currentTarget.style.background = UI.buttonPrimary;
-                    }
-              }
-            >
-              Invite Client
-            </button>
           </div>
         </div>
       )}
       <ClientPortalInvite
-        open={inviteModalOpen}
-        onClose={() => setInviteModalOpen(false)}
+        open={inviteContact != null}
+        onClose={() => setInviteContact(null)}
         project={project}
+        defaultName={inviteContact?.name || ""}
+        defaultEmail={inviteContact?.email || ""}
       />
     </div>
   );
