@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import SplashPage from "./pages/SplashPage";
 import HomePage from "./pages/HomePage";
@@ -41,6 +42,7 @@ import LoggedInUserButton from "./components/LoggedInUserButton";
 import PresenceHeartbeat from "./components/PresenceHeartbeat";
 import FadeImageOverlay from "./components/FadeImageOverlay";
 import { UiThemeProvider } from "./context/UiThemeProvider";
+import { verifyServerSession } from "./utils/auth";
 
 function Auth({ children }) {
   return <RequireAuth>{children}</RequireAuth>;
@@ -51,6 +53,12 @@ export default function App() {
     typeof window !== "undefined" &&
     typeof window.location?.hostname === "string" &&
     window.location.hostname.toLowerCase().endsWith("trycloudflare.com");
+
+  // v0.3: quietly adopt the server session (informational/diagnostics only).
+  // Does not gate rendering, redirect, or affect the existing auth flow.
+  useEffect(() => {
+    verifyServerSession();
+  }, []);
 
   return (
     <BrowserRouter>

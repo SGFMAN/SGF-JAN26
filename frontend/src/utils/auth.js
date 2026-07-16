@@ -117,3 +117,45 @@ export async function isUserAdmin() {
   }
   return hasUserAccess("admin");
 }
+
+// v0.3: informational-only server session adoption.
+// Holds the staff user reported by GET /api/auth/session, if a valid server
+// session cookie exists. Nothing in the app depends on this yet.
+let verifiedServerSessionUser = null;
+
+/**
+ * Get the staff user from the last successful server-session check (or null).
+ * Informational only; does not gate any behaviour.
+ */
+export function getVerifiedServerSessionUser() {
+  return verifiedServerSessionUser;
+}
+
+/**
+ * Quietly check whether a valid server-side staff session exists.
+ *
+ * On success, records the user in memory and logs a dev-only message. On any
+ * failure (no session, network error) it does nothing: no logout, no redirect,
+ * no warning. The existing X-User-Id / sessionStorage auth is untouched.
+ */
+export async function verifyServerSession() {
+  try {
+    const response = await fetch(`${API_URL}/api/auth/session`, {
+      credentials: "same-origin",
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const data = await response.json();
+    if (data && data.authenticated && data.user) {
+      verifiedServerSessionUser = data.user;
+      if (import.meta.env && import.meta.env.DEV) {
+        console.log(`Server session verified for ${data.user.name}`);
+      }
+      return data.user;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}

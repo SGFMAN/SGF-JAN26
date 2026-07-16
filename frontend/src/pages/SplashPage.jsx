@@ -104,30 +104,6 @@ export default function SplashPage() {
 
       <div
         style={{
-          height: 0,
-          display: "flex",
-          justifyContent: "center",
-          position: "relative",
-          zIndex: 2,
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            top: "-30px",
-            whiteSpace: "nowrap",
-            fontSize: "0.75rem",
-            color: "#ffffff",
-            opacity: 0.7,
-            letterSpacing: "0.02em",
-          }}
-        >
-          {APP_VERSION}
-        </div>
-      </div>
-
-      <div
-        style={{
           display: "flex",
           flexDirection: "column",
           gap: "16px",
@@ -235,6 +211,18 @@ export default function SplashPage() {
         >
           {loggingIn ? "Signing in…" : "Enter"}
         </button>
+
+        <div
+          style={{
+            fontSize: "0.75rem",
+            color: "#ffffff",
+            opacity: 0.7,
+            letterSpacing: "0.02em",
+            textAlign: "center",
+          }}
+        >
+          {APP_VERSION}
+        </div>
       </div>
     </div>
   );
