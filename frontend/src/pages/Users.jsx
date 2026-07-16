@@ -48,7 +48,8 @@ export default function Users() {
 
   useEffect(() => {
     const user = users.find((u) => u.id === parseInt(selectedUserId, 10));
-    setDetailsPassword(user?.password || "admin");
+    // Do not load the stored password/hash into the field.
+    setDetailsPassword("");
     setDetailsUiThemeId(user?.ui_theme_id || "classic");
   }, [selectedUserId, users]);
 
@@ -88,7 +89,8 @@ export default function Users() {
     setNewUserName(user.name || "");
     setNewUserEmail(user.email || "");
     setNewUserPhone(user.phone || "");
-    setNewUserPassword(user.password || "admin");
+    // Leave blank to keep the current password unless the admin enters a new one.
+    setNewUserPassword("");
     // Set primary position from user data
     setPrimaryPositionId(user.primary_position_id || null);
     // Also set selectedPositionIds to include all positions (for backward compatibility)
@@ -272,7 +274,8 @@ export default function Users() {
           name: user.name,
           email: user.email || null,
           phone: user.phone || null,
-          password: user.password || "admin",
+          // Omit password change when updating palette only.
+          password: null,
           positionIds: userPositionIds,
           primaryPositionId: user.primary_position_id || null,
           uiThemeId: detailsUiThemeId,
@@ -301,11 +304,7 @@ export default function Users() {
 
     const trimmedPassword = detailsPassword.trim();
     if (!trimmedPassword) {
-      alert("Password cannot be empty");
-      return;
-    }
-
-    if (trimmedPassword === (user.password || "admin")) {
+      alert("Enter a new password to change it");
       return;
     }
 
@@ -334,6 +333,7 @@ export default function Users() {
         throw new Error(errorData.error || "Failed to update password");
       }
 
+      setDetailsPassword("");
       await fetchUsers();
       setSelectedUserId(selectedUserId);
     } catch (error) {
@@ -408,7 +408,8 @@ export default function Users() {
           name: newUserName.trim(),
           email: newUserEmail.trim() || null,
           phone: newUserPhone.trim() || null,
-          password: newUserPassword.trim() || "admin",
+          // Blank = keep existing password; otherwise set the new one.
+          password: newUserPassword.trim() || null,
           // Include primary position in positionIds for backward compatibility
           positionIds: primaryPositionId ? [primaryPositionId, ...selectedPositionIds.filter(id => id !== primaryPositionId)] : selectedPositionIds,
           primaryPositionId: primaryPositionId || null,
@@ -932,7 +933,7 @@ export default function Users() {
                     }
                   }}
                   disabled={isSavingPassword}
-                  placeholder="Enter password"
+                  placeholder="Enter a new password"
                   style={{
                     flex: 1,
                     padding: "10px 12px",
@@ -948,11 +949,7 @@ export default function Users() {
                 <button
                   type="button"
                   onClick={handleSavePassword}
-                  disabled={
-                    isSavingPassword ||
-                    !detailsPassword.trim() ||
-                    detailsPassword.trim() === (selectedUser.password || "admin")
-                  }
+                  disabled={isSavingPassword || !detailsPassword.trim()}
                   style={{
                     background: WHITE,
                     color: MONUMENT,
@@ -962,15 +959,11 @@ export default function Users() {
                     fontSize: "0.95rem",
                     fontWeight: 500,
                     cursor:
-                      isSavingPassword ||
-                      !detailsPassword.trim() ||
-                      detailsPassword.trim() === (selectedUser.password || "admin")
+                      isSavingPassword || !detailsPassword.trim()
                         ? "not-allowed"
                         : "pointer",
                     opacity:
-                      isSavingPassword ||
-                      !detailsPassword.trim() ||
-                      detailsPassword.trim() === (selectedUser.password || "admin")
+                      isSavingPassword || !detailsPassword.trim()
                         ? 0.6
                         : 1,
                     whiteSpace: "nowrap",
@@ -1543,7 +1536,7 @@ export default function Users() {
                 type="text"
                 value={newUserPassword}
                 onChange={(e) => setNewUserPassword(e.target.value)}
-                placeholder="Enter password"
+                placeholder="Leave blank to keep current password"
                 style={{
                   width: "100%",
                   padding: "10px 12px",

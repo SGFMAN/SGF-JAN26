@@ -175,10 +175,11 @@ function AccountSettingsContent({ open }) {
         if (cancelled) return;
 
         if (user) {
-          const currentPassword = user.password || "admin";
+          // Do not load the stored password/hash into the field — show empty so
+          // the user can type a new password to change it.
           setUserRecord(user);
-          setPassword(currentPassword);
-          lastSavedPassword.current = currentPassword;
+          setPassword("");
+          lastSavedPassword.current = "";
         }
       } catch (error) {
         console.error("Error loading account:", error);
@@ -242,8 +243,12 @@ function AccountSettingsContent({ open }) {
           throw new Error(errorData.error || "Failed to save password");
         }
 
-        lastSavedPassword.current = trimmed;
-        setUserRecord((prev) => (prev ? { ...prev, password: trimmed } : prev));
+        setPassword("");
+        lastSavedPassword.current = "";
+        skipNextSave.current = true;
+        window.setTimeout(() => {
+          skipNextSave.current = false;
+        }, 0);
         setSaveStatus("Saved");
         window.setTimeout(() => setSaveStatus(""), 2000);
       } catch (error) {
@@ -286,7 +291,7 @@ function AccountSettingsContent({ open }) {
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Enter password"
+          placeholder="Enter a new password"
           autoComplete="new-password"
           style={{
             width: "100%",
@@ -311,7 +316,8 @@ function AccountSettingsContent({ open }) {
           </p>
         ) : null}
         <p style={{ margin: "12px 0 0 0", fontSize: "0.85rem", color: UI.textMuted, lineHeight: 1.4 }}>
-          This is the password you use to log in. Changes save automatically.
+          Leave blank to keep your current password. Type a new one to change it —
+          changes save automatically.
         </p>
       </div>
     </>
