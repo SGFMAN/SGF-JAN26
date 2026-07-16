@@ -4,6 +4,7 @@
  */
 
 const nodemailer = require("nodemailer");
+const fs = require("fs/promises");
 const { requireStaffUserId, getStaffUserIdFromRequest } = require("./staffIdentity");
 const {
   hashToken,
@@ -545,6 +546,49 @@ module.exports = function registerClientPortalRoutes(app, pool, helpers) {
     } catch (e) {
       console.error("GET /api/client/projects/:projectId:", e);
       res.status(500).json({ error: e.message || "Failed to load project" });
+    }
+  });
+
+  // Stream the current drawing without ever exposing its filesystem path.
+  app.get("/api/client/projects/:projectId/drawing", async (req, res) => {
+    if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+    const clientAccountId = await requireClientAccountId(pool, req, res);
+    if (!clientAccountId) return;
+
+    const projectId = Number(req.params.projectId);
+    if (!Number.isFinite(projectId)) {
+      return res.status(400).json({ error: "invalid project id" });
+    }
+
+    try {
+      const result = await pool.query(
+        `SELECT p.drawings_pdf_location
+         FROM client_project_memberships m
+         JOIN projects p ON p.id = m.project_id
+         WHERE m.client_account_id = $1
+           AND m.project_id = $2
+           AND m.active = TRUE
+         LIMIT 1`,
+        [clientAccountId, projectId]
+      );
+      const drawingPath = result.rows[0]?.drawings_pdf_location;
+      if (!drawingPath) {
+        return res.status(404).json({ error: "Drawing not found" });
+      }
+
+      const fileBuffer = await fs.readFile(drawingPath);
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", 'inline; filename="Drawings.pdf"');
+      return res.send(fileBuffer);
+    } catch (e) {
+      if (e?.code === "ENOENT") {
+        return res.status(404).json({ error: "Drawing not found" });
+      }
+      console.error("GET /api/client/projects/:projectId/drawing:", e);
+      return res.status(500).json({ error: "Failed to load drawing" });
     }
   });
 };

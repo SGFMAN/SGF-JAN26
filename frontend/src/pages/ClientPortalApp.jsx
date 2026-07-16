@@ -5,6 +5,7 @@ import { UI } from "../utils/uiThemeTokens";
 import { APP_VERSION } from "../utils/appVersion";
 
 import "../pages/Overview.css";
+import "./ClientPortalApp.css";
 
 const API_URL = "";
 const LIGHT_MONUMENT = UI.pageBg;
@@ -23,28 +24,69 @@ const fieldStyle = {
   boxSizing: "border-box",
 };
 
-function ProjectOverviewSection({ project }) {
+function ReadOnlyField({ label, value }) {
   return (
-    <section
-      style={{
-        width: "100%",
-        maxWidth: "min(100%, 1200px)",
-        boxSizing: "border-box",
-      }}
-    >
-      <h2
-        style={{
-          margin: "0 0 12px",
-          fontSize: "clamp(1.1rem, 2.5vw, 1.35rem)",
-          fontWeight: 600,
-          color: PAGE_TEXT,
-          textAlign: "center",
-        }}
-      >
-        {project.address || "Project"}
-      </h2>
-      <div className="overview-page">
+    <div className="client-portal-project-field">
+      <div className="client-portal-project-field__label">{label}</div>
+      <div className="client-portal-project-field__value">
+        {value == null || String(value).trim() === "" ? "—" : String(value)}
+      </div>
+    </div>
+  );
+}
+
+function ClientProjectSection({ project, showAddress }) {
+  const info = project.projectInfo || {};
+  const drawingUrl = `${API_URL}/api/client/projects/${project.projectId}/drawing`;
+
+  return (
+    <section className="client-portal-project">
+      <div className="client-portal-project__overview">
+        {showAddress ? (
+          <h2 className="client-portal-project__address">{project.address || "Project"}</h2>
+        ) : null}
         <DesignPhaseStatusPanel project={project} readOnly showHeading />
+      </div>
+
+      <div className="client-portal-project__columns">
+        <section className="client-portal-project-info" aria-labelledby={`project-info-${project.projectId}`}>
+          <h2 id={`project-info-${project.projectId}`} className="client-portal-column-heading">
+            Project Info
+          </h2>
+          <div className="client-portal-project-info__panel">
+            <div className="client-portal-project-info__status-row">
+              <ReadOnlyField label="Status" value={info.status} />
+              {info.onHold ? <span className="client-portal-on-hold">On Hold</span> : null}
+            </div>
+            <ReadOnlyField label="Street" value={info.street} />
+            <div className="client-portal-project-info__split">
+              <ReadOnlyField label="Suburb" value={info.suburb} />
+              <ReadOnlyField label="State" value={info.state} />
+            </div>
+            <div className="client-portal-project-info__split">
+              <ReadOnlyField label="Specs" value={info.specs} />
+              <ReadOnlyField label="Classification" value={info.classification} />
+            </div>
+            {info.qpNumber ? <ReadOnlyField label="QP Number" value={info.qpNumber} /> : null}
+          </div>
+        </section>
+
+        <section className="client-portal-drawing" aria-labelledby={`drawing-${project.projectId}`}>
+          <h2 id={`drawing-${project.projectId}`} className="client-portal-column-heading">
+            Drawings
+          </h2>
+          <div className="client-portal-drawing__viewer">
+            {project.hasDrawing ? (
+              <iframe
+                title={`Current drawings for ${project.address || "project"}`}
+                src={drawingUrl}
+                className="client-portal-drawing__frame"
+              />
+            ) : (
+              <div className="client-portal-drawing__empty">No drawing is available yet.</div>
+            )}
+          </div>
+        </section>
       </div>
     </section>
   );
@@ -199,7 +241,7 @@ export default function ClientPortalApp() {
     flexDirection: "column",
     alignItems: "center",
     overflow: "auto",
-    padding: "32px 16px 48px",
+    padding: phase === "app" ? "0" : "32px 16px 48px",
     boxSizing: "border-box",
   };
 
@@ -313,65 +355,52 @@ export default function ClientPortalApp() {
   }
 
   return (
-    <div style={shell}>
-      <div
-        style={{
-          width: "100%",
-          maxWidth: "560px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: "12px",
-          marginBottom: "20px",
-        }}
-      >
+    <div style={shell} className="client-portal-app">
+      <header className="client-portal-header">
         <img
           src={logo}
-          alt="Superior Granny Flats"
-          style={{ maxWidth: "220px", width: "55%", objectFit: "contain" }}
+          alt="SGF Central"
+          className="client-portal-header__logo"
         />
-        <button
-          type="button"
-          onClick={handleLogout}
-          disabled={loggingOut}
-          style={{
-            padding: "8px 14px",
-            fontSize: "0.9rem",
-            fontWeight: 500,
-            color: PAGE_TEXT,
-            background: "transparent",
-            border: `1px solid ${WHITE}`,
-            borderRadius: "8px",
-            cursor: loggingOut ? "not-allowed" : "pointer",
-          }}
-        >
-          {loggingOut ? "Signing out…" : "Logout"}
-        </button>
-      </div>
-
-      <div style={{ width: "100%", maxWidth: "560px", marginBottom: "16px", color: PAGE_TEXT }}>
-        <div style={{ fontSize: "0.75rem", opacity: 0.7, marginBottom: "6px" }}>{APP_VERSION}</div>
-        <h1 style={{ margin: "0 0 4px", fontSize: "1.5rem", fontWeight: 600 }}>Client Portal</h1>
-        {client?.email ? (
-          <div style={{ opacity: 0.85, fontSize: "0.95rem" }}>Signed in as {client.email}</div>
-        ) : null}
-      </div>
+        <div className="client-portal-header__address">
+          {projects.length === 1 ? projects[0].address || "Project" : "Your Projects"}
+        </div>
+        <div className="client-portal-header__account">
+          <div className="client-portal-header__version">{APP_VERSION}</div>
+          <h1>Client Portal</h1>
+          <div className="client-portal-header__signed-in">
+            {client?.email ? `Signed in as ${client.email}` : null}
+          </div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="client-portal-header__logout"
+          >
+            {loggingOut ? "Signing out…" : "Logout"}
+          </button>
+        </div>
+      </header>
 
       {projectsError ? (
-        <div style={{ color: "#f88", marginBottom: "12px" }}>{projectsError}</div>
+        <div className="client-portal-error">{projectsError}</div>
       ) : null}
 
       {projects.length === 0 ? (
-        <div style={{ color: PAGE_TEXT, opacity: 0.9, maxWidth: "560px" }}>
+        <div className="client-portal-empty">
           No projects are linked to this account yet. If you expected to see a project, ask your
           Superior Granny Flats consultant to send an invitation.
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "28px", width: "100%", alignItems: "center" }}>
+        <main className="client-portal-projects">
           {projects.map((p) => (
-            <ProjectOverviewSection key={p.projectId} project={p} />
+            <ClientProjectSection
+              key={p.projectId}
+              project={p}
+              showAddress={projects.length > 1}
+            />
           ))}
-        </div>
+        </main>
       )}
     </div>
   );
