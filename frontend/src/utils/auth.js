@@ -9,10 +9,19 @@ function getAuthStorage() {
   return sessionStorage;
 }
 
+// v0.3/v0.5: in-memory copy of the staff user from GET /api/auth/session.
+// Preferred identity when present; sessionStorage remains the fallback.
+let verifiedServerSessionUser = null;
+
 /**
- * Get the logged-in user ID from session storage.
+ * Get the logged-in user ID.
+ * v0.5: prefer verified server-session identity when available; otherwise
+ * fall back to legacy sessionStorage (X-User-Id source).
  */
 export function getLoggedInUserId() {
+  if (verifiedServerSessionUser && verifiedServerSessionUser.id != null) {
+    return String(verifiedServerSessionUser.id);
+  }
   return getAuthStorage().getItem(AUTH_USER_ID_KEY);
 }
 
@@ -24,17 +33,48 @@ export function getPasswordType() {
 }
 
 /**
- * Get the logged-in user's display name from session storage.
+ * Get the logged-in user's display name.
+ * v0.5: prefer verified server-session name when available.
  */
 export function getLoggedInUserName() {
+  if (verifiedServerSessionUser && verifiedServerSessionUser.name) {
+    return String(verifiedServerSessionUser.name);
+  }
   return getAuthStorage().getItem(AUTH_USER_NAME_KEY) || "";
 }
 
 /**
  * Whether the current browser tab has an active login session.
+ * Still based on legacy sessionStorage so missing server sessions do not
+ * log the user out of the UI.
  */
 export function isAuthenticated() {
-  return Boolean(getLoggedInUserId());
+  return Boolean(getAuthStorage().getItem(AUTH_USER_ID_KEY));
+}
+
+/**
+ * Preferred staff identity helper (v0.5).
+ * Returns { userId, name, source } where source is 'session' or 'storage'.
+ */
+export function resolveCurrentStaffIdentity() {
+  if (verifiedServerSessionUser && verifiedServerSessionUser.id != null) {
+    return {
+      userId: String(verifiedServerSessionUser.id),
+      name: verifiedServerSessionUser.name || "",
+      source: "session",
+      user: verifiedServerSessionUser,
+    };
+  }
+  const storedId = getAuthStorage().getItem(AUTH_USER_ID_KEY);
+  if (storedId) {
+    return {
+      userId: storedId,
+      name: getAuthStorage().getItem(AUTH_USER_NAME_KEY) || "",
+      source: "storage",
+      user: null,
+    };
+  }
+  return { userId: null, name: "", source: null, user: null };
 }
 
 /**
@@ -61,6 +101,8 @@ export function setAuthSession(userId, passwordType, userName) {
       new CustomEvent("sgf-auth-session-change", { detail: { userId: String(userId) } })
     );
   }
+  // Quietly adopt the new HttpOnly session cookie into memory (non-blocking).
+  verifyServerSession();
 }
 
 /**
@@ -76,6 +118,7 @@ export function clearAuthSession() {
     }).catch(() => {});
   }
 
+  verifiedServerSessionUser = null;
   clearUserAccessCache();
   const storage = getAuthStorage();
   storage.removeItem(AUTH_USER_ID_KEY);
@@ -95,6 +138,7 @@ export function clearAuthSession() {
 
 /**
  * Get headers with admin authentication info for API requests.
+ * Still sends X-User-Id for legacy compatibility; server prefers the session cookie.
  */
 export function getApiHeaders(additionalHeaders = {}) {
   const userId = getLoggedInUserId();
@@ -118,14 +162,8 @@ export async function isUserAdmin() {
   return hasUserAccess("admin");
 }
 
-// v0.3: informational-only server session adoption.
-// Holds the staff user reported by GET /api/auth/session, if a valid server
-// session cookie exists. Nothing in the app depends on this yet.
-let verifiedServerSessionUser = null;
-
 /**
  * Get the staff user from the last successful server-session check (or null).
- * Informational only; does not gate any behaviour.
  */
 export function getVerifiedServerSessionUser() {
   return verifiedServerSessionUser;
@@ -134,9 +172,8 @@ export function getVerifiedServerSessionUser() {
 /**
  * Quietly check whether a valid server-side staff session exists.
  *
- * On success, records the user in memory and logs a dev-only message. On any
- * failure (no session, network error) it does nothing: no logout, no redirect,
- * no warning. The existing X-User-Id / sessionStorage auth is untouched.
+ * On success, records the user in memory. On any failure it does nothing:
+ * no logout, no redirect, no warning. Legacy sessionStorage auth remains.
  */
 export async function verifyServerSession() {
   try {

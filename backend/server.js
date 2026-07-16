@@ -97,7 +97,6 @@ const { applyConceptApprovalRules, parseDrawingsHistory } = require("./drawingsS
 const {
   SESSION_COOKIE_NAME,
   createStaffSession,
-  getStaffSession,
   destroyStaffSession,
   getSessionTokenFromRequest,
   sessionCookieOptions,
@@ -108,6 +107,10 @@ const {
   toStoredPassword,
   verifyPassword,
 } = require("./passwordHashing");
+const {
+  resolveStaffIdentity,
+  getStaffUserIdFromRequest,
+} = require("./staffIdentity");
 const app = express();
 
 /** False until migrations finish; API returns 503 until then (server listens immediately). */
@@ -369,7 +372,8 @@ app.use(cors({ origin: true }));
 
 app.use((req, res, next) => {
   if (req.path.startsWith("/api")) {
-    const userId = req.headers["x-user-id"] || req.headers["X-User-Id"];
+    // v0.5: prefer server session identity; fall back to X-User-Id.
+    const userId = getStaffUserIdFromRequest(req);
     if (userId) {
       touchUserPresence(userId);
     }
@@ -440,7 +444,8 @@ const upload = multer({
 async function isAdminRequest(req) {
   try {
     if (!pool) return false;
-    const userId = Number(req.headers["x-user-id"] || req.headers["X-User-Id"]);
+    // v0.5: prefer server session; fall back to X-User-Id.
+    const userId = getStaffUserIdFromRequest(req);
     if (!Number.isFinite(userId)) return false;
     return userHasAccessGrant(pool, userId, "admin");
   } catch (e) {
@@ -453,7 +458,8 @@ async function isAdminRequest(req) {
 async function isSalesRequest(req) {
   try {
     if (!pool) return false;
-    const userId = Number(req.headers["x-user-id"] || req.headers["X-User-Id"]);
+    // v0.5: prefer server session; fall back to X-User-Id.
+    const userId = getStaffUserIdFromRequest(req);
     if (!Number.isFinite(userId)) return false;
     return userHasAccessGrant(pool, userId, "sales");
   } catch (e) {
@@ -3334,28 +3340,30 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-// Stage 1: return the staff member tied to a valid server-side session cookie.
-// Does not read or trust X-User-Id; purely reflects the new session mechanism.
+// Stage 1 / v0.5: return the staff member tied to a valid server-side session.
+// Uses the shared identity helper; only reports authenticated when the source
+// is the session cookie (header-only callers are not treated as a session).
 app.get("/api/auth/session", (req, res) => {
-  const token = getSessionTokenFromRequest(req);
-  const session = getStaffSession(token);
-  if (!session) {
+  const identity = resolveStaffIdentity(req);
+  if (identity.source !== "session" || !identity.session) {
     return res.status(401).json({ authenticated: false });
   }
-  touchUserPresence(session.userId);
+  touchUserPresence(identity.userId);
   res.json({
     authenticated: true,
+    source: identity.source,
     user: {
-      id: session.userId,
-      name: session.name,
-      primary_position_id: session.primary_position_id,
-      positions: session.positions,
+      id: identity.userId,
+      name: identity.name,
+      primary_position_id: identity.primary_position_id,
+      positions: identity.positions,
     },
   });
 });
 
 app.post("/api/auth/presence", (req, res) => {
-  const userId = req.headers["x-user-id"] || req.headers["X-User-Id"];
+  // v0.5: prefer server session; fall back to X-User-Id.
+  const userId = getStaffUserIdFromRequest(req);
   if (!userId) {
     return res.status(401).json({ error: "Not authenticated" });
   }
@@ -3364,11 +3372,12 @@ app.post("/api/auth/presence", (req, res) => {
 });
 
 app.post("/api/auth/logout", (req, res) => {
-  const userId = req.headers["x-user-id"] || req.headers["X-User-Id"];
-  if (userId) {
-    clearUserPresence(userId);
+  // v0.5: clear presence for resolved identity (session preferred).
+  const identity = resolveStaffIdentity(req);
+  if (identity.userId) {
+    clearUserPresence(identity.userId);
   }
-  // Stage 1: also destroy the server-side session and clear its cookie.
+  // Also destroy the server-side session and clear its cookie.
   const token = getSessionTokenFromRequest(req);
   if (token) {
     destroyStaffSession(token);
@@ -3378,14 +3387,16 @@ app.post("/api/auth/logout", (req, res) => {
 });
 
 function getRequestUserId(req) {
-  const userId = Number(req.headers["x-user-id"] || req.headers["X-User-Id"]);
-  return Number.isFinite(userId) ? userId : null;
+  // v0.5: prefer server session; fall back to X-User-Id.
+  return getStaffUserIdFromRequest(req);
 }
 
 // User-to-user messages (inbox)
+// v0.6: Messages API uses the shared staff identity helper (session preferred,
+// X-User-Id fallback). No other API group is changed in this release.
 app.get("/api/messages/inbox", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
-  const userId = getRequestUserId(req);
+  const userId = getStaffUserIdFromRequest(req);
   if (!userId) {
     return res.status(401).json({ error: "Not authenticated" });
   }
@@ -3409,7 +3420,7 @@ app.get("/api/messages/inbox", async (req, res) => {
 
 app.post("/api/messages", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
-  const fromUserId = getRequestUserId(req);
+  const fromUserId = getStaffUserIdFromRequest(req);
   if (!fromUserId) {
     return res.status(401).json({ error: "Not authenticated" });
   }
@@ -3448,7 +3459,7 @@ app.post("/api/messages", async (req, res) => {
 
 app.patch("/api/messages/:id/read", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
-  const userId = getRequestUserId(req);
+  const userId = getStaffUserIdFromRequest(req);
   if (!userId) {
     return res.status(401).json({ error: "Not authenticated" });
   }
@@ -3478,7 +3489,7 @@ app.patch("/api/messages/:id/read", async (req, res) => {
 
 app.get("/api/messages/unread-count", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
-  const userId = getRequestUserId(req);
+  const userId = getStaffUserIdFromRequest(req);
   if (!userId) {
     return res.status(401).json({ error: "Not authenticated" });
   }
@@ -3499,7 +3510,7 @@ app.get("/api/messages/unread-count", async (req, res) => {
 
 app.delete("/api/messages/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
-  const userId = getRequestUserId(req);
+  const userId = getStaffUserIdFromRequest(req);
   if (!userId) {
     return res.status(401).json({ error: "Not authenticated" });
   }
