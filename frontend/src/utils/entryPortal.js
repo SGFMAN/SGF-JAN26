@@ -1,5 +1,5 @@
 /**
- * Hostname-aware entry: staff app vs client portal placeholder.
+ * Hostname-aware entry: staff app vs Client Portal.
  *
  * Production uses hostname only.
  * Local development may preview the client entry with ?portal=client

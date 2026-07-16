@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import SplashPage from "./pages/SplashPage";
-import ClientPortalLanding from "./pages/ClientPortalLanding";
+import ClientPortalApp from "./pages/ClientPortalApp";
 import HomePage from "./pages/HomePage";
 import ProjectPage from "./pages/ProjectPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -71,7 +71,7 @@ export default function App() {
       <BrowserRouter>
         <UiThemeProvider>
           <Routes>
-            <Route path="*" element={<ClientPortalLanding />} />
+            <Route path="*" element={<ClientPortalApp />} />
           </Routes>
         </UiThemeProvider>
       </BrowserRouter>

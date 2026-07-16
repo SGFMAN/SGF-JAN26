@@ -71,6 +71,7 @@ const {
   getOnlineUserIds,
 } = require("./userPresence");
 const { ensureUserMessagesTable } = require("./userMessages");
+const { ensureClientPortalTables } = require("./clientPortalSchema");
 const {
   buildTimesheetLines,
   exportTimesheetFile,
@@ -1052,6 +1053,7 @@ async function ensureSchema() {
     await ensureMapQuoteItemsTable(pool);
     await ensureUserAccessPermissionsTable(pool);
     await ensureUserMessagesTable(pool);
+    await ensureClientPortalTables(pool);
     await ensureMapFloorPlansDollarValueColumn(pool);
     await addMissingColumns(pool, "projects", ["construction_payments_paid", "colours_plan_trace_polygon"]);
     await addMissingColumns(pool, "settings", [
@@ -1678,6 +1680,7 @@ async function ensureSchema() {
   await ensureProjectAccessTokens(pool);
   await ensureUserAccessPermissionsTable(pool);
   await ensureUserMessagesTable(pool);
+  await ensureClientPortalTables(pool);
   await markSchemaUpToDate(pool);
   console.log(`Schema ${SCHEMA_VERSION} applied`);
 }
@@ -8215,6 +8218,10 @@ app.post("/api/projects/:id/planning-job-file-merge", async (req, res) => {
 });
 
 require("./portalRoutes")(app, pool, fs);
+require("./clientPortalRoutes")(app, pool, {
+  getSmtpCredentialsForFromAddress,
+  getDefaultSystemSmtpFrom,
+});
 
 // Serve colours PDF
 app.get("/api/files/colours/:id", async (req, res) => {

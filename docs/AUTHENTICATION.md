@@ -213,24 +213,25 @@ When adding or changing APIs:
 
 ---
 
-## Future Client Portal
+## Client Portal (v2.1)
 
-The intended architecture for a real client portal is **separate** from staff auth:
+Client auth is **separate** from staff auth:
 
-| Piece | Intent |
-|-------|--------|
-| Client accounts | Own table(s); **not** the staff `users` table |
-| Client sessions | Own cookie / token model; not `sgf_staff_session` |
-| Memberships | Explicit client ↔ project (or job) membership |
-| Permissions | Client-scoped capabilities, not `user_access_permissions` staff areas |
-| Staff tooling | Continues on staff sessions + grants as today |
+| Piece | Implementation |
+|-------|----------------|
+| Client accounts | `client_accounts` (not staff `users`) |
+| Client sessions | Cookie `sgf_client_session` + `client_sessions` (hashed tokens) |
+| Memberships | `client_project_memberships` (active membership required) |
+| Invitations / magic links | `client_invitations` (hashed, single-use, expiring) |
+| Overview API | Dedicated DTO — never the full staff project row |
+| Host | `client.superiorgrannyflats.com.au` |
 
 ### Principles
 
 - Do not overload staff login for customers.
-- Do not treat `projects.access_token` as a long-term substitute for client identity (it may remain as a migration/compatibility bridge).
+- Do not treat `projects.access_token` as a long-term substitute for client identity.
 - Keep staff and client session cookies and stores isolated.
-- Design DTOs so clients never receive internal staff-only fields (costs notes paths, etc.) by accident.
+- Clients never receive internal staff-only fields (costs, notes, paths, etc.).
 
 ---
 
@@ -243,7 +244,10 @@ The intended architecture for a real client portal is **separate** from staff au
 | `backend/passwordHashing.js` | Hash / verify / upgrade |
 | `backend/portalRoutes.js` | Portal capability APIs |
 | `backend/projectAccessToken.js` | Project `access_token` helpers |
-| `frontend/src/utils/auth.js` | Client auth headers / session helpers |
+| `backend/clientSessions.js` | Client session create / validate / destroy |
+| `backend/clientIdentity.js` | Client identity (cookie only; no `X-User-Id`) |
+| `backend/clientPortalRoutes.js` | Invite, magic link, overview APIs |
+| `frontend/src/utils/auth.js` | Staff auth headers / session helpers |
 | `frontend/src/main.jsx` | Fetch patch: API headers + `credentials: 'same-origin'` |
 
 ---
@@ -252,4 +256,4 @@ The intended architecture for a real client portal is **separate** from staff au
 
 **Staff authentication migration: complete (v1.4).**
 
-Portal capability hardening and a future client-account portal remain **separate** workstreams and must not be implemented by extending staff sessions.
+**Client Portal (first working overview): complete (v2.1).**
