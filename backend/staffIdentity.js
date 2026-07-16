@@ -72,7 +72,21 @@ function getStaffUserIdFromRequest(req) {
   return resolveStaffIdentity(req).userId;
 }
 
+/**
+ * Resolve staff identity or write 401 and return null.
+ * Session preferred; X-User-Id fallback. Used by admin / current-user routes.
+ */
+function requireStaffUserId(req, res) {
+  const userId = getStaffUserIdFromRequest(req);
+  if (!userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return null;
+  }
+  return userId;
+}
+
 module.exports = {
   resolveStaffIdentity,
   getStaffUserIdFromRequest,
+  requireStaffUserId,
 };

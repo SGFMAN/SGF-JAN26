@@ -110,6 +110,7 @@ const {
 const {
   resolveStaffIdentity,
   getStaffUserIdFromRequest,
+  requireStaffUserId,
 } = require("./staffIdentity");
 const app = express();
 
@@ -440,11 +441,12 @@ const upload = multer({
   }
 });
 
-// Helper: whether the request user has Admin checked in Permissions
+// Helper: whether the request user has Admin checked in Permissions.
+// v0.8: administration auth helper — identity from shared staff helper
+// (session preferred, X-User-Id fallback).
 async function isAdminRequest(req) {
   try {
     if (!pool) return false;
-    // v0.5: prefer server session; fall back to X-User-Id.
     const userId = getStaffUserIdFromRequest(req);
     if (!Number.isFinite(userId)) return false;
     return userHasAccessGrant(pool, userId, "admin");
@@ -3538,8 +3540,11 @@ app.delete("/api/messages/:id", async (req, res) => {
 });
 
 // List users
+// v0.8: staff directory — require shared identity (session preferred).
+// Not admin-gated: many non-admin workflows read this list.
 app.get("/api/users", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
   try {
     const usersResult = await pool.query(
       `SELECT u.id, u.name, u.email, u.phone, u.primary_position_id, u.ui_theme_id,
@@ -3565,8 +3570,13 @@ app.get("/api/users", async (req, res) => {
 });
 
 // Create user
+// v0.8: administration — identity via helper; Admin grant required.
 app.post("/api/users", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
   try {
     const { name, email, phone, positionIds, primaryPositionId, password } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
@@ -3634,8 +3644,13 @@ app.post("/api/users", async (req, res) => {
 });
 
 // Access permissions matrix (Settings → Permissions)
+// v0.8: administration — identity via helper; Admin grant required.
 app.get("/api/access-permissions", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
   try {
     const usersResult = await pool.query(
       `SELECT id, name, COALESCE(password, 'admin') AS password FROM users ORDER BY name ASC, id ASC`
@@ -3691,6 +3706,11 @@ app.get("/api/access-permissions/me", async (req, res) => {
 
 app.put("/api/access-permissions", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  // v0.8: administration — identity via helper; Admin grant required.
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
   try {
     const { userId, accessArea, granted } = req.body || {};
     const id = Number(userId);
@@ -3727,8 +3747,10 @@ app.put("/api/access-permissions", async (req, res) => {
 });
 
 // List positions
+// v0.8: administration support list — require shared identity.
 app.get("/api/positions", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
   try {
     const r = await pool.query(
       "SELECT id, name, created_at, updated_at FROM positions ORDER BY name ASC, id ASC"
@@ -3740,8 +3762,11 @@ app.get("/api/positions", async (req, res) => {
 });
 
 // Update user
+// v0.8: identity via helper. Not admin-gated — Account settings also updates
+// the current user's password/theme through this endpoint.
 app.put("/api/users/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
   
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
@@ -3830,8 +3855,13 @@ app.put("/api/users/:id", async (req, res) => {
 });
 
 // Delete user
+// v0.8: administration — identity via helper; Admin grant required.
 app.delete("/api/users/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
 
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
@@ -3857,8 +3887,13 @@ app.delete("/api/users/:id", async (req, res) => {
 });
 
 // Create position
+// v0.8: administration — identity via helper; Admin grant required.
 app.post("/api/positions", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
   try {
     const { name } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
@@ -3876,8 +3911,13 @@ app.post("/api/positions", async (req, res) => {
 });
 
 // Update position
+// v0.8: administration — identity via helper; Admin grant required.
 app.put("/api/positions/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
   
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
@@ -3907,8 +3947,13 @@ app.put("/api/positions/:id", async (req, res) => {
 });
 
 // Delete position
+// v0.8: administration — identity via helper; Admin grant required.
 app.delete("/api/positions/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
 
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
