@@ -3975,8 +3975,11 @@ app.delete("/api/positions/:id", async (req, res) => {
 });
 
 // Get settings
+// v0.9: require authenticated staff identity (session preferred).
+// Not Admin-gated on read — many non-admin workflows load folder/email config.
 app.get("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
   try {
     const r = await pool.query(
       `SELECT id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, timesheet_export_path, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, stream_settings_json, email_general_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at FROM settings WHERE id = 1`
@@ -4160,8 +4163,13 @@ app.put("/api/users/me/ui-preferences", async (req, res) => {
 });
 
 // Update settings
+// v0.9: require authenticated staff identity + Admin grant (session preferred).
 app.put("/api/settings", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
   try {
     const {
       root_directory,

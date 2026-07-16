@@ -4,4 +4,4 @@
  * Update this value on each release. It is displayed on the login screen so the
  * running build can be confirmed at a glance (helps detect stale cached builds).
  */
-export const APP_VERSION = "v0.8 (Administration APIs)";
+export const APP_VERSION = "v0.9 (Secure Settings)";
