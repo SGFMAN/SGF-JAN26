@@ -94,6 +94,14 @@ const {
 } = require("./schemaStartup");
 const { buildProjectsListQuery } = require("./projectQueries");
 const { applyConceptApprovalRules, parseDrawingsHistory } = require("./drawingsStatusRules");
+const {
+  SESSION_COOKIE_NAME,
+  createStaffSession,
+  getStaffSession,
+  destroyStaffSession,
+  getSessionTokenFromRequest,
+  sessionCookieOptions,
+} = require("./staffSessions");
 const app = express();
 
 /** False until migrations finish; API returns 503 until then (server listens immediately). */
@@ -3275,6 +3283,22 @@ app.post("/api/auth/login", async (req, res) => {
 
     touchUserPresence(user.id);
 
+    // Stage 1 (compatibility mode): also issue a server-side session + HttpOnly
+    // cookie. This is IN ADDITION to the legacy X-User-Id header flow, which is
+    // intentionally left untouched. Session store is temporary/in-memory.
+    try {
+      const sessionToken = createStaffSession({
+        id: user.id,
+        name: user.name,
+        primary_position_id: user.primary_position_id,
+        positions,
+      });
+      res.cookie(SESSION_COOKIE_NAME, sessionToken, sessionCookieOptions());
+    } catch (sessionErr) {
+      // Never let session issuance break the existing login behaviour.
+      console.error("Staff session issue failed (login still succeeds):", sessionErr);
+    }
+
     res.json({
       userId: user.id,
       passwordType: "global",
@@ -3291,6 +3315,26 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
+// Stage 1: return the staff member tied to a valid server-side session cookie.
+// Does not read or trust X-User-Id; purely reflects the new session mechanism.
+app.get("/api/auth/session", (req, res) => {
+  const token = getSessionTokenFromRequest(req);
+  const session = getStaffSession(token);
+  if (!session) {
+    return res.status(401).json({ authenticated: false });
+  }
+  touchUserPresence(session.userId);
+  res.json({
+    authenticated: true,
+    user: {
+      id: session.userId,
+      name: session.name,
+      primary_position_id: session.primary_position_id,
+      positions: session.positions,
+    },
+  });
+});
+
 app.post("/api/auth/presence", (req, res) => {
   const userId = req.headers["x-user-id"] || req.headers["X-User-Id"];
   if (!userId) {
@@ -3305,6 +3349,12 @@ app.post("/api/auth/logout", (req, res) => {
   if (userId) {
     clearUserPresence(userId);
   }
+  // Stage 1: also destroy the server-side session and clear its cookie.
+  const token = getSessionTokenFromRequest(req);
+  if (token) {
+    destroyStaffSession(token);
+  }
+  res.clearCookie(SESSION_COOKIE_NAME, { ...sessionCookieOptions(), maxAge: undefined });
   res.json({ ok: true });
 });
 

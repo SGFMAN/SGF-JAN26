@@ -13,6 +13,11 @@ window.fetch = function(url, options = {}) {
   if (typeof url === 'string' && url.includes('/api/')) {
     const existingHeaders = options.headers || {};
     const apiHeaders = getApiHeaders();
+    // Stage 1: ensure the HttpOnly staff session cookie is sent on same-origin
+    // API calls (this is the browser default, set explicitly for clarity).
+    if (options.credentials == null) {
+      options.credentials = 'same-origin';
+    }
     
     // If body is FormData, don't set Content-Type (browser will set it automatically with boundary)
     const isFormData = options.body instanceof FormData;
