@@ -4453,6 +4453,7 @@ app.post("/api/timesheets/export", async (req, res) => {
 // Send test email using SMTP credentials from SMTP Settings (validates user + password for a slot)
 const SMTP_TEST_TO = "ben@superiorgrannyflats.com.au";
 app.post("/api/emails/smtp-test", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const { smtpUser, smtpPass } = req.body || {};
     const fromAddr = String(smtpUser || "").trim();
@@ -4516,6 +4517,7 @@ app.put("/api/projects/:id/drawing-manager-notes", async (req, res) => {
 
 // Get all email templates
 app.get("/api/email-templates", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const result = await pool.query(
@@ -4535,6 +4537,7 @@ app.get("/api/email-templates", async (req, res) => {
 
 // Get single email template
 app.get("/api/email-templates/:id", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const id = Number(req.params.id);
@@ -4561,6 +4564,7 @@ app.get("/api/email-templates/:id", async (req, res) => {
 
 // Create email template
 app.post("/api/email-templates", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const { name, template_group, to_addresses, from_address, subject, body } = req.body || {};
@@ -4593,6 +4597,7 @@ app.post("/api/email-templates", async (req, res) => {
 
 // Update email template
 app.put("/api/email-templates/:id", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const id = Number(req.params.id);
@@ -4635,6 +4640,7 @@ app.put("/api/email-templates/:id", async (req, res) => {
 
 // Delete email template
 app.delete("/api/email-templates/:id", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const id = Number(req.params.id);
@@ -4660,6 +4666,7 @@ app.delete("/api/email-templates/:id", async (req, res) => {
 
 // Get custom email template groups
 app.get("/api/email-template-groups", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const result = await pool.query(
@@ -4674,6 +4681,7 @@ app.get("/api/email-template-groups", async (req, res) => {
 
 // Create custom email template group
 app.post("/api/email-template-groups", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
     const { name } = req.body || {};
@@ -4822,6 +4830,7 @@ function parseEmailSendRequest(req, res, next) {
 
 // Send HTML email via SMTP (JSON or multipart with optional attachment file)
 app.post("/api/emails/send", parseEmailSendRequest, async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   let to;
   let from;
   let subject;
@@ -5067,6 +5076,7 @@ async function applyDrawingsSalespersonTokenSubstitution(pool, htmlBody, subject
 
 // Send drawings PDF via email with attachment
 app.post("/api/emails/send-drawings", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   const { projectId, toEmail, attachDrawings, toEmails, customBody, from, subject: customSubject } = req.body || {};
   const attachPdf = attachDrawings !== false; // Default to true if not specified
 
@@ -5289,6 +5299,7 @@ app.post("/api/emails/send-drawings", async (req, res) => {
 
 // Send colours PDFs via email with attachments
 app.post("/api/emails/send-colours", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   const { projectId, attachAffordable, attachSuperior, toEmails, customBody, from } = req.body || {};
 
   if (!projectId) {
@@ -5691,6 +5702,7 @@ app.post("/api/emails/send-colours", async (req, res) => {
 
 // Send colours reminder email - identical to send-colours but uses "COLOURS - Remind" template
 app.post("/api/emails/send-colours-reminder", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   const { projectId, attachAffordable, attachSuperior, toEmails, customBody, from } = req.body || {};
 
   if (!projectId) {
@@ -6703,6 +6715,7 @@ app.post("/api/projects/update-site-visit-scheduled", async (req, res) => {
 
 // Send colours Windows & Roof email - identical to send-colours-reminder but uses "COLORS - Windows&Roof" template
 app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   const { projectId, attachAffordable, attachSuperior, toEmails, customBody, from } = req.body || {};
 
   if (!projectId) {
@@ -7106,6 +7119,7 @@ app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
 
 // Send colours portal email
 app.post("/api/emails/send-colours-portal", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   const { projectId, toEmails, from, subject, htmlBody } = req.body || {};
 
   if (!projectId) {
@@ -7303,6 +7317,7 @@ app.post("/api/projects/:id/update-colours", async (req, res) => {
 
 // Send windows order email
 app.post("/api/emails/send-windows-order", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   const {
     projectId,
     customBody,
@@ -10878,6 +10893,7 @@ app.post("/api/projects/:id/generate-render", async (req, res) => {
 
 // Email Generator: Analyze text and break into response points
 app.post("/api/email-generator/analyze", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!openaiClient) {
     return res.status(503).json({ error: "OpenAI API key not configured" });
   }
@@ -11004,6 +11020,7 @@ Respond with ONLY the JSON object, no additional text or explanation.`;
 
 // Email Generator: Compile answers into professional email draft
 app.post("/api/email-generator/compile", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!openaiClient) {
     return res.status(503).json({ error: "OpenAI API key not configured" });
   }
@@ -11186,6 +11203,7 @@ function calculateSimilarity(words1, words2) {
 
 // Email Generator: Get suggested answer for a question
 app.post("/api/email-generator/suggest", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) {
     return res.status(503).json({ error: "Database not available" });
   }
@@ -11451,6 +11469,7 @@ Please modify the HTML file according to the user's request. Return ONLY the com
 });
 
 app.post("/api/email-generator/save-answer", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) {
     return res.status(503).json({ error: "Database not available" });
   }
@@ -11524,6 +11543,7 @@ app.post("/api/email-generator/save-answer", async (req, res) => {
 
 // Email Generator: Get all learned answers (for management UI)
 app.get("/api/email-generator/learned-answers", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) {
     return res.status(503).json({ error: "Database not available" });
   }
@@ -11568,6 +11588,7 @@ app.get("/api/email-generator/learned-answers", async (req, res) => {
 
 // Email Generator: Delete a learned answer
 app.delete("/api/email-generator/learned-answers/:id", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!pool) {
     return res.status(503).json({ error: "Database not available" });
   }
