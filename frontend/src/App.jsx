@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import SplashPage from "./pages/SplashPage";
+import ClientPortalLanding from "./pages/ClientPortalLanding";
 import HomePage from "./pages/HomePage";
 import ProjectPage from "./pages/ProjectPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -43,12 +44,15 @@ import PresenceHeartbeat from "./components/PresenceHeartbeat";
 import FadeImageOverlay from "./components/FadeImageOverlay";
 import { UiThemeProvider } from "./context/UiThemeProvider";
 import { verifyServerSession } from "./utils/auth";
+import { isClientPortalEntry } from "./utils/entryPortal";
 
 function Auth({ children }) {
   return <RequireAuth>{children}</RequireAuth>;
 }
 
 export default function App() {
+  const isClientEntry = isClientPortalEntry();
+
   const isCloudflarePublicHost =
     typeof window !== "undefined" &&
     typeof window.location?.hostname === "string" &&
@@ -56,9 +60,23 @@ export default function App() {
 
   // v0.3: quietly adopt the server session (informational/diagnostics only).
   // Does not gate rendering, redirect, or affect the existing auth flow.
+  // Skipped on the client portal entry host — staff-only.
   useEffect(() => {
+    if (isClientEntry) return;
     verifyServerSession();
-  }, []);
+  }, [isClientEntry]);
+
+  if (isClientEntry) {
+    return (
+      <BrowserRouter>
+        <UiThemeProvider>
+          <Routes>
+            <Route path="*" element={<ClientPortalLanding />} />
+          </Routes>
+        </UiThemeProvider>
+      </BrowserRouter>
+    );
+  }
 
   return (
     <BrowserRouter>
