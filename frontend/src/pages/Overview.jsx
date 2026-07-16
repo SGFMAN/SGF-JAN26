@@ -16,6 +16,7 @@ import "./Overview.css";
 
 import { UI, STREAM, INDICATOR } from "../utils/uiThemeTokens.js";
 import { getOverviewIndicatorStyle } from "../utils/uiButtonStyles.js";
+import DesignPhaseStatusPanel from "../components/DesignPhaseStatusPanel.jsx";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
@@ -23,40 +24,6 @@ const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 /** Match Project Info box headings (Notes, Project Log, Status, etc.). */
-const overviewStatusLabelStyle = {
-  fontSize: "0.9rem",
-  color: UI.textMuted,
-  flexShrink: 0,
-};
-
-function OverviewStatusTile({ label, value, indicatorStyle, onClick }) {
-  return (
-    <div className="overview-status-item">
-      <div className="overview-status-label" style={overviewStatusLabelStyle}>
-        {label}
-      </div>
-      <div
-        role="button"
-        tabIndex={0}
-        className="overview-status-card"
-        style={{
-          background: indicatorStyle.background,
-          color: indicatorStyle.color,
-          border: indicatorStyle.border ?? "none",
-        }}
-        onClick={onClick}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onClick();
-          }
-        }}
-      >
-        <span className="overview-status-card__text">{value}</span>
-      </div>
-    </div>
-  );
-}
 
 export default function Overview({ project }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
@@ -1106,98 +1073,6 @@ export default function Overview({ project }) {
     window.location.href = mailtoLink;
   }
 
-  function buildDesignPhaseStatusTiles() {
-    if (!project) return [];
-    return [
-      {
-        key: "deposit",
-        label: "Deposit",
-        value: getDepositStatus(),
-        indicatorStyle: getDepositStatusIndicator(),
-        view: "admin",
-      },
-      {
-        key: "drawings",
-        label: "Drawings",
-        value: project.drawings_status || "Not Assigned",
-        indicatorStyle: getDrawingsStatusIndicator(),
-        view: "drawings",
-      },
-      {
-        key: "site-visit",
-        label: "Site Visit",
-        value: project.site_visit_status || "Not Complete",
-        indicatorStyle: getSiteVisitStatusIndicator(),
-        view: "site-visit",
-      },
-      {
-        key: "colours",
-        label: "Colours",
-        value: project.colours_status || "Not Sent",
-        indicatorStyle: getColoursStatusIndicator(),
-        view: "colours",
-      },
-      {
-        key: "windows",
-        label: "Windows",
-        value: project.window_status || "Not Ordered",
-        indicatorStyle: getWindowStatusIndicator(),
-        view: "windows",
-      },
-      {
-        key: "contract",
-        label: "Contract",
-        value: getContractStatusText(),
-        indicatorStyle: getContractStatusIndicator(),
-        view: "contract",
-      },
-      {
-        key: "survey-soils",
-        label: "Survey & Soils",
-        value: getSurveySoilsStatusText(),
-        indicatorStyle: getSurveySoilsStatusIndicator(),
-        view: "survey-soil",
-      },
-      {
-        key: "planning",
-        label: "Planning Permit",
-        value: project.planning_status || "Not Selected",
-        indicatorStyle: getPlanningPermitStatusIndicator(),
-        view: "planning",
-      },
-      {
-        key: "energy",
-        label: "Energy Report",
-        value: project.energy_report_status || "Not Submitted",
-        indicatorStyle: getEnergyReportStatusIndicator(),
-        view: "planning",
-      },
-      {
-        key: "footing",
-        label: "Footing Certification",
-        value: project.footing_certification_status || "Not Submitted",
-        indicatorStyle: getFootingCertificationStatusIndicator(),
-        view: "planning",
-      },
-      {
-        key: "building-permit",
-        label: "Building Permit",
-        value: project.building_permit_status || "Not Submitted",
-        indicatorStyle: getBuildingPermitStatusIndicator(),
-        view: "planning",
-      },
-      {
-        key: "pic",
-        label: "PIC",
-        value: project.pic === "Yes" ? "Yes" : "No",
-        indicatorStyle: getPicStatusIndicator(),
-        view: "planning",
-      },
-    ];
-  }
-
-  const designPhaseStatusTiles = buildDesignPhaseStatusTiles();
-
   return (
     <div className="overview-page">
       <div className="overview-header">
@@ -1363,28 +1238,14 @@ export default function Overview({ project }) {
         </div>
       )}
       {project && (
-        <div className="overview-stack">
-          <div className="overview-progress-block">
-            <h2 className="overview-progress-heading">Design Phase Progress</h2>
-            <div className="overview-progress-section">
-              <div className="overview-status-grid">
-                {designPhaseStatusTiles.map((tile) => (
-                  <OverviewStatusTile
-                    key={tile.key}
-                    label={tile.label}
-                    value={tile.value}
-                    indicatorStyle={tile.indicatorStyle}
-                    onClick={() =>
-                      navigate(projectPath(project, { view: tile.view, t: Date.now() }), {
-                        replace: false,
-                      })
-                    }
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+        <DesignPhaseStatusPanel
+          project={project}
+          onTileClick={(tile) =>
+            navigate(projectPath(project, { view: tile.view, t: Date.now() }), {
+              replace: false,
+            })
+          }
+        />
       )}
 
       {/* Email Preview Modal */}

@@ -1,23 +1,23 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { UI } from "../utils/uiThemeTokens.js";
 import { getApiHeaders } from "../utils/auth";
+import "../pages/Overview.css";
 
 const API_URL = "";
-const PAGE_TEXT = UI.pageText;
 const WHITE = UI.cardBg;
 const MONUMENT = UI.textPrimary;
 
 /**
- * Staff: invite clients to the Client Portal for this project.
+ * Staff modal: invite clients to the Client Portal for this project.
  */
-export default function ClientPortalInvite({ project }) {
+export default function ClientPortalInvite({ project, open, onClose }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [sending, setSending] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [statusError, setStatusError] = useState("");
   const [members, setMembers] = useState([]);
-  const [loadingMembers, setLoadingMembers] = useState(true);
+  const [loadingMembers, setLoadingMembers] = useState(false);
 
   const projectId = project?.id;
 
@@ -41,8 +41,20 @@ export default function ClientPortalInvite({ project }) {
   }, [projectId]);
 
   useEffect(() => {
+    if (!open) return;
+    setStatusMessage("");
+    setStatusError("");
     loadMembers();
-  }, [loadMembers]);
+  }, [open, loadMembers]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
   async function handleInvite(e) {
     e.preventDefault();
@@ -84,155 +96,200 @@ export default function ClientPortalInvite({ project }) {
     }
   }
 
+  if (!open) return null;
+
   return (
     <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "24px",
-        padding: "20px 24px",
-        color: PAGE_TEXT,
-        maxWidth: "640px",
-      }}
+      className="overview-modal-backdrop"
+      onClick={() => onClose?.()}
+      role="presentation"
     >
-      <div>
-        <h2 style={{ margin: "0 0 8px", fontSize: "1.35rem", fontWeight: 600 }}>Client Portal</h2>
-        <p style={{ margin: 0, opacity: 0.9, lineHeight: 1.45 }}>
-          Invite a client to view a read-only overview of this project. They will receive a secure
-          one-time login link by email.
-        </p>
-      </div>
-
-      <form
-        onSubmit={handleInvite}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "14px",
-          background: UI.panelBg,
-          padding: "18px",
-          borderRadius: "10px",
-        }}
+      <div
+        className="overview-modal-panel"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="client-portal-invite-title"
       >
-        <div>
-          <label
-            style={{
-              display: "block",
-              fontSize: "0.9rem",
-              marginBottom: "6px",
-              fontWeight: 500,
-            }}
-          >
-            Client email
-          </label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="client@example.com"
-            disabled={sending}
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              borderRadius: "8px",
-              border: "none",
-              fontSize: "1rem",
-              color: MONUMENT,
-              background: WHITE,
-              boxSizing: "border-box",
-            }}
-            required
-          />
-        </div>
-        <div>
-          <label
-            style={{
-              display: "block",
-              fontSize: "0.9rem",
-              marginBottom: "6px",
-              fontWeight: 500,
-            }}
-          >
-            Name (optional)
-          </label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Client name"
-            disabled={sending}
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              borderRadius: "8px",
-              border: "none",
-              fontSize: "1rem",
-              color: MONUMENT,
-              background: WHITE,
-              boxSizing: "border-box",
-            }}
-          />
-        </div>
         <button
-          type="submit"
-          disabled={sending || !email.trim()}
+          type="button"
+          onClick={() => onClose?.()}
+          className="overview-modal-close"
+          aria-label="Close"
+        >
+          ×
+        </button>
+
+        <div
           style={{
-            alignSelf: "flex-start",
-            padding: "12px 20px",
-            fontSize: "1rem",
-            fontWeight: 500,
-            color: UI.buttonPrimaryText,
-            background: sending || !email.trim() ? "#666" : UI.buttonPrimary,
-            border: "none",
-            borderRadius: "8px",
-            cursor: sending || !email.trim() ? "not-allowed" : "pointer",
+            display: "flex",
+            flexDirection: "column",
+            gap: "20px",
+            color: MONUMENT,
           }}
         >
-          {sending ? "Sending…" : "Invite Client"}
-        </button>
-        {statusMessage ? (
-          <div style={{ color: "#8f8", fontSize: "0.95rem" }}>{statusMessage}</div>
-        ) : null}
-        {statusError ? (
-          <div style={{ color: "#f88", fontSize: "0.95rem" }}>{statusError}</div>
-        ) : null}
-      </form>
+          <div>
+            <h2
+              id="client-portal-invite-title"
+              style={{ margin: "0 0 8px", fontSize: "1.35rem", fontWeight: 600 }}
+            >
+              Invite Client
+            </h2>
+            <p style={{ margin: 0, color: UI.textMuted, lineHeight: 1.45 }}>
+              Send a secure one-time login link so the client can view a read-only overview of this
+              project.
+            </p>
+          </div>
 
-      <div>
-        <h3 style={{ margin: "0 0 12px", fontSize: "1.1rem", fontWeight: 600 }}>
-          Invited clients
-        </h3>
-        {loadingMembers ? (
-          <div style={{ opacity: 0.8 }}>Loading…</div>
-        ) : members.length === 0 ? (
-          <div style={{ opacity: 0.8 }}>No clients invited yet.</div>
-        ) : (
-          <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-            {members.map((m) => (
-              <li
-                key={m.membershipId}
+          <form
+            onSubmit={handleInvite}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "14px",
+              background: UI.inputBg,
+              padding: "18px",
+              borderRadius: "10px",
+            }}
+          >
+            <div>
+              <label
                 style={{
-                  padding: "10px 12px",
-                  background: UI.panelBg,
-                  borderRadius: "8px",
-                  marginBottom: "8px",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: "12px",
-                  flexWrap: "wrap",
+                  display: "block",
+                  fontSize: "0.9rem",
+                  marginBottom: "6px",
+                  fontWeight: 500,
                 }}
               >
-                <span>
-                  <strong>{m.email}</strong>
-                  {m.name ? ` — ${m.name}` : ""}
-                </span>
-                <span style={{ opacity: 0.75, fontSize: "0.85rem" }}>
-                  {m.active ? "Active" : "Inactive"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+                Client email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="client@example.com"
+                disabled={sending}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: `1px solid ${UI.outline}`,
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                }}
+                required
+              />
+            </div>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  marginBottom: "6px",
+                  fontWeight: 500,
+                }}
+              >
+                Name (optional)
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Client name"
+                disabled={sending}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: `1px solid ${UI.outline}`,
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+            {statusMessage ? (
+              <div style={{ color: UI.textPrimary, fontSize: "0.95rem" }}>{statusMessage}</div>
+            ) : null}
+            {statusError ? (
+              <div style={{ color: "#b33", fontSize: "0.95rem" }}>{statusError}</div>
+            ) : null}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => onClose?.()}
+                style={{
+                  padding: "10px 18px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  color: MONUMENT,
+                  background: WHITE,
+                  border: `1px solid ${UI.outline}`,
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                }}
+              >
+                Close
+              </button>
+              <button
+                type="submit"
+                disabled={sending || !email.trim()}
+                style={{
+                  padding: "10px 18px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  color: UI.buttonPrimaryText,
+                  background: sending || !email.trim() ? "#999" : UI.buttonPrimary,
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: sending || !email.trim() ? "not-allowed" : "pointer",
+                }}
+              >
+                {sending ? "Sending…" : "Invite Client"}
+              </button>
+            </div>
+          </form>
+
+          <div>
+            <h3 style={{ margin: "0 0 12px", fontSize: "1.05rem", fontWeight: 600 }}>
+              Invited clients
+            </h3>
+            {loadingMembers ? (
+              <div style={{ color: UI.textMuted }}>Loading…</div>
+            ) : members.length === 0 ? (
+              <div style={{ color: UI.textMuted }}>No clients invited yet.</div>
+            ) : (
+              <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                {members.map((m) => (
+                  <li
+                    key={m.membershipId}
+                    style={{
+                      padding: "10px 12px",
+                      background: UI.inputBg,
+                      borderRadius: "8px",
+                      marginBottom: "8px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: "12px",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <span>
+                      <strong>{m.email}</strong>
+                      {m.name ? ` — ${m.name}` : ""}
+                    </span>
+                    <span style={{ color: UI.textMuted, fontSize: "0.85rem" }}>
+                      {m.active ? "Active" : "Inactive"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -7,7 +7,6 @@ import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
 import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
 import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
 import ClientInfo from "./ClientInfo";
-import ClientPortalInvite from "./ClientPortalInvite";
 import Drawings from "./Drawings";
 import Colours from "./Colours";
 import Windows from "./Windows";
@@ -152,7 +151,6 @@ const MENU_OPTIONS = [
   { label: "Overview", key: "overview" },
   { label: "Project Info", key: "project-info" },
   { label: "Client Info", key: "client-info" },
-  { label: "Client Portal", key: "client-portal" },
   { label: "Drawings", key: "drawings" },
     { label: "Colours", key: "colours" },
     { label: "Windows", key: "windows" },
@@ -169,7 +167,6 @@ const CONSTRUCTION_MENU_OPTIONS = [
   { label: "Overview", key: "overview" },
   { label: "Project Info", key: "project-info" },
   { label: "Client Info", key: "client-info" },
-  { label: "Client Portal", key: "client-portal" },
   { label: "Robes", key: "robes" },
   { label: "Variations", key: "variations" },
   { label: "Payments", key: "payments" },
@@ -1051,20 +1048,6 @@ export default function ProjectPage() {
                   }}
                 >
                   <ClientInfo project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
-                </div>
-              )}
-              {activeView === "client-portal" && !isPortalProjectPath && (
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    flex: 1,
-                    minHeight: 0,
-                    alignSelf: "stretch",
-                    overflow: "auto",
-                  }}
-                >
-                  <ClientPortalInvite project={project} />
                 </div>
               )}
               {activeView === "robes" && <Robes project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />}

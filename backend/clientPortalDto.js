@@ -14,58 +14,75 @@ function formatAddress(row) {
   return name || "Project";
 }
 
-function formatDraftsperson(raw) {
-  if (raw == null) return null;
-  const t = String(raw).trim();
-  if (!t || t === DRAFTSPERSON_UNASSIGNED) return null;
-  return t;
+function parseMoneyInt(value) {
+  if (value == null || value === "") return 0;
+  return parseInt(String(value).replace(/[^0-9]/g, ""), 10) || 0;
 }
 
-function deriveExpectedNextStep(row) {
-  const sub = row.substatus != null ? String(row.substatus).trim() : "";
-  const detail = row.substatus_detail != null ? String(row.substatus_detail).trim() : "";
-  if (sub && detail) return `${sub} — ${detail}`;
-  if (sub) return sub;
+function deriveDepositStatus(row) {
+  const depositNum = parseMoneyInt(row.deposit);
+  const costNum = parseMoneyInt(row.project_cost);
+  if (!depositNum || !costNum) return "No Deposit";
+  const fullDeposit = Math.floor(costNum / 20);
+  if (fullDeposit > 0 && depositNum >= fullDeposit) return "Full Deposit";
+  return "Partial Deposit";
+}
 
-  const drawings = row.drawings_status != null ? String(row.drawings_status).trim() : "";
-  if (drawings && drawings !== "Not Assigned") {
-    return `Drawings: ${drawings}`;
+function deriveContractStatusText(row) {
+  const contractStatus = row.contract_status != null ? String(row.contract_status) : "Not Sent";
+  const supportingDocsStatus =
+    row.supporting_documents_status != null ? String(row.supporting_documents_status) : "Not Sent";
+  const waterDeclStatus =
+    row.water_declaration_status != null ? String(row.water_declaration_status) : "Not Required";
+
+  if (
+    contractStatus === "Complete" &&
+    supportingDocsStatus === "Complete" &&
+    (waterDeclStatus === "Complete" || waterDeclStatus === "Not Required")
+  ) {
+    return "All Documents Complete";
   }
-
-  const status = row.status != null ? String(row.status).trim() : "";
-  if (status) return `Current stage: ${status}`;
-  return "Your project team will be in touch with the next steps.";
+  return "Documents Missing";
 }
 
-function pickDate(value) {
+function deriveSurveySoilsStatusText(row) {
+  const surveyStatus = row.survey_status != null ? String(row.survey_status) : "Not Booked";
+  const soilStatus = row.soil_status != null ? String(row.soil_status) : "Not Booked";
+  if (surveyStatus === "Complete" && soilStatus === "Complete") return "Complete";
+  if (surveyStatus === "Not Booked" && soilStatus === "Not Booked") return "Not Booked";
+  return "In Progress";
+}
+
+function pickString(value) {
   if (value == null || value === "") return null;
   const s = String(value).trim();
   return s || null;
 }
 
 /**
- * Build a client-safe project overview object.
+ * Build a client-safe project overview object (status tiles only).
  */
 function toClientProjectOverviewDto(row) {
-  const importantDates = {
-    siteVisitDate: pickDate(row.site_visit_date),
-    siteVisitScheduledDate: pickDate(row.site_visit_scheduled_date),
-    contractSentDate: pickDate(row.contract_sent_date),
-    contractCompleteDate: pickDate(row.contract_complete_date),
-    drawingsSentToClientDate: pickDate(row.drawings_sent_to_client_date),
-    coloursSentDate: pickDate(row.colours_sent_date),
-  };
-
   return {
     projectId: row.id,
     address: formatAddress(row),
-    status: row.status != null ? String(row.status) : null,
-    substatus: row.substatus != null ? String(row.substatus) : null,
-    substatusDetail: row.substatus_detail != null ? String(row.substatus_detail) : null,
-    salesConsultant: row.salesperson != null ? String(row.salesperson).trim() || null : null,
-    projectConsultant: formatDraftsperson(row.draftsperson),
-    expectedNextStep: deriveExpectedNextStep(row),
-    importantDates,
+    depositStatus: deriveDepositStatus(row),
+    drawingsStatus: pickString(row.drawings_status) || "Not Assigned",
+    siteVisitStatus: pickString(row.site_visit_status) || "Not Complete",
+    coloursStatus: pickString(row.colours_status) || "Not Sent",
+    windowStatus: pickString(row.window_status) || "Not Ordered",
+    contractStatusText: deriveContractStatusText(row),
+    contractStatus: pickString(row.contract_status) || "Not Sent",
+    supportingDocumentsStatus: pickString(row.supporting_documents_status) || "Not Sent",
+    waterDeclarationStatus: pickString(row.water_declaration_status) || "Not Required",
+    surveySoilsStatusText: deriveSurveySoilsStatusText(row),
+    surveyStatus: pickString(row.survey_status) || "Not Booked",
+    soilStatus: pickString(row.soil_status) || "Not Booked",
+    planningStatus: pickString(row.planning_status) || "Not Selected",
+    energyReportStatus: pickString(row.energy_report_status) || "Not Submitted",
+    footingCertificationStatus: pickString(row.footing_certification_status) || "Not Submitted",
+    buildingPermitStatus: pickString(row.building_permit_status) || "Not Submitted",
+    pic: pickString(row.pic) === "Yes" ? "Yes" : "No",
   };
 }
 
@@ -73,21 +90,25 @@ const CLIENT_PROJECT_SELECT = `
   SELECT
     id,
     name,
-    status,
     suburb,
     street,
     state,
-    salesperson,
-    draftsperson,
-    substatus,
-    substatus_detail,
+    deposit,
+    project_cost,
     drawings_status,
-    site_visit_date,
-    site_visit_scheduled_date,
-    contract_sent_date,
-    contract_complete_date,
-    drawings_sent_to_client_date,
-    colours_sent_date
+    site_visit_status,
+    colours_status,
+    window_status,
+    contract_status,
+    supporting_documents_status,
+    water_declaration_status,
+    survey_status,
+    soil_status,
+    planning_status,
+    energy_report_status,
+    footing_certification_status,
+    building_permit_status,
+    pic
   FROM projects
   WHERE id = $1
 `;

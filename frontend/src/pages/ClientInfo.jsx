@@ -3,11 +3,13 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { UI, MENU, INDICATOR } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
+import ClientPortalInvite from "./ClientPortalInvite.jsx";
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
 const FIELD_OUTLINE = `1px solid ${UI.outline}`;
 const SEND_CLIENT_DETAILS_BUTTON_ID = 4;
 const EMAIL_CLIENT_BUTTON_ID = 3;
+const INVITE_CLIENT_BUTTON_ID = 5;
 const API_URL = "";
 
 /** Align action buttons with sidebar Back to Main (same as Project Info / Drawings). */
@@ -24,6 +26,7 @@ function mergeClientInfoButtonStyle(styleId, fallback) {
 }
 
 export default function ClientInfo({ project, onUpdate }) {
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [client1Name, setClient1Name] = useState(project?.client1_name || "");
   const [client1Email, setClient1Email] = useState(project?.client1_email || "");
   const [client1Phone, setClient1Phone] = useState(project?.client1_phone || "");
@@ -409,8 +412,21 @@ export default function ClientInfo({ project, onUpdate }) {
     transition: "background 0.17s, border-color 0.17s",
     flexShrink: 0,
   });
+  const inviteClientButtonStyle = mergeClientInfoButtonStyle(INVITE_CLIENT_BUTTON_ID, {
+    background: UI.buttonPrimary,
+    color: UI.buttonPrimaryText,
+    border: FIELD_OUTLINE,
+    borderRadius: "10px",
+    padding: "10px 20px",
+    fontSize: "0.9rem",
+    fontWeight: 500,
+    cursor: "pointer",
+    transition: "background 0.17s, border-color 0.17s",
+    flexShrink: 0,
+  });
   const sendClientDetailsUsesSavedStyle = Boolean(buildSavedButtonStyle(SEND_CLIENT_DETAILS_BUTTON_ID, true));
   const emailClientUsesSavedStyle = Boolean(buildSavedButtonStyle(EMAIL_CLIENT_BUTTON_ID, true));
+  const inviteClientUsesSavedStyle = Boolean(buildSavedButtonStyle(INVITE_CLIENT_BUTTON_ID, true));
 
   const inputStyle = {
     width: "100%",
@@ -660,9 +676,35 @@ export default function ClientInfo({ project, onUpdate }) {
                 ? "Email Client"
                 : "Email Clients"}
             </button>
+            <button
+              type="button"
+              onClick={() => setInviteModalOpen(true)}
+              style={inviteClientButtonStyle}
+              onMouseEnter={
+                inviteClientUsesSavedStyle
+                  ? undefined
+                  : (e) => {
+                      e.currentTarget.style.background = streamColorHover(UI.buttonPrimary);
+                    }
+              }
+              onMouseLeave={
+                inviteClientUsesSavedStyle
+                  ? undefined
+                  : (e) => {
+                      e.currentTarget.style.background = UI.buttonPrimary;
+                    }
+              }
+            >
+              Invite Client
+            </button>
           </div>
         </div>
       )}
+      <ClientPortalInvite
+        open={inviteModalOpen}
+        onClose={() => setInviteModalOpen(false)}
+        project={project}
+      />
     </div>
   );
 }

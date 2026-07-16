@@ -1,7 +1,10 @@
 import React, { useCallback, useEffect, useState } from "react";
+import DesignPhaseStatusPanel from "../components/DesignPhaseStatusPanel.jsx";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { UI } from "../utils/uiThemeTokens";
 import { APP_VERSION } from "../utils/appVersion";
+
+import "../pages/Overview.css";
 
 const API_URL = "";
 const LIGHT_MONUMENT = UI.pageBg;
@@ -20,88 +23,30 @@ const fieldStyle = {
   boxSizing: "border-box",
 };
 
-function formatDateLabel(value) {
-  if (!value) return null;
-  const s = String(value).trim();
-  if (!s) return null;
-  // Prefer YYYY-MM-DD display as stored
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  return s;
-}
-
-function ProjectOverviewCard({ project }) {
-  const dates = project.importantDates || {};
-  const dateRows = [
-    ["Site visit", formatDateLabel(dates.siteVisitDate)],
-    ["Site visit scheduled", formatDateLabel(dates.siteVisitScheduledDate)],
-    ["Contract sent", formatDateLabel(dates.contractSentDate)],
-    ["Contract complete", formatDateLabel(dates.contractCompleteDate)],
-    ["Drawings sent", formatDateLabel(dates.drawingsSentToClientDate)],
-    ["Colours sent", formatDateLabel(dates.coloursSentDate)],
-  ].filter(([, v]) => v);
-
+function ProjectOverviewSection({ project }) {
   return (
     <section
       style={{
-        background: UI.panelBg,
-        borderRadius: "12px",
-        padding: "20px 22px",
-        color: PAGE_TEXT,
         width: "100%",
-        maxWidth: "560px",
+        maxWidth: "min(100%, 1200px)",
         boxSizing: "border-box",
       }}
     >
-      <h2 style={{ margin: "0 0 4px", fontSize: "1.25rem", fontWeight: 600 }}>
+      <h2
+        style={{
+          margin: "0 0 12px",
+          fontSize: "clamp(1.1rem, 2.5vw, 1.35rem)",
+          fontWeight: 600,
+          color: PAGE_TEXT,
+          textAlign: "center",
+        }}
+      >
         {project.address || "Project"}
       </h2>
-      <div style={{ opacity: 0.85, marginBottom: "16px", fontSize: "0.95rem" }}>
-        Overview
+      <div className="overview-page">
+        <DesignPhaseStatusPanel project={project} readOnly showHeading />
       </div>
-
-      <OverviewRow label="Current status" value={project.status} />
-      <OverviewRow
-        label="Substatus"
-        value={
-          project.substatus
-            ? project.substatusDetail
-              ? `${project.substatus} — ${project.substatusDetail}`
-              : project.substatus
-            : null
-        }
-      />
-      <OverviewRow label="Sales consultant" value={project.salesConsultant} />
-      <OverviewRow label="Project consultant" value={project.projectConsultant} />
-      <OverviewRow label="Expected next step" value={project.expectedNextStep} />
-
-      {dateRows.length > 0 ? (
-        <div style={{ marginTop: "18px" }}>
-          <div style={{ fontWeight: 600, marginBottom: "8px", fontSize: "0.95rem" }}>
-            Important dates
-          </div>
-          {dateRows.map(([label, value]) => (
-            <OverviewRow key={label} label={label} value={value} />
-          ))}
-        </div>
-      ) : null}
     </section>
-  );
-}
-
-function OverviewRow({ label, value }) {
-  if (value == null || String(value).trim() === "") return null;
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "2px",
-        marginBottom: "10px",
-      }}
-    >
-      <div style={{ fontSize: "0.8rem", opacity: 0.75 }}>{label}</div>
-      <div style={{ fontSize: "1rem", fontWeight: 500 }}>{value}</div>
-    </div>
   );
 }
 
@@ -422,9 +367,9 @@ export default function ClientPortalApp() {
           Superior Granny Flats consultant to send an invitation.
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px", width: "100%", alignItems: "center" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "28px", width: "100%", alignItems: "center" }}>
           {projects.map((p) => (
-            <ProjectOverviewCard key={p.projectId} project={p} />
+            <ProjectOverviewSection key={p.projectId} project={p} />
           ))}
         </div>
       )}
