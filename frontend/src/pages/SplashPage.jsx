@@ -11,13 +11,34 @@ const LIGHT_MONUMENT = UI.pageBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 
+const fieldLabelStyle = {
+  display: "block",
+  fontSize: "0.9rem",
+  color: PAGE_TEXT,
+  marginBottom: "6px",
+  fontWeight: 500,
+};
+
+const fieldControlStyle = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: "8px",
+  border: "none",
+  fontSize: "1rem",
+  color: MONUMENT,
+  background: WHITE,
+  boxSizing: "border-box",
+};
+
 export default function SplashPage() {
   const logo = useAppLogo();
   const navigate = useNavigate();
   const location = useLocation();
+  const [loginMode, setLoginMode] = useState("staff");
   const [users, setUsers] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [password, setPassword] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
   const [loading, setLoading] = useState(true);
   const [loggingIn, setLoggingIn] = useState(false);
 
@@ -76,6 +97,21 @@ export default function SplashPage() {
     }
   }
 
+  function tabButtonStyle(active) {
+    return {
+      flex: 1,
+      padding: "10px 14px",
+      fontSize: "0.95rem",
+      fontWeight: 600,
+      color: active ? UI.buttonPrimaryText : PAGE_TEXT,
+      background: active ? UI.buttonPrimary : "transparent",
+      border: `1px solid ${active ? UI.buttonPrimary : WHITE}`,
+      borderRadius: "8px",
+      cursor: "pointer",
+      transition: "background 0.17s, color 0.17s, border-color 0.17s",
+    };
+  }
+
   return (
     <div
       style={{
@@ -109,109 +145,16 @@ export default function SplashPage() {
           gap: "16px",
           alignItems: "center",
           minWidth: "300px",
+          width: "100%",
+          maxWidth: "320px",
           marginTop: "-50px",
           position: "relative",
           zIndex: 2,
+          padding: "0 12px",
+          boxSizing: "border-box",
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ width: "100%", maxWidth: "300px" }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: "0.9rem",
-              color: PAGE_TEXT,
-              marginBottom: "6px",
-              fontWeight: 500,
-            }}
-          >
-            User
-          </label>
-          <select
-            value={selectedUserId}
-            onChange={(e) => setSelectedUserId(e.target.value)}
-            disabled={loading || loggingIn}
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              borderRadius: "8px",
-              border: "none",
-              fontSize: "1rem",
-              color: MONUMENT,
-              background: WHITE,
-              boxSizing: "border-box",
-              cursor: loading || loggingIn ? "not-allowed" : "pointer",
-            }}
-          >
-            <option value="">
-              {loading ? "Loading..." : users.length === 0 ? "No users" : "Select user..."}
-            </option>
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div style={{ width: "100%", maxWidth: "300px" }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: "0.9rem",
-              color: PAGE_TEXT,
-              marginBottom: "6px",
-              fontWeight: 500,
-            }}
-          >
-            Password
-          </label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                handleLogin();
-              }
-            }}
-            placeholder="Enter password"
-            disabled={loggingIn}
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              borderRadius: "8px",
-              border: "none",
-              fontSize: "1rem",
-              color: MONUMENT,
-              background: WHITE,
-              boxSizing: "border-box",
-            }}
-            autoComplete="off"
-          />
-        </div>
-
-        <button
-          type="button"
-          onClick={handleLogin}
-          disabled={!selectedUserId || !password || loggingIn}
-          style={{
-            width: "100%",
-            maxWidth: "300px",
-            padding: "12px 20px",
-            fontSize: "1rem",
-            fontWeight: 500,
-            color: UI.buttonPrimaryText,
-            background: !selectedUserId || !password || loggingIn ? "#666" : UI.buttonPrimary,
-            border: "none",
-            borderRadius: "8px",
-            cursor: !selectedUserId || !password || loggingIn ? "not-allowed" : "pointer",
-            transition: "background 0.17s",
-          }}
-        >
-          {loggingIn ? "Signing in…" : "Enter"}
-        </button>
-
         <div
           style={{
             fontSize: "0.75rem",
@@ -223,6 +166,148 @@ export default function SplashPage() {
         >
           {APP_VERSION}
         </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: "8px",
+            width: "100%",
+          }}
+          role="tablist"
+          aria-label="Login type"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={loginMode === "staff"}
+            onClick={() => setLoginMode("staff")}
+            style={tabButtonStyle(loginMode === "staff")}
+          >
+            Staff
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={loginMode === "client"}
+            onClick={() => setLoginMode("client")}
+            style={tabButtonStyle(loginMode === "client")}
+          >
+            Client Portal
+          </button>
+        </div>
+
+        {loginMode === "staff" ? (
+          <>
+            <div style={{ width: "100%" }}>
+              <label style={fieldLabelStyle}>User</label>
+              <select
+                value={selectedUserId}
+                onChange={(e) => setSelectedUserId(e.target.value)}
+                disabled={loading || loggingIn}
+                style={{
+                  ...fieldControlStyle,
+                  cursor: loading || loggingIn ? "not-allowed" : "pointer",
+                }}
+              >
+                <option value="">
+                  {loading ? "Loading..." : users.length === 0 ? "No users" : "Select user..."}
+                </option>
+                {users.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ width: "100%" }}>
+              <label style={fieldLabelStyle}>Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleLogin();
+                  }
+                }}
+                placeholder="Enter password"
+                disabled={loggingIn}
+                style={fieldControlStyle}
+                autoComplete="off"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleLogin}
+              disabled={!selectedUserId || !password || loggingIn}
+              style={{
+                width: "100%",
+                padding: "12px 20px",
+                fontSize: "1rem",
+                fontWeight: 500,
+                color: UI.buttonPrimaryText,
+                background: !selectedUserId || !password || loggingIn ? "#666" : UI.buttonPrimary,
+                border: "none",
+                borderRadius: "8px",
+                cursor: !selectedUserId || !password || loggingIn ? "not-allowed" : "pointer",
+                transition: "background 0.17s",
+              }}
+            >
+              {loggingIn ? "Signing in…" : "Enter"}
+            </button>
+          </>
+        ) : (
+          <>
+            <div style={{ width: "100%" }}>
+              <label style={fieldLabelStyle} htmlFor="client-portal-email">
+                Email Address
+              </label>
+              <input
+                id="client-portal-email"
+                type="email"
+                value={clientEmail}
+                onChange={(e) => setClientEmail(e.target.value)}
+                placeholder="you@example.com"
+                style={fieldControlStyle}
+                autoComplete="email"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {}}
+              style={{
+                width: "100%",
+                padding: "12px 20px",
+                fontSize: "1rem",
+                fontWeight: 500,
+                color: UI.buttonPrimaryText,
+                background: UI.buttonPrimary,
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer",
+                transition: "background 0.17s",
+              }}
+            >
+              Email me a secure login link
+            </button>
+
+            <div
+              style={{
+                width: "100%",
+                textAlign: "center",
+                fontSize: "0.9rem",
+                color: PAGE_TEXT,
+                opacity: 0.85,
+                lineHeight: 1.4,
+              }}
+            >
+              Client Portal coming soon.
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

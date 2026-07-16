@@ -456,6 +456,39 @@ async function isAdminRequest(req) {
   }
 }
 
+/**
+ * v1.4: portal carve-out for PUT /api/projects/:id.
+ * Client colour / 3d-vis portal pages update a small field set without staff session.
+ * Staff identity (session preferred, X-User-Id fallback) is required for all other PUTs.
+ */
+const PORTAL_PROJECT_PUT_ALLOWED_KEYS = new Set([
+  "name",
+  "status",
+  "stream",
+  "suburb",
+  "street",
+  "state",
+  "deposit",
+  "project_cost",
+  "roof_colour",
+  "cladding_colour",
+  "baseboards_colour",
+  "roof_style",
+  "fascia_gutter_colour",
+  "balustrade_colour",
+  "front_door_colour",
+  "window_frames_colour",
+  "window_surrounds_colour",
+]);
+
+function isPortalProjectPutCarveOut(req) {
+  if (getStaffUserIdFromRequest(req)) return false;
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const keys = Object.keys(body);
+  if (keys.length === 0) return false;
+  return keys.every((k) => PORTAL_PROJECT_PUT_ALLOWED_KEYS.has(k));
+}
+
 // Helper: whether the request user has Sales checked in Permissions.
 // v1.0: Hotlist auth helper — identity from shared staff helper
 // (session preferred, X-User-Id fallback).
@@ -854,6 +887,7 @@ function resolveBenBoxDir(relPath) {
 }
 
 app.get("/api/benbox/list", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const rel = (req.query.path || "").toString();
     const dir = resolveBenBoxDir(rel);
@@ -967,6 +1001,7 @@ async function loadPricingCatalogRows() {
 }
 
 app.get("/api/pricing-catalog/search", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const q = (req.query.q || "").toString().trim().toLowerCase();
     const { rows, error } = await loadPricingCatalogRows();
@@ -994,6 +1029,7 @@ app.get("/api/pricing-catalog/search", async (req, res) => {
 });
 
 app.get("/api/pricing-catalog/meta", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const { rows, error } = await loadPricingCatalogRows();
     const p = getPricingCatalogPath();
@@ -2039,6 +2075,9 @@ app.put("/api/projects/:id", async (req, res) => {
     if (!isAdmin) {
       return res.status(403).json({ error: "Admin access required" });
     }
+  } else if (!isPortalProjectPutCarveOut(req)) {
+    // v1.4: staff updates require identity; unauthenticated portal colour-field PUTs remain allowed.
+    if (!requireStaffUserId(req, res)) return;
   }
 
   try {
@@ -2608,6 +2647,7 @@ async function geocodeWithNominatim(q) {
 // VIC: Vicmap Parcel via mapsParcelLookup.js. QLD: TODO.
 
 async function handlePropertyBoundaryRequest(req, res) {
+  if (!requireStaffUserId(req, res)) return;
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) {
     return res.status(403).json({ ok: false, error: "Admin access required" });
@@ -2667,6 +2707,7 @@ app.get("/api/maps/parcel", handlePropertyBoundaryRequest);
 
 // --- Victorian planning scheme info (Vicmap Planning FeatureServer) ---
 async function handlePlanningInfoRequest(req, res) {
+  if (!requireStaffUserId(req, res)) return;
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) {
     return res.status(403).json({ ok: false, error: "Admin access required" });
@@ -2719,6 +2760,7 @@ app.get("/api/planning-info", handlePlanningInfoRequest);
 
 // --- Victorian property easements (Vicmap Property Easements FeatureServer) ---
 async function handlePropertyEasementsRequest(req, res) {
+  if (!requireStaffUserId(req, res)) return;
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) {
     return res.status(403).json({ ok: false, error: "Admin access required" });
@@ -2786,6 +2828,7 @@ app.post("/api/property-easements", handlePropertyEasementsRequest);
 
 // --- Victorian AHD elevation at points (Vicmap Elevation FeatureServer) ---
 app.post("/api/maps/elevation-ahd", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) {
     return res.status(403).json({ ok: false, error: "Admin access required" });
@@ -2827,6 +2870,7 @@ app.post("/api/maps/elevation-ahd", async (req, res) => {
 
 // --- Vicmap monument box around site boundary (NW/NE/SE/SW) ---
 app.post("/api/maps/elevation-monument-box", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) {
     return res.status(403).json({ ok: false, error: "Admin access required" });
@@ -2862,6 +2906,7 @@ app.post("/api/maps/elevation-monument-box", async (req, res) => {
 // --- Maps floor plans (settings) ---
 app.get("/api/maps/floor-plans", async (req, res) => {
   if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
   try {
@@ -2875,6 +2920,7 @@ app.get("/api/maps/floor-plans", async (req, res) => {
 
 app.get("/api/maps/floor-plans/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
   try {
@@ -2891,6 +2937,7 @@ app.get("/api/maps/floor-plans/:id", async (req, res) => {
 
 app.get("/api/maps/floor-plans/:id/image", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) return res.status(403).json({ error: "Admin access required" });
   try {
@@ -2910,6 +2957,7 @@ app.get("/api/maps/floor-plans/:id/image", async (req, res) => {
 
 app.post("/api/maps/floor-plans", upload.single("image"), async (req, res) => {
   if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
   try {
@@ -2925,6 +2973,7 @@ app.post("/api/maps/floor-plans", upload.single("image"), async (req, res) => {
 
 app.put("/api/maps/floor-plans/:id", upload.single("image"), async (req, res) => {
   if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
   try {
@@ -2943,6 +2992,7 @@ app.put("/api/maps/floor-plans/:id", upload.single("image"), async (req, res) =>
 
 app.patch("/api/maps/floor-plans/:id/dollar-value", async (req, res) => {
   if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
   try {
@@ -2963,6 +3013,7 @@ app.patch("/api/maps/floor-plans/:id/dollar-value", async (req, res) => {
 
 app.patch("/api/maps/floor-plans/:id/define-3d", async (req, res) => {
   if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
   try {
@@ -2983,6 +3034,7 @@ app.patch("/api/maps/floor-plans/:id/define-3d", async (req, res) => {
 
 app.delete("/api/maps/floor-plans/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
   try {
@@ -3000,6 +3052,7 @@ app.delete("/api/maps/floor-plans/:id", async (req, res) => {
 // --- Maps quote checklist (settings + maps quote modal) ---
 app.get("/api/maps/quote-items", async (req, res) => {
   if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
   try {
@@ -3013,6 +3066,7 @@ app.get("/api/maps/quote-items", async (req, res) => {
 
 app.put("/api/maps/quote-items", async (req, res) => {
   if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
   try {
@@ -3036,6 +3090,7 @@ app.post(
   ]),
   async (req, res) => {
     if (!pool) return res.status(500).json({ ok: false, error: "DATABASE_URL not set" });
+    if (!requireStaffUserId(req, res)) return;
     const isAdmin = await isAdminRequest(req);
     if (!isAdmin) return res.status(403).json({ ok: false, error: "Admin access required" });
     try {
@@ -3086,7 +3141,8 @@ const NEARMAP_API_KEY = String(
   process.env.NEARMAP_API_KEY || process.env.REACT_APP_NEARMAP_API_KEY || ""
 ).trim();
 
-app.get("/api/maps/basemap-config", (_req, res) => {
+app.get("/api/maps/basemap-config", (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   res.json({
     nearmapEnabled: Boolean(NEARMAP_API_KEY),
     defaultBasemapId: "vicmap-aerial",
@@ -3094,6 +3150,7 @@ app.get("/api/maps/basemap-config", (_req, res) => {
 });
 
 app.get("/api/maps/nearmap-tiles/:z/:x/:y.jpg", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!NEARMAP_API_KEY) {
     return res.status(404).json({ error: "Nearmap not configured" });
   }
@@ -3718,6 +3775,7 @@ app.get("/api/access-permissions", async (req, res) => {
 });
 
 app.get("/api/access-permissions/online", (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   res.json({ onlineUserIds: getOnlineUserIds() });
 });
 
@@ -4118,6 +4176,7 @@ app.get("/api/ui-button-styles", async (req, res) => {
 
 app.put("/api/ui-button-styles", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) return res.status(403).json({ error: "Admin access required" });
   try {
@@ -4155,6 +4214,7 @@ app.get("/api/ui-theme-colors", async (req, res) => {
 
 app.put("/api/ui-theme-colors", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
   const isAdmin = await isAdminRequest(req);
   if (!isAdmin) return res.status(403).json({ error: "Admin access required" });
   try {
@@ -9595,6 +9655,7 @@ app.get("/api/projects/variations/approve", async (req, res) => {
 
 // Open / download a single file from the project Variations folder (path traversal safe)
 app.get("/api/files/variations/:id/file", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const relativePathRaw = req.query.relativePath;
     if (!relativePathRaw || typeof relativePathRaw !== "string") {
@@ -9658,6 +9719,7 @@ app.get("/api/files/variations/:id/file", async (req, res) => {
 
 // List files in Variations folder
 app.get("/api/files/variations/:id", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const ctx = await getVariationsFolderForProjectId(req.params.id);
     if (!ctx.ok) {
@@ -11335,6 +11397,7 @@ app.post("/api/email-generator/suggest", async (req, res) => {
 // Email Generator: Save or update learned answer
 // Reset playground.html to original state
 app.post("/api/playground/reset", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   try {
     const playgroundPath = path.join(__dirname, "..", "playground.html");
     
@@ -11419,6 +11482,7 @@ app.post("/api/playground/reset", async (req, res) => {
 
 // Edit playground.html using AI
 app.post("/api/playground/edit", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
   if (!openaiClient) {
     return res.status(503).json({ error: "OpenAI API key not configured" });
   }
