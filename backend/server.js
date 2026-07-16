@@ -102,6 +102,12 @@ const {
   getSessionTokenFromRequest,
   sessionCookieOptions,
 } = require("./staffSessions");
+const {
+  isHashedPassword,
+  hashPassword,
+  toStoredPassword,
+  verifyPassword,
+} = require("./passwordHashing");
 const app = express();
 
 /** False until migrations finish; API returns 503 until then (server listens immediately). */
@@ -3275,8 +3281,21 @@ app.post("/api/auth/login", async (req, res) => {
 
     const user = userResult.rows[0];
     const storedPassword = user.password || "admin";
-    if (String(password) !== storedPassword) {
+    const passwordOk = await verifyPassword(password, storedPassword);
+    if (!passwordOk) {
       return res.status(401).json({ error: "Incorrect password" });
+    }
+
+    // v0.4 compatibility migration: if the stored password was still plaintext,
+    // transparently upgrade it to a bcrypt hash now that we've verified it.
+    if (!isHashedPassword(storedPassword)) {
+      try {
+        const newHash = await hashPassword(password);
+        await pool.query(`UPDATE users SET password = $1 WHERE id = $2`, [newHash, user.id]);
+      } catch (migrateErr) {
+        // Never block login if the upgrade write fails; try again next login.
+        console.error("Password hash upgrade failed (login still succeeds):", migrateErr);
+      }
     }
 
     const positions = Array.isArray(user.positions) ? user.positions : [];
@@ -3541,6 +3560,11 @@ app.post("/api/users", async (req, res) => {
     const { name, email, phone, positionIds, primaryPositionId, password } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
 
+    // v0.4: always store a bcrypt hash for new users (never plaintext).
+    const initialPassword =
+      password && String(password).trim() !== "" ? String(password) : "admin";
+    const hashedPassword = await toStoredPassword(initialPassword);
+
     await pool.query('BEGIN');
     
     // Create the user
@@ -3552,7 +3576,7 @@ app.post("/api/users", async (req, res) => {
         email ? email.trim() : null,
         phone ? phone.trim() : null,
         primaryPositionId ? parseInt(primaryPositionId) : null,
-        password && String(password).trim() !== "" ? String(password) : "admin",
+        hashedPassword,
       ]
     );
 
@@ -3721,6 +3745,15 @@ app.put("/api/users/:id", async (req, res) => {
         ? normalizeUiThemeId(uiThemeId ?? ui_theme_id)
         : null;
 
+    // v0.4: when a password is provided, always store it hashed. If the admin
+    // UI resubmitted the already-stored bcrypt hash unchanged, keep it as-is to
+    // avoid double-hashing (which would break login). A null password leaves the
+    // existing stored value untouched (unchanged from prior behaviour).
+    const incomingPassword =
+      password != null && String(password).trim() !== "" ? String(password) : null;
+    const passwordToStore =
+      incomingPassword != null ? await toStoredPassword(incomingPassword) : null;
+
     await pool.query('BEGIN');
 
     // Update the user
@@ -3737,7 +3770,7 @@ app.put("/api/users/:id", async (req, res) => {
         email ? email.trim() : null,
         phone ? phone.trim() : null,
         primaryPositionId ? parseInt(primaryPositionId) : null,
-        password != null && String(password).trim() !== "" ? String(password) : null,
+        passwordToStore,
         resolvedUiThemeId,
         id,
       ]
