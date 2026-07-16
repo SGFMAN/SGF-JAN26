@@ -3661,7 +3661,8 @@ app.get("/api/access-permissions/online", (req, res) => {
 app.get("/api/access-permissions/me", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const userId = Number(req.headers["x-user-id"] || req.headers["X-User-Id"]);
+    // v0.7: current-staff grants — prefer session; fall back to X-User-Id.
+    const userId = getStaffUserIdFromRequest(req);
     if (!Number.isFinite(userId)) {
       return res.json({ grants: {} });
     }
@@ -4004,9 +4005,10 @@ app.get("/api/settings", async (req, res) => {
 });
 
 // UI button style presets (Settings → UI → Buttons) — shared app-wide
+// v0.7: current-staff identity for read access (session preferred).
 app.get("/api/ui-button-styles", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
-  const userId = getRequestUserId(req);
+  const userId = getStaffUserIdFromRequest(req);
   if (!userId) return res.status(401).json({ error: "Not authenticated" });
   try {
     const r = await pool.query("SELECT ui_button_styles_json FROM settings WHERE id = 1");
@@ -4040,9 +4042,10 @@ app.put("/api/ui-button-styles", async (req, res) => {
 });
 
 // Global UI theme palette colour overrides (Settings → UI → Palette)
+// v0.7: current-staff identity for read access (session preferred).
 app.get("/api/ui-theme-colors", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
-  const userId = getRequestUserId(req);
+  const userId = getStaffUserIdFromRequest(req);
   if (!userId) return res.status(401).json({ error: "Not authenticated" });
   try {
     const r = await pool.query("SELECT ui_theme_color_overrides_json FROM settings WHERE id = 1");
@@ -4076,9 +4079,10 @@ app.put("/api/ui-theme-colors", async (req, res) => {
 });
 
 // Per-user colour palette (theme) preference
+// v0.7: /me preference endpoints use the shared staff identity helper.
 app.get("/api/users/me/ui-preferences", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
-  const userId = getRequestUserId(req);
+  const userId = getStaffUserIdFromRequest(req);
   if (!userId) return res.status(401).json({ error: "Not authenticated" });
   try {
     const r = await pool.query(`SELECT ui_theme_id FROM users WHERE id = $1`, [userId]);
@@ -4093,7 +4097,7 @@ app.get("/api/users/me/ui-preferences", async (req, res) => {
 
 app.put("/api/users/me/ui-preferences", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
-  const userId = getRequestUserId(req);
+  const userId = getStaffUserIdFromRequest(req);
   if (!userId) return res.status(401).json({ error: "Not authenticated" });
   try {
     const body = req.body && typeof req.body === "object" ? req.body : {};
@@ -4309,7 +4313,8 @@ app.put("/api/settings", async (req, res) => {
 app.post("/api/timesheets/export", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const requestUserId = Number(req.headers["x-user-id"] || req.headers["X-User-Id"]);
+    // v0.7: current-staff identity for "own timesheet only" (session preferred).
+    const requestUserId = getStaffUserIdFromRequest(req);
     if (!Number.isFinite(requestUserId)) {
       return res.status(401).json({ error: "Login required" });
     }
