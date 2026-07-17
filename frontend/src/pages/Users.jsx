@@ -586,7 +586,8 @@ export default function Users() {
   const selectedUser = users.find((user) => user.id === parseInt(selectedUserId));
 
   return (
-    <div style={{ width: "100%", padding: "24px", display: "flex", gap: "24px", height: "100%" }}>
+    <div style={{ width: "100%", padding: "24px", display: "flex", flexDirection: "column", gap: "24px", height: "100%" }}>
+      <div style={{ width: "100%", display: "flex", gap: "24px" }}>
       {/* Column 1: Left - Controls */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
         <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: "24px", color: MONUMENT }}>
@@ -808,48 +809,6 @@ export default function Users() {
           </div>
         </div>
 
-        {/* Invited Clients Section */}
-        <div style={{ width: "100%", maxWidth: "500px", marginTop: "48px" }}>
-          <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: "24px", color: MONUMENT }}>
-            Invited Clients
-          </h2>
-
-          {loadingInvitedClients ? (
-            <div style={{ color: UI.textMuted }}>Loading...</div>
-          ) : invitedClients.length === 0 ? (
-            <div style={{ color: UI.textMuted }}>No clients have been invited yet.</div>
-          ) : (
-            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-              {invitedClients.map((m) => (
-                <li
-                  key={m.membershipId}
-                  style={{
-                    padding: "10px 12px",
-                    background: WHITE,
-                    borderRadius: "8px",
-                    marginBottom: "8px",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "2px",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
-                    <span style={{ color: MONUMENT, fontWeight: 600 }}>
-                      {m.email}
-                      {m.name ? ` — ${m.name}` : ""}
-                    </span>
-                    <span style={{ color: UI.textMuted, fontSize: "0.85rem" }}>
-                      {m.active ? "Active" : "Inactive"}
-                    </span>
-                  </div>
-                  <span style={{ color: UI.textMuted, fontSize: "0.85rem" }}>
-                    {m.projectLabel}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
       </div>
 
       {/* Column 2: Right - User Details */}
@@ -1094,6 +1053,82 @@ export default function Users() {
           <div style={{ color: UI.textMuted, fontSize: "0.95rem" }}>
             Select a user to view details
           </div>
+        )}
+      </div>
+      </div>
+
+      {/* Invited Clients spans both columns */}
+      <div style={{ width: "100%", marginTop: "24px" }}>
+        <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: "24px", color: MONUMENT }}>
+          Invited Clients
+        </h2>
+
+        {loadingInvitedClients ? (
+          <div style={{ color: UI.textMuted }}>Loading...</div>
+        ) : invitedClients.length === 0 ? (
+          <div style={{ color: UI.textMuted }}>No clients have been invited yet.</div>
+        ) : (
+          <ul
+            style={{
+              listStyle: "none",
+              margin: 0,
+              padding: 0,
+              maxHeight: "240px",
+              overflowY: "auto",
+              background: WHITE,
+              borderRadius: "8px",
+            }}
+          >
+            {invitedClients.map((m) => (
+              <li
+                key={m.membershipId}
+                style={{
+                  padding: "10px 12px",
+                  display: "grid",
+                  gridTemplateColumns: "minmax(180px, 1.2fr) minmax(220px, 1.5fr) minmax(140px, 1fr) auto",
+                  alignItems: "center",
+                  gap: "16px",
+                  fontSize: "1rem",
+                  borderBottom: `1px solid ${UI.outline}`,
+                }}
+              >
+                <span
+                  style={{
+                    color: MONUMENT,
+                    fontWeight: 400,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {m.email}
+                </span>
+                <span
+                  style={{
+                    color: UI.textMuted,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {m.projectLabel}
+                </span>
+                <span
+                  style={{
+                    color: UI.textMuted,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {m.name || "—"}
+                </span>
+                <span style={{ color: UI.textMuted, whiteSpace: "nowrap" }}>
+                  {m.active ? "Active" : "Inactive"}
+                </span>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 
