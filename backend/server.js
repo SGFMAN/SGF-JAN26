@@ -10671,13 +10671,21 @@ const COLORBOND_SWATCH_NOTES = Object.freeze({
   Monument: "COLORBOND® Monument® — deep dark charcoal grey (approx #323233). Not black, not mid-grey.",
   Paperbark: "COLORBOND® Paperbark® — muted pale brown / cream-grey (approx #CABFA4). Warm light neutral.",
   Wallaby: "COLORBOND® Wallaby® — muted mid grey-brown (approx #7F7C78). Earthy mid-tone, not charcoal.",
+  White: "Clean white painted finish (approx #FFFFFF). Bright white, not cream or grey.",
 });
+
+const AI_3D_RENDER_DEFAULT_COLOUR = "White";
 
 function normalizeColourChoice(value) {
   if (value == null) return "";
   const s = String(value).trim();
   if (!s || /^select$/i.test(s)) return "";
   return s;
+}
+
+/** Missing / Select → White (temporary fallback until all colours are locked down). */
+function colourChoiceOrWhite(value) {
+  return normalizeColourChoice(value) || AI_3D_RENDER_DEFAULT_COLOUR;
 }
 
 function describeColorbondChoice(name) {
@@ -10704,7 +10712,7 @@ function buildAiRenderFinishInstructionsFromDb(projectRow) {
   ].join("\n");
 }
 
-/** Rich finish block for 3D unit photoreal — colours are mandatory when set. */
+/** Rich finish block for 3D unit photoreal — every part always has a colour (White if unset). */
 function buildAi3dRenderFinishInstructions(finishes = {}) {
   const parts = [
     ["Wall cladding boards", finishes.claddingColour || finishes.cladding_colour],
@@ -10717,23 +10725,19 @@ function buildAi3dRenderFinishInstructions(finishes = {}) {
     ["Roof (if visible)", finishes.roofColour || finishes.roof_colour],
   ];
 
-  const lines = [];
-  for (const [label, raw] of parts) {
-    const name = normalizeColourChoice(raw);
-    if (!name) continue;
-    lines.push(`- ${label}: ${describeColorbondChoice(name)}`);
-  }
-
-  if (lines.length === 0) {
-    return [
-      "FINISHES: No external colours selected yet.",
-      "Keep cladding as clean light/white weatherboards and use subdued Australian neutrals for trims only.",
-    ].join("\n");
-  }
+  const lines = parts.map(([label, raw]) => {
+    const name = colourChoiceOrWhite(raw);
+    const fromDefault = !normalizeColourChoice(raw);
+    const note = fromDefault
+      ? `${describeColorbondChoice(name)} (default — no colour selected)`
+      : describeColorbondChoice(name);
+    return `- ${label}: ${note}`;
+  });
 
   return [
-    "FINISHES (MANDATORY — project colour selections):",
-    "Apply each listed COLORBOND® colour to the matching building part. Do not ignore or replace these.",
+    "FINISHES (MANDATORY — every part has a colour):",
+    `Apply each colour to the matching building part. If a part had no selection, use ${AI_3D_RENDER_DEFAULT_COLOUR}.`,
+    "Do not leave any exterior part unspecified, invent alternate schemes, or keep grey placeholder materials from the 3D screenshot.",
     ...lines,
   ].join("\n");
 }
