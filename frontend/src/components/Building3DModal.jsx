@@ -221,6 +221,7 @@ export default function Building3DModal({
   calibration = null,
   buildModel,
   projectId = null,
+  finishes = null,
 }) {
   const containerRef = useRef(null);
   const captureRef = useRef(null);
@@ -1214,7 +1215,18 @@ export default function Building3DModal({
       const response = await fetch(`/api/projects/${projectId}/generate-3d-render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageDataUrl }),
+        body: JSON.stringify({
+          imageDataUrl,
+          finishes: finishes && typeof finishes === "object" ? finishes : undefined,
+          geometry: {
+            subfloorHeightM,
+            subfloorHeightMm: Math.round(subfloorHeightM * 1000),
+            claddingHeightM: CLADDING_HEIGHT_M,
+            wallHeightMm: Math.round(CLADDING_HEIGHT_M * 1000),
+            claddingBoardCount: CLADDING_LAYER_COUNT,
+            claddingBoardHeightMm: Math.round(CLADDING_LAYER_HEIGHT_M * 1000),
+          },
+        }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {

@@ -1189,6 +1189,16 @@ export default function Colours({ project, onUpdate }) {
           slidingDoors={planTraceSlidingDoors}
           calibration={planTraceCalibration}
           projectId={project?.id ?? null}
+          finishes={{
+            roofColour,
+            claddingColour,
+            baseboardsColour,
+            fasciaGutterColour,
+            balustradeColour,
+            frontDoorColour,
+            windowFramesColour,
+            windowSurroundsColour,
+          }}
           onClose={() => setShowBuilding3DModal(false)}
         />
       )}

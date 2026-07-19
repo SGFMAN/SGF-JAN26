@@ -10642,32 +10642,56 @@ const AI_RENDER_PROMPT_SINGLE_PASS_FALLBACK = `${AI_RENDER_PROMPT_MARGIN_PASS}\n
 /** Photorealize a captured 3D unit viewer screenshot (current camera view). */
 const AI_3D_RENDER_PROMPT = `Turn this screenshot of a simple 3D architectural unit model into a photorealistic exterior architectural visualization.
 
-CRITICAL GEOMETRY LOCK:
-- Preserve the exact camera angle, framing, building proportions, footprint shape, window/door openings, and overall composition from the input.
-- Do not invent a different building, move openings, or change the viewpoint.
-- Keep the modular cladding panels, surrounds, frames, and openings readable and correctly placed.
+CRITICAL GEOMETRY LOCK (NON-NEGOTIABLE):
+- Preserve the exact camera angle, framing, footprint shape, window/door openings, and overall composition from the input.
+- Do not invent a different building, move openings, change the viewpoint, or add/remove storeys.
+- Keep the modular cladding board lines, surrounds, frames, and openings readable and correctly placed.
+- SUBFLOOR / BASE HEIGHT IS MANDATORY: keep the raised subfloor exactly the same height and band proportions as in the input. Do not raise, lower, thicken, or squash the base. Do not bury it in landscaping that hides its true height.
+- WALL / CLADDING HEIGHT IS MANDATORY: keep the wall cladding exactly the same total height and horizontal board count/proportions as in the input. Do not stretch walls taller, compress them shorter, or invent extra boards/storeys.
+- Relative heights between ground → subfloor top → wall top → openings must match the input pixel-for-pixel in proportion.
+
+MANDATORY COLOUR / FINISH LOCK:
+- Apply the project colour selections exactly as listed in FINISHES below (COLORBOND® product names).
+- Do not invent alternate colour schemes, “improve” the palette, or keep the white/grey placeholder colours from the 3D screenshot when a finish is specified.
+- Map finishes to the correct parts: cladding boards, baseboards/subfloor trims, window frames, window surrounds, front door, fascia/gutter, balustrade, roof (if visible).
+- Where a finish is listed, that part MUST read as that COLORBOND® colour in the final image.
 
 ENVIRONMENT & LIGHTING:
 - Replace the plain studio/backdrop with a believable Australian suburban setting: natural daylight sky, soft sun lighting, realistic shadows.
-- Add a grass lawn / ground plane under and around the building.
-- Add a few trees and light landscaping in the mid/background (do not obscure the building).
+- Add a grass lawn / ground plane under and around the building without changing the visible subfloor height.
+- Add a few trees and light landscaping in the mid/background (do not obscure the building or hide the base height).
 - Optional subtle driveway or path if it fits the composition naturally.
 
-MATERIALS:
-- Apply photoreal cladding, glazing, frames, trims, and subfloor materials matching the finish notes when provided.
-- Aim for clean, high-quality architectural-viz output suitable for a client presentation.`;
+OUTPUT QUALITY:
+- Photoreal materials and glazing; clean architectural-viz suitable for a client presentation.
+- Geometry and colour locks above take priority over stylistic embellishment.`;
 
-function decodeOpenAiImageEditB64Json(imagesResp) {
-  const b64 = imagesResp?.data?.[0]?.b64_json;
-  if (!b64) throw new Error("OpenAI returned no image data.");
-  return Buffer.from(b64, "base64");
+/** Known COLORBOND® swatches used on the Colours page — give the model concrete appearance targets. */
+const COLORBOND_SWATCH_NOTES = Object.freeze({
+  Monument: "COLORBOND® Monument® — deep dark charcoal grey (approx #323233). Not black, not mid-grey.",
+  Paperbark: "COLORBOND® Paperbark® — muted pale brown / cream-grey (approx #CABFA4). Warm light neutral.",
+  Wallaby: "COLORBOND® Wallaby® — muted mid grey-brown (approx #7F7C78). Earthy mid-tone, not charcoal.",
+});
+
+function normalizeColourChoice(value) {
+  if (value == null) return "";
+  const s = String(value).trim();
+  if (!s || /^select$/i.test(s)) return "";
+  return s;
+}
+
+function describeColorbondChoice(name) {
+  return (
+    COLORBOND_SWATCH_NOTES[name] ||
+    `COLORBOND® ${name} (match the real product colour; do not substitute)`
+  );
 }
 
 function buildAiRenderFinishInstructionsFromDb(projectRow) {
   const bits = [];
-  const rc = projectRow?.roof_colour != null ? String(projectRow.roof_colour).trim() : "";
-  const cc = projectRow?.cladding_colour != null ? String(projectRow.cladding_colour).trim() : "";
-  const bc = projectRow?.baseboards_colour != null ? String(projectRow.baseboards_colour).trim() : "";
+  const rc = normalizeColourChoice(projectRow?.roof_colour);
+  const cc = normalizeColourChoice(projectRow?.cladding_colour);
+  const bc = normalizeColourChoice(projectRow?.baseboards_colour);
   if (rc) bits.push(`Roof / Colorbond: ${rc}`);
   if (cc) bits.push(`Wall cladding: ${cc}`);
   if (bc) bits.push(`Baseboards / trims: ${bc}`);
@@ -10678,6 +10702,77 @@ function buildAiRenderFinishInstructionsFromDb(projectRow) {
     "FINISHES (project record): apply these colours/materials to the render.",
     bits.join("\n"),
   ].join("\n");
+}
+
+/** Rich finish block for 3D unit photoreal — colours are mandatory when set. */
+function buildAi3dRenderFinishInstructions(finishes = {}) {
+  const parts = [
+    ["Wall cladding boards", finishes.claddingColour || finishes.cladding_colour],
+    ["Subfloor / baseboards / trims", finishes.baseboardsColour || finishes.baseboards_colour],
+    ["Window frames", finishes.windowFramesColour || finishes.window_frames_colour],
+    ["Window surrounds", finishes.windowSurroundsColour || finishes.window_surrounds_colour],
+    ["Front door", finishes.frontDoorColour || finishes.front_door_colour],
+    ["Fascia / gutter", finishes.fasciaGutterColour || finishes.fascia_gutter_colour],
+    ["Balustrade", finishes.balustradeColour || finishes.balustrade_colour],
+    ["Roof (if visible)", finishes.roofColour || finishes.roof_colour],
+  ];
+
+  const lines = [];
+  for (const [label, raw] of parts) {
+    const name = normalizeColourChoice(raw);
+    if (!name) continue;
+    lines.push(`- ${label}: ${describeColorbondChoice(name)}`);
+  }
+
+  if (lines.length === 0) {
+    return [
+      "FINISHES: No external colours selected yet.",
+      "Keep cladding as clean light/white weatherboards and use subdued Australian neutrals for trims only.",
+    ].join("\n");
+  }
+
+  return [
+    "FINISHES (MANDATORY — project colour selections):",
+    "Apply each listed COLORBOND® colour to the matching building part. Do not ignore or replace these.",
+    ...lines,
+  ].join("\n");
+}
+
+function buildAi3dGeometryLockInstructions(geometry = {}) {
+  const subfloorMm =
+    Number.isFinite(Number(geometry.subfloorHeightMm))
+      ? Math.round(Number(geometry.subfloorHeightMm))
+      : Number.isFinite(Number(geometry.subfloorHeightM))
+        ? Math.round(Number(geometry.subfloorHeightM) * 1000)
+        : 650;
+  const wallMm =
+    Number.isFinite(Number(geometry.wallHeightMm))
+      ? Math.round(Number(geometry.wallHeightMm))
+      : Number.isFinite(Number(geometry.claddingHeightM))
+        ? Math.round(Number(geometry.claddingHeightM) * 1000)
+        : 2600;
+  const claddingBoards =
+    Number.isFinite(Number(geometry.claddingBoardCount))
+      ? Math.round(Number(geometry.claddingBoardCount))
+      : 13;
+  const boardMm =
+    Number.isFinite(Number(geometry.claddingBoardHeightMm))
+      ? Math.round(Number(geometry.claddingBoardHeightMm))
+      : 200;
+
+  return [
+    "MANDATORY DIMENSIONS (must match the input model — do not alter):",
+    `- Subfloor / raised base height: exactly ${subfloorMm} mm from ground to underside of walls (three solid bands with narrow gaps as shown).`,
+    `- Wall cladding height: exactly ${wallMm} mm above the subfloor (${claddingBoards} horizontal boards × ${boardMm} mm).`,
+    "- Keep the same number of cladding boards and the same relative opening heights as the input.",
+    "- Do not make the building taller, shorter, or add a different base height for stylistic reasons.",
+  ].join("\n");
+}
+
+function decodeOpenAiImageEditB64Json(imagesResp) {
+  const b64 = imagesResp?.data?.[0]?.b64_json;
+  if (!b64) throw new Error("OpenAI returned no image data.");
+  return Buffer.from(b64, "base64");
 }
 
 async function sharpResizePngForAiInput(buffer, maxEdge = 1536) {
@@ -11072,7 +11167,11 @@ app.post("/api/projects/:id/generate-3d-render", async (req, res) => {
 
   try {
     const projectResult = await pool.query(
-      "SELECT drawings_pdf_location, colours_pdf_location, roof_colour, cladding_colour, baseboards_colour FROM projects WHERE id = $1",
+      `SELECT drawings_pdf_location, colours_pdf_location,
+              roof_colour, cladding_colour, baseboards_colour,
+              fascia_gutter_colour, balustrade_colour, front_door_colour,
+              window_frames_colour, window_surrounds_colour
+       FROM projects WHERE id = $1`,
       [projectId]
     );
     if (projectResult.rows.length === 0) {
@@ -11113,7 +11212,37 @@ app.post("/api/projects/:id/generate-3d-render", async (req, res) => {
     const editSize = pickGptImageOneEditSizeFromPlansAspectRatio(aspect);
     pngBuf = await sharpResizePngForAiInput(pngBuf, 1536);
 
-    const finishBlock = buildAiRenderFinishInstructionsFromDb(row);
+    // Prefer live Colours-page finishes from the client; fall back to DB.
+    const bodyFinishes =
+      req.body?.finishes && typeof req.body.finishes === "object" ? req.body.finishes : {};
+    const finishes = {
+      roof_colour: bodyFinishes.roofColour ?? bodyFinishes.roof_colour ?? row.roof_colour,
+      cladding_colour:
+        bodyFinishes.claddingColour ?? bodyFinishes.cladding_colour ?? row.cladding_colour,
+      baseboards_colour:
+        bodyFinishes.baseboardsColour ?? bodyFinishes.baseboards_colour ?? row.baseboards_colour,
+      fascia_gutter_colour:
+        bodyFinishes.fasciaGutterColour ??
+        bodyFinishes.fascia_gutter_colour ??
+        row.fascia_gutter_colour,
+      balustrade_colour:
+        bodyFinishes.balustradeColour ?? bodyFinishes.balustrade_colour ?? row.balustrade_colour,
+      front_door_colour:
+        bodyFinishes.frontDoorColour ?? bodyFinishes.front_door_colour ?? row.front_door_colour,
+      window_frames_colour:
+        bodyFinishes.windowFramesColour ??
+        bodyFinishes.window_frames_colour ??
+        row.window_frames_colour,
+      window_surrounds_colour:
+        bodyFinishes.windowSurroundsColour ??
+        bodyFinishes.window_surrounds_colour ??
+        row.window_surrounds_colour,
+    };
+    const geometry =
+      req.body?.geometry && typeof req.body.geometry === "object" ? req.body.geometry : {};
+
+    const finishBlock = buildAi3dRenderFinishInstructions(finishes);
+    const geometryBlock = buildAi3dGeometryLockInstructions(geometry);
     const imageFile = await toFile(pngBuf, "unit-3d-viewport.png", { type: "image/png" });
 
     let outBuf;
@@ -11124,7 +11253,7 @@ app.post("/api/projects/:id/generate-3d-render", async (req, res) => {
         input_fidelity: "high",
         size: editSize,
         n: 1,
-        prompt: `${AI_3D_RENDER_PROMPT}\n\n${finishBlock}`,
+        prompt: `${AI_3D_RENDER_PROMPT}\n\n${geometryBlock}\n\n${finishBlock}`,
         image: imageFile,
       });
       outBuf = decodeOpenAiImageEditB64Json(resp);
