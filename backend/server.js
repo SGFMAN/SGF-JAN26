@@ -11172,9 +11172,7 @@ app.post("/api/projects/:id/generate-3d-render", async (req, res) => {
   try {
     const projectResult = await pool.query(
       `SELECT drawings_pdf_location, colours_pdf_location,
-              roof_colour, cladding_colour, baseboards_colour,
-              fascia_gutter_colour, balustrade_colour, front_door_colour,
-              window_frames_colour, window_surrounds_colour
+              roof_colour, cladding_colour, baseboards_colour
        FROM projects WHERE id = $1`,
       [projectId]
     );
@@ -11216,7 +11214,8 @@ app.post("/api/projects/:id/generate-3d-render", async (req, res) => {
     const editSize = pickGptImageOneEditSizeFromPlansAspectRatio(aspect);
     pngBuf = await sharpResizePngForAiInput(pngBuf, 1536);
 
-    // Prefer live Colours-page finishes from the client; fall back to DB.
+    // Prefer live Colours-page finishes from the client; fall back to DB where columns exist.
+    // Extra finish fields (fascia, frames, etc.) are client-only until those DB columns exist.
     const bodyFinishes =
       req.body?.finishes && typeof req.body.finishes === "object" ? req.body.finishes : {};
     const finishes = {
@@ -11226,21 +11225,15 @@ app.post("/api/projects/:id/generate-3d-render", async (req, res) => {
       baseboards_colour:
         bodyFinishes.baseboardsColour ?? bodyFinishes.baseboards_colour ?? row.baseboards_colour,
       fascia_gutter_colour:
-        bodyFinishes.fasciaGutterColour ??
-        bodyFinishes.fascia_gutter_colour ??
-        row.fascia_gutter_colour,
+        bodyFinishes.fasciaGutterColour ?? bodyFinishes.fascia_gutter_colour ?? null,
       balustrade_colour:
-        bodyFinishes.balustradeColour ?? bodyFinishes.balustrade_colour ?? row.balustrade_colour,
+        bodyFinishes.balustradeColour ?? bodyFinishes.balustrade_colour ?? null,
       front_door_colour:
-        bodyFinishes.frontDoorColour ?? bodyFinishes.front_door_colour ?? row.front_door_colour,
+        bodyFinishes.frontDoorColour ?? bodyFinishes.front_door_colour ?? null,
       window_frames_colour:
-        bodyFinishes.windowFramesColour ??
-        bodyFinishes.window_frames_colour ??
-        row.window_frames_colour,
+        bodyFinishes.windowFramesColour ?? bodyFinishes.window_frames_colour ?? null,
       window_surrounds_colour:
-        bodyFinishes.windowSurroundsColour ??
-        bodyFinishes.window_surrounds_colour ??
-        row.window_surrounds_colour,
+        bodyFinishes.windowSurroundsColour ?? bodyFinishes.window_surrounds_colour ?? null,
     };
     const geometry =
       req.body?.geometry && typeof req.body.geometry === "object" ? req.body.geometry : {};
