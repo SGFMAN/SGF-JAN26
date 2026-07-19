@@ -108,10 +108,16 @@ export async function loadFloorPlanSourceCanvasFromUrl(url) {
   return loadFloorPlanSourceCanvas(file);
 }
 
-/** Fit image into viewport with uniform scale (preserves aspect ratio). */
+/** Fit image into viewport with uniform scale (preserves aspect ratio, may letterbox). */
 export function fitScale(sourceWidth, sourceHeight, viewportWidth, viewportHeight) {
   if (!sourceWidth || !sourceHeight || !viewportWidth || !viewportHeight) return 1;
   return Math.min(viewportWidth / sourceWidth, viewportHeight / sourceHeight);
+}
+
+/** Fill viewport with uniform scale (preserves aspect ratio, may crop until panned). */
+export function coverScale(sourceWidth, sourceHeight, viewportWidth, viewportHeight) {
+  if (!sourceWidth || !sourceHeight || !viewportWidth || !viewportHeight) return 1;
+  return Math.max(viewportWidth / sourceWidth, viewportHeight / sourceHeight);
 }
 
 /** @returns {{ minX: number, minY: number, cropCorners: { x: number, y: number }[] }} */

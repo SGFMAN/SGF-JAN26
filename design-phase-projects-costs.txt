@@ -1,0 +1,186 @@
+Suburb - Street - Project Cost - Deposit Amount Paid
+Ashgrove - 21 Elimatta Drive - 330369 - $16,518
+Ashmore - 7 Wilga Gr - 280730 - $5,000
+Avoca - 38 Glenview Cr - $284,124 - $14,206
+Basin Pocket - 8 Mcgill Street - 303000 - $15,150
+Baxter - 288-292 Golf Links Road - 360000 - $7,500
+BAYSWATER - 55 Sasses Avenue - 220000 - $11,000
+Bayswater North - 93 Canterbury Rd - $204,000 - $10,200
+BEAUDESERT - 8 Cedar Drive - 203930 - $10,196
+Belgrave - 10 Benson St - $245,700 - $12,285
+Belmont - 12 Dudley Street - 261145 - $13,057
+Belmont - 97 Laura Av - 241295 - $12,064
+Bentleigh - 8 Balmoral Av - 188000 - $9,400
+Bentleigh East - 816 Centre Rd - 199650 - $2,000
+Bethania - 54 Parliament St - 240250 - $12,012
+BETHANIA - 6 Zircon Court - $232,160 - $11,608
+BIRKDALE - 14 Thomas Street - $298,530 - $14,926
+Birkdale - 6 Maud St - $215,150 - $10,757
+Boronia - 20 Maryborough Rd - $195,000 - $9,750
+Bracken Ridge - 5 Buckra Street - $208,604 - $10,430
+Bray Park - 46 Irula St - 257000 - $12,850
+BRIGHTON - 84 Bay Street - 271920 - $13,596
+Browns Plains - 8 Saratoga Street - $242,360 - $12,118
+Buccan - 8-14 Veronica Court - $289,330 - $14,466
+BUNDOORA - 35 Chaucer Crescent - $217,150 - $10,857
+BUNYIP - 20 Strafford Lane - $340,000 - $17,000
+CABOOLTURE - 220 King Street - $224,340 - $11,217
+CABOOLTURE - 7 Linwood Court - 195000 - $9,750
+Caboolture South - 16 Matthew Flinders Dr - $197,550 - $9,877
+CALLAMVALE - 72 Sunflower Crescent - $225,555 - $11,277
+CALOUNDRA - 8 Suller Street - 208650 - $10,432
+Camberwell - 6 Aird Street - 256550 - $12,827
+CARRUM DOWNS - 15 Viking Court - $232,000 - $5,000
+Chapel Hill - 3 Keil Place - $274,350 - $13,717
+Clifton Springs - 22 Amarina Road - 575684 - $5,000
+Clifton Springs - 5 Tarkarri Av - 221450 - $2,000
+Clifton Springs - 70 Boonderabbi Dr - $246,125 - $12,306
+Coopers Plains - 11 Bosworth Street - $207,650 - $10,382
+Corio - 8 Clavus Rd - 215000 - $10,750
+CRESTMEAD - 15 Pinewood Street - $234,905 - $11,745
+Crestmead - 2 Citron Ct - 343016 - $5,000
+CRESTMEAD - 7 Wisdom Way - $229,350 - $11,467
+Croydon - 19 Abraham Dr - $194,000 - $9,700
+Croydon - 89 Eastfield Rd - 202650 - $10,132
+Croydon South - 136 Belmont Road - 220150 - $11,007
+CROYDON SOUTH - 4B Bridge Court - 243764 - $12,188
+Daisy Hill - 7 Begonia St - 248705 - $12,435
+Dandenong North - 20 Deakin Cr - $210,000 - $10,500
+Darley - 3 Snow Ct - 225749 - $11,287
+Deagon - 8 Henderson Rd - 241250 - $12,062
+DONVALE - 63-65 Heads Road - 337600 - $16,880
+Drouin - 3 Amberly Dr - 249100 - $12,455
+Eagleby - 22 Dion Drive - $240,510 - $12,025
+EAGLEBY - 33 Rinto Drive - $248,280 - $12,414
+EAGLEBY - 3 Bedford Crescent - $237,510 - $11,875
+East Geelong - 77 Ormond Rd - 224835 - $2,000
+Edens Landing - 178 Castile crescent - 236445 - $11,822
+ELIMBAH - 9–11 Greentree Road - $259,260 - $12,963
+Eltham - 141 Brougham Street - $605,538 - $30,276
+Everton Hills - 20 Longford St - $241,975 - $12,098
+FERNTREE GULLY - 1-412 Scoresby Road - $180,000 - $9,000
+FERNTREE GULLY - 27 James Road - 220000 - $11,000
+Ferntree Gully - 663 Burwood Hwy - 214930 - $10,746
+FORESTDALE - 13-17 Sheriff Street - $392,590 - $19,629
+Frankston - 15 Dell Road - 255635 - $12,781
+FRANKSTON NORTH - 2-37 Longleaf Street - $268,000 - $13,400
+Frankston South - 6 Poinciana St - 260395 - $13,019
+Frankston South - 73 Baileyana St - $275,705 - $13,785
+Glen Iris - 29 Adrian St - $200,000 - $10,000
+GLENWAVERLY - 2-8 Myers Ave - 29040 - $1,452
+GRACEVILLE - 36 Park Road - 232100 - $11,605
+Greenvale - 10 Vidos Rd - $197,650 - $9,882
+Grovedale - 133 Burdoo Dr - $241,395 - $12,069
+Hampton Park - 5 Edsall Cl - $203,350 - $2,000
+Harristown - 45 Merino St - $270,000 - $5,000
+Helensvale - 18 Barradine Crescent - 263110 - $13,155
+Heritage Park - 5 Excelsa Place - $232,445 - $11,622
+HORSHAM - 18 Philip Street - 592900 - $29,645
+INALA - 30 Kestrel Street - 291410 - $14,570
+INALA - 96 Biota Street - $226,260 - $11,313
+Jacana - 3 Lorraine Cr - $260,855 - $13,042
+JIMBOOMBA - 25-33 Alluring Court - $351,730 - $17,586
+Jimboomba - 300-312 Mundoolun Road - $338,390 - $16,919
+KALLANGUR - 8 Beattie Street - $210,000 - $10,500
+Kensington Grove - 59 Thallon Road - $306,665 - $15,333
+KILMORE EAST - 5 Louis Rise - $232,000 - $11,600
+Kingston - 69 Anchusa Street - 217279 - $10,863
+KOORALBYN - 30-40 Yulgibar Close - $276,400 - $13,820
+LANGWARRIN SOUTH - 40 West Road - 325000 - $16,250
+LARA - 100 McClelland Avenue - 223000 - $5,000
+Lara - 55 Curletts Rd - $259,690 - $12,984
+Lilydale - 37 Mitchell Road - $220,950 - $11,047
+LOGAN CENTRAL - 13 Moore Street - $290,000 - $14,500
+LOGAN CENTRAL - 4 Waitara St - $203,930 - $10,196
+Logan Central - 73 Cormie St - $257,020 - $12,851
+Loganlea - 24 Keyes Street - $213,530 - $10,676
+Logan Village - 68 Ardee Pl - 218490 - $10,924
+LORNE - 10 Smith Street - 327185 - $16,359
+Macleod - 19 Thornton Street - 219330 - $10,966
+Macleod - 22 Lindsay St - 248926 - $12,446
+Macleod - 22 Lindsay St - 275980 - $13,799
+Manor Lakes - 8 Grovedale Way - $213,000 - $10,650
+MARGATE - 11 Dover Road - $292,000 - $14,600
+Marsden - 131b First Av - $238,164 - $11,908
+Marsden - 50 Kim St - $216,450 - $10,822
+MARSDEN - 95 Second Av - $203,500 - $10,175
+Meadowbrook - 5 Torina Pl - $256,993 - $12,849
+Mernda - 19 Gael Ct - 238000 - $11,900
+MIDDLE PARK - 7 Meadow Place - $255,000 - $12,750
+Mitcham - 6 Blossom St - $226,000 - $11,300
+Moggill - 126 Weekes Road - $331,805 - $3,500
+MOOROOKA - 11 Fegen Drive - $305,265 - $15,263
+Mooroolbark - 118 Manchester Rd - $204,000 - $10,200
+Mooroolbark - 23 Croydondale Dr - 194660 - $9,733
+MOOROOLBARK - 25 Highland Cres - $29,040 - $1,452
+Mooroolbark - 6 Wilde Ct - 413750 - $20,687
+Morayfield - 9-13 Bridges Road - $259,630 - $12,981
+Mount Crosby - 59 Highfield Place - 291950 - $14,597
+Mount Gravatt - 141 Broadwater Road - $222,390 - $11,119
+MOUNT WARREN PARK - 7 Lane Court - $199,380 - $9,969
+Mudgeeraba - 19 Palomino Drive - $330,000 - $16,500
+MUNDOOLUN - 61–65 Bredalbane Street - $236,160 - $11,808
+Munruben - 45 - 49 Richmond Court - $239,950 - $11,997
+NERANG - 21 Spring Court - $354,040 - $17,702
+NEW BEITH - 67-71 Melrose Place - $325,000 - $16,250
+New Beith - 75-79 Bradman Street - $378,475 - $18,923
+Newmarket - 9 Travill Street - $308,540 - $15,427
+NINGI - 6 Grice Crescent - 239060 - $11,953
+NOOSAVILLE - 1 Juron Street - $227,300 - $11,365
+Notting Hill - 20 Bingley Ave - $195,000 - $9,750
+Oak Park - 642 Pascoe Vale Rd - $220,000 - $2,000
+Ormeau - 51 Charlton Crescent - $213,049 - $10,652
+OXLEY - 1137 Oxley Rd - $331,675 - $16,583
+PARKDALE - 20 Sixth Street - 224670 - $11,233
+Pialba - 4 Baird Dr - 295435 - $14,771
+Pinjarra Hills - 2734 Moggill Rd - $251,800 - $12,590
+Regents Park - 20 Dryade St Regents - 265230 - $13,261
+Research - 486 Reynolds Rd - $222,000 - $11,100
+Reservoir - 30 Carrington Road - $29,420 - $1,471
+Ringwood - 6 Bidston Ct - $31,050 - $1,552
+Riverbend - 202-206 Payne Rd - $238,468 - $11,923
+RIVERHILLS - 20 Zambesi Street - 243930 - $12,196
+ROCKLEA - 45 Marshall Road - 272600 - $13,630
+Rothwell - 3 Streeton Ct - $229,500 - $11,475
+Rowville - 175 Murrindal Dr - $270,000 - $13,500
+Runcorn - 60 Camaro St - $250,407 - $12,520
+RUNCORN - 8 Davina Court - $267,230 - $13,361
+Runcorn. - 16 Plum Street - $327,835 - $16,391
+Scarness - 24 Wuruma St - $257,930 - $12,896
+SEVEN HILLS - 125 D'arcy Rd - $294,171 - $14,708
+SHAILER PARK - 42A Hester Street - $225,350 - $11,267
+SILKSTONE - 5 Louise Court - $252,210 - $12,610
+Slacks Creek - 21 Renita St - $215,730 - $10,786
+Slacks Creek - 22 Esplen St - 226930 - $11,346
+Slacks Creek - 35 Janice St - $258,745 - $12,937
+Somerville - 2-52 Station St - 213000 - $10,650
+Southport - 76 stevens street - $290,660 - $14,533
+SPRINGVALE - 797 Heatherton Road - 263000 - $13,150
+Stafford - 13 Theodore St - $203,250 - $7,500
+Stafford - 15 Goorama St - $287,429 - $14,371
+Strathpine - 44 Fox Street - 269360 - $13,468
+STRATHPINE - 59 Samsonvale Rd - $203,600 - $10,180
+SUNBURY - 1 Gurners Lane - $226,070 - $11,303
+SUNBURY - 48 Emu Road - $495,170 - $24,758
+SUNNYBANK - 25 Agnes St - $228,100 - $11,405
+Sunnybank Hills - 2 Sollya Place - $231,100 - $11,555
+TEMPLESTOWE - 13 Anthlin Court - $209,770 - $10,488
+THE BASIN - 45 Old Forest Road - $240,000 - $12,000
+The Gap (brisbane City) - 1043 Waterworks Rd - $219,345 - $7,500
+TINGALPA - 13 Cox Close - $214,600 - $10,730
+Upper Brookfield - 388 Haven Road - $365,680 - $18,284
+Upper Mount Gravatt - 105 Zetland St - $316,355 - $15,817
+URANGAN - 106 Elizabeth Street - $237,540 - $11,877
+Victoria Point - 31 Sycamore Pde - 270000 - $5,000
+WANTIRNA - 7 Aminya Court - 235000 - $11,750
+Wantirna South - 11 Giselle Av - $213,000 - $2,000
+Wantirna South - 9 Tinarra Ct - $235,000 - $2,000
+Waterford West - 9 Taplow Street - $351,820 - $17,591
+WAVELL HEIGHTS - 23 Newman Road - 227000 - $11,350
+Werribee - 4 Dobell Cr - 237475 - $11,873
+Whittington - 17 Conrad Ct - 267505 - $13,375
+WOODHILL - 92-108 Munroe Drive - 241350 - $12,067
+Woodridge - 16-18 Parkdale St - $291,910 - $14,595
+WOORI YALLOCK - 1606 Warburton Highway - $205,000 - $10,250
+Wynnum West - 12 Cranleigh Street - $224,770 - $11,238
+YARRAMBAT - 261-279 Ironbark Road - 219300 - $10,965

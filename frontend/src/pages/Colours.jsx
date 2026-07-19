@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import TracePlanModal from "../components/TracePlanModal";
-import TracePlan3DModal from "../components/TracePlan3DModal";
+import Building3DModal from "../components/Building3DModal.jsx";
+import BuildingElevations from "../components/BuildingElevations.jsx";
 import { resolveNewProjectClientFrom, findSalespersonUserInList } from "../utils/streamNewProjectEmail";
 import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
 import { parsePlanTracePolygon, serializePlanTracePolygon } from "../utils/planTracePolygon";
@@ -27,10 +28,12 @@ function mergeColoursButtonStyle(styleId, fallback) {
 
 const COLOURS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
 const COLOUR_OPTIONS = ["Select", "Monument", "Paperbark", "Wallaby"];
+const COLOUR_PAGE_CATEGORIES = ["External", "Flooring", "Kitchen", "Bathroom", "Bedrooms"];
 
 export default function Colours({ project, onUpdate }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const [coloursStatus, setColoursStatus] = useState(project?.colours_status || "Not Sent");
+  const [activeColourCategory, setActiveColourCategory] = useState("External");
   const [notes, setNotes] = useState(project?.colours_notes || "");
   const [roofColour, setRoofColour] = useState(project?.roof_colour || "Select");
   const [claddingColour, setCladdingColour] = useState(project?.cladding_colour || "Select");
@@ -43,8 +46,17 @@ export default function Colours({ project, onUpdate }) {
   const [windowSurroundsColour, setWindowSurroundsColour] = useState(project?.window_surrounds_colour || "Select");
   const [showSendModal, setShowSendModal] = useState(false);
   const [showTracePlanModal, setShowTracePlanModal] = useState(false);
-  const [showTracePlan3DModal, setShowTracePlan3DModal] = useState(false);
+  const [showBuilding3DModal, setShowBuilding3DModal] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const planTrace = useMemo(
+    () => parsePlanTracePolygon(project?.colours_plan_trace_polygon),
+    [project?.colours_plan_trace_polygon]
+  );
+  const planTraceFootprintPoints = planTrace.points;
+  const planTraceWindows = planTrace.windows;
+  const planTraceDoors = planTrace.doors;
+  const planTraceSlidingDoors = planTrace.slidingDoors;
+  const planTraceCalibration = planTrace.calibration;
   const [attachAffordable, setAttachAffordable] = useState(false);
   const [attachSuperior, setAttachSuperior] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -847,15 +859,19 @@ export default function Colours({ project, onUpdate }) {
 
   function handleOpen3DVisualiser() {
     if (!isAdmin) return;
-    const { points } = parsePlanTracePolygon(project?.colours_plan_trace_polygon);
-    if (points.length < 3) {
-      alert("Trace a floor plan first using Trace Plan.");
-      return;
-    }
-    setShowTracePlan3DModal(true);
+    setShowBuilding3DModal(true);
   }
 
-  async function savePlanTracePolygon(normalizedPoints, page, internalWallSegments = []) {
+  async function savePlanTracePolygon(
+    normalizedPoints,
+    page,
+    internalWallSegments = [],
+    crop = null,
+    windows = [],
+    calibration = null,
+    doors = [],
+    slidingDoors = []
+  ) {
     if (!project?.id) {
       throw new Error("No project selected");
     }
@@ -871,7 +887,12 @@ export default function Colours({ project, onUpdate }) {
         colours_plan_trace_polygon: serializePlanTracePolygon(
           page,
           normalizedPoints,
-          internalWallSegments
+          internalWallSegments,
+          crop,
+          windows,
+          calibration,
+          doors,
+          slidingDoors
         ),
       }),
     });
@@ -943,9 +964,18 @@ export default function Colours({ project, onUpdate }) {
       </h2>
       {project && (
         <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-        <div style={{ marginTop: "24px", display: "flex", gap: "24px", flexWrap: "wrap", flex: 1, minHeight: 0 }}>
+        <div
+          style={{
+            marginTop: "24px",
+            display: "grid",
+            gridTemplateColumns: "minmax(150px, 0.5fr) minmax(0, 1.25fr) minmax(0, 1.25fr)",
+            gap: "24px",
+            flex: 1,
+            minHeight: 0,
+          }}
+        >
           {/* Column 1 */}
-          <div style={{ flex: "1", minWidth: "200px" }}>
+          <div style={{ minWidth: "200px" }}>
             <div style={{ marginBottom: "24px" }}>
               <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Status
@@ -972,150 +1002,87 @@ export default function Colours({ project, onUpdate }) {
                 ))}
               </select>
             </div>
-            
-            <div style={{ marginTop: "24px", display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
-                <button
-                  type="button"
-                  onClick={handleOpenSendModal}
-                  style={emailClientButtonStyle}
-                  onMouseEnter={
-                    emailClientUsesSavedStyle
-                      ? undefined
-                      : (e) => {
-                          e.currentTarget.style.background = streamColorHover(MENU.purple);
-                        }
-                  }
-                  onMouseLeave={
-                    emailClientUsesSavedStyle
-                      ? undefined
-                      : (e) => {
-                          e.currentTarget.style.background = MENU.purple;
-                        }
-                  }
-                >
-                  Email Client
-                </button>
-                <div style={{ flex: 1, padding: "10px 12px", fontSize: "0.9rem", color: MONUMENT, display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span>{project?.colours_sent_date ? formatDateTime(project.colours_sent_date) : (coloursStatus === "Sent" ? "Sent (refreshing...)" : "Not sent")}</span>
-                  {project?.colours_sent_date && (() => {
-                    const daysSince = getDaysSinceSent(project.colours_sent_date);
-                    return daysSince !== null ? (
-                      <span style={{ color: SECTION_GREY, fontSize: "0.85rem" }}>
-                        ({daysSince} {daysSince === 1 ? "day" : "days"} ago)
-                      </span>
-                    ) : null;
-                  })()}
-                </div>
-              </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {COLOUR_PAGE_CATEGORIES.map((category) => {
+                const selected = activeColourCategory === category;
+                return (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => setActiveColourCategory(category)}
+                    style={{
+                      width: "100%",
+                      minHeight: "42px",
+                      padding: "10px 14px",
+                      border: FIELD_OUTLINE,
+                      borderRadius: "8px",
+                      background: selected ? MENU.purple : WHITE,
+                      color: selected ? MENU.activeText : MONUMENT,
+                      fontSize: "1rem",
+                      fontWeight: 500,
+                      textAlign: "left",
+                      cursor: "pointer",
+                      transition: "background 0.17s, color 0.17s",
+                    }}
+                  >
+                    {category}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* Column 2 */}
-          <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column" }}>
-            <div style={{ marginBottom: "24px" }}>
-              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: "500" }}>
-                Colours PDF
-              </div>
-              
-              {/* Drop Zone */}
+          {/* Colour category display spans columns 2 and 3 */}
+          <div
+            style={{
+              gridColumn: "2 / 4",
+              minWidth: 0,
+              minHeight: "460px",
+              display: "flex",
+              flexDirection: "column",
+              background: WHITE,
+              border: FIELD_OUTLINE,
+              borderRadius: "12px",
+              padding: "24px",
+              boxSizing: "border-box",
+            }}
+          >
+            <h3
+              style={{
+                margin: "0 0 16px",
+                color: MONUMENT,
+                fontSize: "1.25rem",
+                fontWeight: 600,
+              }}
+            >
+              {activeColourCategory}
+            </h3>
+            {activeColourCategory === "External" ? (
+              <BuildingElevations
+                widthM={11.3}
+                depthM={5.0}
+                footprintPoints={planTraceFootprintPoints}
+                windows={planTraceWindows}
+                doors={planTraceDoors}
+                slidingDoors={planTraceSlidingDoors}
+                calibration={planTraceCalibration}
+              />
+            ) : (
               <div
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-                onClick={handleBrowseClick}
                 style={{
-                  border: `2px dashed ${isDragging ? "#4D93D9" : SECTION_GREY}`,
-                  borderRadius: "8px",
-                  padding: "40px 20px",
-                  textAlign: "center",
-                  cursor: "pointer",
-                  background: isDragging ? "#f0f7ff" : WHITE,
-                  transition: "background 0.2s, border-color 0.2s",
-                  minHeight: "150px",
+                  flex: 1,
                   display: "flex",
-                  flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
-                  gap: "12px",
+                  color: UI.textMuted,
+                  fontSize: "1rem",
+                  textAlign: "center",
                 }}
               >
-                <div style={{ fontSize: "1rem", color: MONUMENT, fontWeight: 500 }}>
-                  Drag and drop PDF file here
-                </div>
-                <div style={{ fontSize: "0.85rem", color: UI.textMuted }}>
-                  or click to browse
-                </div>
-                {selectedFile && (
-                  <div style={{ fontSize: "0.9rem", color: MONUMENT, marginTop: "8px" }}>
-                    Selected: {selectedFile.name}
-                  </div>
-                )}
+                {activeColourCategory} colour selections will appear here.
               </div>
-
-              {/* Hidden file input */}
-              <input
-                type="file"
-                ref={fileInputRef}
-                accept=".pdf"
-                style={{ display: "none" }}
-                onChange={handleFileSelect}
-              />
-
-              {/* Show Colours button */}
-              {project?.colours_pdf_location && (
-                <button
-                  type="button"
-                  onClick={handleShowColours}
-                  style={{
-                    marginTop: "16px",
-                    width: "100%",
-                    background: MONUMENT,
-                    color: PAGE_TEXT,
-                    border: "none",
-                    borderRadius: "8px",
-                    padding: "10px 20px",
-                    fontSize: "1rem",
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    transition: "background 0.2s",
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1b")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
-                >
-                  Show Colours
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Column 3 - Notes */}
-          <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", height: "100%" }}>
-            <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", flexShrink: 0 }}>
-              Notes
-            </div>
-            <textarea
-              name="colours_notes"
-              value={notes}
-              onChange={handleNotesChange}
-              onBlur={() => void saveAllFields()}
-              placeholder="Enter notes..."
-              style={{
-                width: "100%",
-                flex: "1",
-                minHeight: "400px",
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: "none",
-                fontSize: "1rem",
-                color: MONUMENT,
-                background: WHITE,
-                boxSizing: "border-box",
-                resize: "vertical",
-                fontFamily: "inherit",
-              }}
-            />
+            )}
           </div>
         </div>
 
@@ -1176,6 +1143,27 @@ export default function Colours({ project, onUpdate }) {
             3D<br />Visualiser
           </button>
           )}
+          <button
+            type="button"
+            onClick={handleOpenSendModal}
+            style={emailClientButtonStyle}
+            onMouseEnter={
+              emailClientUsesSavedStyle
+                ? undefined
+                : (e) => {
+                    e.currentTarget.style.background = streamColorHover(MENU.purple);
+                  }
+            }
+            onMouseLeave={
+              emailClientUsesSavedStyle
+                ? undefined
+                : (e) => {
+                    e.currentTarget.style.background = MENU.purple;
+                  }
+            }
+          >
+            Email Client
+          </button>
         </div>
         </div>
       )}
@@ -1189,10 +1177,19 @@ export default function Colours({ project, onUpdate }) {
         />
       )}
 
-      {isAdmin && showTracePlan3DModal && (
-        <TracePlan3DModal
-          savedPolygon={project?.colours_plan_trace_polygon}
-          onClose={() => setShowTracePlan3DModal(false)}
+      {isAdmin && showBuilding3DModal && (
+        <Building3DModal
+          title="3D Unit"
+          widthM={11.3}
+          depthM={5.0}
+          subfloorHeightM={0.65}
+          footprintPoints={planTraceFootprintPoints}
+          windows={planTraceWindows}
+          doors={planTraceDoors}
+          slidingDoors={planTraceSlidingDoors}
+          calibration={planTraceCalibration}
+          projectId={project?.id ?? null}
+          onClose={() => setShowBuilding3DModal(false)}
         />
       )}
 

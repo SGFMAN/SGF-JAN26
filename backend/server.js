@@ -119,6 +119,7 @@ const app = express();
 let serverReady = false;
 
 const AI_RENDER_FILENAME = "AI Render.png";
+const AI_3D_RENDER_FILENAME = "AI 3D Render.png";
 
 /**
  * Stored paths match Drawings / Colours pages (e.g. Z:\...\file.pdf).
@@ -8303,6 +8304,42 @@ app.get("/api/files/ai-render/:id", async (req, res) => {
   }
 });
 
+// Serve generated AI 3D-view photoreal render PNG
+app.get("/api/files/ai-3d-render/:id", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
+  try {
+    const { id } = req.params;
+    if (!pool) {
+      return res.status(500).json({ error: "DATABASE_URL not set" });
+    }
+    const projectResult = await pool.query(
+      "SELECT drawings_pdf_location, colours_pdf_location FROM projects WHERE id = $1",
+      [id]
+    );
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+    const row = projectResult.rows[0];
+    const projectDir = projectDirectoryFromColoursOrDrawings(row.colours_pdf_location, row.drawings_pdf_location);
+    if (!projectDir) {
+      return res.status(404).json({ error: "No project folder resolved for this render" });
+    }
+    const abs = path.join(projectDir, AI_3D_RENDER_FILENAME);
+    try {
+      await fs.access(abs);
+    } catch {
+      return res.status(404).json({ error: "AI 3D render has not been generated yet." });
+    }
+    const img = await fs.readFile(abs);
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Content-Disposition", `inline; filename="${AI_3D_RENDER_FILENAME}"`);
+    res.send(img);
+  } catch (error) {
+    console.error("Error serving AI 3D render:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Folder layout always uses a 4-digit YEAR segment: <root>/<YYYY>/<STATE>/...
 // projects.year stores a full date (YYYY-MM-DD) or legacy year; never use the full date as a path segment.
 function getProjectYearFolderSegment(yearValue) {
@@ -10602,6 +10639,24 @@ BUILDING PASS SCOPE:
 /** Fallback if masked two-pass fails (API quirks): single unmasked generation—less strict pixel lock. */
 const AI_RENDER_PROMPT_SINGLE_PASS_FALLBACK = `${AI_RENDER_PROMPT_MARGIN_PASS}\n\n${AI_RENDER_PROMPT_BUILDING_PASS}`;
 
+/** Photorealize a captured 3D unit viewer screenshot (current camera view). */
+const AI_3D_RENDER_PROMPT = `Turn this screenshot of a simple 3D architectural unit model into a photorealistic exterior architectural visualization.
+
+CRITICAL GEOMETRY LOCK:
+- Preserve the exact camera angle, framing, building proportions, footprint shape, window/door openings, and overall composition from the input.
+- Do not invent a different building, move openings, or change the viewpoint.
+- Keep the modular cladding panels, surrounds, frames, and openings readable and correctly placed.
+
+ENVIRONMENT & LIGHTING:
+- Replace the plain studio/backdrop with a believable Australian suburban setting: natural daylight sky, soft sun lighting, realistic shadows.
+- Add a grass lawn / ground plane under and around the building.
+- Add a few trees and light landscaping in the mid/background (do not obscure the building).
+- Optional subtle driveway or path if it fits the composition naturally.
+
+MATERIALS:
+- Apply photoreal cladding, glazing, frames, trims, and subfloor materials matching the finish notes when provided.
+- Aim for clean, high-quality architectural-viz output suitable for a client presentation.`;
+
 function decodeOpenAiImageEditB64Json(imagesResp) {
   const b64 = imagesResp?.data?.[0]?.b64_json;
   if (!b64) throw new Error("OpenAI returned no image data.");
@@ -10995,6 +11050,109 @@ app.post("/api/projects/:id/generate-render", async (req, res) => {
   } catch (e) {
     console.error("generate-render:", e);
     return res.status(500).json({ error: e.message || "Failed to generate render" });
+  }
+});
+
+/**
+ * POST a 3D unit viewer screenshot (data URL or base64 PNG) → OpenAI image edit →
+ * photoreal context (grass/trees/sky/lighting). Saves AI 3D Render.png when a project folder exists.
+ */
+app.post("/api/projects/:id/generate-3d-render", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
+  if (!openaiClient) {
+    return res.status(503).json({ error: "OpenAI API key not configured" });
+  }
+  if (!pool) {
+    return res.status(500).json({ error: "DATABASE_URL not set" });
+  }
+  const projectId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(projectId)) {
+    return res.status(400).json({ error: "Invalid project id" });
+  }
+
+  try {
+    const projectResult = await pool.query(
+      "SELECT drawings_pdf_location, colours_pdf_location, roof_colour, cladding_colour, baseboards_colour FROM projects WHERE id = $1",
+      [projectId]
+    );
+    if (projectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+    const row = projectResult.rows[0];
+
+    const raw =
+      (typeof req.body?.imageDataUrl === "string" && req.body.imageDataUrl) ||
+      (typeof req.body?.imageBase64 === "string" && req.body.imageBase64) ||
+      "";
+    if (!raw) {
+      return res.status(400).json({ error: "Screenshot image is required (imageDataUrl)." });
+    }
+
+    let pngBuf;
+    const dataUrlMatch = /^data:image\/(?:png|jpeg|jpg);base64,(.+)$/i.exec(raw.trim());
+    if (dataUrlMatch) {
+      pngBuf = Buffer.from(dataUrlMatch[1], "base64");
+    } else if (/^[A-Za-z0-9+/=\s]+$/.test(raw.trim().slice(0, 80))) {
+      pngBuf = Buffer.from(raw.replace(/\s+/g, ""), "base64");
+    } else {
+      return res.status(400).json({ error: "Invalid image payload. Send a PNG/JPEG data URL." });
+    }
+    if (!pngBuf || pngBuf.length < 64) {
+      return res.status(400).json({ error: "Screenshot image was empty or too small." });
+    }
+
+    // Normalize to PNG for OpenAI edit.
+    try {
+      pngBuf = await sharp(pngBuf).png().toBuffer();
+    } catch (e) {
+      return res.status(400).json({ error: `Could not decode screenshot: ${e.message}` });
+    }
+
+    const meta = await sharp(pngBuf).metadata();
+    const aspect = (meta.width || 1) / (meta.height || 1);
+    const editSize = pickGptImageOneEditSizeFromPlansAspectRatio(aspect);
+    pngBuf = await sharpResizePngForAiInput(pngBuf, 1536);
+
+    const finishBlock = buildAiRenderFinishInstructionsFromDb(row);
+    const imageFile = await toFile(pngBuf, "unit-3d-viewport.png", { type: "image/png" });
+
+    let outBuf;
+    try {
+      const resp = await openaiClient.images.edit({
+        model: "gpt-image-1",
+        quality: "high",
+        input_fidelity: "high",
+        size: editSize,
+        n: 1,
+        prompt: `${AI_3D_RENDER_PROMPT}\n\n${finishBlock}`,
+        image: imageFile,
+      });
+      outBuf = decodeOpenAiImageEditB64Json(resp);
+    } catch (e) {
+      console.error("generate-3d-render OpenAI error:", e);
+      const msg = e.message || String(e);
+      return res.status(502).json({ error: `OpenAI image generation failed: ${msg}` });
+    }
+
+    let renderUrl = null;
+    const coloursPath = resolveStoredFilesystemPath(row.colours_pdf_location);
+    const drawingsPath = resolveStoredFilesystemPath(row.drawings_pdf_location);
+    const projectDir = projectDirectoryFromColoursOrDrawings(coloursPath, drawingsPath);
+    if (projectDir) {
+      const outAbs = path.join(projectDir, AI_3D_RENDER_FILENAME);
+      await fs.mkdir(projectDir, { recursive: true });
+      await fs.writeFile(outAbs, outBuf);
+      renderUrl = `/api/files/ai-3d-render/${projectId}`;
+    }
+
+    return res.json({
+      success: true,
+      renderUrl,
+      imageDataUrl: `data:image/png;base64,${outBuf.toString("base64")}`,
+    });
+  } catch (e) {
+    console.error("generate-3d-render:", e);
+    return res.status(500).json({ error: e.message || "Failed to generate 3D render" });
   }
 });
 

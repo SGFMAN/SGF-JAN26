@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { buildExtrudedFootprintMesh } from "./siteBoundaryMesh";
+import { calibrationNormScales } from "./planTraceScale";
 
 export const TRACE_WALL_HEIGHT_M = 3.2;
 export const TRACE_WALL_BASE_M = 0.65;
@@ -35,7 +36,7 @@ export function tracePlanLookAtHeight(cameraHeightM) {
  * @param {{ x: number, y: number }[]} normalizedPoints
  * @returns {{ x: number, z: number }[] | null}
  */
-export function tracePolygonToOuterXZRing(normalizedPoints) {
+export function tracePolygonToOuterXZRing(normalizedPoints, calibration = null) {
   if (!Array.isArray(normalizedPoints) || normalizedPoints.length < 3) return null;
 
   const xs = normalizedPoints.map((p) => p.x);
@@ -47,13 +48,16 @@ export function tracePolygonToOuterXZRing(normalizedPoints) {
   const spanX = maxX - minX;
   const spanY = maxY - minY;
   const maxSpan = Math.max(spanX, spanY, 0.001);
-  const scale = TRACE_FOOTPRINT_TARGET_M / maxSpan;
+  const fallback = TRACE_FOOTPRINT_TARGET_M / maxSpan;
+  const calibScales = calibrationNormScales(calibration);
+  const Kx = calibScales ? calibScales.Kx : fallback;
+  const Ky = calibScales ? calibScales.Ky : fallback;
   const cx = (minX + maxX) / 2;
   const cy = (minY + maxY) / 2;
 
   return normalizedPoints.map((p) => ({
-    x: -(p.x - cx) * scale,
-    z: -(p.y - cy) * scale,
+    x: -(p.x - cx) * Kx,
+    z: -(p.y - cy) * Ky,
   }));
 }
 
@@ -220,7 +224,7 @@ function buildWallBandGeometry(outer, inner, baseYM, heightM) {
  * @param {{ x: number, y: number }[]} normalizedPoints
  * @returns {{ scale: number, cx: number, cy: number } | null}
  */
-export function getTracePlanXZMapping(normalizedPoints) {
+export function getTracePlanXZMapping(normalizedPoints, calibration = null) {
   if (!Array.isArray(normalizedPoints) || normalizedPoints.length < 3) return null;
 
   const xs = normalizedPoints.map((p) => p.x);
@@ -230,8 +234,14 @@ export function getTracePlanXZMapping(normalizedPoints) {
   const minY = Math.min(...ys);
   const maxY = Math.max(...ys);
   const maxSpan = Math.max(maxX - minX, maxY - minY, 0.001);
+  const fallback = TRACE_FOOTPRINT_TARGET_M / maxSpan;
+  const calibScales = calibrationNormScales(calibration);
+  const Kx = calibScales ? calibScales.Kx : fallback;
+  const Ky = calibScales ? calibScales.Ky : fallback;
   return {
-    scale: TRACE_FOOTPRINT_TARGET_M / maxSpan,
+    scale: Kx,
+    Kx,
+    Ky,
     cx: (minX + maxX) / 2,
     cy: (minY + maxY) / 2,
   };
@@ -239,13 +249,15 @@ export function getTracePlanXZMapping(normalizedPoints) {
 
 /**
  * @param {{ x: number, y: number }} point
- * @param {{ scale: number, cx: number, cy: number }} mapping
+ * @param {{ scale: number, Kx?: number, Ky?: number, cx: number, cy: number }} mapping
  * @returns {{ x: number, z: number }}
  */
 export function normalizedPointToXZ(point, mapping) {
+  const Kx = mapping.Kx ?? mapping.scale;
+  const Ky = mapping.Ky ?? mapping.scale;
   return {
-    x: -(point.x - mapping.cx) * mapping.scale,
-    z: -(point.y - mapping.cy) * mapping.scale,
+    x: -(point.x - mapping.cx) * Kx,
+    z: -(point.y - mapping.cy) * Ky,
   };
 }
 

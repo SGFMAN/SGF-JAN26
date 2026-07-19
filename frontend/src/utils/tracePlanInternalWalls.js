@@ -4,7 +4,7 @@ import {
   TRACE_WALL_THICKNESS_M,
 } from "./tracePlan3D";
 
-function traceScaleParams(points) {
+function traceScaleParams(points, metresPerPixel = null) {
   const xs = points.map((p) => p.x);
   const ys = points.map((p) => p.y);
   const minX = Math.min(...xs);
@@ -12,14 +12,17 @@ function traceScaleParams(points) {
   const minY = Math.min(...ys);
   const maxY = Math.max(...ys);
   const maxSpan = Math.max(maxX - minX, maxY - minY, 1);
-  const metresPerUnit = TRACE_FOOTPRINT_TARGET_M / maxSpan;
+  // Prefer a measured metres-per-pixel (calibration line); otherwise assume the
+  // longest traced side equals TRACE_FOOTPRINT_TARGET_M (legacy fallback).
+  const metresPerUnit =
+    metresPerPixel && metresPerPixel > 0 ? metresPerPixel : TRACE_FOOTPRINT_TARGET_M / maxSpan;
   const cx = (minX + maxX) / 2;
   const cy = (minY + maxY) / 2;
   return { metresPerUnit, cx, cy };
 }
 
-function sourceToMetreRing(points) {
-  const params = traceScaleParams(points);
+function sourceToMetreRing(points, metresPerPixel = null) {
+  const params = traceScaleParams(points, metresPerPixel);
   return {
     ring: points.map((p) => ({
       x: (p.x - params.cx) * params.metresPerUnit,
@@ -42,18 +45,18 @@ function metreRingToSource(ring, params) {
  * @param {{ x: number, y: number }[]} outerPoints
  * @returns {{ x: number, y: number }[] | null}
  */
-export function externalWallInnerBoundarySource(outerPoints) {
+export function externalWallInnerBoundarySource(outerPoints, metresPerPixel = null) {
   if (!Array.isArray(outerPoints) || outerPoints.length < 3) return null;
-  const { ring, params } = sourceToMetreRing(outerPoints);
+  const { ring, params } = sourceToMetreRing(outerPoints, metresPerPixel);
   const inner = offsetPolygonInward(ring, TRACE_WALL_THICKNESS_M);
   if (!inner || inner.length < 3) return null;
   return metreRingToSource(inner, params);
 }
 
 /** Half-width of a 100 mm internal wall band in PDF source coordinates. */
-export function internalWallHalfThicknessSource(outerPoints) {
+export function internalWallHalfThicknessSource(outerPoints, metresPerPixel = null) {
   if (!outerPoints?.length) return null;
-  const { metresPerUnit } = traceScaleParams(outerPoints);
+  const { metresPerUnit } = traceScaleParams(outerPoints, metresPerPixel);
   return TRACE_WALL_THICKNESS_M / 2 / metresPerUnit;
 }
 
@@ -63,8 +66,8 @@ export function internalWallHalfThicknessSource(outerPoints) {
  * @param {{ x: number, y: number }[]} outerPoints
  * @returns {{ x: number, y: number }[] | null}
  */
-export function internalWallSegmentSourceFootprint(segment, outerPoints) {
-  const halfT = internalWallHalfThicknessSource(outerPoints);
+export function internalWallSegmentSourceFootprint(segment, outerPoints, metresPerPixel = null) {
+  const halfT = internalWallHalfThicknessSource(outerPoints, metresPerPixel);
   if (halfT == null) return null;
 
   const dx = segment.b.x - segment.a.x;
@@ -306,13 +309,14 @@ export function internalWallSegmentSourceFootprintForRender(
   seg,
   segmentIndex,
   segments,
-  outerPoints
+  outerPoints,
+  metresPerPixel = null
 ) {
-  const halfT = internalWallHalfThicknessSource(outerPoints);
+  const halfT = internalWallHalfThicknessSource(outerPoints, metresPerPixel);
   if (halfT == null) return null;
   const renderSeg = internalWallSegmentForRender(seg, segmentIndex, segments, halfT);
   if (!renderSeg) return null;
-  return internalWallSegmentSourceFootprint(renderSeg, outerPoints);
+  return internalWallSegmentSourceFootprint(renderSeg, outerPoints, metresPerPixel);
 }
 
 function endpointSidePoint(segmentIndex, vertex, side, segments, halfT) {
@@ -542,11 +546,11 @@ export function clipSegmentToPolygonInterior(a, b, polygon, tolerance = 1) {
  * @param {{ x: number, y: number }[]} outerPoints
  * @returns {{ a: { x: number, y: number }, b: { x: number, y: number } }[]}
  */
-export function finalizeInternalWallSegment(start, end, outerPoints) {
+export function finalizeInternalWallSegment(start, end, outerPoints, metresPerPixel = null) {
   const len = Math.hypot(end.x - start.x, end.y - start.y);
   if (len < MIN_SEGMENT_LEN) return [];
 
-  const inner = externalWallInnerBoundarySource(outerPoints);
+  const inner = externalWallInnerBoundarySource(outerPoints, metresPerPixel);
   if (!inner || outerPoints.length < 3) {
     return [{ a: start, b: end }];
   }
@@ -570,8 +574,8 @@ export function finalizeInternalWallSegment(start, end, outerPoints) {
  * @param {{ a: { x: number, y: number }, b: { x: number, y: number } }} segment
  * @param {{ x: number, y: number }[]} externalOuterPoints
  */
-export function clipInternalWallSegment(segment, externalOuterPoints) {
-  const inner = externalWallInnerBoundarySource(externalOuterPoints);
+export function clipInternalWallSegment(segment, externalOuterPoints, metresPerPixel = null) {
+  const inner = externalWallInnerBoundarySource(externalOuterPoints, metresPerPixel);
   if (!inner) return [];
   return clipSegmentToPolygonInterior(segment.a, segment.b, inner);
 }
