@@ -31,8 +31,20 @@ const COLOURS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
 const COLOUR_OPTIONS = ["Select", ...COLORBOND_COLOURS.map((c) => c.name)];
 const ROOF_STYLE_OPTIONS = ["Select", "Affordable", "Superior", "Skillion"];
 const COLOUR_PAGE_CATEGORIES = ["External", "Flooring", "Kitchen", "Bathroom", "Bedrooms"];
-const COLOURS_NAV_LABELS = [...COLOURS_STATUS_OPTIONS, ...COLOUR_PAGE_CATEGORIES];
-const COLOURS_NAV_FIT_WIDTH = `calc(${Math.max(...COLOURS_NAV_LABELS.map((s) => s.length))}ch + 28px)`;
+const COLOURS_CATEGORY_FIT_WIDTH = `calc(${Math.max(...COLOUR_PAGE_CATEGORIES.map((s) => s.length))}ch + 28px)`;
+const COLOURS_ROOF_STYLE_FIT_WIDTH = `calc(${Math.max(...ROOF_STYLE_OPTIONS.map((s) => s.length))}ch + 28px)`;
+const COLOURS_LEFT_COLUMN_WIDTH = "200px";
+const COLOURS_FIELD_SELECT_STYLE = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: "8px",
+  border: FIELD_OUTLINE,
+  fontSize: "1rem",
+  color: MONUMENT,
+  background: WHITE,
+  boxSizing: "border-box",
+  minHeight: "42px",
+};
 
 function colourOrSelect(value) {
   return value && String(value).trim() ? String(value).trim() : "Select";
@@ -62,6 +74,7 @@ export default function Colours({ project, onUpdate }) {
   );
   const [colourSaveStatus, setColourSaveStatus] = useState(""); // "", "saving", "saved", "error"
   const colourSaveStatusTimerRef = useRef(null);
+  const colourEditGenRef = useRef(0);
   const [showSendModal, setShowSendModal] = useState(false);
   const [showTracePlanModal, setShowTracePlanModal] = useState(false);
   const [showBuilding3DModal, setShowBuilding3DModal] = useState(false);
@@ -151,6 +164,41 @@ export default function Colours({ project, onUpdate }) {
       setAttachSuperior(false);
     }
   }, [project?.id]);
+
+  // Always reload colours from the API when this tab mounts so leave/return
+  // is not stuck with a stale parent `project` object.
+  useEffect(() => {
+    const key = project?.access_token || project?.id;
+    if (!key) return undefined;
+    let cancelled = false;
+    const genAtStart = colourEditGenRef.current;
+
+    (async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/projects/${key}`);
+        if (!response.ok || cancelled) return;
+        const data = await response.json();
+        if (cancelled || colourEditGenRef.current !== genAtStart) return;
+        setRoofColour(colourOrSelect(data.roof_colour));
+        setCladdingColour(colourOrSelect(data.cladding_colour));
+        setBaseboardsColour(colourOrSelect(data.baseboards_colour));
+        setRoofStyle(colourOrSelect(data.roof_style));
+        setWindowFramesColour(
+          colourOrSelect(data.windowframes_colour ?? data.window_frames_colour)
+        );
+        setWindowSurroundsColour(
+          colourOrSelect(data.windowsurrounds_colour ?? data.window_surrounds_colour)
+        );
+        setDoorColour(colourOrSelect(data.door_colour ?? data.front_door_colour));
+      } catch (error) {
+        console.error("Failed to load saved colours:", error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [project?.id, project?.access_token]);
 
   useEffect(() => {
     (async () => setIsAdmin(await isUserAdmin()))();
@@ -308,12 +356,16 @@ export default function Colours({ project, onUpdate }) {
         body: JSON.stringify({
           [fieldName]: colourForSave(value),
         }),
+        keepalive: true,
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: response.statusText }));
         throw new Error(errorData.error || "Failed to save colours");
       }
+
+      // Do not call onUpdate here: a parent refetch mid-edit can wipe other fields.
+      // ProjectPage refetches when re-opening the Colours tab.
 
       setColourSaveStatus("saved");
       colourSaveStatusTimerRef.current = setTimeout(() => {
@@ -332,6 +384,7 @@ export default function Colours({ project, onUpdate }) {
 
   async function handleRoofColourChange(e) {
     const newValue = e.target.value;
+    colourEditGenRef.current += 1;
     setRoofColour(newValue);
     valuesRef.current.roofColour = newValue;
     await saveExternalColourField("roof_colour", newValue);
@@ -339,6 +392,7 @@ export default function Colours({ project, onUpdate }) {
 
   async function handleCladdingColourChange(e) {
     const newValue = e.target.value;
+    colourEditGenRef.current += 1;
     setCladdingColour(newValue);
     valuesRef.current.claddingColour = newValue;
     await saveExternalColourField("cladding_colour", newValue);
@@ -346,6 +400,7 @@ export default function Colours({ project, onUpdate }) {
 
   async function handleBaseboardsColourChange(e) {
     const newValue = e.target.value;
+    colourEditGenRef.current += 1;
     setBaseboardsColour(newValue);
     valuesRef.current.baseboardsColour = newValue;
     await saveExternalColourField("baseboards_colour", newValue);
@@ -353,6 +408,7 @@ export default function Colours({ project, onUpdate }) {
 
   async function handleRoofStyleChange(e) {
     const newValue = e.target.value;
+    colourEditGenRef.current += 1;
     setRoofStyle(newValue);
     valuesRef.current.roofStyle = newValue;
     await saveExternalColourField("roof_style", newValue);
@@ -360,6 +416,7 @@ export default function Colours({ project, onUpdate }) {
 
   async function handleWindowFramesColourChange(e) {
     const newValue = e.target.value;
+    colourEditGenRef.current += 1;
     setWindowFramesColour(newValue);
     valuesRef.current.windowFramesColour = newValue;
     await saveExternalColourField("windowframes_colour", newValue);
@@ -367,6 +424,7 @@ export default function Colours({ project, onUpdate }) {
 
   async function handleWindowSurroundsColourChange(e) {
     const newValue = e.target.value;
+    colourEditGenRef.current += 1;
     setWindowSurroundsColour(newValue);
     valuesRef.current.windowSurroundsColour = newValue;
     await saveExternalColourField("windowsurrounds_colour", newValue);
@@ -374,6 +432,7 @@ export default function Colours({ project, onUpdate }) {
 
   async function handleDoorColourChange(e) {
     const newValue = e.target.value;
+    colourEditGenRef.current += 1;
     setDoorColour(newValue);
     valuesRef.current.doorColour = newValue;
     await saveExternalColourField("door_colour", newValue);
@@ -1008,90 +1067,125 @@ export default function Colours({ project, onUpdate }) {
       </h2>
       {project && (
         <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, marginTop: "24px", gap: "16px" }}>
-          {/* Status + category tabs — horizontal row above the content */}
+          {/* Status (left, aligned with colour fields) + category tabs (aligned with elevations) */}
           <div
             style={{
               display: "flex",
               flexDirection: "row",
-              flexWrap: "wrap",
-              alignItems: "center",
-              gap: "10px",
+              gap: "24px",
               flexShrink: 0,
+              alignItems: "flex-end",
             }}
           >
-            <select
-              name="coloursStatus"
-              value={coloursStatus}
-              onChange={handleColoursStatusChange}
-              aria-label="Colours status"
+            <label
               style={{
-                width: COLOURS_NAV_FIT_WIDTH,
-                minHeight: "42px",
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: FIELD_OUTLINE,
-                fontSize: "1rem",
-                color: MONUMENT,
-                background: WHITE,
-                boxSizing: "border-box",
+                width: COLOURS_LEFT_COLUMN_WIDTH,
+                flexShrink: 0,
+                display: "flex",
+                flexDirection: "column",
+                gap: "6px",
               }}
             >
-              {COLOURS_STATUS_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+              <span style={{ fontSize: "0.9rem", color: UI.textMuted }}>Status</span>
+              <select
+                name="coloursStatus"
+                value={coloursStatus}
+                onChange={handleColoursStatusChange}
+                style={COLOURS_FIELD_SELECT_STYLE}
+              >
+                {COLOURS_STATUS_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-            {COLOUR_PAGE_CATEGORIES.map((category) => {
-              const selected = activeColourCategory === category;
-              return (
-                <button
-                  key={category}
-                  type="button"
-                  onClick={() => setActiveColourCategory(category)}
-                  style={{
-                    width: COLOURS_NAV_FIT_WIDTH,
-                    minHeight: "42px",
-                    padding: "10px 14px",
-                    border: FIELD_OUTLINE,
-                    borderRadius: "8px",
-                    background: selected ? MENU.purple : WHITE,
-                    color: selected ? MENU.activeText : MONUMENT,
-                    fontSize: "1rem",
-                    fontWeight: 500,
-                    textAlign: "center",
-                    cursor: "pointer",
-                    transition: "background 0.17s, color 0.17s",
-                    boxSizing: "border-box",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {category}
-                </button>
-              );
-            })}
+            <div
+              style={{
+                flex: 1,
+                minWidth: 0,
+                display: "flex",
+                flexDirection: "row",
+                flexWrap: "wrap",
+                alignItems: "flex-end",
+                gap: "10px",
+              }}
+            >
+              {COLOUR_PAGE_CATEGORIES.map((category) => {
+                const selected = activeColourCategory === category;
+                return (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => setActiveColourCategory(category)}
+                    style={{
+                      width: COLOURS_CATEGORY_FIT_WIDTH,
+                      minHeight: "42px",
+                      padding: "10px 14px",
+                      border: FIELD_OUTLINE,
+                      borderRadius: "8px",
+                      background: selected ? MENU.purple : WHITE,
+                      color: selected ? MENU.activeText : MONUMENT,
+                      fontSize: "1rem",
+                      fontWeight: 500,
+                      textAlign: "center",
+                      cursor: "pointer",
+                      transition: "background 0.17s, color 0.17s",
+                      boxSizing: "border-box",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {category}
+                  </button>
+                );
+              })}
 
-            {activeColourCategory === "External" && colourSaveStatus ? (
-              <span
+              <label
                 style={{
-                  fontSize: "0.85rem",
-                  fontWeight: 500,
-                  color:
-                    colourSaveStatus === "error"
-                      ? "#842029"
-                      : colourSaveStatus === "saved"
-                        ? "#0f5132"
-                        : UI.textMuted,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "6px",
+                  width: COLOURS_ROOF_STYLE_FIT_WIDTH,
+                  flexShrink: 0,
                 }}
               >
-                {colourSaveStatus === "saving"
-                  ? "Saving…"
-                  : colourSaveStatus === "saved"
-                    ? "Saved"
-                    : "Save failed"}
-              </span>
-            ) : null}
+                <span style={{ fontSize: "0.9rem", color: UI.textMuted }}>Roof style</span>
+                <select
+                  value={roofStyle}
+                  onChange={handleRoofStyleChange}
+                  style={COLOURS_FIELD_SELECT_STYLE}
+                >
+                  {ROOF_STYLE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {activeColourCategory === "External" && colourSaveStatus ? (
+                <span
+                  style={{
+                    fontSize: "0.85rem",
+                    fontWeight: 500,
+                    alignSelf: "center",
+                    color:
+                      colourSaveStatus === "error"
+                        ? "#842029"
+                        : colourSaveStatus === "saved"
+                          ? "#0f5132"
+                          : UI.textMuted,
+                  }}
+                >
+                  {colourSaveStatus === "saving"
+                    ? "Saving…"
+                    : colourSaveStatus === "saved"
+                      ? "Saved"
+                      : "Save failed"}
+                </span>
+              ) : null}
+            </div>
           </div>
 
           {/* Left colour fields + right elevation / category panel */}
@@ -1108,7 +1202,7 @@ export default function Colours({ project, onUpdate }) {
             {activeColourCategory === "External" ? (
               <div
                 style={{
-                  width: "200px",
+                  width: COLOURS_LEFT_COLUMN_WIDTH,
                   flexShrink: 0,
                   display: "flex",
                   flexDirection: "column",
@@ -1137,12 +1231,6 @@ export default function Colours({ project, onUpdate }) {
                     options: COLOUR_OPTIONS,
                   },
                   {
-                    label: "Roof style",
-                    value: roofStyle,
-                    onChange: handleRoofStyleChange,
-                    options: ROOF_STYLE_OPTIONS,
-                  },
-                  {
                     label: "Window frames",
                     value: windowFramesColour,
                     onChange: handleWindowFramesColourChange,
@@ -1163,20 +1251,7 @@ export default function Colours({ project, onUpdate }) {
                 ].map((field) => (
                   <label key={field.label} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                     <span style={{ fontSize: "0.9rem", color: UI.textMuted }}>{field.label}</span>
-                    <select
-                      value={field.value}
-                      onChange={field.onChange}
-                      style={{
-                        width: "100%",
-                        padding: "10px 12px",
-                        borderRadius: "8px",
-                        border: FIELD_OUTLINE,
-                        fontSize: "1rem",
-                        color: MONUMENT,
-                        background: WHITE,
-                        boxSizing: "border-box",
-                      }}
-                    >
+                    <select value={field.value} onChange={field.onChange} style={COLOURS_FIELD_SELECT_STYLE}>
                       {field.options.map((option) => (
                         <option key={option} value={option}>
                           {option}
@@ -1186,7 +1261,9 @@ export default function Colours({ project, onUpdate }) {
                   </label>
                 ))}
               </div>
-            ) : null}
+            ) : (
+              <div style={{ width: COLOURS_LEFT_COLUMN_WIDTH, flexShrink: 0 }} aria-hidden />
+            )}
 
             <div
               style={{

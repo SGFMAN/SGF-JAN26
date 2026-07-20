@@ -361,11 +361,11 @@ export default function ProjectPage() {
     }
   }
 
-  // Reload project when opening Drawings so `draftsperson` and other fields match the DB
-  // (e.g. assigned via Project Claim while this page had an older in-memory `project`).
+  // Reload project when opening Drawings/Colours so in-memory fields match the DB
+  // (e.g. draftsperson from Project Claim, or external colours after autosave).
   useEffect(() => {
     if (!token) return;
-    if (activeView !== "drawings") return;
+    if (activeView !== "drawings" && activeView !== "colours") return;
     void fetchProject(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only when tab or token changes
   }, [activeView, token]);
