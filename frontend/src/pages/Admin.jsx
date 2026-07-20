@@ -7,7 +7,47 @@ import {
   resolveDepositBalanceTeamFrom,
   resolveDepositBalanceTeamTo,
 } from "../utils/emailGeneralSettings";
-import { fullFivePercentDeposit, isFullFivePercentDepositPaid } from "../utils/projectDeposit";
+import {
+  formatMoneyInput,
+  getDepositPaidValue,
+  isFullFivePercentDepositPaid,
+  parseMoneyToInt,
+  resolveDepositRequired,
+} from "../utils/projectDeposit";
+
+const PAYMENT_FIELD_KEYS = [
+  "pre_engagement_required",
+  "pre_engagement_paid",
+  "deposit_required",
+  "deposit_paid",
+  "base_required",
+  "base_paid",
+  "frame_required",
+  "frame_paid",
+  "lock_up_required",
+  "lock_up_paid",
+  "fix_required",
+  "fix_paid",
+  "final_required",
+  "final_paid",
+];
+
+function emptyPaymentFields() {
+  return Object.fromEntries(PAYMENT_FIELD_KEYS.map((k) => [k, ""]));
+}
+
+function paymentFieldsFromProject(project) {
+  const next = emptyPaymentFields();
+  if (!project) return next;
+  for (const key of PAYMENT_FIELD_KEYS) {
+    next[key] = formatMoneyInput(project[key]);
+  }
+  // Compat: deposit_paid may still only live on legacy deposit
+  if (!next.deposit_paid) {
+    next.deposit_paid = formatMoneyInput(getDepositPaidValue(project));
+  }
+  return next;
+}
 
 const DEPOSIT_EMAIL_STEP_CLIENT = 1;
 const DEPOSIT_EMAIL_STEP_INTERNAL = 2;
@@ -58,12 +98,10 @@ function replaceDepositBalanceTokens(text, project) {
 
   let depositPaid = "$0";
   let depositNum = 0;
-  if (project.deposit != null && project.deposit !== "") {
-    depositNum =
-      typeof project.deposit === "string"
-        ? parseFloat(project.deposit.replace(/[$,\s]/g, ""))
-        : Number(project.deposit);
-    if (!isNaN(depositNum) && depositNum > 0) {
+  const depositPaidRaw = getDepositPaidValue(project);
+  if (depositPaidRaw != null && depositPaidRaw !== "") {
+    depositNum = parseMoneyToInt(depositPaidRaw);
+    if (depositNum > 0) {
       depositPaid = `$${depositNum.toLocaleString()}`;
     }
   }
@@ -71,14 +109,10 @@ function replaceDepositBalanceTokens(text, project) {
 
   let depositStatus = "$0 only";
   if (depositNum > 0) {
-    const projectCostNum =
-      typeof project.project_cost === "string"
-        ? parseFloat(project.project_cost.replace(/[$,\s]/g, ""))
-        : Number(project.project_cost || 0);
-    if (!isNaN(projectCostNum) && projectCostNum > 0) {
-      const fullDepositAmount = Math.floor(projectCostNum / 20);
+    const fullDepositAmount = resolveDepositRequired(project.deposit_required, project.project_cost);
+    if (fullDepositAmount > 0) {
       depositStatus =
-        depositNum === fullDepositAmount ? "Full Deposit Paid" : `${depositPaid} only`;
+        depositNum >= fullDepositAmount ? "Full Deposit Paid" : `${depositPaid} only`;
     } else {
       depositStatus = `${depositPaid} only`;
     }
@@ -113,13 +147,11 @@ function getLongestText(arr, include = "") {
   );
 }
 
-const DEPOSIT_OPTIONS = ["Full 5%", "$7.5k only", "Other"];
-
 export default function Admin({ project, onUpdate }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const [stream, setStream] = useState(project?.stream || "");
-  const [customDeposit, setCustomDeposit] = useState("");
-  const [projectCost, setProjectCost] = useState("");
+  const [paymentFields, setPaymentFields] = useState(() => paymentFieldsFromProject(project));
+  const [projectCost, setProjectCost] = useState(() => formatMoneyInput(project?.project_cost));
   const [projectDate, setProjectDate] = useState("");
   const [salesperson, setSalesperson] = useState(project?.salesperson || "");
   const [salesTeamUsers, setSalesTeamUsers] = useState([]);
@@ -135,26 +167,11 @@ export default function Admin({ project, onUpdate }) {
   const depositInternalDraftRef = useRef({ to: "", from: "", subject: "", body: "" });
   const depositEmailBodyRef = useRef(null);
   const saveFieldRef = useRef(() => Promise.resolve());
+  const savePaymentFieldsRef = useRef(() => Promise.resolve());
   
   useEffect(() => {
-    // Initialize deposit amount - format with commas
-    const depositValue = project?.deposit || "";
-    if (depositValue) {
-      // Check if it's a formatted string or needs formatting
-      const numericValue = parseInt(depositValue.replace(/[^0-9]/g, "")) || 0;
-      setCustomDeposit(numericValue > 0 ? `$${numericValue.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : depositValue);
-    } else {
-      setCustomDeposit("");
-    }
-    
-    // Initialize project cost - format with commas
-    const costValue = project?.project_cost || "";
-    if (costValue) {
-      const numericValue = parseInt(costValue.replace(/[^0-9]/g, "")) || 0;
-      setProjectCost(numericValue > 0 ? `$${numericValue.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : "");
-    } else {
-      setProjectCost("");
-    }
+    setPaymentFields(paymentFieldsFromProject(project));
+    setProjectCost(formatMoneyInput(project?.project_cost));
 
     // Initialize project date
     // If year field exists and is a date (YYYY-MM-DD format), use it
@@ -176,11 +193,11 @@ export default function Admin({ project, onUpdate }) {
     }
   }, [project]);
   
-  const valuesRef = useRef({ stream, deposit: customDeposit, projectCost, projectDate, salesperson });
+  const valuesRef = useRef({ stream, projectCost, projectDate, salesperson, paymentFields });
   
   useEffect(() => {
-    valuesRef.current = { stream, deposit: customDeposit, projectCost, projectDate, salesperson };
-  }, [stream, customDeposit, projectCost, projectDate, salesperson]);
+    valuesRef.current = { stream, projectCost, projectDate, salesperson, paymentFields };
+  }, [stream, projectCost, projectDate, salesperson, paymentFields]);
 
   // Fetch sales team users on mount
   useEffect(() => {
@@ -235,7 +252,7 @@ export default function Admin({ project, onUpdate }) {
         suburb: project?.suburb || null,
         street: project?.street || null,
         state: project?.state || null,
-        deposit: currentValues.deposit,
+        deposit: currentValues.paymentFields?.deposit_paid || null,
         project_cost: currentValues.projectCost,
         salesperson: currentValues.salesperson || null,
         [fieldName]: value === "" ? null : value,
@@ -276,15 +293,50 @@ export default function Admin({ project, onUpdate }) {
     }
   }
 
+  async function savePaymentFields(partial) {
+    if (!project?.id) return;
+    try {
+      const payload = {};
+      for (const [key, value] of Object.entries(partial || {})) {
+        if (value === undefined) continue;
+        if (typeof value === "string") {
+          payload[key] = value.replace(/[^0-9]/g, "") || null;
+        } else {
+          payload[key] = value;
+        }
+      }
+      if (Object.keys(payload).length === 0) return;
+
+      const response = await fetch(`${API_URL}/api/projects/${project.id}/payment-fields`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        console.error("Failed to save payment fields:", errorData.error || response.statusText);
+        return;
+      }
+
+      if (onUpdate) onUpdate();
+    } catch (error) {
+      console.error("Error saving payment fields:", error);
+    }
+  }
+
   useEffect(() => {
     saveFieldRef.current = saveField;
+    savePaymentFieldsRef.current = savePaymentFields;
   });
 
   useEffect(() => {
     return () => {
-      const save = saveFieldRef.current;
-      void save("deposit", valuesRef.current.deposit);
-      void save("project_cost", valuesRef.current.projectCost);
+      const current = valuesRef.current;
+      void savePaymentFieldsRef.current({
+        project_cost: current.projectCost,
+        ...current.paymentFields,
+      });
     };
   }, []);
 
@@ -310,45 +362,57 @@ export default function Admin({ project, onUpdate }) {
     await saveField("year", newDate);
   }
 
-  function handleCustomDepositChange(e) {
-    // Format with commas as user types
-    const numericValue = e.target.value.replace(/[^0-9]/g, "");
-    const numeric = parseInt(numericValue) || 0;
-    const formattedValue = numeric > 0 ? `$${numeric.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : "";
-    setCustomDeposit(formattedValue);
-    valuesRef.current.deposit = formattedValue;
-  }
-
   function handleProjectCostChange(e) {
-    // Format project cost: remove all non-numeric characters, add $ prefix and commas
-    const numericValue = e.target.value.replace(/[^0-9]/g, "");
-    const numeric = parseInt(numericValue) || 0;
-    const formattedValue = numeric > 0 ? `$${numeric.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : "";
+    const formattedValue = formatMoneyInput(e.target.value);
     setProjectCost(formattedValue);
     valuesRef.current.projectCost = formattedValue;
   }
 
-  // Calculate full 5% deposit from project cost (same rule as Planning / Overview)
-  function calculateFullDeposit() {
-    const fullDeposit = fullFivePercentDeposit(projectCost);
-    if (fullDeposit === 0) return "$0";
-    return `$${fullDeposit.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+  async function handleProjectCostBlur() {
+    await savePaymentFields({ project_cost: valuesRef.current.projectCost });
+  }
+
+  function handlePaymentFieldChange(fieldKey, rawValue) {
+    const formattedValue = formatMoneyInput(rawValue);
+    setPaymentFields((prev) => {
+      const next = { ...prev, [fieldKey]: formattedValue };
+      valuesRef.current.paymentFields = next;
+      return next;
+    });
+  }
+
+  async function handlePaymentFieldBlur(fieldKey) {
+    const value = valuesRef.current.paymentFields?.[fieldKey] ?? "";
+    await savePaymentFields({ [fieldKey]: value });
   }
 
   function isDepositFullyPaid() {
-    return isFullFivePercentDepositPaid(customDeposit, projectCost);
+    return isFullFivePercentDepositPaid(
+      paymentFields.deposit_paid,
+      projectCost,
+      paymentFields.deposit_required
+    );
   }
 
   async function handleFullDepositPaid() {
-    const fullDepositAmount = fullFivePercentDeposit(projectCost);
+    const fullDepositAmount = resolveDepositRequired(paymentFields.deposit_required, projectCost);
     if (fullDepositAmount === 0) {
-      alert("Please enter a Project Cost first.");
+      alert("Please enter a Deposit Required or Project Cost first.");
       return;
     }
-    const formattedDeposit = `$${fullDepositAmount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
-    setCustomDeposit(formattedDeposit);
-    valuesRef.current.deposit = formattedDeposit;
-    await saveField("deposit", formattedDeposit);
+    // If required was empty, persist the 5% amount as deposit_required too
+    const requiredFormatted = formatMoneyInput(fullDepositAmount);
+    const paidFormatted = requiredFormatted;
+    const patch = { deposit_paid: paidFormatted };
+    if (!parseMoneyToInt(paymentFields.deposit_required)) {
+      patch.deposit_required = requiredFormatted;
+    }
+    setPaymentFields((prev) => {
+      const next = { ...prev, ...patch };
+      valuesRef.current.paymentFields = next;
+      return next;
+    });
+    await savePaymentFields(patch);
     setDepositEmailStep(DEPOSIT_EMAIL_STEP_CLIENT);
     setShowDepositBalanceEmailModal(true);
     prepareDepositBalanceEmails();
@@ -446,7 +510,9 @@ export default function Admin({ project, onUpdate }) {
 
       const projectForTokens = {
         ...project,
-        deposit: valuesRef.current.deposit || project?.deposit,
+        deposit: valuesRef.current.paymentFields?.deposit_paid || project?.deposit_paid || project?.deposit,
+        deposit_paid: valuesRef.current.paymentFields?.deposit_paid || project?.deposit_paid || project?.deposit,
+        deposit_required: valuesRef.current.paymentFields?.deposit_required || project?.deposit_required,
         project_cost: valuesRef.current.projectCost || project?.project_cost,
       };
 
@@ -668,8 +734,8 @@ export default function Admin({ project, onUpdate }) {
             </div>
           </div>
 
-          {/* Column 2 */}
-          <div style={{ flex: "1", minWidth: "200px" }}>
+          {/* Column 2 — cost + early payments */}
+          <div style={{ flex: "1", minWidth: "220px" }}>
             <div style={{ marginBottom: "16px" }}>
               <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Project Cost
@@ -679,6 +745,7 @@ export default function Admin({ project, onUpdate }) {
                 name="projectCost"
                 value={projectCost}
                 onChange={handleProjectCostChange}
+                onBlur={handleProjectCostBlur}
                 placeholder="$0"
                 style={{
                   width: "100%",
@@ -694,37 +761,23 @@ export default function Admin({ project, onUpdate }) {
                 autoComplete="off"
               />
             </div>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
-                {isDepositFullyPaid() ? "Total Deposit - PAID" : "Total Deposit"}
-              </div>
-              <div
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                  maxWidth: "100%",
-                }}
-              >
-                {calculateFullDeposit()}
-              </div>
-            </div>
-            {!isDepositFullyPaid() && (
-              <div style={{ marginBottom: "16px" }}>
+            {[
+              ["pre_engagement_required", "Pre-Engagement Required"],
+              ["pre_engagement_paid", "Pre-Engagement Paid"],
+              ["deposit_required", "Deposit Required"],
+              ["deposit_paid", "Deposit Paid"],
+            ].map(([key, label]) => (
+              <div key={key} style={{ marginBottom: "16px" }}>
                 <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
-                  Deposit Paid
+                  {key === "deposit_paid" && isDepositFullyPaid() ? "Deposit Paid — PAID" : label}
                 </div>
                 <div style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
                   <input
                     type="text"
-                    name="customDeposit"
-                    value={customDeposit}
-                    onChange={handleCustomDepositChange}
+                    name={key}
+                    value={paymentFields[key] || ""}
+                    onChange={(e) => handlePaymentFieldChange(key, e.target.value)}
+                    onBlur={() => handlePaymentFieldBlur(key)}
                     placeholder="$0"
                     style={{
                       flex: "1",
@@ -738,34 +791,102 @@ export default function Admin({ project, onUpdate }) {
                     }}
                     autoComplete="off"
                   />
-                  <button
-                    type="button"
-                    onClick={handleFullDepositPaid}
-                    style={{
-                      background: MONUMENT,
-                      color: PAGE_TEXT,
-                      border: "none",
-                      borderRadius: "10px",
-                      padding: "10px 20px",
-                      fontSize: "0.9rem",
-                      fontWeight: 500,
-                      cursor: "pointer",
-                      transition: "background 0.17s",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    Full Deposit Paid
-                  </button>
+                  {key === "deposit_paid" && !isDepositFullyPaid() && (
+                    <button
+                      type="button"
+                      onClick={handleFullDepositPaid}
+                      style={{
+                        background: MONUMENT,
+                        color: PAGE_TEXT,
+                        border: "none",
+                        borderRadius: "10px",
+                        padding: "10px 16px",
+                        fontSize: "0.85rem",
+                        fontWeight: 500,
+                        cursor: "pointer",
+                        transition: "background 0.17s",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Full Deposit Paid
+                    </button>
+                  )}
                 </div>
               </div>
-            )}
+            ))}
           </div>
 
-          {/* Column 3 - reserved (variations moved to Variations tab) */}
-          <div style={{ flex: "1", minWidth: "200px" }} />
+          {/* Column 3 — base / frame / lock-up */}
+          <div style={{ flex: "1", minWidth: "200px" }}>
+            {[
+              ["base_required", "Base Required"],
+              ["base_paid", "Base Paid"],
+              ["frame_required", "Frame Required"],
+              ["frame_paid", "Frame Paid"],
+              ["lock_up_required", "Lock Up Required"],
+              ["lock_up_paid", "Lock Up Paid"],
+            ].map(([key, label]) => (
+              <div key={key} style={{ marginBottom: "16px" }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
+                  {label}
+                </div>
+                <input
+                  type="text"
+                  name={key}
+                  value={paymentFields[key] || ""}
+                  onChange={(e) => handlePaymentFieldChange(key, e.target.value)}
+                  onBlur={() => handlePaymentFieldBlur(key)}
+                  placeholder="$0"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                  autoComplete="off"
+                />
+              </div>
+            ))}
+          </div>
 
-          {/* Column 4 - reserved */}
-          <div style={{ flex: "1", minWidth: "200px" }} />
+          {/* Column 4 — fix / final */}
+          <div style={{ flex: "1", minWidth: "200px" }}>
+            {[
+              ["fix_required", "Fix Required"],
+              ["fix_paid", "Fix Paid"],
+              ["final_required", "Final Required"],
+              ["final_paid", "Final Paid"],
+            ].map(([key, label]) => (
+              <div key={key} style={{ marginBottom: "16px" }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
+                  {label}
+                </div>
+                <input
+                  type="text"
+                  name={key}
+                  value={paymentFields[key] || ""}
+                  onChange={(e) => handlePaymentFieldChange(key, e.target.value)}
+                  onBlur={() => handlePaymentFieldBlur(key)}
+                  placeholder="$0"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                  autoComplete="off"
+                />
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
