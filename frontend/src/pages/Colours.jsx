@@ -85,7 +85,7 @@ export default function Colours({ project, onUpdate }) {
   );
   const planTraceFootprintPoints = planTrace.points;
   const planTraceRoofPoints = planTrace.roofPoints;
-  const planTraceDeckPoints = planTrace.deckPoints;
+  const planTraceDecks = planTrace.decks;
   const planTraceWindows = planTrace.windows;
   const planTraceDoors = planTrace.doors;
   const planTraceSlidingDoors = planTrace.slidingDoors;
@@ -977,9 +977,10 @@ export default function Colours({ project, onUpdate }) {
     doors = [],
     slidingDoors = [],
     roofPoints = [],
-    deckPoints = []
+    decks = []
   ) {
-    if (!project?.id) {
+    const projectKey = project?.access_token || project?.id;
+    if (!projectKey) {
       throw new Error("No project selected");
     }
     const projectName =
@@ -1001,7 +1002,7 @@ export default function Colours({ project, onUpdate }) {
           doors,
           slidingDoors,
           roofPoints,
-          deckPoints
+          decks
         ),
       }),
     });
@@ -1009,7 +1010,7 @@ export default function Colours({ project, onUpdate }) {
       const data = await response.json().catch(() => ({}));
       throw new Error(data.error || "Failed to save plan trace");
     }
-    if (onUpdate) onUpdate();
+    if (onUpdate) onUpdate(true);
   }
 
   const emailClientButtonStyle = mergeColoursButtonStyle(EMAIL_CLIENT_BUTTON_ID, {
@@ -1293,6 +1294,7 @@ export default function Colours({ project, onUpdate }) {
                     depthM={5.0}
                     footprintPoints={planTraceFootprintPoints}
                     roofPoints={planTraceRoofPoints}
+                    decks={planTraceDecks}
                     windows={planTraceWindows}
                     doors={planTraceDoors}
                     slidingDoors={planTraceSlidingDoors}
@@ -1424,7 +1426,7 @@ export default function Colours({ project, onUpdate }) {
           subfloorHeightM={0.65}
           footprintPoints={planTraceFootprintPoints}
           roofPoints={planTraceRoofPoints}
-          deckPoints={planTraceDeckPoints}
+          decks={planTraceDecks}
           windows={planTraceWindows}
           doors={planTraceDoors}
           slidingDoors={planTraceSlidingDoors}

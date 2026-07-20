@@ -65,6 +65,35 @@ export function resolveBuildingFootprintRing(
   return { ring: rectangleFootprintRing(widthM, depthM), fromTrace: false };
 }
 
+/**
+ * Map a secondary trace (deck, roof, etc.) into the same XZ frame as the
+ * external-wall footprint, so overhangs and attachments stay aligned.
+ *
+ * @param {{ x: number, y: number }[] | null | undefined} normalizedPoints
+ * @param {{ x: number, y: number }[] | null | undefined} referenceNormalizedPoints  usually external walls
+ * @param {object | null} [calibration]
+ * @returns {{ ring: { x: number, z: number }[], fromTrace: boolean }}
+ */
+export function resolveAlignedTraceRing(
+  normalizedPoints,
+  referenceNormalizedPoints,
+  calibration = null
+) {
+  if (!Array.isArray(normalizedPoints) || normalizedPoints.length < 3) {
+    return { ring: [], fromTrace: false };
+  }
+  const reference =
+    Array.isArray(referenceNormalizedPoints) && referenceNormalizedPoints.length >= 3
+      ? referenceNormalizedPoints
+      : normalizedPoints;
+  const mapping = getTracePlanXZMapping(reference, calibration);
+  if (!mapping) return { ring: [], fromTrace: false };
+  const ring = sanitizeFootprintRing(
+    normalizedPoints.map((p) => normalizedPointToXZ(p, mapping))
+  );
+  return { ring, fromTrace: ring.length >= 3 };
+}
+
 export function footprintBounds(ring) {
   const xs = ring.map((p) => p.x);
   const zs = ring.map((p) => p.z);

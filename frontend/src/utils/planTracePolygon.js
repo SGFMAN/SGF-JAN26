@@ -29,12 +29,18 @@ export const TRACE_PLAN_LAYERS = [
     id: DECK_LAYER_ID,
     label: "Deck",
     group: "external",
+    mode: "decks",
     stroke: "#059669",
     fillClosed: "rgba(5, 150, 105, 0.22)",
     fillOpen: "rgba(5, 150, 105, 0.12)",
     marker: "#059669",
     origin: "#047857",
     saves: true,
+    submenu: [
+      { id: "add", label: "Add" },
+      { id: "edit", label: "Edit" },
+      { id: "delete", label: "Delete" },
+    ],
   },
   {
     id: ROOF_LAYER_ID,
@@ -143,6 +149,11 @@ export function isSlidingDoorsTraceLayer(layerId) {
   return layer.mode === "slidingDoors";
 }
 
+export function isDeckTraceLayer(layerId) {
+  const layer = getTracePlanLayer(layerId);
+  return layer.mode === "decks";
+}
+
 export function createEmptyLayerTrace(layerId) {
   if (isWindowsTraceLayer(layerId)) {
     return { windows: [] };
@@ -152,6 +163,9 @@ export function createEmptyLayerTrace(layerId) {
   }
   if (isSlidingDoorsTraceLayer(layerId)) {
     return { slidingDoors: [] };
+  }
+  if (isDeckTraceLayer(layerId)) {
+    return { decks: [], points: [], polygonClosed: false };
   }
   if (isLineTraceLayer(layerId)) {
     return { segments: [], draftStart: null };
@@ -175,6 +189,13 @@ export function hasLayerDraft(layerId, trace) {
   }
   if (isSlidingDoorsTraceLayer(layerId)) {
     return (trace.slidingDoors?.length ?? 0) > 0;
+  }
+  if (isDeckTraceLayer(layerId)) {
+    return (
+      (trace.decks?.length ?? 0) > 0 ||
+      (trace.points?.length ?? 0) > 0 ||
+      Boolean(trace.polygonClosed)
+    );
   }
   if (isLineTraceLayer(layerId)) {
     return (trace.segments?.length ?? 0) > 0 || trace.draftStart != null;
@@ -279,8 +300,31 @@ export function isRoofTraceLayer(layerId) {
   return layerId === ROOF_LAYER_ID;
 }
 
-export function isDeckTraceLayer(layerId) {
-  return layerId === DECK_LAYER_ID;
+/** Normalize a deck outline to page 0–1 points (min 3). */
+export function parsePlanTraceDeckPoints(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+    .slice(0, MAX_TRACE_POINTS)
+    .map((p) => ({ x: p.x, y: p.y }));
+}
+
+/**
+ * Prefer `decks: [{ points }]`. Migrate legacy `deckPoints` → one deck.
+ * @returns {{ points: { x: number, y: number }[] }[]}
+ */
+export function parsePlanTraceDecks(rawDecks, legacyDeckPoints) {
+  const fromArray = Array.isArray(rawDecks)
+    ? rawDecks
+        .map((deck) => {
+          const points = parsePlanTraceDeckPoints(deck?.points ?? deck);
+          return points.length >= 3 ? { points } : null;
+        })
+        .filter(Boolean)
+    : [];
+  if (fromArray.length) return fromArray;
+  const legacy = parsePlanTraceDeckPoints(legacyDeckPoints);
+  return legacy.length >= 3 ? [{ points: legacy }] : [];
 }
 
 export function parsePlanTracePolygon(raw) {
@@ -288,6 +332,7 @@ export function parsePlanTracePolygon(raw) {
     page: 1,
     points: [],
     roofPoints: [],
+    decks: [],
     deckPoints: [],
     internalWallSegments: [],
     crop: null,
@@ -312,17 +357,15 @@ export function parsePlanTracePolygon(raw) {
           .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
           .slice(0, MAX_TRACE_POINTS)
       : [];
-    const deckPoints = Array.isArray(data?.deckPoints)
-      ? data.deckPoints
-          .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
-          .slice(0, MAX_TRACE_POINTS)
-      : [];
+    const decks = parsePlanTraceDecks(data?.decks, data?.deckPoints);
+    const deckPoints = decks[0]?.points ?? [];
     const safePage = Number.isFinite(page) && page >= 1 ? page : 1;
     if (!Array.isArray(points)) {
       return {
         page: safePage,
         points: [],
         roofPoints,
+        decks,
         deckPoints,
         internalWallSegments,
         crop,
@@ -338,6 +381,7 @@ export function parsePlanTracePolygon(raw) {
         .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
         .slice(0, MAX_TRACE_POINTS),
       roofPoints,
+      decks,
       deckPoints,
       internalWallSegments,
       crop,
@@ -351,6 +395,7 @@ export function parsePlanTracePolygon(raw) {
       page: 1,
       points: [],
       roofPoints: [],
+      decks: [],
       deckPoints: [],
       internalWallSegments: [],
       crop: null,
@@ -372,7 +417,7 @@ export function serializePlanTracePolygon(
   doors = [],
   slidingDoors = [],
   roofPoints = [],
-  deckPoints = []
+  decks = []
 ) {
   const round = (v) => Math.round(v * 1e6) / 1e6;
   const payload = {
@@ -388,11 +433,25 @@ export function serializePlanTracePolygon(
     .slice(0, MAX_TRACE_POINTS)
     .map((p) => ({ x: round(p.x), y: round(p.y) }));
   if (normalizedRoof.length >= 3) payload.roofPoints = normalizedRoof;
-  const normalizedDeck = (deckPoints ?? [])
-    .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
-    .slice(0, MAX_TRACE_POINTS)
-    .map((p) => ({ x: round(p.x), y: round(p.y) }));
-  if (normalizedDeck.length >= 3) payload.deckPoints = normalizedDeck;
+  // Accept either decks[] or a legacy single deckPoints array as the last arg.
+  const deckList = Array.isArray(decks) && decks.length && !Number.isFinite(decks[0]?.x)
+    ? decks
+    : Array.isArray(decks) && decks.length >= 3 && Number.isFinite(decks[0]?.x)
+      ? [{ points: decks }]
+      : [];
+  const normalizedDecks = deckList
+    .map((deck) => {
+      const pts = parsePlanTraceDeckPoints(deck?.points ?? deck)
+        .slice(0, MAX_TRACE_POINTS)
+        .map((p) => ({ x: round(p.x), y: round(p.y) }));
+      return pts.length >= 3 ? { points: pts } : null;
+    })
+    .filter(Boolean);
+  if (normalizedDecks.length) {
+    payload.decks = normalizedDecks;
+    // Keep legacy key so older readers still see the first deck.
+    payload.deckPoints = normalizedDecks[0].points;
+  }
   const normalizedWindows = parsePlanTraceWindows(windows).map((win) => {
     const out = {
       a: { x: round(win.a.x), y: round(win.a.y) },

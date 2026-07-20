@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { UI } from "../utils/uiThemeTokens.js";
 import {
   buildFootprintElevations,
+  resolveAlignedTraceRing,
   resolveBuildingFootprintRing,
   resolveModelDoors,
   resolveModelSlidingDoors,
@@ -47,6 +48,8 @@ const DOOR_GLASS_COLOR = "#2b322c";
 const DOOR_OUTLINE = "#202124";
 /** Sliding doors wider than this get two vertical frame dividers instead of one. */
 const SLIDING_DOOR_DOUBLE_MULLION_MIN_WIDTH_M = 2.7;
+/** Timber board look for the top deck slab in elevations. */
+const DECK_TOP_COLOR = "#b8956a";
 
 function FootprintElevation({
   title,
@@ -58,7 +61,9 @@ function FootprintElevation({
   doors = [],
   slidingDoors = [],
   roofSegments = [],
+  deckSegments = [],
   hasRoofSlab = false,
+  hasDeck = false,
   colours,
 }) {
   const {
@@ -89,6 +94,16 @@ function FootprintElevation({
     { id: "layer-3", bottomMm: (LAYER_HEIGHT_MM + LAYER_GAP_MM) * 2 },
   ];
 
+  const deckLayers = [
+    { id: "deck-1", bottomMm: 0, fill: baseboardsColor },
+    { id: "deck-2", bottomMm: LAYER_HEIGHT_MM + LAYER_GAP_MM, fill: baseboardsColor },
+    {
+      id: "deck-3",
+      bottomMm: (LAYER_HEIGHT_MM + LAYER_GAP_MM) * 2,
+      fill: DECK_TOP_COLOR,
+    },
+  ];
+
   const claddingLayers = Array.from({ length: CLADDING_LAYER_COUNT }, (_, index) => ({
     id: `cladding-${index + 1}`,
     bottomMm: SUBFLOOR_HEIGHT_MM + index * CLADDING_LAYER_HEIGHT_MM,
@@ -117,6 +132,32 @@ function FootprintElevation({
         }}
         preserveAspectRatio="xMidYMid meet"
       >
+        {hasDeck &&
+          deckSegments.map((segment, segmentIndex) => {
+            const x = toX(segment.s0);
+            const width = Math.max(1, (segment.s1 - segment.s0) * 1000);
+            return (
+              <g key={`deck-seg-${segmentIndex}`}>
+                {deckLayers.map((layer) => {
+                  const y = groundY - layer.bottomMm - LAYER_HEIGHT_MM;
+                  return (
+                    <rect
+                      key={`deck-${segmentIndex}-${layer.id}`}
+                      x={x}
+                      y={y}
+                      width={width}
+                      height={LAYER_HEIGHT_MM}
+                      fill={layer.fill}
+                      stroke="#202124"
+                      strokeWidth={OUTLINE_STROKE_WIDTH}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  );
+                })}
+              </g>
+            );
+          })}
+
         {drawSegments.map((segment, segmentIndex) => {
           const x = toX(segment.s0);
           const width = Math.max(1, (segment.s1 - segment.s0) * 1000);
@@ -520,6 +561,8 @@ export default function BuildingElevations({
   depthM = 5.0,
   footprintPoints = null,
   roofPoints = null,
+  decks = null,
+  deckPoints = null,
   windows = null,
   doors = null,
   slidingDoors = null,
@@ -534,13 +577,31 @@ export default function BuildingElevations({
       depthM,
       calibration
     );
-    const roofResolved = resolveBuildingFootprintRing(roofPoints, widthM, depthM, calibration);
+    const roofResolved = resolveAlignedTraceRing(roofPoints, footprintPoints, calibration);
     const hasRoofSlab = fromTrace && roofResolved.fromTrace && roofResolved.ring.length >= 3;
     const roofElevationByTitle = hasRoofSlab
       ? Object.fromEntries(
           buildFootprintElevations(roofResolved.ring).map((elev) => [elev.title, elev])
         )
       : {};
+    const deckOutlines = [];
+    if (Array.isArray(decks) && decks.length) {
+      decks.forEach((deck) => {
+        const pts = Array.isArray(deck?.points) ? deck.points : Array.isArray(deck) ? deck : null;
+        if (pts?.length >= 3) deckOutlines.push(pts);
+      });
+    } else if (Array.isArray(deckPoints) && deckPoints.length >= 3) {
+      deckOutlines.push(deckPoints);
+    }
+    const deckElevationsList = deckOutlines
+      .map((pts) => resolveAlignedTraceRing(pts, footprintPoints, calibration))
+      .filter((resolved) => resolved.ring.length >= 3)
+      .map((resolved) =>
+        Object.fromEntries(
+          buildFootprintElevations(resolved.ring).map((elev) => [elev.title, elev])
+        )
+      );
+    const hasDeck = deckElevationsList.length > 0;
     const modelWindows = fromTrace ? resolveModelWindows(footprintPoints, windows, calibration) : [];
     const modelDoors = fromTrace ? resolveModelDoors(footprintPoints, doors, calibration) : [];
     const modelSlidingDoors = fromTrace
@@ -575,16 +636,34 @@ export default function BuildingElevations({
           return { sMin: Math.min(sA, sB), sMax: Math.max(sA, sB), widthM: d.lengthM };
         });
       const roofElev = roofElevationByTitle[elev.title];
+      const deckSegments = deckElevationsList.flatMap(
+        (byTitle) => byTitle[elev.title]?.segments ?? []
+      );
+      let minS = elev.minS;
+      let maxS = elev.maxS;
+      for (const seg of deckSegments) {
+        minS = Math.min(minS, seg.s0, seg.s1);
+        maxS = Math.max(maxS, seg.s0, seg.s1);
+      }
+      for (const seg of roofElev?.segments ?? []) {
+        minS = Math.min(minS, seg.s0, seg.s1);
+        maxS = Math.max(maxS, seg.s0, seg.s1);
+      }
       return {
         ...elev,
+        minS,
+        maxS,
+        lengthM: Math.max(0.01, maxS - minS),
         windows: elevWindows,
         doors: elevDoors,
         slidingDoors: elevSlidingDoors,
         roofSegments: roofElev?.segments ?? [],
+        deckSegments,
         hasRoofSlab,
+        hasDeck,
       };
     });
-  }, [depthM, footprintPoints, roofPoints, windows, doors, slidingDoors, widthM, calibration]);
+  }, [depthM, footprintPoints, roofPoints, decks, deckPoints, windows, doors, slidingDoors, widthM, calibration]);
 
   const scaleLengthM = Math.max(...elevations.map((e) => e.lengthM), 0.01);
 
@@ -612,7 +691,9 @@ export default function BuildingElevations({
           doors={elevation.doors}
           slidingDoors={elevation.slidingDoors}
           roofSegments={elevation.roofSegments}
+          deckSegments={elevation.deckSegments}
           hasRoofSlab={elevation.hasRoofSlab}
+          hasDeck={elevation.hasDeck}
           colours={colours}
         />
       ))}

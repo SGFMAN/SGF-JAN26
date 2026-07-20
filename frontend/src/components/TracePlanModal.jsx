@@ -16,6 +16,7 @@ import {
   isWindowsTraceLayer,
   isDoorsTraceLayer,
   isSlidingDoorsTraceLayer,
+  isDeckTraceLayer,
   DOORS_LAYER_ID,
   SLIDING_DOORS_LAYER_ID,
   ROOF_LAYER_ID,
@@ -149,6 +150,9 @@ export default function TracePlanModal({
   const [draggingWallNode, setDraggingWallNode] = useState(null);
   const [windowPreview, setWindowPreview] = useState(null);
   const [windowTool, setWindowTool] = useState("add");
+  const [deckTool, setDeckTool] = useState("add");
+  const [hoveredDeckIndex, setHoveredDeckIndex] = useState(-1);
+  const [editingDeckIndex, setEditingDeckIndex] = useState(-1);
   const [hoveredWindowIndex, setHoveredWindowIndex] = useState(-1);
   const [hoveredResizeIndex, setHoveredResizeIndex] = useState(-1);
   const [hoveredHeightIndex, setHoveredHeightIndex] = useState(-1);
@@ -174,11 +178,14 @@ export default function TracePlanModal({
   const isWindowsLayerActive = isWindowsTraceLayer(activeLayerId);
   const isDoorsLayerActive = isDoorsTraceLayer(activeLayerId);
   const isSlidingDoorsLayerActive = isSlidingDoorsTraceLayer(activeLayerId);
+  const isDeckLayerActive = isDeckTraceLayer(activeLayerId);
   const activeTrace =
     layerTraces[activeLayerId] ||
     (isLineTraceLayer(activeLayerId)
       ? { segments: [], draftStart: null }
-      : { points: [], polygonClosed: false });
+      : isDeckTraceLayer(activeLayerId)
+        ? { decks: [], points: [], polygonClosed: false }
+        : { points: [], polygonClosed: false });
   const points = isLineLayerActive ? [] : (activeTrace.points ?? []);
   const polygonClosed = isLineLayerActive ? false : Boolean(activeTrace.polygonClosed);
   const lineDraftStart = isLineLayerActive ? activeTrace.draftStart : null;
@@ -251,6 +258,11 @@ export default function TracePlanModal({
     if (layerId === WINDOWS_LAYER_ID) setWindowTool("add");
     if (layerId === DOORS_LAYER_ID) setDoorTool("add");
     if (layerId === SLIDING_DOORS_LAYER_ID) setSlidingDoorTool("add");
+    if (layerId === DECK_LAYER_ID) {
+      setDeckTool("add");
+      setHoveredDeckIndex(-1);
+      setEditingDeckIndex(-1);
+    }
     setActiveLayerId(layerId);
   }
 
@@ -304,7 +316,101 @@ export default function TracePlanModal({
       setMovingSlidingDoorIndex(-1);
       setSlidingResizeWidthM(null);
     }
+    if (layer.id === DECK_LAYER_ID) {
+      // Commit any in-progress edit before switching tools.
+      commitDeckDraftIfNeeded();
+      setDeckTool(item.id);
+      setHoveredDeckIndex(-1);
+      if (item.id !== "edit") setEditingDeckIndex(-1);
+      if (item.id === "add") {
+        patchLayerTrace(DECK_LAYER_ID, { points: [], polygonClosed: false });
+        setEditingDeckIndex(-1);
+      }
+    }
     setOpenSubmenuLayerId(null);
+  }
+
+  function commitDeckDraftIfNeeded() {
+    const deck = layerTraces[DECK_LAYER_ID];
+    if (!deck) return;
+    const draftPts = deck.points ?? [];
+    if (draftPts.length < 3) return;
+    if (editingDeckIndex >= 0) {
+      setLayerTraces((prev) => {
+        const current = prev[DECK_LAYER_ID] || { decks: [], points: [], polygonClosed: false };
+        const decks = [...(current.decks ?? [])];
+        if (editingDeckIndex >= decks.length) return prev;
+        decks[editingDeckIndex] = { points: draftPts.map((p) => ({ x: p.x, y: p.y })) };
+        return {
+          ...prev,
+          [DECK_LAYER_ID]: { decks, points: [], polygonClosed: false },
+        };
+      });
+      setEditingDeckIndex(-1);
+      return;
+    }
+    if (deck.polygonClosed || draftPts.length >= 3) {
+      setLayerTraces((prev) => {
+        const current = prev[DECK_LAYER_ID] || { decks: [], points: [], polygonClosed: false };
+        return {
+          ...prev,
+          [DECK_LAYER_ID]: {
+            decks: [
+              ...(current.decks ?? []),
+              { points: draftPts.map((p) => ({ x: p.x, y: p.y })) },
+            ],
+            points: [],
+            polygonClosed: false,
+          },
+        };
+      });
+    }
+  }
+
+  function deckIndexAtScreen(screenX, screenY) {
+    const placed = layerTraces[DECK_LAYER_ID]?.decks ?? [];
+    if (!placed.length) return -1;
+    const src = clampSourcePoint(screenToSource(screenX, screenY));
+    for (let i = placed.length - 1; i >= 0; i -= 1) {
+      const pts = placed[i]?.points;
+      if (pts?.length >= 3 && pointInPolygon(src, pts, 0)) return i;
+    }
+    return -1;
+  }
+
+  function removeDeckAt(index) {
+    if (index < 0) return;
+    setLayerTraces((prev) => {
+      const current = prev[DECK_LAYER_ID] || { decks: [], points: [], polygonClosed: false };
+      const decks = (current.decks ?? []).filter((_, i) => i !== index);
+      return {
+        ...prev,
+        [DECK_LAYER_ID]: {
+          ...current,
+          decks,
+          points: editingDeckIndex === index ? [] : current.points,
+          polygonClosed: editingDeckIndex === index ? false : current.polygonClosed,
+        },
+      };
+    });
+    if (editingDeckIndex === index) setEditingDeckIndex(-1);
+    else if (editingDeckIndex > index) setEditingDeckIndex((n) => n - 1);
+    setHoveredDeckIndex(-1);
+  }
+
+  function beginEditDeckAt(index) {
+    if (index < 0) return;
+    const placed = layerTraces[DECK_LAYER_ID]?.decks ?? [];
+    const deck = placed[index];
+    if (!deck?.points?.length) return;
+    if (editingDeckIndex >= 0 && editingDeckIndex !== index) commitDeckDraftIfNeeded();
+    setEditingDeckIndex(index);
+    patchLayerTrace(DECK_LAYER_ID, {
+      points: deck.points.map((p) => ({ x: p.x, y: p.y })),
+      polygonClosed: true,
+    });
+    setNearOrigin(false);
+    clearPolygonPreview();
   }
 
   function windowIndexAtScreen(screenX, screenY) {
@@ -541,10 +647,33 @@ export default function TracePlanModal({
         polygonClosed: true,
       };
     }
-    if (saved.page === pageNumber && saved.deckPoints?.length >= 3) {
+    if (saved.page === pageNumber && saved.decks?.length) {
       next[DECK_LAYER_ID] = {
-        points: denormalizeTracePoints(saved.deckPoints, sourceCanvas.width, sourceCanvas.height),
-        polygonClosed: true,
+        decks: saved.decks
+          .map((deck) => {
+            const pts = deck?.points ?? deck;
+            if (!Array.isArray(pts) || pts.length < 3) return null;
+            return {
+              points: denormalizeTracePoints(pts, sourceCanvas.width, sourceCanvas.height),
+            };
+          })
+          .filter(Boolean),
+        points: [],
+        polygonClosed: false,
+      };
+    } else if (saved.page === pageNumber && saved.deckPoints?.length >= 3) {
+      next[DECK_LAYER_ID] = {
+        decks: [
+          {
+            points: denormalizeTracePoints(
+              saved.deckPoints,
+              sourceCanvas.width,
+              sourceCanvas.height
+            ),
+          },
+        ],
+        points: [],
+        polygonClosed: false,
       };
     }
     if (saved.page === pageNumber && saved.internalWallSegments?.length) {
@@ -971,6 +1100,35 @@ export default function TracePlanModal({
         return;
       }
 
+      // Placed decks (committed outlines) — always drawn for the deck layer.
+      if (layer.mode === "decks" && Array.isArray(trace.decks) && trace.decks.length) {
+        trace.decks.forEach((deck, deckIndex) => {
+          const deckPts = deck?.points;
+          if (!Array.isArray(deckPts) || deckPts.length < 3) return;
+          // Skip the deck currently loaded into the draft editor (drawn below).
+          if (isActive && editingDeckIndex === deckIndex && (trace.points?.length ?? 0) >= 3) {
+            return;
+          }
+          const hovered =
+            isActive && (deckTool === "delete" || deckTool === "edit") && hoveredDeckIndex === deckIndex;
+          ctx.beginPath();
+          ctx.moveTo(deckPts[0].x, deckPts[0].y);
+          for (let i = 1; i < deckPts.length; i += 1) ctx.lineTo(deckPts[i].x, deckPts[i].y);
+          ctx.closePath();
+          ctx.fillStyle = hovered
+            ? deckTool === "delete"
+              ? "rgba(220, 38, 38, 0.28)"
+              : "rgba(5, 150, 105, 0.35)"
+            : layer.fillClosed;
+          ctx.strokeStyle = hovered && deckTool === "delete" ? "#dc2626" : layer.stroke;
+          ctx.lineWidth = (hovered ? 2.5 : isActive ? 2 : 1.5) / scale;
+          ctx.globalAlpha = isActive ? 1 : 0.72;
+          ctx.fill();
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        });
+      }
+
       if (!trace.points?.length) {
         // Allow active empty polygon layers (e.g. deck start) to draw snap preview.
         if (
@@ -980,9 +1138,21 @@ export default function TracePlanModal({
           layer.mode === "lines" ||
           layer.mode === "windows" ||
           layer.mode === "doors" ||
-          layer.mode === "slidingDoors"
+          layer.mode === "slidingDoors" ||
+          layer.mode === "decks"
         ) {
-          return;
+          // Deck add with empty draft still needs wall-start snap preview.
+          if (
+            !(
+              isActive &&
+              layer.mode === "decks" &&
+              deckTool === "add" &&
+              !polygonClosed &&
+              polygonPreviewPoint
+            )
+          ) {
+            return;
+          }
         }
         const guides = polygonSnapGuidesRef.current || [];
         const source = sourceCanvasRef.current;
@@ -1468,7 +1638,7 @@ export default function TracePlanModal({
 
   useEffect(() => {
     if (!loading && !loadError) redraw();
-  }, [loading, loadError, pageLoading, layerTraces, activeLayerId, nearOrigin, redraw, viewTick, linePreviewPoint, polygonPreviewPoint, windowPreview, windowTool, hoveredWindowIndex, hoveredResizeIndex, hoveredHeightIndex, resizeWidthM, movingWindowIndex, doorTool, doorPreview, hoveredDoorIndex, movingDoorIndex, slidingDoorTool, slidingDoorPreview, hoveredSlidingDoorIndex, hoveredSlidingResizeIndex, movingSlidingDoorIndex, slidingResizeWidthM, wizardStep, cropRectPx, cropDraftEnd, calibration, calibDraftStart, calibPreviewEnd, pendingCalibLine]);
+  }, [loading, loadError, pageLoading, layerTraces, activeLayerId, nearOrigin, redraw, viewTick, linePreviewPoint, polygonPreviewPoint, windowPreview, windowTool, hoveredWindowIndex, hoveredResizeIndex, hoveredHeightIndex, resizeWidthM, movingWindowIndex, doorTool, doorPreview, hoveredDoorIndex, movingDoorIndex, slidingDoorTool, slidingDoorPreview, hoveredSlidingDoorIndex, hoveredSlidingResizeIndex, movingSlidingDoorIndex, slidingResizeWidthM, deckTool, hoveredDeckIndex, editingDeckIndex, wizardStep, cropRectPx, cropDraftEnd, calibration, calibDraftStart, calibPreviewEnd, pendingCalibLine]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1807,12 +1977,42 @@ export default function TracePlanModal({
   function addPointAtScreen(screenX, screenY) {
     if (!showTraceUi) return;
     if (isLineLayerActive) return;
+    if (isDeckLayerActive && deckTool !== "add" && editingDeckIndex < 0) return;
     if (polygonClosed || pageLoading) return;
     const source = sourceCanvasRef.current;
     if (!source) return;
 
     if (points.length >= 3 && isNearOrigin(screenX, screenY)) {
-      patchActiveTrace({ polygonClosed: true });
+      if (isDeckLayerActive && deckTool === "add") {
+        const closedPts = points.map((p) => ({ x: p.x, y: p.y }));
+        setLayerTraces((prev) => {
+          const current = prev[DECK_LAYER_ID] || { decks: [], points: [], polygonClosed: false };
+          return {
+            ...prev,
+            [DECK_LAYER_ID]: {
+              decks: [...(current.decks ?? []), { points: closedPts }],
+              points: [],
+              polygonClosed: false,
+            },
+          };
+        });
+      } else if (isDeckLayerActive && editingDeckIndex >= 0) {
+        const closedPts = points.map((p) => ({ x: p.x, y: p.y }));
+        setLayerTraces((prev) => {
+          const current = prev[DECK_LAYER_ID] || { decks: [], points: [], polygonClosed: false };
+          const decks = [...(current.decks ?? [])];
+          if (editingDeckIndex < decks.length) {
+            decks[editingDeckIndex] = { points: closedPts };
+          }
+          return {
+            ...prev,
+            [DECK_LAYER_ID]: { decks, points: [], polygonClosed: false },
+          };
+        });
+        setEditingDeckIndex(-1);
+      } else {
+        patchActiveTrace({ polygonClosed: true });
+      }
       setNearOrigin(false);
       clearPolygonPreview();
       return;
@@ -2218,6 +2418,16 @@ export default function TracePlanModal({
         return;
       }
 
+      if (isDeckLayerActive && (deckTool === "delete" || (deckTool === "edit" && editingDeckIndex < 0))) {
+        interactionRef.current = {
+          type: "deckTool",
+          startX: pt.x,
+          startY: pt.y,
+          moved: false,
+        };
+        return;
+      }
+
       if (isLineLayerActive) {
         const wallNode = findInternalWallNodeAtScreen(pt.x, pt.y);
         if (wallNode) {
@@ -2366,6 +2576,13 @@ export default function TracePlanModal({
         }
         return;
       }
+      if (isDeckLayerActive && (deckTool === "delete" || deckTool === "edit")) {
+        if (!(deckTool === "edit" && editingDeckIndex >= 0 && polygonClosed)) {
+          const idx = deckIndexAtScreen(pt.x, pt.y);
+          setHoveredDeckIndex((prev) => (prev === idx ? prev : idx));
+          return;
+        }
+      }
       if (isLineLayerActive) {
         if (internalWallDraftRef.current) {
           const segments = layerTraces[INTERNAL_WALLS_LAYER_ID]?.segments ?? [];
@@ -2490,6 +2707,15 @@ export default function TracePlanModal({
         const idx = slidingDoorIndexAtScreen(pt.x, pt.y);
         setHoveredSlidingDoorIndex((prev) => (prev === idx ? prev : idx));
       }
+      return;
+    }
+
+    if (interaction.type === "deckTool") {
+      const dx = pt.x - interaction.startX;
+      const dy = pt.y - interaction.startY;
+      if (Math.hypot(dx, dy) > 4) interaction.moved = true;
+      const idx = deckIndexAtScreen(pt.x, pt.y);
+      setHoveredDeckIndex((prev) => (prev === idx ? prev : idx));
       return;
     }
 
@@ -2667,6 +2893,20 @@ export default function TracePlanModal({
       return;
     }
 
+    if (interaction.type === "deckTool") {
+      if (event.button === 0 && !interaction.moved) {
+        const pt = canvasCoords(event) || { x: interaction.startX, y: interaction.startY };
+        const idx = deckIndexAtScreen(pt.x, pt.y);
+        if (deckTool === "delete") {
+          removeDeckAt(idx);
+        } else if (deckTool === "edit") {
+          beginEditDeckAt(idx);
+        }
+        setHoveredDeckIndex(-1);
+      }
+      return;
+    }
+
     if (interaction.type === "calibratePoint") {
       if (event.button !== 0 || pendingCalibLine) return;
       const pt = canvasCoords(event) || { x: interaction.startX, y: interaction.startY };
@@ -2704,11 +2944,28 @@ export default function TracePlanModal({
         if (snapTargetIndex >= 0 && snapTargetIndex !== nodeIndex) {
           mergeNodeInto(nodeIndex, snapTargetIndex);
         }
+        if (isDeckLayerActive && editingDeckIndex >= 0) {
+          setLayerTraces((prev) => {
+            const current = prev[DECK_LAYER_ID];
+            if (!current || (current.points?.length ?? 0) < 3) return prev;
+            const decks = [...(current.decks ?? [])];
+            if (editingDeckIndex >= decks.length) return prev;
+            decks[editingDeckIndex] = {
+              points: current.points.map((p) => ({ x: p.x, y: p.y })),
+            };
+            return { ...prev, [DECK_LAYER_ID]: { ...current, decks } };
+          });
+        }
         return;
       }
       if (interaction.type === "insertOrIdle" && !interaction.moved && event.button === 0) {
         const segment = findSegmentAtScreen(interaction.startX, interaction.startY);
         if (segment) insertNodeOnSegment(segment);
+        if (isDeckLayerActive && editingDeckIndex >= 0) {
+          // Sync after potential insert on next tick via points already in state —
+          // insertNodeOnSegment updates points synchronously in setState, so sync here from ref is hard.
+          // Commit happens on tool switch / save.
+        }
       }
       return;
     }
@@ -2771,6 +3028,31 @@ export default function TracePlanModal({
       });
       return;
     }
+    if (isDeckLayerActive) {
+      const deck = layerTraces[DECK_LAYER_ID];
+      if ((deck?.points?.length ?? 0) > 0) {
+        if (polygonClosed) {
+          patchLayerTrace(DECK_LAYER_ID, { polygonClosed: false });
+        } else {
+          setActivePoints((prev) => prev.slice(0, -1));
+        }
+        return;
+      }
+      if ((deck?.decks?.length ?? 0) > 0) {
+        setLayerTraces((prev) => {
+          const current = prev[DECK_LAYER_ID] || { decks: [], points: [], polygonClosed: false };
+          return {
+            ...prev,
+            [DECK_LAYER_ID]: {
+              ...current,
+              decks: (current.decks ?? []).slice(0, -1),
+            },
+          };
+        });
+        setEditingDeckIndex(-1);
+      }
+      return;
+    }
     if (isLineLayerActive) {
       const trace = layerTraces[INTERNAL_WALLS_LAYER_ID];
       if (trace?.draftStart) {
@@ -2809,6 +3091,14 @@ export default function TracePlanModal({
     if (isSlidingDoorsLayerActive) {
       patchLayerTrace(SLIDING_DOORS_LAYER_ID, { slidingDoors: [] });
       setSlidingDoorPreview(null);
+      return;
+    }
+    if (isDeckLayerActive) {
+      patchLayerTrace(DECK_LAYER_ID, { decks: [], points: [], polygonClosed: false });
+      setEditingDeckIndex(-1);
+      setHoveredDeckIndex(-1);
+      setNearOrigin(false);
+      clearPolygonPreview();
       return;
     }
     if (isLineLayerActive) {
@@ -2854,13 +3144,25 @@ export default function TracePlanModal({
         return JSON.stringify(normalized) !== JSON.stringify(saved.roofPoints ?? []);
       }
       if (layer.id === DECK_LAYER_ID) {
-        if (!trace.polygonClosed || (trace.points?.length ?? 0) < 3) return true;
         if (saved.page !== currentPage) return true;
         const sourceW = source?.width;
         const sourceH = source?.height;
         if (!sourceW || !sourceH) return true;
-        const normalized = normalizeTracePoints(trace.points, sourceW, sourceH);
-        return JSON.stringify(normalized) !== JSON.stringify(saved.deckPoints ?? []);
+        const decks = [...(trace.decks ?? [])];
+        if ((trace.points?.length ?? 0) >= 3) {
+          if (editingDeckIndex >= 0 && editingDeckIndex < decks.length) {
+            decks[editingDeckIndex] = { points: trace.points };
+          } else {
+            decks.push({ points: trace.points });
+          }
+        }
+        const normalized = decks
+          .map((deck) => normalizeTracePoints(deck.points ?? [], sourceW, sourceH))
+          .filter((pts) => pts.length >= 3)
+          .map((pts) => ({ points: pts }));
+        const savedDecks = (saved.decks?.length ? saved.decks : null)
+          ?? (saved.deckPoints?.length >= 3 ? [{ points: saved.deckPoints }] : []);
+        return JSON.stringify(normalized) !== JSON.stringify(savedDecks);
       }
       if (layer.id === INTERNAL_WALLS_LAYER_ID && source) {
         if (saved.page !== currentPage) return true;
@@ -3097,11 +3399,25 @@ export default function TracePlanModal({
         roof?.polygonClosed && (roof.points?.length ?? 0) >= 3
           ? normalizeTracePoints(roof.points, source.width, source.height)
           : [];
-      const deck = layerTraces[DECK_LAYER_ID];
-      const normalizedDeck =
-        deck?.polygonClosed && (deck.points?.length ?? 0) >= 3
-          ? normalizeTracePoints(deck.points, source.width, source.height)
-          : [];
+      const deckLayer = layerTraces[DECK_LAYER_ID] || { decks: [], points: [], polygonClosed: false };
+      // Flush any open draft / edit into the decks list before save.
+      const decksForSave = [...(deckLayer.decks ?? [])];
+      if ((deckLayer.points?.length ?? 0) >= 3) {
+        const draft = {
+          points: deckLayer.points.map((p) => ({ x: p.x, y: p.y })),
+        };
+        if (editingDeckIndex >= 0 && editingDeckIndex < decksForSave.length) {
+          decksForSave[editingDeckIndex] = draft;
+        } else {
+          decksForSave.push(draft);
+        }
+      }
+      const normalizedDecks = decksForSave
+        .map((deck) => {
+          const pts = normalizeTracePoints(deck.points ?? [], source.width, source.height);
+          return pts.length >= 3 ? { points: pts } : null;
+        })
+        .filter(Boolean);
       await onSave(
         normalized,
         currentPage,
@@ -3112,13 +3428,14 @@ export default function TracePlanModal({
         normalizedDoors,
         normalizedSlidingDoors,
         normalizedRoof,
-        normalizedDeck
+        normalizedDecks
       );
       savedTraceRef.current = {
         page: currentPage,
         points: normalized,
         roofPoints: normalizedRoof,
-        deckPoints: normalizedDeck,
+        decks: normalizedDecks,
+        deckPoints: normalizedDecks[0]?.points ?? [],
         internalWallSegments: normalizedInternal,
         crop: normalizedCrop,
         windows: normalizedWindows,
@@ -3219,11 +3536,11 @@ export default function TracePlanModal({
                   : ""
               }`
           : activeLayerId === DECK_LAYER_ID
-            ? `Trace a deck — start on an external wall edge, then click corners (horizontal/vertical only, max ${MAX_TRACE_POINTS}). The deck stays snap-aligned to walls; green guides show wall snaps and 90° closes. Click the green origin to close.${
-                polygonClosed
-                  ? " Drag nodes to move them (edges stay H/V), drop onto another node to merge, or click a line to add a node."
-                  : ""
-              }`
+            ? deckTool === "delete"
+              ? "Delete decks: hover a placed deck (highlights red) and click to remove it. Use the Deck ▸ menu to switch tools."
+              : deckTool === "edit"
+                ? "Edit decks: click a deck to select it, then drag nodes (edges stay H/V). Use the Deck ▸ menu to switch tools."
+                : `Add a deck — start on an external wall edge, then click corners (horizontal/vertical only, max ${MAX_TRACE_POINTS}). Click the green origin to close and place it. You can add more decks the same way.`
           : `Click corners on the fitted floor plan — lines snap horizontal/vertical only (max ${MAX_TRACE_POINTS}). Blue guides show axes; green guides snap when a side can close back to the origin at 90°. Click the green origin to close.${
               polygonClosed
                 ? " Drag nodes to move them (edges stay H/V), drop onto another node to merge, or click a line to add a node."
@@ -3448,7 +3765,7 @@ export default function TracePlanModal({
                               }}
                             />
                             <span style={{ lineHeight: 1.25, flex: 1 }}>{layer.label}</span>
-                            {isActive && hasSubmenu && (layer.id === WINDOWS_LAYER_ID || layer.id === DOORS_LAYER_ID || layer.id === SLIDING_DOORS_LAYER_ID) && (
+                            {isActive && hasSubmenu && (layer.id === WINDOWS_LAYER_ID || layer.id === DOORS_LAYER_ID || layer.id === SLIDING_DOORS_LAYER_ID || layer.id === DECK_LAYER_ID) && (
                               <span
                                 style={{
                                   fontSize: "0.68rem",
@@ -3461,7 +3778,9 @@ export default function TracePlanModal({
                                   ? windowTool
                                   : layer.id === DOORS_LAYER_ID
                                     ? doorTool
-                                    : slidingDoorTool}
+                                    : layer.id === SLIDING_DOORS_LAYER_ID
+                                      ? slidingDoorTool
+                                      : deckTool}
                               </span>
                             )}
                             {hasSubmenu && (
@@ -3501,7 +3820,8 @@ export default function TracePlanModal({
                                 const itemActive =
                                   (layer.id === WINDOWS_LAYER_ID && windowTool === item.id) ||
                                   (layer.id === DOORS_LAYER_ID && doorTool === item.id) ||
-                                  (layer.id === SLIDING_DOORS_LAYER_ID && slidingDoorTool === item.id);
+                                  (layer.id === SLIDING_DOORS_LAYER_ID && slidingDoorTool === item.id) ||
+                                  (layer.id === DECK_LAYER_ID && deckTool === item.id);
                                 return (
                                   <button
                                     key={item.id}

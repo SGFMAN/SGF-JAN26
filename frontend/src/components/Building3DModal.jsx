@@ -7,6 +7,7 @@ import {
   footprintBounds,
   footprintCornerColumnCenters,
   notchFootprintRingForDoors,
+  resolveAlignedTraceRing,
   resolveBuildingFootprintRing,
   resolveModelDoors,
   resolveModelSlidingDoors,
@@ -269,6 +270,7 @@ export default function Building3DModal({
   subfloorHeightM = 0.65,
   footprintPoints = null,
   roofPoints = null,
+  decks = null,
   deckPoints = null,
   windows = null,
   doors = null,
@@ -290,7 +292,16 @@ export default function Building3DModal({
     [footprintPoints]
   );
   const roofPointsKey = useMemo(() => JSON.stringify(roofPoints ?? null), [roofPoints]);
-  const deckPointsKey = useMemo(() => JSON.stringify(deckPoints ?? null), [deckPoints]);
+  const resolvedDecks = useMemo(() => {
+    if (Array.isArray(decks) && decks.length) {
+      return decks
+        .map((deck) => (Array.isArray(deck?.points) ? deck.points : Array.isArray(deck) ? deck : null))
+        .filter((pts) => Array.isArray(pts) && pts.length >= 3);
+    }
+    if (Array.isArray(deckPoints) && deckPoints.length >= 3) return [deckPoints];
+    return [];
+  }, [decks, deckPoints]);
+  const deckPointsKey = useMemo(() => JSON.stringify(resolvedDecks), [resolvedDecks]);
   const windowsKey = useMemo(() => JSON.stringify(windows ?? null), [windows]);
   const doorsKey = useMemo(() => JSON.stringify(doors ?? null), [doors]);
   const slidingDoorsKey = useMemo(
@@ -428,53 +439,56 @@ export default function Building3DModal({
         }
       );
 
-      // Deck: same 200 / 25 / 200 / 25 / 200 stack as subfloor, with timber boards on top.
+      // Decks: same 200 / 25 / 200 / 25 / 200 stack as subfloor, timber boards on top.
+      // No walls above — second subfloor(s) attached beside the unit.
       let hasDeck = false;
-      if (fromTrace && Array.isArray(deckPoints) && deckPoints.length >= 3) {
-        const deckResolved = resolveBuildingFootprintRing(
-          deckPoints,
-          widthM,
-          depthM,
+      const wallRef = footprintPoints?.length >= 3 ? footprintPoints : null;
+      resolvedDecks.forEach((deckPts, deckIndex) => {
+        const deckResolved = resolveAlignedTraceRing(
+          deckPts,
+          wallRef || deckPts,
           calibration
         );
-        if (deckResolved.fromTrace && deckResolved.ring.length >= 3) {
-          const deckGroup = new THREE.Group();
-          deckGroup.name = BUILDING_3D_PARTS.DECK;
-          deckGroup.userData = {
-            partId: BUILDING_3D_PARTS.DECK,
-            partType: "deck",
-            layerHeightM: SUBFLOOR_LAYER_HEIGHT_M,
-            layerGapM: SUBFLOOR_LAYER_GAP_M,
-            heightM: subfloorHeightM,
-          };
-          modelGroup.add(deckGroup);
+        if (deckResolved.ring.length < 3) return;
 
-          let builtDeckLayers = 0;
-          DECK_LAYER_IDS.forEach((partId, index) => {
-            const bottomY = index * (SUBFLOOR_LAYER_HEIGHT_M + SUBFLOOR_LAYER_GAP_M);
-            const topY = bottomY + SUBFLOOR_LAYER_HEIGHT_M;
-            if (
-              addFootprintSlab(deckGroup, {
-                partId,
-                partType: "deck-layer",
-                layerNumber: index + 1,
-                ring: deckResolved.ring,
-                bottomY,
-                topY,
-                color: finishHex.baseboards,
-                roughness: 0.78,
-                metalness: 0.05,
-              })
-            ) {
-              builtDeckLayers += 1;
-            }
-          });
+        const deckGroup = new THREE.Group();
+        deckGroup.name = deckIndex === 0 ? BUILDING_3D_PARTS.DECK : `${BUILDING_3D_PARTS.DECK}-${deckIndex}`;
+        deckGroup.userData = {
+          partId: BUILDING_3D_PARTS.DECK,
+          partType: "deck",
+          deckIndex,
+          layerHeightM: SUBFLOOR_LAYER_HEIGHT_M,
+          layerGapM: SUBFLOOR_LAYER_GAP_M,
+          heightM: subfloorHeightM,
+        };
+        modelGroup.add(deckGroup);
 
-          if (builtDeckLayers === DECK_LAYER_IDS.length) {
-            hasDeck = addDeckTopBoards(deckGroup, deckResolved.ring, subfloorHeightM);
+        let builtDeckLayers = 0;
+        DECK_LAYER_IDS.forEach((partId, index) => {
+          const bottomY = index * (SUBFLOOR_LAYER_HEIGHT_M + SUBFLOOR_LAYER_GAP_M);
+          const topY = bottomY + SUBFLOOR_LAYER_HEIGHT_M;
+          if (
+            addFootprintSlab(deckGroup, {
+              partId: deckIndex === 0 ? partId : `${partId}-${deckIndex}`,
+              partType: "deck-layer",
+              layerNumber: index + 1,
+              ring: deckResolved.ring,
+              bottomY,
+              topY,
+              color: finishHex.baseboards,
+              roughness: 0.78,
+              metalness: 0.05,
+            })
+          ) {
+            builtDeckLayers += 1;
           }
+        });
+
+        if (builtDeckLayers > 0) {
+          const topped = addDeckTopBoards(deckGroup, deckResolved.ring, subfloorHeightM);
+          if (topped) hasDeck = true;
         }
-      }
+      });
       modelGroup.userData = {
         ...(modelGroup.userData || {}),
         hasDeck,
@@ -609,10 +623,9 @@ export default function Building3DModal({
       const wallTopY = subfloorHeightM + CLADDING_HEIGHT_M;
       let hasRoofSlab = false;
       if (fromTrace && Array.isArray(roofPoints) && roofPoints.length >= 3) {
-        const roofResolved = resolveBuildingFootprintRing(
+        const roofResolved = resolveAlignedTraceRing(
           roofPoints,
-          widthM,
-          depthM,
+          footprintPoints,
           calibration
         );
         if (roofResolved.fromTrace && roofResolved.ring.length >= 3) {
@@ -1346,7 +1359,7 @@ export default function Building3DModal({
         container.removeChild(renderer.domElement);
       }
     };
-  }, [buildModel, depthM, footprintKey, footprintPoints, roofPointsKey, roofPoints, deckPointsKey, deckPoints, windowsKey, windows, doorsKey, doors, slidingDoorsKey, slidingDoors, calibrationKey, calibration, subfloorHeightM, widthM, finishesKey, finishHex]);
+  }, [buildModel, depthM, footprintKey, footprintPoints, roofPointsKey, roofPoints, deckPointsKey, resolvedDecks, windowsKey, windows, doorsKey, doors, slidingDoorsKey, slidingDoors, calibrationKey, calibration, subfloorHeightM, widthM, finishesKey, finishHex]);
 
   async function handlePhotorealRender() {
     if (renderBusy) return;
@@ -1412,7 +1425,9 @@ export default function Building3DModal({
   const roofLabel =
     roofPoints?.length >= 3 ? " · Roof: 150 mm traced slab on wall top" : "";
   const deckLabel =
-    deckPoints?.length >= 3 ? " · Deck: 200 / 25 / 200 / 25 / 200 mm + timber top" : "";
+    resolvedDecks.length
+      ? ` · Deck${resolvedDecks.length > 1 ? `s (${resolvedDecks.length})` : ""}: 200 / 25 / 200 / 25 / 200 mm + timber top`
+      : "";
   const headerBtnStyle = {
     padding: "7px 13px",
     color: UI.cardBg,
