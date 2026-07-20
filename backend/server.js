@@ -10650,11 +10650,18 @@ CRITICAL GEOMETRY LOCK (NON-NEGOTIABLE):
 - WALL / CLADDING HEIGHT IS MANDATORY: keep the wall cladding exactly the same total height and horizontal board count/proportions as in the input. Do not stretch walls taller, compress them shorter, or invent extra boards/storeys.
 - Relative heights between ground → subfloor top → wall top → openings must match the input pixel-for-pixel in proportion.
 
-MANDATORY COLOUR / FINISH LOCK:
-- Apply the project colour selections exactly as listed in FINISHES below (COLORBOND® product names).
-- Do not invent alternate colour schemes, “improve” the palette, or keep the white/grey placeholder colours from the 3D screenshot when a finish is specified.
-- Map finishes to the correct parts: cladding boards, baseboards/subfloor trims, window frames, window surrounds, front door, fascia/gutter, balustrade, roof (if visible).
-- Where a finish is listed, that part MUST read as that COLORBOND® colour in the final image.
+MANDATORY COLOUR LOCK (FROM THE INPUT IMAGE + FINISHES LIST):
+- The building colours in the screenshot are already the correct project colours. Match them closely.
+- Do NOT recolour white cladding to Monument/dark grey (or any other colour) unless FINISHES explicitly lists that for cladding.
+- Do NOT recolour Monument/dark baseboards to stained wood, cedar, or natural timber.
+- Apply each FINISHES colour only to its listed part. Never swap colours between cladding and baseboards.
+- If cladding is white in the input, keep cladding white/off-white painted weatherboards in the output.
+
+MANDATORY MATERIAL LOCK:
+- Use the MATERIALS list below. These are painted / coated products — not stained or natural timber finishes.
+- Baseboards and cladding must look like opaque exterior paint on timber profiles (smooth painted surface), never stain/varnish grain.
+- Window frames are coated aluminium with transparent glass.
+- Doors are painted solid-core leaves with glass panels.
 
 ENVIRONMENT & LIGHTING:
 - Replace the plain studio/backdrop with a believable Australian suburban setting: natural daylight sky, soft sun lighting, realistic shadows.
@@ -10664,14 +10671,30 @@ ENVIRONMENT & LIGHTING:
 
 OUTPUT QUALITY:
 - Photoreal materials and glazing; clean architectural-viz suitable for a client presentation.
-- Geometry and colour locks above take priority over stylistic embellishment.`;
+- Geometry, colour, and material locks above take priority over stylistic embellishment.`;
+
+/** Default material copy if the client does not send materials. */
+const AI_3D_DEFAULT_MATERIALS = Object.freeze({
+  cladding:
+    "Painted timber weatherboards — opaque exterior paint matching the cladding colour. NOT stained wood, NOT natural timber grain, NOT cedar.",
+  baseboards:
+    "Painted timber baseboards / subfloor bands — opaque exterior paint matching the baseboard colour. NOT stained wood, NOT varnished hardwood, NOT natural timber.",
+  windowFrames:
+    "Coated aluminium window frames with clear transparent glass. Metal frame (not timber), glass stays transparent.",
+  windowSurrounds:
+    "Painted surrounds matching the surround colour — opaque paint (not stained timber).",
+  doors:
+    "Painted solid-core door with glass panels — opaque paint matching the door colour on the leaf; glass panels stay transparent. NOT stained wood.",
+  slidingDoors:
+    "Painted solid-core sliding door leaf with glazing — opaque paint matching the door colour; glass stays transparent. NOT stained wood.",
+});
 
 /** Known COLORBOND® swatches used on the Colours page — give the model concrete appearance targets. */
 const COLORBOND_SWATCH_NOTES = Object.freeze({
-  Monument: "COLORBOND® Monument® — deep dark charcoal grey (approx #323233). Not black, not mid-grey.",
-  Paperbark: "COLORBOND® Paperbark® — muted pale brown / cream-grey (approx #CABFA4). Warm light neutral.",
-  Wallaby: "COLORBOND® Wallaby® — muted mid grey-brown (approx #7F7C78). Earthy mid-tone, not charcoal.",
-  White: "Clean white painted finish (approx #FFFFFF). Bright white, not cream or grey.",
+  Monument: "COLORBOND® Monument® — deep dark charcoal grey (approx #323233). Not black, not mid-grey. Opaque paint / coated finish — not timber stain.",
+  Paperbark: "COLORBOND® Paperbark® — muted pale brown / cream-grey (approx #CABFA4). Warm light neutral. Opaque paint — not timber stain.",
+  Wallaby: "COLORBOND® Wallaby® — muted mid grey-brown (approx #7F7C78). Earthy mid-tone, not charcoal. Opaque paint — not timber stain.",
+  White: "Clean white painted finish (approx #FFFFFF). Bright white painted surface, not cream, not grey, not stained wood.",
 });
 
 const AI_3D_RENDER_DEFAULT_COLOUR = "White";
@@ -10719,7 +10742,7 @@ function buildAi3dRenderFinishInstructions(finishes = {}) {
     ["Subfloor / baseboards / trims", finishes.baseboardsColour || finishes.baseboards_colour],
     ["Window frames", finishes.windowFramesColour || finishes.window_frames_colour],
     ["Window surrounds", finishes.windowSurroundsColour || finishes.window_surrounds_colour],
-    ["Front door", finishes.frontDoorColour || finishes.front_door_colour],
+    ["Front door / sliding door leaf", finishes.frontDoorColour || finishes.front_door_colour],
     ["Fascia / gutter", finishes.fasciaGutterColour || finishes.fascia_gutter_colour],
     ["Balustrade", finishes.balustradeColour || finishes.balustrade_colour],
     ["Roof (if visible)", finishes.roofColour || finishes.roof_colour],
@@ -10735,10 +10758,28 @@ function buildAi3dRenderFinishInstructions(finishes = {}) {
   });
 
   return [
-    "FINISHES (MANDATORY — every part has a colour):",
-    `Apply each colour to the matching building part. If a part had no selection, use ${AI_3D_RENDER_DEFAULT_COLOUR}.`,
-    "Do not leave any exterior part unspecified, invent alternate schemes, or keep grey placeholder materials from the 3D screenshot.",
+    "FINISHES (MANDATORY — every part has a colour; match the screenshot + this list):",
+    `If a part had no selection, use ${AI_3D_RENDER_DEFAULT_COLOUR}.`,
+    "Do not invent alternate schemes. Do not swap cladding colour with baseboard colour.",
+    "Opaque painted / coated appearance only — never stained or natural timber grain on cladding or baseboards.",
     ...lines,
+  ].join("\n");
+}
+
+function buildAi3dMaterialInstructions(materials = {}) {
+  const m = {
+    ...AI_3D_DEFAULT_MATERIALS,
+    ...(materials && typeof materials === "object" ? materials : {}),
+  };
+  return [
+    "MATERIALS (MANDATORY — construction product types):",
+    `- Wall cladding: ${m.cladding || AI_3D_DEFAULT_MATERIALS.cladding}`,
+    `- Baseboards / subfloor: ${m.baseboards || AI_3D_DEFAULT_MATERIALS.baseboards}`,
+    `- Window frames: ${m.windowFrames || AI_3D_DEFAULT_MATERIALS.windowFrames}`,
+    `- Window surrounds: ${m.windowSurrounds || AI_3D_DEFAULT_MATERIALS.windowSurrounds}`,
+    `- Swing / front doors: ${m.doors || AI_3D_DEFAULT_MATERIALS.doors}`,
+    `- Sliding doors: ${m.slidingDoors || AI_3D_DEFAULT_MATERIALS.slidingDoors}`,
+    "Forbidden: stained timber, cedar cladding look, varnished hardwood baseboards, opaque fake glass.",
   ].join("\n");
 }
 
@@ -11239,6 +11280,9 @@ app.post("/api/projects/:id/generate-3d-render", async (req, res) => {
       req.body?.geometry && typeof req.body.geometry === "object" ? req.body.geometry : {};
 
     const finishBlock = buildAi3dRenderFinishInstructions(finishes);
+    const materialBlock = buildAi3dMaterialInstructions(
+      req.body?.materials && typeof req.body.materials === "object" ? req.body.materials : {}
+    );
     const geometryBlock = buildAi3dGeometryLockInstructions(geometry);
     const imageFile = await toFile(pngBuf, "unit-3d-viewport.png", { type: "image/png" });
 
@@ -11250,7 +11294,7 @@ app.post("/api/projects/:id/generate-3d-render", async (req, res) => {
         input_fidelity: "high",
         size: editSize,
         n: 1,
-        prompt: `${AI_3D_RENDER_PROMPT}\n\n${geometryBlock}\n\n${finishBlock}`,
+        prompt: `${AI_3D_RENDER_PROMPT}\n\n${geometryBlock}\n\n${finishBlock}\n\n${materialBlock}`,
         image: imageFile,
       });
       outBuf = decodeOpenAiImageEditB64Json(resp);

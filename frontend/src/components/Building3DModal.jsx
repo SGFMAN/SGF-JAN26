@@ -12,6 +12,10 @@ import {
   resolveModelSlidingDoors,
   resolveModelWindows,
 } from "../utils/buildingUnitGeometry";
+import {
+  resolveUnitFinishHexes,
+  UNIT_MATERIAL_META,
+} from "../utils/buildingUnitFinishes.js";
 import { UI } from "../utils/uiThemeTokens.js";
 
 export const BUILDING_3D_PARTS = Object.freeze({
@@ -49,7 +53,6 @@ const CORNER_COLUMN_PROJECTION_M = 0.005;
 const CLADDING_LAYER_COUNT = 13;
 const CLADDING_LAYER_HEIGHT_M = 0.2;
 const CLADDING_HEIGHT_M = CLADDING_LAYER_COUNT * CLADDING_LAYER_HEIGHT_M;
-const CLADDING_COLOR = 0xffffff;
 const WINDOW_HEIGHT_M = 1.8;
 const WINDOW_TOP_ABOVE_SUBFLOOR_M = 2.1;
 const WINDOW_PANEL_THICKNESS_M = 0.01;
@@ -57,10 +60,8 @@ const WINDOW_PROUD_M = 0;
 const WINDOW_COLOR = 0x2b322c;
 const WINDOW_SURROUND_THICKNESS_M = 0.03;
 const WINDOW_SURROUND_WIDTH_M = 0.07;
-const WINDOW_SURROUND_COLOR = 0xffffff;
 const WINDOW_FRAME_THICKNESS_M = 0.003;
 const WINDOW_FRAME_WIDTH_M = 0.05;
-const WINDOW_FRAME_COLOR = 0xffffff;
 const WINDOW_MULLION_WIDTH_M = 0.06;
 const WINDOW_MULLION_MIN_WIDTH_M = 1.2;
 // Windows at least this tall get a horizontal transom. It sits a third of the way
@@ -75,11 +76,9 @@ const DOOR_PANEL_THICKNESS_M = 0.01;
 const DOOR_INSET_M = 0.07;
 /** Pull the door slightly proud of the notch back face to avoid z-fighting. */
 const DOOR_INSET_CLEARANCE_M = 0.005;
-const DOOR_COLOR = 0xffffff;
 /** 100 mm surround on left/right/top, proud of the cladding (no bottom). */
 const DOOR_SURROUND_WIDTH_M = 0.1;
 const DOOR_SURROUND_THICKNESS_M = 0.03;
-const DOOR_SURROUND_COLOR = 0xffffff;
 /** Four glass lights: 100 mm high, door width minus 100 mm each side, first at 300 mm up. */
 const DOOR_GLASS_COUNT = 4;
 const DOOR_GLASS_HEIGHT_M = 0.1;
@@ -240,6 +239,8 @@ export default function Building3DModal({
     [slidingDoors]
   );
   const calibrationKey = useMemo(() => JSON.stringify(calibration ?? null), [calibration]);
+  const finishesKey = useMemo(() => JSON.stringify(finishes ?? null), [finishes]);
+  const finishHex = useMemo(() => resolveUnitFinishHexes(finishes), [finishesKey]);
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -331,7 +332,7 @@ export default function Building3DModal({
             ring,
             bottomY,
             topY,
-            color: 0x6b7280,
+            color: finishHex.baseboards,
             roughness: 0.78,
             metalness: 0.05,
           })
@@ -360,7 +361,7 @@ export default function Building3DModal({
             z,
             y: CORNER_COLUMN_HEIGHT_M / 2,
             heightM: CORNER_COLUMN_HEIGHT_M,
-            color: 0x9ca3af,
+            color: finishHex.baseboards,
             roughness: 0.72,
             metalness: 0.08,
           });
@@ -375,7 +376,7 @@ export default function Building3DModal({
         fromTrace,
         layerCount: CLADDING_LAYER_COUNT,
         layerHeightM: CLADDING_LAYER_HEIGHT_M,
-        color: "#ffffff",
+        color: `#${finishHex.cladding.toString(16).padStart(6, "0")}`,
       };
       modelGroup.add(cladding);
 
@@ -410,10 +411,12 @@ export default function Building3DModal({
             ring: layerRing,
             bottomY,
             topY,
-            color: CLADDING_COLOR,
+            color: finishHex.cladding,
             roughness: 0.62,
             metalness: 0.02,
-            extraUserData: { color: "#ffffff" },
+            extraUserData: {
+              color: `#${finishHex.cladding.toString(16).padStart(6, "0")}`,
+            },
           })
         ) {
           builtCladdingLayers += 1;
@@ -433,7 +436,7 @@ export default function Building3DModal({
           allDoorOpenings.forEach((door, index) => {
             const geometry = new THREE.BoxGeometry(door.lengthM, fillerHeight, fillerDepth);
             const material = new THREE.MeshStandardMaterial({
-              color: CLADDING_COLOR,
+              color: finishHex.cladding,
               roughness: 0.62,
               metalness: 0.02,
             });
@@ -477,7 +480,7 @@ export default function Building3DModal({
             z,
             y: subfloorHeightM + CLADDING_HEIGHT_M / 2,
             heightM: CLADDING_HEIGHT_M,
-            color: CLADDING_COLOR,
+            color: finishHex.cladding,
             roughness: 0.62,
             metalness: 0.02,
           });
@@ -640,7 +643,7 @@ export default function Building3DModal({
               band,
               thickness: WINDOW_SURROUND_THICKNESS_M,
               depthOffset: WINDOW_SURROUND_THICKNESS_M / 2,
-              color: WINDOW_SURROUND_COLOR,
+              color: finishHex.windowSurrounds,
             });
           }
 
@@ -651,14 +654,14 @@ export default function Building3DModal({
             const band = WINDOW_FRAME_WIDTH_M;
             const depthOffset = WINDOW_PANEL_THICKNESS_M + WINDOW_FRAME_THICKNESS_M / 2;
             const innerHeight = Math.max(winHeight - band * 2, 0.001);
-            const opts = { thickness: WINDOW_FRAME_THICKNESS_M, depthOffset, color: WINDOW_FRAME_COLOR };
+            const opts = { thickness: WINDOW_FRAME_THICKNESS_M, depthOffset, color: finishHex.windowFrames };
             addRingFrame(`window-${index + 1}-frame`, "window-frame", {
               outerHalfLen: halfLen,
               outerHalfH: halfHeight,
               band,
               thickness: WINDOW_FRAME_THICKNESS_M,
               depthOffset,
-              color: WINDOW_FRAME_COLOR,
+              color: finishHex.windowFrames,
             });
 
             // Wide windows get a central vertical mullion between the top and bottom frame bars.
@@ -699,7 +702,7 @@ export default function Building3DModal({
             DOOR_PANEL_THICKNESS_M
           );
           const material = new THREE.MeshStandardMaterial({
-            color: DOOR_COLOR,
+            color: finishHex.frontDoor,
             roughness: 0.7,
             metalness: 0.05,
           });
@@ -796,7 +799,7 @@ export default function Building3DModal({
             const surround = new THREE.Mesh(
               geo,
               new THREE.MeshStandardMaterial({
-                color: DOOR_SURROUND_COLOR,
+                color: finishHex.windowSurrounds,
                 roughness: 0.7,
                 metalness: 0.05,
               })
@@ -850,7 +853,7 @@ export default function Building3DModal({
           const mesh = new THREE.Mesh(
             geometry,
             new THREE.MeshStandardMaterial({
-              color: DOOR_COLOR,
+              color: finishHex.frontDoor,
               roughness: 0.7,
               metalness: 0.05,
             })
@@ -937,7 +940,7 @@ export default function Building3DModal({
             const frame = new THREE.Mesh(
               frameGeo,
               new THREE.MeshStandardMaterial({
-                color: WINDOW_FRAME_COLOR,
+                color: finishHex.windowFrames,
                 roughness: 0.7,
                 metalness: 0.05,
               })
@@ -975,7 +978,7 @@ export default function Building3DModal({
                   frameThickness
                 ),
                 new THREE.MeshStandardMaterial({
-                  color: WINDOW_FRAME_COLOR,
+                  color: finishHex.windowFrames,
                   roughness: 0.7,
                   metalness: 0.05,
                 })
@@ -1027,7 +1030,7 @@ export default function Building3DModal({
           const surround = new THREE.Mesh(
             geo,
             new THREE.MeshStandardMaterial({
-              color: DOOR_SURROUND_COLOR,
+              color: finishHex.windowSurrounds,
               roughness: 0.7,
               metalness: 0.05,
             })
@@ -1183,7 +1186,7 @@ export default function Building3DModal({
         container.removeChild(renderer.domElement);
       }
     };
-  }, [buildModel, depthM, footprintKey, footprintPoints, windowsKey, windows, doorsKey, doors, slidingDoorsKey, slidingDoors, calibrationKey, calibration, subfloorHeightM, widthM]);
+  }, [buildModel, depthM, footprintKey, footprintPoints, windowsKey, windows, doorsKey, doors, slidingDoorsKey, slidingDoors, calibrationKey, calibration, subfloorHeightM, widthM, finishesKey, finishHex]);
 
   async function handlePhotorealRender() {
     if (renderBusy) return;
@@ -1218,6 +1221,7 @@ export default function Building3DModal({
         body: JSON.stringify({
           imageDataUrl,
           finishes: finishes && typeof finishes === "object" ? finishes : undefined,
+          materials: UNIT_MATERIAL_META,
           geometry: {
             subfloorHeightM,
             subfloorHeightMm: Math.round(subfloorHeightM * 1000),
