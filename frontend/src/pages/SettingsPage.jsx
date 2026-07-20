@@ -9,6 +9,7 @@ import ColourSettings from "./ColourSettings";
 import StreamSettings from "./StreamSettings";
 import MapsSettings from "./MapsSettings";
 import UISettings from "./UISettings";
+import PaymentsSettings from "./PaymentsSettings";
 import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -25,6 +26,7 @@ const menuOptions = [
   { key: "emailTemplates", label: "Email Templates" },
   { key: "file", label: "File Settings" },
   { key: "maps", label: "Maps" },
+  { key: "payments", label: "Payments" },
   { key: "emailSettings", label: "SMTP Settings" },
   { key: "ui", label: "UI" },
   { key: "users", label: "Users" },
@@ -59,6 +61,8 @@ export default function SettingsPage() {
         return <ColourSettings />;
       case "maps":
         return <MapsSettings />;
+      case "payments":
+        return <PaymentsSettings />;
       case "streamSettings":
         return (
           <div

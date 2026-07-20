@@ -170,6 +170,7 @@ export default function TracePlanModal({
   const [movingSlidingDoorIndex, setMovingSlidingDoorIndex] = useState(-1);
   const [slidingResizeWidthM, setSlidingResizeWidthM] = useState(null);
   const [openSubmenuLayerId, setOpenSubmenuLayerId] = useState(null);
+  const [showPdfPlan, setShowPdfPlan] = useState(true);
   const polygonSnapGuidesRef = useRef([]);
   const polygonSnapKindRef = useRef("ortho");
 
@@ -899,7 +900,9 @@ export default function TracePlanModal({
     const scale = viewScale();
     const { panX, panY } = viewRef.current;
     ctx.setTransform(scale, 0, 0, scale, panX, panY);
-    ctx.drawImage(source, 0, 0);
+    if (showPdfPlan) {
+      ctx.drawImage(source, 0, 0);
+    }
 
     const metresPerPixel = currentMetresPerPixel();
 
@@ -1634,11 +1637,12 @@ export default function TracePlanModal({
     calibDraftStart,
     calibPreviewEnd,
     pendingCalibLine,
+    showPdfPlan,
   ]);
 
   useEffect(() => {
     if (!loading && !loadError) redraw();
-  }, [loading, loadError, pageLoading, layerTraces, activeLayerId, nearOrigin, redraw, viewTick, linePreviewPoint, polygonPreviewPoint, windowPreview, windowTool, hoveredWindowIndex, hoveredResizeIndex, hoveredHeightIndex, resizeWidthM, movingWindowIndex, doorTool, doorPreview, hoveredDoorIndex, movingDoorIndex, slidingDoorTool, slidingDoorPreview, hoveredSlidingDoorIndex, hoveredSlidingResizeIndex, movingSlidingDoorIndex, slidingResizeWidthM, deckTool, hoveredDeckIndex, editingDeckIndex, wizardStep, cropRectPx, cropDraftEnd, calibration, calibDraftStart, calibPreviewEnd, pendingCalibLine]);
+  }, [loading, loadError, pageLoading, layerTraces, activeLayerId, nearOrigin, redraw, viewTick, linePreviewPoint, polygonPreviewPoint, windowPreview, windowTool, hoveredWindowIndex, hoveredResizeIndex, hoveredHeightIndex, resizeWidthM, movingWindowIndex, doorTool, doorPreview, hoveredDoorIndex, movingDoorIndex, slidingDoorTool, slidingDoorPreview, hoveredSlidingDoorIndex, hoveredSlidingResizeIndex, movingSlidingDoorIndex, slidingResizeWidthM, deckTool, hoveredDeckIndex, editingDeckIndex, wizardStep, cropRectPx, cropDraftEnd, calibration, calibDraftStart, calibPreviewEnd, pendingCalibLine, showPdfPlan]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -3556,6 +3560,21 @@ export default function TracePlanModal({
     fontSize: "0.9rem",
     fontWeight: 500,
   };
+  const pdfPlanToggleButton = (
+    <button
+      type="button"
+      onClick={() => setShowPdfPlan((visible) => !visible)}
+      style={{
+        ...navButtonStyle,
+        background: showPdfPlan ? "transparent" : MONUMENT,
+        color: showPdfPlan ? MONUMENT : PAGE_TEXT,
+        borderColor: showPdfPlan ? SECTION_GREY : MONUMENT,
+      }}
+      title={showPdfPlan ? "Hide the PDF floor plan" : "Show the PDF floor plan"}
+    >
+      {showPdfPlan ? "Hide plan" : "Show plan"}
+    </button>
+  );
 
   return (
     <div
@@ -4012,6 +4031,7 @@ export default function TracePlanModal({
                 <button type="button" onClick={backToAreaStep} style={navButtonStyle}>
                   Edit area
                 </button>
+                {pdfPlanToggleButton}
                 <button
                   type="button"
                   onClick={() => {
@@ -4051,6 +4071,7 @@ export default function TracePlanModal({
                 <button type="button" onClick={backToAreaStep} style={navButtonStyle}>
                   Edit area
                 </button>
+                {pdfPlanToggleButton}
                 <button type="button" onClick={backToCalibrateStep} style={navButtonStyle}>
                   Edit scale
                 </button>

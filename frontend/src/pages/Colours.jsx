@@ -12,6 +12,10 @@ import { streamColorHover } from "../utils/streamColors.js";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 import { isUserAdmin } from "../utils/auth";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
+import {
+  COLOURS_ROOF_STYLE_OPTIONS,
+  normalizeRoofStyle,
+} from "../constants/roofStyles.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
@@ -29,7 +33,7 @@ function mergeColoursButtonStyle(styleId, fallback) {
 
 const COLOURS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
 const COLOUR_OPTIONS = ["Select", ...COLORBOND_COLOURS.map((c) => c.name)];
-const ROOF_STYLE_OPTIONS = ["Select", "Affordable", "Superior", "Skillion"];
+const ROOF_STYLE_OPTIONS = COLOURS_ROOF_STYLE_OPTIONS;
 const COLOUR_PAGE_CATEGORIES = ["External", "Flooring", "Kitchen", "Bathroom", "Bedrooms"];
 const COLOURS_CATEGORY_FIT_WIDTH = `calc(${Math.max(...COLOUR_PAGE_CATEGORIES.map((s) => s.length))}ch + 28px)`;
 const COLOURS_ROOF_STYLE_FIT_WIDTH = `calc(${Math.max(...ROOF_STYLE_OPTIONS.map((s) => s.length))}ch + 28px)`;
@@ -50,6 +54,10 @@ function colourOrSelect(value) {
   return value && String(value).trim() ? String(value).trim() : "Select";
 }
 
+function roofStyleOrSelect(value) {
+  return normalizeRoofStyle(colourOrSelect(value));
+}
+
 function colourForSave(value) {
   return value === "Select" || value == null || value === "" ? null : value;
 }
@@ -62,7 +70,7 @@ export default function Colours({ project, onUpdate }) {
   const [roofColour, setRoofColour] = useState(colourOrSelect(project?.roof_colour));
   const [claddingColour, setCladdingColour] = useState(colourOrSelect(project?.cladding_colour));
   const [baseboardsColour, setBaseboardsColour] = useState(colourOrSelect(project?.baseboards_colour));
-  const [roofStyle, setRoofStyle] = useState(colourOrSelect(project?.roof_style));
+  const [roofStyle, setRoofStyle] = useState(roofStyleOrSelect(project?.roof_style));
   const [windowFramesColour, setWindowFramesColour] = useState(
     colourOrSelect(project?.windowframes_colour ?? project?.window_frames_colour)
   );
@@ -146,7 +154,7 @@ export default function Colours({ project, onUpdate }) {
     setRoofColour(colourOrSelect(project.roof_colour));
     setCladdingColour(colourOrSelect(project.cladding_colour));
     setBaseboardsColour(colourOrSelect(project.baseboards_colour));
-    setRoofStyle(colourOrSelect(project.roof_style));
+    setRoofStyle(roofStyleOrSelect(project.roof_style));
     setWindowFramesColour(
       colourOrSelect(project.windowframes_colour ?? project.window_frames_colour)
     );
@@ -184,7 +192,7 @@ export default function Colours({ project, onUpdate }) {
         setRoofColour(colourOrSelect(data.roof_colour));
         setCladdingColour(colourOrSelect(data.cladding_colour));
         setBaseboardsColour(colourOrSelect(data.baseboards_colour));
-        setRoofStyle(colourOrSelect(data.roof_style));
+        setRoofStyle(roofStyleOrSelect(data.roof_style));
         setWindowFramesColour(
           colourOrSelect(data.windowframes_colour ?? data.window_frames_colour)
         );
@@ -1303,6 +1311,7 @@ export default function Colours({ project, onUpdate }) {
                       claddingColour,
                       baseboardsColour,
                       roofColour,
+                      roofStyle,
                       windowFramesColour,
                       windowSurroundsColour,
                       doorColour,

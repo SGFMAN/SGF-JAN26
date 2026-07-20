@@ -9,6 +9,23 @@ import {
   resolveModelWindows,
 } from "../utils/buildingUnitGeometry";
 import { resolveUnitFinishCssHexes } from "../utils/buildingUnitFinishes.js";
+import {
+  HIPPED_ROOF_PITCH_DEG,
+  ROOF_GUTTER_INSET_M,
+  ROOF_SLAB_THICKNESS_M,
+  insetRoofRingForGutter,
+  projectHippedRoofElevation,
+} from "../utils/hippedRoofGeometry.js";
+import { isSuperiorHippedRoofStyle, isSuperiorSkillionRoofStyle } from "../constants/roofStyles.js";
+import {
+  projectSkillionRoofElevation,
+  resolveSkillionPitchFromSwingDoor,
+  skillionExtraCladdingBands,
+  skillionMaxWallRiseM,
+  skillionUndersideRiseM,
+  SKILLION_ROOF_PITCH_DEG,
+  SKILLION_ROOF_SLAB_THICKNESS_M,
+} from "../utils/skillionRoofGeometry.js";
 
 const SUBFLOOR_HEIGHT_MM = 650;
 const LAYER_HEIGHT_MM = 200;
@@ -18,9 +35,8 @@ const COLUMN_PROJECTION_MM = 5;
 const CLADDING_LAYER_COUNT = 13;
 const CLADDING_LAYER_HEIGHT_MM = 200;
 const CLADDING_HEIGHT_MM = CLADDING_LAYER_COUNT * CLADDING_LAYER_HEIGHT_MM;
-const ROOF_SLAB_THICKNESS_MM = 150;
+const ROOF_SLAB_THICKNESS_MM = Math.round(ROOF_SLAB_THICKNESS_M * 1000);
 const TOTAL_HEIGHT_MM = SUBFLOOR_HEIGHT_MM + CLADDING_HEIGHT_MM;
-const TOTAL_HEIGHT_WITH_ROOF_MM = TOTAL_HEIGHT_MM + ROOF_SLAB_THICKNESS_MM;
 const OUTLINE_STROKE_WIDTH = 1;
 const GROUND_STROKE_WIDTH = 7;
 
@@ -48,8 +64,6 @@ const DOOR_GLASS_COLOR = "#2b322c";
 const DOOR_OUTLINE = "#202124";
 /** Sliding doors wider than this get two vertical frame dividers instead of one. */
 const SLIDING_DOOR_DOUBLE_MULLION_MIN_WIDTH_M = 2.7;
-/** Timber board look for the top deck slab in elevations. */
-const DECK_TOP_COLOR = "#b8956a";
 
 function FootprintElevation({
   title,
@@ -60,10 +74,17 @@ function FootprintElevation({
   windows = [],
   doors = [],
   slidingDoors = [],
+  roofPolygons = [],
+  roofRiseMm = 0,
   roofSegments = [],
   deckSegments = [],
-  hasRoofSlab = false,
+  hasRoof = false,
   hasDeck = false,
+  roofSlabThicknessMm = ROOF_SLAB_THICKNESS_MM,
+  drawFlatRoofSegments = true,
+  useSkillionRoofPolygons = false,
+  skillionCladdingBands = [],
+  skillionCladdingEdges = [],
   colours,
 }) {
   const {
@@ -77,13 +98,22 @@ function FootprintElevation({
   const lengthMm = (maxS - minS) * 1000;
   const scaleLengthMm = scaleLengthM * 1000;
   const marginX = Math.max(150, scaleLengthMm * 0.025);
-  const marginTop = 100 + (hasRoofSlab ? ROOF_SLAB_THICKNESS_MM : 0);
+  const roofAboveWallMm = hasRoof
+    ? useSkillionRoofPolygons
+      ? Math.max(roofRiseMm, 0)
+      : drawFlatRoofSegments
+        ? roofSlabThicknessMm + Math.max(roofRiseMm, 0)
+        : Math.max(roofRiseMm, 0)
+    : 0;
+  const marginTop = 100 + roofAboveWallMm;
   const marginBottom = 720;
-  const buildingHeightMm = hasRoofSlab ? TOTAL_HEIGHT_WITH_ROOF_MM : TOTAL_HEIGHT_MM;
+  const buildingHeightMm = TOTAL_HEIGHT_MM + roofAboveWallMm;
   const groundY = marginTop + buildingHeightMm;
   const viewWidth = scaleLengthMm + marginX * 2;
   const viewHeight = marginTop + buildingHeightMm + marginBottom;
   const wallTopY = groundY - TOTAL_HEIGHT_MM;
+  const slabTopY = wallTopY - roofSlabThicknessMm;
+  const roofPolygonBaseY = useSkillionRoofPolygons || !drawFlatRoofSegments ? wallTopY : slabTopY;
   const elevationOriginX = marginX + (scaleLengthMm - lengthMm) / 2;
 
   const toX = (s) => elevationOriginX + (s - minS) * 1000;
@@ -94,14 +124,11 @@ function FootprintElevation({
     { id: "layer-3", bottomMm: (LAYER_HEIGHT_MM + LAYER_GAP_MM) * 2 },
   ];
 
+  // Same baseboards colour on all three 200 mm slabs — timber boards are 3D-only.
   const deckLayers = [
-    { id: "deck-1", bottomMm: 0, fill: baseboardsColor },
-    { id: "deck-2", bottomMm: LAYER_HEIGHT_MM + LAYER_GAP_MM, fill: baseboardsColor },
-    {
-      id: "deck-3",
-      bottomMm: (LAYER_HEIGHT_MM + LAYER_GAP_MM) * 2,
-      fill: DECK_TOP_COLOR,
-    },
+    { id: "deck-1", bottomMm: 0 },
+    { id: "deck-2", bottomMm: LAYER_HEIGHT_MM + LAYER_GAP_MM },
+    { id: "deck-3", bottomMm: (LAYER_HEIGHT_MM + LAYER_GAP_MM) * 2 },
   ];
 
   const claddingLayers = Array.from({ length: CLADDING_LAYER_COUNT }, (_, index) => ({
@@ -147,7 +174,7 @@ function FootprintElevation({
                       y={y}
                       width={width}
                       height={LAYER_HEIGHT_MM}
-                      fill={layer.fill}
+                      fill={baseboardsColor}
                       stroke="#202124"
                       strokeWidth={OUTLINE_STROKE_WIDTH}
                       vectorEffect="non-scaling-stroke"
@@ -283,6 +310,48 @@ function FootprintElevation({
             </g>
           );
         })}
+
+        {useSkillionRoofPolygons &&
+          skillionCladdingEdges.map((edge, edgeIndex) =>
+            skillionCladdingBands.map((band, bandIndex) => {
+              const rise0 = edge.rise0M;
+              const rise1 = edge.rise1M;
+              const { bottomRiseM, topRiseM } = band;
+              if (Math.max(rise0, rise1) <= bottomRiseM + 1e-6) return null;
+
+              // Flat 200 mm board — may run into the roof; no pitched/stepped top.
+              let sLeft = edge.s0;
+              let sRight = edge.s1;
+              if (rise0 < bottomRiseM && rise1 > bottomRiseM) {
+                const t = (bottomRiseM - rise0) / (rise1 - rise0);
+                sLeft = edge.s0 + t * (edge.s1 - edge.s0);
+              } else if (rise1 < bottomRiseM && rise0 > bottomRiseM) {
+                const t = (bottomRiseM - rise0) / (rise1 - rise0);
+                sRight = edge.s0 + t * (edge.s1 - edge.s0);
+              } else if (rise0 < bottomRiseM && rise1 < bottomRiseM) {
+                return null;
+              }
+
+              const x = toX(sLeft);
+              const width = Math.max(1, (sRight - sLeft) * 1000);
+              const yTop = wallTopY - topRiseM * 1000;
+              const height = (topRiseM - bottomRiseM) * 1000;
+
+              return (
+                <rect
+                  key={`skillion-clad-${edgeIndex}-${bandIndex}`}
+                  x={x}
+                  y={yTop}
+                  width={width}
+                  height={height}
+                  fill={claddingColor}
+                  stroke="#202124"
+                  strokeWidth={OUTLINE_STROKE_WIDTH}
+                  vectorEffect="non-scaling-stroke"
+                />
+              );
+            })
+          )}
 
         {windows.map((win, windowIndex) => {
           const xLeft = toX(win.sMin);
@@ -511,7 +580,8 @@ function FootprintElevation({
           );
         })}
 
-        {hasRoofSlab &&
+        {hasRoof &&
+          drawFlatRoofSegments &&
           roofSegments.map((segment, segmentIndex) => {
             const x = toX(segment.s0);
             const width = Math.max(1, (segment.s1 - segment.s0) * 1000);
@@ -519,9 +589,47 @@ function FootprintElevation({
               <rect
                 key={`roof-slab-${segmentIndex}`}
                 x={x}
-                y={wallTopY - ROOF_SLAB_THICKNESS_MM}
+                y={slabTopY}
                 width={width}
-                height={ROOF_SLAB_THICKNESS_MM}
+                height={roofSlabThicknessMm}
+                fill={roofColor}
+                stroke={roofColor}
+                strokeWidth={OUTLINE_STROKE_WIDTH}
+                vectorEffect="non-scaling-stroke"
+              />
+            );
+          })}
+
+        {hasRoof &&
+          useSkillionRoofPolygons &&
+          roofPolygons.map((poly, polyIndex) => {
+            const points = (poly.points ?? [])
+              .map((p) => `${toX(p.s)},${roofPolygonBaseY - p.y * 1000}`)
+              .join(" ");
+            if (!points) return null;
+            return (
+              <polygon
+                key={`roof-skillion-${polyIndex}`}
+                points={points}
+                fill={roofColor}
+                stroke="#202124"
+                strokeWidth={OUTLINE_STROKE_WIDTH}
+                vectorEffect="non-scaling-stroke"
+              />
+            );
+          })}
+
+        {hasRoof &&
+          !useSkillionRoofPolygons &&
+          roofPolygons.map((poly, polyIndex) => {
+            const points = (poly.points ?? [])
+              .map((p) => `${toX(p.s)},${roofPolygonBaseY - p.y * 1000}`)
+              .join(" ");
+            if (!points) return null;
+            return (
+              <polygon
+                key={`roof-hip-${polyIndex}`}
+                points={points}
                 fill={roofColor}
                 stroke={roofColor}
                 strokeWidth={OUTLINE_STROKE_WIDTH}
@@ -577,9 +685,16 @@ export default function BuildingElevations({
       depthM,
       calibration
     );
+    const showHippedPlanes = isSuperiorHippedRoofStyle(finishes?.roofStyle);
+    const showSkillionSlab = isSuperiorSkillionRoofStyle(finishes?.roofStyle);
+    const roofSlabThicknessMm = showSkillionSlab
+      ? Math.round(SKILLION_ROOF_SLAB_THICKNESS_M * 1000)
+      : ROOF_SLAB_THICKNESS_MM;
     const roofResolved = resolveAlignedTraceRing(roofPoints, footprintPoints, calibration);
-    const hasRoofSlab = fromTrace && roofResolved.fromTrace && roofResolved.ring.length >= 3;
-    const roofElevationByTitle = hasRoofSlab
+    const hasRoof = fromTrace && roofResolved.fromTrace && roofResolved.ring.length >= 3;
+    const hipRing =
+      hasRoof ? insetRoofRingForGutter(roofResolved.ring, ROOF_GUTTER_INSET_M) : null;
+    const roofElevationByTitle = hasRoof
       ? Object.fromEntries(
           buildFootprintElevations(roofResolved.ring).map((elev) => [elev.title, elev])
         )
@@ -604,9 +719,20 @@ export default function BuildingElevations({
     const hasDeck = deckElevationsList.length > 0;
     const modelWindows = fromTrace ? resolveModelWindows(footprintPoints, windows, calibration) : [];
     const modelDoors = fromTrace ? resolveModelDoors(footprintPoints, doors, calibration) : [];
+    const swingDoor = modelDoors[0] ?? null;
     const modelSlidingDoors = fromTrace
       ? resolveModelSlidingDoors(footprintPoints, slidingDoors, calibration)
       : [];
+    const skillionPitch =
+      showSkillionSlab && hasRoof
+        ? resolveSkillionPitchFromSwingDoor(roofResolved.ring, swingDoor)
+        : null;
+    const skillionMaxRiseM = skillionMaxWallRiseM(skillionPitch, SKILLION_ROOF_PITCH_DEG);
+    const skillionCladdingBands = skillionExtraCladdingBands(
+      skillionMaxRiseM,
+      CLADDING_LAYER_HEIGHT_MM / 1000
+    );
+
     return buildFootprintElevations(ring).map((elev) => {
       const screenAxis = { x: elev.viewDir.z, z: -elev.viewDir.x };
       const projectS = (x, z) => x * screenAxis.x + z * screenAxis.z;
@@ -635,7 +761,29 @@ export default function BuildingElevations({
           const sB = projectS(d.midX + d.dirX * half, d.midZ + d.dirZ * half);
           return { sMin: Math.min(sA, sB), sMax: Math.max(sA, sB), widthM: d.lengthM };
         });
-      const roofElev = roofElevationByTitle[elev.title];
+      const skillionElev =
+        showSkillionSlab && hasRoof
+          ? projectSkillionRoofElevation(
+              roofResolved.ring,
+              0,
+              elev.viewDir,
+              swingDoor,
+              SKILLION_ROOF_PITCH_DEG,
+              SKILLION_ROOF_SLAB_THICKNESS_M
+            )
+          : null;
+      const hipElev =
+        showHippedPlanes && hasRoof && hipRing?.length >= 3
+          ? projectHippedRoofElevation(
+              hipRing,
+              0,
+              elev.viewDir,
+              HIPPED_ROOF_PITCH_DEG
+            )
+          : null;
+      const roofPolygons = skillionElev?.polygons ?? hipElev?.polygons ?? [];
+      const roofRiseMm = (skillionElev?.maxRiseM ?? hipElev?.maxRiseM ?? 0) * 1000;
+      const roofElevSegments = roofElevationByTitle[elev.title]?.segments ?? [];
       const deckSegments = deckElevationsList.flatMap(
         (byTitle) => byTitle[elev.title]?.segments ?? []
       );
@@ -645,10 +793,51 @@ export default function BuildingElevations({
         minS = Math.min(minS, seg.s0, seg.s1);
         maxS = Math.max(maxS, seg.s0, seg.s1);
       }
-      for (const seg of roofElev?.segments ?? []) {
+      for (const seg of roofElevSegments) {
         minS = Math.min(minS, seg.s0, seg.s1);
         maxS = Math.max(maxS, seg.s0, seg.s1);
       }
+      if (hipElev && Number.isFinite(hipElev.minS) && Number.isFinite(hipElev.maxS)) {
+        minS = Math.min(minS, hipElev.minS);
+        maxS = Math.max(maxS, hipElev.maxS);
+      }
+      if (skillionElev && Number.isFinite(skillionElev.minS) && Number.isFinite(skillionElev.maxS)) {
+        minS = Math.min(minS, skillionElev.minS);
+        maxS = Math.max(maxS, skillionElev.maxS);
+      }
+
+      const skillionCladdingEdges = [];
+      if (skillionPitch && skillionCladdingBands.length) {
+        let signedArea = 0;
+        for (let i = 0; i < ring.length; i += 1) {
+          const a = ring[i];
+          const b = ring[(i + 1) % ring.length];
+          signedArea += a.x * b.z - b.x * a.z;
+        }
+        const counterClockwise = signedArea > 0;
+        for (let i = 0; i < ring.length; i += 1) {
+          const a = ring[i];
+          const b = ring[(i + 1) % ring.length];
+          const dx = b.x - a.x;
+          const dz = b.z - a.z;
+          const len = Math.hypot(dx, dz) || 1;
+          const nx = counterClockwise ? dz / len : -dz / len;
+          const nz = counterClockwise ? -dx / len : dx / len;
+          if (nx * elev.viewDir.x + nz * elev.viewDir.z <= 0.05) continue;
+          const sA = projectS(a.x, a.z);
+          const sB = projectS(b.x, b.z);
+          const riseA = skillionUndersideRiseM(a, skillionPitch, SKILLION_ROOF_PITCH_DEG);
+          const riseB = skillionUndersideRiseM(b, skillionPitch, SKILLION_ROOF_PITCH_DEG);
+          if (Math.max(riseA, riseB) < 1e-4) continue;
+          skillionCladdingEdges.push({
+            s0: Math.min(sA, sB),
+            s1: Math.max(sA, sB),
+            rise0M: sA <= sB ? riseA : riseB,
+            rise1M: sA <= sB ? riseB : riseA,
+          });
+        }
+      }
+
       return {
         ...elev,
         minS,
@@ -657,13 +846,20 @@ export default function BuildingElevations({
         windows: elevWindows,
         doors: elevDoors,
         slidingDoors: elevSlidingDoors,
-        roofSegments: roofElev?.segments ?? [],
+        roofPolygons,
+        roofRiseMm,
+        roofSegments: roofElevSegments,
         deckSegments,
-        hasRoofSlab,
+        hasRoof,
         hasDeck,
+        roofSlabThicknessMm,
+        drawFlatRoofSegments: hasRoof && !showSkillionSlab,
+        useSkillionRoofPolygons: showSkillionSlab && hasRoof,
+        skillionCladdingBands,
+        skillionCladdingEdges,
       };
     });
-  }, [depthM, footprintPoints, roofPoints, decks, deckPoints, windows, doors, slidingDoors, widthM, calibration]);
+  }, [depthM, footprintPoints, roofPoints, decks, deckPoints, windows, doors, slidingDoors, widthM, calibration, finishes?.roofStyle]);
 
   const scaleLengthM = Math.max(...elevations.map((e) => e.lengthM), 0.01);
 
@@ -690,10 +886,17 @@ export default function BuildingElevations({
           windows={elevation.windows}
           doors={elevation.doors}
           slidingDoors={elevation.slidingDoors}
+          roofPolygons={elevation.roofPolygons}
+          roofRiseMm={elevation.roofRiseMm}
           roofSegments={elevation.roofSegments}
           deckSegments={elevation.deckSegments}
-          hasRoofSlab={elevation.hasRoofSlab}
+          hasRoof={elevation.hasRoof}
           hasDeck={elevation.hasDeck}
+          roofSlabThicknessMm={elevation.roofSlabThicknessMm}
+          drawFlatRoofSegments={elevation.drawFlatRoofSegments}
+          useSkillionRoofPolygons={elevation.useSkillionRoofPolygons}
+          skillionCladdingBands={elevation.skillionCladdingBands}
+          skillionCladdingEdges={elevation.skillionCladdingEdges}
           colours={colours}
         />
       ))}

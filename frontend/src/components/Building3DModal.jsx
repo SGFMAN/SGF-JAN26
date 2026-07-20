@@ -23,6 +23,32 @@ import {
   createTimberDeckTexture,
   TIMBER_DECK_BOARD_PITCH_M,
 } from "../utils/timberDeckTexture.js";
+import {
+  buildHippedRoofGeometry,
+  buildHippedRoofMeshData,
+  buildHippedRoofOutlineGeometry,
+  HIPPED_ROOF_PITCH_DEG,
+  ROOF_GUTTER_INSET_M,
+  ROOF_SLAB_THICKNESS_M,
+  hippedRoofEaveYM,
+  insetRoofRingForGutter,
+} from "../utils/hippedRoofGeometry.js";
+import { isSuperiorHippedRoofStyle, isSuperiorSkillionRoofStyle } from "../constants/roofStyles.js";
+import {
+  buildSkillionRoofSlabGeometry,
+  buildSkillionRoofSlabMeshData,
+  buildSkillionRoofSlabOutlineGeometry,
+  clipRingToSkillionMinRise,
+  resolveSkillionPitchFromSwingDoor,
+  skillionExtraCladdingBands,
+  skillionMaxWallRiseM,
+  skillionUndersideRiseM,
+  SKILLION_ROOF_PITCH_DEG,
+  SKILLION_ROOF_SLAB_THICKNESS_M,
+} from "../utils/skillionRoofGeometry.js";
+import {
+  createCorrugatedRoofTexture,
+} from "../utils/corrugatedRoofTexture.js";
 import { UI } from "../utils/uiThemeTokens.js";
 
 export const BUILDING_3D_PARTS = Object.freeze({
@@ -58,6 +84,8 @@ export const BUILDING_3D_PARTS = Object.freeze({
 });
 
 const EYE_HEIGHT_M = 1.65;
+const CAMERA_HEIGHT_STEP_M = 0.1;
+const CAMERA_HEIGHT_MIN_M = 0.5;
 const SUBFLOOR_LAYER_HEIGHT_M = 0.2;
 const SUBFLOOR_LAYER_GAP_M = 0.025;
 const CORNER_COLUMN_SIZE_M = 0.05;
@@ -68,8 +96,6 @@ const DECK_TOP_CAP_THICKNESS_M = 0.008;
 const CLADDING_LAYER_COUNT = 13;
 const CLADDING_LAYER_HEIGHT_M = 0.2;
 const CLADDING_HEIGHT_M = CLADDING_LAYER_COUNT * CLADDING_LAYER_HEIGHT_M;
-/** Temporary flat roof slab thickness (sits on top of cladding). */
-const ROOF_SLAB_THICKNESS_M = 0.15;
 const WINDOW_HEIGHT_M = 1.8;
 const WINDOW_TOP_ABOVE_SUBFLOOR_M = 2.1;
 const WINDOW_PANEL_THICKNESS_M = 0.01;
@@ -282,7 +308,9 @@ export default function Building3DModal({
 }) {
   const containerRef = useRef(null);
   const captureRef = useRef(null);
+  const cameraHeightRef = useRef(EYE_HEIGHT_M);
   const [error, setError] = useState("");
+  const [cameraHeightM, setCameraHeightM] = useState(EYE_HEIGHT_M);
   const [renderBusy, setRenderBusy] = useState(false);
   const [renderError, setRenderError] = useState("");
   const [renderImageUrl, setRenderImageUrl] = useState(null);
@@ -619,9 +647,12 @@ export default function Building3DModal({
         );
       }
 
-      // Roof: traced outline as a 150 mm solid slab sitting on top of the cladding.
+      // Roof: 150 mm slab on full traced outline; 15° hip sits on the slab,
+      // inset 150 mm for gutter.
       const wallTopY = subfloorHeightM + CLADDING_HEIGHT_M;
+      const eaveYM = hippedRoofEaveYM(wallTopY);
       let hasRoofSlab = false;
+      let roofStackM = 0;
       if (fromTrace && Array.isArray(roofPoints) && roofPoints.length >= 3) {
         const roofResolved = resolveAlignedTraceRing(
           roofPoints,
@@ -629,36 +660,225 @@ export default function Building3DModal({
           calibration
         );
         if (roofResolved.fromTrace && roofResolved.ring.length >= 3) {
+          const slabRing = roofResolved.ring;
+          const hipRing = insetRoofRingForGutter(slabRing, ROOF_GUTTER_INSET_M);
+          const showHippedPlanes = isSuperiorHippedRoofStyle(finishes?.roofStyle);
+          const showSkillionSlab = isSuperiorSkillionRoofStyle(finishes?.roofStyle);
+          const swingDoor = modelDoors[0] ?? null;
+
+          // Extra 200 mm cladding boards under the skillion rise (roof geometry unchanged).
+          // Full flat boards — they may run into the pitched roof; no stepped tops.
+          if (showSkillionSlab) {
+            const skillionPitch = resolveSkillionPitchFromSwingDoor(slabRing, swingDoor);
+            const maxRiseM = skillionMaxWallRiseM(skillionPitch, SKILLION_ROOF_PITCH_DEG);
+            const bands = skillionExtraCladdingBands(maxRiseM, CLADDING_LAYER_HEIGHT_M);
+            bands.forEach((band, bandIndex) => {
+              const clipped = clipRingToSkillionMinRise(
+                ring,
+                skillionPitch,
+                band.bottomRiseM,
+                SKILLION_ROOF_PITCH_DEG
+              );
+              if (!clipped) return;
+              addFootprintSlab(cladding, {
+                partId: `cladding-layer-${CLADDING_LAYER_COUNT + bandIndex + 1}`,
+                partType: "cladding-layer",
+                layerNumber: CLADDING_LAYER_COUNT + bandIndex + 1,
+                ring: clipped,
+                bottomY: wallTopY + band.bottomRiseM,
+                topY: wallTopY + band.topRiseM,
+                color: finishHex.cladding,
+                roughness: 0.62,
+                metalness: 0.02,
+                extraUserData: {
+                  color: `#${finishHex.cladding.toString(16).padStart(6, "0")}`,
+                  skillionInfill: true,
+                },
+              });
+            });
+
+            // Extend corner posts up to the pitched underside at each corner.
+            if (skillionPitch && maxRiseM > 1e-6) {
+              footprintCornerColumnCenters(
+                ring,
+                CORNER_COLUMN_SIZE_M,
+                CORNER_COLUMN_PROJECTION_M
+              ).forEach(({ x, z, index }) => {
+                const riseM = skillionUndersideRiseM(
+                  { x, z },
+                  skillionPitch,
+                  SKILLION_ROOF_PITCH_DEG
+                );
+                if (!(riseM > 1e-4)) return;
+                addCornerColumn(claddingCornerColumns, {
+                  partId: `cladding-corner-column-${index + 1}-skillion`,
+                  partType: "cladding-corner-column",
+                  x,
+                  z,
+                  y: wallTopY + riseM / 2,
+                  heightM: riseM,
+                  color: finishHex.cladding,
+                  roughness: 0.62,
+                  metalness: 0.02,
+                });
+              });
+            }
+          }
+
           const roofGroup = new THREE.Group();
           roofGroup.name = BUILDING_3D_PARTS.ROOF;
           roofGroup.userData = {
             partId: BUILDING_3D_PARTS.ROOF,
-            partType: "roof-slab",
-            thicknessM: ROOF_SLAB_THICKNESS_M,
+            partType: "roof",
+            slabThicknessM: showSkillionSlab ? SKILLION_ROOF_SLAB_THICKNESS_M : ROOF_SLAB_THICKNESS_M,
+            gutterInsetM: ROOF_GUTTER_INSET_M,
+            pitchDeg: showSkillionSlab ? SKILLION_ROOF_PITCH_DEG : HIPPED_ROOF_PITCH_DEG,
             color: `#${finishHex.roof.toString(16).padStart(6, "0")}`,
           };
           modelGroup.add(roofGroup);
-          hasRoofSlab = addFootprintSlab(roofGroup, {
-            partId: BUILDING_3D_PARTS.ROOF,
-            partType: "roof-slab",
-            layerNumber: 1,
-            ring: roofResolved.ring,
-            bottomY: wallTopY,
-            topY: wallTopY + ROOF_SLAB_THICKNESS_M,
-            color: finishHex.roof,
-            roughness: 0.55,
-            metalness: 0.08,
-            outlineColor: finishHex.roof,
-            extraUserData: {
-              color: `#${finishHex.roof.toString(16).padStart(6, "0")}`,
-            },
-          });
+
+          let slabOk = false;
+          let hipOk = false;
+          if (showSkillionSlab) {
+            const skillionData = buildSkillionRoofSlabMeshData(
+              slabRing,
+              wallTopY,
+              swingDoor,
+              SKILLION_ROOF_PITCH_DEG,
+              SKILLION_ROOF_SLAB_THICKNESS_M
+            );
+            const skillionGeom = buildSkillionRoofSlabGeometry(
+              slabRing,
+              wallTopY,
+              swingDoor,
+              SKILLION_ROOF_PITCH_DEG,
+              SKILLION_ROOF_SLAB_THICKNESS_M
+            );
+            if (skillionGeom && skillionData) {
+              const material = new THREE.MeshBasicMaterial({
+                color: finishHex.roof,
+                side: THREE.DoubleSide,
+              });
+              const mesh = new THREE.Mesh(skillionGeom, material);
+              mesh.name = `${BUILDING_3D_PARTS.ROOF}-skillion-slab`;
+              mesh.userData = {
+                partId: BUILDING_3D_PARTS.ROOF,
+                partType: "skillion-roof",
+                pitchDeg: SKILLION_ROOF_PITCH_DEG,
+                slabThicknessM: SKILLION_ROOF_SLAB_THICKNESS_M,
+                color: `#${finishHex.roof.toString(16).padStart(6, "0")}`,
+              };
+              mesh.castShadow = false;
+              mesh.receiveShadow = false;
+              roofGroup.add(mesh);
+
+              const outlineGeom = buildSkillionRoofSlabOutlineGeometry(
+                slabRing,
+                wallTopY,
+                swingDoor,
+                SKILLION_ROOF_PITCH_DEG,
+                SKILLION_ROOF_SLAB_THICKNESS_M
+              );
+              if (outlineGeom) {
+                const outline = new THREE.LineSegments(
+                  outlineGeom,
+                  new THREE.LineBasicMaterial({ color: 0x202124 })
+                );
+                outline.name = `${BUILDING_3D_PARTS.ROOF}-skillion-outline`;
+                roofGroup.add(outline);
+              }
+
+              roofGroup.userData.riseM = skillionData.maxRiseM;
+              roofStackM = skillionData.maxRiseM;
+              slabOk = true;
+            }
+          } else {
+            slabOk = addFootprintSlab(roofGroup, {
+              partId: `${BUILDING_3D_PARTS.ROOF}-slab`,
+              partType: "roof-slab",
+              layerNumber: 1,
+              ring: slabRing,
+              bottomY: wallTopY,
+              topY: wallTopY + ROOF_SLAB_THICKNESS_M,
+              color: finishHex.roof,
+              roughness: 0.55,
+              metalness: 0.08,
+              outlineColor: finishHex.roof,
+              extraUserData: {
+                color: `#${finishHex.roof.toString(16).padStart(6, "0")}`,
+              },
+            });
+
+            if (showHippedPlanes && hipRing?.length >= 3) {
+              const roofData = buildHippedRoofMeshData(
+              hipRing,
+              eaveYM,
+              HIPPED_ROOF_PITCH_DEG
+            );
+            const roofGeom = buildHippedRoofGeometry(
+              hipRing,
+              eaveYM,
+              HIPPED_ROOF_PITCH_DEG
+            );
+            if (roofGeom && roofData) {
+              const corrugated = createCorrugatedRoofTexture();
+              corrugated.repeat.set(1, 1);
+              const material = new THREE.MeshStandardMaterial({
+                map: corrugated,
+                color: finishHex.roof,
+                roughness: 0.42,
+                metalness: 0.35,
+                side: THREE.DoubleSide,
+              });
+              const mesh = new THREE.Mesh(roofGeom, material);
+              mesh.name = `${BUILDING_3D_PARTS.ROOF}-planes`;
+              mesh.userData = {
+                partId: BUILDING_3D_PARTS.ROOF,
+                partType: "hipped-roof",
+                pitchDeg: HIPPED_ROOF_PITCH_DEG,
+                eaveYM,
+                gutterInsetM: ROOF_GUTTER_INSET_M,
+              };
+              mesh.castShadow = true;
+              mesh.receiveShadow = true;
+              roofGroup.add(mesh);
+
+              const outlineGeom = buildHippedRoofOutlineGeometry(
+                hipRing,
+                eaveYM,
+                HIPPED_ROOF_PITCH_DEG
+              );
+              if (outlineGeom) {
+                const outline = new THREE.LineSegments(
+                  outlineGeom,
+                  new THREE.LineBasicMaterial({
+                    color: finishHex.roof,
+                    transparent: true,
+                    opacity: 0.55,
+                  })
+                );
+                outline.name = `${BUILDING_3D_PARTS.ROOF}-outline`;
+                roofGroup.add(outline);
+              }
+
+              roofGroup.userData.riseM = roofData.maxRiseM;
+              hipOk = true;
+              roofStackM = ROOF_SLAB_THICKNESS_M + roofData.maxRiseM;
+            }
+            }
+          }
+
+          hasRoofSlab = slabOk || hipOk;
+          if (hasRoofSlab && !(roofStackM > 0)) {
+            roofStackM = ROOF_SLAB_THICKNESS_M;
+          }
         }
       }
       modelGroup.userData = {
         ...(modelGroup.userData || {}),
         hasRoofSlab,
-        roofThicknessM: hasRoofSlab ? ROOF_SLAB_THICKNESS_M : 0,
+        roofThicknessM: hasRoofSlab ? roofStackM : 0,
+        roofPitchDeg: hasRoofSlab ? HIPPED_ROOF_PITCH_DEG : 0,
       };
 
       // Windows: 1.8 m × 1.8 m black panels on the outside face, top 2.1 m above subfloor.
@@ -1251,24 +1471,50 @@ export default function Building3DModal({
     const buildingHeightM =
       subfloorHeightM +
       CLADDING_HEIGHT_M +
-      (fromTrace && Array.isArray(roofPoints) && roofPoints.length >= 3
-        ? ROOF_SLAB_THICKNESS_M
+      (Number(modelGroup.userData?.roofThicknessM) > 0
+        ? Number(modelGroup.userData.roofThicknessM)
         : 0);
     const target = new THREE.Vector3(0, buildingHeightM / 2, 0);
     let theta = Math.PI / 4;
     let distance = spanM * 1.25 + 4;
     const minDistance = spanM * 0.65;
     const maxDistance = spanM * 3.5;
+    let cameraHeight = cameraHeightRef.current;
+    const maxCameraHeight = buildingHeightM + spanM * 2 + 4;
 
     const updateCamera = () => {
       camera.position.set(
         target.x + distance * Math.sin(theta),
-        EYE_HEIGHT_M,
+        cameraHeight,
         target.z + distance * Math.cos(theta)
       );
       camera.lookAt(target);
     };
     updateCamera();
+
+    const onCameraHeightKeyDown = (event) => {
+      if (
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement ||
+        event.target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key !== "q" && key !== "z") return;
+      event.preventDefault();
+      const step = CAMERA_HEIGHT_STEP_M;
+      if (key === "q") {
+        cameraHeight = Math.min(maxCameraHeight, cameraHeight + step);
+      } else {
+        cameraHeight = Math.max(CAMERA_HEIGHT_MIN_M, cameraHeight - step);
+      }
+      cameraHeightRef.current = cameraHeight;
+      setCameraHeightM(cameraHeight);
+      updateCamera();
+    };
+
+    window.addEventListener("keydown", onCameraHeightKeyDown);
 
     let dragging = false;
     let lastX = 0;
@@ -1353,6 +1599,7 @@ export default function Building3DModal({
       container.removeEventListener("pointerleave", endDrag);
       container.removeEventListener("wheel", onWheel);
       container.removeEventListener("contextmenu", onContextMenu);
+      window.removeEventListener("keydown", onCameraHeightKeyDown);
       disposeThreeObject(scene);
       renderer?.dispose();
       if (renderer?.domElement?.parentNode === container) {
@@ -1423,7 +1670,13 @@ export default function Building3DModal({
 
   const footprintLabel = footprintPoints?.length >= 3 ? "traced plan footprint" : `${widthM.toFixed(1)} m × ${depthM.toFixed(1)} m`;
   const roofLabel =
-    roofPoints?.length >= 3 ? " · Roof: 150 mm traced slab on wall top" : "";
+    roofPoints?.length >= 3
+      ? isSuperiorSkillionRoofStyle(finishes?.roofStyle)
+        ? ` · Roof: ${SKILLION_ROOF_PITCH_DEG}° skillion slab (400 mm)`
+        : isSuperiorHippedRoofStyle(finishes?.roofStyle)
+          ? ` · Roof: 150 mm slab + ${HIPPED_ROOF_PITCH_DEG}° planes to ridge per edge`
+          : " · Roof: 150 mm slab"
+      : "";
   const deckLabel =
     resolvedDecks.length
       ? ` · Deck${resolvedDecks.length > 1 ? `s (${resolvedDecks.length})` : ""}: 200 / 25 / 200 / 25 / 200 mm + timber top`
@@ -1491,7 +1744,7 @@ export default function Building3DModal({
               {deckLabel}
               {roofLabel}
               {" · "}50 mm corner posts, 5 mm proud
-              {" — "}{EYE_HEIGHT_M.toFixed(2)} m eye height · drag to rotate · scroll to zoom
+              {" — "}{cameraHeightM.toFixed(2)} m eye height · drag to rotate · scroll to zoom · Q/Z height
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
