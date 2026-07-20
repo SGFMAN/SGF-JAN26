@@ -7,6 +7,7 @@ import {
   resolveModelSlidingDoors,
   resolveModelWindows,
 } from "../utils/buildingUnitGeometry";
+import { resolveUnitFinishCssHexes } from "../utils/buildingUnitFinishes.js";
 
 const SUBFLOOR_HEIGHT_MM = 650;
 const LAYER_HEIGHT_MM = 200;
@@ -32,7 +33,6 @@ const WINDOW_MULLION_MIN_WIDTH_M = 1.2;
 const WINDOW_TRANSOM_MIN_HEIGHT_MM = 1500;
 const WINDOW_TRANSOM_SPLIT_FRACTION = 1 / 3;
 const WINDOW_GLASS_COLOR = "#2b322c";
-const WINDOW_FRAME_COLOR = "#ffffff";
 const WINDOW_OUTLINE = "#202124";
 const DOOR_HEIGHT_MM = 2100;
 const DOOR_SURROUND_WIDTH_MM = 100;
@@ -41,8 +41,6 @@ const DOOR_GLASS_HEIGHT_MM = 100;
 const DOOR_GLASS_SIDE_MARGIN_MM = 100;
 const DOOR_GLASS_FIRST_BOTTOM_MM = 300;
 const DOOR_GLASS_TOP_MARGIN_MM = 300;
-const DOOR_COLOR = "#ffffff";
-const DOOR_FRAME_COLOR = "#ffffff";
 const DOOR_GLASS_COLOR = "#2b322c";
 const DOOR_OUTLINE = "#202124";
 /** Sliding doors wider than this get two vertical frame dividers instead of one. */
@@ -57,7 +55,15 @@ function FootprintElevation({
   windows = [],
   doors = [],
   slidingDoors = [],
+  colours,
 }) {
+  const {
+    cladding: claddingColor,
+    baseboards: baseboardsColor,
+    windowFrames: windowFrameColor,
+    windowSurrounds: windowSurroundColor,
+    frontDoor: doorColor,
+  } = colours;
   const lengthMm = (maxS - minS) * 1000;
   const scaleLengthMm = scaleLengthM * 1000;
   const marginX = Math.max(150, scaleLengthMm * 0.025);
@@ -116,7 +122,7 @@ function FootprintElevation({
                     y={y}
                     width={width}
                     height={LAYER_HEIGHT_MM}
-                    fill="#6b7280"
+                    fill={baseboardsColor}
                     stroke="#202124"
                     strokeWidth={OUTLINE_STROKE_WIDTH}
                     vectorEffect="non-scaling-stroke"
@@ -158,7 +164,7 @@ function FootprintElevation({
                       y={yTop}
                       width={width}
                       height={CLADDING_LAYER_HEIGHT_MM}
-                      fill="#ffffff"
+                      fill={claddingColor}
                       stroke="#202124"
                       strokeWidth={OUTLINE_STROKE_WIDTH}
                       vectorEffect="non-scaling-stroke"
@@ -175,7 +181,7 @@ function FootprintElevation({
                   <path
                     key={`${segmentIndex}-${layer.id}`}
                     d={d}
-                    fill="#ffffff"
+                    fill={claddingColor}
                     fillRule="evenodd"
                     stroke="#202124"
                     strokeWidth={OUTLINE_STROKE_WIDTH}
@@ -189,7 +195,7 @@ function FootprintElevation({
                 y={groundY - SUBFLOOR_HEIGHT_MM}
                 width={COLUMN_WIDTH_MM}
                 height={SUBFLOOR_HEIGHT_MM}
-                fill="#9ca3af"
+                fill={baseboardsColor}
                 stroke="#202124"
                 strokeWidth={OUTLINE_STROKE_WIDTH}
                 vectorEffect="non-scaling-stroke"
@@ -199,7 +205,7 @@ function FootprintElevation({
                 y={groundY - SUBFLOOR_HEIGHT_MM}
                 width={COLUMN_WIDTH_MM}
                 height={SUBFLOOR_HEIGHT_MM}
-                fill="#9ca3af"
+                fill={baseboardsColor}
                 stroke="#202124"
                 strokeWidth={OUTLINE_STROKE_WIDTH}
                 vectorEffect="non-scaling-stroke"
@@ -209,7 +215,7 @@ function FootprintElevation({
                 y={groundY - TOTAL_HEIGHT_MM}
                 width={COLUMN_WIDTH_MM}
                 height={CLADDING_HEIGHT_MM}
-                fill="#ffffff"
+                fill={claddingColor}
                 stroke="#202124"
                 strokeWidth={OUTLINE_STROKE_WIDTH}
                 vectorEffect="non-scaling-stroke"
@@ -219,7 +225,7 @@ function FootprintElevation({
                 y={groundY - TOTAL_HEIGHT_MM}
                 width={COLUMN_WIDTH_MM}
                 height={CLADDING_HEIGHT_MM}
-                fill="#ffffff"
+                fill={claddingColor}
                 stroke="#202124"
                 strokeWidth={OUTLINE_STROKE_WIDTH}
                 vectorEffect="non-scaling-stroke"
@@ -254,7 +260,7 @@ function FootprintElevation({
                 y={surround.y}
                 width={surround.w}
                 height={surround.h}
-                fill={WINDOW_FRAME_COLOR}
+                fill={windowSurroundColor}
                 stroke={WINDOW_OUTLINE}
                 strokeWidth={OUTLINE_STROKE_WIDTH}
                 vectorEffect="non-scaling-stroke"
@@ -265,7 +271,7 @@ function FootprintElevation({
                 y={groundY - WINDOW_TOP_MM}
                 width={widthPx}
                 height={winHeightMm}
-                fill={WINDOW_FRAME_COLOR}
+                fill={windowFrameColor}
                 stroke={WINDOW_OUTLINE}
                 strokeWidth={OUTLINE_STROKE_WIDTH}
                 vectorEffect="non-scaling-stroke"
@@ -288,7 +294,7 @@ function FootprintElevation({
                   y={groundY - (WINDOW_TOP_MM - WINDOW_FRAME_WIDTH_MM)}
                   width={WINDOW_MULLION_WIDTH_MM}
                   height={glassH}
-                  fill={WINDOW_FRAME_COLOR}
+                  fill={windowFrameColor}
                   stroke={WINDOW_OUTLINE}
                   strokeWidth={OUTLINE_STROKE_WIDTH}
                   vectorEffect="non-scaling-stroke"
@@ -301,7 +307,7 @@ function FootprintElevation({
                   y={transomCenterY - WINDOW_MULLION_WIDTH_MM / 2}
                   width={glassW}
                   height={WINDOW_MULLION_WIDTH_MM}
-                  fill={WINDOW_FRAME_COLOR}
+                  fill={windowFrameColor}
                   stroke={WINDOW_OUTLINE}
                   strokeWidth={OUTLINE_STROKE_WIDTH}
                   vectorEffect="non-scaling-stroke"
@@ -342,7 +348,7 @@ function FootprintElevation({
                   `L ${xLeft} ${doorBottomY}`,
                   "Z",
                 ].join(" ")}
-                fill={DOOR_FRAME_COLOR}
+                fill={windowSurroundColor}
                 stroke={DOOR_OUTLINE}
                 strokeWidth={OUTLINE_STROKE_WIDTH}
                 vectorEffect="non-scaling-stroke"
@@ -352,7 +358,7 @@ function FootprintElevation({
                 y={doorTopY}
                 width={widthPx}
                 height={DOOR_HEIGHT_MM}
-                fill={DOOR_COLOR}
+                fill={doorColor}
                 stroke={DOOR_OUTLINE}
                 strokeWidth={OUTLINE_STROKE_WIDTH}
                 vectorEffect="non-scaling-stroke"
@@ -400,7 +406,7 @@ function FootprintElevation({
                   `L ${xLeft} ${doorBottomY}`,
                   "Z",
                 ].join(" ")}
-                fill={DOOR_FRAME_COLOR}
+                fill={windowSurroundColor}
                 stroke={DOOR_OUTLINE}
                 strokeWidth={OUTLINE_STROKE_WIDTH}
                 vectorEffect="non-scaling-stroke"
@@ -410,7 +416,7 @@ function FootprintElevation({
                 y={doorTopY}
                 width={widthPx}
                 height={DOOR_HEIGHT_MM}
-                fill={DOOR_FRAME_COLOR}
+                fill={windowFrameColor}
                 stroke={DOOR_OUTLINE}
                 strokeWidth={OUTLINE_STROKE_WIDTH}
                 vectorEffect="non-scaling-stroke"
@@ -444,7 +450,7 @@ function FootprintElevation({
                     y={glassTop}
                     width={WINDOW_MULLION_WIDTH_MM}
                     height={glassH}
-                    fill={DOOR_FRAME_COLOR}
+                    fill={windowFrameColor}
                     stroke={DOOR_OUTLINE}
                     strokeWidth={OUTLINE_STROKE_WIDTH}
                     vectorEffect="non-scaling-stroke"
@@ -489,7 +495,9 @@ export default function BuildingElevations({
   doors = null,
   slidingDoors = null,
   calibration = null,
+  finishes = null,
 }) {
+  const colours = useMemo(() => resolveUnitFinishCssHexes(finishes), [finishes]);
   const elevations = useMemo(() => {
     const { ring, fromTrace } = resolveBuildingFootprintRing(
       footprintPoints,
@@ -561,6 +569,7 @@ export default function BuildingElevations({
           windows={elevation.windows}
           doors={elevation.doors}
           slidingDoors={elevation.slidingDoors}
+          colours={colours}
         />
       ))}
     </div>

@@ -476,11 +476,10 @@ const PORTAL_PROJECT_PUT_ALLOWED_KEYS = new Set([
   "cladding_colour",
   "baseboards_colour",
   "roof_style",
-  "fascia_gutter_colour",
-  "balustrade_colour",
-  "front_door_colour",
-  "window_frames_colour",
-  "window_surrounds_colour",
+  "windowframes_colour",
+  "windowsurrounds_colour",
+  "door_colour",
+  "slidingdoor_colour",
 ]);
 
 function isPortalProjectPutCarveOut(req) {
@@ -1056,7 +1055,14 @@ async function ensureSchema() {
     await ensureUserMessagesTable(pool);
     await ensureClientPortalTables(pool);
     await ensureMapFloorPlansDollarValueColumn(pool);
-    await addMissingColumns(pool, "projects", ["construction_payments_paid", "colours_plan_trace_polygon"]);
+    await addMissingColumns(pool, "projects", [
+      "construction_payments_paid",
+      "colours_plan_trace_polygon",
+      "windowframes_colour",
+      "windowsurrounds_colour",
+      "door_colour",
+      "slidingdoor_colour",
+    ]);
     await addMissingColumns(pool, "settings", [
       "ui_button_styles_json",
       "ui_theme_color_overrides_json",
@@ -1255,7 +1261,7 @@ async function ensureSchema() {
     'water_authority', 'water_declaration_status', 'water_declaration_sent_date', 'water_declaration_complete_date',
     'notes', 'project_info_notes', 'specs', 'classification', 'project_log',
     'window_status', 'window_colour', 'window_reveal', 'window_reveal_other', 'window_glazing', 'window_bal_rating', 'window_date_required', 'window_ordered_date', 'window_order_pdf_location', 'window_order_number',
-    'drawings_status', 'drawings_pdf_location', 'drawings_history', 'drawings_viewed_date', 'drawings_sent_to_client_date', 'drawings_holder_date', 'draftsperson', 'drawings_holder', 'drawing_manager_notes', 'colours_status', 'colours_notes', 'colours_pdf_location', 'colours_sent_date', 'colours_reminder_sent_date', 'colours_plan_trace_polygon', 'roof_colour', 'cladding_colour', 'baseboards_colour', 'roof_style', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status', 'septic_permit', 'septic_notes', 'septic_email_sent_date', 'pic',
+    'drawings_status', 'drawings_pdf_location', 'drawings_history', 'drawings_viewed_date', 'drawings_sent_to_client_date', 'drawings_holder_date', 'draftsperson', 'drawings_holder', 'drawing_manager_notes', 'colours_status', 'colours_notes', 'colours_pdf_location', 'colours_sent_date', 'colours_reminder_sent_date', 'colours_plan_trace_polygon', 'roof_colour', 'cladding_colour', 'baseboards_colour', 'roof_style', 'windowframes_colour', 'windowsurrounds_colour', 'door_colour', 'slidingdoor_colour', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status', 'septic_permit', 'septic_notes', 'septic_email_sent_date', 'pic',
     'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail', 'on_hold', 'survey_status', 'soil_status', 'agreement_sent', 'hotlist_notes', 'qp_number',
     'planning_jf_planning_property_report_path', 'planning_jf_title_covenant_subdivision_path', 'planning_jf_title_path', 'planning_jf_covenant_path', 'planning_jf_section_173_agreement_path', 'planning_jf_plan_of_subdivision_path', 'planning_jf_ebyda_stormwater_path', 'planning_jf_byda_sewer_main_path', 'planning_jf_internal_sewer_plan_path', 'planning_jf_sewer_main_size_depth_offset_path', 'planning_jf_legal_point_discharge_path', 'planning_jf_property_info_report_path',
     'planning_jf_job_file_pdf_path',
@@ -1717,7 +1723,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, access_token, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, colours_plan_trace_polygon, roof_colour, cladding_colour, baseboards_colour, roof_style, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, planning_written_advice, planning_written_advice_requested_at, planning_written_advice_received_at, planning_town_planning, planning_town_planning_requested_at, planning_town_planning_received_at, planning_land_flooding_regulation, planning_land_flooding_fpa_requested_at, planning_land_flooding_fpa_received_at, planning_land_flooding_cc_requested_at, planning_land_flooding_cc_received_at, planning_bal, planning_bal_requested_at, planning_bal_received_at, planning_footing_certification_requested_at, planning_footing_certification_received_at, planning_energy_report_requested_at, planning_energy_report_received_at, planning_energy_specs_added_to_plans, construction_payments_paid, duplicate_source_project_id, project_lat, project_lng, project_geocoded_at, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects WHERE id = $1",
+      "SELECT id, access_token, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, colours_plan_trace_polygon, roof_colour, cladding_colour, baseboards_colour, roof_style, windowframes_colour, windowsurrounds_colour, door_colour, slidingdoor_colour, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, planning_written_advice, planning_written_advice_requested_at, planning_written_advice_received_at, planning_town_planning, planning_town_planning_requested_at, planning_town_planning_received_at, planning_land_flooding_regulation, planning_land_flooding_fpa_requested_at, planning_land_flooding_fpa_received_at, planning_land_flooding_cc_requested_at, planning_land_flooding_cc_received_at, planning_bal, planning_bal_requested_at, planning_bal_received_at, planning_footing_certification_requested_at, planning_footing_certification_received_at, planning_energy_report_requested_at, planning_energy_report_received_at, planning_energy_specs_added_to_plans, construction_payments_paid, duplicate_source_project_id, project_lat, project_lng, project_geocoded_at, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects WHERE id = $1",
       [id]
     );
     
@@ -7352,44 +7358,69 @@ app.post("/api/emails/send-colours-portal", async (req, res) => {
   }
 });
 
-// Update colours from portal (public endpoint - no auth required)
+// Update external colours (portal + Colours page)
 app.post("/api/projects/:id/update-colours", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
 
-  const id = Number(req.params.id);
+  const routeParam = req.params.id;
+  let id = null;
+  if (isLegacyNumericProjectId(routeParam)) {
+    id = Number(routeParam);
+  } else {
+    id = await resolveProjectIdFromAccessToken(pool, routeParam);
+  }
   if (!Number.isFinite(id)) {
     return res.status(400).json({ error: "invalid id" });
   }
 
-  const { roof_colour, cladding_colour, baseboards_colour } = req.body || {};
+  const body = req.body || {};
+  const colourFields = [
+    "roof_colour",
+    "cladding_colour",
+    "baseboards_colour",
+    "roof_style",
+    "windowframes_colour",
+    "windowsurrounds_colour",
+    "door_colour",
+  ];
 
   try {
-    // Verify project exists
     const projectResult = await pool.query("SELECT id FROM projects WHERE id = $1", [id]);
     if (projectResult.rows.length === 0) {
       return res.status(404).json({ error: "Project not found" });
     }
 
-    // Update colours - always set to provided values (including NULL to clear)
+    const setParts = [];
+    const values = [];
+    let i = 1;
+    for (const field of colourFields) {
+      if (!Object.prototype.hasOwnProperty.call(body, field)) continue;
+      setParts.push(`${field} = $${i}`);
+      values.push(body[field] == null || body[field] === "" || body[field] === "Select" ? null : body[field]);
+      i += 1;
+    }
+    if (setParts.length === 0) {
+      return res.status(400).json({ error: "No colour fields provided" });
+    }
+    setParts.push("updated_at = NOW()");
+    values.push(id);
+
     const updateResult = await pool.query(
-      `UPDATE projects 
-       SET roof_colour = $1,
-           cladding_colour = $2,
-           baseboards_colour = $3,
-           updated_at = NOW()
-       WHERE id = $4
-       RETURNING id, roof_colour, cladding_colour, baseboards_colour`,
-      [roof_colour, cladding_colour, baseboards_colour, id]
+      `UPDATE projects
+       SET ${setParts.join(", ")}
+       WHERE id = $${i}
+       RETURNING id, ${colourFields.join(", ")}`,
+      values
     );
 
     if (updateResult.rowCount === 0) {
       return res.status(404).json({ error: "Failed to update project" });
     }
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: "Colours updated successfully",
-      project: updateResult.rows[0]
+      project: updateResult.rows[0],
     });
   } catch (e) {
     console.error("Error updating colours:", e);
@@ -10689,13 +10720,48 @@ const AI_3D_DEFAULT_MATERIALS = Object.freeze({
     "Painted solid-core sliding door leaf with glazing — opaque paint matching the door colour; glass stays transparent. NOT stained wood.",
 });
 
-/** Known COLORBOND® swatches used on the Colours page — give the model concrete appearance targets. */
+/** Known COLORBOND® swatches — concrete appearance targets for prompts + hex lock. */
 const COLORBOND_SWATCH_NOTES = Object.freeze({
-  Monument: "COLORBOND® Monument® — deep dark charcoal grey (approx #323233). Not black, not mid-grey. Opaque paint / coated finish — not timber stain.",
-  Paperbark: "COLORBOND® Paperbark® — muted pale brown / cream-grey (approx #CABFA4). Warm light neutral. Opaque paint — not timber stain.",
-  Wallaby: "COLORBOND® Wallaby® — muted mid grey-brown (approx #7F7C78). Earthy mid-tone, not charcoal. Opaque paint — not timber stain.",
-  White: "Clean white painted finish (approx #FFFFFF). Bright white painted surface, not cream, not grey, not stained wood.",
+  White: "Clean white painted finish (approx #FFFFFF). Bright white painted surface — not cream, not grey, not stained wood.",
+  Monument: "COLORBOND® Monument® — deep dark charcoal grey (approx #323233). Opaque paint/coated steel — not timber stain.",
+  Paperbark: "COLORBOND® Paperbark® — muted pale brown / cream-grey (approx #CABFA4). Opaque paint — not timber stain.",
+  Wallaby: "COLORBOND® Wallaby® — muted mid grey-brown (approx #7F7C78). Opaque paint — not timber stain.",
+  "Night Sky": "COLORBOND® Night Sky® — near-black / midnight (approx #000000). Opaque painted/coated finish — NOT Monument, NOT stained wood.",
+  "Manor Red": "COLORBOND® Manor Red® — deep earthy red (approx #5E1D0E / RGB 94,29,14). Opaque painted timber or coated steel in that red — NEVER red wood stain, NEVER cedar, NEVER natural timber grain.",
+  "Classic Cream": "COLORBOND® Classic Cream™ — warm cream (approx #E9DCB8). Opaque paint/coated steel — not timber stain.",
+  Surfmist: "COLORBOND® Surfmist® — light grey-white (approx #E4E2D5). Opaque paint — not timber stain.",
+  "Shale Grey": "COLORBOND® Shale Grey™ — light/mid grey. Opaque paint — not timber stain.",
+  "Woodland Grey": "COLORBOND® Woodland Grey® — mid-dark grey-green. Opaque paint — not timber stain.",
+  Dune: "COLORBOND® Dune® — warm sandy beige. Opaque paint — not timber stain.",
+  Ironstone: "COLORBOND® Ironstone® — dark charcoal-green. Opaque paint — not timber stain.",
+  "Deep Ocean": "COLORBOND® Deep Ocean® — dark blue-grey. Opaque paint — not timber stain.",
+  "Cottage Green": "COLORBOND® Cottage Green® — deep heritage green. Opaque paint — not timber stain.",
 });
+
+const COLORBOND_HEX = Object.freeze({
+  White: "#FFFFFF",
+  Monument: "#323233",
+  Paperbark: "#CABFA4",
+  Wallaby: "#7F7C78",
+  "Night Sky": "#000000",
+  "Manor Red": "#5E1D0E",
+  "Classic Cream": "#E9DCB8",
+  Surfmist: "#E4E2D5",
+});
+
+function colourLookupKey(name) {
+  return String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+const COLORBOND_SWATCH_BY_KEY = Object.fromEntries(
+  Object.entries(COLORBOND_SWATCH_NOTES).map(([k, v]) => [colourLookupKey(k), { name: k, note: v }])
+);
+const COLORBOND_HEX_BY_KEY = Object.fromEntries(
+  Object.entries(COLORBOND_HEX).map(([k, v]) => [colourLookupKey(k), v])
+);
 
 const AI_3D_RENDER_DEFAULT_COLOUR = "White";
 
@@ -10711,11 +10777,20 @@ function colourChoiceOrWhite(value) {
   return normalizeColourChoice(value) || AI_3D_RENDER_DEFAULT_COLOUR;
 }
 
+function resolveColorbondEntry(name) {
+  const raw = colourChoiceOrWhite(name);
+  const hit = COLORBOND_SWATCH_BY_KEY[colourLookupKey(raw)];
+  if (hit) return hit;
+  return {
+    name: raw,
+    note: `COLORBOND® ${raw} (match the real product colour as opaque paint/coating — never timber stain)`,
+  };
+}
+
 function describeColorbondChoice(name) {
-  return (
-    COLORBOND_SWATCH_NOTES[name] ||
-    `COLORBOND® ${name} (match the real product colour; do not substitute)`
-  );
+  const { note } = resolveColorbondEntry(name);
+  const hex = COLORBOND_HEX_BY_KEY[colourLookupKey(colourChoiceOrWhite(name))];
+  return hex ? `${note} Exact hex target: ${hex}.` : note;
 }
 
 function buildAiRenderFinishInstructionsFromDb(projectRow) {
@@ -10737,6 +10812,8 @@ function buildAiRenderFinishInstructionsFromDb(projectRow) {
 
 /** Rich finish block for 3D unit photoreal — every part always has a colour (White if unset). */
 function buildAi3dRenderFinishInstructions(finishes = {}) {
+  const cladding = colourChoiceOrWhite(finishes.claddingColour || finishes.cladding_colour);
+  const baseboards = colourChoiceOrWhite(finishes.baseboardsColour || finishes.baseboards_colour);
   const parts = [
     ["Wall cladding boards", finishes.claddingColour || finishes.cladding_colour],
     ["Subfloor / baseboards / trims", finishes.baseboardsColour || finishes.baseboards_colour],
@@ -10757,7 +10834,15 @@ function buildAi3dRenderFinishInstructions(finishes = {}) {
     return `- ${label}: ${note}`;
   });
 
+  const claddingHex = COLORBOND_HEX_BY_KEY[colourLookupKey(cladding)] || "(match COLORBOND product)";
+  const baseboardsHex = COLORBOND_HEX_BY_KEY[colourLookupKey(baseboards)] || "(match COLORBOND product)";
+
   return [
+    "PROJECT COLOURS (HIGHEST PRIORITY — do not invent substitutes):",
+    `- CLADDING MUST BE: ${cladding} (${claddingHex}) as opaque painted weatherboards.`,
+    `- BASEBOARDS MUST BE: ${baseboards} (${baseboardsHex}) as opaque painted timber.`,
+    `- If baseboards are Manor Red: that is a COLORBOND paint colour (deep red #5E1D0E), NOT wood stain.`,
+    `- If cladding is Night Sky: that is near-black COLORBOND (#000000), NOT Monument grey, NOT charcoal timber.`,
     "FINISHES (MANDATORY — every part has a colour; match the screenshot + this list):",
     `If a part had no selection, use ${AI_3D_RENDER_DEFAULT_COLOUR}.`,
     "Do not invent alternate schemes. Do not swap cladding colour with baseboard colour.",
@@ -11256,26 +11341,60 @@ app.post("/api/projects/:id/generate-3d-render", async (req, res) => {
     pngBuf = await sharpResizePngForAiInput(pngBuf, 1536);
 
     // Prefer live Colours-page finishes from the client; fall back to DB where columns exist.
-    // Extra finish fields (fascia, frames, etc.) are client-only until those DB columns exist.
+    // Treat "Select"/empty as unset so they do not override saved DB colours.
     const bodyFinishes =
       req.body?.finishes && typeof req.body.finishes === "object" ? req.body.finishes : {};
-    const finishes = {
-      roof_colour: bodyFinishes.roofColour ?? bodyFinishes.roof_colour ?? row.roof_colour,
-      cladding_colour:
-        bodyFinishes.claddingColour ?? bodyFinishes.cladding_colour ?? row.cladding_colour,
-      baseboards_colour:
-        bodyFinishes.baseboardsColour ?? bodyFinishes.baseboards_colour ?? row.baseboards_colour,
-      fascia_gutter_colour:
-        bodyFinishes.fasciaGutterColour ?? bodyFinishes.fascia_gutter_colour ?? null,
-      balustrade_colour:
-        bodyFinishes.balustradeColour ?? bodyFinishes.balustrade_colour ?? null,
-      front_door_colour:
-        bodyFinishes.frontDoorColour ?? bodyFinishes.front_door_colour ?? null,
-      window_frames_colour:
-        bodyFinishes.windowFramesColour ?? bodyFinishes.window_frames_colour ?? null,
-      window_surrounds_colour:
-        bodyFinishes.windowSurroundsColour ?? bodyFinishes.window_surrounds_colour ?? null,
+    const pickFinish = (...candidates) => {
+      for (const c of candidates) {
+        const n = normalizeColourChoice(c);
+        if (n) return n;
+      }
+      return null;
     };
+    const finishes = {
+      roof_colour: pickFinish(bodyFinishes.roofColour, bodyFinishes.roof_colour, row.roof_colour),
+      cladding_colour: pickFinish(
+        bodyFinishes.claddingColour,
+        bodyFinishes.cladding_colour,
+        row.cladding_colour
+      ),
+      baseboards_colour: pickFinish(
+        bodyFinishes.baseboardsColour,
+        bodyFinishes.baseboards_colour,
+        row.baseboards_colour
+      ),
+      fascia_gutter_colour: pickFinish(
+        bodyFinishes.fasciaGutterColour,
+        bodyFinishes.fascia_gutter_colour
+      ),
+      balustrade_colour: pickFinish(bodyFinishes.balustradeColour, bodyFinishes.balustrade_colour),
+      front_door_colour: pickFinish(bodyFinishes.frontDoorColour, bodyFinishes.front_door_colour),
+      window_frames_colour: pickFinish(
+        bodyFinishes.windowFramesColour,
+        bodyFinishes.window_frames_colour
+      ),
+      window_surrounds_colour: pickFinish(
+        bodyFinishes.windowSurroundsColour,
+        bodyFinishes.window_surrounds_colour
+      ),
+    };
+    console.log(
+      `[generate-3d-render] project ${projectId} finishes:`,
+      JSON.stringify({
+        cladding: finishes.cladding_colour,
+        baseboards: finishes.baseboards_colour,
+        roof: finishes.roof_colour,
+        fromBody: {
+          cladding: bodyFinishes.claddingColour ?? bodyFinishes.cladding_colour ?? null,
+          baseboards: bodyFinishes.baseboardsColour ?? bodyFinishes.baseboards_colour ?? null,
+        },
+        fromDb: {
+          cladding: row.cladding_colour,
+          baseboards: row.baseboards_colour,
+          roof: row.roof_colour,
+        },
+      })
+    );
     const geometry =
       req.body?.geometry && typeof req.body.geometry === "object" ? req.body.geometry : {};
 
@@ -11319,6 +11438,14 @@ app.post("/api/projects/:id/generate-3d-render", async (req, res) => {
       success: true,
       renderUrl,
       imageDataUrl: `data:image/png;base64,${outBuf.toString("base64")}`,
+      finishesUsed: {
+        cladding: finishes.cladding_colour || AI_3D_RENDER_DEFAULT_COLOUR,
+        baseboards: finishes.baseboards_colour || AI_3D_RENDER_DEFAULT_COLOUR,
+        roof: finishes.roof_colour || AI_3D_RENDER_DEFAULT_COLOUR,
+        windowFrames: finishes.window_frames_colour || AI_3D_RENDER_DEFAULT_COLOUR,
+        windowSurrounds: finishes.window_surrounds_colour || AI_3D_RENDER_DEFAULT_COLOUR,
+        frontDoor: finishes.front_door_colour || AI_3D_RENDER_DEFAULT_COLOUR,
+      },
     });
   } catch (e) {
     console.error("generate-3d-render:", e);

@@ -413,6 +413,7 @@ export default function ProjectPage() {
       const allowedPortalMutation =
         pathAndSearch.startsWith("/api/portal/") ||
         pathAndSearch.startsWith("/api/sitevisit/") ||
+        /\/api\/projects\/[^/]+\/update-colours(?:\?|$)/.test(pathAndSearch) ||
         isPortalAllowedSendDrawingsPost(pathAndSearch, method, init, portalProjectIdRef.current) ||
         isPortalAllowedVerifyDrawingsFolderPost(pathAndSearch, method, portalProjectIdRef.current);
       if (isMutation && pathAndSearch.startsWith("/api/") && !allowedPortalMutation) {

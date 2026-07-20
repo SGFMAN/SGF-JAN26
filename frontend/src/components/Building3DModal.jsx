@@ -228,6 +228,7 @@ export default function Building3DModal({
   const [renderBusy, setRenderBusy] = useState(false);
   const [renderError, setRenderError] = useState("");
   const [renderImageUrl, setRenderImageUrl] = useState(null);
+  const [renderFinishesUsed, setRenderFinishesUsed] = useState(null);
   const footprintKey = useMemo(
     () => JSON.stringify(footprintPoints ?? null),
     [footprintPoints]
@@ -248,6 +249,7 @@ export default function Building3DModal({
       if (renderImageUrl || renderBusy) {
         if (!renderBusy) {
           setRenderImageUrl(null);
+          setRenderFinishesUsed(null);
           setRenderError("");
         }
         return;
@@ -853,7 +855,7 @@ export default function Building3DModal({
           const mesh = new THREE.Mesh(
             geometry,
             new THREE.MeshStandardMaterial({
-              color: finishHex.frontDoor,
+              color: finishHex.windowFrames,
               roughness: 0.7,
               metalness: 0.05,
             })
@@ -1240,6 +1242,7 @@ export default function Building3DModal({
         throw new Error("Render succeeded but no image was returned.");
       }
       setRenderImageUrl(data.imageDataUrl);
+      setRenderFinishesUsed(data.finishesUsed || null);
     } catch (err) {
       setRenderError(err?.message || "Failed to generate photoreal render.");
     } finally {
@@ -1401,7 +1404,18 @@ export default function Building3DModal({
                       background: "rgba(0,0,0,0.35)",
                     }}
                   >
-                    <div style={{ color: UI.cardBg, fontWeight: 600 }}>Photoreal render</div>
+                    <div>
+                      <div style={{ color: UI.cardBg, fontWeight: 600 }}>Photoreal render</div>
+                      {renderFinishesUsed ? (
+                        <div style={{ marginTop: "4px", color: "rgba(255,255,255,0.72)", fontSize: "0.8rem" }}>
+                          Cladding: {renderFinishesUsed.cladding}
+                          {" · "}
+                          Baseboards: {renderFinishesUsed.baseboards}
+                          {" · "}
+                          Roof: {renderFinishesUsed.roof}
+                        </div>
+                      ) : null}
+                    </div>
                     <div style={{ display: "flex", gap: "8px" }}>
                       <a
                         href={renderImageUrl}
@@ -1414,6 +1428,7 @@ export default function Building3DModal({
                         type="button"
                         onClick={() => {
                           setRenderImageUrl(null);
+                          setRenderFinishesUsed(null);
                           setRenderError("");
                         }}
                         style={headerBtnStyle}
