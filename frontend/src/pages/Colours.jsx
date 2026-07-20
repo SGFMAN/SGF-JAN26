@@ -84,6 +84,8 @@ export default function Colours({ project, onUpdate }) {
     [project?.colours_plan_trace_polygon]
   );
   const planTraceFootprintPoints = planTrace.points;
+  const planTraceRoofPoints = planTrace.roofPoints;
+  const planTraceDeckPoints = planTrace.deckPoints;
   const planTraceWindows = planTrace.windows;
   const planTraceDoors = planTrace.doors;
   const planTraceSlidingDoors = planTrace.slidingDoors;
@@ -973,7 +975,9 @@ export default function Colours({ project, onUpdate }) {
     windows = [],
     calibration = null,
     doors = [],
-    slidingDoors = []
+    slidingDoors = [],
+    roofPoints = [],
+    deckPoints = []
   ) {
     if (!project?.id) {
       throw new Error("No project selected");
@@ -995,7 +999,9 @@ export default function Colours({ project, onUpdate }) {
           windows,
           calibration,
           doors,
-          slidingDoors
+          slidingDoors,
+          roofPoints,
+          deckPoints
         ),
       }),
     });
@@ -1062,11 +1068,11 @@ export default function Colours({ project, onUpdate }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
-      <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT }}>
+      <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: 0, color: MONUMENT }}>
         Colours
       </h2>
       {project && (
-        <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, marginTop: "24px", gap: "16px" }}>
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, marginTop: "8px", gap: "12px" }}>
           {/* Status (left, aligned with colour fields) + category tabs (aligned with elevations) */}
           <div
             style={{
@@ -1141,29 +1147,6 @@ export default function Colours({ project, onUpdate }) {
                 );
               })}
 
-              <label
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "6px",
-                  width: COLOURS_ROOF_STYLE_FIT_WIDTH,
-                  flexShrink: 0,
-                }}
-              >
-                <span style={{ fontSize: "0.9rem", color: UI.textMuted }}>Roof style</span>
-                <select
-                  value={roofStyle}
-                  onChange={handleRoofStyleChange}
-                  style={COLOURS_FIELD_SELECT_STYLE}
-                >
-                  {ROOF_STYLE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
               {activeColourCategory === "External" && colourSaveStatus ? (
                 <span
                   style={{
@@ -1185,6 +1168,30 @@ export default function Colours({ project, onUpdate }) {
                       : "Save failed"}
                 </span>
               ) : null}
+
+              <label
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "6px",
+                  width: COLOURS_ROOF_STYLE_FIT_WIDTH,
+                  flexShrink: 0,
+                  marginLeft: "auto",
+                }}
+              >
+                <span style={{ fontSize: "0.9rem", color: UI.textMuted }}>Roof style</span>
+                <select
+                  value={roofStyle}
+                  onChange={handleRoofStyleChange}
+                  style={COLOURS_FIELD_SELECT_STYLE}
+                >
+                  {ROOF_STYLE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
           </div>
 
@@ -1207,7 +1214,7 @@ export default function Colours({ project, onUpdate }) {
                   display: "flex",
                   flexDirection: "column",
                   gap: "12px",
-                  overflowY: "auto",
+                  overflow: "visible",
                   paddingRight: "4px",
                 }}
               >
@@ -1269,22 +1276,23 @@ export default function Colours({ project, onUpdate }) {
               style={{
                 flex: 1,
                 minWidth: 0,
-                minHeight: "460px",
+                minHeight: 0,
                 display: "flex",
                 flexDirection: "column",
                 background: WHITE,
                 border: FIELD_OUTLINE,
                 borderRadius: "12px",
-                padding: "24px",
+                padding: "16px",
                 boxSizing: "border-box",
               }}
             >
               {activeColourCategory === "External" ? (
-                <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "auto" }}>
+                <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>
                   <BuildingElevations
                     widthM={11.3}
                     depthM={5.0}
                     footprintPoints={planTraceFootprintPoints}
+                    roofPoints={planTraceRoofPoints}
                     windows={planTraceWindows}
                     doors={planTraceDoors}
                     slidingDoors={planTraceSlidingDoors}
@@ -1415,6 +1423,8 @@ export default function Colours({ project, onUpdate }) {
           depthM={5.0}
           subfloorHeightM={0.65}
           footprintPoints={planTraceFootprintPoints}
+          roofPoints={planTraceRoofPoints}
+          deckPoints={planTraceDeckPoints}
           windows={planTraceWindows}
           doors={planTraceDoors}
           slidingDoors={planTraceSlidingDoors}

@@ -5,6 +5,8 @@ export const INTERNAL_WALLS_LAYER_ID = "internalWalls";
 export const WINDOWS_LAYER_ID = "windows";
 export const DOORS_LAYER_ID = "doors";
 export const SLIDING_DOORS_LAYER_ID = "slidingDoors";
+export const ROOF_LAYER_ID = "roof";
+export const DECK_LAYER_ID = "deck";
 
 export const TRACE_PLAN_GROUPS = [
   { id: "external", label: "External" },
@@ -24,7 +26,7 @@ export const TRACE_PLAN_LAYERS = [
     saves: true,
   },
   {
-    id: "deck",
+    id: DECK_LAYER_ID,
     label: "Deck",
     group: "external",
     stroke: "#059669",
@@ -32,10 +34,10 @@ export const TRACE_PLAN_LAYERS = [
     fillOpen: "rgba(5, 150, 105, 0.12)",
     marker: "#059669",
     origin: "#047857",
-    saves: false,
+    saves: true,
   },
   {
-    id: "roof",
+    id: ROOF_LAYER_ID,
     label: "Roof",
     group: "external",
     stroke: "#475569",
@@ -43,7 +45,7 @@ export const TRACE_PLAN_LAYERS = [
     fillOpen: "rgba(71, 85, 105, 0.14)",
     marker: "#475569",
     origin: "#334155",
-    saves: false,
+    saves: true,
   },
   {
     id: WINDOWS_LAYER_ID,
@@ -273,10 +275,20 @@ export function parsePlanTraceCalibration(raw) {
   return out;
 }
 
+export function isRoofTraceLayer(layerId) {
+  return layerId === ROOF_LAYER_ID;
+}
+
+export function isDeckTraceLayer(layerId) {
+  return layerId === DECK_LAYER_ID;
+}
+
 export function parsePlanTracePolygon(raw) {
   const empty = {
     page: 1,
     points: [],
+    roofPoints: [],
+    deckPoints: [],
     internalWallSegments: [],
     crop: null,
     windows: [],
@@ -295,11 +307,23 @@ export function parsePlanTracePolygon(raw) {
     const doors = parsePlanTraceDoors(data?.doors);
     const slidingDoors = parsePlanTraceSlidingDoors(data?.slidingDoors);
     const calibration = parsePlanTraceCalibration(data?.calibration);
+    const roofPoints = Array.isArray(data?.roofPoints)
+      ? data.roofPoints
+          .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+          .slice(0, MAX_TRACE_POINTS)
+      : [];
+    const deckPoints = Array.isArray(data?.deckPoints)
+      ? data.deckPoints
+          .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+          .slice(0, MAX_TRACE_POINTS)
+      : [];
     const safePage = Number.isFinite(page) && page >= 1 ? page : 1;
     if (!Array.isArray(points)) {
       return {
         page: safePage,
         points: [],
+        roofPoints,
+        deckPoints,
         internalWallSegments,
         crop,
         windows,
@@ -313,6 +337,8 @@ export function parsePlanTracePolygon(raw) {
       points: points
         .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
         .slice(0, MAX_TRACE_POINTS),
+      roofPoints,
+      deckPoints,
       internalWallSegments,
       crop,
       windows,
@@ -324,6 +350,8 @@ export function parsePlanTracePolygon(raw) {
     return {
       page: 1,
       points: [],
+      roofPoints: [],
+      deckPoints: [],
       internalWallSegments: [],
       crop: null,
       windows: [],
@@ -342,7 +370,9 @@ export function serializePlanTracePolygon(
   windows = [],
   calibration = null,
   doors = [],
-  slidingDoors = []
+  slidingDoors = [],
+  roofPoints = [],
+  deckPoints = []
 ) {
   const round = (v) => Math.round(v * 1e6) / 1e6;
   const payload = {
@@ -353,6 +383,16 @@ export function serializePlanTracePolygon(
       b: { x: round(seg.b.x), y: round(seg.b.y) },
     })),
   };
+  const normalizedRoof = (roofPoints ?? [])
+    .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+    .slice(0, MAX_TRACE_POINTS)
+    .map((p) => ({ x: round(p.x), y: round(p.y) }));
+  if (normalizedRoof.length >= 3) payload.roofPoints = normalizedRoof;
+  const normalizedDeck = (deckPoints ?? [])
+    .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+    .slice(0, MAX_TRACE_POINTS)
+    .map((p) => ({ x: round(p.x), y: round(p.y) }));
+  if (normalizedDeck.length >= 3) payload.deckPoints = normalizedDeck;
   const normalizedWindows = parsePlanTraceWindows(windows).map((win) => {
     const out = {
       a: { x: round(win.a.x), y: round(win.a.y) },

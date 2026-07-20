@@ -16,6 +16,12 @@ import {
   resolveUnitFinishHexes,
   UNIT_MATERIAL_META,
 } from "../utils/buildingUnitFinishes.js";
+import {
+  assignTimberDeckUVs,
+  createTimberDeckMaterial,
+  createTimberDeckTexture,
+  TIMBER_DECK_BOARD_PITCH_M,
+} from "../utils/timberDeckTexture.js";
 import { UI } from "../utils/uiThemeTokens.js";
 
 export const BUILDING_3D_PARTS = Object.freeze({
@@ -24,6 +30,11 @@ export const BUILDING_3D_PARTS = Object.freeze({
   SUBFLOOR_LAYER_2: "subfloor-layer-2",
   SUBFLOOR_LAYER_3: "subfloor-layer-3",
   CORNER_COLUMNS: "corner-columns",
+  DECK: "deck",
+  DECK_LAYER_1: "deck-layer-1",
+  DECK_LAYER_2: "deck-layer-2",
+  DECK_LAYER_3: "deck-layer-3",
+  DECK_TOP: "deck-top",
   CLADDING: "cladding",
   CLADDING_LAYER_1: "cladding-layer-1",
   CLADDING_LAYER_2: "cladding-layer-2",
@@ -39,6 +50,7 @@ export const BUILDING_3D_PARTS = Object.freeze({
   CLADDING_LAYER_12: "cladding-layer-12",
   CLADDING_LAYER_13: "cladding-layer-13",
   CLADDING_CORNER_COLUMNS: "cladding-corner-columns",
+  ROOF: "roof",
   WINDOWS: "windows",
   DOORS: "doors",
   SLIDING_DOORS: "sliding-doors",
@@ -50,9 +62,13 @@ const SUBFLOOR_LAYER_GAP_M = 0.025;
 const CORNER_COLUMN_SIZE_M = 0.05;
 const CORNER_COLUMN_HEIGHT_M = 0.65;
 const CORNER_COLUMN_PROJECTION_M = 0.005;
+/** Thin timber board cap on the top deck slab. */
+const DECK_TOP_CAP_THICKNESS_M = 0.008;
 const CLADDING_LAYER_COUNT = 13;
 const CLADDING_LAYER_HEIGHT_M = 0.2;
 const CLADDING_HEIGHT_M = CLADDING_LAYER_COUNT * CLADDING_LAYER_HEIGHT_M;
+/** Temporary flat roof slab thickness (sits on top of cladding). */
+const ROOF_SLAB_THICKNESS_M = 0.15;
 const WINDOW_HEIGHT_M = 1.8;
 const WINDOW_TOP_ABOVE_SUBFLOOR_M = 2.1;
 const WINDOW_PANEL_THICKNESS_M = 0.01;
@@ -96,6 +112,12 @@ const SUBFLOOR_LAYER_IDS = [
   BUILDING_3D_PARTS.SUBFLOOR_LAYER_3,
 ];
 
+const DECK_LAYER_IDS = [
+  BUILDING_3D_PARTS.DECK_LAYER_1,
+  BUILDING_3D_PARTS.DECK_LAYER_2,
+  BUILDING_3D_PARTS.DECK_LAYER_3,
+];
+
 const CLADDING_LAYER_IDS = [
   BUILDING_3D_PARTS.CLADDING_LAYER_1,
   BUILDING_3D_PARTS.CLADDING_LAYER_2,
@@ -122,6 +144,7 @@ function addFootprintSlab(parent, {
   color,
   roughness,
   metalness,
+  outlineColor = 0x202124,
   extraUserData = {},
 }) {
   const geometry = buildFootprintSlabGeometry(ring, bottomY, topY);
@@ -149,12 +172,43 @@ function addFootprintSlab(parent, {
   if (outlineGeometry) {
     const outline = new THREE.LineSegments(
       outlineGeometry,
-      new THREE.LineBasicMaterial({ color: 0x202124 })
+      new THREE.LineBasicMaterial({ color: outlineColor })
     );
     outline.name = `${partId}-outline`;
     parent.add(outline);
   }
 
+  return true;
+}
+
+/** Thin timber-decking cap on the top face of a deck stack. */
+function addDeckTopBoards(parent, ring, topY) {
+  const geometry = buildFootprintSlabGeometry(
+    ring,
+    topY,
+    topY + DECK_TOP_CAP_THICKNESS_M
+  );
+  if (!geometry) return false;
+
+  const pos = geometry.getAttribute("position");
+  if (pos) {
+    const uvs = new Float32Array(pos.count * 2);
+    assignTimberDeckUVs(pos.array, uvs, TIMBER_DECK_BOARD_PITCH_M);
+    geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  }
+
+  const texture = createTimberDeckTexture();
+  const material = createTimberDeckMaterial(texture);
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = BUILDING_3D_PARTS.DECK_TOP;
+  mesh.userData = {
+    partId: BUILDING_3D_PARTS.DECK_TOP,
+    partType: "deck-top",
+    thicknessM: DECK_TOP_CAP_THICKNESS_M,
+  };
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
   return true;
 }
 
@@ -214,6 +268,8 @@ export default function Building3DModal({
   depthM = 5.0,
   subfloorHeightM = 0.65,
   footprintPoints = null,
+  roofPoints = null,
+  deckPoints = null,
   windows = null,
   doors = null,
   slidingDoors = null,
@@ -233,6 +289,8 @@ export default function Building3DModal({
     () => JSON.stringify(footprintPoints ?? null),
     [footprintPoints]
   );
+  const roofPointsKey = useMemo(() => JSON.stringify(roofPoints ?? null), [roofPoints]);
+  const deckPointsKey = useMemo(() => JSON.stringify(deckPoints ?? null), [deckPoints]);
   const windowsKey = useMemo(() => JSON.stringify(windows ?? null), [windows]);
   const doorsKey = useMemo(() => JSON.stringify(doors ?? null), [doors]);
   const slidingDoorsKey = useMemo(
@@ -370,6 +428,58 @@ export default function Building3DModal({
         }
       );
 
+      // Deck: same 200 / 25 / 200 / 25 / 200 stack as subfloor, with timber boards on top.
+      let hasDeck = false;
+      if (fromTrace && Array.isArray(deckPoints) && deckPoints.length >= 3) {
+        const deckResolved = resolveBuildingFootprintRing(
+          deckPoints,
+          widthM,
+          depthM,
+          calibration
+        );
+        if (deckResolved.fromTrace && deckResolved.ring.length >= 3) {
+          const deckGroup = new THREE.Group();
+          deckGroup.name = BUILDING_3D_PARTS.DECK;
+          deckGroup.userData = {
+            partId: BUILDING_3D_PARTS.DECK,
+            partType: "deck",
+            layerHeightM: SUBFLOOR_LAYER_HEIGHT_M,
+            layerGapM: SUBFLOOR_LAYER_GAP_M,
+            heightM: subfloorHeightM,
+          };
+          modelGroup.add(deckGroup);
+
+          let builtDeckLayers = 0;
+          DECK_LAYER_IDS.forEach((partId, index) => {
+            const bottomY = index * (SUBFLOOR_LAYER_HEIGHT_M + SUBFLOOR_LAYER_GAP_M);
+            const topY = bottomY + SUBFLOOR_LAYER_HEIGHT_M;
+            if (
+              addFootprintSlab(deckGroup, {
+                partId,
+                partType: "deck-layer",
+                layerNumber: index + 1,
+                ring: deckResolved.ring,
+                bottomY,
+                topY,
+                color: finishHex.baseboards,
+                roughness: 0.78,
+                metalness: 0.05,
+              })
+            ) {
+              builtDeckLayers += 1;
+            }
+          });
+
+          if (builtDeckLayers === DECK_LAYER_IDS.length) {
+            hasDeck = addDeckTopBoards(deckGroup, deckResolved.ring, subfloorHeightM);
+          }
+        }
+      }
+      modelGroup.userData = {
+        ...(modelGroup.userData || {}),
+        hasDeck,
+      };
+
       const cladding = new THREE.Group();
       cladding.name = BUILDING_3D_PARTS.CLADDING;
       cladding.userData = {
@@ -494,6 +604,49 @@ export default function Building3DModal({
           `Could not extrude the unit footprint (${builtSubfloorLayers}/3 subfloor, ${builtCladdingLayers}/${CLADDING_LAYER_COUNT} cladding).`
         );
       }
+
+      // Roof: traced outline as a 150 mm solid slab sitting on top of the cladding.
+      const wallTopY = subfloorHeightM + CLADDING_HEIGHT_M;
+      let hasRoofSlab = false;
+      if (fromTrace && Array.isArray(roofPoints) && roofPoints.length >= 3) {
+        const roofResolved = resolveBuildingFootprintRing(
+          roofPoints,
+          widthM,
+          depthM,
+          calibration
+        );
+        if (roofResolved.fromTrace && roofResolved.ring.length >= 3) {
+          const roofGroup = new THREE.Group();
+          roofGroup.name = BUILDING_3D_PARTS.ROOF;
+          roofGroup.userData = {
+            partId: BUILDING_3D_PARTS.ROOF,
+            partType: "roof-slab",
+            thicknessM: ROOF_SLAB_THICKNESS_M,
+            color: `#${finishHex.roof.toString(16).padStart(6, "0")}`,
+          };
+          modelGroup.add(roofGroup);
+          hasRoofSlab = addFootprintSlab(roofGroup, {
+            partId: BUILDING_3D_PARTS.ROOF,
+            partType: "roof-slab",
+            layerNumber: 1,
+            ring: roofResolved.ring,
+            bottomY: wallTopY,
+            topY: wallTopY + ROOF_SLAB_THICKNESS_M,
+            color: finishHex.roof,
+            roughness: 0.55,
+            metalness: 0.08,
+            outlineColor: finishHex.roof,
+            extraUserData: {
+              color: `#${finishHex.roof.toString(16).padStart(6, "0")}`,
+            },
+          });
+        }
+      }
+      modelGroup.userData = {
+        ...(modelGroup.userData || {}),
+        hasRoofSlab,
+        roofThicknessM: hasRoofSlab ? ROOF_SLAB_THICKNESS_M : 0,
+      };
 
       // Windows: 1.8 m × 1.8 m black panels on the outside face, top 2.1 m above subfloor.
       const modelWindows = fromTrace ? resolveModelWindows(footprintPoints, windows, calibration) : [];
@@ -1082,7 +1235,12 @@ export default function Building3DModal({
       setError(err?.message || "Could not build the 3D unit");
     }
 
-    const buildingHeightM = subfloorHeightM + CLADDING_HEIGHT_M;
+    const buildingHeightM =
+      subfloorHeightM +
+      CLADDING_HEIGHT_M +
+      (fromTrace && Array.isArray(roofPoints) && roofPoints.length >= 3
+        ? ROOF_SLAB_THICKNESS_M
+        : 0);
     const target = new THREE.Vector3(0, buildingHeightM / 2, 0);
     let theta = Math.PI / 4;
     let distance = spanM * 1.25 + 4;
@@ -1188,7 +1346,7 @@ export default function Building3DModal({
         container.removeChild(renderer.domElement);
       }
     };
-  }, [buildModel, depthM, footprintKey, footprintPoints, windowsKey, windows, doorsKey, doors, slidingDoorsKey, slidingDoors, calibrationKey, calibration, subfloorHeightM, widthM, finishesKey, finishHex]);
+  }, [buildModel, depthM, footprintKey, footprintPoints, roofPointsKey, roofPoints, deckPointsKey, deckPoints, windowsKey, windows, doorsKey, doors, slidingDoorsKey, slidingDoors, calibrationKey, calibration, subfloorHeightM, widthM, finishesKey, finishHex]);
 
   async function handlePhotorealRender() {
     if (renderBusy) return;
@@ -1251,6 +1409,10 @@ export default function Building3DModal({
   }
 
   const footprintLabel = footprintPoints?.length >= 3 ? "traced plan footprint" : `${widthM.toFixed(1)} m × ${depthM.toFixed(1)} m`;
+  const roofLabel =
+    roofPoints?.length >= 3 ? " · Roof: 150 mm traced slab on wall top" : "";
+  const deckLabel =
+    deckPoints?.length >= 3 ? " · Deck: 200 / 25 / 200 / 25 / 200 mm + timber top" : "";
   const headerBtnStyle = {
     padding: "7px 13px",
     color: UI.cardBg,
@@ -1311,6 +1473,8 @@ export default function Building3DModal({
             <div style={{ marginTop: "4px", color: "rgba(255,255,255,0.68)", fontSize: "0.85rem" }}>
               Subfloor: 200 / 25 / 200 / 25 / 200 mm solid slabs · {footprintLabel}
               {" · "}Cladding: 13 × 200 mm solid slabs on top
+              {deckLabel}
+              {roofLabel}
               {" · "}50 mm corner posts, 5 mm proud
               {" — "}{EYE_HEIGHT_M.toFixed(2)} m eye height · drag to rotate · scroll to zoom
             </div>

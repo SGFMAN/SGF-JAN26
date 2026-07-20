@@ -17,7 +17,9 @@ const COLUMN_PROJECTION_MM = 5;
 const CLADDING_LAYER_COUNT = 13;
 const CLADDING_LAYER_HEIGHT_MM = 200;
 const CLADDING_HEIGHT_MM = CLADDING_LAYER_COUNT * CLADDING_LAYER_HEIGHT_MM;
+const ROOF_SLAB_THICKNESS_MM = 150;
 const TOTAL_HEIGHT_MM = SUBFLOOR_HEIGHT_MM + CLADDING_HEIGHT_MM;
+const TOTAL_HEIGHT_WITH_ROOF_MM = TOTAL_HEIGHT_MM + ROOF_SLAB_THICKNESS_MM;
 const OUTLINE_STROKE_WIDTH = 1;
 const GROUND_STROKE_WIDTH = 7;
 
@@ -55,11 +57,14 @@ function FootprintElevation({
   windows = [],
   doors = [],
   slidingDoors = [],
+  roofSegments = [],
+  hasRoofSlab = false,
   colours,
 }) {
   const {
     cladding: claddingColor,
     baseboards: baseboardsColor,
+    roof: roofColor,
     windowFrames: windowFrameColor,
     windowSurrounds: windowSurroundColor,
     frontDoor: doorColor,
@@ -67,11 +72,13 @@ function FootprintElevation({
   const lengthMm = (maxS - minS) * 1000;
   const scaleLengthMm = scaleLengthM * 1000;
   const marginX = Math.max(150, scaleLengthMm * 0.025);
-  const marginTop = 100;
+  const marginTop = 100 + (hasRoofSlab ? ROOF_SLAB_THICKNESS_MM : 0);
   const marginBottom = 720;
-  const groundY = marginTop + TOTAL_HEIGHT_MM;
+  const buildingHeightMm = hasRoofSlab ? TOTAL_HEIGHT_WITH_ROOF_MM : TOTAL_HEIGHT_MM;
+  const groundY = marginTop + buildingHeightMm;
   const viewWidth = scaleLengthMm + marginX * 2;
-  const viewHeight = marginTop + TOTAL_HEIGHT_MM + marginBottom;
+  const viewHeight = marginTop + buildingHeightMm + marginBottom;
+  const wallTopY = groundY - TOTAL_HEIGHT_MM;
   const elevationOriginX = marginX + (scaleLengthMm - lengthMm) / 2;
 
   const toX = (s) => elevationOriginX + (s - minS) * 1000;
@@ -95,15 +102,17 @@ function FootprintElevation({
   const labelY = groundY + GROUND_STROKE_WIDTH + labelFontSize + 240;
 
   return (
-    <div style={{ minWidth: 0 }}>
+    <div style={{ minWidth: 0, minHeight: 0, height: "100%", display: "flex", flexDirection: "column" }}>
       <svg
         viewBox={`0 0 ${viewWidth} ${viewHeight}`}
         role="img"
-        aria-label={`${title}, ${(maxS - minS).toFixed(1)} metres wide by ${(TOTAL_HEIGHT_MM / 1000).toFixed(2)} metres high`}
+        aria-label={`${title}, ${(maxS - minS).toFixed(1)} metres wide by ${(buildingHeightMm / 1000).toFixed(2)} metres high`}
         style={{
           display: "block",
           width: "100%",
-          height: "240px",
+          height: "100%",
+          flex: 1,
+          minHeight: 0,
           background: "transparent",
         }}
         preserveAspectRatio="xMidYMid meet"
@@ -461,6 +470,25 @@ function FootprintElevation({
           );
         })}
 
+        {hasRoofSlab &&
+          roofSegments.map((segment, segmentIndex) => {
+            const x = toX(segment.s0);
+            const width = Math.max(1, (segment.s1 - segment.s0) * 1000);
+            return (
+              <rect
+                key={`roof-slab-${segmentIndex}`}
+                x={x}
+                y={wallTopY - ROOF_SLAB_THICKNESS_MM}
+                width={width}
+                height={ROOF_SLAB_THICKNESS_MM}
+                fill={roofColor}
+                stroke={roofColor}
+                strokeWidth={OUTLINE_STROKE_WIDTH}
+                vectorEffect="non-scaling-stroke"
+              />
+            );
+          })}
+
         <line
           x1={elevationOriginX - marginX * 0.75}
           y1={groundY}
@@ -491,6 +519,7 @@ export default function BuildingElevations({
   widthM = 11.3,
   depthM = 5.0,
   footprintPoints = null,
+  roofPoints = null,
   windows = null,
   doors = null,
   slidingDoors = null,
@@ -505,6 +534,13 @@ export default function BuildingElevations({
       depthM,
       calibration
     );
+    const roofResolved = resolveBuildingFootprintRing(roofPoints, widthM, depthM, calibration);
+    const hasRoofSlab = fromTrace && roofResolved.fromTrace && roofResolved.ring.length >= 3;
+    const roofElevationByTitle = hasRoofSlab
+      ? Object.fromEntries(
+          buildFootprintElevations(roofResolved.ring).map((elev) => [elev.title, elev])
+        )
+      : {};
     const modelWindows = fromTrace ? resolveModelWindows(footprintPoints, windows, calibration) : [];
     const modelDoors = fromTrace ? resolveModelDoors(footprintPoints, doors, calibration) : [];
     const modelSlidingDoors = fromTrace
@@ -538,14 +574,17 @@ export default function BuildingElevations({
           const sB = projectS(d.midX + d.dirX * half, d.midZ + d.dirZ * half);
           return { sMin: Math.min(sA, sB), sMax: Math.max(sA, sB), widthM: d.lengthM };
         });
+      const roofElev = roofElevationByTitle[elev.title];
       return {
         ...elev,
         windows: elevWindows,
         doors: elevDoors,
         slidingDoors: elevSlidingDoors,
+        roofSegments: roofElev?.segments ?? [],
+        hasRoofSlab,
       };
     });
-  }, [depthM, footprintPoints, windows, doors, slidingDoors, widthM, calibration]);
+  }, [depthM, footprintPoints, roofPoints, windows, doors, slidingDoors, widthM, calibration]);
 
   const scaleLengthM = Math.max(...elevations.map((e) => e.lengthM), 0.01);
 
@@ -553,9 +592,12 @@ export default function BuildingElevations({
     <div
       style={{
         width: "100%",
+        height: "100%",
+        minHeight: 0,
         display: "grid",
         gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-        gap: "16px 24px",
+        gridTemplateRows: "repeat(2, minmax(0, 1fr))",
+        gap: "12px 20px",
       }}
     >
       {elevations.map((elevation) => (
@@ -569,6 +611,8 @@ export default function BuildingElevations({
           windows={elevation.windows}
           doors={elevation.doors}
           slidingDoors={elevation.slidingDoors}
+          roofSegments={elevation.roofSegments}
+          hasRoofSlab={elevation.hasRoofSlab}
           colours={colours}
         />
       ))}

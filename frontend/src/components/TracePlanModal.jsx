@@ -18,6 +18,8 @@ import {
   isSlidingDoorsTraceLayer,
   DOORS_LAYER_ID,
   SLIDING_DOORS_LAYER_ID,
+  ROOF_LAYER_ID,
+  DECK_LAYER_ID,
   MAX_TRACE_POINTS,
   normalizeCropRect,
   normalizePixelCropRect,
@@ -49,10 +51,12 @@ import {
 } from "../utils/tracePlanInternalWalls";
 import { resolveInternalWallDrawSnap } from "../utils/tracePlanInternalWallSnap";
 import {
+  collectOrthoReferenceAxes,
   orthogonalSnap,
   resolveOrthoNodeDrag,
   resolvePolygonOrthoSnap,
 } from "../utils/planTraceOrthoSnap";
+import { resolveDeckPolygonSnap, resolveDeckStartSnap } from "../utils/planTraceDeckSnap";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -208,7 +212,9 @@ export default function TracePlanModal({
       layerId === INTERNAL_WALLS_LAYER_ID ||
       layerId === WINDOWS_LAYER_ID ||
       layerId === DOORS_LAYER_ID ||
-      layerId === SLIDING_DOORS_LAYER_ID
+      layerId === SLIDING_DOORS_LAYER_ID ||
+      layerId === ROOF_LAYER_ID ||
+      layerId === DECK_LAYER_ID
     ) {
       const ext = layerTraces[EXTERNAL_WALLS_LAYER_ID];
       if (!ext?.polygonClosed || (ext.points?.length ?? 0) < 3) return false;
@@ -257,7 +263,11 @@ export default function TracePlanModal({
             ? "Trace and close External Walls before placing swing doors."
             : layer.id === SLIDING_DOORS_LAYER_ID
               ? "Trace and close External Walls before placing sliding doors."
-              : "Trace and close External Walls before drawing internal walls."
+              : layer.id === ROOF_LAYER_ID
+                ? "Trace and close External Walls before drawing the roof outline."
+                : layer.id === DECK_LAYER_ID
+                  ? "Trace and close External Walls before drawing a deck."
+                : "Trace and close External Walls before drawing internal walls."
       );
       return;
     }
@@ -416,13 +426,35 @@ export default function TracePlanModal({
   }
 
   function resolveActivePolygonSnap(rawCursor) {
+    const wallPoints = externalTrace.points;
+    const hasWalls = wallPoints?.length >= 3 && externalTrace.polygonClosed;
+
+    // Deck first point: must land on an external wall edge.
+    if (activeLayerId === DECK_LAYER_ID && points.length === 0) {
+      if (!hasWalls) return { point: rawCursor, kind: "ortho", guides: [] };
+      const start = resolveDeckStartSnap(rawCursor, wallPoints, orthoSnapThresholdSource());
+      return start || { point: null, kind: "ortho", guides: [] };
+    }
+
     if (!points.length) {
       return { point: rawCursor, kind: "ortho", guides: [] };
     }
     const prev = points[points.length - 1];
     const origin = points.length >= 2 ? points[0] : null;
+
+    if (activeLayerId === DECK_LAYER_ID && hasWalls) {
+      return resolveDeckPolygonSnap(prev, rawCursor, origin, wallPoints, {
+        snapThreshold: orthoSnapThresholdSource(),
+      });
+    }
+
+    const referenceAxes =
+      activeLayerId === ROOF_LAYER_ID && hasWalls
+        ? collectOrthoReferenceAxes(wallPoints)
+        : undefined;
     return resolvePolygonOrthoSnap(prev, rawCursor, origin, {
       snapThreshold: orthoSnapThresholdSource(),
+      referenceAxes,
     });
   }
 
@@ -500,6 +532,18 @@ export default function TracePlanModal({
     if (saved.page === pageNumber && saved.points.length >= 3) {
       next[EXTERNAL_WALLS_LAYER_ID] = {
         points: denormalizeTracePoints(saved.points, sourceCanvas.width, sourceCanvas.height),
+        polygonClosed: true,
+      };
+    }
+    if (saved.page === pageNumber && saved.roofPoints?.length >= 3) {
+      next[ROOF_LAYER_ID] = {
+        points: denormalizeTracePoints(saved.roofPoints, sourceCanvas.width, sourceCanvas.height),
+        polygonClosed: true,
+      };
+    }
+    if (saved.page === pageNumber && saved.deckPoints?.length >= 3) {
+      next[DECK_LAYER_ID] = {
+        points: denormalizeTracePoints(saved.deckPoints, sourceCanvas.width, sourceCanvas.height),
         polygonClosed: true,
       };
     }
@@ -927,7 +971,61 @@ export default function TracePlanModal({
         return;
       }
 
-      if (!trace.points?.length) return;
+      if (!trace.points?.length) {
+        // Allow active empty polygon layers (e.g. deck start) to draw snap preview.
+        if (
+          !isActive ||
+          polygonClosed ||
+          !polygonPreviewPoint ||
+          layer.mode === "lines" ||
+          layer.mode === "windows" ||
+          layer.mode === "doors" ||
+          layer.mode === "slidingDoors"
+        ) {
+          return;
+        }
+        const guides = polygonSnapGuidesRef.current || [];
+        const source = sourceCanvasRef.current;
+        const clipPad = Math.max(source?.width || 0, source?.height || 0) * 2;
+        const snapEmphasis =
+          polygonSnapKindRef.current === "close-ready" ||
+          polygonSnapKindRef.current === "reference" ||
+          polygonSnapKindRef.current === "wall";
+        ctx.save();
+        guides.forEach((guide) => {
+          ctx.beginPath();
+          ctx.moveTo(
+            Math.max(-clipPad, Math.min(clipPad, guide.x1)),
+            Math.max(-clipPad, Math.min(clipPad, guide.y1))
+          );
+          ctx.lineTo(
+            Math.max(-clipPad, Math.min(clipPad, guide.x2)),
+            Math.max(-clipPad, Math.min(clipPad, guide.y2))
+          );
+          ctx.strokeStyle = guide.emphasis ? "#16a34a" : "rgba(37, 99, 235, 0.55)";
+          ctx.lineWidth = (guide.emphasis ? 2 : 1) / scale;
+          ctx.setLineDash(guide.emphasis ? [6 / scale, 4 / scale] : [4 / scale, 4 / scale]);
+          ctx.globalAlpha = guide.emphasis ? 0.95 : 0.7;
+          ctx.stroke();
+        });
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.arc(
+          polygonPreviewPoint.x,
+          polygonPreviewPoint.y,
+          snapEmphasis ? 8 / scale : markerRadius,
+          0,
+          Math.PI * 2
+        );
+        ctx.fillStyle = snapEmphasis ? "rgba(34, 197, 94, 0.4)" : layer.marker;
+        ctx.strokeStyle = snapEmphasis ? "#16a34a" : WHITE;
+        ctx.lineWidth = 2 / scale;
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+        return;
+      }
 
       const closed = trace.polygonClosed;
       const layerPoints = trace.points;
@@ -1023,11 +1121,14 @@ export default function TracePlanModal({
       });
 
       // Live H/V draft + alignment guides while placing the next corner.
-      if (!closed && isActive && polygonPreviewPoint && layerPoints.length >= 1) {
-        const last = layerPoints[layerPoints.length - 1];
+      if (!closed && isActive && polygonPreviewPoint) {
         const guides = polygonSnapGuidesRef.current || [];
         const source = sourceCanvasRef.current;
         const clipPad = Math.max(source?.width || 0, source?.height || 0) * 2;
+        const snapEmphasis =
+          polygonSnapKindRef.current === "close-ready" ||
+          polygonSnapKindRef.current === "reference" ||
+          polygonSnapKindRef.current === "wall";
 
         ctx.save();
         guides.forEach((guide) => {
@@ -1049,30 +1150,28 @@ export default function TracePlanModal({
         ctx.setLineDash([]);
         ctx.globalAlpha = 1;
 
-        ctx.beginPath();
-        ctx.moveTo(last.x, last.y);
-        ctx.lineTo(polygonPreviewPoint.x, polygonPreviewPoint.y);
-        ctx.strokeStyle =
-          polygonSnapKindRef.current === "close-ready" ? "#16a34a" : layer.stroke;
-        ctx.lineWidth = 2 / scale;
-        ctx.globalAlpha = 0.85;
-        ctx.stroke();
-        ctx.globalAlpha = 1;
+        if (layerPoints.length >= 1) {
+          const last = layerPoints[layerPoints.length - 1];
+          ctx.beginPath();
+          ctx.moveTo(last.x, last.y);
+          ctx.lineTo(polygonPreviewPoint.x, polygonPreviewPoint.y);
+          ctx.strokeStyle = snapEmphasis ? "#16a34a" : layer.stroke;
+          ctx.lineWidth = 2 / scale;
+          ctx.globalAlpha = 0.85;
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
 
         ctx.beginPath();
         ctx.arc(
           polygonPreviewPoint.x,
           polygonPreviewPoint.y,
-          polygonSnapKindRef.current === "close-ready" ? 8 / scale : markerRadius,
+          snapEmphasis ? 8 / scale : markerRadius,
           0,
           Math.PI * 2
         );
-        ctx.fillStyle =
-          polygonSnapKindRef.current === "close-ready"
-            ? "rgba(34, 197, 94, 0.4)"
-            : layer.marker;
-        ctx.strokeStyle =
-          polygonSnapKindRef.current === "close-ready" ? "#16a34a" : WHITE;
+        ctx.fillStyle = snapEmphasis ? "rgba(34, 197, 94, 0.4)" : layer.marker;
+        ctx.strokeStyle = snapEmphasis ? "#16a34a" : WHITE;
         ctx.lineWidth = 2 / scale;
         ctx.fill();
         ctx.stroke();
@@ -1727,10 +1826,14 @@ export default function TracePlanModal({
     const raw = screenToSource(screenX, screenY);
     if (raw.x < 0 || raw.y < 0 || raw.x > source.width || raw.y > source.height) return;
 
-    const snapped = points.length === 0
-      ? raw
-      : resolveActivePolygonSnap(raw).point;
-    const pt = clampSourcePoint(snapped);
+    const snap = resolveActivePolygonSnap(raw);
+    if (!snap?.point) {
+      if (activeLayerId === DECK_LAYER_ID && points.length === 0) {
+        alert("Start the deck on an external wall — move closer to a wall edge.");
+      }
+      return;
+    }
+    const pt = clampSourcePoint(snap.point);
     setActivePoints((prev) => [...prev, pt]);
     setNearOrigin(false);
     clearPolygonPreview();
@@ -2287,17 +2390,21 @@ export default function TracePlanModal({
       if (polygonClosed) {
         updateHoveredNode(pt.x, pt.y);
         clearPolygonPreview();
-      } else if (points.length >= 1) {
+      } else if (points.length >= 1 || activeLayerId === DECK_LAYER_ID) {
         const raw = clampSourcePoint(screenToSource(pt.x, pt.y));
         const snap = resolveActivePolygonSnap(raw);
-        polygonSnapGuidesRef.current = snap.guides;
-        polygonSnapKindRef.current = snap.kind;
-        setPolygonPreviewPoint((prev) =>
-          prev && prev.x === snap.point.x && prev.y === snap.point.y ? prev : snap.point
-        );
-        if (points.length >= 2) {
-          const previewScreen = sourceToScreen(snap.point.x, snap.point.y);
-          updateNearOrigin(previewScreen.x, previewScreen.y);
+        if (!snap?.point) {
+          clearPolygonPreview();
+        } else {
+          polygonSnapGuidesRef.current = snap.guides || [];
+          polygonSnapKindRef.current = snap.kind;
+          setPolygonPreviewPoint((prev) =>
+            prev && prev.x === snap.point.x && prev.y === snap.point.y ? prev : snap.point
+          );
+          if (points.length >= 2) {
+            const previewScreen = sourceToScreen(snap.point.x, snap.point.y);
+            updateNearOrigin(previewScreen.x, previewScreen.y);
+          }
         }
       } else {
         clearPolygonPreview();
@@ -2439,17 +2546,21 @@ export default function TracePlanModal({
       const dx = pt.x - interaction.startX;
       const dy = pt.y - interaction.startY;
       if (Math.hypot(dx, dy) > 4) interaction.moved = true;
-      if (!polygonClosed && points.length >= 1) {
+      if (!polygonClosed && (points.length >= 1 || activeLayerId === DECK_LAYER_ID)) {
         const raw = clampSourcePoint(screenToSource(pt.x, pt.y));
         const snap = resolveActivePolygonSnap(raw);
-        polygonSnapGuidesRef.current = snap.guides;
-        polygonSnapKindRef.current = snap.kind;
-        setPolygonPreviewPoint((prev) =>
-          prev && prev.x === snap.point.x && prev.y === snap.point.y ? prev : snap.point
-        );
-        if (points.length >= 2) {
-          const previewScreen = sourceToScreen(snap.point.x, snap.point.y);
-          updateNearOrigin(previewScreen.x, previewScreen.y);
+        if (!snap?.point) {
+          clearPolygonPreview();
+        } else {
+          polygonSnapGuidesRef.current = snap.guides || [];
+          polygonSnapKindRef.current = snap.kind;
+          setPolygonPreviewPoint((prev) =>
+            prev && prev.x === snap.point.x && prev.y === snap.point.y ? prev : snap.point
+          );
+          if (points.length >= 2) {
+            const previewScreen = sourceToScreen(snap.point.x, snap.point.y);
+            updateNearOrigin(previewScreen.x, previewScreen.y);
+          }
         }
       }
     }
@@ -2733,6 +2844,24 @@ export default function TracePlanModal({
           trace.polygonClosed
         );
       }
+      if (layer.id === ROOF_LAYER_ID) {
+        if (!trace.polygonClosed || (trace.points?.length ?? 0) < 3) return true;
+        if (saved.page !== currentPage) return true;
+        const sourceW = source?.width;
+        const sourceH = source?.height;
+        if (!sourceW || !sourceH) return true;
+        const normalized = normalizeTracePoints(trace.points, sourceW, sourceH);
+        return JSON.stringify(normalized) !== JSON.stringify(saved.roofPoints ?? []);
+      }
+      if (layer.id === DECK_LAYER_ID) {
+        if (!trace.polygonClosed || (trace.points?.length ?? 0) < 3) return true;
+        if (saved.page !== currentPage) return true;
+        const sourceW = source?.width;
+        const sourceH = source?.height;
+        if (!sourceW || !sourceH) return true;
+        const normalized = normalizeTracePoints(trace.points, sourceW, sourceH);
+        return JSON.stringify(normalized) !== JSON.stringify(saved.deckPoints ?? []);
+      }
       if (layer.id === INTERNAL_WALLS_LAYER_ID && source) {
         if (saved.page !== currentPage) return true;
         const normalized = normalizeTraceSegments(trace.segments ?? [], source.width, source.height);
@@ -2963,6 +3092,16 @@ export default function TracePlanModal({
           };
         })
         .filter(Boolean);
+      const roof = layerTraces[ROOF_LAYER_ID];
+      const normalizedRoof =
+        roof?.polygonClosed && (roof.points?.length ?? 0) >= 3
+          ? normalizeTracePoints(roof.points, source.width, source.height)
+          : [];
+      const deck = layerTraces[DECK_LAYER_ID];
+      const normalizedDeck =
+        deck?.polygonClosed && (deck.points?.length ?? 0) >= 3
+          ? normalizeTracePoints(deck.points, source.width, source.height)
+          : [];
       await onSave(
         normalized,
         currentPage,
@@ -2971,11 +3110,15 @@ export default function TracePlanModal({
         normalizedWindows,
         calibration,
         normalizedDoors,
-        normalizedSlidingDoors
+        normalizedSlidingDoors,
+        normalizedRoof,
+        normalizedDeck
       );
       savedTraceRef.current = {
         page: currentPage,
         points: normalized,
+        roofPoints: normalizedRoof,
+        deckPoints: normalizedDeck,
         internalWallSegments: normalizedInternal,
         crop: normalizedCrop,
         windows: normalizedWindows,
@@ -3069,6 +3212,18 @@ export default function TracePlanModal({
               : "Add sliding doors: hover near an external wall — a 2.1 m × 100 mm door follows the cursor and snaps to the wall. Click to place it."
           : isLineLayerActive
           ? "Click once for each end of a wall line — horizontal or vertical only. Segments trim to the inside edge of external walls. Drag nodes to adjust. Scroll to zoom, shift+drag to pan."
+          : activeLayerId === ROOF_LAYER_ID
+            ? `Trace the roof outline — horizontal/vertical only (max ${MAX_TRACE_POINTS}). Blue guides show your stroke axes and external-wall alignments; green guides appear when a side can close at 90° or snaps to a wall line. Click the green origin to close.${
+                polygonClosed
+                  ? " Drag nodes to move them (edges stay H/V), drop onto another node to merge, or click a line to add a node."
+                  : ""
+              }`
+          : activeLayerId === DECK_LAYER_ID
+            ? `Trace a deck — start on an external wall edge, then click corners (horizontal/vertical only, max ${MAX_TRACE_POINTS}). The deck stays snap-aligned to walls; green guides show wall snaps and 90° closes. Click the green origin to close.${
+                polygonClosed
+                  ? " Drag nodes to move them (edges stay H/V), drop onto another node to merge, or click a line to add a node."
+                  : ""
+              }`
           : `Click corners on the fitted floor plan — lines snap horizontal/vertical only (max ${MAX_TRACE_POINTS}). Blue guides show axes; green guides snap when a side can close back to the origin at 90°. Click the green origin to close.${
               polygonClosed
                 ? " Drag nodes to move them (edges stay H/V), drop onto another node to merge, or click a line to add a node."
