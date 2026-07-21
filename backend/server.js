@@ -1225,6 +1225,26 @@ async function seedDefaultStreams(dbPool) {
   }
 }
 
+/** Idempotent: runs on every startup (schema already applied or full migrate). */
+async function ensureStreamsTable(dbPool) {
+  if (!dbPool) return;
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS streams (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      display_name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_sgf BOOLEAN NOT NULL DEFAULT FALSE,
+      badge_acronym TEXT,
+      aliases JSONB NOT NULL DEFAULT '[]'::jsonb,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await seedDefaultStreams(dbPool);
+}
+
 function mapStreamRow(row) {
   if (!row) return null;
   let aliases = [];
@@ -1289,6 +1309,7 @@ async function ensureSchema() {
     ]);
     await addMissingColumns(pool, "users", ["password", "ui_theme_id"]);
     await pool.query(`UPDATE users SET password = 'admin' WHERE password IS NULL OR password = ''`);
+    await ensureStreamsTable(pool);
     return;
   }
   console.log(`Applying schema migrations (target ${SCHEMA_VERSION})…`);
@@ -1375,21 +1396,7 @@ async function ensureSchema() {
     );
   `);
   // Sales / email streams (replaces hardcoded frontend lists)
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS streams (
-      id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE,
-      display_name TEXT NOT NULL,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      is_sgf BOOLEAN NOT NULL DEFAULT FALSE,
-      badge_acronym TEXT,
-      aliases JSONB NOT NULL DEFAULT '[]'::jsonb,
-      active BOOLEAN NOT NULL DEFAULT TRUE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-  await seedDefaultStreams(pool);
+  await ensureStreamsTable(pool);
   // Create email_templates table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS email_templates (
