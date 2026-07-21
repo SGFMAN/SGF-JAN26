@@ -4,7 +4,7 @@
  */
 
 /** Bump when ensureSchema() gains new migrations so they run once on deploy. */
-const SCHEMA_VERSION = "2026-07-21-v1";
+const SCHEMA_VERSION = "2026-06-10-v1";
 
 const PLANNING_JF_SCRUB_KEY = "planning_jf_scrub_v1";
 

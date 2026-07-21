@@ -1,20 +1,22 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  calculatePaymentAmounts,
+  resolveStagePercents,
+} from "../utils/paymentStageAmounts";
 import { UI } from "../utils/uiThemeTokens.js";
+
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
-const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
-const DEPOSIT_STAGE = { key: "deposit", label: "Deposit", percent: 5 };
-
 const CHECKBOX_STAGES = [
-  { key: "base", label: "Base", percent: 10 },
-  { key: "frame", label: "Frame", percent: 15 },
-  { key: "lock_up", label: "Lock Up", percent: 35 },
-  { key: "fix", label: "Fix", percent: 25 },
-  { key: "final", label: "Final", percent: 10 },
+  { key: "base", label: "Base" },
+  { key: "frame", label: "Frame" },
+  { key: "lock_up", label: "Lock Up" },
+  { key: "fix", label: "Fix" },
+  { key: "final", label: "Final" },
 ];
 
 const DEFAULT_PAID_STATE = Object.fromEntries(CHECKBOX_STAGES.map((s) => [s.key, false]));
@@ -59,6 +61,7 @@ export default function Payments({ project, onUpdate }) {
   const [paidState, setPaidState] = useState(() =>
     parsePaidState(project?.construction_payments_paid)
   );
+  const [paymentSettings, setPaymentSettings] = useState(null);
   const paidStateRef = useRef(paidState);
   const savingRef = useRef(false);
 
@@ -70,17 +73,45 @@ export default function Payments({ project, onUpdate }) {
     setPaidState(parsePaidState(project?.construction_payments_paid));
   }, [project?.construction_payments_paid]);
 
-  const projectCost = parseProjectCost(project?.project_cost);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/settings`);
+        if (!response.ok || cancelled) return;
+        const data = await response.json();
+        if (!cancelled) setPaymentSettings(data);
+      } catch (error) {
+        console.error("Error fetching payment settings:", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const depositAmount =
-    projectCost > 0 ? Math.round((projectCost * DEPOSIT_STAGE.percent) / 100) : 0;
+  const projectCost = parseProjectCost(project?.project_cost);
+  const percents = useMemo(() => resolveStagePercents(paymentSettings), [paymentSettings]);
+  const amounts = useMemo(
+    () =>
+      calculatePaymentAmounts(
+        project?.project_cost,
+        paymentSettings,
+        project?.pre_engagement_required
+      ),
+    [project?.project_cost, project?.pre_engagement_required, paymentSettings]
+  );
+
+  const depositAmount = amounts.deposit;
+  const depositPercent = percents.deposit;
 
   const stageAmounts = useMemo(() => {
     return CHECKBOX_STAGES.map((stage) => ({
       ...stage,
-      amount: projectCost > 0 ? Math.round((projectCost * stage.percent) / 100) : 0,
+      percent: percents[stage.key],
+      amount: amounts[stage.key],
     }));
-  }, [projectCost]);
+  }, [percents, amounts]);
 
   async function savePaidState(nextState) {
     if (!project?.id || savingRef.current) return;
@@ -183,7 +214,7 @@ export default function Payments({ project, onUpdate }) {
                 fontWeight: 600,
               }}
             >
-              {DEPOSIT_STAGE.label} {DEPOSIT_STAGE.percent}%
+              Deposit {depositPercent}%
             </span>
             <span
               style={{
