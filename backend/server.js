@@ -11148,6 +11148,107 @@ function buildAi3dGeometryLockInstructions(geometry = {}) {
   ].join("\n");
 }
 
+/** Normalize client time-of-day for AI 3D renders. */
+function normalizeAi3dTimeOfDay(raw) {
+  const s = String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+  if (s === "morning") return "morning";
+  if (s === "late afternoon" || s === "lateafternoon" || s === "sunset" || s === "afternoon") {
+    return "late_afternoon";
+  }
+  if (s === "evening" || s === "night" || s === "dusk") return "evening";
+  return "morning";
+}
+
+/**
+ * Lighting / atmosphere instructions from Time of Day selection.
+ * Appended after the base prompt so it can refine the generic daylight guidance.
+ */
+function buildAi3dTimeOfDayInstructions(timeOfDayRaw) {
+  const tod = normalizeAi3dTimeOfDay(timeOfDayRaw);
+  if (tod === "late_afternoon") {
+    return [
+      "TIME OF DAY (MANDATORY — refine ENVIRONMENT & LIGHTING; do not change building geometry):",
+      "- Late afternoon / sunset golden hour.",
+      "- Warm low sun, long soft shadows, golden/amber light on cladding and ground.",
+      "- Sky toward sunset: warmer horizon, soft evening colour; still clearly daytime-dusk, not night.",
+      "- Interior / exterior building lights OFF or only the faintest hint — natural sunset light dominates.",
+    ].join("\n");
+  }
+  if (tod === "evening") {
+    return [
+      "TIME OF DAY (MANDATORY — refine ENVIRONMENT & LIGHTING; do not change building geometry):",
+      "- Evening / early night after sunset.",
+      "- Cooler dusk-to-night sky; believable night exterior ambience around the unit.",
+      "- TURN LIGHTS ON: warm interior light visible through windows and glass door panels;",
+      "  entry/porch or exterior lights on where natural for a small residential unit.",
+      "- Glazing should glow softly from inside; keep glass transparent (not opaque white).",
+      "- Soft artificial light spill on nearby grass/deck without washing out the building colours.",
+    ].join("\n");
+  }
+  return [
+    "TIME OF DAY (MANDATORY — refine ENVIRONMENT & LIGHTING; do not change building geometry):",
+    "- Fresh morning daylight.",
+    "- Clear cooler-blue sky, soft early sun angle, crisp but gentle shadows.",
+    "- Bright, clean morning atmosphere; building lights OFF.",
+  ].join("\n");
+}
+
+function resolveSgfCentralLogoPath() {
+  const candidates = [
+    path.join(__dirname, "..", "frontend", "src", "images", "logo.png"),
+    path.join(__dirname, "..", "frontend", "dist", "images", "logo.png"),
+    path.join(__dirname, "logo.png"),
+  ];
+  for (const p of candidates) {
+    try {
+      if (fsSync.existsSync(p)) return p;
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
+/** Composite SGF Central logo in the bottom-right of a PNG render. */
+async function applySgfLogoWatermarkToPng(pngBuf) {
+  const logoPath = resolveSgfCentralLogoPath();
+  if (!logoPath) {
+    console.warn("[generate-3d-render] SGF logo not found — skipping watermark");
+    return pngBuf;
+  }
+  try {
+    const meta = await sharp(pngBuf).metadata();
+    const W = meta.width || 0;
+    const H = meta.height || 0;
+    if (!W || !H) return pngBuf;
+
+    const targetW = Math.max(96, Math.round(Math.min(W, H) * 0.16));
+    const logoResized = await sharp(logoPath)
+      .resize({ width: targetW, withoutEnlargement: true })
+      .ensureAlpha()
+      .png()
+      .toBuffer();
+    const logoMeta = await sharp(logoResized).metadata();
+    const logoW = logoMeta.width || targetW;
+    const logoH = logoMeta.height || Math.round(targetW / 2);
+    const margin = Math.max(12, Math.round(Math.min(W, H) * 0.028));
+    const left = Math.max(0, W - logoW - margin);
+    const top = Math.max(0, H - logoH - margin);
+
+    return sharp(pngBuf)
+      .composite([{ input: logoResized, left, top }])
+      .png()
+      .toBuffer();
+  } catch (e) {
+    console.warn("[generate-3d-render] logo watermark failed:", e?.message || e);
+    return pngBuf;
+  }
+}
+
 function decodeOpenAiImageEditB64Json(imagesResp) {
   const b64 = imagesResp?.data?.[0]?.b64_json;
   if (!b64) throw new Error("OpenAI returned no image data.");
@@ -11652,6 +11753,8 @@ app.post("/api/projects/:id/generate-3d-render", async (req, res) => {
       req.body?.materials && typeof req.body.materials === "object" ? req.body.materials : {}
     );
     const geometryBlock = buildAi3dGeometryLockInstructions(geometry);
+    const timeOfDay = normalizeAi3dTimeOfDay(req.body?.timeOfDay ?? req.body?.time_of_day);
+    const timeOfDayBlock = buildAi3dTimeOfDayInstructions(timeOfDay);
     const imageFile = await toFile(pngBuf, "unit-3d-viewport.png", { type: "image/png" });
 
     let outBuf;
@@ -11662,7 +11765,7 @@ app.post("/api/projects/:id/generate-3d-render", async (req, res) => {
         input_fidelity: "high",
         size: editSize,
         n: 1,
-        prompt: `${AI_3D_RENDER_PROMPT}\n\n${geometryBlock}\n\n${finishBlock}\n\n${materialBlock}`,
+        prompt: `${AI_3D_RENDER_PROMPT}\n\n${geometryBlock}\n\n${finishBlock}\n\n${materialBlock}\n\n${timeOfDayBlock}`,
         image: imageFile,
       });
       outBuf = decodeOpenAiImageEditB64Json(resp);
@@ -11671,6 +11774,8 @@ app.post("/api/projects/:id/generate-3d-render", async (req, res) => {
       const msg = e.message || String(e);
       return res.status(502).json({ error: `OpenAI image generation failed: ${msg}` });
     }
+
+    outBuf = await applySgfLogoWatermarkToPng(outBuf);
 
     let renderUrl = null;
     const coloursPath = resolveStoredFilesystemPath(row.colours_pdf_location);
@@ -11687,6 +11792,7 @@ app.post("/api/projects/:id/generate-3d-render", async (req, res) => {
       success: true,
       renderUrl,
       imageDataUrl: `data:image/png;base64,${outBuf.toString("base64")}`,
+      timeOfDay,
       finishesUsed: {
         cladding: finishes.cladding_colour || AI_3D_RENDER_DEFAULT_COLOUR,
         baseboards: finishes.baseboards_colour || AI_3D_RENDER_DEFAULT_COLOUR,

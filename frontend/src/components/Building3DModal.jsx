@@ -49,6 +49,8 @@ import {
 import {
   createCorrugatedRoofTexture,
 } from "../utils/corrugatedRoofTexture.js";
+import grassImage from "../images/grass.jpg";
+import skyImage from "../images/sky.jpg";
 import { UI } from "../utils/uiThemeTokens.js";
 
 export const BUILDING_3D_PARTS = Object.freeze({
@@ -112,6 +114,12 @@ const WINDOW_MULLION_MIN_WIDTH_M = 1.2;
 const WINDOW_TRANSOM_MIN_HEIGHT_M = 1.5;
 const WINDOW_TRANSOM_SPLIT_FRACTION = 1 / 3;
 const WINDOW_SURROUND_OUTLINE_COLOR = 0x202124;
+
+const RENDER_TIME_OF_DAY_OPTIONS = [
+  { value: "morning", label: "Morning" },
+  { value: "late_afternoon", label: "Late Afternoon" },
+  { value: "evening", label: "Evening" },
+];
 
 const DOOR_HEIGHT_M = 2.1;
 const DOOR_PANEL_THICKNESS_M = 0.01;
@@ -315,6 +323,9 @@ export default function Building3DModal({
   const [renderError, setRenderError] = useState("");
   const [renderImageUrl, setRenderImageUrl] = useState(null);
   const [renderFinishesUsed, setRenderFinishesUsed] = useState(null);
+  const [renderOptionsOpen, setRenderOptionsOpen] = useState(false);
+  const [renderTimeOfDay, setRenderTimeOfDay] = useState("morning");
+  const [lastRenderTimeOfDay, setLastRenderTimeOfDay] = useState(null);
   const footprintKey = useMemo(
     () => JSON.stringify(footprintPoints ?? null),
     [footprintPoints]
@@ -343,10 +354,15 @@ export default function Building3DModal({
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key !== "Escape") return;
+      if (renderOptionsOpen && !renderBusy) {
+        setRenderOptionsOpen(false);
+        return;
+      }
       if (renderImageUrl || renderBusy) {
         if (!renderBusy) {
           setRenderImageUrl(null);
           setRenderFinishesUsed(null);
+          setLastRenderTimeOfDay(null);
           setRenderError("");
         }
         return;
@@ -355,7 +371,7 @@ export default function Building3DModal({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, renderBusy, renderImageUrl]);
+  }, [onClose, renderBusy, renderImageUrl, renderOptionsOpen]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -376,12 +392,16 @@ export default function Building3DModal({
     const spanM = Math.max(bounds.spanX, bounds.spanZ, 1);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x1a2332);
+    scene.background = new THREE.Color(0x87c4ef);
+    scene.fog = new THREE.Fog(0xb7daf5, Math.max(28, spanM * 2.2), Math.max(70, spanM * 5.5));
 
-    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 250);
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
     // preserveDrawingBuffer so we can capture the current view for AI render.
     renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(renderer.domElement);
@@ -393,11 +413,38 @@ export default function Building3DModal({
       },
     };
 
-    scene.add(new THREE.HemisphereLight(0xddeeff, 0x29331f, 1.3));
-    const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
-    keyLight.position.set(10, 16, 12);
+    const textureLoader = new THREE.TextureLoader();
+    const skyTexture = textureLoader.load(skyImage);
+    skyTexture.colorSpace = THREE.SRGBColorSpace;
+    const sky = new THREE.Mesh(
+      new THREE.SphereGeometry(180, 48, 24),
+      new THREE.MeshBasicMaterial({
+        map: skyTexture,
+        side: THREE.BackSide,
+        depthWrite: false,
+        fog: false,
+      })
+    );
+    sky.name = "sky";
+    sky.renderOrder = -1;
+    scene.add(sky);
+
+    scene.add(new THREE.HemisphereLight(0xc8e4ff, 0x5d8a42, 1.15));
+    const keyLight = new THREE.DirectionalLight(0xfff4e5, 2.35);
+    keyLight.position.set(12, 22, 10);
     keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(1024, 1024);
+    keyLight.shadow.camera.near = 1;
+    keyLight.shadow.camera.far = 80;
+    const shadowSpan = Math.max(18, spanM + 10);
+    keyLight.shadow.camera.left = -shadowSpan;
+    keyLight.shadow.camera.right = shadowSpan;
+    keyLight.shadow.camera.top = shadowSpan;
+    keyLight.shadow.camera.bottom = -shadowSpan;
     scene.add(keyLight);
+    const fillLight = new THREE.DirectionalLight(0xb7d7ff, 0.55);
+    fillLight.position.set(-10, 10, -8);
+    scene.add(fillLight);
 
     const modelGroup = new THREE.Group();
     modelGroup.name = "building";
@@ -1459,10 +1506,28 @@ export default function Building3DModal({
         });
       }
 
-      const gridSize = Math.max(20, Math.ceil(spanM + 8));
-      const grid = new THREE.GridHelper(gridSize, gridSize, 0x73806b, 0x455044);
-      grid.position.y = -0.002;
-      scene.add(grid);
+      const groundSize = Math.max(40, Math.ceil(spanM + 24));
+      const grassTexture = textureLoader.load(grassImage);
+      grassTexture.wrapS = THREE.RepeatWrapping;
+      grassTexture.wrapT = THREE.RepeatWrapping;
+      grassTexture.colorSpace = THREE.SRGBColorSpace;
+      // ~4 m per tile
+      const grassRepeat = Math.max(6, groundSize * 0.25);
+      grassTexture.repeat.set(grassRepeat, grassRepeat);
+      grassTexture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy?.() || 4);
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(groundSize, groundSize),
+        new THREE.MeshStandardMaterial({
+          map: grassTexture,
+          roughness: 0.92,
+          metalness: 0.02,
+        })
+      );
+      ground.name = "grass-ground";
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.y = -0.01;
+      ground.receiveShadow = true;
+      scene.add(ground);
       setError("");
     } catch (err) {
       setError(err?.message || "Could not build the 3D unit");
@@ -1608,7 +1673,17 @@ export default function Building3DModal({
     };
   }, [buildModel, depthM, footprintKey, footprintPoints, roofPointsKey, roofPoints, deckPointsKey, resolvedDecks, windowsKey, windows, doorsKey, doors, slidingDoorsKey, slidingDoors, calibrationKey, calibration, subfloorHeightM, widthM, finishesKey, finishHex]);
 
-  async function handlePhotorealRender() {
+  function openRenderOptions() {
+    if (renderBusy) return;
+    setRenderError("");
+    if (!projectId) {
+      setRenderError("No project loaded — cannot generate a render.");
+      return;
+    }
+    setRenderOptionsOpen(true);
+  }
+
+  async function handlePhotorealRender(timeOfDayOverride) {
     if (renderBusy) return;
     setRenderError("");
     if (!projectId) {
@@ -1633,6 +1708,12 @@ export default function Building3DModal({
       return;
     }
 
+    const timeOfDay =
+      typeof timeOfDayOverride === "string" && timeOfDayOverride
+        ? timeOfDayOverride
+        : renderTimeOfDay;
+
+    setRenderOptionsOpen(false);
     setRenderBusy(true);
     try {
       const response = await fetch(`/api/projects/${projectId}/generate-3d-render`, {
@@ -1640,6 +1721,7 @@ export default function Building3DModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           imageDataUrl,
+          timeOfDay,
           finishes: finishes && typeof finishes === "object" ? finishes : undefined,
           materials: UNIT_MATERIAL_META,
           geometry: {
@@ -1661,6 +1743,7 @@ export default function Building3DModal({
       }
       setRenderImageUrl(data.imageDataUrl);
       setRenderFinishesUsed(data.finishesUsed || null);
+      setLastRenderTimeOfDay(data.timeOfDay || timeOfDay);
     } catch (err) {
       setRenderError(err?.message || "Failed to generate photoreal render.");
     } finally {
@@ -1698,7 +1781,7 @@ export default function Building3DModal({
       aria-modal="true"
       aria-labelledby="building-3d-modal-title"
       onClick={() => {
-        if (renderBusy) return;
+        if (renderBusy || renderOptionsOpen) return;
         onClose?.();
       }}
       style={{
@@ -1719,7 +1802,7 @@ export default function Building3DModal({
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
-          background: "#1a2332",
+          background: "#6eb0e4",
           borderRadius: "12px",
           boxShadow: "0 8px 32px rgba(0, 0, 0, 0.28)",
         }}
@@ -1731,7 +1814,8 @@ export default function Building3DModal({
             alignItems: "center",
             gap: "16px",
             padding: "12px 20px",
-            borderBottom: "1px solid rgba(255,255,255,0.12)",
+            borderBottom: "1px solid rgba(255,255,255,0.28)",
+            background: "linear-gradient(180deg, rgba(26, 95, 180, 0.55) 0%, rgba(110, 176, 228, 0.2) 100%)",
           }}
         >
           <div>
@@ -1750,7 +1834,7 @@ export default function Building3DModal({
           <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
             <button
               type="button"
-              onClick={handlePhotorealRender}
+              onClick={openRenderOptions}
               disabled={renderBusy || !projectId}
               title={
                 !projectId
@@ -1845,6 +1929,12 @@ export default function Building3DModal({
                           Baseboards: {renderFinishesUsed.baseboards}
                           {" · "}
                           Roof: {renderFinishesUsed.roof}
+                          {lastRenderTimeOfDay
+                            ? ` · ${
+                                RENDER_TIME_OF_DAY_OPTIONS.find((o) => o.value === lastRenderTimeOfDay)
+                                  ?.label || lastRenderTimeOfDay
+                              }`
+                            : ""}
                         </div>
                       ) : null}
                     </div>
@@ -1861,6 +1951,7 @@ export default function Building3DModal({
                         onClick={() => {
                           setRenderImageUrl(null);
                           setRenderFinishesUsed(null);
+                          setLastRenderTimeOfDay(null);
                           setRenderError("");
                         }}
                         style={headerBtnStyle}
@@ -1898,6 +1989,116 @@ export default function Building3DModal({
           )}
         </div>
       </div>
+
+      {renderOptionsOpen && !renderBusy ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="render-options-title"
+          onClick={() => setRenderOptionsOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1100,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+            background: "rgba(0, 0, 0, 0.45)",
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: "420px",
+              background: UI.cardBg || "#fff",
+              borderRadius: "12px",
+              boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
+              padding: "22px 24px",
+              color: UI.textPrimary,
+            }}
+          >
+            <h3 id="render-options-title" style={{ margin: "0 0 6px", fontSize: "1.2rem" }}>
+              Render options
+            </h3>
+            <p style={{ margin: "0 0 18px", fontSize: "0.9rem", opacity: 0.75, lineHeight: 1.4 }}>
+              Choose the lighting for this photoreal render. Geometry and finishes stay the same.
+            </p>
+            <label
+              htmlFor="render-time-of-day"
+              style={{ display: "block", fontWeight: 600, fontSize: "0.92rem", marginBottom: "8px" }}
+            >
+              Time of Day
+            </label>
+            <select
+              id="render-time-of-day"
+              value={renderTimeOfDay}
+              onChange={(e) => setRenderTimeOfDay(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: "8px",
+                border: "1px solid rgba(0,0,0,0.18)",
+                fontSize: "1rem",
+                background: "#fff",
+                color: "inherit",
+                boxSizing: "border-box",
+              }}
+            >
+              {RENDER_TIME_OF_DAY_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <div style={{ marginTop: "10px", fontSize: "0.82rem", opacity: 0.7, lineHeight: 1.35 }}>
+              {renderTimeOfDay === "evening"
+                ? "Evening: dusk lighting with interior and exterior lights on."
+                : renderTimeOfDay === "late_afternoon"
+                  ? "Late afternoon: warm sunset / golden-hour light."
+                  : "Morning: fresh soft daylight."}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "10px",
+                marginTop: "22px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setRenderOptionsOpen(false)}
+                style={{
+                  padding: "9px 14px",
+                  borderRadius: "8px",
+                  border: "1px solid rgba(0,0,0,0.18)",
+                  background: "transparent",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePhotorealRender(renderTimeOfDay)}
+                style={{
+                  padding: "9px 16px",
+                  borderRadius: "8px",
+                  border: "1px solid rgba(40, 110, 200, 0.45)",
+                  background: "rgba(94, 160, 255, 0.35)",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Create render
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
