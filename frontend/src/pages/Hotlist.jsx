@@ -2070,7 +2070,11 @@ export default function Hotlist() {
                 try {
                   const project = await handleCreateProjectFromSold(formData);
                   if (project) {
-                    setCreatedProjectForEmail(project);
+                    setCreatedProjectForEmail({
+                      ...project,
+                      newJobDepositType: formData.depositType || "",
+                      depositType: formData.depositType || "",
+                    });
                     if (project.access_token) {
                       createdProjectTokenRef.current = project.access_token;
                     }
@@ -2091,7 +2095,11 @@ export default function Hotlist() {
               onBack={() => setCurrentModal(4)}
               onNext={(project) => {
                 if (project) {
-                  setCreatedProjectForEmail(project);
+                  setCreatedProjectForEmail({
+                    ...project,
+                    newJobDepositType: formData.depositType || "",
+                    depositType: formData.depositType || "",
+                  });
                   if (project.access_token) {
                     createdProjectTokenRef.current = project.access_token;
                   }

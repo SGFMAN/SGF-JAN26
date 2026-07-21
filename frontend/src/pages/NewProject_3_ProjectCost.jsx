@@ -20,7 +20,16 @@ const STREAM_OPTIONS = [
   "Fresh Start Advisory",
 ];
 
-const DEPOSIT_OPTIONS = ["Full 5%", "$7.5k only", "Other"];
+const DEPOSIT_OPTION_FIVE_PERCENT = "5% Deposit";
+const DEPOSIT_OPTION_PRE_ENGAGEMENT = "$8,500 Pre-Engagement";
+const DEPOSIT_OPTION_HOLDING = "$2,000 Holding Deposit";
+const DEPOSIT_OPTION_OTHER = "Other";
+const DEPOSIT_OPTIONS = [
+  DEPOSIT_OPTION_FIVE_PERCENT,
+  DEPOSIT_OPTION_PRE_ENGAGEMENT,
+  DEPOSIT_OPTION_HOLDING,
+  DEPOSIT_OPTION_OTHER,
+];
 
 const SPECS_OPTIONS = ["Affordable", "Superior"];
 
@@ -38,7 +47,7 @@ export default function NewProject_3_ProjectCost({
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [tempDepositAmount, setTempDepositAmount] = useState("");
   const [previousDepositType, setPreviousDepositType] = useState("");
-  const [depositType, setDepositType] = useState(""); // "Full 5%", "$7.5k only", "Other", or ""
+  const [depositType, setDepositType] = useState("");
   const [salesTeamUsers, setSalesTeamUsers] = useState([]);
   const [loadingSalesUsers, setLoadingSalesUsers] = useState(false);
 
@@ -54,21 +63,32 @@ export default function NewProject_3_ProjectCost({
     return parseInt(formattedStr.replace(/[^0-9]/g, "")) || 0;
   }
 
-  // Calculate actual deposit amount based on deposit type and project cost
-  function calculateDepositAmount() {
-    const projectCostNum = parseFormattedNumber(formData.projectCost);
-    
-    if (depositType === "Full 5%") {
-      const amount = projectCostNum > 0 ? Math.floor(projectCostNum / 20) : 0;
-      return amount > 0 ? `$${formatWithCommas(amount)}` : "$0";
-    } else if (depositType === "$7.5k only") {
-      return "$7,500";
-    } else if (depositType === "Other" && formData.customDeposit) {
-      // Format the custom deposit with commas
+  function fivePercentDepositFormatted(projectCostFormatted) {
+    const projectCostNum = parseFormattedNumber(projectCostFormatted);
+    const amount = projectCostNum > 0 ? Math.floor(projectCostNum / 20) : 0;
+    return amount > 0 ? `$${formatWithCommas(amount)}` : "$0";
+  }
+
+  function depositAmountForType(type) {
+    if (type === DEPOSIT_OPTION_FIVE_PERCENT) {
+      return fivePercentDepositFormatted(formData.projectCost);
+    }
+    if (type === DEPOSIT_OPTION_PRE_ENGAGEMENT) {
+      return "$8,500";
+    }
+    if (type === DEPOSIT_OPTION_HOLDING) {
+      return "$2,000";
+    }
+    if (type === DEPOSIT_OPTION_OTHER && formData.customDeposit) {
       const customNum = parseFormattedNumber(formData.customDeposit);
       return customNum > 0 ? `$${formatWithCommas(customNum)}` : formData.customDeposit;
     }
     return "";
+  }
+
+  // Calculate actual deposit amount based on deposit type and project cost
+  function calculateDepositAmount() {
+    return depositAmountForType(depositType);
   }
 
   const actualDepositAmount = calculateDepositAmount();
@@ -110,66 +130,93 @@ export default function NewProject_3_ProjectCost({
   // Initialize deposit type from formData when modal opens
 
   useEffect(() => {
-    if (isOpen) {
-      // Check if formData.deposit is one of the preset values or a custom amount
-      const depositValue = formData.deposit || "";
-      if (depositValue === "Full 5%") {
-        setDepositType("Full 5%");
-      } else if (depositValue === "$7.5k only" || depositValue === "$5k only") {
-        setDepositType("$7.5k only");
-      } else {
-        // Check if it's $7,500 or $7500
-        const depositNum = parseFormattedNumber(depositValue);
-        if (depositNum === 7500) {
-          setDepositType("$7.5k only");
-        } else if (depositValue && depositValue !== "") {
-          // Check if it's a calculated 5% value
-          const projectCostNum = parseFormattedNumber(formData.projectCost);
-          const calculated5Percent = projectCostNum > 0 ? Math.floor(projectCostNum / 20) : 0;
-          if (depositNum === calculated5Percent && calculated5Percent > 0) {
-            setDepositType("Full 5%");
-          } else {
-            setDepositType("Other");
-          }
+    if (!isOpen) return;
+
+    const storedType = String(formData.depositType || "").trim();
+    if (
+      storedType === DEPOSIT_OPTION_FIVE_PERCENT ||
+      storedType === DEPOSIT_OPTION_PRE_ENGAGEMENT ||
+      storedType === DEPOSIT_OPTION_HOLDING ||
+      storedType === DEPOSIT_OPTION_OTHER
+    ) {
+      setDepositType(storedType);
+      return;
+    }
+
+    // Check if formData.deposit is one of the preset values or a custom amount
+    const depositValue = formData.deposit || "";
+    if (
+      depositValue === DEPOSIT_OPTION_FIVE_PERCENT ||
+      depositValue === "Full 5%"
+    ) {
+      setDepositType(DEPOSIT_OPTION_FIVE_PERCENT);
+    } else if (depositValue === DEPOSIT_OPTION_PRE_ENGAGEMENT) {
+      setDepositType(DEPOSIT_OPTION_PRE_ENGAGEMENT);
+    } else if (depositValue === DEPOSIT_OPTION_HOLDING) {
+      setDepositType(DEPOSIT_OPTION_HOLDING);
+    } else if (depositValue === "$7.5k only" || depositValue === "$5k only") {
+      setDepositType(DEPOSIT_OPTION_OTHER);
+    } else {
+      const depositNum = parseFormattedNumber(depositValue);
+      if (depositNum === 8500) {
+        setDepositType(DEPOSIT_OPTION_PRE_ENGAGEMENT);
+      } else if (depositNum === 2000) {
+        setDepositType(DEPOSIT_OPTION_HOLDING);
+      } else if (depositValue && depositValue !== "") {
+        const projectCostNum = parseFormattedNumber(formData.projectCost);
+        const calculated5Percent = projectCostNum > 0 ? Math.floor(projectCostNum / 20) : 0;
+        if (depositNum === calculated5Percent && calculated5Percent > 0) {
+          setDepositType(DEPOSIT_OPTION_FIVE_PERCENT);
         } else {
-          setDepositType("");
+          setDepositType(DEPOSIT_OPTION_OTHER);
         }
+      } else {
+        setDepositType("");
       }
     }
-  }, [isOpen, formData.deposit, formData.projectCost]);
+  }, [isOpen, formData.depositType, formData.deposit, formData.projectCost]);
 
   if (!isOpen) return null;
 
   function handleChange(e) {
     const { name, value } = e.target;
     if (name === "depositType") {
-      // This is the dropdown selection - don't store it, just use it to calculate
       setDepositType(value);
-      if (value === "Other") {
+      if (value === DEPOSIT_OPTION_OTHER) {
         // Save current deposit type and open modal when "Other" is selected
         setPreviousDepositType(depositType);
         setTempDepositAmount(formData.customDeposit || "");
         setShowDepositModal(true);
-      } else if (value === "Full 5%") {
-        // Calculate 5% of project cost
-        const projectCostNum = parseFormattedNumber(formData.projectCost);
-        const calculatedAmount = projectCostNum > 0 ? Math.floor(projectCostNum / 20) : 0;
-        const formattedAmount = calculatedAmount > 0 ? `$${formatWithCommas(calculatedAmount)}` : "$0";
         onFormDataChange({
           ...formData,
-          customDeposit: "",
-          deposit: formattedAmount,
+          depositType: value,
         });
-      } else if (value === "$7.5k only") {
+      } else if (value === DEPOSIT_OPTION_FIVE_PERCENT) {
         onFormDataChange({
           ...formData,
+          depositType: value,
           customDeposit: "",
-          deposit: "$7,500",
+          deposit: fivePercentDepositFormatted(formData.projectCost),
+        });
+      } else if (value === DEPOSIT_OPTION_PRE_ENGAGEMENT) {
+        onFormDataChange({
+          ...formData,
+          depositType: value,
+          customDeposit: "",
+          deposit: "$8,500",
+        });
+      } else if (value === DEPOSIT_OPTION_HOLDING) {
+        onFormDataChange({
+          ...formData,
+          depositType: value,
+          customDeposit: "",
+          deposit: "$2,000",
         });
       } else {
         // Empty selection
         onFormDataChange({
           ...formData,
+          depositType: "",
           deposit: "",
           customDeposit: "",
         });
@@ -184,8 +231,8 @@ export default function NewProject_3_ProjectCost({
         projectCost: formattedValue,
       };
       
-      // If deposit type is "Full 5%", recalculate deposit amount
-      if (depositType === "Full 5%" && numeric > 0) {
+      // If deposit type is 5%, recalculate deposit amount
+      if (depositType === DEPOSIT_OPTION_FIVE_PERCENT && numeric > 0) {
         const calculatedAmount = Math.floor(numeric / 20);
         updatedFormData.deposit = calculatedAmount > 0 ? `$${formatWithCommas(calculatedAmount)}` : "$0";
       }
@@ -199,6 +246,38 @@ export default function NewProject_3_ProjectCost({
     }
   }
 
+  function applyDepositType(type) {
+    if (type === DEPOSIT_OPTION_FIVE_PERCENT) {
+      onFormDataChange({
+        ...formData,
+        depositType: type,
+        deposit: fivePercentDepositFormatted(formData.projectCost),
+        customDeposit: "",
+      });
+    } else if (type === DEPOSIT_OPTION_PRE_ENGAGEMENT) {
+      onFormDataChange({
+        ...formData,
+        depositType: type,
+        deposit: "$8,500",
+        customDeposit: "",
+      });
+    } else if (type === DEPOSIT_OPTION_HOLDING) {
+      onFormDataChange({
+        ...formData,
+        depositType: type,
+        deposit: "$2,000",
+        customDeposit: "",
+      });
+    } else {
+      onFormDataChange({
+        ...formData,
+        depositType: type || "",
+        deposit: "",
+        customDeposit: "",
+      });
+    }
+  }
+
   function handleDepositModalOk() {
     if (tempDepositAmount.trim()) {
       // Format the entered amount with commas
@@ -206,35 +285,14 @@ export default function NewProject_3_ProjectCost({
       const formattedAmount = numericValue > 0 ? `$${formatWithCommas(numericValue)}` : tempDepositAmount.trim();
       onFormDataChange({
         ...formData,
+        depositType: DEPOSIT_OPTION_OTHER,
         deposit: formattedAmount,
         customDeposit: formattedAmount,
       });
     } else {
       // If empty, revert to previous deposit type
       setDepositType(previousDepositType);
-      // Recalculate deposit based on previous type
-      if (previousDepositType === "Full 5%") {
-        const projectCostNum = parseFormattedNumber(formData.projectCost);
-        const calculatedAmount = projectCostNum > 0 ? Math.floor(projectCostNum / 20) : 0;
-        const formattedAmount = calculatedAmount > 0 ? `$${formatWithCommas(calculatedAmount)}` : "$0";
-        onFormDataChange({
-          ...formData,
-          deposit: formattedAmount,
-          customDeposit: "",
-        });
-      } else if (previousDepositType === "$7.5k only") {
-        onFormDataChange({
-          ...formData,
-          deposit: "$7,500",
-          customDeposit: "",
-        });
-      } else {
-        onFormDataChange({
-          ...formData,
-          deposit: "",
-          customDeposit: "",
-        });
-      }
+      applyDepositType(previousDepositType);
     }
     setShowDepositModal(false);
     setTempDepositAmount("");
@@ -243,29 +301,7 @@ export default function NewProject_3_ProjectCost({
   function handleDepositModalCancel() {
     // Revert dropdown to previous deposit type
     setDepositType(previousDepositType);
-    // Recalculate deposit based on previous type
-    if (previousDepositType === "Full 5%") {
-      const projectCostNum = parseFormattedNumber(formData.projectCost);
-      const calculatedAmount = projectCostNum > 0 ? Math.floor(projectCostNum / 20) : 0;
-      const formattedAmount = calculatedAmount > 0 ? `$${formatWithCommas(calculatedAmount)}` : "$0";
-      onFormDataChange({
-        ...formData,
-        deposit: formattedAmount,
-        customDeposit: "",
-      });
-    } else if (previousDepositType === "$7.5k only") {
-      onFormDataChange({
-        ...formData,
-        deposit: "$7,500",
-        customDeposit: "",
-      });
-    } else {
-      onFormDataChange({
-        ...formData,
-        deposit: "",
-        customDeposit: "",
-      });
-    }
+    applyDepositType(previousDepositType);
     setShowDepositModal(false);
     setTempDepositAmount("");
   }

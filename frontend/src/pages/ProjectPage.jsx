@@ -1124,7 +1124,11 @@ export default function ProjectPage() {
         onNext={async (created) => {
           const p = created || renovationDupFormData.createdProject;
           if (p) {
-            setRenovationDupCreatedForEmail(p);
+            setRenovationDupCreatedForEmail({
+              ...p,
+              newJobDepositType: renovationDupFormData.depositType || "",
+              depositType: renovationDupFormData.depositType || "",
+            });
             setRenovationDupStep(6);
           }
         }}
@@ -1276,7 +1280,11 @@ export default function ProjectPage() {
         onNext={async (created) => {
           const p = created || linkRenoDupFormData.createdProject;
           if (p) {
-            setLinkRenoDupCreatedForEmail(p);
+            setLinkRenoDupCreatedForEmail({
+              ...p,
+              newJobDepositType: linkRenoDupFormData.depositType || "",
+              depositType: linkRenoDupFormData.depositType || "",
+            });
             setLinkRenoDupStep("emailint");
           }
         }}

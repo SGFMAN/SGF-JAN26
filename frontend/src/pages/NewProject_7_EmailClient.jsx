@@ -136,27 +136,6 @@ export default function NewProject_7_EmailClient({
     return replaced;
   }
 
-  /** True if project has full 5% deposit (so use Full Deposit template). */
-  function isFullDeposit(project) {
-    let depositNum = 0;
-    if (project.deposit != null && project.deposit !== "") {
-      if (typeof project.deposit === "string") {
-        const cleaned = project.deposit.replace(/[$,\s]/g, "");
-        depositNum = parseFloat(cleaned);
-      } else {
-        depositNum = Number(project.deposit);
-      }
-    }
-    if (depositNum <= 0) return false;
-    const projectCostNum =
-      typeof project.project_cost === "string"
-        ? parseFloat(project.project_cost.replace(/[$,\s]/g, ""))
-        : Number(project.project_cost || 0);
-    if (!projectCostNum || isNaN(projectCostNum)) return false;
-    const fullDepositAmount = Math.floor(projectCostNum / 20);
-    return depositNum === fullDepositAmount;
-  }
-
   async function prepareClientEmail(project) {
     setIsPreparing(true);
     try {
@@ -171,15 +150,14 @@ export default function NewProject_7_EmailClient({
       const users = usersResponse.ok ? await usersResponse.json() : [];
       const salespersonUser = findSalespersonUserInList(users, project?.salesperson);
 
-      const fullDeposit = isFullDeposit(project);
-      const templateName = pickNewJobClientTemplateName(project, fullDeposit, salespersonUser);
+      const templateName = pickNewJobClientTemplateName(project);
       const template = templates.find(
         (t) => t.name && t.name.toLowerCase().trim() === templateName.toLowerCase()
       );
 
       if (!template) {
         alert(
-          `Template "${templateName}" not found. Create it in Settings → Email Templates (state ${String(project?.state ?? "").trim() || "?"}, ${fullDeposit ? "full" : "partial"} deposit).`
+          `Template "${templateName}" not found. Create it in Settings → Email Templates (state ${String(project?.state ?? "").trim() || "?"}).`
         );
         setIsPreparing(false);
         return;

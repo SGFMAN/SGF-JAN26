@@ -3,12 +3,18 @@
 import { expandProjectContactTokensInToAddresses } from "./drawingNotifyFrom";
 import { generalEmailStateCode, getGeneralNewProjectBranch } from "./emailGeneralSettings";
 
-const NJ_STD_FULL = "NEW JOB - Client Full Deposit";
-const NJ_STD_PART = "NEW JOB - Client Part Deposit";
+export const NEW_JOB_DEPOSIT_TYPE = {
+  FIVE_PERCENT: "5% Deposit",
+  PRE_ENGAGEMENT: "$8,500 Pre-Engagement",
+  HOLDING: "$2,000 Holding Deposit",
+  OTHER: "Other",
+};
+
+const NJ_VIC_INTRO_FULL_5 = "NEW JOB - Client Full Deposit - VIC INTRO - 5%";
 const NJ_VIC_INTRO_FULL = "NEW JOB - Client Full Deposit - VIC INTRO";
-const NJ_VIC_INTRO_PART = "NEW JOB - Client Part Deposit - VIC INTRO";
+const NJ_PART = "NEW JOB - Client Part Deposit";
+const NJ_QLD_INTRO_FULL_5 = "NEW JOB - Client Full Deposit - QLD INTRO - 5%";
 const NJ_QLD_INTRO_FULL = "NEW JOB - Client Full Deposit - QLD INTRO";
-const NJ_QLD_INTRO_PART = "NEW JOB - Client Part Deposit - QLD INTRO";
 
 function userHasPositionName(user, positionName) {
   if (!user?.positions || !Array.isArray(user.positions)) return false;
@@ -25,25 +31,80 @@ export function userIsRegionalSalesManager(user, stateCode) {
   return false;
 }
 
+function parseMoneyToInt(value) {
+  if (value == null || value === "") return 0;
+  return parseInt(String(value).replace(/[^0-9]/g, ""), 10) || 0;
+}
+
+function normalizeNewJobDepositType(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
+  if (s === NEW_JOB_DEPOSIT_TYPE.FIVE_PERCENT || s === "Full 5%" || s === "5% Deposit") {
+    return NEW_JOB_DEPOSIT_TYPE.FIVE_PERCENT;
+  }
+  if (s === NEW_JOB_DEPOSIT_TYPE.PRE_ENGAGEMENT || s === "$8,500 Pre-Engagement") {
+    return NEW_JOB_DEPOSIT_TYPE.PRE_ENGAGEMENT;
+  }
+  if (s === NEW_JOB_DEPOSIT_TYPE.HOLDING || s === "$2,000 Holding Deposit") {
+    return NEW_JOB_DEPOSIT_TYPE.HOLDING;
+  }
+  if (s === NEW_JOB_DEPOSIT_TYPE.OTHER || s === "Other") {
+    return NEW_JOB_DEPOSIT_TYPE.OTHER;
+  }
+  return s;
+}
+
+/** Infer deposit type from stored deposit + project cost when wizard type is unavailable. */
+export function inferNewJobDepositTypeFromProject(project) {
+  const depositNum = parseMoneyToInt(project?.deposit ?? project?.deposit_paid);
+  const costNum = parseMoneyToInt(project?.project_cost);
+  if (depositNum === 8500) return NEW_JOB_DEPOSIT_TYPE.PRE_ENGAGEMENT;
+  if (depositNum === 2000) return NEW_JOB_DEPOSIT_TYPE.HOLDING;
+  if (costNum > 0) {
+    const fivePercent = Math.floor(costNum / 20);
+    if (depositNum === fivePercent && fivePercent > 0) {
+      return NEW_JOB_DEPOSIT_TYPE.FIVE_PERCENT;
+    }
+  }
+  return NEW_JOB_DEPOSIT_TYPE.OTHER;
+}
+
+export function resolveNewJobDepositType(project, depositType) {
+  const fromArg = normalizeNewJobDepositType(depositType);
+  if (fromArg) return fromArg;
+  const fromProject = normalizeNewJobDepositType(
+    project?.newJobDepositType ?? project?.depositType
+  );
+  if (fromProject) return fromProject;
+  return inferNewJobDepositTypeFromProject(project);
+}
+
 /**
- * New job → client email template name from project state, full vs part deposit, and salesperson user positions.
- * VIC / QLD Sales Managers use the standard templates; other salespeople use the INTRO variants for their state.
+ * New job → client email template from project state + deposit type only
+ * (salesperson role is ignored for template choice).
  */
-export function pickNewJobClientTemplateName(project, fullDeposit, salespersonUser) {
+export function pickNewJobClientTemplateName(project, depositType) {
   const st = generalEmailStateCode(project);
+  const type = resolveNewJobDepositType(project, depositType);
+
+  // Holding + Other: same template for all states
+  if (
+    type === NEW_JOB_DEPOSIT_TYPE.HOLDING ||
+    type === NEW_JOB_DEPOSIT_TYPE.OTHER ||
+    (type !== NEW_JOB_DEPOSIT_TYPE.FIVE_PERCENT &&
+      type !== NEW_JOB_DEPOSIT_TYPE.PRE_ENGAGEMENT)
+  ) {
+    return NJ_PART;
+  }
+
   if (st === "QLD") {
-    if (userHasPositionName(salespersonUser, "QLD Sales Manager")) {
-      return fullDeposit ? NJ_STD_FULL : NJ_STD_PART;
-    }
-    return fullDeposit ? NJ_QLD_INTRO_FULL : NJ_QLD_INTRO_PART;
+    if (type === NEW_JOB_DEPOSIT_TYPE.FIVE_PERCENT) return NJ_QLD_INTRO_FULL_5;
+    return NJ_QLD_INTRO_FULL; // Pre-Engagement
   }
-  if (st === "VIC") {
-    if (userHasPositionName(salespersonUser, "VIC Sales Manager")) {
-      return fullDeposit ? NJ_STD_FULL : NJ_STD_PART;
-    }
-    return fullDeposit ? NJ_VIC_INTRO_FULL : NJ_VIC_INTRO_PART;
-  }
-  return fullDeposit ? NJ_STD_FULL : NJ_STD_PART;
+
+  // VIC (and any other/unknown state)
+  if (type === NEW_JOB_DEPOSIT_TYPE.FIVE_PERCENT) return NJ_VIC_INTRO_FULL_5;
+  return NJ_VIC_INTRO_FULL; // Pre-Engagement
 }
 
 /** Match `salespersonName` to a user in an already-fetched `/api/users` list. */

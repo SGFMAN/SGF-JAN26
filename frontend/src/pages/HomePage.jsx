@@ -424,7 +424,11 @@ export default function HomePage() {
       const newProject = await handleCreateProject(newProjectFormData);
       
       // Store project and show email modal (step 6)
-      setCreatedProjectForEmail(newProject);
+      setCreatedProjectForEmail({
+        ...newProject,
+        newJobDepositType: newProjectFormData.depositType || "",
+        depositType: newProjectFormData.depositType || "",
+      });
       setNewProjectStep(6); // Go to email modal
     } catch (error) {
       console.error("Error creating project:", error);
@@ -1492,7 +1496,11 @@ export default function HomePage() {
           // Use the project passed as parameter, or fall back to formData
           const projectToUse = project || newProjectFormData.createdProject;
           if (projectToUse) {
-            setCreatedProjectForEmail(projectToUse);
+            setCreatedProjectForEmail({
+              ...projectToUse,
+              newJobDepositType: newProjectFormData.depositType || "",
+              depositType: newProjectFormData.depositType || "",
+            });
             setNewProjectStep(6); // Go to email modal
           } else {
             // Fallback: if project wasn't created yet, create it now
