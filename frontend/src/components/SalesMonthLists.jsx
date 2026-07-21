@@ -1,30 +1,23 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import { STREAM_GROUP_COLORS } from "../utils/streamColors";
+import {
+  FALLBACK_STREAMS,
+  SGF_QLD_STREAM,
+  SGF_VIC_STREAM,
+  fetchStreams,
+  greenSalesStreams,
+  projectMatchesStream,
+} from "../utils/streamsCatalog";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 
-const COLUMN1_STREAM = "SGF - VIC";
-const COLUMN2_STREAM = "SGF - QLD";
-const COLUMN3_STREAMS = ["Dual Dwelling", "ATA", "Pumped On Property"];
-const COLUMN4_STREAMS = ["Henderson", "Create Cash Flow", "Fresh Start Advisory"];
-
-function streamMatches(projectStream, stream) {
-  if (stream === "Pumped On Property") {
-    return projectStream === "Pumped On Property" || projectStream === "Pumped on Property";
-  }
-  if (stream === "Create Cash Flow") {
-    return projectStream === "Create Cash Flow" || projectStream === "Creat Cash Flow";
-  }
-  return projectStream === stream;
-}
-
-function getStreamProjects(monthFilteredProjects, stream) {
+function getStreamProjects(monthFilteredProjects, stream, streamsCatalog = FALLBACK_STREAMS) {
   return monthFilteredProjects
-    .filter((project) => streamMatches(project.stream || "", stream))
+    .filter((project) => projectMatchesStream(project.stream || "", stream, streamsCatalog))
     .sort((a, b) => {
       const dateA = a.year ? a.year.toString() : "";
       const dateB = b.year ? b.year.toString() : "";
@@ -226,10 +219,33 @@ function StreamGrid({ stream, streamProjects, gridSize, cellColorLight, cellColo
 
 /**
  * Monthly sales list grid — same layout as the Sales page (/sales).
+ * Always shows SGF - VIC / SGF - QLD. Other streams only if ≥1 sale this month.
  */
 export default function SalesMonthLists({ monthFilteredProjects, pageTitle, onProjectClick }) {
-  const vicProjects = getStreamProjects(monthFilteredProjects, COLUMN1_STREAM);
-  const qldProjects = getStreamProjects(monthFilteredProjects, COLUMN2_STREAM);
+  const [streamsCatalog, setStreamsCatalog] = useState(FALLBACK_STREAMS);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchStreams("").then((rows) => {
+      if (!cancelled) setStreamsCatalog(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const greenWithSales = useMemo(() => {
+    return greenSalesStreams(streamsCatalog).filter(
+      (stream) => getStreamProjects(monthFilteredProjects, stream, streamsCatalog).length >= 1
+    );
+  }, [monthFilteredProjects, streamsCatalog]);
+
+  const mid = Math.ceil(greenWithSales.length / 2);
+  const column3Streams = greenWithSales.slice(0, mid);
+  const column4Streams = greenWithSales.slice(mid);
+
+  const vicProjects = getStreamProjects(monthFilteredProjects, SGF_VIC_STREAM, streamsCatalog);
+  const qldProjects = getStreamProjects(monthFilteredProjects, SGF_QLD_STREAM, streamsCatalog);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -256,7 +272,7 @@ export default function SalesMonthLists({ monthFilteredProjects, pageTitle, onPr
       >
         <div style={{ minWidth: 0 }}>
           <StreamGrid
-            stream={COLUMN1_STREAM}
+            stream={SGF_VIC_STREAM}
             streamProjects={vicProjects}
             gridSize={35}
             cellColorLight={STREAM_GROUP_COLORS.vic.lighter}
@@ -269,7 +285,7 @@ export default function SalesMonthLists({ monthFilteredProjects, pageTitle, onPr
 
         <div style={{ minWidth: 0 }}>
           <StreamGrid
-            stream={COLUMN2_STREAM}
+            stream={SGF_QLD_STREAM}
             streamProjects={qldProjects}
             gridSize={35}
             cellColorLight={STREAM_GROUP_COLORS.qld.lighter}
@@ -281,28 +297,34 @@ export default function SalesMonthLists({ monthFilteredProjects, pageTitle, onPr
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
-          {COLUMN3_STREAMS.map((stream, index) => (
-            <div key={stream} style={{ marginTop: index > 0 ? "13px" : 0 }}>
-              <StreamGrid
-                stream={stream}
-                streamProjects={getStreamProjects(monthFilteredProjects, stream)}
-                gridSize={11}
-                cellColorLight={STREAM_GROUP_COLORS.green.lighter}
-                cellColorExtraLight={STREAM_GROUP_COLORS.green.lighter}
-                darkerColor={STREAM_GROUP_COLORS.green.darker}
-                hoverColor={STREAM_GROUP_COLORS.green.darker}
-                onProjectClick={onProjectClick}
-              />
+          {column3Streams.length === 0 ? (
+            <div style={{ fontSize: "0.75rem", color: UI.textMuted, padding: "8px 4px" }}>
+              No other stream sales this month
             </div>
-          ))}
+          ) : (
+            column3Streams.map((stream, index) => (
+              <div key={stream} style={{ marginTop: index > 0 ? "13px" : 0 }}>
+                <StreamGrid
+                  stream={stream}
+                  streamProjects={getStreamProjects(monthFilteredProjects, stream, streamsCatalog)}
+                  gridSize={11}
+                  cellColorLight={STREAM_GROUP_COLORS.green.lighter}
+                  cellColorExtraLight={STREAM_GROUP_COLORS.green.lighter}
+                  darkerColor={STREAM_GROUP_COLORS.green.darker}
+                  hoverColor={STREAM_GROUP_COLORS.green.darker}
+                  onProjectClick={onProjectClick}
+                />
+              </div>
+            ))
+          )}
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
-          {COLUMN4_STREAMS.map((stream, index) => (
+          {column4Streams.map((stream, index) => (
             <div key={stream} style={{ marginTop: index > 0 ? "13px" : 0 }}>
               <StreamGrid
                 stream={stream}
-                streamProjects={getStreamProjects(monthFilteredProjects, stream)}
+                streamProjects={getStreamProjects(monthFilteredProjects, stream, streamsCatalog)}
                 gridSize={11}
                 cellColorLight={STREAM_GROUP_COLORS.green.lighter}
                 cellColorExtraLight={STREAM_GROUP_COLORS.green.lighter}

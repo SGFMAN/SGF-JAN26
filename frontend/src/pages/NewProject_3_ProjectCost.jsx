@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { CLASSIFICATION_OPTIONS, CLASSIFICATION_ABBREV_MAP as CLASSIFICATION_MAP } from "../utils/classifications";
 import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
+import { FALLBACK_STREAMS, fetchStreams, projectStreamOptions } from "../utils/streamsCatalog";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -8,17 +9,6 @@ const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 const API_URL = "";
-
-const STREAM_OPTIONS = [
-  "SGF - VIC",
-  "SGF - QLD",
-  "Dual Dwelling",
-  "ATA",
-  "Pumped on Property",
-  "Henderson",
-  "Creat Cash Flow",
-  "Fresh Start Advisory",
-];
 
 const DEPOSIT_OPTION_FIVE_PERCENT = "5% Deposit";
 const DEPOSIT_OPTION_PRE_ENGAGEMENT = "$8,500 Pre-Engagement";
@@ -50,6 +40,18 @@ export default function NewProject_3_ProjectCost({
   const [depositType, setDepositType] = useState("");
   const [salesTeamUsers, setSalesTeamUsers] = useState([]);
   const [loadingSalesUsers, setLoadingSalesUsers] = useState(false);
+  const [streamOptions, setStreamOptions] = useState(() => projectStreamOptions(FALLBACK_STREAMS));
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    fetchStreams(API_URL).then((rows) => {
+      if (!cancelled) setStreamOptions(projectStreamOptions(rows));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   // Format number with commas: 1234567 -> "1,234,567"
   function formatWithCommas(num) {
@@ -684,7 +686,7 @@ export default function NewProject_3_ProjectCost({
                 }}
               >
                 <option value="">Select Stream</option>
-                {STREAM_OPTIONS.map((option) => (
+                {streamOptions.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>

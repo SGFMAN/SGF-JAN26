@@ -19,6 +19,7 @@ import {
 } from "../utils/emailGeneralSettings";
 import { getHotlistAgreementRowBackground, getHotlistStreamAccent, getStreamGroupColors } from "../utils/streamColors";
 import useAppLogo from "../hooks/useAppLogo.js";
+import { FALLBACK_STREAMS, fetchStreams, projectStreamOptions } from "../utils/streamsCatalog";
 
 import { UI, MENU, STREAM, outlineBorder } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
@@ -43,17 +44,8 @@ function mergeHotlistActionButtonStyle(styleId, fallback) {
   return saved ? { ...saved } : fallback;
 }
 
-/** Same values as `NewProject_3_ProjectCost` — stored on `projects.stream`. */
-const HOTLIST_PROJECT_STREAM_OPTIONS = [
-  "SGF - VIC",
-  "SGF - QLD",
-  "Dual Dwelling",
-  "ATA",
-  "Pumped on Property",
-  "Henderson",
-  "Creat Cash Flow",
-  "Fresh Start Advisory",
-];
+/** Same values as project stream dropdown — loaded from `/api/streams`. */
+const HOTLIST_PROJECT_STREAM_OPTIONS_FALLBACK = projectStreamOptions(FALLBACK_STREAMS);
 
 /** Section headers: bar colours match agreement-sent row tints; darker outline marks headings. */
 const HOTLIST_SECTION_HEADING = {
@@ -71,18 +63,11 @@ function normalizeHotlistProjectStream(s) {
 }
 
 function isGreenStreamHotlistItem(item) {
-  const t = normalizeHotlistProjectStream(item?.stream).toLowerCase();
-  if (!t) return false;
-  const greens = new Set([
-    "dual dwelling",
-    "ata",
-    "pumped on property",
-    "henderson",
-    "create cash flow",
-    "creat cash flow",
-    "fresh start advisory",
-  ]);
-  return greens.has(t);
+  const st = normalizeHotlistProjectStream(item?.stream);
+  if (!st) return false;
+  if (st === "SGF - VIC" || st === "SGF - QLD") return false;
+  // Any non-SGF project stream (including newly added DB streams) is a "green" stream.
+  return true;
 }
 
 /** Buckets for list layout; unknown stream values go to `unassigned` so they stay visible. */
@@ -154,6 +139,19 @@ export default function Hotlist() {
     proposalFile: null,
     customDeposit: "",
   });
+  const [hotlistProjectStreamOptions, setHotlistProjectStreamOptions] = useState(
+    HOTLIST_PROJECT_STREAM_OPTIONS_FALLBACK
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchStreams(API_URL).then((rows) => {
+      if (!cancelled) setHotlistProjectStreamOptions(projectStreamOptions(rows));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [hotlistSectionOpen, setHotlistSectionOpen] = useState({
     vic: false,
@@ -1029,7 +1027,7 @@ export default function Hotlist() {
             : getHotlistStreamAccent("vic");
 
     const streamVal = item.stream || "";
-    const streamKnown = HOTLIST_PROJECT_STREAM_OPTIONS.includes(streamVal);
+    const streamKnown = hotlistProjectStreamOptions.includes(streamVal);
 
     return (
       <div
@@ -1103,7 +1101,7 @@ export default function Hotlist() {
             <option value="" style={{ color: MONUMENT, backgroundColor: WHITE }}>
               — Stream —
             </option>
-            {HOTLIST_PROJECT_STREAM_OPTIONS.map((opt) => (
+            {hotlistProjectStreamOptions.map((opt) => (
               <option key={opt} value={opt} style={{ color: MONUMENT, backgroundColor: WHITE }}>
                 {opt}
               </option>
@@ -1978,7 +1976,7 @@ export default function Hotlist() {
                   <option value="" style={{ color: MONUMENT, backgroundColor: WHITE }}>
                     Select stream…
                   </option>
-                  {HOTLIST_PROJECT_STREAM_OPTIONS.map((opt) => (
+                  {hotlistProjectStreamOptions.map((opt) => (
                     <option key={opt} value={opt} style={{ color: MONUMENT, backgroundColor: WHITE }}>
                       {opt}
                     </option>

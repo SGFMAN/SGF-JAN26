@@ -7,6 +7,13 @@ import {
   coerceNewProjectTeamEmailToArray,
   emailGeneralJsonForPersist,
 } from "../utils/emailGeneralSettings";
+import {
+  FALLBACK_STREAMS,
+  buildLegacyStreamToVicMap,
+  emailSettingsDisplayItems,
+  emailSettingsKeysFromStreams,
+  fetchStreams,
+} from "../utils/streamsCatalog";
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
@@ -69,43 +76,7 @@ function smtpSlotEmailsFromSettings(data) {
   return list;
 }
 
-const STREAM_OPTIONS = [
-  "SGF - VIC",
-  "SGF - QLD",
-  "Dual Dwelling - VIC",
-  "Dual Dwelling - QLD",
-  "ATA - VIC",
-  "ATA - QLD",
-  "Pumped On Property - VIC",
-  "Pumped On Property - QLD",
-  "Henderson - VIC",
-  "Henderson - QLD",
-  "Create Cash Flow - VIC",
-  "Create Cash Flow - QLD",
-  "Fresh Start Advisory - VIC",
-  "Fresh Start Advisory - QLD",
-];
-
-const STREAM_DISPLAY_ORDER = [
-  "SGF - Retail",
-  "Dual Dwelling Investments",
-  "ATA",
-  "Pumped On Property",
-  "Henderson",
-  "Create Cash Flow",
-  "Fresh Start Advisory",
-];
-
-const LEGACY_STREAM_TO_VIC = {
-  "Dual Dwelling": "Dual Dwelling - VIC",
-  ATA: "ATA - VIC",
-  "Pumped On Property": "Pumped On Property - VIC",
-  "Pumped on Property": "Pumped On Property - VIC",
-  Henderson: "Henderson - VIC",
-  "Create Cash Flow": "Create Cash Flow - VIC",
-  "Creat Cash Flow": "Create Cash Flow - VIC",
-  "Fresh Start Advisory": "Fresh Start Advisory - VIC",
-};
+const STREAM_OPTIONS_FALLBACK = emailSettingsKeysFromStreams(FALLBACK_STREAMS);
 
 const EXTRA_EMAIL_SLOTS = [
   { checkKey: "extraEmail1", addrKey: "extraEmail1Address", label: "Extra Email 1" },
@@ -289,8 +260,12 @@ function parseStreamSettingsRaw(raw) {
 }
 
 /** Payload for PUT: normalized map (no per-stream `newProject`; that lives in General). */
-function streamSettingsMapForPersist(map) {
-  return normalizeStreamSettingsMap(map);
+function streamSettingsMapForPersist(map, streamOptions) {
+  const options =
+    Array.isArray(streamOptions) && streamOptions.length
+      ? streamOptions
+      : Object.keys(map && typeof map === "object" ? map : {});
+  return normalizeStreamSettingsMap(map, options.length ? options : STREAM_OPTIONS_FALLBACK, {});
 }
 
 function defaultNewProjectState() {
@@ -397,7 +372,7 @@ function defaultDrawingsState() {
   };
 }
 
-function normalizeStreamSettingsMap(raw) {
+function normalizeStreamSettingsMap(raw, streamOptions = STREAM_OPTIONS_FALLBACK, legacyToVic = {}) {
   let parsed = raw;
   if (typeof raw === "string") {
     try {
@@ -408,8 +383,9 @@ function normalizeStreamSettingsMap(raw) {
   }
   const src = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   const out = {};
-  for (const stream of STREAM_OPTIONS) {
-    const legacyKey = Object.keys(LEGACY_STREAM_TO_VIC).find((k) => LEGACY_STREAM_TO_VIC[k] === stream) || null;
+  const options = Array.isArray(streamOptions) && streamOptions.length ? streamOptions : STREAM_OPTIONS_FALLBACK;
+  for (const stream of options) {
+    const legacyKey = Object.keys(legacyToVic).find((k) => legacyToVic[k] === stream) || null;
     const sourceRow =
       (src[stream] && typeof src[stream] === "object" && src[stream]) ||
       (legacyKey && src[legacyKey] && typeof src[legacyKey] === "object" ? src[legacyKey] : null) ||
@@ -473,30 +449,18 @@ function resolveVicQldStreamKeys(streamKey) {
   return { vicKey: s, qldKey: s };
 }
 
-function streamBaseLabel(streamKey) {
-  if (streamKey === "SGF - VIC" || streamKey === "SGF - QLD") return "SGF - Retail";
-  if (streamKey.startsWith("Dual Dwelling -")) return "Dual Dwelling Investments";
-  return streamKey.replace(/\s*-\s*(VIC|QLD)\s*$/i, "");
-}
-
-function streamDisplayItems(streamOptions) {
-  const byLabel = new Map();
-  for (const key of streamOptions) {
-    const label = streamBaseLabel(key);
-    if (!byLabel.has(label)) byLabel.set(label, []);
-    byLabel.get(label).push(key);
-  }
-  const ordered = [];
-  for (const label of STREAM_DISPLAY_ORDER) {
-    if (byLabel.has(label)) {
-      ordered.push({ label, keys: byLabel.get(label) });
-      byLabel.delete(label);
-    }
-  }
-  for (const [label, keys] of byLabel.entries()) {
-    ordered.push({ label, keys });
-  }
-  return ordered;
+function streamBaseLabel(streamKey, streamsCatalog = FALLBACK_STREAMS) {
+  const s = String(streamKey || "").trim();
+  const match = (streamsCatalog || []).find((row) => {
+    const keys = row.is_sgf || /\s-\s*(VIC|QLD)$/i.test(row.name)
+      ? [row.name]
+      : [`${row.name} - VIC`, `${row.name} - QLD`];
+    return keys.includes(s);
+  });
+  if (match?.display_name) return match.display_name;
+  if (s === "SGF - VIC" || s === "SGF - QLD") return "SGF - Retail";
+  if (s.startsWith("Dual Dwelling -")) return "Dual Dwelling Investments";
+  return s.replace(/\s*-\s*(VIC|QLD)\s*$/i, "");
 }
 
 const columnPanelStyle = {
@@ -693,10 +657,14 @@ const GLOBAL_EMAIL_SECTIONS = [
 
 export default function StreamSettings() {
   const [emailNavScope, setEmailNavScope] = useState("stream"); // "stream" | EMAIL_NAV_GENERAL
-  const [selectedStream, setSelectedStream] = useState(STREAM_OPTIONS[0]);
+  const [streamsCatalog, setStreamsCatalog] = useState(FALLBACK_STREAMS);
+  const [streamOptions, setStreamOptions] = useState(STREAM_OPTIONS_FALLBACK);
+  const [selectedStream, setSelectedStream] = useState(STREAM_OPTIONS_FALLBACK[0]);
   const [activeSection, setActiveSection] = useState("drawings");
   const [globalEmailSection, setGlobalEmailSection] = useState("colours");
-  const [streamSettingsMap, setStreamSettingsMap] = useState(() => normalizeStreamSettingsMap({}));
+  const [streamSettingsMap, setStreamSettingsMap] = useState(() =>
+    normalizeStreamSettingsMap({}, STREAM_OPTIONS_FALLBACK, buildLegacyStreamToVicMap(FALLBACK_STREAMS))
+  );
   const streamSettingsMapRef = useRef(streamSettingsMap);
   streamSettingsMapRef.current = streamSettingsMap;
   const [loading, setLoading] = useState(true);
@@ -710,7 +678,7 @@ export default function StreamSettings() {
   const [windowsOrderingSectionOpen, setWindowsOrderingSectionOpen] = useState(false);
   const [emailGeneral, setEmailGeneral] = useState(() => parseEmailGeneralJson(null));
   const emailGeneralRef = useRef(emailGeneral);
-  const streamDisplayList = streamDisplayItems(STREAM_OPTIONS);
+  const streamDisplayList = emailSettingsDisplayItems(streamsCatalog);
 
   useEffect(() => {
     if (emailNavScope === EMAIL_NAV_GENERAL && globalEmailSection === "newProject") {
@@ -734,6 +702,13 @@ export default function StreamSettings() {
   const loadSettings = useCallback(async () => {
     try {
       setLoading(true);
+      const catalog = await fetchStreams(API_URL);
+      const options = emailSettingsKeysFromStreams(catalog);
+      const legacyMap = buildLegacyStreamToVicMap(catalog);
+      setStreamsCatalog(catalog);
+      setStreamOptions(options);
+      setSelectedStream((prev) => (options.includes(prev) ? prev : options[0]));
+
       const res = await fetch(`${API_URL}/api/settings`);
       if (!res.ok) throw new Error("Failed to load settings");
       let data = await res.json();
@@ -770,13 +745,19 @@ export default function StreamSettings() {
           }
         }
       }
-      setStreamSettingsMap(normalizeStreamSettingsMap(data.stream_settings_json));
+      setStreamSettingsMap(normalizeStreamSettingsMap(data.stream_settings_json, options, legacyMap));
       setSmtpSlotEmails(smtpSlotEmailsFromSettings(data));
       setEmailGeneral(eg);
       emailGeneralRef.current = eg;
     } catch (e) {
       console.error(e);
-      setStreamSettingsMap(normalizeStreamSettingsMap({}));
+      setStreamSettingsMap(
+        normalizeStreamSettingsMap(
+          {},
+          STREAM_OPTIONS_FALLBACK,
+          buildLegacyStreamToVicMap(FALLBACK_STREAMS)
+        )
+      );
       setSmtpSlotEmails([]);
       const eg = parseEmailGeneralJson(null);
       setEmailGeneral(eg);
@@ -796,14 +777,17 @@ export default function StreamSettings() {
       const res = await fetch(`${API_URL}/api/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stream_settings_json: streamSettingsMapForPersist(nextMap) }),
+        body: JSON.stringify({ stream_settings_json: streamSettingsMapForPersist(nextMap, streamOptions) }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || res.statusText);
       }
       const data = await res.json();
-      setStreamSettingsMap(normalizeStreamSettingsMap(data.stream_settings_json));
+      const legacyMap = buildLegacyStreamToVicMap(streamsCatalog);
+      setStreamSettingsMap(
+        normalizeStreamSettingsMap(data.stream_settings_json, streamOptions, legacyMap)
+      );
       setSmtpSlotEmails(smtpSlotEmailsFromSettings(data));
       const eg = parseEmailGeneralJson(data.email_general_json);
       setEmailGeneral(eg);
@@ -960,7 +944,7 @@ export default function StreamSettings() {
     void persistStreamSettings(normalizeStreamSettingsMap(streamSettingsMapRef.current));
   }
 
-  const selectedStreamLabel = streamBaseLabel(selectedStream);
+  const selectedStreamLabel = streamBaseLabel(selectedStream, streamsCatalog);
   const { vicKey, qldKey } = resolveVicQldStreamKeys(selectedStream);
   const npRoot =
     emailGeneral.newProject && typeof emailGeneral.newProject === "object"

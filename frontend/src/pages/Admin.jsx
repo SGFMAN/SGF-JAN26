@@ -8,6 +8,7 @@ import {
   calculatePaymentAmounts,
   formatCalculatedAmount,
 } from "../utils/paymentStageAmounts";
+import { FALLBACK_STREAMS, fetchStreams, projectStreamOptions } from "../utils/streamsCatalog";
 import { UI } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
@@ -52,15 +53,14 @@ function paymentFieldsFromProject(project) {
   return next;
 }
 
-const STREAM_OPTIONS = [
-  "SGF - VIC",
-  "SGF - QLD",
-  "Dual Dwelling",
-  "ATA",
-  "Pumped on Property",
-  "Henderson",
-  "Creat Cash Flow",
-  "Fresh Start Advisory",
+const PAYMENT_ROWS = [
+  { stage: "Pre-Engagement", amountKey: "pre_engagement", paidKey: "pre_engagement_paid", amountStored: true },
+  { stage: "Deposit", amountKey: "deposit", paidKey: "deposit_paid", amountStored: false },
+  { stage: "Base", amountKey: "base", paidKey: "base_paid", amountStored: false },
+  { stage: "Frame", amountKey: "frame", paidKey: "frame_paid", amountStored: false },
+  { stage: "Lock Up", amountKey: "lock_up", paidKey: "lock_up_paid", amountStored: false },
+  { stage: "Fix", amountKey: "fix", paidKey: "fix_paid", amountStored: false },
+  { stage: "Final", amountKey: "final", paidKey: "final_paid", amountStored: false },
 ];
 
 const MONEY_INPUT_STYLE = {
@@ -168,6 +168,17 @@ export default function Admin({ project, onUpdate }) {
   const [salesTeamUsers, setSalesTeamUsers] = useState([]);
   const [loadingSalesUsers, setLoadingSalesUsers] = useState(false);
   const [paymentSettings, setPaymentSettings] = useState(null);
+  const [streamOptions, setStreamOptions] = useState(() => projectStreamOptions(FALLBACK_STREAMS));
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchStreams(API_URL).then((rows) => {
+      if (!cancelled) setStreamOptions(projectStreamOptions(rows));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const saveFieldRef = useRef(() => Promise.resolve());
   const savePaymentFieldsRef = useRef(() => Promise.resolve());
 
@@ -423,7 +434,7 @@ export default function Admin({ project, onUpdate }) {
                 }}
               >
                 <option value="">Select Stream</option>
-                {STREAM_OPTIONS.map((option) => (
+                {streamOptions.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>

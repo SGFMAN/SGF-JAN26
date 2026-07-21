@@ -1089,6 +1089,169 @@ app.get("/api/pricing-catalog/meta", async (req, res) => {
 });
 
 // Ensure schema
+
+const DEFAULT_STREAMS_SEED = [
+  {
+    name: "SGF - VIC",
+    display_name: "SGF - Retail",
+    sort_order: 0,
+    is_sgf: true,
+    badge_acronym: "VIC",
+    aliases: [],
+  },
+  {
+    name: "SGF - QLD",
+    display_name: "SGF - Retail",
+    sort_order: 1,
+    is_sgf: true,
+    badge_acronym: "QLD",
+    aliases: [],
+  },
+  {
+    name: "Dual Dwelling",
+    display_name: "Dual Dwelling Investments",
+    sort_order: 10,
+    is_sgf: false,
+    badge_acronym: "DDI",
+    aliases: [],
+  },
+  {
+    name: "ATA",
+    display_name: "ATA",
+    sort_order: 20,
+    is_sgf: false,
+    badge_acronym: "ATA",
+    aliases: [],
+  },
+  {
+    name: "Pumped On Property",
+    display_name: "Pumped On Property",
+    sort_order: 30,
+    is_sgf: false,
+    badge_acronym: "POP",
+    aliases: ["Pumped on Property"],
+  },
+  {
+    name: "Henderson",
+    display_name: "Henderson",
+    sort_order: 40,
+    is_sgf: false,
+    badge_acronym: "HEN",
+    aliases: [],
+  },
+  {
+    name: "Create Cash Flow",
+    display_name: "Create Cash Flow",
+    sort_order: 50,
+    is_sgf: false,
+    badge_acronym: "CCF",
+    aliases: ["Creat Cash Flow"],
+  },
+  {
+    name: "Fresh Start Advisory",
+    display_name: "Fresh Start Advisory",
+    sort_order: 60,
+    is_sgf: false,
+    badge_acronym: "FSA",
+    aliases: [],
+  },
+];
+
+function streamEmailSettingsKeysForName(name, isSgf) {
+  const n = String(name || "").trim();
+  if (!n) return [];
+  if (isSgf || /\s-\s*(VIC|QLD)$/i.test(n)) return [n];
+  return [`${n} - VIC`, `${n} - QLD`];
+}
+
+async function ensureStreamEmailSettingsKeys(dbPool, name, isSgf) {
+  const keys = streamEmailSettingsKeysForName(name, isSgf);
+  if (!keys.length) return;
+  try {
+    const r = await dbPool.query(
+      "SELECT id, stream_settings_json FROM settings WHERE id = 1 LIMIT 1"
+    );
+    if (!r.rows.length) return;
+    let map = {};
+    try {
+      const raw = r.rows[0].stream_settings_json;
+      map = typeof raw === "string" ? JSON.parse(raw || "{}") : raw && typeof raw === "object" ? raw : {};
+    } catch {
+      map = {};
+    }
+    if (!map || typeof map !== "object" || Array.isArray(map)) map = {};
+    let changed = false;
+    for (const key of keys) {
+      if (!map[key] || typeof map[key] !== "object") {
+        map[key] = { drawings: {} };
+        changed = true;
+      } else if (!map[key].drawings || typeof map[key].drawings !== "object") {
+        map[key] = { ...map[key], drawings: {} };
+        changed = true;
+      }
+    }
+    if (changed) {
+      await dbPool.query(
+        "UPDATE settings SET stream_settings_json = $1, updated_at = NOW() WHERE id = $2",
+        [JSON.stringify(map), r.rows[0].id]
+      );
+    }
+  } catch (e) {
+    console.log(`ensureStreamEmailSettingsKeys:`, e.message);
+  }
+}
+
+async function seedDefaultStreams(dbPool) {
+  if (!dbPool) return;
+  for (const s of DEFAULT_STREAMS_SEED) {
+    try {
+      await dbPool.query(
+        `INSERT INTO streams (name, display_name, sort_order, is_sgf, badge_acronym, aliases, active)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, TRUE)
+         ON CONFLICT (name) DO NOTHING`,
+        [
+          s.name,
+          s.display_name,
+          s.sort_order,
+          s.is_sgf,
+          s.badge_acronym || null,
+          JSON.stringify(s.aliases || []),
+        ]
+      );
+      await ensureStreamEmailSettingsKeys(dbPool, s.name, s.is_sgf);
+    } catch (e) {
+      console.log(`seedDefaultStreams (${s.name}):`, e.message);
+    }
+  }
+}
+
+function mapStreamRow(row) {
+  if (!row) return null;
+  let aliases = [];
+  try {
+    aliases = Array.isArray(row.aliases)
+      ? row.aliases
+      : typeof row.aliases === "string"
+        ? JSON.parse(row.aliases || "[]")
+        : [];
+  } catch {
+    aliases = [];
+  }
+  if (!Array.isArray(aliases)) aliases = [];
+  return {
+    id: row.id,
+    name: row.name,
+    display_name: row.display_name,
+    sort_order: row.sort_order,
+    is_sgf: !!row.is_sgf,
+    badge_acronym: row.badge_acronym || "",
+    aliases,
+    active: row.active !== false,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
 async function ensureSchema() {
   if (!pool) return;
   await ensureAppMeta(pool);
@@ -1211,6 +1374,22 @@ async function ensureSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  // Sales / email streams (replaces hardcoded frontend lists)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS streams (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      display_name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_sgf BOOLEAN NOT NULL DEFAULT FALSE,
+      badge_acronym TEXT,
+      aliases JSONB NOT NULL DEFAULT '[]'::jsonb,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await seedDefaultStreams(pool);
   // Create email_templates table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS email_templates (
@@ -4275,6 +4454,150 @@ app.delete("/api/positions/:id", async (req, res) => {
     res.json({ success: true, deleted: r.rows[0] });
   } catch (e) {
     res.status(500).json({ error: e.message || "Failed to delete position" });
+  }
+});
+
+// List streams (sales / email catalog)
+app.get("/api/streams", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  try {
+    const includeInactive = String(req.query.includeInactive || "") === "1";
+    const r = await pool.query(
+      includeInactive
+        ? `SELECT id, name, display_name, sort_order, is_sgf, badge_acronym, aliases, active, created_at, updated_at
+           FROM streams ORDER BY sort_order ASC, name ASC, id ASC`
+        : `SELECT id, name, display_name, sort_order, is_sgf, badge_acronym, aliases, active, created_at, updated_at
+           FROM streams WHERE active = TRUE ORDER BY sort_order ASC, name ASC, id ASC`
+    );
+    res.json(r.rows.map(mapStreamRow));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Create stream (+ provision empty Email Settings VIC/QLD rows)
+app.post("/api/streams", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  try {
+    const { name, display_name, displayName, badge_acronym, badgeAcronym, aliases } = req.body || {};
+    const streamName = String(name || "").trim();
+    if (!streamName) return res.status(400).json({ error: "name required" });
+    if (/^SGF\s*-/i.test(streamName)) {
+      return res.status(400).json({ error: "SGF streams are fixed and cannot be added here" });
+    }
+    const label = String(displayName ?? display_name ?? streamName).trim() || streamName;
+    const acronym = String(badgeAcronym ?? badge_acronym ?? "")
+      .trim()
+      .slice(0, 8);
+    const aliasList = Array.isArray(aliases)
+      ? aliases.map((a) => String(a || "").trim()).filter(Boolean)
+      : [];
+
+    const maxOrder = await pool.query(
+      `SELECT COALESCE(MAX(sort_order), 0) AS m FROM streams WHERE is_sgf = FALSE`
+    );
+    const nextOrder = Number(maxOrder.rows[0]?.m || 0) + 10;
+
+    const r = await pool.query(
+      `INSERT INTO streams (name, display_name, sort_order, is_sgf, badge_acronym, aliases, active)
+       VALUES ($1, $2, $3, FALSE, $4, $5::jsonb, TRUE)
+       RETURNING *`,
+      [streamName, label, nextOrder, acronym || null, JSON.stringify(aliasList)]
+    );
+    await ensureStreamEmailSettingsKeys(pool, streamName, false);
+    res.json(mapStreamRow(r.rows[0]));
+  } catch (e) {
+    if (e && e.code === "23505") {
+      return res.status(409).json({ error: "A stream with that name already exists" });
+    }
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Update stream
+app.put("/api/streams/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const existing = await pool.query(`SELECT * FROM streams WHERE id = $1`, [id]);
+    if (!existing.rows.length) return res.status(404).json({ error: "stream not found" });
+    const row = existing.rows[0];
+    const body = req.body || {};
+    const displayName = String(body.displayName ?? body.display_name ?? row.display_name).trim();
+    const acronym = String(body.badgeAcronym ?? body.badge_acronym ?? row.badge_acronym ?? "")
+      .trim()
+      .slice(0, 8);
+    const aliases = Array.isArray(body.aliases)
+      ? body.aliases.map((a) => String(a || "").trim()).filter(Boolean)
+      : row.aliases;
+    const sortOrder =
+      body.sort_order != null || body.sortOrder != null
+        ? Number(body.sortOrder ?? body.sort_order)
+        : row.sort_order;
+    // Do not rename SGF rows' `name` (fixed project values).
+    let nextName = row.name;
+    if (!row.is_sgf && body.name != null && String(body.name).trim()) {
+      nextName = String(body.name).trim();
+    }
+    const r = await pool.query(
+      `UPDATE streams
+       SET name = $1, display_name = $2, badge_acronym = $3, aliases = $4::jsonb,
+           sort_order = $5, updated_at = NOW()
+       WHERE id = $6
+       RETURNING *`,
+      [
+        nextName,
+        displayName || nextName,
+        acronym || null,
+        JSON.stringify(Array.isArray(aliases) ? aliases : []),
+        Number.isFinite(sortOrder) ? sortOrder : row.sort_order,
+        id,
+      ]
+    );
+    if (nextName !== row.name) {
+      await ensureStreamEmailSettingsKeys(pool, nextName, false);
+    }
+    res.json(mapStreamRow(r.rows[0]));
+  } catch (e) {
+    if (e && e.code === "23505") {
+      return res.status(409).json({ error: "A stream with that name already exists" });
+    }
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Soft-delete stream (cannot delete SGF - VIC / SGF - QLD)
+app.delete("/api/streams/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const existing = await pool.query(`SELECT * FROM streams WHERE id = $1`, [id]);
+    if (!existing.rows.length) return res.status(404).json({ error: "stream not found" });
+    if (existing.rows[0].is_sgf) {
+      return res.status(400).json({ error: "SGF streams cannot be deleted" });
+    }
+    const r = await pool.query(
+      `UPDATE streams SET active = FALSE, updated_at = NOW() WHERE id = $1 RETURNING *`,
+      [id]
+    );
+    res.json({ success: true, deleted: mapStreamRow(r.rows[0]) });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Failed to delete stream" });
   }
 });
 

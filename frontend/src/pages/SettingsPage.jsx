@@ -7,6 +7,7 @@ import EmailTemplate from "./EmailTemplate";
 import EmailSettings from "./EmailSettings";
 import ColourSettings from "./ColourSettings";
 import StreamSettings from "./StreamSettings";
+import StreamsSettings from "./StreamsSettings";
 import MapsSettings from "./MapsSettings";
 import UISettings from "./UISettings";
 import PaymentsSettings from "./PaymentsSettings";
@@ -28,6 +29,7 @@ const menuOptions = [
   { key: "maps", label: "Maps" },
   { key: "payments", label: "Payments" },
   { key: "emailSettings", label: "SMTP Settings" },
+  { key: "streams", label: "Streams" },
   { key: "ui", label: "UI" },
   { key: "users", label: "Users" },
   { key: "permissions", label: "Permissions" },
@@ -63,6 +65,8 @@ export default function SettingsPage() {
         return <MapsSettings />;
       case "payments":
         return <PaymentsSettings />;
+      case "streams":
+        return <StreamsSettings />;
       case "streamSettings":
         return (
           <div
