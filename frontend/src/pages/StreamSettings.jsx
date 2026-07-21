@@ -919,11 +919,13 @@ export default function StreamSettings() {
   }
 
   function toggleDrawingOption(stream, optionKey) {
-    const next = normalizeStreamSettingsMap(streamSettingsMapRef.current);
-    const cur = !!next[stream].drawings[optionKey];
+    const next = normalizeStreamSettingsMap(streamSettingsMapRef.current, streamOptions);
+    const row = next[stream] || { drawings: defaultDrawingsState() };
+    const drawings = { ...defaultDrawingsState(), ...(row.drawings || {}) };
+    const cur = !!drawings[optionKey];
     next[stream] = {
-      ...next[stream],
-      drawings: { ...next[stream].drawings, [optionKey]: !cur },
+      ...row,
+      drawings: { ...drawings, [optionKey]: !cur },
     };
     streamSettingsMapRef.current = next;
     setStreamSettingsMap(next);
@@ -931,17 +933,18 @@ export default function StreamSettings() {
   }
 
   function updateDrawingText(stream, addrKey, value) {
-    const next = normalizeStreamSettingsMap(streamSettingsMapRef.current);
+    const next = normalizeStreamSettingsMap(streamSettingsMapRef.current, streamOptions);
+    const row = next[stream] || { drawings: defaultDrawingsState() };
     next[stream] = {
-      ...next[stream],
-      drawings: { ...next[stream].drawings, [addrKey]: value },
+      ...row,
+      drawings: { ...defaultDrawingsState(), ...(row.drawings || {}), [addrKey]: value },
     };
     streamSettingsMapRef.current = next;
     setStreamSettingsMap(next);
   }
 
   function flushPersist() {
-    void persistStreamSettings(normalizeStreamSettingsMap(streamSettingsMapRef.current));
+    void persistStreamSettings(normalizeStreamSettingsMap(streamSettingsMapRef.current, streamOptions));
   }
 
   const selectedStreamLabel = streamBaseLabel(selectedStream, streamsCatalog);
