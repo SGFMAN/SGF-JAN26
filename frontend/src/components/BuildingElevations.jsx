@@ -19,13 +19,14 @@ import {
 import { isSuperiorHippedRoofStyle, isSuperiorSkillionRoofStyle } from "../constants/roofStyles.js";
 import {
   projectSkillionRoofElevation,
-  resolveSkillionPitchFromSwingDoor,
+  resolveSkillionPitch,
   skillionExtraCladdingBands,
   skillionMaxWallRiseM,
   skillionUndersideRiseM,
   SKILLION_ROOF_PITCH_DEG,
   SKILLION_ROOF_SLAB_THICKNESS_M,
 } from "../utils/skillionRoofGeometry.js";
+import { getTracePlanXZMapping, normalizedPointToXZ } from "../utils/tracePlan3D.js";
 
 const SUBFLOOR_HEIGHT_MM = 650;
 const LAYER_HEIGHT_MM = 200;
@@ -669,6 +670,7 @@ export default function BuildingElevations({
   depthM = 5.0,
   footprintPoints = null,
   roofPoints = null,
+  roofPivotLine = null,
   decks = null,
   deckPoints = null,
   windows = null,
@@ -723,9 +725,24 @@ export default function BuildingElevations({
     const modelSlidingDoors = fromTrace
       ? resolveModelSlidingDoors(footprintPoints, slidingDoors, calibration)
       : [];
+    let pivotLineXZ = null;
+    if (roofPivotLine?.a && roofPivotLine?.b) {
+      const mapping = getTracePlanXZMapping(
+        Array.isArray(footprintPoints) && footprintPoints.length >= 3
+          ? footprintPoints
+          : roofPoints,
+        calibration
+      );
+      if (mapping) {
+        pivotLineXZ = {
+          a: normalizedPointToXZ(roofPivotLine.a, mapping),
+          b: normalizedPointToXZ(roofPivotLine.b, mapping),
+        };
+      }
+    }
     const skillionPitch =
       showSkillionSlab && hasRoof
-        ? resolveSkillionPitchFromSwingDoor(roofResolved.ring, swingDoor)
+        ? resolveSkillionPitch(roofResolved.ring, pivotLineXZ, swingDoor)
         : null;
     const skillionMaxRiseM = skillionMaxWallRiseM(skillionPitch, SKILLION_ROOF_PITCH_DEG);
     const skillionCladdingBands = skillionExtraCladdingBands(
@@ -769,7 +786,8 @@ export default function BuildingElevations({
               elev.viewDir,
               swingDoor,
               SKILLION_ROOF_PITCH_DEG,
-              SKILLION_ROOF_SLAB_THICKNESS_M
+              SKILLION_ROOF_SLAB_THICKNESS_M,
+              pivotLineXZ
             )
           : null;
       const hipElev =
@@ -859,7 +877,7 @@ export default function BuildingElevations({
         skillionCladdingEdges,
       };
     });
-  }, [depthM, footprintPoints, roofPoints, decks, deckPoints, windows, doors, slidingDoors, widthM, calibration, finishes?.roofStyle]);
+  }, [depthM, footprintPoints, roofPoints, roofPivotLine, decks, deckPoints, windows, doors, slidingDoors, widthM, calibration, finishes?.roofStyle]);
 
   const scaleLengthM = Math.max(...elevations.map((e) => e.lengthM), 0.01);
 

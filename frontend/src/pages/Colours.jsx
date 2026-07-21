@@ -93,6 +93,7 @@ export default function Colours({ project, onUpdate }) {
   );
   const planTraceFootprintPoints = planTrace.points;
   const planTraceRoofPoints = planTrace.roofPoints;
+  const planTraceRoofPivotLine = planTrace.roofPivotLine;
   const planTraceDecks = planTrace.decks;
   const planTraceWindows = planTrace.windows;
   const planTraceDoors = planTrace.doors;
@@ -985,7 +986,8 @@ export default function Colours({ project, onUpdate }) {
     doors = [],
     slidingDoors = [],
     roofPoints = [],
-    decks = []
+    decks = [],
+    roofPivotLine = null
   ) {
     const projectKey = project?.access_token || project?.id;
     if (!projectKey) {
@@ -1010,7 +1012,8 @@ export default function Colours({ project, onUpdate }) {
           doors,
           slidingDoors,
           roofPoints,
-          decks
+          decks,
+          roofPivotLine
         ),
       }),
     });
@@ -1302,6 +1305,7 @@ export default function Colours({ project, onUpdate }) {
                     depthM={5.0}
                     footprintPoints={planTraceFootprintPoints}
                     roofPoints={planTraceRoofPoints}
+                    roofPivotLine={planTraceRoofPivotLine}
                     decks={planTraceDecks}
                     windows={planTraceWindows}
                     doors={planTraceDoors}
@@ -1435,6 +1439,7 @@ export default function Colours({ project, onUpdate }) {
           subfloorHeightM={0.65}
           footprintPoints={planTraceFootprintPoints}
           roofPoints={planTraceRoofPoints}
+          roofPivotLine={planTraceRoofPivotLine}
           decks={planTraceDecks}
           windows={planTraceWindows}
           doors={planTraceDoors}

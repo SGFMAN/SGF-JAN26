@@ -52,6 +52,10 @@ export const TRACE_PLAN_LAYERS = [
     marker: "#475569",
     origin: "#334155",
     saves: true,
+    submenu: [
+      { id: "outline", label: "Draw outline" },
+      { id: "pivot", label: "Draw pivot point" },
+    ],
   },
   {
     id: WINDOWS_LAYER_ID,
@@ -170,6 +174,9 @@ export function createEmptyLayerTrace(layerId) {
   if (isLineTraceLayer(layerId)) {
     return { segments: [], draftStart: null };
   }
+  if (isRoofTraceLayer(layerId)) {
+    return { points: [], polygonClosed: false, pivotLine: null };
+  }
   return { points: [], polygonClosed: false };
 }
 
@@ -199,6 +206,13 @@ export function hasLayerDraft(layerId, trace) {
   }
   if (isLineTraceLayer(layerId)) {
     return (trace.segments?.length ?? 0) > 0 || trace.draftStart != null;
+  }
+  if (isRoofTraceLayer(layerId)) {
+    return (
+      (trace.points?.length ?? 0) > 0 ||
+      Boolean(trace.polygonClosed) ||
+      Boolean(trace.pivotLine?.a && trace.pivotLine?.b)
+    );
   }
   return (trace.points?.length ?? 0) > 0 || Boolean(trace.polygonClosed);
 }
@@ -296,6 +310,21 @@ export function parsePlanTraceCalibration(raw) {
   return out;
 }
 
+/** Roof skillion pivot / hinge line (normalized endpoints, H or V in plan). */
+export function parsePlanTraceRoofPivotLine(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const ax = Number(raw.a?.x);
+  const ay = Number(raw.a?.y);
+  const bx = Number(raw.b?.x);
+  const by = Number(raw.b?.y);
+  if (![ax, ay, bx, by].every((v) => Number.isFinite(v))) return null;
+  if (Math.hypot(bx - ax, by - ay) < 1e-9) return null;
+  return {
+    a: { x: ax, y: ay },
+    b: { x: bx, y: by },
+  };
+}
+
 export function isRoofTraceLayer(layerId) {
   return layerId === ROOF_LAYER_ID;
 }
@@ -332,6 +361,7 @@ export function parsePlanTracePolygon(raw) {
     page: 1,
     points: [],
     roofPoints: [],
+    roofPivotLine: null,
     decks: [],
     deckPoints: [],
     internalWallSegments: [],
@@ -352,6 +382,7 @@ export function parsePlanTracePolygon(raw) {
     const doors = parsePlanTraceDoors(data?.doors);
     const slidingDoors = parsePlanTraceSlidingDoors(data?.slidingDoors);
     const calibration = parsePlanTraceCalibration(data?.calibration);
+    const roofPivotLine = parsePlanTraceRoofPivotLine(data?.roofPivotLine);
     const roofPoints = Array.isArray(data?.roofPoints)
       ? data.roofPoints
           .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
@@ -365,6 +396,7 @@ export function parsePlanTracePolygon(raw) {
         page: safePage,
         points: [],
         roofPoints,
+        roofPivotLine,
         decks,
         deckPoints,
         internalWallSegments,
@@ -381,6 +413,7 @@ export function parsePlanTracePolygon(raw) {
         .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
         .slice(0, MAX_TRACE_POINTS),
       roofPoints,
+      roofPivotLine,
       decks,
       deckPoints,
       internalWallSegments,
@@ -395,6 +428,7 @@ export function parsePlanTracePolygon(raw) {
       page: 1,
       points: [],
       roofPoints: [],
+      roofPivotLine: null,
       decks: [],
       deckPoints: [],
       internalWallSegments: [],
@@ -417,7 +451,8 @@ export function serializePlanTracePolygon(
   doors = [],
   slidingDoors = [],
   roofPoints = [],
-  decks = []
+  decks = [],
+  roofPivotLine = null
 ) {
   const round = (v) => Math.round(v * 1e6) / 1e6;
   const payload = {
@@ -433,6 +468,13 @@ export function serializePlanTracePolygon(
     .slice(0, MAX_TRACE_POINTS)
     .map((p) => ({ x: round(p.x), y: round(p.y) }));
   if (normalizedRoof.length >= 3) payload.roofPoints = normalizedRoof;
+  const pivot = parsePlanTraceRoofPivotLine(roofPivotLine);
+  if (pivot) {
+    payload.roofPivotLine = {
+      a: { x: round(pivot.a.x), y: round(pivot.a.y) },
+      b: { x: round(pivot.b.x), y: round(pivot.b.y) },
+    };
+  }
   // Accept either decks[] or a legacy single deckPoints array as the last arg.
   const deckList = Array.isArray(decks) && decks.length && !Number.isFinite(decks[0]?.x)
     ? decks

@@ -62,6 +62,78 @@ export function resolveSkillionPitchFromSwingDoor(ring, swingDoor) {
   return { highDir, projMin, projMax, runM: projMax - projMin };
 }
 
+/**
+ * Pitch from a user-traced horizontal/vertical hinge (pivot) line in plan XZ.
+ * The line is the low / hinge side; rise increases perpendicular away from it
+ * toward the footprint centroid.
+ *
+ * @param {{ x: number, z: number }[]} ring
+ * @param {{ x: number, z: number }} pivotA
+ * @param {{ x: number, z: number }} pivotB
+ */
+export function resolveSkillionPitchFromPivotLine(ring, pivotA, pivotB) {
+  const clean = sanitizeFootprintRing(ring);
+  if (clean.length < 3 || !pivotA || !pivotB) return null;
+
+  const dx = pivotB.x - pivotA.x;
+  const dz = pivotB.z - pivotA.z;
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-6) return null;
+
+  // Prefer axis-aligned hinge (trace is H/V); fall back to true perpendicular.
+  let highDir;
+  if (Math.abs(dx) >= Math.abs(dz)) {
+    // Horizontal hinge → pitch along ±Z
+    highDir = { x: 0, z: 1 };
+  } else {
+    // Vertical hinge → pitch along ±X
+    highDir = { x: 1, z: 0 };
+  }
+
+  let cx = 0;
+  let cz = 0;
+  for (const p of clean) {
+    cx += p.x;
+    cz += p.z;
+  }
+  cx /= clean.length;
+  cz /= clean.length;
+  const midX = (pivotA.x + pivotB.x) * 0.5;
+  const midZ = (pivotA.z + pivotB.z) * 0.5;
+  if ((cx - midX) * highDir.x + (cz - midZ) * highDir.z < 0) {
+    highDir = { x: -highDir.x, z: -highDir.z };
+  }
+
+  const projMin = midX * highDir.x + midZ * highDir.z;
+  let projMax = projMin;
+  for (const p of clean) {
+    const proj = p.x * highDir.x + p.z * highDir.z;
+    projMax = Math.max(projMax, proj);
+  }
+
+  return {
+    highDir,
+    projMin,
+    projMax,
+    runM: Math.max(0, projMax - projMin),
+  };
+}
+
+/**
+ * Prefer a traced pivot line; otherwise swing-door / footprint fallback.
+ *
+ * @param {{ x: number, z: number }[]} ring
+ * @param {{ a?: { x: number, z: number }, b?: { x: number, z: number } } | null | undefined} pivotLineXZ
+ * @param {{ normalX: number, normalZ: number } | null | undefined} swingDoor
+ */
+export function resolveSkillionPitch(ring, pivotLineXZ, swingDoor) {
+  if (pivotLineXZ?.a && pivotLineXZ?.b) {
+    const fromPivot = resolveSkillionPitchFromPivotLine(ring, pivotLineXZ.a, pivotLineXZ.b);
+    if (fromPivot) return fromPivot;
+  }
+  return resolveSkillionPitchFromSwingDoor(ring, swingDoor);
+}
+
 function runAt(point, pitch) {
   return point.x * pitch.highDir.x + point.z * pitch.highDir.z - pitch.projMin;
 }
@@ -192,12 +264,13 @@ export function buildSkillionRoofSlabMeshData(
   wallTopY,
   swingDoor,
   pitchDeg = SKILLION_ROOF_PITCH_DEG,
-  thicknessM = SKILLION_ROOF_SLAB_THICKNESS_M
+  thicknessM = SKILLION_ROOF_SLAB_THICKNESS_M,
+  pivotLineXZ = null
 ) {
   const clean = sanitizeFootprintRing(ring);
   if (clean.length < 3 || !Number.isFinite(wallTopY) || !(thicknessM > 0)) return null;
 
-  const pitch = resolveSkillionPitchFromSwingDoor(clean, swingDoor);
+  const pitch = resolveSkillionPitch(clean, pivotLineXZ, swingDoor);
   if (!pitch) return null;
 
   const pitchRad = (pitchDeg * Math.PI) / 180;
@@ -289,9 +362,17 @@ export function buildSkillionRoofSlabGeometry(
   wallTopY,
   swingDoor,
   pitchDeg = SKILLION_ROOF_PITCH_DEG,
-  thicknessM = SKILLION_ROOF_SLAB_THICKNESS_M
+  thicknessM = SKILLION_ROOF_SLAB_THICKNESS_M,
+  pivotLineXZ = null
 ) {
-  const data = buildSkillionRoofSlabMeshData(ring, wallTopY, swingDoor, pitchDeg, thicknessM);
+  const data = buildSkillionRoofSlabMeshData(
+    ring,
+    wallTopY,
+    swingDoor,
+    pitchDeg,
+    thicknessM,
+    pivotLineXZ
+  );
   if (!data) return null;
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(data.positions, 3));
@@ -311,12 +392,13 @@ export function buildSkillionRoofSlabOutlineGeometry(
   wallTopY,
   swingDoor,
   pitchDeg = SKILLION_ROOF_PITCH_DEG,
-  thicknessM = SKILLION_ROOF_SLAB_THICKNESS_M
+  thicknessM = SKILLION_ROOF_SLAB_THICKNESS_M,
+  pivotLineXZ = null
 ) {
   const clean = sanitizeFootprintRing(ring);
   if (clean.length < 3 || !Number.isFinite(wallTopY) || !(thicknessM > 0)) return null;
 
-  const pitch = resolveSkillionPitchFromSwingDoor(clean, swingDoor);
+  const pitch = resolveSkillionPitch(clean, pivotLineXZ, swingDoor);
   if (!pitch) return null;
 
   const pitchRad = (pitchDeg * Math.PI) / 180;
@@ -369,12 +451,13 @@ export function projectSkillionRoofElevation(
   viewDir,
   swingDoor,
   pitchDeg = SKILLION_ROOF_PITCH_DEG,
-  thicknessM = SKILLION_ROOF_SLAB_THICKNESS_M
+  thicknessM = SKILLION_ROOF_SLAB_THICKNESS_M,
+  pivotLineXZ = null
 ) {
   const clean = sanitizeFootprintRing(ring);
   if (clean.length < 3) return null;
 
-  const pitch = resolveSkillionPitchFromSwingDoor(clean, swingDoor);
+  const pitch = resolveSkillionPitch(clean, pivotLineXZ, swingDoor);
   if (!pitch) return null;
 
   const pitchRad = (pitchDeg * Math.PI) / 180;

@@ -27,6 +27,7 @@ import {
   normalizeTracePoints,
   normalizeTraceSegments,
   parsePlanTracePolygon,
+  parsePlanTraceRoofPivotLine,
   TRACE_PLAN_GROUPS,
   TRACE_PLAN_LAYERS,
   WINDOWS_LAYER_ID,
@@ -151,7 +152,9 @@ export default function TracePlanModal({
   const [windowPreview, setWindowPreview] = useState(null);
   const [windowTool, setWindowTool] = useState("add");
   const [deckTool, setDeckTool] = useState("add");
-  const [hoveredDeckIndex, setHoveredDeckIndex] = useState(-1);
+  const [roofTool, setRoofTool] = useState("outline");
+  const [roofPivotDraftStart, setRoofPivotDraftStart] = useState(null);
+  const [roofPivotPreviewEnd, setRoofPivotPreviewEnd] = useState(null);  const [hoveredDeckIndex, setHoveredDeckIndex] = useState(-1);
   const [editingDeckIndex, setEditingDeckIndex] = useState(-1);
   const [hoveredWindowIndex, setHoveredWindowIndex] = useState(-1);
   const [hoveredResizeIndex, setHoveredResizeIndex] = useState(-1);
@@ -180,13 +183,17 @@ export default function TracePlanModal({
   const isDoorsLayerActive = isDoorsTraceLayer(activeLayerId);
   const isSlidingDoorsLayerActive = isSlidingDoorsTraceLayer(activeLayerId);
   const isDeckLayerActive = isDeckTraceLayer(activeLayerId);
+  const isRoofLayerActive = activeLayerId === ROOF_LAYER_ID;
+  const isRoofPivotTool = isRoofLayerActive && roofTool === "pivot";
   const activeTrace =
     layerTraces[activeLayerId] ||
     (isLineTraceLayer(activeLayerId)
       ? { segments: [], draftStart: null }
       : isDeckTraceLayer(activeLayerId)
         ? { decks: [], points: [], polygonClosed: false }
-        : { points: [], polygonClosed: false });
+        : activeLayerId === ROOF_LAYER_ID
+          ? { points: [], polygonClosed: false, pivotLine: null }
+          : { points: [], polygonClosed: false });
   const points = isLineLayerActive ? [] : (activeTrace.points ?? []);
   const polygonClosed = isLineLayerActive ? false : Boolean(activeTrace.polygonClosed);
   const lineDraftStart = isLineLayerActive ? activeTrace.draftStart : null;
@@ -264,6 +271,11 @@ export default function TracePlanModal({
       setHoveredDeckIndex(-1);
       setEditingDeckIndex(-1);
     }
+    if (layerId === ROOF_LAYER_ID) {
+      setRoofTool("outline");
+    }
+    setRoofPivotDraftStart(null);
+    setRoofPivotPreviewEnd(null);
     setActiveLayerId(layerId);
   }
 
@@ -277,7 +289,7 @@ export default function TracePlanModal({
             : layer.id === SLIDING_DOORS_LAYER_ID
               ? "Trace and close External Walls before placing sliding doors."
               : layer.id === ROOF_LAYER_ID
-                ? "Trace and close External Walls before drawing the roof outline."
+                ? "Trace and close External Walls before drawing the roof outline or pivot."
                 : layer.id === DECK_LAYER_ID
                   ? "Trace and close External Walls before drawing a deck."
                 : "Trace and close External Walls before drawing internal walls."
@@ -327,6 +339,13 @@ export default function TracePlanModal({
         patchLayerTrace(DECK_LAYER_ID, { points: [], polygonClosed: false });
         setEditingDeckIndex(-1);
       }
+    }
+    if (layer.id === ROOF_LAYER_ID) {
+      setRoofTool(item.id);
+      setRoofPivotDraftStart(null);
+      setRoofPivotPreviewEnd(null);
+      clearPolygonPreview();
+      setNearOrigin(false);
     }
     setOpenSubmenuLayerId(null);
   }
@@ -646,6 +665,27 @@ export default function TracePlanModal({
       next[ROOF_LAYER_ID] = {
         points: denormalizeTracePoints(saved.roofPoints, sourceCanvas.width, sourceCanvas.height),
         polygonClosed: true,
+        pivotLine: null,
+      };
+    }
+    if (saved.page === pageNumber && saved.roofPivotLine?.a && saved.roofPivotLine?.b) {
+      const prevRoof = next[ROOF_LAYER_ID] || {
+        points: [],
+        polygonClosed: false,
+        pivotLine: null,
+      };
+      next[ROOF_LAYER_ID] = {
+        ...prevRoof,
+        pivotLine: {
+          a: {
+            x: saved.roofPivotLine.a.x * sourceCanvas.width,
+            y: saved.roofPivotLine.a.y * sourceCanvas.height,
+          },
+          b: {
+            x: saved.roofPivotLine.b.x * sourceCanvas.width,
+            y: saved.roofPivotLine.b.y * sourceCanvas.height,
+          },
+        },
       };
     }
     if (saved.page === pageNumber && saved.decks?.length) {
@@ -1589,6 +1629,53 @@ export default function TracePlanModal({
       ctx.fill();
       ctx.stroke();
     }
+
+    // Roof pivot / hinge line (H or V).
+    {
+      const roofTrace = layerTraces[ROOF_LAYER_ID];
+      const pivotCommitted = roofTrace?.pivotLine;
+      const draftA = isRoofPivotTool ? roofPivotDraftStart : null;
+      const draftB = isRoofPivotTool ? roofPivotPreviewEnd : null;
+      const drawPivot = (aPx, bPx, { color, dashed = false }) => {
+        if (!aPx || !bPx) return;
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2.5 / scale;
+        if (dashed) ctx.setLineDash([6 / scale, 4 / scale]);
+        ctx.beginPath();
+        ctx.moveTo(aPx.x, aPx.y);
+        ctx.lineTo(bPx.x, bPx.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        [aPx, bPx].forEach((p) => {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 5 / scale, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.strokeStyle = WHITE;
+          ctx.lineWidth = 2 / scale;
+          ctx.fill();
+          ctx.stroke();
+        });
+        const mx = (aPx.x + bPx.x) / 2;
+        const my = (aPx.y + bPx.y) / 2;
+        ctx.font = `${13 / scale}px sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        const label = "Pivot";
+        const tw = ctx.measureText(label).width;
+        ctx.fillStyle = "rgba(255,255,255,0.88)";
+        ctx.fillRect(mx - tw / 2 - 4 / scale, my - 8 / scale - 15 / scale, tw + 8 / scale, 16 / scale);
+        ctx.fillStyle = color;
+        ctx.fillText(label, mx, my - 8 / scale);
+        ctx.restore();
+      };
+      if (pivotCommitted?.a && pivotCommitted?.b && !(draftA && draftB)) {
+        drawPivot(pivotCommitted.a, pivotCommitted.b, { color: "#7c3aed" });
+      }
+      if (draftA) {
+        drawPivot(draftA, draftB || draftA, { color: "#7c3aed", dashed: true });
+      }
+    }
     }
   }, [
     layerTraces,
@@ -1627,6 +1714,9 @@ export default function TracePlanModal({
     movingSlidingDoorIndex,
     slidingResizeWidthM,
     viewTick,
+    isRoofPivotTool,
+    roofPivotDraftStart,
+    roofPivotPreviewEnd,
     wizardStep,
     cropRectPx,
     cropDraftEnd,
@@ -1642,7 +1732,7 @@ export default function TracePlanModal({
 
   useEffect(() => {
     if (!loading && !loadError) redraw();
-  }, [loading, loadError, pageLoading, layerTraces, activeLayerId, nearOrigin, redraw, viewTick, linePreviewPoint, polygonPreviewPoint, windowPreview, windowTool, hoveredWindowIndex, hoveredResizeIndex, hoveredHeightIndex, resizeWidthM, movingWindowIndex, doorTool, doorPreview, hoveredDoorIndex, movingDoorIndex, slidingDoorTool, slidingDoorPreview, hoveredSlidingDoorIndex, hoveredSlidingResizeIndex, movingSlidingDoorIndex, slidingResizeWidthM, deckTool, hoveredDeckIndex, editingDeckIndex, wizardStep, cropRectPx, cropDraftEnd, calibration, calibDraftStart, calibPreviewEnd, pendingCalibLine, showPdfPlan]);
+  }, [loading, loadError, pageLoading, layerTraces, activeLayerId, nearOrigin, redraw, viewTick, linePreviewPoint, polygonPreviewPoint, windowPreview, windowTool, hoveredWindowIndex, hoveredResizeIndex, hoveredHeightIndex, resizeWidthM, movingWindowIndex, doorTool, doorPreview, hoveredDoorIndex, movingDoorIndex, slidingDoorTool, slidingDoorPreview, hoveredSlidingDoorIndex, hoveredSlidingResizeIndex, movingSlidingDoorIndex, slidingResizeWidthM, deckTool, hoveredDeckIndex, editingDeckIndex, roofTool, roofPivotDraftStart, roofPivotPreviewEnd, wizardStep, cropRectPx, cropDraftEnd, calibration, calibDraftStart, calibPreviewEnd, pendingCalibLine, showPdfPlan]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1981,6 +2071,7 @@ export default function TracePlanModal({
   function addPointAtScreen(screenX, screenY) {
     if (!showTraceUi) return;
     if (isLineLayerActive) return;
+    if (isRoofPivotTool) return;
     if (isDeckLayerActive && deckTool !== "add" && editingDeckIndex < 0) return;
     if (polygonClosed || pageLoading) return;
     const source = sourceCanvasRef.current;
@@ -2432,6 +2523,16 @@ export default function TracePlanModal({
         return;
       }
 
+      if (isRoofPivotTool) {
+        interactionRef.current = {
+          type: "roofPivotPoint",
+          startX: pt.x,
+          startY: pt.y,
+          moved: false,
+        };
+        return;
+      }
+
       if (isLineLayerActive) {
         const wallNode = findInternalWallNodeAtScreen(pt.x, pt.y);
         if (wallNode) {
@@ -2517,6 +2618,16 @@ export default function TracePlanModal({
         return;
       }
       if (!showTraceUi) return;
+      if (isRoofPivotTool) {
+        if (roofPivotDraftStart) {
+          const raw = clampSourcePoint(screenToSource(pt.x, pt.y));
+          const snapped = orthogonalSnap(roofPivotDraftStart, raw);
+          setRoofPivotPreviewEnd((prev) =>
+            prev && prev.x === snapped.x && prev.y === snapped.y ? prev : snapped
+          );
+        }
+        return;
+      }
       if (isWindowsLayerActive) {
         if (windowTool === "add") {
           const placement = windowPlacementAtScreen(pt.x, pt.y);
@@ -2737,6 +2848,20 @@ export default function TracePlanModal({
       return;
     }
 
+    if (interaction.type === "roofPivotPoint") {
+      const dx = pt.x - interaction.startX;
+      const dy = pt.y - interaction.startY;
+      if (Math.hypot(dx, dy) > 4) interaction.moved = true;
+      if (roofPivotDraftStart) {
+        const raw = clampSourcePoint(screenToSource(pt.x, pt.y));
+        const snapped = orthogonalSnap(roofPivotDraftStart, raw);
+        setRoofPivotPreviewEnd((prev) =>
+          prev && prev.x === snapped.x && prev.y === snapped.y ? prev : snapped
+        );
+      }
+      return;
+    }
+
     if (interaction.type === "dragInternalWallNode") {
       const dx = pt.x - interaction.startX;
       const dy = pt.y - interaction.startY;
@@ -2931,6 +3056,27 @@ export default function TracePlanModal({
       return;
     }
 
+    if (interaction.type === "roofPivotPoint") {
+      if (event.button !== 0) return;
+      const pt = canvasCoords(event) || { x: interaction.startX, y: interaction.startY };
+      const source = clampSourcePoint(screenToSource(pt.x, pt.y));
+      if (!roofPivotDraftStart) {
+        setRoofPivotDraftStart(source);
+        setRoofPivotPreviewEnd(source);
+        return;
+      }
+      const end = orthogonalSnap(roofPivotDraftStart, source);
+      if (Math.hypot(end.x - roofPivotDraftStart.x, end.y - roofPivotDraftStart.y) < 2) {
+        return;
+      }
+      patchLayerTrace(ROOF_LAYER_ID, {
+        pivotLine: { a: { ...roofPivotDraftStart }, b: { ...end } },
+      });
+      setRoofPivotDraftStart(null);
+      setRoofPivotPreviewEnd(null);
+      return;
+    }
+
     if (interaction.type === "dragInternalWallNode") {
       setDraggingWallNode(null);
       if (interaction.moved) {
@@ -3057,6 +3203,18 @@ export default function TracePlanModal({
       }
       return;
     }
+    if (isRoofPivotTool) {
+      if (roofPivotDraftStart) {
+        setRoofPivotDraftStart(null);
+        setRoofPivotPreviewEnd(null);
+        return;
+      }
+      const roof = layerTraces[ROOF_LAYER_ID];
+      if (roof?.pivotLine) {
+        patchLayerTrace(ROOF_LAYER_ID, { pivotLine: null });
+      }
+      return;
+    }
     if (isLineLayerActive) {
       const trace = layerTraces[INTERNAL_WALLS_LAYER_ID];
       if (trace?.draftStart) {
@@ -3105,6 +3263,21 @@ export default function TracePlanModal({
       clearPolygonPreview();
       return;
     }
+    if (isRoofLayerActive) {
+      if (isRoofPivotTool) {
+        setRoofPivotDraftStart(null);
+        setRoofPivotPreviewEnd(null);
+        patchLayerTrace(ROOF_LAYER_ID, { pivotLine: null });
+        return;
+      }
+      patchActiveTrace({ points: [], polygonClosed: false });
+      setNearOrigin(false);
+      clearPolygonPreview();
+      setHoveredNodeIndex(-1);
+      setDraggingNodeIndex(-1);
+      setSnapMergeTargetIndex(-1);
+      return;
+    }
     if (isLineLayerActive) {
       internalWallDraftRef.current = null;
       patchLayerTrace(activeLayerId, { segments: [], draftStart: null });
@@ -3139,13 +3312,33 @@ export default function TracePlanModal({
         );
       }
       if (layer.id === ROOF_LAYER_ID) {
-        if (!trace.polygonClosed || (trace.points?.length ?? 0) < 3) return true;
         if (saved.page !== currentPage) return true;
         const sourceW = source?.width;
         const sourceH = source?.height;
         if (!sourceW || !sourceH) return true;
-        const normalized = normalizeTracePoints(trace.points, sourceW, sourceH);
-        return JSON.stringify(normalized) !== JSON.stringify(saved.roofPoints ?? []);
+        const hasOutline = trace.polygonClosed && (trace.points?.length ?? 0) >= 3;
+        const normalized = hasOutline
+          ? normalizeTracePoints(trace.points, sourceW, sourceH)
+          : [];
+        const outlineDirty = JSON.stringify(normalized) !== JSON.stringify(saved.roofPoints ?? []);
+        const pivotNorm = trace.pivotLine
+          ? parsePlanTraceRoofPivotLine({
+              a: {
+                x: trace.pivotLine.a.x / sourceW,
+                y: trace.pivotLine.a.y / sourceH,
+              },
+              b: {
+                x: trace.pivotLine.b.x / sourceW,
+                y: trace.pivotLine.b.y / sourceH,
+              },
+            })
+          : null;
+        const pivotDirty =
+          JSON.stringify(pivotNorm) !== JSON.stringify(saved.roofPivotLine ?? null);
+        const draftOnly =
+          !hasOutline &&
+          ((trace.points?.length ?? 0) > 0 || Boolean(trace.polygonClosed));
+        return outlineDirty || pivotDirty || draftOnly;
       }
       if (layer.id === DECK_LAYER_ID) {
         if (saved.page !== currentPage) return true;
@@ -3403,6 +3596,18 @@ export default function TracePlanModal({
         roof?.polygonClosed && (roof.points?.length ?? 0) >= 3
           ? normalizeTracePoints(roof.points, source.width, source.height)
           : [];
+      const normalizedRoofPivot = roof?.pivotLine
+        ? parsePlanTraceRoofPivotLine({
+            a: {
+              x: roof.pivotLine.a.x / source.width,
+              y: roof.pivotLine.a.y / source.height,
+            },
+            b: {
+              x: roof.pivotLine.b.x / source.width,
+              y: roof.pivotLine.b.y / source.height,
+            },
+          })
+        : null;
       const deckLayer = layerTraces[DECK_LAYER_ID] || { decks: [], points: [], polygonClosed: false };
       // Flush any open draft / edit into the decks list before save.
       const decksForSave = [...(deckLayer.decks ?? [])];
@@ -3432,12 +3637,14 @@ export default function TracePlanModal({
         normalizedDoors,
         normalizedSlidingDoors,
         normalizedRoof,
-        normalizedDecks
+        normalizedDecks,
+        normalizedRoofPivot
       );
       savedTraceRef.current = {
         page: currentPage,
         points: normalized,
         roofPoints: normalizedRoof,
+        roofPivotLine: normalizedRoofPivot,
         decks: normalizedDecks,
         deckPoints: normalizedDecks[0]?.points ?? [],
         internalWallSegments: normalizedInternal,
@@ -3534,7 +3741,9 @@ export default function TracePlanModal({
           : isLineLayerActive
           ? "Click once for each end of a wall line — horizontal or vertical only. Segments trim to the inside edge of external walls. Drag nodes to adjust. Scroll to zoom, shift+drag to pan."
           : activeLayerId === ROOF_LAYER_ID
-            ? `Trace the roof outline — horizontal/vertical only (max ${MAX_TRACE_POINTS}). Blue guides show your stroke axes and external-wall alignments; green guides appear when a side can close at 90° or snaps to a wall line. Click the green origin to close.${
+            ? roofTool === "pivot"
+              ? "Draw pivot point: click once for each end of a horizontal or vertical hinge line (the skillion roof pitches about this line). A second line replaces the first. Undo clears the draft or the placed pivot."
+              : `Trace the roof outline — horizontal/vertical only (max ${MAX_TRACE_POINTS}). Blue guides show your stroke axes and external-wall alignments; green guides appear when a side can close at 90° or snaps to a wall line. Click the green origin to close.${
                 polygonClosed
                   ? " Drag nodes to move them (edges stay H/V), drop onto another node to merge, or click a line to add a node."
                   : ""
@@ -3784,7 +3993,7 @@ export default function TracePlanModal({
                               }}
                             />
                             <span style={{ lineHeight: 1.25, flex: 1 }}>{layer.label}</span>
-                            {isActive && hasSubmenu && (layer.id === WINDOWS_LAYER_ID || layer.id === DOORS_LAYER_ID || layer.id === SLIDING_DOORS_LAYER_ID || layer.id === DECK_LAYER_ID) && (
+                            {isActive && hasSubmenu && (layer.id === WINDOWS_LAYER_ID || layer.id === DOORS_LAYER_ID || layer.id === SLIDING_DOORS_LAYER_ID || layer.id === DECK_LAYER_ID || layer.id === ROOF_LAYER_ID) && (
                               <span
                                 style={{
                                   fontSize: "0.68rem",
@@ -3799,6 +4008,8 @@ export default function TracePlanModal({
                                     ? doorTool
                                     : layer.id === SLIDING_DOORS_LAYER_ID
                                       ? slidingDoorTool
+                                      : layer.id === ROOF_LAYER_ID
+                                        ? roofTool
                                       : deckTool}
                               </span>
                             )}
@@ -3840,7 +4051,8 @@ export default function TracePlanModal({
                                   (layer.id === WINDOWS_LAYER_ID && windowTool === item.id) ||
                                   (layer.id === DOORS_LAYER_ID && doorTool === item.id) ||
                                   (layer.id === SLIDING_DOORS_LAYER_ID && slidingDoorTool === item.id) ||
-                                  (layer.id === DECK_LAYER_ID && deckTool === item.id);
+                                  (layer.id === DECK_LAYER_ID && deckTool === item.id) ||
+                                  (layer.id === ROOF_LAYER_ID && roofTool === item.id);
                                 return (
                                   <button
                                     key={item.id}

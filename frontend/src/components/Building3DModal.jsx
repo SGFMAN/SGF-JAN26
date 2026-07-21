@@ -39,13 +39,14 @@ import {
   buildSkillionRoofSlabMeshData,
   buildSkillionRoofSlabOutlineGeometry,
   clipRingToSkillionMinRise,
-  resolveSkillionPitchFromSwingDoor,
+  resolveSkillionPitch,
   skillionExtraCladdingBands,
   skillionMaxWallRiseM,
   skillionUndersideRiseM,
   SKILLION_ROOF_PITCH_DEG,
   SKILLION_ROOF_SLAB_THICKNESS_M,
 } from "../utils/skillionRoofGeometry.js";
+import { getTracePlanXZMapping, normalizedPointToXZ } from "../utils/tracePlan3D.js";
 import {
   createCorrugatedRoofTexture,
 } from "../utils/corrugatedRoofTexture.js";
@@ -304,6 +305,7 @@ export default function Building3DModal({
   subfloorHeightM = 0.65,
   footprintPoints = null,
   roofPoints = null,
+  roofPivotLine = null,
   decks = null,
   deckPoints = null,
   windows = null,
@@ -331,6 +333,7 @@ export default function Building3DModal({
     [footprintPoints]
   );
   const roofPointsKey = useMemo(() => JSON.stringify(roofPoints ?? null), [roofPoints]);
+  const roofPivotKey = useMemo(() => JSON.stringify(roofPivotLine ?? null), [roofPivotLine]);
   const resolvedDecks = useMemo(() => {
     if (Array.isArray(decks) && decks.length) {
       return decks
@@ -712,11 +715,26 @@ export default function Building3DModal({
           const showHippedPlanes = isSuperiorHippedRoofStyle(finishes?.roofStyle);
           const showSkillionSlab = isSuperiorSkillionRoofStyle(finishes?.roofStyle);
           const swingDoor = modelDoors[0] ?? null;
+          let pivotLineXZ = null;
+          if (roofPivotLine?.a && roofPivotLine?.b) {
+            const mapping = getTracePlanXZMapping(
+              Array.isArray(footprintPoints) && footprintPoints.length >= 3
+                ? footprintPoints
+                : roofPoints,
+              calibration
+            );
+            if (mapping) {
+              pivotLineXZ = {
+                a: normalizedPointToXZ(roofPivotLine.a, mapping),
+                b: normalizedPointToXZ(roofPivotLine.b, mapping),
+              };
+            }
+          }
 
           // Extra 200 mm cladding boards under the skillion rise (roof geometry unchanged).
           // Full flat boards — they may run into the pitched roof; no stepped tops.
           if (showSkillionSlab) {
-            const skillionPitch = resolveSkillionPitchFromSwingDoor(slabRing, swingDoor);
+            const skillionPitch = resolveSkillionPitch(slabRing, pivotLineXZ, swingDoor);
             const maxRiseM = skillionMaxWallRiseM(skillionPitch, SKILLION_ROOF_PITCH_DEG);
             const bands = skillionExtraCladdingBands(maxRiseM, CLADDING_LAYER_HEIGHT_M);
             bands.forEach((band, bandIndex) => {
@@ -792,14 +810,16 @@ export default function Building3DModal({
               wallTopY,
               swingDoor,
               SKILLION_ROOF_PITCH_DEG,
-              SKILLION_ROOF_SLAB_THICKNESS_M
+              SKILLION_ROOF_SLAB_THICKNESS_M,
+              pivotLineXZ
             );
             const skillionGeom = buildSkillionRoofSlabGeometry(
               slabRing,
               wallTopY,
               swingDoor,
               SKILLION_ROOF_PITCH_DEG,
-              SKILLION_ROOF_SLAB_THICKNESS_M
+              SKILLION_ROOF_SLAB_THICKNESS_M,
+              pivotLineXZ
             );
             if (skillionGeom && skillionData) {
               const material = new THREE.MeshBasicMaterial({
@@ -824,7 +844,8 @@ export default function Building3DModal({
                 wallTopY,
                 swingDoor,
                 SKILLION_ROOF_PITCH_DEG,
-                SKILLION_ROOF_SLAB_THICKNESS_M
+                SKILLION_ROOF_SLAB_THICKNESS_M,
+                pivotLineXZ
               );
               if (outlineGeom) {
                 const outline = new THREE.LineSegments(
@@ -1671,7 +1692,7 @@ export default function Building3DModal({
         container.removeChild(renderer.domElement);
       }
     };
-  }, [buildModel, depthM, footprintKey, footprintPoints, roofPointsKey, roofPoints, deckPointsKey, resolvedDecks, windowsKey, windows, doorsKey, doors, slidingDoorsKey, slidingDoors, calibrationKey, calibration, subfloorHeightM, widthM, finishesKey, finishHex]);
+  }, [buildModel, depthM, footprintKey, footprintPoints, roofPointsKey, roofPoints, roofPivotKey, roofPivotLine, deckPointsKey, resolvedDecks, windowsKey, windows, doorsKey, doors, slidingDoorsKey, slidingDoors, calibrationKey, calibration, subfloorHeightM, widthM, finishesKey, finishHex]);
 
   function openRenderOptions() {
     if (renderBusy) return;
