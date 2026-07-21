@@ -53,16 +53,6 @@ function paymentFieldsFromProject(project) {
   return next;
 }
 
-const PAYMENT_ROWS = [
-  { stage: "Pre-Engagement", amountKey: "pre_engagement", paidKey: "pre_engagement_paid", amountStored: true },
-  { stage: "Deposit", amountKey: "deposit", paidKey: "deposit_paid", amountStored: false },
-  { stage: "Base", amountKey: "base", paidKey: "base_paid", amountStored: false },
-  { stage: "Frame", amountKey: "frame", paidKey: "frame_paid", amountStored: false },
-  { stage: "Lock Up", amountKey: "lock_up", paidKey: "lock_up_paid", amountStored: false },
-  { stage: "Fix", amountKey: "fix", paidKey: "fix_paid", amountStored: false },
-  { stage: "Final", amountKey: "final", paidKey: "final_paid", amountStored: false },
-];
-
 const MONEY_INPUT_STYLE = {
   width: "100%",
   padding: "10px 12px",
