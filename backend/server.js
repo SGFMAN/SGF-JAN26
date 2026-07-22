@@ -57,6 +57,12 @@ const {
   deleteFloorPlan,
   getFloorPlanImagePath,
 } = require("./mapFloorPlans");
+const {
+  ensurePolytecColourTables,
+  listPolytecCatalogue,
+  updateSample: updateColourSample,
+  getSampleImagePath: getColourSampleImagePath,
+} = require("./polytecColours");
 const { ensureMapQuoteItemsTable, listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
 const {
   ACCESS_AREAS,
@@ -1310,6 +1316,7 @@ async function ensureSchema() {
     await addMissingColumns(pool, "users", ["password", "ui_theme_id"]);
     await pool.query(`UPDATE users SET password = 'admin' WHERE password IS NULL OR password = ''`);
     await ensureStreamsTable(pool);
+    await ensurePolytecColourTables(pool);
     return;
   }
   console.log(`Applying schema migrations (target ${SCHEMA_VERSION})…`);
@@ -1963,6 +1970,8 @@ async function ensureSchema() {
   await ensureUserAccessPermissionsTable(pool);
   await ensureUserMessagesTable(pool);
   await ensureClientPortalTables(pool);
+  await ensureStreamsTable(pool);
+  await ensurePolytecColourTables(pool);
   await markSchemaUpToDate(pool);
   console.log(`Schema ${SCHEMA_VERSION} applied`);
 }
@@ -4605,6 +4614,57 @@ app.delete("/api/streams/:id", async (req, res) => {
     res.json({ success: true, deleted: mapStreamRow(r.rows[0]) });
   } catch (e) {
     res.status(500).json({ error: e.message || "Failed to delete stream" });
+  }
+});
+
+// Polytec colour catalogue (Doors & Panels)
+app.get("/api/colour-groups/polytec", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  try {
+    const catalogue = await listPolytecCatalogue(pool);
+    res.json(catalogue);
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Failed to load polytec colours" });
+  }
+});
+
+app.put("/api/colour-samples/:id", upload.single("image"), async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const body = req.body || {};
+    const result = await updateColourSample(pool, id, {
+      name: body.name,
+      subgroupId: body.subgroup_id ?? body.subgroupId,
+      file: req.file || null,
+    });
+    if (result.notFound) return res.status(404).json({ error: "sample not found" });
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.json(result.sample);
+  } catch (e) {
+    console.error("[colour-samples] update error:", e);
+    res.status(500).json({ error: e.message || "Failed to update sample" });
+  }
+});
+
+app.get("/api/colour-samples/:id/image", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const result = await getColourSampleImagePath(pool, id);
+    if (result.notFound) return res.status(404).json({ error: "sample not found" });
+    if (result.noImage) return res.status(404).json({ error: "no image" });
+    return res.sendFile(result.path);
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Failed to load image" });
   }
 });
 

@@ -172,36 +172,38 @@ export default function SettingsPage() {
             display: "flex",
             flexDirection: "column",
             alignItems: "stretch",
-            gap: "18px",
+            gap: "0",
             boxSizing: "border-box",
           }}
         >
           {/* Menu Buttons */}
-          {menuOptions.map(option => (
-            <button
-              key={option.key}
-              onClick={() => setSelected(option.key)}
-              style={{
-                background: selected === option.key ? WHITE : "transparent",
-                color: selected === option.key ? MONUMENT : UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "12px 8px",
-                fontSize: "1.05rem",
-                fontWeight: 500,
-                textAlign: "center", // Center the heading on the button
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "2px",
-                outline: selected === option.key ? `1px solid ${UI.outline}` : "none",
-                boxShadow: selected === option.key ? "0 2px 4px rgba(50,50,51,.04)" : "none"
-              }}
-            >
-              {option.label}
-            </button>
-          ))}
+          <div style={{ display: "flex", flexDirection: "column", gap: 0, flexShrink: 0 }}>
+            {menuOptions.map(option => (
+              <button
+                key={option.key}
+                onClick={() => setSelected(option.key)}
+                style={{
+                  background: selected === option.key ? WHITE : "transparent",
+                  color: selected === option.key ? MONUMENT : UI.textSecondary,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "12px 8px",
+                  fontSize: "1.05rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  textDecoration: "none",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  margin: 0,
+                  outline: selected === option.key ? `1px solid ${UI.outline}` : "none",
+                  boxShadow: selected === option.key ? "0 2px 4px rgba(50,50,51,.04)" : "none",
+                }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
 
           <div style={{ flex: 1 }} />
 
@@ -222,7 +224,7 @@ export default function SettingsPage() {
               cursor: "pointer",
               transition: "background 0.17s",
               marginBottom: "4px",
-              display: "block", // Ensures the link stretches full width for centering
+              display: "block",
             }}
           >
             ← Back to Main

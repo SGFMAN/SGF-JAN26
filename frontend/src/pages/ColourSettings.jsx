@@ -1,169 +1,142 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
-
+import { getApiHeaders } from "../utils/auth";
 import { UI } from "../utils/uiThemeTokens.js";
+
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
-const PAGE_TEXT = UI.pageText;
-const SECTION_GREY = UI.panelBg;
-
-// Initial Polytec - Doors & Panels colors organized by category
-const INITIAL_POLYTEC_COLOURS = {
-  "Woodmatt timberprint & solid": [
-    "Nordic Oak", "Tasmanian Oak", "Palace Teak", "Angora Oak", "Blossom White",
-    "Perugian Walnut", "Bottega Oak", "Rojo Walnut", "Arcadia Oak", "Boston Oak",
-    "Ligurian Walnut", "Quartiera Maple", "Plantation Ash", "Palomera Oak", "Black Ply",
-    "Natural Ply", "Black", "Coastal Oak", "Notaio Walnut", "Casentino Beech",
-    "Silk Bespoke", "Estella Oak", "Prime Oak", "Serene", "Cinder",
-    "Florentine Walnut", "Antico Oak", "Australian Native", "Empire Oak", "Havana Oak"
-  ],
-  "Smooth timberprint & solid": [
-    "Verdelho", "Botanic", "Topiary", "Aston White", "Habitat",
-    "Onyx Figured-Wood", "Ochre Figured-Wood", "Agave", "Oasis", "Gossamer White",
-    "Pallido", "Mercurio Grey", "Sienna Figured-Wood", "Adriatic", "Elemental Grey",
-    "Arabica", "Forage"
-  ],
-  "Timberprint & solid": [
-    "New Antique White", "Polar White", "Parchment", "Porcelain", "Moss Grey",
-    "Alabaster", "Husk", "Designer White", "Avion Grey", "Greige",
-    "Café Cream", "White Cotton", "Antique", "Classic White", "Marni Lini",
-    "Blossom White", "Amaro", "Whitewood", "White Mist", "Gesso Lini",
-    "Maison Oak", "Soft Walnut", "Crema Lini", "Malt", "Natural Oak",
-    "Tuross Oak", "Marina Grey", "Jamaican Walnut", "European Walnut", "Combat Teak",
-    "Tessuto Milan", "Taupe", "Stone Grey", "Rocco Lini", "Tasmanian Oak",
-    "Notaio Walnut", "Prime Oak", "Strata Grey", "Artisan Oak", "Cinder",
-    "Ferro", "Char Oak", "Truffle Lini", "Belgian Oak", "Shannon Oak",
-    "Black Silk", "Graphite", "Wenge"
-  ],
-  "Timberprint, solid & abstract": [
-    "Empire Titanium Oak", "Black", "Feldspar Shimmer", "Cavia Lini", "Aluminium",
-    "Nickel", "Oxford", "Nouveau Grey", "Oyster Grey", "Canterbury Grey"
-  ],
-  "Metallic Leaf": [
-    "Light Brass Leaf", "Rose Gold Leaf", "Pure Gold Leaf", "Copper Leaf",
-    "Bronze Gold Leaf", "Platinum Leaf"
-  ]
-};
-
-// Helper function to generate a color hex from a color name
-const getColorFromName = (name) => {
-  // This is a simple hash function to generate consistent colors from names
-  // In a real application, you'd want actual color values
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const r = (hash & 0xFF0000) >> 16;
-  const g = (hash & 0xFF00) >> 8;
-  const b = hash & 0xFF;
-  // Ensure minimum brightness for visibility
-  return `#${[Math.max(r, 100), Math.max(g, 100), Math.max(b, 100)].map(x => {
-    const hex = x.toString(16);
-    return hex.length === 1 ? '0' + hex : hex;
-  }).join('')}`;
-};
+const API_URL = "";
 
 export default function ColourSettings() {
-  const [polytecColours, setPolytecColours] = useState(INITIAL_POLYTEC_COLOURS);
-  const [colorImages, setColorImages] = useState({}); // Store image URLs by color name
-  const [selectedGroup, setSelectedGroup] = useState(null); // Track selected color group
+  const [polytecCatalogue, setPolytecCatalogue] = useState(null);
+  const [loadingPolytec, setLoadingPolytec] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [selectedGroup, setSelectedGroup] = useState(null);
   const [showModal, setShowModal] = useState(false);
-  const [editingColor, setEditingColor] = useState(null);
+  const [editingSample, setEditingSample] = useState(null);
   const [editForm, setEditForm] = useState({
     name: "",
-    category: "",
-    imageUrl: ""
+    subgroupId: "",
+    imagePreview: "",
+    imageFile: null,
   });
 
+  const loadPolytec = useCallback(async () => {
+    try {
+      setLoadingPolytec(true);
+      setLoadError("");
+      const res = await fetch(`${API_URL}/api/colour-groups/polytec`, {
+        headers: getApiHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      setPolytecCatalogue(data);
+    } catch (e) {
+      console.error(e);
+      setLoadError(e.message || "Failed to load Polytec colours");
+      setPolytecCatalogue(null);
+    } finally {
+      setLoadingPolytec(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadPolytec();
+  }, [loadPolytec]);
+
   const getColourHex = (r, g, b) => {
-    return `#${[r, g, b].map(x => {
-      const hex = x.toString(16);
-      return hex.length === 1 ? '0' + hex : hex;
-    }).join('')}`;
+    return `#${[r, g, b]
+      .map((x) => {
+        const hex = x.toString(16);
+        return hex.length === 1 ? "0" + hex : hex;
+      })
+      .join("")}`;
   };
 
-  const handleColorClick = (colorName, category) => {
-    setEditingColor({ name: colorName, category });
+  const subgroups = polytecCatalogue?.subgroups || [];
+
+  const handleColorClick = (sample, subgroup) => {
+    setEditingSample(sample);
     setEditForm({
-      name: colorName,
-      category: category,
-      imageUrl: colorImages[colorName] || "" // Load existing image if available
+      name: sample.name || "",
+      subgroupId: String(subgroup.id),
+      imagePreview: sample.image_url || "",
+      imageFile: null,
     });
     setShowModal(true);
   };
 
   const handleModalClose = () => {
+    if (saving) return;
     setShowModal(false);
-    setEditingColor(null);
-    setEditForm({ name: "", category: "", imageUrl: "" });
+    setEditingSample(null);
+    setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFile: null });
   };
 
-  const handleModalOk = () => {
-    if (!editForm.name.trim() || !editForm.category) {
-      return; // Don't save if name or category is empty
-    }
-
-    // Create updated colors object
-    const updatedColours = { ...polytecColours };
-
-    // Remove color from old category if it exists
-    if (editingColor) {
-      updatedColours[editingColor.category] = updatedColours[editingColor.category].filter(
-        c => c !== editingColor.name
-      );
-    }
-
-    // Add color to new category
-    if (!updatedColours[editForm.category]) {
-      updatedColours[editForm.category] = [];
-    }
-    updatedColours[editForm.category].push(editForm.name);
-
-    // Sort the category array to maintain order
-    updatedColours[editForm.category].sort();
-
-    // Update image storage if image was provided
-    if (editForm.imageUrl) {
-      const updatedImages = { ...colorImages };
-      // Remove old image entry if name changed
-      if (editingColor && editingColor.name !== editForm.name) {
-        delete updatedImages[editingColor.name];
+  const handleModalOk = async () => {
+    if (!editingSample?.id || !editForm.name.trim() || !editForm.subgroupId) return;
+    try {
+      setSaving(true);
+      const formData = new FormData();
+      formData.append("name", editForm.name.trim());
+      formData.append("subgroup_id", editForm.subgroupId);
+      if (editForm.imageFile) {
+        formData.append("image", editForm.imageFile);
       }
-      // Add/update image for new name
-      updatedImages[editForm.name] = editForm.imageUrl;
-      setColorImages(updatedImages);
+      const headers = getApiHeaders();
+      delete headers["Content-Type"];
+      const res = await fetch(`${API_URL}/api/colour-samples/${editingSample.id}`, {
+        method: "PUT",
+        headers,
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      await loadPolytec();
+      setShowModal(false);
+      setEditingSample(null);
+      setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFile: null });
+    } catch (e) {
+      alert(e.message || "Failed to save sample");
+    } finally {
+      setSaving(false);
     }
-
-    setPolytecColours(updatedColours);
-    handleModalClose();
   };
 
   const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setEditForm({ ...editForm, imageUrl: reader.result });
-      };
-      reader.readAsDataURL(file);
-    }
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setEditForm((prev) => ({
+        ...prev,
+        imageFile: file,
+        imagePreview: typeof reader.result === "string" ? reader.result : prev.imagePreview,
+      }));
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
-    <div style={{ width: "100%", height: "100%", padding: "24px 32px", display: "flex", flexDirection: "column", gap: "24px", overflow: "auto" }}>
-      <h2 style={{ fontSize: "1.5rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>
-        Colour Settings
-      </h2>
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        padding: "24px 32px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "24px",
+        overflow: "auto",
+        boxSizing: "border-box",
+      }}
+    >
+      <h2 style={{ fontSize: "1.5rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>Colour Settings</h2>
 
-      {/* 2 Column Layout */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 3fr", gap: "24px", flex: 1, minHeight: 0 }}>
-        {/* Column 1: Color Groups */}
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", overflowY: "auto", paddingRight: "8px" }}>
-          <h3 style={{ fontSize: "1.1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>
-            Color Groups
-          </h3>
+          <h3 style={{ fontSize: "1.1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>Color Groups</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            {/* Colorbond Option */}
             <div
               onClick={() => setSelectedGroup("colorbond")}
               style={{
@@ -175,22 +148,15 @@ export default function ColourSettings() {
                 backgroundColor: selectedGroup === "colorbond" ? UI.inputBg : "transparent",
               }}
               onMouseEnter={(e) => {
-                if (selectedGroup !== "colorbond") {
-                  e.currentTarget.style.backgroundColor = UI.inputBg;
-                }
+                if (selectedGroup !== "colorbond") e.currentTarget.style.backgroundColor = UI.inputBg;
               }}
               onMouseLeave={(e) => {
-                if (selectedGroup !== "colorbond") {
-                  e.currentTarget.style.backgroundColor = "transparent";
-                }
+                if (selectedGroup !== "colorbond") e.currentTarget.style.backgroundColor = "transparent";
               }}
             >
-              <div style={{ fontSize: "1rem", fontWeight: 600, color: MONUMENT }}>
-                Colorbond
-              </div>
+              <div style={{ fontSize: "1rem", fontWeight: 600, color: MONUMENT }}>Colorbond</div>
             </div>
 
-            {/* Polytec Option */}
             <div
               onClick={() => setSelectedGroup("polytec")}
               style={{
@@ -202,30 +168,23 @@ export default function ColourSettings() {
                 backgroundColor: selectedGroup === "polytec" ? UI.inputBg : "transparent",
               }}
               onMouseEnter={(e) => {
-                if (selectedGroup !== "polytec") {
-                  e.currentTarget.style.backgroundColor = UI.inputBg;
-                }
+                if (selectedGroup !== "polytec") e.currentTarget.style.backgroundColor = UI.inputBg;
               }}
               onMouseLeave={(e) => {
-                if (selectedGroup !== "polytec") {
-                  e.currentTarget.style.backgroundColor = "transparent";
-                }
+                if (selectedGroup !== "polytec") e.currentTarget.style.backgroundColor = "transparent";
               }}
             >
               <div style={{ fontSize: "1rem", fontWeight: 600, color: MONUMENT }}>
-                Polytec - Doors & Panels
+                {polytecCatalogue?.name || "Polytec - Doors & Panels"}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Column 2: Selected Group Content */}
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", overflowY: "auto", paddingRight: "8px" }}>
           {selectedGroup === "colorbond" && (
             <>
-              <h3 style={{ fontSize: "1.1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>
-                Colorbond Colours
-              </h3>
+              <h3 style={{ fontSize: "1.1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>Colorbond Colours</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 {COLORBOND_COLOURS.map((colour, index) => {
                   const hex = getColourHex(colour.r, colour.g, colour.b);
@@ -255,9 +214,7 @@ export default function ColourSettings() {
                         }}
                       />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: "0.9rem", fontWeight: 500, color: MONUMENT }}>
-                          {colour.name}
-                        </div>
+                        <div style={{ fontSize: "0.9rem", fontWeight: 500, color: MONUMENT }}>{colour.name}</div>
                         <div style={{ fontSize: "0.75rem", color: "var(--sgf-text-primary)" }}>
                           R: {colour.r} G: {colour.g} B: {colour.b}
                         </div>
@@ -272,27 +229,33 @@ export default function ColourSettings() {
           {selectedGroup === "polytec" && (
             <>
               <h3 style={{ fontSize: "1.1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>
-                Polytec - Doors & Panels
+                {polytecCatalogue?.name || "Polytec - Doors & Panels"}
               </h3>
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                {Object.entries(polytecColours).map(([category, colors]) => (
-                  <div key={category} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                    <h4 style={{ 
-                      fontSize: "0.95rem", 
-                      margin: 0, 
-                      color: MONUMENT, 
-                      fontWeight: 600,
-                      paddingBottom: "4px",
-                      borderBottom: "1px solid #ddd"
-                    }}>
-                      {category}
-                    </h4>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                      {colors.map((colorName, index) => {
-                        return (
+              {loadingPolytec ? (
+                <div style={{ color: UI.textMuted, fontSize: "0.9rem" }}>Loading…</div>
+              ) : loadError ? (
+                <div style={{ color: "#842029", fontSize: "0.9rem" }}>{loadError}</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  {subgroups.map((subgroup) => (
+                    <div key={subgroup.id} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <h4
+                        style={{
+                          fontSize: "0.95rem",
+                          margin: 0,
+                          color: MONUMENT,
+                          fontWeight: 600,
+                          paddingBottom: "4px",
+                          borderBottom: "1px solid #ddd",
+                        }}
+                      >
+                        {subgroup.name}
+                      </h4>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        {(subgroup.samples || []).map((sample) => (
                           <div
-                            key={index}
-                            onClick={() => handleColorClick(colorName, category)}
+                            key={sample.id}
+                            onClick={() => handleColorClick(sample, subgroup)}
                             style={{
                               background: "transparent",
                               border: "1px solid #ddd",
@@ -324,19 +287,14 @@ export default function ColourSettings() {
                                 alignItems: "center",
                                 justifyContent: "center",
                                 backgroundColor: UI.inputBg,
-                                position: "relative",
                                 overflow: "hidden",
                               }}
                             >
-                              {colorImages[colorName] ? (
+                              {sample.image_url ? (
                                 <img
-                                  src={colorImages[colorName]}
-                                  alt={colorName}
-                                  style={{
-                                    width: "100%",
-                                    height: "100%",
-                                    objectFit: "cover",
-                                  }}
+                                  src={sample.image_url}
+                                  alt={sample.name}
+                                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
                                 />
                               ) : (
                                 <div
@@ -354,37 +312,36 @@ export default function ColourSettings() {
                               )}
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: "0.85rem", fontWeight: 500, color: MONUMENT }}>
-                                {colorName}
-                              </div>
+                              <div style={{ fontSize: "0.85rem", fontWeight: 500, color: MONUMENT }}>{sample.name}</div>
                             </div>
                           </div>
-                        );
-                      })}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </>
           )}
 
           {!selectedGroup && (
-            <div style={{ 
-              display: "flex", 
-              alignItems: "center", 
-              justifyContent: "center", 
-              height: "100%",
-              color: "var(--sgf-text-primary)",
-              fontSize: "0.9rem"
-            }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100%",
+                color: "var(--sgf-text-primary)",
+                fontSize: "0.9rem",
+              }}
+            >
               Select a color group from the left to view colors
             </div>
           )}
         </div>
       </div>
 
-      {/* Edit Color Modal */}
-      {showModal && (
+      {showModal && editingSample && (
         <div
           style={{
             position: "fixed",
@@ -416,15 +373,17 @@ export default function ColourSettings() {
             </h3>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              {/* Color Name */}
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, color: MONUMENT, marginBottom: "6px" }}>
-                  Color Name
+                <label
+                  style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, color: MONUMENT, marginBottom: "6px" }}
+                >
+                  Name
                 </label>
                 <input
                   type="text"
                   value={editForm.name}
                   onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  disabled={saving}
                   style={{
                     width: "100%",
                     padding: "10px 12px",
@@ -436,14 +395,16 @@ export default function ColourSettings() {
                 />
               </div>
 
-              {/* Subgroup Dropdown */}
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, color: MONUMENT, marginBottom: "6px" }}>
+                <label
+                  style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, color: MONUMENT, marginBottom: "6px" }}
+                >
                   Subgroup
                 </label>
                 <select
-                  value={editForm.category}
-                  onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                  value={editForm.subgroupId}
+                  onChange={(e) => setEditForm({ ...editForm, subgroupId: e.target.value })}
+                  disabled={saving}
                   style={{
                     width: "100%",
                     padding: "10px 12px",
@@ -456,23 +417,25 @@ export default function ColourSettings() {
                   }}
                 >
                   <option value="">Select a subgroup</option>
-                  {Object.keys(polytecColours).map((category) => (
-                    <option key={category} value={category}>
-                      {category}
+                  {subgroups.map((subgroup) => (
+                    <option key={subgroup.id} value={String(subgroup.id)}>
+                      {subgroup.name}
                     </option>
                   ))}
                 </select>
               </div>
 
-              {/* Image Upload */}
               <div>
-                <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, color: MONUMENT, marginBottom: "6px" }}>
-                  Color Image
+                <label
+                  style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, color: MONUMENT, marginBottom: "6px" }}
+                >
+                  Image
                 </label>
                 <input
                   type="file"
                   accept="image/*"
                   onChange={handleImageChange}
+                  disabled={saving}
                   style={{
                     width: "100%",
                     padding: "10px 12px",
@@ -483,10 +446,10 @@ export default function ColourSettings() {
                     cursor: "pointer",
                   }}
                 />
-                {editForm.imageUrl && (
+                {editForm.imagePreview ? (
                   <div style={{ marginTop: "10px" }}>
                     <img
-                      src={editForm.imageUrl}
+                      src={editForm.imagePreview}
                       alt="Preview"
                       style={{
                         maxWidth: "100%",
@@ -496,14 +459,15 @@ export default function ColourSettings() {
                       }}
                     />
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
 
-            {/* Buttons */}
             <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "24px" }}>
               <button
+                type="button"
                 onClick={handleModalClose}
+                disabled={saving}
                 style={{
                   padding: "10px 20px",
                   border: "1px solid #ddd",
@@ -512,44 +476,29 @@ export default function ColourSettings() {
                   color: MONUMENT,
                   fontSize: "0.9rem",
                   fontWeight: 500,
-                  cursor: "pointer",
-                  transition: "background 0.2s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = UI.inputBg;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = WHITE;
+                  cursor: saving ? "not-allowed" : "pointer",
                 }}
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleModalOk}
-                disabled={!editForm.name.trim() || !editForm.category}
+                disabled={saving || !editForm.name.trim() || !editForm.subgroupId}
                 style={{
                   padding: "10px 20px",
                   border: "none",
                   borderRadius: "8px",
-                  backgroundColor: (!editForm.name.trim() || !editForm.category) ? "#ccc" : MONUMENT,
+                  backgroundColor:
+                    saving || !editForm.name.trim() || !editForm.subgroupId ? "#ccc" : MONUMENT,
                   color: WHITE,
                   fontSize: "0.9rem",
                   fontWeight: 500,
-                  cursor: (!editForm.name.trim() || !editForm.category) ? "not-allowed" : "pointer",
-                  transition: "background 0.2s",
-                }}
-                onMouseEnter={(e) => {
-                  if (editForm.name.trim() && editForm.category) {
-                    e.currentTarget.style.backgroundColor = "#1a1a1b";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (editForm.name.trim() && editForm.category) {
-                    e.currentTarget.style.backgroundColor = MONUMENT;
-                  }
+                  cursor:
+                    saving || !editForm.name.trim() || !editForm.subgroupId ? "not-allowed" : "pointer",
                 }}
               >
-                OK
+                {saving ? "Saving…" : "OK"}
               </button>
             </div>
           </div>
