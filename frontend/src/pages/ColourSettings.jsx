@@ -17,6 +17,7 @@ export default function ColourSettings() {
   const [editingSample, setEditingSample] = useState(null);
   const [editForm, setEditForm] = useState({
     name: "",
+    subgroupId: "",
     imagePreview: "",
     imageFile: null,
   });
@@ -53,12 +54,13 @@ export default function ColourSettings() {
       .join("")}`;
   };
 
-  const samples = polytecCatalogue?.samples || [];
+  const subgroups = polytecCatalogue?.subgroups || [];
 
-  const handleColorClick = (sample) => {
+  const handleColorClick = (sample, subgroup) => {
     setEditingSample(sample);
     setEditForm({
       name: sample.name || "",
+      subgroupId: String(subgroup.id),
       imagePreview: sample.image_url || "",
       imageFile: null,
     });
@@ -69,15 +71,16 @@ export default function ColourSettings() {
     if (saving) return;
     setShowModal(false);
     setEditingSample(null);
-    setEditForm({ name: "", imagePreview: "", imageFile: null });
+    setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFile: null });
   };
 
   const handleModalOk = async () => {
-    if (!editingSample?.id || !editForm.name.trim()) return;
+    if (!editingSample?.id || !editForm.name.trim() || !editForm.subgroupId) return;
     try {
       setSaving(true);
       const formData = new FormData();
       formData.append("name", editForm.name.trim());
+      formData.append("subgroup_id", editForm.subgroupId);
       if (editForm.imageFile) {
         formData.append("image", editForm.imageFile);
       }
@@ -93,7 +96,7 @@ export default function ColourSettings() {
       await loadPolytec();
       setShowModal(false);
       setEditingSample(null);
-      setEditForm({ name: "", imagePreview: "", imageFile: null });
+      setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFile: null });
     } catch (e) {
       alert(e.message || "Failed to save sample");
     } finally {
@@ -233,68 +236,86 @@ export default function ColourSettings() {
               ) : loadError ? (
                 <div style={{ color: "#842029", fontSize: "0.9rem" }}>{loadError}</div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  {samples.map((sample) => (
-                    <div
-                      key={sample.id}
-                      onClick={() => handleColorClick(sample)}
-                      style={{
-                        background: "transparent",
-                        border: "1px solid #ddd",
-                        borderRadius: "8px",
-                        padding: "10px 8px",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        maxWidth: "100%",
-                        boxSizing: "border-box",
-                        cursor: "pointer",
-                        transition: "background 0.2s",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = UI.inputBg;
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = "transparent";
-                      }}
-                    >
-                      <div
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  {subgroups.map((subgroup) => (
+                    <div key={subgroup.id} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <h4
                         style={{
-                          width: "28px",
-                          height: "28px",
-                          borderRadius: "4px",
-                          border: "1px solid #ccc",
-                          flexShrink: 0,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          backgroundColor: UI.inputBg,
-                          overflow: "hidden",
+                          fontSize: "0.95rem",
+                          margin: 0,
+                          color: MONUMENT,
+                          fontWeight: 600,
+                          paddingBottom: "4px",
+                          borderBottom: "1px solid #ddd",
                         }}
                       >
-                        {sample.image_url ? (
-                          <img
-                            src={sample.image_url}
-                            alt={sample.name}
-                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                          />
-                        ) : (
+                        {subgroup.name}
+                      </h4>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        {(subgroup.samples || []).map((sample) => (
                           <div
+                            key={sample.id}
+                            onClick={() => handleColorClick(sample, subgroup)}
                             style={{
-                              fontSize: "6px",
-                              color: "var(--sgf-text-primary)",
-                              fontWeight: 600,
-                              textAlign: "center",
-                              lineHeight: "1",
-                              letterSpacing: "0.3px",
+                              background: "transparent",
+                              border: "1px solid #ddd",
+                              borderRadius: "8px",
+                              padding: "10px 8px",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                              maxWidth: "100%",
+                              boxSizing: "border-box",
+                              cursor: "pointer",
+                              transition: "background 0.2s",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = UI.inputBg;
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "transparent";
                             }}
                           >
-                            Soon
+                            <div
+                              style={{
+                                width: "28px",
+                                height: "28px",
+                                borderRadius: "4px",
+                                border: "1px solid #ccc",
+                                flexShrink: 0,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                backgroundColor: UI.inputBg,
+                                overflow: "hidden",
+                              }}
+                            >
+                              {sample.image_url ? (
+                                <img
+                                  src={sample.image_url}
+                                  alt={sample.name}
+                                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                />
+                              ) : (
+                                <div
+                                  style={{
+                                    fontSize: "6px",
+                                    color: "var(--sgf-text-primary)",
+                                    fontWeight: 600,
+                                    textAlign: "center",
+                                    lineHeight: "1",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Soon
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: "0.85rem", fontWeight: 500, color: MONUMENT }}>{sample.name}</div>
+                            </div>
                           </div>
-                        )}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: "0.85rem", fontWeight: 500, color: MONUMENT }}>{sample.name}</div>
+                        ))}
                       </div>
                     </div>
                   ))}
@@ -378,6 +399,36 @@ export default function ColourSettings() {
                 <label
                   style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, color: MONUMENT, marginBottom: "6px" }}
                 >
+                  Subgroup
+                </label>
+                <select
+                  value={editForm.subgroupId}
+                  onChange={(e) => setEditForm({ ...editForm, subgroupId: e.target.value })}
+                  disabled={saving}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    border: "1px solid #ddd",
+                    borderRadius: "8px",
+                    fontSize: "0.9rem",
+                    backgroundColor: WHITE,
+                    boxSizing: "border-box",
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="">Select a subgroup</option>
+                  {subgroups.map((subgroup) => (
+                    <option key={subgroup.id} value={String(subgroup.id)}>
+                      {subgroup.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label
+                  style={{ display: "block", fontSize: "0.9rem", fontWeight: 500, color: MONUMENT, marginBottom: "6px" }}
+                >
                   Image
                 </label>
                 <input
@@ -433,16 +484,18 @@ export default function ColourSettings() {
               <button
                 type="button"
                 onClick={handleModalOk}
-                disabled={saving || !editForm.name.trim()}
+                disabled={saving || !editForm.name.trim() || !editForm.subgroupId}
                 style={{
                   padding: "10px 20px",
                   border: "none",
                   borderRadius: "8px",
-                  backgroundColor: saving || !editForm.name.trim() ? "#ccc" : MONUMENT,
+                  backgroundColor:
+                    saving || !editForm.name.trim() || !editForm.subgroupId ? "#ccc" : MONUMENT,
                   color: WHITE,
                   fontSize: "0.9rem",
                   fontWeight: 500,
-                  cursor: saving || !editForm.name.trim() ? "not-allowed" : "pointer",
+                  cursor:
+                    saving || !editForm.name.trim() || !editForm.subgroupId ? "not-allowed" : "pointer",
                 }}
               >
                 {saving ? "Saving…" : "OK"}

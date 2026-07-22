@@ -73,6 +73,8 @@ module.exports = {
   ensureAppMeta,
   isSchemaUpToDate,
   markSchemaUpToDate,
+  getMeta,
+  setMeta,
   getExistingColumns,
   addMissingColumns,
   shouldRunPlanningJfScrub,

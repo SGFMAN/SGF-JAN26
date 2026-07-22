@@ -57,12 +57,19 @@ export default function PolytecKitchenCube() {
   const [textureError, setTextureError] = useState("");
 
   const flatSamples = useMemo(() => {
-    const list = Array.isArray(catalogue?.samples) ? catalogue.samples : [];
-    return list.map((sample) => ({
-      id: sample.id,
-      name: sample.name,
-      image_url: sample.image_url,
-    }));
+    const subgroups = catalogue?.subgroups || [];
+    const out = [];
+    for (const sg of subgroups) {
+      for (const sample of sg.samples || []) {
+        out.push({
+          id: sample.id,
+          name: sample.name,
+          subgroup: sg.name,
+          image_url: sample.image_url,
+        });
+      }
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
   }, [catalogue]);
 
   const selectedSample = useMemo(
@@ -252,7 +259,7 @@ export default function PolytecKitchenCube() {
     void api.setImageUrl(selectedSample?.image_url || null);
   }, [selectedSample?.image_url]);
 
-  const samples = catalogue?.samples || [];
+  const subgroups = catalogue?.subgroups || [];
 
   return (
     <div
@@ -286,11 +293,15 @@ export default function PolytecKitchenCube() {
             }}
           >
             <option value="">{loadingList ? "Loading…" : "Select a finish"}</option>
-            {samples.map((sample) => (
-              <option key={sample.id} value={String(sample.id)}>
-                {sample.name}
-                {sample.image_url ? "" : " (no image)"}
-              </option>
+            {subgroups.map((sg) => (
+              <optgroup key={sg.id} label={sg.name}>
+                {(sg.samples || []).map((sample) => (
+                  <option key={sample.id} value={String(sample.id)}>
+                    {sample.name}
+                    {sample.image_url ? "" : " (no image)"}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </label>
