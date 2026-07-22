@@ -254,42 +254,24 @@ async function listPolytecCatalogue(pool) {
     [GROUP_KEY]
   );
   if (!groupRes.rows.length) {
-    return { key: GROUP_KEY, name: GROUP_DISPLAY_NAME, subgroups: [] };
+    return { key: GROUP_KEY, name: GROUP_DISPLAY_NAME, samples: [] };
   }
   const group = groupRes.rows[0];
-  const subgroupsRes = await pool.query(
-    `SELECT id, name, sort_order
-     FROM colour_subgroups
-     WHERE group_id = $1
-     ORDER BY sort_order ASC, name ASC, id ASC`,
-    [group.id]
-  );
   const samplesRes = await pool.query(
     `SELECT s.id, s.subgroup_id, s.name, s.image_filename, s.sort_order, s.created_at, s.updated_at,
             sg.name AS subgroup_name
      FROM colour_samples s
      JOIN colour_subgroups sg ON sg.id = s.subgroup_id
      WHERE sg.group_id = $1
-     ORDER BY s.sort_order ASC, s.name ASC, s.id ASC`,
+     ORDER BY LOWER(s.name) ASC, s.name ASC, s.id ASC`,
     [group.id]
   );
-
-  const samplesBySubgroup = new Map();
-  for (const row of samplesRes.rows) {
-    if (!samplesBySubgroup.has(row.subgroup_id)) samplesBySubgroup.set(row.subgroup_id, []);
-    samplesBySubgroup.get(row.subgroup_id).push(mapSampleRow(row));
-  }
 
   return {
     id: group.id,
     key: group.key,
     name: group.name,
-    subgroups: subgroupsRes.rows.map((sg) => ({
-      id: sg.id,
-      name: sg.name,
-      sort_order: sg.sort_order,
-      samples: samplesBySubgroup.get(sg.id) || [],
-    })),
+    samples: samplesRes.rows.map(mapSampleRow),
   };
 }
 

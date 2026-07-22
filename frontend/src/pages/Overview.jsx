@@ -10,8 +10,6 @@ import {
   resolveNewProjectClientToEmails,
   findSalespersonUserInList,
 } from "../utils/streamNewProjectEmail";
-import craig1 from "../images/craig1.jpg";
-import craig3 from "../images/craig3.jpg";
 import "./Overview.css";
 
 import { UI, STREAM, INDICATOR } from "../utils/uiThemeTokens.js";
@@ -43,13 +41,9 @@ export default function Overview({ project }) {
   const [fullResults, setFullResults] = useState([]); // Store full results before typewriter effect
   const [faqModalOpen, setFaqModalOpen] = useState(false);
   const [, setUiButtonStyleRevision] = useState(0);
-  const [currentCraigImage, setCurrentCraigImage] = useState(0);
-  const craigAnimationRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const typewriterIntervalRef = useRef(null);
   const fullResultsRef = useRef([]);
-  
-  const craigImages = [craig1, craig3];
 
   useEffect(() => {
     fetchEmailTemplates();
@@ -64,33 +58,6 @@ export default function Overview({ project }) {
       window.removeEventListener("sgf-ui-theme-change", refresh);
     };
   }, []);
-
-  // Animate Craig only when text is actively being printed
-  useEffect(() => {
-    if (isPrintingText && faqModalOpen) {
-      // Start animation
-      let imageIndex = 0;
-      craigAnimationRef.current = setInterval(() => {
-        imageIndex = (imageIndex + 1) % craigImages.length;
-        setCurrentCraigImage(imageIndex);
-      }, 200); // Change image every 200ms for talking animation
-      
-      return () => {
-        if (craigAnimationRef.current) {
-          clearInterval(craigAnimationRef.current);
-        }
-      };
-    } else {
-      // Stop animation
-      if (craigAnimationRef.current) {
-        clearInterval(craigAnimationRef.current);
-        craigAnimationRef.current = null;
-      }
-      if (!isPrintingText) {
-        setCurrentCraigImage(0); // Reset to first image when not printing
-      }
-    }
-  }, [isPrintingText, faqModalOpen]);
 
   // Check if all text printing is complete
   useEffect(() => {
@@ -1119,13 +1086,6 @@ export default function Overview({ project }) {
             </h2>
             
             <div className="overview-faq-row">
-              <div className="overview-faq-avatar">
-                <img
-                  src={craigImages[currentCraigImage]}
-                  alt="Virtual Construction Manager"
-                />
-              </div>
-              
               <div className="overview-faq-search">
                 <input
                   type="text"

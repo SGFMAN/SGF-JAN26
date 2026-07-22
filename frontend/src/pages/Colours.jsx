@@ -3,6 +3,7 @@ import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import TracePlanModal from "../components/TracePlanModal";
 import Building3DModal from "../components/Building3DModal.jsx";
 import BuildingElevations from "../components/BuildingElevations.jsx";
+import PolytecKitchenCube from "../components/PolytecKitchenCube.jsx";
 import { resolveNewProjectClientFrom, findSalespersonUserInList } from "../utils/streamNewProjectEmail";
 import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
 import { parsePlanTracePolygon, serializePlanTracePolygon } from "../utils/planTracePolygon";
@@ -1322,6 +1323,8 @@ export default function Colours({ project, onUpdate }) {
                     }}
                   />
                 </div>
+              ) : activeColourCategory === "Kitchen" ? (
+                <PolytecKitchenCube />
               ) : (
                 <div
                   style={{

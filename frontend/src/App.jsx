@@ -41,7 +41,6 @@ import PortalProjects from "./pages/PortalProjects";
 import RequireAuth from "./components/RequireAuth";
 import LoggedInUserButton from "./components/LoggedInUserButton";
 import PresenceHeartbeat from "./components/PresenceHeartbeat";
-import FadeImageOverlay from "./components/FadeImageOverlay";
 import { UiThemeProvider } from "./context/UiThemeProvider";
 import { verifyServerSession } from "./utils/auth";
 import { isClientPortalEntry } from "./utils/entryPortal";
@@ -83,7 +82,6 @@ export default function App() {
       <UiThemeProvider>
       <EmailSendOverlayProvider>
       <PresenceHeartbeat />
-      <FadeImageOverlay />
       <LoggedInUserButton />
       <Routes>
         {isCloudflarePublicHost ? (

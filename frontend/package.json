@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:clean": "node -e \"try{require('fs').rmSync('node_modules/.vite',{recursive:true,force:true})}catch(e){}\" && vite",
-    "build": "node -e \"const fs=require('fs');fs.mkdirSync('public/images',{recursive:true});fs.copyFileSync('src/images/craig3.jpg','public/images/craig3.jpg');\" && vite build",
+    "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
