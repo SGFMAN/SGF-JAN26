@@ -158,6 +158,7 @@ const MENU_OPTIONS = [
   { label: "Contract", key: "contract" },
   { label: "Planning - OLD", key: "planning-old", hidden: true },
   { label: "Planning", key: "planning" },
+  { label: "Planning - Underconstruction", key: "planning-underconstruction", adminOnly: true },
   { label: "Variations", key: "variations" },
   { label: "Admin", key: "admin" },
 ];
@@ -244,6 +245,8 @@ export default function ProjectPage() {
     if (viewParam && allowedKeys.some((opt) => opt.key === viewParam)) {
       if (isPortalProjectPath && viewParam === "admin") {
         setActiveView("overview");
+      } else if (viewParam === "planning-underconstruction" && !isAdmin) {
+        setActiveView("overview");
       } else {
         setActiveView(viewParam);
       }
@@ -252,7 +255,14 @@ export default function ProjectPage() {
     } else if (isMobile) {
       setActiveView("overview");
     }
-  }, [token, location.search, isPortalProjectPath, isMobile]);
+  }, [token, location.search, isPortalProjectPath, isMobile, isAdmin]);
+
+  // Non-admins cannot stay on admin-only planning underconstruction
+  useEffect(() => {
+    if (activeView === "planning-underconstruction" && !isAdmin) {
+      setActiveView("overview");
+    }
+  }, [activeView, isAdmin]);
 
   // Set default menu view for Construction Phase projects
   useEffect(() => {
@@ -930,7 +940,12 @@ export default function ProjectPage() {
             ? CONSTRUCTION_MENU_OPTIONS
             : MENU_OPTIONS
           )
-            .filter((item) => !item.hidden && !(isPortalProjectPath && item.key === "admin"))
+            .filter(
+              (item) =>
+                !item.hidden &&
+                !(isPortalProjectPath && item.key === "admin") &&
+                !(item.adminOnly && !isAdmin)
+            )
             .map((item) => {
             return (
               <button
@@ -1082,6 +1097,14 @@ export default function ProjectPage() {
                 <PlanningOld project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
               )}
               {activeView === "planning" && (
+                <div style={{ padding: "8px 4px" }}>
+                  <h2 style={{ margin: "0 0 12px", fontSize: "1.35rem", color: MONUMENT }}>Planning</h2>
+                  <p style={{ margin: 0, color: UI.textMuted, fontSize: "1rem", lineHeight: 1.45 }}>
+                    Planning section placeholder — content coming soon.
+                  </p>
+                </div>
+              )}
+              {activeView === "planning-underconstruction" && isAdmin && (
                 <Planning
                   project={project}
                   onUpdate={isPortalProjectPath ? () => {} : updateProject}

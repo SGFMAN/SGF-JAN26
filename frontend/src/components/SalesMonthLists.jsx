@@ -217,9 +217,14 @@ function StreamGrid({ stream, streamProjects, gridSize, cellColorLight, cellColo
   );
 }
 
+/** Green stream grids: heading + ≥5 sale rows + total; grows when sales exceed 5. */
+function greenStreamGridSize(saleCount) {
+  return 2 + Math.max(5, saleCount || 0);
+}
+
 /**
  * Monthly sales list grid — same layout as the Sales page (/sales).
- * Always shows SGF - VIC / SGF - QLD. Other streams only if ≥1 sale this month.
+ * Always shows SGF - VIC / SGF - QLD and every green stream (min 5 sale rows each).
  */
 export default function SalesMonthLists({ monthFilteredProjects, pageTitle, onProjectClick }) {
   const [streamsCatalog, setStreamsCatalog] = useState(FALLBACK_STREAMS);
@@ -234,15 +239,11 @@ export default function SalesMonthLists({ monthFilteredProjects, pageTitle, onPr
     };
   }, []);
 
-  const greenWithSales = useMemo(() => {
-    return greenSalesStreams(streamsCatalog).filter(
-      (stream) => getStreamProjects(monthFilteredProjects, stream, streamsCatalog).length >= 1
-    );
-  }, [monthFilteredProjects, streamsCatalog]);
+  const greenStreams = useMemo(() => greenSalesStreams(streamsCatalog), [streamsCatalog]);
 
-  const mid = Math.ceil(greenWithSales.length / 2);
-  const column3Streams = greenWithSales.slice(0, mid);
-  const column4Streams = greenWithSales.slice(mid);
+  const mid = Math.ceil(greenStreams.length / 2);
+  const column3Streams = greenStreams.slice(0, mid);
+  const column4Streams = greenStreams.slice(mid);
 
   const vicProjects = getStreamProjects(monthFilteredProjects, SGF_VIC_STREAM, streamsCatalog);
   const qldProjects = getStreamProjects(monthFilteredProjects, SGF_QLD_STREAM, streamsCatalog);
@@ -299,15 +300,38 @@ export default function SalesMonthLists({ monthFilteredProjects, pageTitle, onPr
         <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
           {column3Streams.length === 0 ? (
             <div style={{ fontSize: "0.75rem", color: UI.textMuted, padding: "8px 4px" }}>
-              No other stream sales this month
+              No other streams
             </div>
           ) : (
-            column3Streams.map((stream, index) => (
+            column3Streams.map((stream, index) => {
+              const streamProjects = getStreamProjects(monthFilteredProjects, stream, streamsCatalog);
+              return (
+                <div key={stream} style={{ marginTop: index > 0 ? "13px" : 0 }}>
+                  <StreamGrid
+                    stream={stream}
+                    streamProjects={streamProjects}
+                    gridSize={greenStreamGridSize(streamProjects.length)}
+                    cellColorLight={STREAM_GROUP_COLORS.green.lighter}
+                    cellColorExtraLight={STREAM_GROUP_COLORS.green.lighter}
+                    darkerColor={STREAM_GROUP_COLORS.green.darker}
+                    hoverColor={STREAM_GROUP_COLORS.green.darker}
+                    onProjectClick={onProjectClick}
+                  />
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
+          {column4Streams.map((stream, index) => {
+            const streamProjects = getStreamProjects(monthFilteredProjects, stream, streamsCatalog);
+            return (
               <div key={stream} style={{ marginTop: index > 0 ? "13px" : 0 }}>
                 <StreamGrid
                   stream={stream}
-                  streamProjects={getStreamProjects(monthFilteredProjects, stream, streamsCatalog)}
-                  gridSize={11}
+                  streamProjects={streamProjects}
+                  gridSize={greenStreamGridSize(streamProjects.length)}
                   cellColorLight={STREAM_GROUP_COLORS.green.lighter}
                   cellColorExtraLight={STREAM_GROUP_COLORS.green.lighter}
                   darkerColor={STREAM_GROUP_COLORS.green.darker}
@@ -315,25 +339,8 @@ export default function SalesMonthLists({ monthFilteredProjects, pageTitle, onPr
                   onProjectClick={onProjectClick}
                 />
               </div>
-            ))
-          )}
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
-          {column4Streams.map((stream, index) => (
-            <div key={stream} style={{ marginTop: index > 0 ? "13px" : 0 }}>
-              <StreamGrid
-                stream={stream}
-                streamProjects={getStreamProjects(monthFilteredProjects, stream, streamsCatalog)}
-                gridSize={11}
-                cellColorLight={STREAM_GROUP_COLORS.green.lighter}
-                cellColorExtraLight={STREAM_GROUP_COLORS.green.lighter}
-                darkerColor={STREAM_GROUP_COLORS.green.darker}
-                hoverColor={STREAM_GROUP_COLORS.green.darker}
-                onProjectClick={onProjectClick}
-              />
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

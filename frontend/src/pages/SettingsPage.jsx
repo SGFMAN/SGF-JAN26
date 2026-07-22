@@ -239,9 +239,27 @@ export default function SettingsPage() {
             height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             display: "flex",
-            alignItems: selected === "streamSettings" || selected === "maps" || selected === "permissions" ? "stretch" : "center",
-            justifyContent: selected === "streamSettings" || selected === "maps" || selected === "permissions" ? "flex-start" : "center",
-            overflow: selected === "streamSettings" || selected === "maps" || selected === "permissions" ? "hidden" : "visible",
+            alignItems:
+              selected === "streamSettings" ||
+              selected === "maps" ||
+              selected === "permissions" ||
+              selected === "streams"
+                ? "stretch"
+                : "center",
+            justifyContent:
+              selected === "streamSettings" ||
+              selected === "maps" ||
+              selected === "permissions" ||
+              selected === "streams"
+                ? "flex-start"
+                : "center",
+            overflow:
+              selected === "streamSettings" ||
+              selected === "maps" ||
+              selected === "permissions" ||
+              selected === "streams"
+                ? "hidden"
+                : "visible",
             minWidth: 0,
             color: MONUMENT,
             fontSize: "1.22rem",
