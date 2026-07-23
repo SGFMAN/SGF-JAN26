@@ -442,6 +442,123 @@ async function deleteSample(pool, id) {
   return { deleted: mapSampleRow(existing) };
 }
 
+async function getPolytecGroupId(pool) {
+  const r = await pool.query(
+    `SELECT id FROM colour_groups WHERE key = $1 AND active = TRUE LIMIT 1`,
+    [GROUP_KEY]
+  );
+  return r.rows[0]?.id ?? null;
+}
+
+function mapSubgroupRow(row, sampleCount = 0) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    sort_order: row.sort_order,
+    sample_count: Number(sampleCount) || 0,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+async function listSubgroups(pool) {
+  const groupId = await getPolytecGroupId(pool);
+  if (!groupId) return [];
+  const r = await pool.query(
+    `SELECT sg.*,
+            (SELECT COUNT(*)::int FROM colour_samples s WHERE s.subgroup_id = sg.id) AS sample_count
+     FROM colour_subgroups sg
+     WHERE sg.group_id = $1
+     ORDER BY sg.sort_order ASC, sg.name ASC, sg.id ASC`,
+    [groupId]
+  );
+  return r.rows.map((row) => mapSubgroupRow(row, row.sample_count));
+}
+
+async function createSubgroup(pool, name) {
+  const groupId = await getPolytecGroupId(pool);
+  if (!groupId) return { error: "Polytec colour group not found", status: 404 };
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return { error: "Name is required", status: 400 };
+  const maxOrder = await pool.query(
+    `SELECT COALESCE(MAX(sort_order), 0) AS m FROM colour_subgroups WHERE group_id = $1`,
+    [groupId]
+  );
+  try {
+    const r = await pool.query(
+      `INSERT INTO colour_subgroups (group_id, name, sort_order)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [groupId, trimmed, (Number(maxOrder.rows[0]?.m) || 0) + 10]
+    );
+    return { subgroup: mapSubgroupRow(r.rows[0], 0) };
+  } catch (e) {
+    if (e && e.code === "23505") {
+      return { error: "A subgroup with that name already exists", status: 409 };
+    }
+    throw e;
+  }
+}
+
+async function updateSubgroup(pool, id, name) {
+  const existing = await pool.query(
+    `SELECT sg.*
+     FROM colour_subgroups sg
+     JOIN colour_groups g ON g.id = sg.group_id
+     WHERE sg.id = $1 AND g.key = $2`,
+    [id, GROUP_KEY]
+  );
+  if (!existing.rows.length) return { notFound: true };
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return { error: "Name is required", status: 400 };
+  try {
+    const r = await pool.query(
+      `UPDATE colour_subgroups
+       SET name = $1, updated_at = NOW()
+       WHERE id = $2
+       RETURNING *`,
+      [trimmed, id]
+    );
+    const countR = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM colour_samples WHERE subgroup_id = $1`,
+      [id]
+    );
+    return { subgroup: mapSubgroupRow(r.rows[0], countR.rows[0]?.c) };
+  } catch (e) {
+    if (e && e.code === "23505") {
+      return { error: "A subgroup with that name already exists", status: 409 };
+    }
+    throw e;
+  }
+}
+
+async function deleteSubgroup(pool, id) {
+  const existing = await pool.query(
+    `SELECT sg.*
+     FROM colour_subgroups sg
+     JOIN colour_groups g ON g.id = sg.group_id
+     WHERE sg.id = $1 AND g.key = $2`,
+    [id, GROUP_KEY]
+  );
+  if (!existing.rows.length) return { notFound: true };
+  const images = await pool.query(
+    `SELECT image_filename FROM colour_samples WHERE subgroup_id = $1 AND image_filename IS NOT NULL`,
+    [id]
+  );
+  for (const row of images.rows) {
+    await deleteImageFile(row.image_filename);
+  }
+  const countR = await pool.query(
+    `SELECT COUNT(*)::int AS c FROM colour_samples WHERE subgroup_id = $1`,
+    [id]
+  );
+  await pool.query(`DELETE FROM colour_subgroups WHERE id = $1`, [id]);
+  return {
+    deleted: mapSubgroupRow(existing.rows[0], countR.rows[0]?.c),
+  };
+}
+
 async function getSampleImagePath(pool, id) {
   const row = await getSampleById(pool, id);
   if (!row) return { notFound: true };
@@ -463,6 +580,10 @@ module.exports = {
   getSampleById,
   updateSample,
   deleteSample,
+  listSubgroups,
+  createSubgroup,
+  updateSubgroup,
+  deleteSubgroup,
   getSampleImagePath,
   mapSampleRow,
 };

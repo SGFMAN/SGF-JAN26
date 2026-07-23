@@ -36,6 +36,11 @@ export default function ColourSettings() {
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [sortMode, setSortMode] = useState("group"); // "group" | "alpha"
   const [showModal, setShowModal] = useState(false);
+  const [showSubgroupsModal, setShowSubgroupsModal] = useState(false);
+  const [subgroupDraftName, setSubgroupDraftName] = useState("");
+  const [editingSubgroupId, setEditingSubgroupId] = useState(null);
+  const [editingSubgroupName, setEditingSubgroupName] = useState("");
+  const [subgroupSaving, setSubgroupSaving] = useState(false);
   const [editingSample, setEditingSample] = useState(null);
   const [editForm, setEditForm] = useState({
     name: "",
@@ -170,6 +175,110 @@ export default function ColourSettings() {
       setSaving(false);
     }
   };
+
+  function openSubgroupsModal() {
+    setSubgroupDraftName("");
+    setEditingSubgroupId(null);
+    setEditingSubgroupName("");
+    setShowSubgroupsModal(true);
+  }
+
+  function closeSubgroupsModal() {
+    if (subgroupSaving) return;
+    setShowSubgroupsModal(false);
+    setSubgroupDraftName("");
+    setEditingSubgroupId(null);
+    setEditingSubgroupName("");
+  }
+
+  async function handleAddSubgroup(e) {
+    e?.preventDefault?.();
+    const name = subgroupDraftName.trim();
+    if (!name) {
+      alert("Enter a subgroup name.");
+      return;
+    }
+    try {
+      setSubgroupSaving(true);
+      const res = await fetch(`${API_URL}/api/colour-subgroups`, {
+        method: "POST",
+        headers: getApiHeaders(),
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      setSubgroupDraftName("");
+      await loadPolytec();
+    } catch (err) {
+      alert(err.message || "Failed to add subgroup");
+    } finally {
+      setSubgroupSaving(false);
+    }
+  }
+
+  function startEditSubgroup(subgroup) {
+    setEditingSubgroupId(subgroup.id);
+    setEditingSubgroupName(subgroup.name || "");
+  }
+
+  function cancelEditSubgroup() {
+    setEditingSubgroupId(null);
+    setEditingSubgroupName("");
+  }
+
+  async function handleSaveSubgroup(e) {
+    e?.preventDefault?.();
+    if (!editingSubgroupId) return;
+    const name = editingSubgroupName.trim();
+    if (!name) {
+      alert("Enter a subgroup name.");
+      return;
+    }
+    try {
+      setSubgroupSaving(true);
+      const res = await fetch(`${API_URL}/api/colour-subgroups/${editingSubgroupId}`, {
+        method: "PUT",
+        headers: getApiHeaders(),
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      setEditingSubgroupId(null);
+      setEditingSubgroupName("");
+      await loadPolytec();
+    } catch (err) {
+      alert(err.message || "Failed to update subgroup");
+    } finally {
+      setSubgroupSaving(false);
+    }
+  }
+
+  async function handleDeleteSubgroup(subgroup) {
+    const count = Number(subgroup.sample_count) || (subgroup.samples || []).length || 0;
+    const msg =
+      count > 0
+        ? `Delete subgroup "${subgroup.name}" and its ${count} colour${count === 1 ? "" : "s"}?`
+        : `Delete subgroup "${subgroup.name}"?`;
+    if (!window.confirm(msg)) return;
+    try {
+      setSubgroupSaving(true);
+      const res = await fetch(`${API_URL}/api/colour-subgroups/${subgroup.id}`, {
+        method: "DELETE",
+        headers: getApiHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      if (editingSubgroupId === subgroup.id) {
+        setEditingSubgroupId(null);
+        setEditingSubgroupName("");
+      }
+      await loadPolytec();
+    } catch (err) {
+      alert(err.message || "Failed to delete subgroup");
+    } finally {
+      setSubgroupSaving(false);
+    }
+  }
 
   const handleImageChange = (e) => {
     const file = e.target.files?.[0];
@@ -348,6 +457,9 @@ export default function ColourSettings() {
                   </button>
                   <button type="button" onClick={() => setSortMode("alpha")} style={sortButtonStyle(sortMode === "alpha")}>
                     Sort Alphabetically
+                  </button>
+                  <button type="button" onClick={openSubgroupsModal} style={sortButtonStyle(false)}>
+                    Sub Groups
                   </button>
                 </div>
               </div>
@@ -714,6 +826,227 @@ export default function ColourSettings() {
           </div>
         </div>
       )}
+
+      {showSubgroupsModal ? (
+        <div
+          role="presentation"
+          onClick={closeSubgroupsModal}
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "24px",
+            boxSizing: "border-box",
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="subgroups-modal-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              width: "100%",
+              maxWidth: "560px",
+              maxHeight: "85vh",
+              overflow: "auto",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+              boxSizing: "border-box",
+            }}
+          >
+            <h3
+              id="subgroups-modal-title"
+              style={{ fontSize: "1.3rem", margin: "0 0 16px 0", color: MONUMENT, fontWeight: 600 }}
+            >
+              Sub Groups
+            </h3>
+
+            <form
+              onSubmit={handleAddSubgroup}
+              style={{ display: "flex", gap: "8px", marginBottom: "20px", alignItems: "center" }}
+            >
+              <input
+                type="text"
+                value={subgroupDraftName}
+                onChange={(e) => setSubgroupDraftName(e.target.value)}
+                placeholder="New subgroup name"
+                disabled={subgroupSaving}
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  border: "1px solid #ddd",
+                  borderRadius: "8px",
+                  fontSize: "0.9rem",
+                  boxSizing: "border-box",
+                }}
+              />
+              <button
+                type="submit"
+                disabled={subgroupSaving || !subgroupDraftName.trim()}
+                style={{
+                  padding: "10px 16px",
+                  border: "none",
+                  borderRadius: "8px",
+                  background: subgroupSaving || !subgroupDraftName.trim() ? "#ccc" : MONUMENT,
+                  color: WHITE,
+                  fontWeight: 600,
+                  cursor: subgroupSaving || !subgroupDraftName.trim() ? "not-allowed" : "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Add
+              </button>
+            </form>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {subgroups.length === 0 ? (
+                <div style={{ color: UI.textMuted, fontSize: "0.9rem" }}>No subgroups yet.</div>
+              ) : (
+                subgroups.map((subgroup) => {
+                  const sampleCount =
+                    Number(subgroup.sample_count) || (subgroup.samples || []).length || 0;
+                  const isEditing = editingSubgroupId === subgroup.id;
+                  return (
+                    <div
+                      key={subgroup.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        padding: "10px 12px",
+                        border: "1px solid #ddd",
+                        borderRadius: "8px",
+                        background: UI.inputBg,
+                      }}
+                    >
+                      {isEditing ? (
+                        <form
+                          onSubmit={handleSaveSubgroup}
+                          style={{ display: "flex", flex: 1, gap: "8px", alignItems: "center", minWidth: 0 }}
+                        >
+                          <input
+                            type="text"
+                            value={editingSubgroupName}
+                            onChange={(e) => setEditingSubgroupName(e.target.value)}
+                            disabled={subgroupSaving}
+                            autoFocus
+                            style={{
+                              flex: 1,
+                              padding: "8px 10px",
+                              border: "1px solid #ddd",
+                              borderRadius: "8px",
+                              fontSize: "0.9rem",
+                              boxSizing: "border-box",
+                              minWidth: 0,
+                            }}
+                          />
+                          <button
+                            type="submit"
+                            disabled={subgroupSaving || !editingSubgroupName.trim()}
+                            style={{
+                              padding: "8px 12px",
+                              border: "none",
+                              borderRadius: "8px",
+                              background: MONUMENT,
+                              color: WHITE,
+                              fontWeight: 600,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEditSubgroup}
+                            disabled={subgroupSaving}
+                            style={{
+                              padding: "8px 12px",
+                              border: "1px solid #ddd",
+                              borderRadius: "8px",
+                              background: WHITE,
+                              color: MONUMENT,
+                              fontWeight: 600,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </form>
+                      ) : (
+                        <>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, color: MONUMENT }}>{subgroup.name}</div>
+                            <div style={{ fontSize: "0.78rem", color: UI.textMuted }}>
+                              {sampleCount} colour{sampleCount === 1 ? "" : "s"}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => startEditSubgroup(subgroup)}
+                            disabled={subgroupSaving}
+                            style={{
+                              padding: "7px 12px",
+                              border: `1px solid ${MONUMENT}33`,
+                              borderRadius: "8px",
+                              background: WHITE,
+                              color: MONUMENT,
+                              fontWeight: 600,
+                              cursor: subgroupSaving ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSubgroup(subgroup)}
+                            disabled={subgroupSaving}
+                            style={{
+                              padding: "7px 12px",
+                              border: "1px solid #b42318",
+                              borderRadius: "8px",
+                              background: WHITE,
+                              color: "#b42318",
+                              fontWeight: 600,
+                              cursor: subgroupSaving ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "20px" }}>
+              <button
+                type="button"
+                onClick={closeSubgroupsModal}
+                disabled={subgroupSaving}
+                style={{
+                  padding: "10px 18px",
+                  border: "1px solid #ddd",
+                  borderRadius: "8px",
+                  background: WHITE,
+                  color: MONUMENT,
+                  fontWeight: 600,
+                  cursor: subgroupSaving ? "not-allowed" : "pointer",
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

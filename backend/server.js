@@ -62,6 +62,10 @@ const {
   listPolytecCatalogue,
   updateSample: updateColourSample,
   deleteSample: deleteColourSample,
+  listSubgroups: listColourSubgroups,
+  createSubgroup: createColourSubgroup,
+  updateSubgroup: updateColourSubgroup,
+  deleteSubgroup: deleteColourSubgroup,
   getSampleImagePath: getColourSampleImagePath,
 } = require("./polytecColours");
 const { ensureMapQuoteItemsTable, listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
@@ -4669,6 +4673,70 @@ app.delete("/api/colour-samples/:id", async (req, res) => {
   } catch (e) {
     console.error("[colour-samples] delete error:", e);
     res.status(500).json({ error: e.message || "Failed to delete sample" });
+  }
+});
+
+app.get("/api/colour-subgroups", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  try {
+    const subgroups = await listColourSubgroups(pool);
+    res.json(subgroups);
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Failed to load subgroups" });
+  }
+});
+
+app.post("/api/colour-subgroups", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  try {
+    const result = await createColourSubgroup(pool, req.body?.name);
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.status(201).json(result.subgroup);
+  } catch (e) {
+    console.error("[colour-subgroups] create error:", e);
+    res.status(500).json({ error: e.message || "Failed to create subgroup" });
+  }
+});
+
+app.put("/api/colour-subgroups/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const result = await updateColourSubgroup(pool, id, req.body?.name);
+    if (result.notFound) return res.status(404).json({ error: "subgroup not found" });
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.json(result.subgroup);
+  } catch (e) {
+    console.error("[colour-subgroups] update error:", e);
+    res.status(500).json({ error: e.message || "Failed to update subgroup" });
+  }
+});
+
+app.delete("/api/colour-subgroups/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const result = await deleteColourSubgroup(pool, id);
+    if (result.notFound) return res.status(404).json({ error: "subgroup not found" });
+    res.json({ success: true, deleted: result.deleted });
+  } catch (e) {
+    console.error("[colour-subgroups] delete error:", e);
+    res.status(500).json({ error: e.message || "Failed to delete subgroup" });
   }
 });
 
