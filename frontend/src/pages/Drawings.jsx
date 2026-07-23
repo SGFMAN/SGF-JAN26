@@ -141,7 +141,7 @@ export default function Drawings({
   const [showDraftspersonRequiredModal, setShowDraftspersonRequiredModal] = useState(false);
   const [pendingPdfFile, setPendingPdfFile] = useState(null);
   const [draftspersonModalChoice, setDraftspersonModalChoice] = useState(DRAFTSPERSON_UNASSIGNED);
-  /** When a new PDF is uploaded, user must pick concept vs working before Save and Send ("", "concept", "working"). */
+  /** When a new PDF is uploaded, user must pick concept / working / certifier before Save and Send. */
   const [newDrawingUploadKind, setNewDrawingUploadKind] = useState("");
   const [streamSettingsJson, setStreamSettingsJson] = useState({});
   const drawingUploadPreverifiedPublishedPlansDirRef = useRef(null);
@@ -1965,7 +1965,7 @@ export default function Drawings({
     if (isSendingDraftingEmail) return false;
 
     if (!newDrawingUploadKind) {
-      alert("Please select whether these drawings are concept drawings or working drawings.");
+      alert("Please select whether these drawings are concept, working, or for certifier.");
       return false;
     }
 
@@ -1973,7 +1973,11 @@ export default function Drawings({
     try {
       let drawingsHistory = parseDrawingsHistory(project?.drawings_history);
       const { history: historyWithRules, drawingsStatus: nextDrawingsStatus } =
-        applyDrawingUploadKindRules(drawingsHistory, newDrawingUploadKind);
+        applyDrawingUploadKindRules(
+          drawingsHistory,
+          newDrawingUploadKind,
+          valuesRef.current.drawingsStatus || project?.drawings_status || null
+        );
 
       if (
         notesForRevision.index < 0 ||
@@ -4038,9 +4042,27 @@ export default function Drawings({
                     />
                     Working drawings
                   </label>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      cursor: "pointer",
+                      fontSize: "0.9rem",
+                      color: MONUMENT,
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="newDrawingUploadKind"
+                      checked={newDrawingUploadKind === "certifier"}
+                      onChange={() => setNewDrawingUploadKind("certifier")}
+                    />
+                    For Certifier
+                  </label>
                 </div>
                 <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginTop: "8px" }}>
-                  Required — status is set to Concept Stage or Working Drawing Stage for this upload.
+                  Required — status is set to Concept Stage or Working Drawing Stage for Concept/Working uploads.
                 </div>
               </div>
             )}

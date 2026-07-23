@@ -116,8 +116,10 @@ function drawingsUploadFieldKeys(fieldGroup) {
       fromQld: "qldDesignToSalespersonFromEmail",
       toVic: "designToSalespersonToEmail",
       to2Vic: "designToSalespersonToEmail2",
+      toCrmVic: "designToSalespersonCrmToEmail",
       toQld: "qldDesignToSalespersonToEmail",
       to2Qld: "qldDesignToSalespersonToEmail2",
+      toCrmQld: "qldDesignToSalespersonCrmToEmail",
       toConstructionVic: "designToSalespersonConstructionToEmail",
       toConstruction2Vic: "designToSalespersonConstructionToEmail2",
       toConstruction3Vic: "designToSalespersonConstructionToEmail3",
@@ -287,6 +289,8 @@ function defaultDrawingsState() {
     designToSalespersonToEmail: "",
     /** VIC: second Drawings Upload To slot [DESIGN] (merged with primary at send time). */
     designToSalespersonToEmail2: "",
+    /** VIC: Drawings Upload To [CRM] */
+    designToSalespersonCrmToEmail: "",
     /** VIC: Drawings Upload To [CONSTRUCTION] */
     designToSalespersonConstructionToEmail: "",
     /** VIC: Drawings Upload To (additional) [CONSTRUCTION] */
@@ -314,6 +318,8 @@ function defaultDrawingsState() {
     qldDesignToSalespersonToEmail: "",
     /** QLD: second Drawings Upload To slot [DESIGN] (merged with primary at send time). */
     qldDesignToSalespersonToEmail2: "",
+    /** QLD: Drawings Upload To [CRM] */
+    qldDesignToSalespersonCrmToEmail: "",
     /** QLD: Drawings Upload To [CONSTRUCTION] */
     qldDesignToSalespersonConstructionToEmail: "",
     /** QLD: Drawings Upload To (additional) [CONSTRUCTION] */
@@ -401,6 +407,9 @@ function normalizeStreamSettingsMap(raw, streamOptions = STREAM_OPTIONS_FALLBACK
     }
     if (!row.drawings.qldDesignToSalespersonToEmail2) {
       row.drawings.qldDesignToSalespersonToEmail2 = row.drawings.designToSalespersonToEmail2 || "";
+    }
+    if (!row.drawings.qldDesignToSalespersonCrmToEmail) {
+      row.drawings.qldDesignToSalespersonCrmToEmail = row.drawings.designToSalespersonCrmToEmail || "";
     }
     if (!row.drawings.qldDesignToSalespersonConstructionToEmail) {
       row.drawings.qldDesignToSalespersonConstructionToEmail =
@@ -2058,6 +2067,7 @@ export default function StreamSettings() {
                                           const fromKey = isQld ? K.fromQld : K.fromVic;
                                           const toKey = isQld ? K.toQld : K.toVic;
                                           const to2Key = isQld ? K.to2Qld : K.to2Vic;
+                                          const toCrmKey = isQld ? K.toCrmQld : K.toCrmVic;
                                           const toConstructionKey = isQld
                                             ? K.toConstructionQld
                                             : K.toConstructionVic;
@@ -2123,6 +2133,22 @@ export default function StreamSettings() {
                                                     disabled={saving}
                                                     onValueChange={(next) => {
                                                       updateDrawingText(rowKey, to2Key, next);
+                                                    }}
+                                                    onCommit={flushPersist}
+                                                  />
+                                                </div>
+                                              ) : null}
+                                              {isDrawingsUpload && toCrmKey ? (
+                                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                                  <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                                    {K.label} — To [CRM]
+                                                  </span>
+                                                  <DrawingNotifySmtpSelect
+                                                    smtpOptions={smtpSlotEmails}
+                                                    value={d[toCrmKey] || ""}
+                                                    disabled={saving}
+                                                    onValueChange={(next) => {
+                                                      updateDrawingText(rowKey, toCrmKey, next);
                                                     }}
                                                     onCommit={flushPersist}
                                                   />

@@ -7,15 +7,27 @@
  */
 
 const path = require("path");
+const fsSync = require("fs");
 const { getMeta, setMeta } = require("./schemaStartup");
 
 const GROUP_KEY = "polytec";
 const GROUP_DISPLAY_NAME = "Polytec - Doors & Panels";
 /** Public URL folder for Polytec swatch images (files in frontend/public/…). */
 const IMAGE_PUBLIC_PATH = "/images/Colours/Polytec - Decorative 16mm Doors & Panels";
+/** On-disk folder matching IMAGE_PUBLIC_PATH (dev + prod serve from here / dist copy). */
+const IMAGE_DIR = path.join(
+  __dirname,
+  "..",
+  "frontend",
+  "public",
+  "images",
+  "Colours",
+  "Polytec - Decorative 16mm Doors & Panels"
+);
 /** Bump to wipe and reseed the Polytec catalogue once on startup. */
 const POLYTEC_SEED_VERSION = "2026-07-23-v1";
 const POLYTEC_SEED_META_KEY = "polytec_seed_version";
+const SAFE_IMAGE_FILENAME = /^[A-Za-z0-9][A-Za-z0-9 ._()-]*\.(jpe?g|png|webp|gif|bmp)$/i;
 
 /** Preferred display order for subgroups. */
 const SUBGROUP_ORDER = ["Ashgrain", "Matt", "Sheen", "Smooth", "Texture", "Woodmatt"];
@@ -139,27 +151,31 @@ const POLYTEC_SEED = POLYTEC_SAMPLES.reduce((acc, row) => {
   return acc;
 }, {});
 
-function ensureUploadDir() {
-  if (!fsSync.existsSync(UPLOAD_DIR)) {
-    fsSync.mkdirSync(UPLOAD_DIR, { recursive: true });
-  }
+function sanitizeImageFilename(raw) {
+  if (raw == null) return null;
+  const base = path.basename(String(raw).trim());
+  if (!base || base === "." || base === "..") return null;
+  if (!SAFE_IMAGE_FILENAME.test(base)) return null;
+  return base;
 }
 
-function imageUrlForSample(sampleId, hasImage) {
-  if (!hasImage) return null;
-  return `/api/colour-samples/${sampleId}/image`;
+function imageUrlForFilename(filename) {
+  const safe = sanitizeImageFilename(filename);
+  if (!safe) return null;
+  return `${IMAGE_PUBLIC_PATH}/${encodeURIComponent(safe)}`;
 }
 
 function mapSampleRow(row) {
   if (!row) return null;
+  const imageFilename = row.image_filename || null;
   return {
     id: row.id,
     name: row.name,
     subgroup_id: row.subgroup_id,
     subgroup: row.subgroup_name || null,
     sort_order: row.sort_order,
-    image_filename: row.image_filename || null,
-    image_url: imageUrlForSample(row.id, !!row.image_filename),
+    image_filename: imageFilename,
+    image_url: imageUrlForFilename(imageFilename),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -208,21 +224,11 @@ async function ensurePolytecColourTables(pool) {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS colour_samples_subgroup_id_idx ON colour_samples (subgroup_id);
   `);
-  ensureUploadDir();
   await seedPolytecColours(pool);
 }
 
 async function wipePolytecCatalogue(pool, groupId) {
-  const images = await pool.query(
-    `SELECT s.image_filename
-     FROM colour_samples s
-     JOIN colour_subgroups sg ON sg.id = s.subgroup_id
-     WHERE sg.group_id = $1 AND s.image_filename IS NOT NULL`,
-    [groupId]
-  );
-  for (const row of images.rows) {
-    await deleteImageFile(row.image_filename);
-  }
+  // Image files stay in the shared public folder; only DB rows are cleared.
   await pool.query(
     `DELETE FROM colour_samples
      WHERE subgroup_id IN (SELECT id FROM colour_subgroups WHERE group_id = $1)`,
@@ -366,40 +372,7 @@ async function getSampleById(pool, id) {
   return r.rows[0] || null;
 }
 
-function extensionForUpload(file) {
-  const original = String(file?.originalname || "");
-  const ext = path.extname(original).toLowerCase();
-  if ([".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"].includes(ext)) return ext;
-  const mime = String(file?.mimetype || "").toLowerCase();
-  if (mime === "image/jpeg") return ".jpg";
-  if (mime === "image/png") return ".png";
-  if (mime === "image/webp") return ".webp";
-  if (mime === "image/gif") return ".gif";
-  return ".jpg";
-}
-
-async function saveSampleImageFile(sampleId, file) {
-  ensureUploadDir();
-  const ext = extensionForUpload(file);
-  const filename = `sample-${sampleId}-${crypto.randomBytes(8).toString("hex")}${ext}`;
-  const fullPath = path.join(UPLOAD_DIR, filename);
-  await fs.writeFile(fullPath, file.buffer);
-  return filename;
-}
-
-async function deleteImageFile(filename) {
-  if (!filename) return;
-  const fullPath = path.join(UPLOAD_DIR, filename);
-  try {
-    await fs.unlink(fullPath);
-  } catch (e) {
-    if (e && e.code !== "ENOENT") {
-      console.log(`deleteImageFile (${filename}):`, e.message);
-    }
-  }
-}
-
-async function updateSample(pool, id, { name, subgroupId, file }) {
+async function updateSample(pool, id, { name, subgroupId, imageFilename, clearImage }) {
   const existing = await getSampleById(pool, id);
   if (!existing) return { notFound: true };
 
@@ -416,10 +389,16 @@ async function updateSample(pool, id, { name, subgroupId, file }) {
   }
 
   let nextFilename = existing.image_filename;
-  if (file && file.buffer) {
-    const saved = await saveSampleImageFile(id, file);
-    if (existing.image_filename) await deleteImageFile(existing.image_filename);
-    nextFilename = saved;
+  if (clearImage) {
+    nextFilename = null;
+  } else if (imageFilename !== undefined) {
+    if (imageFilename == null || String(imageFilename).trim() === "") {
+      nextFilename = null;
+    } else {
+      const safe = sanitizeImageFilename(imageFilename);
+      if (!safe) return { error: "Invalid image filename", status: 400 };
+      nextFilename = safe;
+    }
   }
 
   const r = await pool.query(
@@ -436,9 +415,7 @@ async function updateSample(pool, id, { name, subgroupId, file }) {
 async function deleteSample(pool, id) {
   const existing = await getSampleById(pool, id);
   if (!existing) return { notFound: true };
-  if (existing.image_filename) {
-    await deleteImageFile(existing.image_filename);
-  }
+  // Do not delete shared image files from the public colour library.
   await pool.query(`DELETE FROM colour_samples WHERE id = $1`, [id]);
   return { deleted: mapSampleRow(existing) };
 }
@@ -543,13 +520,6 @@ async function deleteSubgroup(pool, id) {
     [id, GROUP_KEY]
   );
   if (!existing.rows.length) return { notFound: true };
-  const images = await pool.query(
-    `SELECT image_filename FROM colour_samples WHERE subgroup_id = $1 AND image_filename IS NOT NULL`,
-    [id]
-  );
-  for (const row of images.rows) {
-    await deleteImageFile(row.image_filename);
-  }
   const countR = await pool.query(
     `SELECT COUNT(*)::int AS c FROM colour_samples WHERE subgroup_id = $1`,
     [id]
@@ -563,10 +533,11 @@ async function deleteSubgroup(pool, id) {
 async function getSampleImagePath(pool, id) {
   const row = await getSampleById(pool, id);
   if (!row) return { notFound: true };
-  if (!row.image_filename) return { noImage: true };
-  const fullPath = path.join(UPLOAD_DIR, row.image_filename);
+  const safe = sanitizeImageFilename(row.image_filename);
+  if (!safe) return { noImage: true };
+  const fullPath = path.join(IMAGE_DIR, safe);
   if (!fsSync.existsSync(fullPath)) return { noImage: true };
-  return { path: fullPath, filename: row.image_filename };
+  return { path: fullPath, filename: safe };
 }
 
 module.exports = {
@@ -575,7 +546,8 @@ module.exports = {
   POLYTEC_SEED,
   POLYTEC_SAMPLES,
   POLYTEC_SEED_VERSION,
-  UPLOAD_DIR,
+  IMAGE_PUBLIC_PATH,
+  IMAGE_DIR,
   ensurePolytecColourTables,
   listPolytecCatalogue,
   getSampleById,
@@ -587,4 +559,6 @@ module.exports = {
   deleteSubgroup,
   getSampleImagePath,
   mapSampleRow,
+  sanitizeImageFilename,
+  imageUrlForFilename,
 };

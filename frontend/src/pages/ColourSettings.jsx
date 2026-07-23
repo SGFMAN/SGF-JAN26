@@ -46,7 +46,7 @@ export default function ColourSettings() {
     name: "",
     subgroupId: "",
     imagePreview: "",
-    imageFile: null,
+    imageFilename: "",
   });
   const listScrollRef = useRef(null);
   const restoreSampleIdRef = useRef(null);
@@ -174,7 +174,7 @@ export default function ColourSettings() {
       name: sample.name || "",
       subgroupId: String(subgroup.id),
       imagePreview: sample.image_url || "",
-      imageFile: null,
+      imageFilename: sample.image_filename || "",
     });
     setShowModal(true);
   };
@@ -184,7 +184,7 @@ export default function ColourSettings() {
     requestListRestore(editingSample?.id ?? restoreSampleIdRef.current);
     setShowModal(false);
     setEditingSample(null);
-    setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFile: null });
+    setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFilename: "" });
   };
 
   const handleModalOk = async () => {
@@ -192,18 +192,14 @@ export default function ColourSettings() {
     const restoreId = editingSample.id;
     try {
       setSaving(true);
-      const formData = new FormData();
-      formData.append("name", editForm.name.trim());
-      formData.append("subgroup_id", editForm.subgroupId);
-      if (editForm.imageFile) {
-        formData.append("image", editForm.imageFile);
-      }
-      const headers = getApiHeaders();
-      delete headers["Content-Type"];
       const res = await fetch(`${API_URL}/api/colour-samples/${editingSample.id}`, {
         method: "PUT",
-        headers,
-        body: formData,
+        headers: getApiHeaders(),
+        body: JSON.stringify({
+          name: editForm.name.trim(),
+          subgroup_id: editForm.subgroupId,
+          image_filename: editForm.imageFilename || null,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
@@ -211,7 +207,7 @@ export default function ColourSettings() {
       await loadPolytec({ silent: true });
       setShowModal(false);
       setEditingSample(null);
-      setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFile: null });
+      setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFilename: "" });
     } catch (e) {
       alert(e.message || "Failed to save sample");
     } finally {
@@ -234,7 +230,7 @@ export default function ColourSettings() {
       await loadPolytec({ silent: true });
       setShowModal(false);
       setEditingSample(null);
-      setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFile: null });
+      setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFilename: "" });
     } catch (e) {
       alert(e.message || "Failed to delete sample");
     } finally {
@@ -360,15 +356,18 @@ export default function ColourSettings() {
   const handleImageChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setEditForm((prev) => ({
+    const filename = file.name || "";
+    const localPreview = URL.createObjectURL(file);
+    setEditForm((prev) => {
+      if (prev.imagePreview && prev.imagePreview.startsWith("blob:")) {
+        URL.revokeObjectURL(prev.imagePreview);
+      }
+      return {
         ...prev,
-        imageFile: file,
-        imagePreview: typeof reader.result === "string" ? reader.result : prev.imagePreview,
-      }));
-    };
-    reader.readAsDataURL(file);
+        imageFilename: filename,
+        imagePreview: localPreview,
+      };
+    });
   };
 
   const deleteButtonFallbackStyle = {
@@ -845,6 +844,11 @@ export default function ColourSettings() {
                     cursor: "pointer",
                   }}
                 />
+                {editForm.imageFilename ? (
+                  <div style={{ marginTop: "8px", fontSize: "0.85rem", color: UI.textMuted }}>
+                    Filename: {editForm.imageFilename}
+                  </div>
+                ) : null}
                 {editForm.imagePreview ? (
                   <div style={{ marginTop: "10px" }}>
                     <img

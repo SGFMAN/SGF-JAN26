@@ -81,9 +81,25 @@ export function applyWorkingUploadRules(drawingsHistory) {
   };
 }
 
-export function applyDrawingUploadKindRules(drawingsHistory, uploadKind) {
+/**
+ * Upload modal: For Certifier selected.
+ * Does not change drawings status — only records the upload kind on the revision.
+ */
+export function applyCertifierUploadRules(drawingsHistory, currentStatus) {
+  return {
+    history: updateLatestRevisionFlags(drawingsHistory, {
+      uploadKind: "certifier",
+    }),
+    drawingsStatus: currentStatus || null,
+  };
+}
+
+export function applyDrawingUploadKindRules(drawingsHistory, uploadKind, currentStatus) {
   if (uploadKind === "working") {
     return applyWorkingUploadRules(drawingsHistory);
+  }
+  if (uploadKind === "certifier") {
+    return applyCertifierUploadRules(drawingsHistory, currentStatus);
   }
   return applyConceptUploadRules(drawingsHistory);
 }

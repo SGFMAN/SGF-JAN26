@@ -71,6 +71,7 @@ function drawingFieldKeyForStreamRow(streamKey, vicStyleKey) {
     designToSalespersonFromEmail: "qldDesignToSalespersonFromEmail",
     designToSalespersonToEmail: "qldDesignToSalespersonToEmail",
     designToSalespersonToEmail2: "qldDesignToSalespersonToEmail2",
+    designToSalespersonCrmToEmail: "qldDesignToSalespersonCrmToEmail",
     designToSalespersonConstructionToEmail: "qldDesignToSalespersonConstructionToEmail",
     designToSalespersonConstructionToEmail2: "qldDesignToSalespersonConstructionToEmail2",
     designToSalespersonConstructionToEmail3: "qldDesignToSalespersonConstructionToEmail3",
@@ -264,6 +265,7 @@ function resolveDesignToSalespersonStreamRowKey(project, settings) {
       (drawingValue(d, key, "designToSalespersonFromEmail") ||
         drawingValue(d, key, "designToSalespersonToEmail") ||
         drawingValue(d, key, "designToSalespersonToEmail2") ||
+        drawingValue(d, key, "designToSalespersonCrmToEmail") ||
         drawingValue(d, key, "designToSalespersonConstructionToEmail") ||
         drawingValue(d, key, "designToSalespersonConstructionToEmail2") ||
         drawingValue(d, key, "designToSalespersonConstructionToEmail3") ||
@@ -287,6 +289,7 @@ function resolveDesignToSalespersonStreamRowKey(project, settings) {
       drawingValue(d, k, "designToSalespersonFromEmail") ||
       drawingValue(d, k, "designToSalespersonToEmail") ||
       drawingValue(d, k, "designToSalespersonToEmail2") ||
+      drawingValue(d, k, "designToSalespersonCrmToEmail") ||
       drawingValue(d, k, "designToSalespersonConstructionToEmail") ||
       drawingValue(d, k, "designToSalespersonConstructionToEmail2") ||
       drawingValue(d, k, "designToSalespersonConstructionToEmail3") ||
@@ -313,6 +316,7 @@ const DESIGN_TO_SALESPERSON_FIELD_KEYS = new Set([
   "designToSalespersonFromEmail",
   "designToSalespersonToEmail",
   "designToSalespersonToEmail2",
+  "designToSalespersonCrmToEmail",
   "designToSalespersonConstructionToEmail",
   "designToSalespersonConstructionToEmail2",
   "designToSalespersonConstructionToEmail3",
@@ -356,9 +360,13 @@ export function resolveDesignToSalespersonFrom(settings, project, _templateFrom)
 /**
  * To recipients for Drawings Upload (primary + optional second To on VIC/QLD stream row `drawings`).
  * Uses [DESIGN] or [CONSTRUCTION] To fields based on project status.
+ * CRM To is always merged when set.
  */
 export function resolveDesignToSalespersonToEmails(settings, project, _templateToEmails) {
   const construction = isConstructionPhaseProject(project);
+  const crm = parseSettingsToEmailList(
+    getDrawingFieldFromStreamRows(settings, project, "designToSalespersonCrmToEmail")
+  );
   if (construction) {
     const primary = parseSettingsToEmailList(
       getDrawingFieldFromStreamRows(settings, project, "designToSalespersonConstructionToEmail")
@@ -372,7 +380,7 @@ export function resolveDesignToSalespersonToEmails(settings, project, _templateT
     const additional3 = parseSettingsToEmailList(
       getDrawingFieldFromStreamRows(settings, project, "designToSalespersonConstructionToEmail4")
     );
-    return mergeUniqueEmails(primary, additional, additional2, additional3);
+    return mergeUniqueEmails(primary, additional, additional2, additional3, crm);
   }
   const primary = parseSettingsToEmailList(
     getDrawingFieldFromStreamRows(settings, project, "designToSalespersonToEmail")
@@ -380,7 +388,7 @@ export function resolveDesignToSalespersonToEmails(settings, project, _templateT
   const secondary = parseSettingsToEmailList(
     getDrawingFieldFromStreamRows(settings, project, "designToSalespersonToEmail2")
   );
-  return mergeUniqueEmails(primary, secondary);
+  return mergeUniqueEmails(primary, secondary, crm);
 }
 
 /** Stream Settings → Drawings → Design Notes — From only (resolved row from stream + state). */

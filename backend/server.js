@@ -4634,7 +4634,7 @@ app.get("/api/colour-groups/polytec", async (req, res) => {
   }
 });
 
-app.put("/api/colour-samples/:id", upload.single("image"), async (req, res) => {
+app.put("/api/colour-samples/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   if (!requireStaffUserId(req, res)) return;
   if (!(await isAdminRequest(req))) {
@@ -4647,7 +4647,8 @@ app.put("/api/colour-samples/:id", upload.single("image"), async (req, res) => {
     const result = await updateColourSample(pool, id, {
       name: body.name,
       subgroupId: body.subgroup_id ?? body.subgroupId,
-      file: req.file || null,
+      imageFilename: body.image_filename ?? body.imageFilename,
+      clearImage: body.clear_image === true || body.clearImage === true,
     });
     if (result.notFound) return res.status(404).json({ error: "sample not found" });
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
