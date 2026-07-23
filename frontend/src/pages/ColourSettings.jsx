@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
 import { getApiHeaders } from "../utils/auth";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
@@ -48,10 +48,14 @@ export default function ColourSettings() {
     imagePreview: "",
     imageFile: null,
   });
+  const listScrollRef = useRef(null);
+  const restoreSampleIdRef = useRef(null);
+  const restoreScrollTopRef = useRef(null);
+  const pendingRestoreRef = useRef(false);
 
-  const loadPolytec = useCallback(async () => {
+  const loadPolytec = useCallback(async ({ silent = false } = {}) => {
     try {
-      setLoadingPolytec(true);
+      if (!silent) setLoadingPolytec(true);
       setLoadError("");
       const res = await fetch(`${API_URL}/api/colour-groups/polytec`, {
         headers: getApiHeaders(),
@@ -62,15 +66,72 @@ export default function ColourSettings() {
     } catch (e) {
       console.error(e);
       setLoadError(e.message || "Failed to load Polytec colours");
-      setPolytecCatalogue(null);
+      if (!silent) setPolytecCatalogue(null);
     } finally {
-      setLoadingPolytec(false);
+      if (!silent) setLoadingPolytec(false);
     }
   }, []);
 
   useEffect(() => {
     void loadPolytec();
   }, [loadPolytec]);
+
+  function captureListPosition(preferredSampleId = null) {
+    const scroller = listScrollRef.current;
+    if (scroller) restoreScrollTopRef.current = scroller.scrollTop;
+    if (preferredSampleId != null) {
+      restoreSampleIdRef.current = preferredSampleId;
+      return;
+    }
+    if (!scroller) return;
+    const rows = scroller.querySelectorAll("[data-sample-id]");
+    const scrollerTop = scroller.getBoundingClientRect().top;
+    let bestId = null;
+    let bestDist = Infinity;
+    rows.forEach((row) => {
+      const rect = row.getBoundingClientRect();
+      const dist = Math.abs(rect.top - scrollerTop);
+      if (rect.bottom > scrollerTop + 8 && dist < bestDist) {
+        bestDist = dist;
+        bestId = row.getAttribute("data-sample-id");
+      }
+    });
+    if (bestId != null) restoreSampleIdRef.current = bestId;
+  }
+
+  function requestListRestore(preferredSampleId = null) {
+    captureListPosition(preferredSampleId);
+    pendingRestoreRef.current = true;
+  }
+
+  function restoreListPosition() {
+    if (!pendingRestoreRef.current) return;
+    const scroller = listScrollRef.current;
+    if (!scroller) return;
+    const sampleId = restoreSampleIdRef.current;
+    const row =
+      sampleId != null
+        ? scroller.querySelector(`[data-sample-id="${CSS.escape(String(sampleId))}"]`)
+        : null;
+    if (row) {
+      row.scrollIntoView({ block: "center", inline: "nearest" });
+      pendingRestoreRef.current = false;
+      return;
+    }
+    if (restoreScrollTopRef.current != null) {
+      scroller.scrollTop = restoreScrollTopRef.current;
+    }
+    pendingRestoreRef.current = false;
+  }
+
+  useEffect(() => {
+    if (loadingPolytec || showModal || showSubgroupsModal) return;
+    if (!pendingRestoreRef.current) return;
+    const id = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => restoreListPosition());
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [loadingPolytec, showModal, showSubgroupsModal, sortMode, polytecCatalogue, selectedGroup]);
 
   const getColourHex = (r, g, b) => {
     return `#${[r, g, b]
@@ -107,6 +168,7 @@ export default function ColourSettings() {
   }, [sortMode]);
 
   const handleColorClick = (sample, subgroup) => {
+    requestListRestore(sample?.id ?? null);
     setEditingSample(sample);
     setEditForm({
       name: sample.name || "",
@@ -119,6 +181,7 @@ export default function ColourSettings() {
 
   const handleModalClose = () => {
     if (saving) return;
+    requestListRestore(editingSample?.id ?? restoreSampleIdRef.current);
     setShowModal(false);
     setEditingSample(null);
     setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFile: null });
@@ -126,6 +189,7 @@ export default function ColourSettings() {
 
   const handleModalOk = async () => {
     if (!editingSample?.id || !editForm.name.trim() || !editForm.subgroupId) return;
+    const restoreId = editingSample.id;
     try {
       setSaving(true);
       const formData = new FormData();
@@ -143,7 +207,8 @@ export default function ColourSettings() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
-      await loadPolytec();
+      requestListRestore(restoreId);
+      await loadPolytec({ silent: true });
       setShowModal(false);
       setEditingSample(null);
       setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFile: null });
@@ -165,7 +230,8 @@ export default function ColourSettings() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
-      await loadPolytec();
+      requestListRestore(null);
+      await loadPolytec({ silent: true });
       setShowModal(false);
       setEditingSample(null);
       setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFile: null });
@@ -177,6 +243,7 @@ export default function ColourSettings() {
   };
 
   function openSubgroupsModal() {
+    requestListRestore();
     setSubgroupDraftName("");
     setEditingSubgroupId(null);
     setEditingSubgroupName("");
@@ -185,6 +252,7 @@ export default function ColourSettings() {
 
   function closeSubgroupsModal() {
     if (subgroupSaving) return;
+    requestListRestore(restoreSampleIdRef.current);
     setShowSubgroupsModal(false);
     setSubgroupDraftName("");
     setEditingSubgroupId(null);
@@ -208,7 +276,8 @@ export default function ColourSettings() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       setSubgroupDraftName("");
-      await loadPolytec();
+      requestListRestore(restoreSampleIdRef.current);
+      await loadPolytec({ silent: true });
     } catch (err) {
       alert(err.message || "Failed to add subgroup");
     } finally {
@@ -245,7 +314,8 @@ export default function ColourSettings() {
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       setEditingSubgroupId(null);
       setEditingSubgroupName("");
-      await loadPolytec();
+      requestListRestore(restoreSampleIdRef.current);
+      await loadPolytec({ silent: true });
     } catch (err) {
       alert(err.message || "Failed to update subgroup");
     } finally {
@@ -272,12 +342,19 @@ export default function ColourSettings() {
         setEditingSubgroupId(null);
         setEditingSubgroupName("");
       }
-      await loadPolytec();
+      requestListRestore(restoreSampleIdRef.current);
+      await loadPolytec({ silent: true });
     } catch (err) {
       alert(err.message || "Failed to delete subgroup");
     } finally {
       setSubgroupSaving(false);
     }
+  }
+
+  function handleSortModeChange(nextMode) {
+    if (nextMode === sortMode) return;
+    requestListRestore();
+    setSortMode(nextMode);
   }
 
   const handleImageChange = (e) => {
@@ -374,7 +451,10 @@ export default function ColourSettings() {
           </div>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px", overflowY: "auto", paddingRight: "8px" }}>
+        <div
+          ref={listScrollRef}
+          style={{ display: "flex", flexDirection: "column", gap: "12px", overflowY: "auto", paddingRight: "8px" }}
+        >
           {selectedGroup === "colorbond" && (
             <>
               <div
@@ -388,10 +468,18 @@ export default function ColourSettings() {
               >
                 <h3 style={{ fontSize: "1.1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>Colorbond Colours</h3>
                 <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
-                  <button type="button" onClick={() => setSortMode("group")} style={sortButtonStyle(sortMode === "group")}>
+                  <button
+                    type="button"
+                    onClick={() => handleSortModeChange("group")}
+                    style={sortButtonStyle(sortMode === "group")}
+                  >
                     Sort by Group
                   </button>
-                  <button type="button" onClick={() => setSortMode("alpha")} style={sortButtonStyle(sortMode === "alpha")}>
+                  <button
+                    type="button"
+                    onClick={() => handleSortModeChange("alpha")}
+                    style={sortButtonStyle(sortMode === "alpha")}
+                  >
                     Sort Alphabetically
                   </button>
                 </div>
@@ -402,6 +490,7 @@ export default function ColourSettings() {
                   return (
                     <div
                       key={`${colour.name}-${index}`}
+                      data-sample-id={`colorbond-${colour.name}`}
                       style={{
                         background: "transparent",
                         border: "1px solid #ddd",
@@ -452,10 +541,18 @@ export default function ColourSettings() {
                   {polytecCatalogue?.name || "Polytec - Doors & Panels"}
                 </h3>
                 <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
-                  <button type="button" onClick={() => setSortMode("group")} style={sortButtonStyle(sortMode === "group")}>
+                  <button
+                    type="button"
+                    onClick={() => handleSortModeChange("group")}
+                    style={sortButtonStyle(sortMode === "group")}
+                  >
                     Sort by Group
                   </button>
-                  <button type="button" onClick={() => setSortMode("alpha")} style={sortButtonStyle(sortMode === "alpha")}>
+                  <button
+                    type="button"
+                    onClick={() => handleSortModeChange("alpha")}
+                    style={sortButtonStyle(sortMode === "alpha")}
+                  >
                     Sort Alphabetically
                   </button>
                   <button type="button" onClick={openSubgroupsModal} style={sortButtonStyle(false)}>
@@ -472,6 +569,7 @@ export default function ColourSettings() {
                   {alphabeticalSamples.map(({ sample, subgroup }) => (
                     <div
                       key={sample.id}
+                      data-sample-id={sample.id}
                       onClick={() => handleColorClick(sample, subgroup)}
                       style={{
                         background: "transparent",
@@ -555,6 +653,7 @@ export default function ColourSettings() {
                         {(subgroup.samples || []).map((sample) => (
                           <div
                             key={sample.id}
+                            data-sample-id={sample.id}
                             onClick={() => handleColorClick(sample, subgroup)}
                             style={{
                               background: "transparent",
