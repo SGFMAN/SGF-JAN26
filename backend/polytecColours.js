@@ -432,6 +432,16 @@ async function updateSample(pool, id, { name, subgroupId, file }) {
   return { sample: mapSampleRow(mapped) };
 }
 
+async function deleteSample(pool, id) {
+  const existing = await getSampleById(pool, id);
+  if (!existing) return { notFound: true };
+  if (existing.image_filename) {
+    await deleteImageFile(existing.image_filename);
+  }
+  await pool.query(`DELETE FROM colour_samples WHERE id = $1`, [id]);
+  return { deleted: mapSampleRow(existing) };
+}
+
 async function getSampleImagePath(pool, id) {
   const row = await getSampleById(pool, id);
   if (!row) return { notFound: true };
@@ -452,6 +462,7 @@ module.exports = {
   listPolytecCatalogue,
   getSampleById,
   updateSample,
+  deleteSample,
   getSampleImagePath,
   mapSampleRow,
 };

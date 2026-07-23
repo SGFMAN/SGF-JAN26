@@ -1,11 +1,32 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
 import { getApiHeaders } from "../utils/auth";
-import { UI } from "../utils/uiThemeTokens.js";
+import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
+import { MENU, UI } from "../utils/uiThemeTokens.js";
+import { streamColorHover } from "../utils/streamColors.js";
 
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
 const API_URL = "";
+const DELETE_COLOUR_BUTTON_ID = 2;
+
+function sortButtonStyle(active) {
+  return {
+    padding: "8px 14px",
+    borderRadius: "8px",
+    border: active ? `1px solid ${MONUMENT}` : "1px solid #ddd",
+    background: active ? MONUMENT : WHITE,
+    color: active ? WHITE : MONUMENT,
+    fontSize: "0.88rem",
+    fontWeight: 600,
+    cursor: "pointer",
+  };
+}
+
+function mergeButtonStyle(styleId, fallback) {
+  const saved = buildSavedButtonStyle(styleId, true);
+  return saved ? { ...saved } : fallback;
+}
 
 export default function ColourSettings() {
   const [polytecCatalogue, setPolytecCatalogue] = useState(null);
@@ -13,6 +34,7 @@ export default function ColourSettings() {
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [selectedGroup, setSelectedGroup] = useState(null);
+  const [sortMode, setSortMode] = useState("group"); // "group" | "alpha"
   const [showModal, setShowModal] = useState(false);
   const [editingSample, setEditingSample] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -55,6 +77,29 @@ export default function ColourSettings() {
   };
 
   const subgroups = polytecCatalogue?.subgroups || [];
+
+  const alphabeticalSamples = useMemo(() => {
+    const out = [];
+    for (const sg of subgroups) {
+      for (const sample of sg.samples || []) {
+        out.push({ sample, subgroup: sg });
+      }
+    }
+    return out.sort((a, b) =>
+      String(a.sample.name || "").localeCompare(String(b.sample.name || ""), undefined, {
+        sensitivity: "base",
+      })
+    );
+  }, [subgroups]);
+
+  const colorbondColours = useMemo(() => {
+    if (sortMode === "alpha") {
+      return [...COLORBOND_COLOURS].sort((a, b) =>
+        String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" })
+      );
+    }
+    return COLORBOND_COLOURS;
+  }, [sortMode]);
 
   const handleColorClick = (sample, subgroup) => {
     setEditingSample(sample);
@@ -104,6 +149,28 @@ export default function ColourSettings() {
     }
   };
 
+  const handleModalDelete = async () => {
+    if (!editingSample?.id) return;
+    if (!window.confirm(`Delete colour "${editingSample.name}"?`)) return;
+    try {
+      setSaving(true);
+      const res = await fetch(`${API_URL}/api/colour-samples/${editingSample.id}`, {
+        method: "DELETE",
+        headers: getApiHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      await loadPolytec();
+      setShowModal(false);
+      setEditingSample(null);
+      setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFile: null });
+    } catch (e) {
+      alert(e.message || "Failed to delete sample");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleImageChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -117,6 +184,23 @@ export default function ColourSettings() {
     };
     reader.readAsDataURL(file);
   };
+
+  const deleteButtonFallbackStyle = {
+    background: MENU.purple,
+    color: MENU.activeText,
+    border: `1px solid ${UI.outline}`,
+    borderRadius: "8px",
+    padding: "10px 20px",
+    fontSize: "1rem",
+    fontWeight: 500,
+    cursor: saving ? "not-allowed" : "pointer",
+    transition: "background 0.2s",
+    flexShrink: 0,
+    boxSizing: "border-box",
+    opacity: saving ? 0.65 : 1,
+  };
+  const deleteButtonStyle = mergeButtonStyle(DELETE_COLOUR_BUTTON_ID, deleteButtonFallbackStyle);
+  const deleteUsesSavedStyle = Boolean(buildSavedButtonStyle(DELETE_COLOUR_BUTTON_ID, true));
 
   return (
     <div
@@ -184,13 +268,31 @@ export default function ColourSettings() {
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", overflowY: "auto", paddingRight: "8px" }}>
           {selectedGroup === "colorbond" && (
             <>
-              <h3 style={{ fontSize: "1.1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>Colorbond Colours</h3>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "12px",
+                  flexWrap: "wrap",
+                }}
+              >
+                <h3 style={{ fontSize: "1.1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>Colorbond Colours</h3>
+                <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+                  <button type="button" onClick={() => setSortMode("group")} style={sortButtonStyle(sortMode === "group")}>
+                    Sort by Group
+                  </button>
+                  <button type="button" onClick={() => setSortMode("alpha")} style={sortButtonStyle(sortMode === "alpha")}>
+                    Sort Alphabetically
+                  </button>
+                </div>
+              </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                {COLORBOND_COLOURS.map((colour, index) => {
+                {colorbondColours.map((colour, index) => {
                   const hex = getColourHex(colour.r, colour.g, colour.b);
                   return (
                     <div
-                      key={index}
+                      key={`${colour.name}-${index}`}
                       style={{
                         background: "transparent",
                         border: "1px solid #ddd",
@@ -228,13 +330,99 @@ export default function ColourSettings() {
 
           {selectedGroup === "polytec" && (
             <>
-              <h3 style={{ fontSize: "1.1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>
-                {polytecCatalogue?.name || "Polytec - Doors & Panels"}
-              </h3>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "12px",
+                  flexWrap: "wrap",
+                }}
+              >
+                <h3 style={{ fontSize: "1.1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>
+                  {polytecCatalogue?.name || "Polytec - Doors & Panels"}
+                </h3>
+                <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+                  <button type="button" onClick={() => setSortMode("group")} style={sortButtonStyle(sortMode === "group")}>
+                    Sort by Group
+                  </button>
+                  <button type="button" onClick={() => setSortMode("alpha")} style={sortButtonStyle(sortMode === "alpha")}>
+                    Sort Alphabetically
+                  </button>
+                </div>
+              </div>
               {loadingPolytec ? (
                 <div style={{ color: UI.textMuted, fontSize: "0.9rem" }}>Loading…</div>
               ) : loadError ? (
                 <div style={{ color: "#842029", fontSize: "0.9rem" }}>{loadError}</div>
+              ) : sortMode === "alpha" ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {alphabeticalSamples.map(({ sample, subgroup }) => (
+                    <div
+                      key={sample.id}
+                      onClick={() => handleColorClick(sample, subgroup)}
+                      style={{
+                        background: "transparent",
+                        border: "1px solid #ddd",
+                        borderRadius: "8px",
+                        padding: "10px 8px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        maxWidth: "100%",
+                        boxSizing: "border-box",
+                        cursor: "pointer",
+                        transition: "background 0.2s",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = UI.inputBg;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "transparent";
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: "28px",
+                          height: "28px",
+                          borderRadius: "4px",
+                          border: "1px solid #ccc",
+                          flexShrink: 0,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: UI.inputBg,
+                          overflow: "hidden",
+                        }}
+                      >
+                        {sample.image_url ? (
+                          <img
+                            src={sample.image_url}
+                            alt={sample.name}
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              fontSize: "6px",
+                              color: "var(--sgf-text-primary)",
+                              fontWeight: 600,
+                              textAlign: "center",
+                              lineHeight: "1",
+                              letterSpacing: "0.3px",
+                            }}
+                          >
+                            Soon
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: "0.85rem", fontWeight: 500, color: MONUMENT }}>{sample.name}</div>
+                        <div style={{ fontSize: "0.75rem", color: UI.textMuted }}>{subgroup.name}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                   {subgroups.map((subgroup) => (
@@ -463,7 +651,29 @@ export default function ColourSettings() {
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "24px" }}>
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "24px", alignItems: "center" }}>
+              <button
+                type="button"
+                onClick={handleModalDelete}
+                disabled={saving}
+                style={deleteButtonStyle}
+                onMouseEnter={
+                  deleteUsesSavedStyle || saving
+                    ? undefined
+                    : (e) => {
+                        e.currentTarget.style.background = streamColorHover(MENU.purple);
+                      }
+                }
+                onMouseLeave={
+                  deleteUsesSavedStyle || saving
+                    ? undefined
+                    : (e) => {
+                        e.currentTarget.style.background = MENU.purple;
+                      }
+                }
+              >
+                Delete
+              </button>
               <button
                 type="button"
                 onClick={handleModalClose}

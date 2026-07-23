@@ -61,6 +61,7 @@ const {
   ensurePolytecColourTables,
   listPolytecCatalogue,
   updateSample: updateColourSample,
+  deleteSample: deleteColourSample,
   getSampleImagePath: getColourSampleImagePath,
 } = require("./polytecColours");
 const { ensureMapQuoteItemsTable, listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
@@ -4650,6 +4651,24 @@ app.put("/api/colour-samples/:id", upload.single("image"), async (req, res) => {
   } catch (e) {
     console.error("[colour-samples] update error:", e);
     res.status(500).json({ error: e.message || "Failed to update sample" });
+  }
+});
+
+app.delete("/api/colour-samples/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const result = await deleteColourSample(pool, id);
+    if (result.notFound) return res.status(404).json({ error: "sample not found" });
+    res.json({ success: true, deleted: result.deleted });
+  } catch (e) {
+    console.error("[colour-samples] delete error:", e);
+    res.status(500).json({ error: e.message || "Failed to delete sample" });
   }
 });
 
