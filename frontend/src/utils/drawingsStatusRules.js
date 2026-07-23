@@ -65,6 +65,7 @@ export function applyConceptUploadRules(drawingsHistory) {
     history: updateLatestRevisionFlags(drawingsHistory, {
       conceptApproved: false,
       workingDrawingsApproved: false,
+      uploadKind: "concept",
     }),
     drawingsStatus: DRAWINGS_STATUS.CONCEPT_STAGE,
   };
@@ -76,6 +77,7 @@ export function applyWorkingUploadRules(drawingsHistory) {
     history: updateLatestRevisionFlags(drawingsHistory, {
       conceptApproved: false,
       workingDrawingsApproved: false,
+      uploadKind: "working",
     }),
     drawingsStatus: DRAWINGS_STATUS.WORKING_STAGE,
   };

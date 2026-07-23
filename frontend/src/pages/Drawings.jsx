@@ -143,6 +143,7 @@ export default function Drawings({
   const [draftspersonModalChoice, setDraftspersonModalChoice] = useState(DRAFTSPERSON_UNASSIGNED);
   /** When a new PDF is uploaded, user must pick concept / working / certifier before Save and Send. */
   const [newDrawingUploadKind, setNewDrawingUploadKind] = useState("");
+  const newDrawingUploadKindRef = useRef("");
   const [streamSettingsJson, setStreamSettingsJson] = useState({});
   const drawingUploadPreverifiedPublishedPlansDirRef = useRef(null);
   const [drawingsFolderCheckPending, setDrawingsFolderCheckPending] = useState(false);
@@ -166,6 +167,10 @@ export default function Drawings({
   useEffect(() => {
     valuesRef.current = { drawingsStatus, draftsperson };
   }, [drawingsStatus, draftsperson]);
+
+  useEffect(() => {
+    newDrawingUploadKindRef.current = newDrawingUploadKind || "";
+  }, [newDrawingUploadKind]);
 
   // Sync from server when these fields change — not [project] (new object refs would reset draftsperson mid-save).
   useEffect(() => {
@@ -1105,6 +1110,7 @@ export default function Drawings({
       });
       setNotesText("");
       setMarkupFile(null);
+      newDrawingUploadKindRef.current = "";
       setNewDrawingUploadKind("");
       setShowNotesModal(true);
     } catch (error) {
@@ -1474,6 +1480,7 @@ export default function Drawings({
     });
     setNotesText(currentNotes);
     setMarkupFile(null);
+    newDrawingUploadKindRef.current = "";
     setNewDrawingUploadKind("");
     setShowNotesModal(true);
   }
@@ -1619,6 +1626,7 @@ export default function Drawings({
     setShowNotesModal(false);
     setNotesForRevision(null);
     setNotesText("");
+    newDrawingUploadKindRef.current = "";
     setNewDrawingUploadKind("");
   }
 
@@ -2091,6 +2099,10 @@ export default function Drawings({
       return;
     }
 
+    // Capture before save/onUpdate can clear React state — drives email To routing.
+    const uploadKindForEmail =
+      newDrawingUploadKindRef.current || newDrawingUploadKind || "";
+
     // Don't attach drawings - just send the email after preview confirms.
 
     /** New uploads: persist status + notes + markup first, then show preview like other drafts. */
@@ -2187,13 +2199,13 @@ export default function Drawings({
         settingsForPreview,
         project,
         [],
-        newDrawingUploadKind
+        uploadKindForEmail
       );
       const previewFromResolved = resolveDesignToSalespersonFrom(settingsForPreview, project, "");
 
       if (!previewToResolved.length) {
         const toHint =
-          newDrawingUploadKind === "certifier"
+          uploadKindForEmail === "certifier"
             ? "To [CRM] and/or To (additional) [DESIGN]"
             : "To [DESIGN] and/or To (additional) [DESIGN]";
         alert(
@@ -2348,6 +2360,7 @@ export default function Drawings({
     setNotesForRevision(null);
     setNotesText("");
     setMarkupFile(null);
+    newDrawingUploadKindRef.current = "";
     setNewDrawingUploadKind("");
   }
 
@@ -2456,6 +2469,7 @@ export default function Drawings({
     setNotesForRevision(null);
     setNotesText("");
     setMarkupFile(null);
+    newDrawingUploadKindRef.current = "";
     setNewDrawingUploadKind("");
     setIsDraggingMarkup(false);
     setIsSendingDraftingEmail(false);
@@ -4028,7 +4042,10 @@ export default function Drawings({
                       type="radio"
                       name="newDrawingUploadKind"
                       checked={newDrawingUploadKind === "concept"}
-                      onChange={() => setNewDrawingUploadKind("concept")}
+                      onChange={() => {
+                        newDrawingUploadKindRef.current = "concept";
+                        setNewDrawingUploadKind("concept");
+                      }}
                     />
                     Concept drawings
                   </label>
@@ -4046,7 +4063,10 @@ export default function Drawings({
                       type="radio"
                       name="newDrawingUploadKind"
                       checked={newDrawingUploadKind === "working"}
-                      onChange={() => setNewDrawingUploadKind("working")}
+                      onChange={() => {
+                        newDrawingUploadKindRef.current = "working";
+                        setNewDrawingUploadKind("working");
+                      }}
                     />
                     Working drawings
                   </label>
@@ -4064,7 +4084,10 @@ export default function Drawings({
                       type="radio"
                       name="newDrawingUploadKind"
                       checked={newDrawingUploadKind === "certifier"}
-                      onChange={() => setNewDrawingUploadKind("certifier")}
+                      onChange={() => {
+                        newDrawingUploadKindRef.current = "certifier";
+                        setNewDrawingUploadKind("certifier");
+                      }}
                     />
                     For Certifier
                   </label>

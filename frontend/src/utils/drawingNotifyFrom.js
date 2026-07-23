@@ -361,8 +361,8 @@ export function resolveDesignToSalespersonFrom(settings, project, _templateFrom)
  * To recipients for Drawings Upload (VIC/QLD stream row `drawings`).
  *
  * Upload modal kind:
- * - certifier → To [CRM] + To (additional) [DESIGN]
- * - concept / working → To [DESIGN] + To (additional) [DESIGN]
+ * - certifier → To [CRM] + To (additional) [DESIGN]  (never To [DESIGN])
+ * - concept / working → To [DESIGN] + To (additional) [DESIGN]  (never CRM)
  *
  * When kind is omitted, falls back to [DESIGN]/CONSTRUCTION] by project status (no CRM).
  */
@@ -376,6 +376,7 @@ export function resolveDesignToSalespersonToEmails(settings, project, _templateT
     const crm = parseSettingsToEmailList(
       getDrawingFieldFromStreamRows(settings, project, "designToSalespersonCrmToEmail")
     );
+    // Explicitly exclude primary DESIGN To for certifier uploads.
     return mergeUniqueEmails(crm, additionalDesign);
   }
 
@@ -383,6 +384,7 @@ export function resolveDesignToSalespersonToEmails(settings, project, _templateT
     const primary = parseSettingsToEmailList(
       getDrawingFieldFromStreamRows(settings, project, "designToSalespersonToEmail")
     );
+    // Explicitly exclude CRM for concept/working uploads.
     return mergeUniqueEmails(primary, additionalDesign);
   }
 
