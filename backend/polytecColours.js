@@ -540,6 +540,132 @@ async function getSampleImagePath(pool, id) {
   return { path: fullPath, filename: safe };
 }
 
+function mapGroupRow(row, sampleCount = 0, subgroupCount = 0) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    key: row.key,
+    name: row.name,
+    sort_order: row.sort_order,
+    active: row.active !== false,
+    sample_count: Number(sampleCount) || 0,
+    subgroup_count: Number(subgroupCount) || 0,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function slugifyGroupKey(name) {
+  const base = String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return base || "group";
+}
+
+async function listColourGroups(pool) {
+  const r = await pool.query(
+    `SELECT g.*,
+            (SELECT COUNT(*)::int FROM colour_subgroups sg WHERE sg.group_id = g.id) AS subgroup_count,
+            (SELECT COUNT(*)::int
+             FROM colour_samples s
+             JOIN colour_subgroups sg ON sg.id = s.subgroup_id
+             WHERE sg.group_id = g.id) AS sample_count
+     FROM colour_groups g
+     WHERE g.active = TRUE
+     ORDER BY g.sort_order ASC, g.name ASC, g.id ASC`
+  );
+  return r.rows.map((row) => mapGroupRow(row, row.sample_count, row.subgroup_count));
+}
+
+async function createColourGroup(pool, name) {
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return { error: "Name is required", status: 400 };
+  let key = slugifyGroupKey(trimmed);
+  const existingKeys = await pool.query(`SELECT key FROM colour_groups`);
+  const used = new Set(existingKeys.rows.map((row) => String(row.key || "").toLowerCase()));
+  if (used.has(key)) {
+    let n = 2;
+    while (used.has(`${key}-${n}`)) n += 1;
+    key = `${key}-${n}`;
+  }
+  const maxOrder = await pool.query(`SELECT COALESCE(MAX(sort_order), 0) AS m FROM colour_groups`);
+  try {
+    const r = await pool.query(
+      `INSERT INTO colour_groups (key, name, sort_order, active)
+       VALUES ($1, $2, $3, TRUE)
+       RETURNING *`,
+      [key, trimmed, (Number(maxOrder.rows[0]?.m) || 0) + 10]
+    );
+    return { group: mapGroupRow(r.rows[0], 0, 0) };
+  } catch (e) {
+    if (e && e.code === "23505") {
+      return { error: "A colour group with that name or key already exists", status: 409 };
+    }
+    throw e;
+  }
+}
+
+async function updateColourGroup(pool, id, name) {
+  const existing = await pool.query(`SELECT * FROM colour_groups WHERE id = $1`, [id]);
+  if (!existing.rows.length) return { notFound: true };
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return { error: "Name is required", status: 400 };
+  try {
+    const r = await pool.query(
+      `UPDATE colour_groups
+       SET name = $1, updated_at = NOW()
+       WHERE id = $2
+       RETURNING *`,
+      [trimmed, id]
+    );
+    const counts = await pool.query(
+      `SELECT
+         (SELECT COUNT(*)::int FROM colour_subgroups sg WHERE sg.group_id = $1) AS subgroup_count,
+         (SELECT COUNT(*)::int
+          FROM colour_samples s
+          JOIN colour_subgroups sg ON sg.id = s.subgroup_id
+          WHERE sg.group_id = $1) AS sample_count`,
+      [id]
+    );
+    return {
+      group: mapGroupRow(
+        r.rows[0],
+        counts.rows[0]?.sample_count,
+        counts.rows[0]?.subgroup_count
+      ),
+    };
+  } catch (e) {
+    if (e && e.code === "23505") {
+      return { error: "A colour group with that name already exists", status: 409 };
+    }
+    throw e;
+  }
+}
+
+async function deleteColourGroup(pool, id) {
+  const existing = await pool.query(`SELECT * FROM colour_groups WHERE id = $1`, [id]);
+  if (!existing.rows.length) return { notFound: true };
+  const counts = await pool.query(
+    `SELECT
+       (SELECT COUNT(*)::int FROM colour_subgroups sg WHERE sg.group_id = $1) AS subgroup_count,
+       (SELECT COUNT(*)::int
+        FROM colour_samples s
+        JOIN colour_subgroups sg ON sg.id = s.subgroup_id
+        WHERE sg.group_id = $1) AS sample_count`,
+    [id]
+  );
+  await pool.query(`DELETE FROM colour_groups WHERE id = $1`, [id]);
+  return {
+    deleted: mapGroupRow(
+      existing.rows[0],
+      counts.rows[0]?.sample_count,
+      counts.rows[0]?.subgroup_count
+    ),
+  };
+}
+
 module.exports = {
   GROUP_KEY,
   GROUP_DISPLAY_NAME,
@@ -561,4 +687,8 @@ module.exports = {
   mapSampleRow,
   sanitizeImageFilename,
   imageUrlForFilename,
+  listColourGroups,
+  createColourGroup,
+  updateColourGroup,
+  deleteColourGroup,
 };

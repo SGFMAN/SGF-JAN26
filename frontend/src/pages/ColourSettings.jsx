@@ -37,6 +37,12 @@ export default function ColourSettings() {
   const [sortMode, setSortMode] = useState("group"); // "group" | "alpha"
   const [showModal, setShowModal] = useState(false);
   const [showSubgroupsModal, setShowSubgroupsModal] = useState(false);
+  const [showGroupsModal, setShowGroupsModal] = useState(false);
+  const [colourGroups, setColourGroups] = useState([]);
+  const [groupDraftName, setGroupDraftName] = useState("");
+  const [editingGroupId, setEditingGroupId] = useState(null);
+  const [editingGroupName, setEditingGroupName] = useState("");
+  const [groupSaving, setGroupSaving] = useState(false);
   const [subgroupDraftName, setSubgroupDraftName] = useState("");
   const [editingSubgroupId, setEditingSubgroupId] = useState(null);
   const [editingSubgroupName, setEditingSubgroupName] = useState("");
@@ -72,9 +78,24 @@ export default function ColourSettings() {
     }
   }, []);
 
+  const loadColourGroups = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/colour-groups`, {
+        headers: getApiHeaders(),
+      });
+      const data = await res.json().catch(() => ([]));
+      if (!res.ok) throw new Error((data && data.error) || `Failed (${res.status})`);
+      setColourGroups(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error(e);
+      setColourGroups([]);
+    }
+  }, []);
+
   useEffect(() => {
     void loadPolytec();
-  }, [loadPolytec]);
+    void loadColourGroups();
+  }, [loadPolytec, loadColourGroups]);
 
   function captureListPosition(preferredSampleId = null) {
     const scroller = listScrollRef.current;
@@ -255,6 +276,118 @@ export default function ColourSettings() {
     setEditingSubgroupName("");
   }
 
+  function openGroupsModal() {
+    setGroupDraftName("");
+    setEditingGroupId(null);
+    setEditingGroupName("");
+    setShowGroupsModal(true);
+    void loadColourGroups();
+  }
+
+  function closeGroupsModal() {
+    if (groupSaving) return;
+    setShowGroupsModal(false);
+    setGroupDraftName("");
+    setEditingGroupId(null);
+    setEditingGroupName("");
+  }
+
+  async function handleAddGroup(e) {
+    e?.preventDefault?.();
+    const name = groupDraftName.trim();
+    if (!name) {
+      alert("Enter a group name.");
+      return;
+    }
+    try {
+      setGroupSaving(true);
+      const res = await fetch(`${API_URL}/api/colour-groups`, {
+        method: "POST",
+        headers: getApiHeaders(),
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      setGroupDraftName("");
+      await loadColourGroups();
+    } catch (err) {
+      alert(err.message || "Failed to add colour group");
+    } finally {
+      setGroupSaving(false);
+    }
+  }
+
+  function startEditGroup(group) {
+    setEditingGroupId(group.id);
+    setEditingGroupName(group.name || "");
+  }
+
+  function cancelEditGroup() {
+    setEditingGroupId(null);
+    setEditingGroupName("");
+  }
+
+  async function handleSaveGroup(e) {
+    e?.preventDefault?.();
+    if (!editingGroupId) return;
+    const name = editingGroupName.trim();
+    if (!name) {
+      alert("Enter a group name.");
+      return;
+    }
+    try {
+      setGroupSaving(true);
+      const res = await fetch(`${API_URL}/api/colour-groups/${editingGroupId}`, {
+        method: "PUT",
+        headers: getApiHeaders(),
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      setEditingGroupId(null);
+      setEditingGroupName("");
+      await loadColourGroups();
+      await loadPolytec({ silent: true });
+    } catch (err) {
+      alert(err.message || "Failed to update colour group");
+    } finally {
+      setGroupSaving(false);
+    }
+  }
+
+  async function handleDeleteGroup(group) {
+    if (!group?.id) return;
+    const sampleCount = Number(group.sample_count) || 0;
+    const subgroupCount = Number(group.subgroup_count) || 0;
+    const detail =
+      sampleCount || subgroupCount
+        ? ` This will also delete ${subgroupCount} subgroup${subgroupCount === 1 ? "" : "s"} and ${sampleCount} colour${sampleCount === 1 ? "" : "s"}.`
+        : "";
+    if (!window.confirm(`Delete colour group "${group.name}"?${detail}`)) return;
+    try {
+      setGroupSaving(true);
+      const res = await fetch(`${API_URL}/api/colour-groups/${group.id}`, {
+        method: "DELETE",
+        headers: getApiHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      if (editingGroupId === group.id) {
+        setEditingGroupId(null);
+        setEditingGroupName("");
+      }
+      if (selectedGroup === group.key) {
+        setSelectedGroup(null);
+      }
+      await loadColourGroups();
+      await loadPolytec({ silent: true });
+    } catch (err) {
+      alert(err.message || "Failed to delete colour group");
+    } finally {
+      setGroupSaving(false);
+    }
+  }
+
   async function handleAddSubgroup(e) {
     e?.preventDefault?.();
     const name = subgroupDraftName.trim();
@@ -404,7 +537,20 @@ export default function ColourSettings() {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 3fr", gap: "24px", flex: 1, minHeight: 0 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", overflowY: "auto", paddingRight: "8px" }}>
-          <h3 style={{ fontSize: "1.1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>Color Groups</h3>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "8px",
+              flexWrap: "wrap",
+            }}
+          >
+            <h3 style={{ fontSize: "1.1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>Color Groups</h3>
+            <button type="button" onClick={openGroupsModal} style={sortButtonStyle(false)}>
+              Group Manager
+            </button>
+          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             <div
               onClick={() => setSelectedGroup("colorbond")}
@@ -426,27 +572,35 @@ export default function ColourSettings() {
               <div style={{ fontSize: "1rem", fontWeight: 600, color: MONUMENT }}>Colorbond</div>
             </div>
 
-            <div
-              onClick={() => setSelectedGroup("polytec")}
-              style={{
-                padding: "16px 12px",
-                border: selectedGroup === "polytec" ? "2px solid " + MONUMENT : "1px solid #ddd",
-                borderRadius: "8px",
-                cursor: "pointer",
-                transition: "all 0.2s",
-                backgroundColor: selectedGroup === "polytec" ? UI.inputBg : "transparent",
-              }}
-              onMouseEnter={(e) => {
-                if (selectedGroup !== "polytec") e.currentTarget.style.backgroundColor = UI.inputBg;
-              }}
-              onMouseLeave={(e) => {
-                if (selectedGroup !== "polytec") e.currentTarget.style.backgroundColor = "transparent";
-              }}
-            >
-              <div style={{ fontSize: "1rem", fontWeight: 600, color: MONUMENT }}>
-                {polytecCatalogue?.name || "Polytec - Doors & Panels"}
-              </div>
-            </div>
+            {colourGroups.map((group) => {
+              const isSelected = selectedGroup === group.key;
+              const label =
+                group.key === "polytec"
+                  ? polytecCatalogue?.name || group.name
+                  : group.name;
+              return (
+                <div
+                  key={group.id}
+                  onClick={() => setSelectedGroup(group.key)}
+                  style={{
+                    padding: "16px 12px",
+                    border: isSelected ? "2px solid " + MONUMENT : "1px solid #ddd",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                    backgroundColor: isSelected ? UI.inputBg : "transparent",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) e.currentTarget.style.backgroundColor = UI.inputBg;
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) e.currentTarget.style.backgroundColor = "transparent";
+                  }}
+                >
+                  <div style={{ fontSize: "1rem", fontWeight: 600, color: MONUMENT }}>{label}</div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -736,6 +890,23 @@ export default function ColourSettings() {
               Select a color group from the left to view colors
             </div>
           )}
+
+          {selectedGroup && selectedGroup !== "colorbond" && selectedGroup !== "polytec" ? (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100%",
+                color: UI.textMuted,
+                fontSize: "0.9rem",
+                textAlign: "center",
+                padding: "24px",
+              }}
+            >
+              No colour catalogue is wired for this group yet. Use Group Manager to rename or remove it.
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -1142,6 +1313,228 @@ export default function ColourSettings() {
                   color: MONUMENT,
                   fontWeight: 600,
                   cursor: subgroupSaving ? "not-allowed" : "pointer",
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showGroupsModal ? (
+        <div
+          role="presentation"
+          onClick={closeGroupsModal}
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "24px",
+            boxSizing: "border-box",
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="groups-modal-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              width: "100%",
+              maxWidth: "560px",
+              maxHeight: "85vh",
+              overflow: "auto",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+              boxSizing: "border-box",
+            }}
+          >
+            <h3
+              id="groups-modal-title"
+              style={{ fontSize: "1.3rem", margin: "0 0 16px 0", color: MONUMENT, fontWeight: 600 }}
+            >
+              Group Manager
+            </h3>
+
+            <form
+              onSubmit={handleAddGroup}
+              style={{ display: "flex", gap: "8px", marginBottom: "20px", alignItems: "center" }}
+            >
+              <input
+                type="text"
+                value={groupDraftName}
+                onChange={(e) => setGroupDraftName(e.target.value)}
+                placeholder="New colour group name"
+                disabled={groupSaving}
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  border: "1px solid #ddd",
+                  borderRadius: "8px",
+                  fontSize: "0.9rem",
+                  boxSizing: "border-box",
+                }}
+              />
+              <button
+                type="submit"
+                disabled={groupSaving || !groupDraftName.trim()}
+                style={{
+                  padding: "10px 16px",
+                  border: "none",
+                  borderRadius: "8px",
+                  background: groupSaving || !groupDraftName.trim() ? "#ccc" : MONUMENT,
+                  color: WHITE,
+                  fontWeight: 600,
+                  cursor: groupSaving || !groupDraftName.trim() ? "not-allowed" : "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Add
+              </button>
+            </form>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {colourGroups.length === 0 ? (
+                <div style={{ color: UI.textMuted, fontSize: "0.9rem" }}>No colour groups yet.</div>
+              ) : (
+                colourGroups.map((group) => {
+                  const isEditing = editingGroupId === group.id;
+                  const sampleCount = Number(group.sample_count) || 0;
+                  const subgroupCount = Number(group.subgroup_count) || 0;
+                  return (
+                    <div
+                      key={group.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        padding: "10px 12px",
+                        border: "1px solid #ddd",
+                        borderRadius: "8px",
+                        background: UI.inputBg,
+                      }}
+                    >
+                      {isEditing ? (
+                        <form
+                          onSubmit={handleSaveGroup}
+                          style={{ display: "flex", flex: 1, gap: "8px", alignItems: "center", minWidth: 0 }}
+                        >
+                          <input
+                            type="text"
+                            value={editingGroupName}
+                            onChange={(e) => setEditingGroupName(e.target.value)}
+                            disabled={groupSaving}
+                            autoFocus
+                            style={{
+                              flex: 1,
+                              padding: "8px 10px",
+                              border: "1px solid #ddd",
+                              borderRadius: "8px",
+                              fontSize: "0.9rem",
+                              boxSizing: "border-box",
+                              minWidth: 0,
+                            }}
+                          />
+                          <button
+                            type="submit"
+                            disabled={groupSaving || !editingGroupName.trim()}
+                            style={{
+                              padding: "8px 12px",
+                              border: "none",
+                              borderRadius: "8px",
+                              background: MONUMENT,
+                              color: WHITE,
+                              fontWeight: 600,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEditGroup}
+                            disabled={groupSaving}
+                            style={{
+                              padding: "8px 12px",
+                              border: "1px solid #ddd",
+                              borderRadius: "8px",
+                              background: WHITE,
+                              color: MONUMENT,
+                              fontWeight: 600,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </form>
+                      ) : (
+                        <>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, color: MONUMENT }}>{group.name}</div>
+                            <div style={{ fontSize: "0.78rem", color: UI.textMuted }}>
+                              {subgroupCount} subgroup{subgroupCount === 1 ? "" : "s"} · {sampleCount} colour
+                              {sampleCount === 1 ? "" : "s"}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => startEditGroup(group)}
+                            disabled={groupSaving}
+                            style={{
+                              padding: "7px 12px",
+                              border: `1px solid ${MONUMENT}33`,
+                              borderRadius: "8px",
+                              background: WHITE,
+                              color: MONUMENT,
+                              fontWeight: 600,
+                              cursor: groupSaving ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteGroup(group)}
+                            disabled={groupSaving}
+                            style={{
+                              padding: "7px 12px",
+                              border: "1px solid #b42318",
+                              borderRadius: "8px",
+                              background: WHITE,
+                              color: "#b42318",
+                              fontWeight: 600,
+                              cursor: groupSaving ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "20px" }}>
+              <button
+                type="button"
+                onClick={closeGroupsModal}
+                disabled={groupSaving}
+                style={{
+                  padding: "10px 18px",
+                  border: "1px solid #ddd",
+                  borderRadius: "8px",
+                  background: WHITE,
+                  color: MONUMENT,
+                  fontWeight: 600,
+                  cursor: groupSaving ? "not-allowed" : "pointer",
                 }}
               >
                 Close

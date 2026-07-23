@@ -67,6 +67,10 @@ const {
   updateSubgroup: updateColourSubgroup,
   deleteSubgroup: deleteColourSubgroup,
   getSampleImagePath: getColourSampleImagePath,
+  listColourGroups,
+  createColourGroup,
+  updateColourGroup,
+  deleteColourGroup,
 } = require("./polytecColours");
 const { ensureMapQuoteItemsTable, listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
 const {
@@ -4639,6 +4643,70 @@ app.get("/api/colour-groups/polytec", async (req, res) => {
     res.json(catalogue);
   } catch (e) {
     res.status(500).json({ error: e.message || "Failed to load polytec colours" });
+  }
+});
+
+app.get("/api/colour-groups", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  try {
+    const groups = await listColourGroups(pool);
+    res.json(groups);
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Failed to load colour groups" });
+  }
+});
+
+app.post("/api/colour-groups", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  try {
+    const result = await createColourGroup(pool, req.body?.name);
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.status(201).json(result.group);
+  } catch (e) {
+    console.error("[colour-groups] create error:", e);
+    res.status(500).json({ error: e.message || "Failed to create colour group" });
+  }
+});
+
+app.put("/api/colour-groups/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const result = await updateColourGroup(pool, id, req.body?.name);
+    if (result.notFound) return res.status(404).json({ error: "group not found" });
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.json(result.group);
+  } catch (e) {
+    console.error("[colour-groups] update error:", e);
+    res.status(500).json({ error: e.message || "Failed to update colour group" });
+  }
+});
+
+app.delete("/api/colour-groups/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const result = await deleteColourGroup(pool, id);
+    if (result.notFound) return res.status(404).json({ error: "group not found" });
+    res.json({ success: true, deleted: result.deleted });
+  } catch (e) {
+    console.error("[colour-groups] delete error:", e);
+    res.status(500).json({ error: e.message || "Failed to delete colour group" });
   }
 });
 
