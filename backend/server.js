@@ -1308,6 +1308,7 @@ async function ensureSchema() {
       "ui_button_styles_json",
       "ui_theme_color_overrides_json",
       "timesheet_export_path",
+      "colours_and_finishes_path",
       "holding_amount",
       "pre_engagement_amount",
       "deposit_percent",
@@ -1791,6 +1792,13 @@ async function ensureSchema() {
   } catch (e) {
     if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
       console.log(`Error adding column timesheet_export_path:`, e.message);
+    }
+  }
+  try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN colours_and_finishes_path TEXT`);
+  } catch (e) {
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column colours_and_finishes_path:`, e.message);
     }
   }
   try {
@@ -4764,7 +4772,7 @@ app.get("/api/settings", async (req, res) => {
   if (!requireStaffUserId(req, res)) return;
   try {
     const r = await pool.query(
-      `SELECT id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, timesheet_export_path, holding_amount, pre_engagement_amount, deposit_percent, base_percent, frame_percent, lock_up_percent, fix_percent, final_percent, deduct_pre_engagement, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, stream_settings_json, email_general_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at FROM settings WHERE id = 1`
+      `SELECT id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, timesheet_export_path, colours_and_finishes_path, holding_amount, pre_engagement_amount, deposit_percent, base_percent, frame_percent, lock_up_percent, fix_percent, final_percent, deduct_pre_engagement, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, stream_settings_json, email_general_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at FROM settings WHERE id = 1`
     );
     if (r.rows.length === 0) {
       const empty = {
@@ -4784,6 +4792,7 @@ app.get("/api/settings", async (req, res) => {
         email_logo_path: null,
         letterhead_path: null,
         timesheet_export_path: null,
+        colours_and_finishes_path: null,
         holding_amount: null,
         pre_engagement_amount: null,
         deposit_percent: null,
@@ -4980,6 +4989,7 @@ app.put("/api/settings", async (req, res) => {
       email_logo_path,
       letterhead_path,
       timesheet_export_path,
+      colours_and_finishes_path,
       holding_amount,
       pre_engagement_amount,
       deposit_percent,
@@ -5069,7 +5079,8 @@ app.put("/api/settings", async (req, res) => {
     const emailGeneralParam = processEmailGeneralJson(email_general_json);
     const emailGeneralParamIndex = streamSettingsParamIndex + 1;
     const timesheetExportParamIndex = emailGeneralParamIndex + 1;
-    const holdingAmountParamIndex = timesheetExportParamIndex + 1;
+    const coloursAndFinishesParamIndex = timesheetExportParamIndex + 1;
+    const holdingAmountParamIndex = coloursAndFinishesParamIndex + 1;
     const preEngagementAmountParamIndex = holdingAmountParamIndex + 1;
     const depositPercentParamIndex = preEngagementAmountParamIndex + 1;
     const basePercentParamIndex = depositPercentParamIndex + 1;
@@ -5081,8 +5092,8 @@ app.put("/api/settings", async (req, res) => {
     const r = await pool.query(
       `INSERT INTO settings (id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, ${smtpInsertCols.join(
         ", "
-      )}, stream_settings_json, email_general_json, timesheet_export_path, holding_amount, pre_engagement_amount, deposit_percent, base_percent, frame_percent, lock_up_percent, fix_percent, final_percent, updated_at)
-       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, ${smtpValuePlaceholders.join(", ")}, $${streamSettingsParamIndex}, $${emailGeneralParamIndex}, $${timesheetExportParamIndex}, $${holdingAmountParamIndex}, $${preEngagementAmountParamIndex}, $${depositPercentParamIndex}, $${basePercentParamIndex}, $${framePercentParamIndex}, $${lockUpPercentParamIndex}, $${fixPercentParamIndex}, $${finalPercentParamIndex}, NOW())
+      )}, stream_settings_json, email_general_json, timesheet_export_path, colours_and_finishes_path, holding_amount, pre_engagement_amount, deposit_percent, base_percent, frame_percent, lock_up_percent, fix_percent, final_percent, updated_at)
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, ${smtpValuePlaceholders.join(", ")}, $${streamSettingsParamIndex}, $${emailGeneralParamIndex}, $${timesheetExportParamIndex}, $${coloursAndFinishesParamIndex}, $${holdingAmountParamIndex}, $${preEngagementAmountParamIndex}, $${depositPercentParamIndex}, $${basePercentParamIndex}, $${framePercentParamIndex}, $${lockUpPercentParamIndex}, $${fixPercentParamIndex}, $${finalPercentParamIndex}, NOW())
        ON CONFLICT (id)
        DO UPDATE SET
          root_directory = COALESCE($1, settings.root_directory),
@@ -5111,6 +5122,7 @@ app.put("/api/settings", async (req, res) => {
          stream_settings_json = COALESCE($${streamSettingsParamIndex}, settings.stream_settings_json),
          email_general_json = COALESCE($${emailGeneralParamIndex}, settings.email_general_json),
          timesheet_export_path = COALESCE($${timesheetExportParamIndex}, settings.timesheet_export_path),
+         colours_and_finishes_path = COALESCE($${coloursAndFinishesParamIndex}, settings.colours_and_finishes_path),
          holding_amount = COALESCE($${holdingAmountParamIndex}, settings.holding_amount),
          pre_engagement_amount = COALESCE($${preEngagementAmountParamIndex}, settings.pre_engagement_amount),
          deposit_percent = COALESCE($${depositPercentParamIndex}, settings.deposit_percent),
@@ -5120,7 +5132,7 @@ app.put("/api/settings", async (req, res) => {
          fix_percent = COALESCE($${fixPercentParamIndex}, settings.fix_percent),
          final_percent = COALESCE($${finalPercentParamIndex}, settings.final_percent),
          updated_at = NOW()
-       RETURNING id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, timesheet_export_path, holding_amount, pre_engagement_amount, deposit_percent, base_percent, frame_percent, lock_up_percent, fix_percent, final_percent, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, stream_settings_json, email_general_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at`,
+       RETURNING id, root_directory, create_folders, root_directory_qld, create_folders_qld, test_project_name_qld, test_folder_qld, global_password, admin_password, colour_attachments_vic, colour_attachments_qld, send_drawings_vic, send_drawings_qld, email_logo_path, letterhead_path, timesheet_export_path, colours_and_finishes_path, holding_amount, pre_engagement_amount, deposit_percent, base_percent, frame_percent, lock_up_percent, fix_percent, final_percent, drawings_vic_design_to_salesperson_email, drawings_vic_salesperson_to_client_email, drawings_qld_design_to_salesperson_email, drawings_qld_salesperson_to_client_email, drawings_investor_streams_design_to_salesperson_email, drawings_investor_streams_salesperson_to_client_email, drawings_vic_design_to_salesperson_to_email, drawings_qld_design_to_salesperson_to_email, stream_settings_json, email_general_json, ${SETTINGS_SMTP_1_16_COLUMNS}, updated_at`,
       [
         processValue(root_directory),
         processBoolean(create_folders),
@@ -5148,6 +5160,7 @@ app.put("/api/settings", async (req, res) => {
         streamSettingsParam,
         emailGeneralParam,
         processValue(timesheet_export_path),
+        processValue(colours_and_finishes_path),
         processValue(holding_amount),
         processValue(pre_engagement_amount),
         processValue(deposit_percent),

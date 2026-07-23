@@ -14,6 +14,7 @@ export default function FileSettings() {
   const [emailLogoPath, setEmailLogoPath] = useState("");
   const [letterheadPath, setLetterheadPath] = useState("");
   const [timesheetExportPath, setTimesheetExportPath] = useState("");
+  const [coloursAndFinishesPath, setColoursAndFinishesPath] = useState("");
 
   const [loading, setLoading] = useState(true);
   const valuesRef = useRef({
@@ -23,6 +24,7 @@ export default function FileSettings() {
     emailLogoPath,
     letterheadPath,
     timesheetExportPath,
+    coloursAndFinishesPath,
   });
 
   useEffect(() => {
@@ -33,6 +35,7 @@ export default function FileSettings() {
       emailLogoPath,
       letterheadPath,
       timesheetExportPath,
+      coloursAndFinishesPath,
     };
   }, [
     rootDirectory,
@@ -41,6 +44,7 @@ export default function FileSettings() {
     emailLogoPath,
     letterheadPath,
     timesheetExportPath,
+    coloursAndFinishesPath,
   ]);
 
   useEffect(() => {
@@ -61,6 +65,7 @@ export default function FileSettings() {
       setEmailLogoPath(data.email_logo_path || "");
       setLetterheadPath(data.letterhead_path || "");
       setTimesheetExportPath(data.timesheet_export_path || "");
+      setColoursAndFinishesPath(data.colours_and_finishes_path || "");
     } catch (error) {
       console.error("Error fetching settings:", error);
       setRootDirectory("");
@@ -69,6 +74,7 @@ export default function FileSettings() {
       setEmailLogoPath("");
       setLetterheadPath("");
       setTimesheetExportPath("");
+      setColoursAndFinishesPath("");
     } finally {
       setLoading(false);
     }
@@ -82,6 +88,7 @@ export default function FileSettings() {
       email_logo_path: (valuesRef.current.emailLogoPath || "").trim() || null,
       letterhead_path: (valuesRef.current.letterheadPath || "").trim() || null,
       timesheet_export_path: (valuesRef.current.timesheetExportPath || "").trim() || null,
+      colours_and_finishes_path: (valuesRef.current.coloursAndFinishesPath || "").trim() || null,
     };
   }
 
@@ -152,6 +159,16 @@ export default function FileSettings() {
     await saveSettings();
   }
 
+  function handleColoursAndFinishesPathChange(e) {
+    const newValue = e.target.value;
+    setColoursAndFinishesPath(newValue);
+    valuesRef.current.coloursAndFinishesPath = newValue;
+  }
+
+  async function handleColoursAndFinishesPathBlur() {
+    await saveSettings();
+  }
+
   async function handleColourAttachmentsVicBlur() {
     await saveSettings();
   }
@@ -172,49 +189,89 @@ export default function FileSettings() {
     );
   }
 
-  const vicCard = {
+  const settingsCard = {
     display: "flex",
     flexDirection: "column",
-    gap: "10px",
+    gap: "6px",
     backgroundColor: "#E5E5E7",
-    padding: "12px",
+    padding: "10px",
     borderRadius: "8px",
     width: "100%",
+    maxWidth: "100%",
+    minWidth: 0,
     boxSizing: "border-box",
+  };
+
+  const titleStyle = {
+    fontSize: "0.9rem",
+    margin: 0,
+    color: MONUMENT,
+    fontWeight: 600,
+  };
+
+  const helpStyle = {
+    fontSize: "0.75rem",
+    color: "var(--sgf-text-primary)",
+    margin: 0,
+    lineHeight: 1.35,
+  };
+
+  const labelStyle = {
+    display: "block",
+    fontSize: "0.8rem",
+    color: UI.textMuted,
+    marginBottom: "4px",
+    fontWeight: 500,
   };
 
   const inputStyle = {
     width: "100%",
-    padding: "8px 10px",
-    borderRadius: "8px",
+    maxWidth: "100%",
+    padding: "7px 9px",
+    borderRadius: "6px",
     border: "none",
-    fontSize: "1rem",
+    fontSize: "0.88rem",
     color: MONUMENT,
     background: WHITE,
     boxSizing: "border-box",
   };
 
-  return (
-    <div style={{ width: "100%", height: "100%", padding: "16px 24px", display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "12px", width: "100%", alignItems: "start" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px", minWidth: 0 }}>
+  const columnStyle = {
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
+    minWidth: 0,
+    maxWidth: "100%",
+  };
 
-          <div style={vicCard}>
-            <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
-              File Settings
-            </h3>
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        padding: "16px 24px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "stretch",
+        boxSizing: "border-box",
+      }}
+    >
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+          gap: "12px",
+          width: "100%",
+          maxWidth: "100%",
+          alignItems: "start",
+          boxSizing: "border-box",
+        }}
+      >
+        <div style={columnStyle}>
+          <div style={settingsCard}>
+            <h3 style={titleStyle}>File Settings</h3>
             <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: UI.textMuted,
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Root Directory
-              </label>
+              <label style={labelStyle}>Root Directory</label>
               <input
                 type="text"
                 name="rootDirectory"
@@ -228,54 +285,49 @@ export default function FileSettings() {
             </div>
           </div>
 
-          <div style={vicCard}>
-            <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
-              Colour Attachments - VIC
-            </h3>
+          <div style={settingsCard}>
+            <h3 style={titleStyle}>Colour Attachments - VIC</h3>
             <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: UI.textMuted,
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Location Path
-              </label>
+              <label style={labelStyle}>Location Path</label>
               <input
                 type="text"
                 name="colourAttachmentsVic"
                 value={colourAttachmentsVic}
                 onChange={handleColourAttachmentsVicChange}
                 onBlur={handleColourAttachmentsVicBlur}
-                placeholder="e.g. Z:\1.SGF PROJECT MANAGEMENT\COLOURS\VIC"
+                placeholder="e.g. Z:\...\COLOURS\VIC"
                 style={inputStyle}
                 autoComplete="off"
               />
             </div>
           </div>
 
-          <div style={vicCard}>
-            <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
-              Logo Attachment
-            </h3>
-            <p style={{ fontSize: "0.85rem", color: "var(--sgf-text-primary)", margin: 0, lineHeight: 1.45 }}>
-              Full path to the image embedded at the end of outgoing HTML emails only (inline in the message). Leave blank for no email logo.
+          <div style={settingsCard}>
+            <h3 style={titleStyle}>Colour Attachments - QLD</h3>
+            <div>
+              <label style={labelStyle}>Location Path</label>
+              <input
+                type="text"
+                name="colourAttachmentsQld"
+                value={colourAttachmentsQld}
+                onChange={handleColourAttachmentsQldChange}
+                onBlur={handleColourAttachmentsQldBlur}
+                placeholder="e.g. Z:\...\COLOURS\QLD"
+                style={inputStyle}
+                autoComplete="off"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div style={columnStyle}>
+          <div style={settingsCard}>
+            <h3 style={titleStyle}>Logo Attachment</h3>
+            <p style={helpStyle}>
+              Path to the image embedded at the end of outgoing HTML emails. Leave blank for none.
             </p>
             <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: UI.textMuted,
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Image file path
-              </label>
+              <label style={labelStyle}>Image file path</label>
               <input
                 type="text"
                 name="emailLogoPath"
@@ -289,25 +341,13 @@ export default function FileSettings() {
             </div>
           </div>
 
-          <div style={vicCard}>
-            <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
-              Letter Head
-            </h3>
-            <p style={{ fontSize: "0.85rem", color: "var(--sgf-text-primary)", margin: 0, lineHeight: 1.45 }}>
-              Full path to the image used at the top of Variation PDFs. Emails keep using Logo Attachment above. If blank, the variation PDF falls back to the email logo path, then no image.
+          <div style={settingsCard}>
+            <h3 style={titleStyle}>Letter Head</h3>
+            <p style={helpStyle}>
+              Path for Variation PDF letterhead. Emails still use Logo Attachment above.
             </p>
             <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: UI.textMuted,
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Letterhead image path
-              </label>
+              <label style={labelStyle}>Letterhead image path</label>
               <input
                 type="text"
                 name="letterheadPath"
@@ -320,64 +360,38 @@ export default function FileSettings() {
               />
             </div>
           </div>
+        </div>
 
-          <div style={vicCard}>
-            <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
-              Time Sheet Export
-            </h3>
-            <p style={{ fontSize: "0.85rem", color: "var(--sgf-text-primary)", margin: 0, lineHeight: 1.45 }}>
-              Folder where time sheet files are saved when users click Send or Export.
-            </p>
+        <div style={columnStyle}>
+          <div style={settingsCard}>
+            <h3 style={titleStyle}>Time Sheet Export</h3>
+            <p style={helpStyle}>Folder used when users click Send or Export on time sheets.</p>
             <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: UI.textMuted,
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Export folder path
-              </label>
+              <label style={labelStyle}>Export folder path</label>
               <input
                 type="text"
                 name="timesheetExportPath"
                 value={timesheetExportPath}
                 onChange={handleTimesheetExportPathChange}
                 onBlur={handleTimesheetExportPathBlur}
-                placeholder="e.g. Z:\1.SGF PROJECT MANAGEMENT\Time Sheets"
+                placeholder="e.g. Z:\...\Time Sheets"
                 style={inputStyle}
                 autoComplete="off"
               />
             </div>
           </div>
-        </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px", minWidth: 0 }}>
-          <div style={vicCard}>
-            <h3 style={{ fontSize: "1rem", marginTop: 0, marginBottom: "8px", color: MONUMENT, fontWeight: 600 }}>
-              Colour Attachments - QLD
-            </h3>
+          <div style={settingsCard}>
+            <h3 style={titleStyle}>Colours and Finishes</h3>
             <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: UI.textMuted,
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Location Path
-              </label>
+              <label style={labelStyle}>Location Path</label>
               <input
                 type="text"
-                name="colourAttachmentsQld"
-                value={colourAttachmentsQld}
-                onChange={handleColourAttachmentsQldChange}
-                onBlur={handleColourAttachmentsQldBlur}
-                placeholder="e.g. Z:\1.SGF PROJECT MANAGEMENT\COLOURS\QLD"
+                name="coloursAndFinishesPath"
+                value={coloursAndFinishesPath}
+                onChange={handleColoursAndFinishesPathChange}
+                onBlur={handleColoursAndFinishesPathBlur}
+                placeholder="e.g. Z:\...\Colours and Finishes"
                 style={inputStyle}
                 autoComplete="off"
               />
