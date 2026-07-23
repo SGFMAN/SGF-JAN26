@@ -2183,13 +2183,21 @@ export default function Drawings({
       } catch (e) {
         console.warn("Could not load settings for drawing From override:", e);
       }
-      const previewToResolved = resolveDesignToSalespersonToEmails(settingsForPreview, project, []);
+      const previewToResolved = resolveDesignToSalespersonToEmails(
+        settingsForPreview,
+        project,
+        [],
+        newDrawingUploadKind
+      );
       const previewFromResolved = resolveDesignToSalespersonFrom(settingsForPreview, project, "");
 
       if (!previewToResolved.length) {
-        const phaseLabel = project?.status === "Construction Phase" ? "CONSTRUCTION" : "DESIGN";
+        const toHint =
+          newDrawingUploadKind === "certifier"
+            ? "To [CRM] and/or To (additional) [DESIGN]"
+            : "To [DESIGN] and/or To (additional) [DESIGN]";
         alert(
-          `No recipient addresses in Stream Settings → Drawings → Drawings Upload — To [${phaseLabel}]. Configure Settings → Email Settings → Streams → Drawings → Drawings Upload for this stream (VIC/QLD column).`
+          `No recipient addresses in Stream Settings → Drawings → Drawings Upload — ${toHint}. Configure Settings → Email Settings → Streams → Drawings → Drawings Upload for this stream (VIC/QLD column).`
         );
         return;
       }

@@ -358,15 +358,35 @@ export function resolveDesignToSalespersonFrom(settings, project, _templateFrom)
 }
 
 /**
- * To recipients for Drawings Upload (primary + optional second To on VIC/QLD stream row `drawings`).
- * Uses [DESIGN] or [CONSTRUCTION] To fields based on project status.
- * CRM To is always merged when set.
+ * To recipients for Drawings Upload (VIC/QLD stream row `drawings`).
+ *
+ * Upload modal kind:
+ * - certifier → To [CRM] + To (additional) [DESIGN]
+ * - concept / working → To [DESIGN] + To (additional) [DESIGN]
+ *
+ * When kind is omitted, falls back to [DESIGN]/CONSTRUCTION] by project status (no CRM).
  */
-export function resolveDesignToSalespersonToEmails(settings, project, _templateToEmails) {
-  const construction = isConstructionPhaseProject(project);
-  const crm = parseSettingsToEmailList(
-    getDrawingFieldFromStreamRows(settings, project, "designToSalespersonCrmToEmail")
+export function resolveDesignToSalespersonToEmails(settings, project, _templateToEmails, uploadKind) {
+  const kind = String(uploadKind || "").trim().toLowerCase();
+  const additionalDesign = parseSettingsToEmailList(
+    getDrawingFieldFromStreamRows(settings, project, "designToSalespersonToEmail2")
   );
+
+  if (kind === "certifier") {
+    const crm = parseSettingsToEmailList(
+      getDrawingFieldFromStreamRows(settings, project, "designToSalespersonCrmToEmail")
+    );
+    return mergeUniqueEmails(crm, additionalDesign);
+  }
+
+  if (kind === "concept" || kind === "working") {
+    const primary = parseSettingsToEmailList(
+      getDrawingFieldFromStreamRows(settings, project, "designToSalespersonToEmail")
+    );
+    return mergeUniqueEmails(primary, additionalDesign);
+  }
+
+  const construction = isConstructionPhaseProject(project);
   if (construction) {
     const primary = parseSettingsToEmailList(
       getDrawingFieldFromStreamRows(settings, project, "designToSalespersonConstructionToEmail")
@@ -380,15 +400,12 @@ export function resolveDesignToSalespersonToEmails(settings, project, _templateT
     const additional3 = parseSettingsToEmailList(
       getDrawingFieldFromStreamRows(settings, project, "designToSalespersonConstructionToEmail4")
     );
-    return mergeUniqueEmails(primary, additional, additional2, additional3, crm);
+    return mergeUniqueEmails(primary, additional, additional2, additional3);
   }
   const primary = parseSettingsToEmailList(
     getDrawingFieldFromStreamRows(settings, project, "designToSalespersonToEmail")
   );
-  const secondary = parseSettingsToEmailList(
-    getDrawingFieldFromStreamRows(settings, project, "designToSalespersonToEmail2")
-  );
-  return mergeUniqueEmails(primary, secondary, crm);
+  return mergeUniqueEmails(primary, additionalDesign);
 }
 
 /** Stream Settings → Drawings → Design Notes — From only (resolved row from stream + state). */
