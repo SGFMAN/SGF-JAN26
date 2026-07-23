@@ -2,8 +2,10 @@
  * Polytec - Doors & Panels colour catalogue (DB-backed).
  * Colorbond remains hardcoded in the frontend.
  *
- * Images live in the frontend public folder. The DB stores only the basename
- * (e.g. "classic-white-matt.jpg"); display uses IMAGE_PUBLIC_PATH + filename.
+ * Image files live under File Settings → Colours and Finishes path,
+ * in a subfolder named after the colour group, e.g.:
+ *   {colours_and_finishes_path}\{group name}\{filename}
+ * The DB stores that full path in colour_samples.image_filename.
  */
 
 const path = require("path");
@@ -12,9 +14,9 @@ const { getMeta, setMeta } = require("./schemaStartup");
 
 const GROUP_KEY = "polytec";
 const GROUP_DISPLAY_NAME = "Polytec - Doors & Panels";
-/** Public URL folder for Polytec swatch images (files in frontend/public/…). */
+/** @deprecated Legacy public URL folder; new rows store full filesystem paths. */
 const IMAGE_PUBLIC_PATH = "/images/Colours/Polytec - Decorative 16mm Doors & Panels";
-/** On-disk folder matching IMAGE_PUBLIC_PATH (dev + prod serve from here / dist copy). */
+/** @deprecated Legacy on-disk fallback for basename-only rows. */
 const IMAGE_DIR = path.join(
   __dirname,
   "..",
@@ -153,16 +155,65 @@ const POLYTEC_SEED = POLYTEC_SAMPLES.reduce((acc, row) => {
 
 function sanitizeImageFilename(raw) {
   if (raw == null) return null;
-  const base = path.basename(String(raw).trim());
+  const base = path.basename(String(raw).trim().replace(/\\/g, "/"));
   if (!base || base === "." || base === "..") return null;
   if (!SAFE_IMAGE_FILENAME.test(base)) return null;
   return base;
 }
 
-function imageUrlForFilename(filename) {
-  const safe = sanitizeImageFilename(filename);
-  if (!safe) return null;
-  return `${IMAGE_PUBLIC_PATH}/${encodeURIComponent(safe)}`;
+function isAbsoluteFilesystemPath(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return false;
+  return path.isAbsolute(s) || /^[A-Za-z]:[\\/]/.test(s);
+}
+
+function sanitizeGroupFolderName(name) {
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return null;
+  // Keep spaces and common punctuation used in group names; block path separators / traversal.
+  if (trimmed.includes("..") || /[\\/]/.test(trimmed)) return null;
+  return trimmed;
+}
+
+async function getColoursAndFinishesBasePath(pool) {
+  const r = await pool.query(`SELECT colours_and_finishes_path FROM settings WHERE id = 1`);
+  return String(r.rows[0]?.colours_and_finishes_path || "").trim();
+}
+
+async function getGroupNameForSubgroup(pool, subgroupId) {
+  const r = await pool.query(
+    `SELECT g.name
+     FROM colour_groups g
+     JOIN colour_subgroups sg ON sg.group_id = g.id
+     WHERE sg.id = $1`,
+    [subgroupId]
+  );
+  return String(r.rows[0]?.name || "").trim();
+}
+
+/**
+ * Build full image path: {Colours and Finishes}\{group name}\{filename}
+ */
+function buildColourImageFullPath(basePath, groupName, filenameOrPath) {
+  const safeFile = sanitizeImageFilename(filenameOrPath);
+  if (!safeFile) return { error: "Invalid image filename", status: 400 };
+  const base = String(basePath || "").trim();
+  if (!base) {
+    return {
+      error: "Colours and Finishes path is not set in File Settings",
+      status: 400,
+    };
+  }
+  const folder = sanitizeGroupFolderName(groupName);
+  if (!folder) {
+    return { error: "Colour group name is missing or invalid", status: 400 };
+  }
+  return { path: path.join(base, folder, safeFile) };
+}
+
+function imageUrlForSample(sampleId, imageFilename) {
+  if (!imageFilename || sampleId == null) return null;
+  return `/api/colour-samples/${sampleId}/image`;
 }
 
 function mapSampleRow(row) {
@@ -173,9 +224,10 @@ function mapSampleRow(row) {
     name: row.name,
     subgroup_id: row.subgroup_id,
     subgroup: row.subgroup_name || null,
+    group_name: row.group_name || null,
     sort_order: row.sort_order,
     image_filename: imageFilename,
-    image_url: imageUrlForFilename(imageFilename),
+    image_url: imageUrlForSample(row.id, imageFilename),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -328,9 +380,10 @@ async function listPolytecCatalogue(pool) {
   );
   const samplesRes = await pool.query(
     `SELECT s.id, s.subgroup_id, s.name, s.image_filename, s.sort_order, s.created_at, s.updated_at,
-            sg.name AS subgroup_name
+            sg.name AS subgroup_name, g.name AS group_name
      FROM colour_samples s
      JOIN colour_subgroups sg ON sg.id = s.subgroup_id
+     JOIN colour_groups g ON g.id = sg.group_id
      WHERE sg.group_id = $1
      ORDER BY LOWER(s.name) ASC, s.name ASC, s.id ASC`,
     [group.id]
@@ -363,9 +416,10 @@ async function listPolytecCatalogue(pool) {
 
 async function getSampleById(pool, id) {
   const r = await pool.query(
-    `SELECT s.*, sg.name AS subgroup_name, sg.group_id
+    `SELECT s.*, sg.name AS subgroup_name, sg.group_id, g.name AS group_name
      FROM colour_samples s
      JOIN colour_subgroups sg ON sg.id = s.subgroup_id
+     JOIN colour_groups g ON g.id = sg.group_id
      WHERE s.id = $1`,
     [id]
   );
@@ -395,9 +449,12 @@ async function updateSample(pool, id, { name, subgroupId, imageFilename, clearIm
     if (imageFilename == null || String(imageFilename).trim() === "") {
       nextFilename = null;
     } else {
-      const safe = sanitizeImageFilename(imageFilename);
-      if (!safe) return { error: "Invalid image filename", status: 400 };
-      nextFilename = safe;
+      const basePath = await getColoursAndFinishesBasePath(pool);
+      const groupName =
+        (await getGroupNameForSubgroup(pool, nextSubgroupId)) || existing.group_name || "";
+      const built = buildColourImageFullPath(basePath, groupName, imageFilename);
+      if (built.error) return { error: built.error, status: built.status || 400 };
+      nextFilename = built.path;
     }
   }
 
@@ -533,11 +590,28 @@ async function deleteSubgroup(pool, id) {
 async function getSampleImagePath(pool, id) {
   const row = await getSampleById(pool, id);
   if (!row) return { notFound: true };
-  const safe = sanitizeImageFilename(row.image_filename);
-  if (!safe) return { noImage: true };
-  const fullPath = path.join(IMAGE_DIR, safe);
-  if (!fsSync.existsSync(fullPath)) return { noImage: true };
-  return { path: fullPath, filename: safe };
+  const stored = String(row.image_filename || "").trim();
+  if (!stored) return { noImage: true };
+
+  let fullPath = null;
+  if (isAbsoluteFilesystemPath(stored)) {
+    fullPath = stored;
+  } else {
+    const safe = sanitizeImageFilename(stored);
+    if (!safe) return { noImage: true };
+    const basePath = await getColoursAndFinishesBasePath(pool);
+    const groupName = String(row.group_name || "").trim();
+    if (basePath && groupName) {
+      const built = buildColourImageFullPath(basePath, groupName, safe);
+      if (!built.error) fullPath = built.path;
+    }
+    if (!fullPath) {
+      fullPath = path.join(IMAGE_DIR, safe);
+    }
+  }
+
+  if (!fullPath || !fsSync.existsSync(fullPath)) return { noImage: true };
+  return { path: fullPath, filename: path.basename(fullPath) };
 }
 
 function mapGroupRow(row, sampleCount = 0, subgroupCount = 0) {
@@ -686,7 +760,8 @@ module.exports = {
   getSampleImagePath,
   mapSampleRow,
   sanitizeImageFilename,
-  imageUrlForFilename,
+  imageUrlForSample,
+  buildColourImageFullPath,
   listColourGroups,
   createColourGroup,
   updateColourGroup,

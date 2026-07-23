@@ -43,6 +43,7 @@ export default function ColourSettings() {
   const [editingGroupId, setEditingGroupId] = useState(null);
   const [editingGroupName, setEditingGroupName] = useState("");
   const [groupSaving, setGroupSaving] = useState(false);
+  const [coloursAndFinishesPath, setColoursAndFinishesPath] = useState("");
   const [subgroupDraftName, setSubgroupDraftName] = useState("");
   const [editingSubgroupId, setEditingSubgroupId] = useState(null);
   const [editingSubgroupName, setEditingSubgroupName] = useState("");
@@ -92,10 +93,44 @@ export default function ColourSettings() {
     }
   }, []);
 
+  const loadColoursAndFinishesPath = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/settings`, {
+        headers: getApiHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+      setColoursAndFinishesPath(String(data.colours_and_finishes_path || "").trim());
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
   useEffect(() => {
     void loadPolytec();
     void loadColourGroups();
-  }, [loadPolytec, loadColourGroups]);
+    void loadColoursAndFinishesPath();
+  }, [loadPolytec, loadColourGroups, loadColoursAndFinishesPath]);
+
+  const activeColourGroupName = useMemo(() => {
+    if (selectedGroup === "polytec") {
+      return polytecCatalogue?.name || "Polytec - Doors & Panels";
+    }
+    const match = colourGroups.find((g) => g.key === selectedGroup);
+    return match?.name || "";
+  }, [selectedGroup, polytecCatalogue, colourGroups]);
+
+  function buildColourImageFullPath(filename) {
+    const file = String(filename || "")
+      .trim()
+      .replace(/^.*[\\/]/, "");
+    if (!file) return "";
+    const base = String(coloursAndFinishesPath || "").trim().replace(/[\\/]+$/, "");
+    const groupName = String(activeColourGroupName || "").trim();
+    if (!base || !groupName) return file;
+    const sep = /\\/.test(base) || /^[A-Za-z]:/.test(base) ? "\\" : "/";
+    return `${base}${sep}${groupName}${sep}${file}`;
+  }
 
   function captureListPosition(preferredSampleId = null) {
     const scroller = listScrollRef.current;
@@ -490,6 +525,7 @@ export default function ColourSettings() {
     const file = e.target.files?.[0];
     if (!file) return;
     const filename = file.name || "";
+    const fullPath = buildColourImageFullPath(filename);
     const localPreview = URL.createObjectURL(file);
     setEditForm((prev) => {
       if (prev.imagePreview && prev.imagePreview.startsWith("blob:")) {
@@ -497,7 +533,7 @@ export default function ColourSettings() {
       }
       return {
         ...prev,
-        imageFilename: filename,
+        imageFilename: fullPath || filename,
         imagePreview: localPreview,
       };
     });
@@ -1016,8 +1052,8 @@ export default function ColourSettings() {
                   }}
                 />
                 {editForm.imageFilename ? (
-                  <div style={{ marginTop: "8px", fontSize: "0.85rem", color: UI.textMuted }}>
-                    Filename: {editForm.imageFilename}
+                  <div style={{ marginTop: "8px", fontSize: "0.85rem", color: UI.textMuted, wordBreak: "break-all" }}>
+                    Image path: {editForm.imageFilename}
                   </div>
                 ) : null}
                 {editForm.imagePreview ? (
