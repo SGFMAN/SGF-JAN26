@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import AuthedImg from "../components/AuthedImg";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
 import { getApiHeaders } from "../utils/auth";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
@@ -795,7 +796,7 @@ export default function ColourSettings() {
                         }}
                       >
                         {sample.image_url ? (
-                          <img
+                          <AuthedImg
                             src={sample.image_url}
                             alt={sample.name}
                             style={{ width: "100%", height: "100%", objectFit: "cover" }}
@@ -879,7 +880,7 @@ export default function ColourSettings() {
                               }}
                             >
                               {sample.image_url ? (
-                                <img
+                                <AuthedImg
                                   src={sample.image_url}
                                   alt={sample.name}
                                   style={{ width: "100%", height: "100%", objectFit: "cover" }}
@@ -1058,7 +1059,7 @@ export default function ColourSettings() {
                 ) : null}
                 {editForm.imagePreview ? (
                   <div style={{ marginTop: "10px" }}>
-                    <img
+                    <AuthedImg
                       src={editForm.imagePreview}
                       alt="Preview"
                       style={{

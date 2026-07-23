@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import AuthedImg from "./AuthedImg";
 import { getApiHeaders } from "../utils/auth";
 import { UI } from "../utils/uiThemeTokens.js";
 
@@ -344,7 +345,7 @@ export default function PolytecKitchenCube() {
           }}
         >
           {selectedSample?.image_url ? (
-            <img
+            <AuthedImg
               src={selectedSample.image_url}
               alt={selectedSample.name || "Selected finish"}
               style={{

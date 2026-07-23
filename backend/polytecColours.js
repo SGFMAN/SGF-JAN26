@@ -84,9 +84,11 @@ function buildColourImageFullPath(basePath, groupName, filenameOrPath) {
   return { path: path.join(base, folder, safeFile) };
 }
 
-function imageUrlForSample(sampleId, imageFilename) {
+function imageUrlForSample(sampleId, imageFilename, updatedAt = null) {
   if (!imageFilename || sampleId == null) return null;
-  return `/api/colour-samples/${sampleId}/image`;
+  // Cache-bust so saving a new path reloads from disk without a server restart.
+  const v = updatedAt ? new Date(updatedAt).getTime() : Date.now();
+  return `/api/colour-samples/${sampleId}/image?v=${Number.isFinite(v) ? v : Date.now()}`;
 }
 
 function mapSampleRow(row) {
@@ -100,7 +102,7 @@ function mapSampleRow(row) {
     group_name: row.group_name || null,
     sort_order: row.sort_order,
     image_filename: imageFilename,
-    image_url: imageUrlForSample(row.id, imageFilename),
+    image_url: imageUrlForSample(row.id, imageFilename, row.updated_at),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

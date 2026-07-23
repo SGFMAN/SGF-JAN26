@@ -4826,7 +4826,9 @@ app.get("/api/colour-samples/:id/image", async (req, res) => {
     const result = await getColourSampleImagePath(pool, id);
     if (result.notFound) return res.status(404).json({ error: "sample not found" });
     if (result.noImage) return res.status(404).json({ error: "no image" });
-    return res.sendFile(result.path);
+    // Read from the Colours and Finishes folder at request time — never embed/copy into the app.
+    res.setHeader("Cache-Control", "no-store");
+    return res.sendFile(path.resolve(result.path));
   } catch (e) {
     res.status(500).json({ error: e.message || "Failed to load image" });
   }
