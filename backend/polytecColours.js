@@ -1,17 +1,18 @@
 /**
  * Polytec - Doors & Panels colour catalogue (DB-backed).
  * Colorbond remains hardcoded in the frontend.
+ *
+ * Images live in the frontend public folder. The DB stores only the basename
+ * (e.g. "classic-white-matt.jpg"); display uses IMAGE_PUBLIC_PATH + filename.
  */
 
 const path = require("path");
-const fs = require("fs").promises;
-const fsSync = require("fs");
-const crypto = require("crypto");
 const { getMeta, setMeta } = require("./schemaStartup");
 
-const UPLOAD_DIR = path.join(__dirname, "data", "polytec-colours");
 const GROUP_KEY = "polytec";
 const GROUP_DISPLAY_NAME = "Polytec - Doors & Panels";
+/** Public URL folder for Polytec swatch images (files in frontend/public/…). */
+const IMAGE_PUBLIC_PATH = "/images/Colours/Polytec - Decorative 16mm Doors & Panels";
 /** Bump to wipe and reseed the Polytec catalogue once on startup. */
 const POLYTEC_SEED_VERSION = "2026-07-23-v1";
 const POLYTEC_SEED_META_KEY = "polytec_seed_version";
