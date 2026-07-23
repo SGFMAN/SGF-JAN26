@@ -1,21 +1,16 @@
 /**
- * Polytec - Doors & Panels colour catalogue (DB-backed).
- * Colorbond remains hardcoded in the frontend.
+ * Colour catalogue (DB-backed). Colorbond remains hardcoded in the frontend.
  *
- * Image files live under File Settings → Colours and Finishes path,
- * in a subfolder named after the colour group, e.g.:
+ * No seed/reseed — colours, subgroups, and groups are managed only via the DB /
+ * Colour Settings UI. Image paths are stored as full filesystem paths:
  *   {colours_and_finishes_path}\{group name}\{filename}
- * The DB stores that full path in colour_samples.image_filename.
  */
 
 const path = require("path");
 const fsSync = require("fs");
-const { getMeta, setMeta } = require("./schemaStartup");
 
 const GROUP_KEY = "polytec";
 const GROUP_DISPLAY_NAME = "Polytec - Doors & Panels";
-/** @deprecated Legacy public URL folder; new rows store full filesystem paths. */
-const IMAGE_PUBLIC_PATH = "/images/Colours/Polytec - Decorative 16mm Doors & Panels";
 /** @deprecated Legacy on-disk fallback for basename-only rows. */
 const IMAGE_DIR = path.join(
   __dirname,
@@ -26,132 +21,10 @@ const IMAGE_DIR = path.join(
   "Colours",
   "Polytec - Decorative 16mm Doors & Panels"
 );
-/** Bump to wipe and reseed the Polytec catalogue once on startup. */
-const POLYTEC_SEED_VERSION = "2026-07-23-v1";
-const POLYTEC_SEED_META_KEY = "polytec_seed_version";
 const SAFE_IMAGE_FILENAME = /^[A-Za-z0-9][A-Za-z0-9 ._()-]*\.(jpe?g|png|webp|gif|bmp)$/i;
 
-/** Preferred display order for subgroups. */
+/** Preferred display order for known finish subgroups (sorting only). */
 const SUBGROUP_ORDER = ["Ashgrain", "Matt", "Sheen", "Smooth", "Texture", "Woodmatt"];
-
-/**
- * Full catalogue: sample display name + finish subgroup.
- * Names include the finish suffix (e.g. "Adriatic - Smooth").
- */
-const POLYTEC_SAMPLES = [
-  { name: "Adriatic - Smooth", subgroup: "Smooth" },
-  { name: "Agave - Smooth", subgroup: "Smooth" },
-  { name: "Alabaster - Matt", subgroup: "Matt" },
-  { name: "Alabaster - Sheen", subgroup: "Sheen" },
-  { name: "Amaro - Matt", subgroup: "Matt" },
-  { name: "Amaro - Sheen", subgroup: "Sheen" },
-  { name: "Antico Oak - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Antique - Matt", subgroup: "Matt" },
-  { name: "Arabica - Smooth", subgroup: "Smooth" },
-  { name: "Arcadia Oak - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Artisan Oak - Matt", subgroup: "Matt" },
-  { name: "Aston White - Smooth", subgroup: "Smooth" },
-  { name: "Australian Native - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Avion Grey - Matt", subgroup: "Matt" },
-  { name: "Belgian Oak - Matt", subgroup: "Matt" },
-  { name: "Bespoke - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Black - Matt", subgroup: "Matt" },
-  { name: "Black - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Black Ply - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Black Wenge - Matt", subgroup: "Matt" },
-  { name: "Blossom White - Matt", subgroup: "Matt" },
-  { name: "Blossom White - Sheen", subgroup: "Sheen" },
-  { name: "Blossom White - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Botanic - Smooth", subgroup: "Smooth" },
-  { name: "Bottega Oak - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Canterbury Grey - Matt", subgroup: "Matt" },
-  { name: "Casentino Beech - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Cavia Lini - Matt", subgroup: "Matt" },
-  { name: "Cavia Lini - Sheen", subgroup: "Sheen" },
-  { name: "Char Oak - Matt", subgroup: "Matt" },
-  { name: "Cinder - Matt", subgroup: "Matt" },
-  { name: "Cinder - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Classic White - Ashgrain", subgroup: "Ashgrain" },
-  { name: "Classic White - Matt", subgroup: "Matt" },
-  { name: "Classic White - Sheen", subgroup: "Sheen" },
-  { name: "Classic White - Texture", subgroup: "Texture" },
-  { name: "Coastal Oak - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Copper Leaf - Matt", subgroup: "Matt" },
-  { name: "Designer White - Texture", subgroup: "Texture" },
-  { name: "Elemental Grey - Smooth", subgroup: "Smooth" },
-  { name: "Empire Oak - Matt", subgroup: "Matt" },
-  { name: "Estella Oak - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Feldspar Shimmer - Matt", subgroup: "Matt" },
-  { name: "Ferro - Matt", subgroup: "Matt" },
-  { name: "Florentine Walnut - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Forage - Smooth", subgroup: "Smooth" },
-  { name: "Gesso Lini - Matt", subgroup: "Matt" },
-  { name: "Gossamer White - Smooth", subgroup: "Smooth" },
-  { name: "Graphite - Matt", subgroup: "Matt" },
-  { name: "Greige - Matt", subgroup: "Matt" },
-  { name: "Habitat - Smooth", subgroup: "Smooth" },
-  { name: "Havana Oak - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Husk - Matt", subgroup: "Matt" },
-  { name: "Jamaican Walnut - Matt", subgroup: "Matt" },
-  { name: "Light Brass Leaf - Matt", subgroup: "Matt" },
-  { name: "Ligurian Walnut - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Maison Oak - Matt", subgroup: "Matt" },
-  { name: "Malt - Matt", subgroup: "Matt" },
-  { name: "Marina Grey - Matt", subgroup: "Matt" },
-  { name: "Marni Lini - Matt", subgroup: "Matt" },
-  { name: "Mercurio Grey - Smooth", subgroup: "Smooth" },
-  { name: "Moss Grey - Matt", subgroup: "Matt" },
-  { name: "Moss Grey - Sheen", subgroup: "Sheen" },
-  { name: "Natural Oak - Matt", subgroup: "Matt" },
-  { name: "Natural Ply - Woodmatt", subgroup: "Woodmatt" },
-  { name: "New Antique White - Matt", subgroup: "Matt" },
-  { name: "Nordic Oak - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Notaio Walnut - Matt", subgroup: "Matt" },
-  { name: "Nouveau Grey - Matt", subgroup: "Matt" },
-  { name: "Oasis - Smooth", subgroup: "Smooth" },
-  { name: "Ochre Figrd Wood - Smooth", subgroup: "Smooth" },
-  { name: "Onyx Figrd Wood - Smooth", subgroup: "Smooth" },
-  { name: "Oxford - Matt", subgroup: "Matt" },
-  { name: "Oyster Grey - Matt", subgroup: "Matt" },
-  { name: "Pallido - Smooth", subgroup: "Smooth" },
-  { name: "Palomera Oak - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Parchment - Matt", subgroup: "Matt" },
-  { name: "Perugian Walnut - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Platinum Leaf - Matt", subgroup: "Matt" },
-  { name: "Polar White - Matt", subgroup: "Matt" },
-  { name: "Porcelain - Matt", subgroup: "Matt" },
-  { name: "Porcelain - Sheen", subgroup: "Sheen" },
-  { name: "Prime Oak - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Pure Gold Leaf - Matt", subgroup: "Matt" },
-  { name: "Quartiera Maple - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Rocco Lini - Matt", subgroup: "Matt" },
-  { name: "Rojo Walnut - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Serene - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Shannon Oak - Matt", subgroup: "Matt" },
-  { name: "Sienna Figrd Wood - Smooth", subgroup: "Smooth" },
-  { name: "Silk - Matt", subgroup: "Matt" },
-  { name: "Silk - Woodmatt", subgroup: "Woodmatt" },
-  { name: "Soft Walnut - Matt", subgroup: "Matt" },
-  { name: "Stone Grey - Matt", subgroup: "Matt" },
-  { name: "Stone Grey - Sheen", subgroup: "Sheen" },
-  { name: "Strata Grey - Matt", subgroup: "Matt" },
-  { name: "Strata Grey - Sheen", subgroup: "Sheen" },
-  { name: "Taupe - Matt", subgroup: "Matt" },
-  { name: "Tessuto Milan - Matt", subgroup: "Matt" },
-  { name: "Titanium - Matt", subgroup: "Matt" },
-  { name: "Truffle Lini - Matt", subgroup: "Matt" },
-  { name: "Tuross Oak - Matt", subgroup: "Matt" },
-  { name: "White Cotton - Matt", subgroup: "Matt" },
-  { name: "White Mist - Matt", subgroup: "Matt" },
-  { name: "Whitewood - Matt", subgroup: "Matt" },
-];
-
-/** @deprecated — kept for export compatibility; derived from POLYTEC_SAMPLES. */
-const POLYTEC_SEED = POLYTEC_SAMPLES.reduce((acc, row) => {
-  if (!acc[row.subgroup]) acc[row.subgroup] = [];
-  acc[row.subgroup].push(row.name);
-  return acc;
-}, {});
 
 function sanitizeImageFilename(raw) {
   if (raw == null) return null;
@@ -276,90 +149,6 @@ async function ensurePolytecColourTables(pool) {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS colour_samples_subgroup_id_idx ON colour_samples (subgroup_id);
   `);
-  await seedPolytecColours(pool);
-}
-
-async function wipePolytecCatalogue(pool, groupId) {
-  // Image files stay in the shared public folder; only DB rows are cleared.
-  await pool.query(
-    `DELETE FROM colour_samples
-     WHERE subgroup_id IN (SELECT id FROM colour_subgroups WHERE group_id = $1)`,
-    [groupId]
-  );
-  await pool.query(`DELETE FROM colour_subgroups WHERE group_id = $1`, [groupId]);
-}
-
-async function seedPolytecColours(pool) {
-  if (!pool) return;
-  const groupRes = await pool.query(
-    `INSERT INTO colour_groups (key, name, sort_order, active)
-     VALUES ($1, $2, 10, TRUE)
-     ON CONFLICT (key) DO UPDATE SET name = EXCLUDED.name, updated_at = NOW()
-     RETURNING id`,
-    [GROUP_KEY, GROUP_DISPLAY_NAME]
-  );
-  const groupId = groupRes.rows[0].id;
-
-  const currentVersion = await getMeta(pool, POLYTEC_SEED_META_KEY);
-  if (currentVersion !== POLYTEC_SEED_VERSION) {
-    console.log(
-      `Reseeding Polytec colours (${currentVersion || "none"} → ${POLYTEC_SEED_VERSION})…`
-    );
-    await wipePolytecCatalogue(pool, groupId);
-  }
-
-  const subgroupIds = new Map();
-  for (let i = 0; i < SUBGROUP_ORDER.length; i++) {
-    const subgroupName = SUBGROUP_ORDER[i];
-    const sgRes = await pool.query(
-      `INSERT INTO colour_subgroups (group_id, name, sort_order)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (group_id, name) DO UPDATE SET sort_order = EXCLUDED.sort_order, updated_at = NOW()
-       RETURNING id`,
-      [groupId, subgroupName, i * 10]
-    );
-    subgroupIds.set(subgroupName, sgRes.rows[0].id);
-  }
-
-  // Any extra subgroups from the sample list not in SUBGROUP_ORDER
-  for (const row of POLYTEC_SAMPLES) {
-    if (subgroupIds.has(row.subgroup)) continue;
-    const sgRes = await pool.query(
-      `INSERT INTO colour_subgroups (group_id, name, sort_order)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (group_id, name) DO UPDATE SET updated_at = NOW()
-       RETURNING id`,
-      [groupId, row.subgroup, 500 + subgroupIds.size]
-    );
-    subgroupIds.set(row.subgroup, sgRes.rows[0].id);
-  }
-
-  const existing = await pool.query(
-    `SELECT s.name, s.subgroup_id
-     FROM colour_samples s
-     JOIN colour_subgroups sg ON sg.id = s.subgroup_id
-     WHERE sg.group_id = $1`,
-    [groupId]
-  );
-  const existingKeys = new Set(existing.rows.map((r) => `${r.subgroup_id}::${r.name}`));
-
-  let sampleOrder = 0;
-  for (const row of POLYTEC_SAMPLES) {
-    const subgroupId = subgroupIds.get(row.subgroup);
-    if (!subgroupId) continue;
-    const key = `${subgroupId}::${row.name}`;
-    if (!existingKeys.has(key)) {
-      await pool.query(
-        `INSERT INTO colour_samples (subgroup_id, name, sort_order)
-         VALUES ($1, $2, $3)`,
-        [subgroupId, row.name, sampleOrder]
-      );
-      existingKeys.add(key);
-    }
-    sampleOrder += 10;
-  }
-
-  await setMeta(pool, POLYTEC_SEED_META_KEY, POLYTEC_SEED_VERSION);
 }
 
 async function listPolytecCatalogue(pool) {
@@ -743,10 +532,6 @@ async function deleteColourGroup(pool, id) {
 module.exports = {
   GROUP_KEY,
   GROUP_DISPLAY_NAME,
-  POLYTEC_SEED,
-  POLYTEC_SAMPLES,
-  POLYTEC_SEED_VERSION,
-  IMAGE_PUBLIC_PATH,
   IMAGE_DIR,
   ensurePolytecColourTables,
   listPolytecCatalogue,
