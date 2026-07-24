@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import AuthedImg from "./AuthedImg";
+import { COLORBOND_COLOURS } from "../constants/colorbondColours";
+import {
+  COLORBOND_RANGE_KEY,
+  normalizeColourSectionRanges,
+} from "../constants/colourSectionRanges";
 import { getApiHeaders } from "../utils/auth";
 import { UI } from "../utils/uiThemeTokens.js";
 
@@ -8,6 +13,23 @@ const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
 const FIELD_OUTLINE = `1px solid ${UI.outline}`;
 const API_URL = "";
+
+function colorbondCatalogue() {
+  const samples = COLORBOND_COLOURS.map((c, index) => ({
+    id: `colorbond-${index}`,
+    name: c.name,
+    subgroup_id: "colorbond",
+    subgroup: "Colorbond",
+    image_url: null,
+    image_filename: null,
+  }));
+  return {
+    key: COLORBOND_RANGE_KEY,
+    name: "Colorbond",
+    subgroups: [{ id: "colorbond", name: "Colorbond", samples }],
+    samples,
+  };
+}
 
 async function loadTextureFromUrl(url) {
   const headers = getApiHeaders();
@@ -45,8 +67,8 @@ async function loadTextureFromUrl(url) {
 }
 
 /**
- * Kitchen preview: Polytec sample dropdown + continuously rotating textured cube.
- * Selected sample image is scaled onto each of the six faces.
+ * Kitchen preview: cabinets finish dropdown + continuously rotating textured cube.
+ * Options come from Colour Settings → Kitchen Cabinets range.
  */
 export default function PolytecKitchenCube() {
   const mountRef = useRef(null);
@@ -86,15 +108,34 @@ export default function PolytecKitchenCube() {
       try {
         setLoadingList(true);
         setListError("");
-        const res = await fetch(`${API_URL}/api/colour-groups/polytec`, {
+        setSelectedSampleId("");
+
+        const rangesRes = await fetch(`${API_URL}/api/colour-section-ranges`, {
           headers: getApiHeaders(),
         });
+        const rangesData = await rangesRes.json().catch(() => ({}));
+        if (!rangesRes.ok) throw new Error(rangesData.error || `Failed (${rangesRes.status})`);
+        const ranges = normalizeColourSectionRanges(rangesData.ranges);
+        const rangeKey = String(ranges.kitchen_cabinets || "").trim();
+        if (!rangeKey) {
+          throw new Error("Select a Kitchen Cabinets range in Colour Settings");
+        }
+
+        if (rangeKey === COLORBOND_RANGE_KEY) {
+          if (!cancelled) setCatalogue(colorbondCatalogue());
+          return;
+        }
+
+        const res = await fetch(
+          `${API_URL}/api/colour-groups/${encodeURIComponent(rangeKey)}/catalogue`,
+          { headers: getApiHeaders() }
+        );
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
         if (!cancelled) setCatalogue(data);
       } catch (e) {
         if (!cancelled) {
-          setListError(e.message || "Failed to load Polytec options");
+          setListError(e.message || "Failed to load cabinet options");
           setCatalogue(null);
         }
       } finally {
@@ -275,7 +316,7 @@ export default function PolytecKitchenCube() {
       <div style={{ flexShrink: 0, maxWidth: "420px" }}>
         <label style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
           <span style={{ fontSize: "0.9rem", color: UI.textMuted, fontWeight: 500 }}>
-            {catalogue?.name || "Polytec - Doors & Panels"}
+            Cabinets
           </span>
           <select
             value={selectedSampleId}

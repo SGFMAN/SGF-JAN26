@@ -11,8 +11,13 @@ import { parsePlanTracePolygon, serializePlanTracePolygon } from "../utils/planT
 import { UI, MENU } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
-import { isUserAdmin } from "../utils/auth";
+import { isUserAdmin, getApiHeaders } from "../utils/auth";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
+import {
+  COLORBOND_RANGE_KEY,
+  colourOptionLabelsFromCatalogue,
+  normalizeColourSectionRanges,
+} from "../constants/colourSectionRanges";
 import {
   COLOURS_ROOF_STYLE_OPTIONS,
   normalizeRoofStyle,
@@ -33,7 +38,7 @@ function mergeColoursButtonStyle(styleId, fallback) {
 }
 
 const COLOURS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
-const COLOUR_OPTIONS = ["Select", ...COLORBOND_COLOURS.map((c) => c.name)];
+const COLORBOND_COLOUR_OPTIONS = ["Select", ...COLORBOND_COLOURS.map((c) => c.name)];
 const ROOF_STYLE_OPTIONS = COLOURS_ROOF_STYLE_OPTIONS;
 const COLOUR_PAGE_CATEGORIES = ["External", "Flooring", "Kitchen", "Bathroom", "Bedrooms"];
 const COLOURS_CATEGORY_FIT_WIDTH = `calc(${Math.max(...COLOUR_PAGE_CATEGORIES.map((s) => s.length))}ch + 28px)`;
@@ -81,6 +86,7 @@ export default function Colours({ project, onUpdate }) {
   const [doorColour, setDoorColour] = useState(
     colourOrSelect(project?.door_colour ?? project?.front_door_colour)
   );
+  const [externalColourOptions, setExternalColourOptions] = useState(COLORBOND_COLOUR_OPTIONS);
   const [colourSaveStatus, setColourSaveStatus] = useState(""); // "", "saving", "saved", "error"
   const colourSaveStatusTimerRef = useRef(null);
   const colourEditGenRef = useRef(0);
@@ -125,6 +131,55 @@ export default function Colours({ project, onUpdate }) {
     doorColour,
   });
   
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/colour-section-ranges`, {
+          headers: getApiHeaders(),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+        const ranges = normalizeColourSectionRanges(data.ranges);
+        const rangeKey = ranges.external || COLORBOND_RANGE_KEY;
+        if (rangeKey === COLORBOND_RANGE_KEY) {
+          if (!cancelled) setExternalColourOptions(COLORBOND_COLOUR_OPTIONS);
+          return;
+        }
+        const catRes = await fetch(`${API_URL}/api/colour-groups/${encodeURIComponent(rangeKey)}/catalogue`, {
+          headers: getApiHeaders(),
+        });
+        const catalogue = await catRes.json().catch(() => ({}));
+        if (!catRes.ok) throw new Error(catalogue.error || `Failed (${catRes.status})`);
+        const labels = colourOptionLabelsFromCatalogue(catalogue);
+        if (!cancelled) {
+          setExternalColourOptions(["Select", ...labels]);
+        }
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setExternalColourOptions(COLORBOND_COLOUR_OPTIONS);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const externalFieldOptions = useMemo(() => {
+    const base = externalColourOptions.length ? externalColourOptions : COLORBOND_COLOUR_OPTIONS;
+    const extras = [claddingColour, baseboardsColour, roofColour, windowSurroundsColour, doorColour]
+      .map((v) => colourOrSelect(v))
+      .filter((v) => v && v !== "Select" && !base.includes(v));
+    return extras.length ? [...base, ...extras] : base;
+  }, [
+    externalColourOptions,
+    claddingColour,
+    baseboardsColour,
+    roofColour,
+    windowSurroundsColour,
+    doorColour,
+  ]);
+
   useEffect(() => {
     valuesRef.current = {
       coloursStatus,
@@ -1236,37 +1291,37 @@ export default function Colours({ project, onUpdate }) {
                     label: "Cladding",
                     value: claddingColour,
                     onChange: handleCladdingColourChange,
-                    options: COLOUR_OPTIONS,
+                    options: externalFieldOptions,
                   },
                   {
                     label: "Baseboards",
                     value: baseboardsColour,
                     onChange: handleBaseboardsColourChange,
-                    options: COLOUR_OPTIONS,
+                    options: externalFieldOptions,
                   },
                   {
                     label: "Roof colour",
                     value: roofColour,
                     onChange: handleRoofColourChange,
-                    options: COLOUR_OPTIONS,
+                    options: externalFieldOptions,
                   },
                   {
                     label: "Window frames",
                     value: windowFramesColour,
                     onChange: handleWindowFramesColourChange,
-                    options: COLOUR_OPTIONS,
+                    options: COLORBOND_COLOUR_OPTIONS,
                   },
                   {
                     label: "Window surrounds",
                     value: windowSurroundsColour,
                     onChange: handleWindowSurroundsColourChange,
-                    options: COLOUR_OPTIONS,
+                    options: externalFieldOptions,
                   },
                   {
                     label: "Door",
                     value: doorColour,
                     onChange: handleDoorColourChange,
-                    options: COLOUR_OPTIONS,
+                    options: externalFieldOptions,
                   },
                 ].map((field) => (
                   <label key={field.label} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>

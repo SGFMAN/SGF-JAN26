@@ -60,6 +60,7 @@ const {
 const {
   ensurePolytecColourTables,
   listPolytecCatalogue,
+  listGroupCatalogue,
   updateSample: updateColourSample,
   deleteSample: deleteColourSample,
   listSubgroups: listColourSubgroups,
@@ -1311,6 +1312,7 @@ async function ensureSchema() {
     await addMissingColumns(pool, "settings", [
       "ui_button_styles_json",
       "ui_theme_color_overrides_json",
+      "colour_section_ranges_json",
       "timesheet_export_path",
       "colours_and_finishes_path",
       "holding_amount",
@@ -1864,6 +1866,13 @@ async function ensureSchema() {
   } catch (e) {
     if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
       console.log(`Error adding column ui_theme_color_overrides_json:`, e.message);
+    }
+  }
+  try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN colour_section_ranges_json TEXT`);
+  } catch (e) {
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column colour_section_ranges_json:`, e.message);
     }
   }
   // Drawing Settings page: notification emails (VIC / QLD / Investor Streams)
@@ -4646,6 +4655,23 @@ app.get("/api/colour-groups/polytec", async (req, res) => {
   }
 });
 
+app.get("/api/colour-groups/:key/catalogue", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  const key = String(req.params.key || "").trim();
+  if (!key) return res.status(400).json({ error: "group key required" });
+  if (key === "colorbond") {
+    return res.json({ key: "colorbond", name: "Colorbond", subgroups: [], samples: [], colorbond: true });
+  }
+  try {
+    const catalogue = await listGroupCatalogue(pool, key);
+    if (!catalogue) return res.status(404).json({ error: "colour group not found" });
+    res.json(catalogue);
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Failed to load colour catalogue" });
+  }
+});
+
 app.get("/api/colour-groups", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   if (!requireStaffUserId(req, res)) return;
@@ -4995,6 +5021,82 @@ app.put("/api/ui-theme-colors", async (req, res) => {
   } catch (e) {
     console.error("Error saving UI theme colours:", e);
     return res.status(500).json({ error: e.message || "Failed to save UI theme colours" });
+  }
+});
+
+function parseColourSectionRangesColumn(raw) {
+  if (raw == null || raw === "") {
+    return {
+      external: "colorbond",
+      windows: "",
+      hybrid_flooring_affordable: "",
+      hybrid_flooring_superior: "",
+      tiles: "",
+      kitchen_cabinets: "",
+      kitchen_benchtops_laminate: "",
+      kitchen_benchtops_stone: "",
+    };
+  }
+  let obj = raw;
+  if (typeof raw === "string") {
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      obj = {};
+    }
+  }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) obj = {};
+  const keys = [
+    "external",
+    "windows",
+    "hybrid_flooring_affordable",
+    "hybrid_flooring_superior",
+    "tiles",
+    "kitchen_cabinets",
+    "kitchen_benchtops_laminate",
+    "kitchen_benchtops_stone",
+  ];
+  const out = {};
+  for (const key of keys) {
+    out[key] = obj[key] == null ? "" : String(obj[key]).trim();
+  }
+  if (!out.external) out.external = "colorbond";
+  return out;
+}
+
+app.get("/api/colour-section-ranges", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  try {
+    const r = await pool.query("SELECT colour_section_ranges_json FROM settings WHERE id = 1");
+    const ranges = parseColourSectionRangesColumn(r.rows[0]?.colour_section_ranges_json);
+    return res.json({ ok: true, ranges });
+  } catch (e) {
+    console.error("Error fetching colour section ranges:", e);
+    return res.status(500).json({ error: e.message || "Failed to fetch colour section ranges" });
+  }
+});
+
+app.put("/api/colour-section-ranges", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const ranges = parseColourSectionRangesColumn(body.ranges ?? body);
+    const json = JSON.stringify(ranges);
+    await pool.query(
+      `INSERT INTO settings (id, colour_section_ranges_json, updated_at)
+       VALUES (1, $1, NOW())
+       ON CONFLICT (id) DO UPDATE SET colour_section_ranges_json = EXCLUDED.colour_section_ranges_json, updated_at = NOW()`,
+      [json]
+    );
+    return res.json({ ok: true, ranges });
+  } catch (e) {
+    console.error("Error saving colour section ranges:", e);
+    return res.status(500).json({ error: e.message || "Failed to save colour section ranges" });
   }
 });
 

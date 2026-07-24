@@ -1,6 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AuthedImg from "../components/AuthedImg";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
+import {
+  COLORBOND_RANGE_KEY,
+  COLOUR_SECTION_RANGE_KEYS,
+  COLOUR_SECTION_RANGE_LABELS,
+  emptyColourSectionRanges,
+  normalizeColourSectionRanges,
+} from "../constants/colourSectionRanges";
 import { getApiHeaders } from "../utils/auth";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 import { MENU, UI } from "../utils/uiThemeTokens.js";
@@ -11,6 +18,41 @@ const WHITE = UI.cardBg;
 const API_URL = "";
 const DELETE_COLOUR_BUTTON_ID = 2;
 
+const SECTION_TITLE_SIZE = "0.9rem";
+const LIST_ROW_GAP = "6px";
+const LIST_SWATCH_SIZE = 28;
+/** Shared height for group + colour rows (padding + swatch). */
+const LIST_ROW_HEIGHT = 48;
+const listRowBaseStyle = {
+  background: "transparent",
+  border: "1px solid #ddd",
+  borderRadius: "8px",
+  padding: "0 8px",
+  height: LIST_ROW_HEIGHT,
+  minHeight: LIST_ROW_HEIGHT,
+  maxHeight: LIST_ROW_HEIGHT,
+  display: "flex",
+  alignItems: "center",
+  gap: "8px",
+  maxWidth: "100%",
+  boxSizing: "border-box",
+  overflow: "hidden",
+};
+
+const listSwatchStyle = {
+  width: LIST_SWATCH_SIZE,
+  height: LIST_SWATCH_SIZE,
+  borderRadius: "4px",
+  border: "1px solid #ccc",
+  flexShrink: 0,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  backgroundColor: UI.inputBg,
+  overflow: "hidden",
+  boxSizing: "border-box",
+};
+
 function sortButtonStyle(active) {
   return {
     padding: "8px 14px",
@@ -18,9 +60,29 @@ function sortButtonStyle(active) {
     border: active ? `1px solid ${MONUMENT}` : "1px solid #ddd",
     background: active ? MONUMENT : WHITE,
     color: active ? WHITE : MONUMENT,
-    fontSize: "0.88rem",
+    fontSize: SECTION_TITLE_SIZE,
     fontWeight: 600,
     cursor: "pointer",
+  };
+}
+
+function sectionHeadingStyle() {
+  return {
+    fontSize: SECTION_TITLE_SIZE,
+    margin: 0,
+    color: MONUMENT,
+    fontWeight: 600,
+    lineHeight: 1.3,
+  };
+}
+
+function sectionHeaderBlockStyle() {
+  return {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: "8px",
+    flexShrink: 0,
   };
 }
 
@@ -45,6 +107,8 @@ export default function ColourSettings() {
   const [editingGroupName, setEditingGroupName] = useState("");
   const [groupSaving, setGroupSaving] = useState(false);
   const [coloursAndFinishesPath, setColoursAndFinishesPath] = useState("");
+  const [sectionRanges, setSectionRanges] = useState(() => emptyColourSectionRanges());
+  const [sectionRangesSaving, setSectionRangesSaving] = useState(false);
   const [subgroupDraftName, setSubgroupDraftName] = useState("");
   const [editingSubgroupId, setEditingSubgroupId] = useState(null);
   const [editingSubgroupName, setEditingSubgroupName] = useState("");
@@ -107,11 +171,62 @@ export default function ColourSettings() {
     }
   }, []);
 
+  const loadSectionRanges = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/colour-section-ranges`, {
+        headers: getApiHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      setSectionRanges(normalizeColourSectionRanges(data.ranges));
+    } catch (e) {
+      console.error(e);
+      setSectionRanges(emptyColourSectionRanges());
+    }
+  }, []);
+
   useEffect(() => {
     void loadPolytec();
     void loadColourGroups();
     void loadColoursAndFinishesPath();
-  }, [loadPolytec, loadColourGroups, loadColoursAndFinishesPath]);
+    void loadSectionRanges();
+  }, [loadPolytec, loadColourGroups, loadColoursAndFinishesPath, loadSectionRanges]);
+
+  const rangeSelectOptions = useMemo(() => {
+    const options = [{ key: COLORBOND_RANGE_KEY, label: "Colorbond" }];
+    for (const group of colourGroups) {
+      const key = String(group.key || "").trim();
+      if (!key || key === COLORBOND_RANGE_KEY) continue;
+      const label =
+        key === "polytec" ? polytecCatalogue?.name || group.name || key : group.name || key;
+      options.push({ key, label });
+    }
+    return options;
+  }, [colourGroups, polytecCatalogue]);
+
+  async function handleSectionRangeChange(sectionKey, rangeKey) {
+    const next = normalizeColourSectionRanges({
+      ...sectionRanges,
+      [sectionKey]: rangeKey,
+    });
+    setSectionRanges(next);
+    try {
+      setSectionRangesSaving(true);
+      const res = await fetch(`${API_URL}/api/colour-section-ranges`, {
+        method: "PUT",
+        headers: getApiHeaders(),
+        body: JSON.stringify({ ranges: next }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      setSectionRanges(normalizeColourSectionRanges(data.ranges));
+    } catch (err) {
+      alert(err.message || "Failed to save colour range");
+      await loadSectionRanges();
+    } finally {
+      setSectionRangesSaving(false);
+    }
+  }
 
   const activeColourGroupName = useMemo(() => {
     if (selectedGroup === "polytec") {
@@ -201,19 +316,23 @@ export default function ColourSettings() {
 
   const subgroups = polytecCatalogue?.subgroups || [];
 
-  const alphabeticalSamples = useMemo(() => {
+  const displayedSamples = useMemo(() => {
     const out = [];
     for (const sg of subgroups) {
       for (const sample of sg.samples || []) {
         out.push({ sample, subgroup: sg });
       }
     }
-    return out.sort((a, b) =>
-      String(a.sample.name || "").localeCompare(String(b.sample.name || ""), undefined, {
-        sensitivity: "base",
-      })
-    );
-  }, [subgroups]);
+    if (sortMode === "alpha") {
+      return out.sort((a, b) =>
+        String(a.sample.name || "").localeCompare(String(b.sample.name || ""), undefined, {
+          sensitivity: "base",
+        })
+      );
+    }
+    // Keep catalogue subgroup order from the API.
+    return out;
+  }, [subgroups, sortMode]);
 
   const colorbondColours = useMemo(() => {
     if (sortMode === "alpha") {
@@ -516,10 +635,9 @@ export default function ColourSettings() {
     }
   }
 
-  function handleSortModeChange(nextMode) {
-    if (nextMode === sortMode) return;
+  function handleSortModeToggle() {
     requestListRestore();
-    setSortMode(nextMode);
+    setSortMode((prev) => (prev === "group" ? "alpha" : "group"));
   }
 
   const handleImageChange = (e) => {
@@ -572,32 +690,50 @@ export default function ColourSettings() {
     >
       <h2 style={{ fontSize: "1.5rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>Colour Settings</h2>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 3fr", gap: "24px", flex: 1, minHeight: 0 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px", overflowY: "auto", paddingRight: "8px" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "8px",
-              flexWrap: "wrap",
-            }}
-          >
-            <h3 style={{ fontSize: "1.1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>Color Groups</h3>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+          gap: "24px",
+          flex: 1,
+          minHeight: 0,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "12px",
+            minHeight: 0,
+            overflow: "hidden",
+          }}
+        >
+          <div style={sectionHeaderBlockStyle()}>
+            <h3 style={sectionHeadingStyle()}>Color Groups</h3>
             <button type="button" onClick={openGroupsModal} style={sortButtonStyle(false)}>
               Group Manager
             </button>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: LIST_ROW_GAP,
+              overflowY: "auto",
+              paddingRight: "8px",
+              flex: 1,
+              minHeight: 0,
+            }}
+          >
             <div
               onClick={() => setSelectedGroup("colorbond")}
               style={{
-                padding: "16px 12px",
-                border: selectedGroup === "colorbond" ? "2px solid " + MONUMENT : "1px solid #ddd",
-                borderRadius: "8px",
+                ...listRowBaseStyle,
                 cursor: "pointer",
-                transition: "all 0.2s",
+                transition: "background 0.2s",
                 backgroundColor: selectedGroup === "colorbond" ? UI.inputBg : "transparent",
+                outline: selectedGroup === "colorbond" ? `1px solid ${MONUMENT}` : "none",
+                outlineOffset: "-1px",
               }}
               onMouseEnter={(e) => {
                 if (selectedGroup !== "colorbond") e.currentTarget.style.backgroundColor = UI.inputBg;
@@ -606,7 +742,21 @@ export default function ColourSettings() {
                 if (selectedGroup !== "colorbond") e.currentTarget.style.backgroundColor = "transparent";
               }}
             >
-              <div style={{ fontSize: "1rem", fontWeight: 600, color: MONUMENT }}>Colorbond</div>
+              <div style={{ ...listSwatchStyle, visibility: "hidden" }} aria-hidden />
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  fontSize: "0.85rem",
+                  fontWeight: 500,
+                  color: MONUMENT,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Colorbond
+              </div>
             </div>
 
             {colourGroups.map((group) => {
@@ -620,12 +770,12 @@ export default function ColourSettings() {
                   key={group.id}
                   onClick={() => setSelectedGroup(group.key)}
                   style={{
-                    padding: "16px 12px",
-                    border: isSelected ? "2px solid " + MONUMENT : "1px solid #ddd",
-                    borderRadius: "8px",
+                    ...listRowBaseStyle,
                     cursor: "pointer",
-                    transition: "all 0.2s",
+                    transition: "background 0.2s",
                     backgroundColor: isSelected ? UI.inputBg : "transparent",
+                    outline: isSelected ? `1px solid ${MONUMENT}` : "none",
+                    outlineOffset: "-1px",
                   }}
                   onMouseEnter={(e) => {
                     if (!isSelected) e.currentTarget.style.backgroundColor = UI.inputBg;
@@ -634,7 +784,21 @@ export default function ColourSettings() {
                     if (!isSelected) e.currentTarget.style.backgroundColor = "transparent";
                   }}
                 >
-                  <div style={{ fontSize: "1rem", fontWeight: 600, color: MONUMENT }}>{label}</div>
+                  <div style={{ ...listSwatchStyle, visibility: "hidden" }} aria-hidden />
+                  <div
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      fontSize: "0.85rem",
+                      fontWeight: 500,
+                      color: MONUMENT,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {label}
+                  </div>
                 </div>
               );
             })}
@@ -642,135 +806,102 @@ export default function ColourSettings() {
         </div>
 
         <div
-          ref={listScrollRef}
-          style={{ display: "flex", flexDirection: "column", gap: "12px", overflowY: "auto", paddingRight: "8px" }}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "12px",
+            minHeight: 0,
+            overflow: "hidden",
+          }}
         >
           {selectedGroup === "colorbond" && (
-            <>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "12px",
-                  flexWrap: "wrap",
-                }}
-              >
-                <h3 style={{ fontSize: "1.1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>Colorbond Colours</h3>
-                <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
-                  <button
-                    type="button"
-                    onClick={() => handleSortModeChange("group")}
-                    style={sortButtonStyle(sortMode === "group")}
-                  >
-                    Sort by Group
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSortModeChange("alpha")}
-                    style={sortButtonStyle(sortMode === "alpha")}
-                  >
-                    Sort Alphabetically
-                  </button>
-                </div>
+            <div style={sectionHeaderBlockStyle()}>
+              <h3 style={sectionHeadingStyle()}>Colorbond Colours</h3>
+              <button type="button" onClick={handleSortModeToggle} style={sortButtonStyle(true)}>
+                {sortMode === "group" ? "Sort Alphabetically" : "Sort by Group"}
+              </button>
+            </div>
+          )}
+
+          {selectedGroup === "polytec" && (
+            <div style={sectionHeaderBlockStyle()}>
+              <h3 style={sectionHeadingStyle()}>
+                {polytecCatalogue?.name || "Polytec - Doors & Panels"}
+              </h3>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button type="button" onClick={handleSortModeToggle} style={sortButtonStyle(true)}>
+                  {sortMode === "group" ? "Sort Alphabetically" : "Sort by Group"}
+                </button>
+                <button type="button" onClick={openSubgroupsModal} style={sortButtonStyle(false)}>
+                  Sub Groups
+                </button>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                {colorbondColours.map((colour, index) => {
-                  const hex = getColourHex(colour.r, colour.g, colour.b);
-                  return (
+            </div>
+          )}
+
+          <div
+            ref={listScrollRef}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+              overflowY: "auto",
+              paddingRight: "8px",
+              flex: 1,
+              minHeight: 0,
+            }}
+          >
+          {selectedGroup === "colorbond" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: LIST_ROW_GAP }}>
+              {colorbondColours.map((colour, index) => {
+                const hex = getColourHex(colour.r, colour.g, colour.b);
+                return (
+                  <div
+                    key={`${colour.name}-${index}`}
+                    data-sample-id={`colorbond-${colour.name}`}
+                    style={listRowBaseStyle}
+                  >
                     <div
-                      key={`${colour.name}-${index}`}
-                      data-sample-id={`colorbond-${colour.name}`}
                       style={{
-                        background: "transparent",
-                        border: "1px solid #ddd",
-                        borderRadius: "8px",
-                        padding: "12px 8px",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        maxWidth: "100%",
-                        boxSizing: "border-box",
+                        ...listSwatchStyle,
+                        backgroundColor: hex,
+                      }}
+                    />
+                    <div
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontSize: "0.85rem",
+                        fontWeight: 500,
+                        color: MONUMENT,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
                       }}
                     >
-                      <div
-                        style={{
-                          width: "32px",
-                          height: "32px",
-                          borderRadius: "4px",
-                          backgroundColor: hex,
-                          border: "1px solid #ccc",
-                          flexShrink: 0,
-                        }}
-                      />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: "0.9rem", fontWeight: 500, color: MONUMENT }}>{colour.name}</div>
-                        <div style={{ fontSize: "0.75rem", color: "var(--sgf-text-primary)" }}>
-                          R: {colour.r} G: {colour.g} B: {colour.b}
-                        </div>
-                      </div>
+                      {colour.name}
                     </div>
-                  );
-                })}
-              </div>
-            </>
+                  </div>
+                );
+              })}
+            </div>
           )}
 
           {selectedGroup === "polytec" && (
             <>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "12px",
-                  flexWrap: "wrap",
-                }}
-              >
-                <h3 style={{ fontSize: "1.1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>
-                  {polytecCatalogue?.name || "Polytec - Doors & Panels"}
-                </h3>
-                <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
-                  <button
-                    type="button"
-                    onClick={() => handleSortModeChange("group")}
-                    style={sortButtonStyle(sortMode === "group")}
-                  >
-                    Sort by Group
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSortModeChange("alpha")}
-                    style={sortButtonStyle(sortMode === "alpha")}
-                  >
-                    Sort Alphabetically
-                  </button>
-                  <button type="button" onClick={openSubgroupsModal} style={sortButtonStyle(false)}>
-                    Sub Groups
-                  </button>
-                </div>
-              </div>
               {loadingPolytec ? (
                 <div style={{ color: UI.textMuted, fontSize: "0.9rem" }}>Loading…</div>
               ) : loadError ? (
                 <div style={{ color: "#842029", fontSize: "0.9rem" }}>{loadError}</div>
-              ) : sortMode === "alpha" ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  {alphabeticalSamples.map(({ sample, subgroup }) => (
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: LIST_ROW_GAP }}>
+                  {displayedSamples.map(({ sample, subgroup }) => (
                     <div
                       key={sample.id}
                       data-sample-id={sample.id}
                       onClick={() => handleColorClick(sample, subgroup)}
                       style={{
-                        background: "transparent",
-                        border: "1px solid #ddd",
-                        borderRadius: "8px",
-                        padding: "10px 8px",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        maxWidth: "100%",
-                        boxSizing: "border-box",
+                        ...listRowBaseStyle,
                         cursor: "pointer",
                         transition: "background 0.2s",
                       }}
@@ -781,20 +912,7 @@ export default function ColourSettings() {
                         e.currentTarget.style.background = "transparent";
                       }}
                     >
-                      <div
-                        style={{
-                          width: "28px",
-                          height: "28px",
-                          borderRadius: "4px",
-                          border: "1px solid #ccc",
-                          flexShrink: 0,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          backgroundColor: UI.inputBg,
-                          overflow: "hidden",
-                        }}
-                      >
+                      <div style={listSwatchStyle}>
                         {sample.image_url ? (
                           <AuthedImg
                             src={sample.image_url}
@@ -816,95 +934,32 @@ export default function ColourSettings() {
                           </div>
                         )}
                       </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: "0.85rem", fontWeight: 500, color: MONUMENT }}>{sample.name}</div>
-                        <div style={{ fontSize: "0.75rem", color: UI.textMuted }}>{subgroup.name}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                  {subgroups.map((subgroup) => (
-                    <div key={subgroup.id} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                      <h4
-                        style={{
-                          fontSize: "0.95rem",
-                          margin: 0,
-                          color: MONUMENT,
-                          fontWeight: 600,
-                          paddingBottom: "4px",
-                          borderBottom: "1px solid #ddd",
-                        }}
-                      >
-                        {subgroup.name}
-                      </h4>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                        {(subgroup.samples || []).map((sample) => (
-                          <div
-                            key={sample.id}
-                            data-sample-id={sample.id}
-                            onClick={() => handleColorClick(sample, subgroup)}
-                            style={{
-                              background: "transparent",
-                              border: "1px solid #ddd",
-                              borderRadius: "8px",
-                              padding: "10px 8px",
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "8px",
-                              maxWidth: "100%",
-                              boxSizing: "border-box",
-                              cursor: "pointer",
-                              transition: "background 0.2s",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = UI.inputBg;
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = "transparent";
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: "28px",
-                                height: "28px",
-                                borderRadius: "4px",
-                                border: "1px solid #ccc",
-                                flexShrink: 0,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                backgroundColor: UI.inputBg,
-                                overflow: "hidden",
-                              }}
-                            >
-                              {sample.image_url ? (
-                                <AuthedImg
-                                  src={sample.image_url}
-                                  alt={sample.name}
-                                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                                />
-                              ) : (
-                                <div
-                                  style={{
-                                    fontSize: "6px",
-                                    color: "var(--sgf-text-primary)",
-                                    fontWeight: 600,
-                                    textAlign: "center",
-                                    lineHeight: "1",
-                                    letterSpacing: "0.3px",
-                                  }}
-                                >
-                                  Soon
-                                </div>
-                              )}
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: "0.85rem", fontWeight: 500, color: MONUMENT }}>{sample.name}</div>
-                            </div>
-                          </div>
-                        ))}
+                      <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            fontSize: "0.85rem",
+                            fontWeight: 500,
+                            color: MONUMENT,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {sample.name}
+                        </div>
+                        <div
+                          style={{
+                            flexShrink: 0,
+                            fontSize: "0.85rem",
+                            fontWeight: 500,
+                            color: UI.textMuted,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {subgroup.name}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -944,7 +999,74 @@ export default function ColourSettings() {
               No colour catalogue is wired for this group yet. Use Group Manager to rename or remove it.
             </div>
           ) : null}
+          </div>
         </div>
+
+        {[COLOUR_SECTION_RANGE_KEYS.slice(0, 4), COLOUR_SECTION_RANGE_KEYS.slice(4)].map(
+          (sectionKeys, columnIndex) => (
+            <div
+              key={columnIndex === 0 ? "colour-ranges-col-3" : "colour-ranges-col-4"}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px",
+                minHeight: 0,
+                overflow: "hidden",
+              }}
+            >
+              <div style={sectionHeaderBlockStyle()}>
+                <h3 style={{ ...sectionHeadingStyle(), visibility: columnIndex === 0 ? "visible" : "hidden" }}>
+                  Colour Ranges
+                </h3>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "12px",
+                  overflowY: "auto",
+                  paddingRight: "8px",
+                  flex: 1,
+                  minHeight: 0,
+                }}
+              >
+                {sectionKeys.map((sectionKey) => (
+                  <label
+                    key={sectionKey}
+                    style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+                  >
+                    <span style={sectionHeadingStyle()}>{COLOUR_SECTION_RANGE_LABELS[sectionKey]}</span>
+                    <select
+                      value={sectionRanges[sectionKey] || ""}
+                      disabled={sectionRangesSaving}
+                      onChange={(e) => handleSectionRangeChange(sectionKey, e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "8px 10px",
+                        borderRadius: "8px",
+                        border: "1px solid #ddd",
+                        fontSize: SECTION_TITLE_SIZE,
+                        fontWeight: 600,
+                        color: MONUMENT,
+                        background: WHITE,
+                        boxSizing: "border-box",
+                        minHeight: LIST_ROW_HEIGHT,
+                        cursor: sectionRangesSaving ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      <option value="">Select range…</option>
+                      {rangeSelectOptions.map((opt) => (
+                        <option key={opt.key} value={opt.key}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )
+        )}
       </div>
 
       {showModal && editingSample && (

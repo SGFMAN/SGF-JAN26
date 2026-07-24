@@ -153,14 +153,14 @@ async function ensurePolytecColourTables(pool) {
   `);
 }
 
-async function listPolytecCatalogue(pool) {
+async function listGroupCatalogue(pool, groupKey) {
+  const key = String(groupKey || "").trim();
+  if (!key) return null;
   const groupRes = await pool.query(
     `SELECT id, key, name, sort_order FROM colour_groups WHERE key = $1 AND active = TRUE LIMIT 1`,
-    [GROUP_KEY]
+    [key]
   );
-  if (!groupRes.rows.length) {
-    return { key: GROUP_KEY, name: GROUP_DISPLAY_NAME, subgroups: [], samples: [] };
-  }
+  if (!groupRes.rows.length) return null;
   const group = groupRes.rows[0];
   const subgroupsRes = await pool.query(
     `SELECT id, name, sort_order
@@ -203,6 +203,14 @@ async function listPolytecCatalogue(pool) {
     subgroups,
     samples,
   };
+}
+
+async function listPolytecCatalogue(pool) {
+  const catalogue = await listGroupCatalogue(pool, GROUP_KEY);
+  if (!catalogue) {
+    return { key: GROUP_KEY, name: GROUP_DISPLAY_NAME, subgroups: [], samples: [] };
+  }
+  return catalogue;
 }
 
 async function getSampleById(pool, id) {
@@ -537,6 +545,7 @@ module.exports = {
   IMAGE_DIR,
   ensurePolytecColourTables,
   listPolytecCatalogue,
+  listGroupCatalogue,
   getSampleById,
   updateSample,
   deleteSample,
