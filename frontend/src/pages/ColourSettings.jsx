@@ -92,8 +92,8 @@ function mergeButtonStyle(styleId, fallback) {
 }
 
 export default function ColourSettings() {
-  const [polytecCatalogue, setPolytecCatalogue] = useState(null);
-  const [loadingPolytec, setLoadingPolytec] = useState(false);
+  const [groupCatalogue, setGroupCatalogue] = useState(null);
+  const [loadingCatalogue, setLoadingCatalogue] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [selectedGroup, setSelectedGroup] = useState(null);
@@ -125,24 +125,37 @@ export default function ColourSettings() {
   const restoreScrollTopRef = useRef(null);
   const pendingRestoreRef = useRef(false);
 
-  const loadPolytec = useCallback(async ({ silent = false } = {}) => {
+  const loadGroupCatalogue = useCallback(async (groupKey, { silent = false } = {}) => {
+    const key = String(groupKey || "").trim();
+    if (!key || key === "colorbond") {
+      if (!silent) setGroupCatalogue(null);
+      return;
+    }
     try {
-      if (!silent) setLoadingPolytec(true);
+      if (!silent) setLoadingCatalogue(true);
       setLoadError("");
-      const res = await fetch(`${API_URL}/api/colour-groups/polytec`, {
+      const res = await fetch(`${API_URL}/api/colour-groups/${encodeURIComponent(key)}/catalogue`, {
         headers: getApiHeaders(),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
-      setPolytecCatalogue(data);
+      setGroupCatalogue(data);
     } catch (e) {
       console.error(e);
-      setLoadError(e.message || "Failed to load Polytec colours");
-      if (!silent) setPolytecCatalogue(null);
+      setLoadError(e.message || "Failed to load colours");
+      if (!silent) setGroupCatalogue(null);
     } finally {
-      if (!silent) setLoadingPolytec(false);
+      if (!silent) setLoadingCatalogue(false);
     }
   }, []);
+
+  const reloadActiveCatalogue = useCallback(
+    async ({ silent = false } = {}) => {
+      if (!selectedGroup || selectedGroup === "colorbond") return;
+      await loadGroupCatalogue(selectedGroup, { silent });
+    },
+    [loadGroupCatalogue, selectedGroup]
+  );
 
   const loadColourGroups = useCallback(async () => {
     try {
@@ -186,23 +199,30 @@ export default function ColourSettings() {
   }, []);
 
   useEffect(() => {
-    void loadPolytec();
     void loadColourGroups();
     void loadColoursAndFinishesPath();
     void loadSectionRanges();
-  }, [loadPolytec, loadColourGroups, loadColoursAndFinishesPath, loadSectionRanges]);
+  }, [loadColourGroups, loadColoursAndFinishesPath, loadSectionRanges]);
+
+  useEffect(() => {
+    if (!selectedGroup || selectedGroup === "colorbond") {
+      setGroupCatalogue(null);
+      setLoadError("");
+      setLoadingCatalogue(false);
+      return;
+    }
+    void loadGroupCatalogue(selectedGroup);
+  }, [selectedGroup, loadGroupCatalogue]);
 
   const rangeSelectOptions = useMemo(() => {
     const options = [{ key: COLORBOND_RANGE_KEY, label: "Colorbond" }];
     for (const group of colourGroups) {
       const key = String(group.key || "").trim();
       if (!key || key === COLORBOND_RANGE_KEY) continue;
-      const label =
-        key === "polytec" ? polytecCatalogue?.name || group.name || key : group.name || key;
-      options.push({ key, label });
+      options.push({ key, label: group.name || key });
     }
     return options;
-  }, [colourGroups, polytecCatalogue]);
+  }, [colourGroups]);
 
   async function handleSectionRangeChange(sectionKey, rangeKey) {
     const next = normalizeColourSectionRanges({
@@ -229,12 +249,14 @@ export default function ColourSettings() {
   }
 
   const activeColourGroupName = useMemo(() => {
-    if (selectedGroup === "polytec") {
-      return polytecCatalogue?.name || "Polytec - Doors & Panels";
-    }
+    if (!selectedGroup || selectedGroup === "colorbond") return "";
+    if (groupCatalogue?.name) return groupCatalogue.name;
     const match = colourGroups.find((g) => g.key === selectedGroup);
     return match?.name || "";
-  }, [selectedGroup, polytecCatalogue, colourGroups]);
+  }, [selectedGroup, groupCatalogue, colourGroups]);
+
+  const isDbColourGroup = Boolean(selectedGroup && selectedGroup !== "colorbond");
+  const canManageSubgroups = selectedGroup === "polytec";
 
   function buildColourImageFullPath(filename) {
     const file = String(filename || "")
@@ -297,13 +319,13 @@ export default function ColourSettings() {
   }
 
   useEffect(() => {
-    if (loadingPolytec || showModal || showSubgroupsModal) return;
+    if (loadingCatalogue || showModal || showSubgroupsModal) return;
     if (!pendingRestoreRef.current) return;
     const id = window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => restoreListPosition());
     });
     return () => window.cancelAnimationFrame(id);
-  }, [loadingPolytec, showModal, showSubgroupsModal, sortMode, polytecCatalogue, selectedGroup]);
+  }, [loadingCatalogue, showModal, showSubgroupsModal, sortMode, groupCatalogue, selectedGroup]);
 
   const getColourHex = (r, g, b) => {
     return `#${[r, g, b]
@@ -314,7 +336,7 @@ export default function ColourSettings() {
       .join("")}`;
   };
 
-  const subgroups = polytecCatalogue?.subgroups || [];
+  const subgroups = groupCatalogue?.subgroups || [];
 
   const displayedSamples = useMemo(() => {
     const out = [];
@@ -380,7 +402,7 @@ export default function ColourSettings() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       requestListRestore(restoreId);
-      await loadPolytec({ silent: true });
+      await reloadActiveCatalogue({ silent: true });
       setShowModal(false);
       setEditingSample(null);
       setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFilename: "" });
@@ -403,7 +425,7 @@ export default function ColourSettings() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       requestListRestore(null);
-      await loadPolytec({ silent: true });
+      await reloadActiveCatalogue({ silent: true });
       setShowModal(false);
       setEditingSample(null);
       setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFilename: "" });
@@ -502,7 +524,7 @@ export default function ColourSettings() {
       setEditingGroupId(null);
       setEditingGroupName("");
       await loadColourGroups();
-      await loadPolytec({ silent: true });
+      await reloadActiveCatalogue({ silent: true });
     } catch (err) {
       alert(err.message || "Failed to update colour group");
     } finally {
@@ -535,7 +557,7 @@ export default function ColourSettings() {
         setSelectedGroup(null);
       }
       await loadColourGroups();
-      await loadPolytec({ silent: true });
+      await reloadActiveCatalogue({ silent: true });
     } catch (err) {
       alert(err.message || "Failed to delete colour group");
     } finally {
@@ -561,7 +583,7 @@ export default function ColourSettings() {
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       setSubgroupDraftName("");
       requestListRestore(restoreSampleIdRef.current);
-      await loadPolytec({ silent: true });
+      await reloadActiveCatalogue({ silent: true });
     } catch (err) {
       alert(err.message || "Failed to add subgroup");
     } finally {
@@ -599,7 +621,7 @@ export default function ColourSettings() {
       setEditingSubgroupId(null);
       setEditingSubgroupName("");
       requestListRestore(restoreSampleIdRef.current);
-      await loadPolytec({ silent: true });
+      await reloadActiveCatalogue({ silent: true });
     } catch (err) {
       alert(err.message || "Failed to update subgroup");
     } finally {
@@ -627,7 +649,7 @@ export default function ColourSettings() {
         setEditingSubgroupName("");
       }
       requestListRestore(restoreSampleIdRef.current);
-      await loadPolytec({ silent: true });
+      await reloadActiveCatalogue({ silent: true });
     } catch (err) {
       alert(err.message || "Failed to delete subgroup");
     } finally {
@@ -761,10 +783,7 @@ export default function ColourSettings() {
 
             {colourGroups.map((group) => {
               const isSelected = selectedGroup === group.key;
-              const label =
-                group.key === "polytec"
-                  ? polytecCatalogue?.name || group.name
-                  : group.name;
+              const label = group.name || group.key;
               return (
                 <div
                   key={group.id}
@@ -823,18 +842,20 @@ export default function ColourSettings() {
             </div>
           )}
 
-          {selectedGroup === "polytec" && (
+          {isDbColourGroup && (
             <div style={sectionHeaderBlockStyle()}>
               <h3 style={sectionHeadingStyle()}>
-                {polytecCatalogue?.name || "Polytec - Doors & Panels"}
+                {groupCatalogue?.name || activeColourGroupName || "Colours"}
               </h3>
               <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                 <button type="button" onClick={handleSortModeToggle} style={sortButtonStyle(true)}>
                   {sortMode === "group" ? "Sort Alphabetically" : "Sort by Group"}
                 </button>
-                <button type="button" onClick={openSubgroupsModal} style={sortButtonStyle(false)}>
-                  Sub Groups
-                </button>
+                {canManageSubgroups ? (
+                  <button type="button" onClick={openSubgroupsModal} style={sortButtonStyle(false)}>
+                    Sub Groups
+                  </button>
+                ) : null}
               </div>
             </div>
           )}
@@ -887,9 +908,9 @@ export default function ColourSettings() {
             </div>
           )}
 
-          {selectedGroup === "polytec" && (
+          {isDbColourGroup && (
             <>
-              {loadingPolytec ? (
+              {loadingCatalogue ? (
                 <div style={{ color: UI.textMuted, fontSize: "0.9rem" }}>Loading…</div>
               ) : loadError ? (
                 <div style={{ color: "#842029", fontSize: "0.9rem" }}>{loadError}</div>
@@ -982,23 +1003,6 @@ export default function ColourSettings() {
               Select a color group from the left to view colors
             </div>
           )}
-
-          {selectedGroup && selectedGroup !== "colorbond" && selectedGroup !== "polytec" ? (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                height: "100%",
-                color: UI.textMuted,
-                fontSize: "0.9rem",
-                textAlign: "center",
-                padding: "24px",
-              }}
-            >
-              No colour catalogue is wired for this group yet. Use Group Manager to rename or remove it.
-            </div>
-          ) : null}
           </div>
         </div>
 
@@ -1097,7 +1101,7 @@ export default function ColourSettings() {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 style={{ fontSize: "1.3rem", margin: "0 0 20px 0", color: MONUMENT, fontWeight: 600 }}>
-              Edit Polytec Color
+              Edit Color
             </h3>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
