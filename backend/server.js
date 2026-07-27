@@ -5221,6 +5221,9 @@ function normalizePlanningManagerLayout(body) {
 app.get("/api/planning-manager-layout", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
   try {
     const r = await pool.query("SELECT planning_manager_layout_json FROM settings WHERE id = 1");
     const layout = parsePlanningManagerLayoutColumn(r.rows[0]?.planning_manager_layout_json);
@@ -5234,6 +5237,9 @@ app.get("/api/planning-manager-layout", async (req, res) => {
 app.put("/api/planning-manager-layout", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
   try {
     const body = req.body && typeof req.body === "object" ? req.body : {};
     const incoming = normalizePlanningManagerLayout(body.layout ?? body);

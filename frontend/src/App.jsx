@@ -121,7 +121,7 @@ export default function App() {
             <Route path="/managers/contract-manager" element={<Auth><ManagersAccessRoute><ContractManager /></ManagersAccessRoute></Auth>} />
             <Route path="/managers/colour-manager" element={<Auth><ManagersAccessRoute><ColourManager /></ManagersAccessRoute></Auth>} />
             <Route path="/managers/status-manager" element={<Auth><ManagersAccessRoute><StatusManager /></ManagersAccessRoute></Auth>} />
-            <Route path="/managers/planning-manager" element={<Auth><ManagersAccessRoute><PlanningManager /></ManagersAccessRoute></Auth>} />
+            <Route path="/managers/planning-manager" element={<Auth><ManagersAccessRoute><AdminAccessRoute><PlanningManager /></AdminAccessRoute></ManagersAccessRoute></Auth>} />
             <Route path="/managers/drawing-manager" element={<Auth><ManagersAccessRoute><AdminDrawingManagerRoute /></ManagersAccessRoute></Auth>} />
             <Route path="/sales" element={<Auth><SalesAccessRoute><Sales /></SalesAccessRoute></Auth>} />
             <Route path="/sales-totals" element={<Auth><SalesAccessRoute><SalesTotals /></SalesAccessRoute></Auth>} />

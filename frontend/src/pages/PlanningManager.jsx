@@ -204,6 +204,7 @@ export default function PlanningManager() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [sheetReady, setSheetReady] = useState(false);
 
   const sheetViewportRef = useRef(null);
   const [baseRowHeight, setBaseRowHeight] = useState(28);
@@ -267,7 +268,10 @@ export default function PlanningManager() {
           setProjects([]);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setSheetReady(true);
+        }
       }
     })();
     return () => {
@@ -295,13 +299,14 @@ export default function PlanningManager() {
   }, []);
 
   useLayoutEffect(() => {
+    if (!sheetReady) return undefined;
     fitRowHeightToViewport();
     const el = sheetViewportRef.current;
     if (!el || typeof ResizeObserver === "undefined") return undefined;
     const ro = new ResizeObserver(() => fitRowHeightToViewport());
     ro.observe(el);
     return () => ro.disconnect();
-  }, [fitRowHeightToViewport]);
+  }, [fitRowHeightToViewport, sheetReady]);
 
   const colOffsets = useMemo(() => {
     const offsets = new Array(COL_COUNT + 1);
@@ -564,13 +569,24 @@ export default function PlanningManager() {
             border: `1px solid ${HEADER_GRID_LINE}`,
           }}
         >
-          {(loading || error) && (
+          {(loading || error || !sheetReady) && (
             <div style={{ padding: "12px 16px", borderBottom: `1px solid ${HEADER_GRID_LINE}`, flexShrink: 0 }}>
-              {loading ? <span style={{ color: UI.textMuted }}>Loading projects…</span> : null}
+              {!sheetReady || loading ? (
+                <span style={{ color: UI.textMuted }}>Loading sheet…</span>
+              ) : null}
               {error ? <span style={{ color: "#cc3333" }}>{error}</span> : null}
             </div>
           )}
 
+          {!sheetReady ? (
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                background: WHITE,
+              }}
+            />
+          ) : (
           <div
             ref={sheetViewportRef}
             onScroll={(e) => {
@@ -978,6 +994,7 @@ export default function PlanningManager() {
               <div style={{ height: Math.max(0, totalHeight - rowOffsets[Math.max(rowEnd, DATA_START_ROW)]) }} />
             </div>
           </div>
+          )}
         </div>
       </div>
     </div>
