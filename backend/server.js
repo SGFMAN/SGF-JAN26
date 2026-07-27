@@ -2637,6 +2637,16 @@ app.put("/api/projects/:id", async (req, res) => {
       if (typeof val === "string" && val.trim() === "Required") return "Required";
       return "N/A";
     };
+    /** Town planning / BAL / Septic: Not Selected | Not Required | Required | Completed; undefined = skip. */
+    const processTownPlanning = (val) => {
+      if (val === undefined || val === null) return null;
+      if (typeof val !== "string") return "Not Selected";
+      const t = val.trim();
+      if (t === "N/A") return "Not Required";
+      if (t === "Complete" || t === "Permit Complete") return "Completed";
+      const allowed = new Set(["Not Selected", "Not Required", "Required", "Completed"]);
+      return allowed.has(t) ? t : "Not Selected";
+    };
     /** Land subject to flooding: N/A | REG 153 | REG 154 | REG 153 & REG 154; undefined = skip COALESCE. */
     const processLandFloodingRegulation = (val) => {
       if (val === undefined || val === null) return null;
@@ -2650,15 +2660,6 @@ app.put("/api/projects/:id", async (req, res) => {
       if (val === undefined || val === null) return null;
       if (typeof val === "string" && val.trim() === "Completed") return "Completed";
       return "Not Completed";
-    };
-    /** Planning septic: Not Required | Required | Complete; undefined = skip COALESCE. */
-    const processPlanningSeptic = (val) => {
-      if (val === undefined || val === null) return null;
-      if (typeof val !== "string") return "Not Required";
-      const t = val.trim();
-      if (t === "Required" || t === "Complete") return t;
-      if (t === "Permit Complete") return "Complete";
-      return "Not Required";
     };
     /**
      * If the client sends a doc status in this PUT, the stored file path must match that status:
@@ -2999,7 +3000,7 @@ app.put("/api/projects/:id", async (req, res) => {
         processWrittenAdvice(planning_written_advice),
         processJfDocDate(planning_written_advice_requested_at),
         processJfDocDate(planning_written_advice_received_at),
-        processWrittenAdvice(planning_town_planning),
+        processTownPlanning(planning_town_planning),
         processJfDocDate(planning_town_planning_requested_at),
         processJfDocDate(planning_town_planning_received_at),
         processLandFloodingRegulation(planning_land_flooding_regulation),
@@ -3007,7 +3008,7 @@ app.put("/api/projects/:id", async (req, res) => {
         processJfDocDate(planning_land_flooding_fpa_received_at),
         processJfDocDate(planning_land_flooding_cc_requested_at),
         processJfDocDate(planning_land_flooding_cc_received_at),
-        processWrittenAdvice(planning_bal),
+        processTownPlanning(planning_bal),
         processJfDocDate(planning_bal_requested_at),
         processJfDocDate(planning_bal_received_at),
         processJfDocDate(planning_footing_certification_requested_at),
@@ -3015,7 +3016,7 @@ app.put("/api/projects/:id", async (req, res) => {
         processJfDocDate(planning_energy_report_requested_at),
         processJfDocDate(planning_energy_report_received_at),
         processEnergySpecsAddedToPlans(planning_energy_specs_added_to_plans),
-        processPlanningSeptic(planning_septic),
+        processTownPlanning(planning_septic),
         processJfDocDate(planning_septic_requested_at),
         processJfDocDate(planning_septic_received_at),
         processValue(salesperson),

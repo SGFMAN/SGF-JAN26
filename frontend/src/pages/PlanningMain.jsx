@@ -6,9 +6,21 @@ const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
-const PLANNING_NA_REQUIRED_OPTIONS = ["N/A", "Required"];
-const SEPTIC_OPTIONS = ["Not Required", "Required", "Complete"];
+const PLANNING_STATUS_OPTIONS = ["Not Selected", "Not Required", "Required", "Completed"];
 const BUILDING_PERMIT_OPTIONS = ["Not Submitted", "Sent", "Complete"];
+const STAMP_BUTTON_LABELS = ["Requested", "Received"];
+
+/** Fit width from longest label (ch) + padding for select chevron / button padding. */
+function fitWidthCh(labels, extraCh = 3.5) {
+  const maxLen = Math.max(1, ...labels.map((s) => String(s).length));
+  return `calc(${maxLen}ch + ${extraCh}ch)`;
+}
+
+const SHARED_SELECT_WIDTH = fitWidthCh(
+  [...PLANNING_STATUS_OPTIONS, ...BUILDING_PERMIT_OPTIONS],
+  3.75
+);
+const SHARED_BUTTON_WIDTH = fitWidthCh(STAMP_BUTTON_LABELS, 3.25);
 
 function formatDateTime(iso) {
   if (!iso || typeof iso !== "string") return "";
@@ -30,37 +42,38 @@ function RequestedReceivedControls({ requestedAt, receivedAt, onRequested, onRec
     fontWeight: 500,
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.65 : 1,
-    width: "100%",
+    width: SHARED_BUTTON_WIDTH,
+    boxSizing: "border-box",
+    flexShrink: 0,
   };
-  const textStyle = {
+  const dateStyle = {
     fontSize: "0.82rem",
     color: "var(--sgf-text-primary)",
     lineHeight: 1.35,
-    maxWidth: "100%",
+    minWidth: 0,
     wordBreak: "break-word",
+  };
+  const rowStyle = {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: "10px",
+    width: "100%",
   };
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-        gap: "12px",
-        alignItems: "start",
-        width: "100%",
-      }}
-    >
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%" }}>
+      <div style={rowStyle}>
         <button type="button" onClick={onRequested} disabled={disabled} style={buttonStyle}>
           Requested
         </button>
-        {requestedAt ? <div style={textStyle}>{formatDateTime(requestedAt)}</div> : null}
+        <div style={dateStyle}>{requestedAt ? formatDateTime(requestedAt) : ""}</div>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
+      <div style={rowStyle}>
         <button type="button" onClick={onReceived} disabled={disabled} style={buttonStyle}>
           Received
         </button>
-        {receivedAt ? <div style={textStyle}>{formatDateTime(receivedAt)}</div> : null}
+        <div style={dateStyle}>{receivedAt ? formatDateTime(receivedAt) : ""}</div>
       </div>
     </div>
   );
@@ -75,7 +88,8 @@ const labelStyle = {
 };
 
 const selectStyle = {
-  width: "100%",
+  width: SHARED_SELECT_WIDTH,
+  maxWidth: "100%",
   padding: "10px 12px",
   borderRadius: "8px",
   border: "1px solid #ddd",
@@ -92,11 +106,16 @@ const columnStyle = {
   gap: "12px",
 };
 
-function normalizeSeptic(value) {
+function normalizePlanningStatus(value) {
   const t = value != null ? String(value).trim() : "";
-  if (SEPTIC_OPTIONS.includes(t)) return t;
-  if (t === "Permit Complete") return "Complete";
-  return "Not Required";
+  if (PLANNING_STATUS_OPTIONS.includes(t)) return t;
+  if (t === "N/A") return "Not Required";
+  if (t === "Complete" || t === "Permit Complete") return "Completed";
+  return "Not Selected";
+}
+
+function showStampControls(status) {
+  return status === "Required" || status === "Completed";
 }
 
 /**
@@ -107,7 +126,11 @@ export default function PlanningMain({ project, onUpdate }) {
   const [buildingPermitStatus, setBuildingPermitStatus] = useState(
     project?.building_permit_status || "Not Submitted"
   );
-  const [septicStatus, setSepticStatus] = useState(normalizeSeptic(project?.planning_septic));
+  const [townPlanningStatus, setTownPlanningStatus] = useState(
+    normalizePlanningStatus(project?.planning_town_planning)
+  );
+  const [balStatus, setBalStatus] = useState(normalizePlanningStatus(project?.planning_bal));
+  const [septicStatus, setSepticStatus] = useState(normalizePlanningStatus(project?.planning_septic));
 
   async function saveFields(fields) {
     if (!project?.id) return false;
@@ -144,51 +167,17 @@ export default function PlanningMain({ project, onUpdate }) {
     return saveFields({ [fieldName]: value });
   }
 
-  const townPlanningRequirement =
-    project?.planning_town_planning != null && String(project.planning_town_planning).trim() === "Required"
-      ? "Required"
-      : "N/A";
-
-  const balRequirement =
-    project?.planning_bal != null && String(project.planning_bal).trim() === "Required" ? "Required" : "N/A";
-
-  async function handleTownPlanningRequirementChange(e) {
-    const next = e.target.value === "Required" ? "Required" : "N/A";
-    if (next === "N/A") {
+  async function handleStatusChange(field, requestedAtKey, receivedAtKey, next, setLocal) {
+    const status = normalizePlanningStatus(next);
+    setLocal(status);
+    if (status === "Not Selected" || status === "Not Required") {
       await saveFields({
-        planning_town_planning: "N/A",
-        planning_town_planning_requested_at: null,
-        planning_town_planning_received_at: null,
+        [field]: status,
+        [requestedAtKey]: null,
+        [receivedAtKey]: null,
       });
     } else {
-      await saveField("planning_town_planning", "Required");
-    }
-  }
-
-  async function handleBalRequirementChange(e) {
-    const next = e.target.value === "Required" ? "Required" : "N/A";
-    if (next === "N/A") {
-      await saveFields({
-        planning_bal: "N/A",
-        planning_bal_requested_at: null,
-        planning_bal_received_at: null,
-      });
-    } else {
-      await saveField("planning_bal", "Required");
-    }
-  }
-
-  async function handleSepticChange(e) {
-    const next = normalizeSeptic(e.target.value);
-    setSepticStatus(next);
-    if (next === "Not Required") {
-      await saveFields({
-        planning_septic: "Not Required",
-        planning_septic_requested_at: null,
-        planning_septic_received_at: null,
-      });
-    } else {
-      await saveField("planning_septic", next);
+      await saveField(field, status);
     }
   }
 
@@ -200,8 +189,16 @@ export default function PlanningMain({ project, onUpdate }) {
 
   useEffect(() => {
     setBuildingPermitStatus(project?.building_permit_status || "Not Submitted");
-    setSepticStatus(normalizeSeptic(project?.planning_septic));
-  }, [project?.id, project?.building_permit_status, project?.planning_septic]);
+    setTownPlanningStatus(normalizePlanningStatus(project?.planning_town_planning));
+    setBalStatus(normalizePlanningStatus(project?.planning_bal));
+    setSepticStatus(normalizePlanningStatus(project?.planning_septic));
+  }, [
+    project?.id,
+    project?.building_permit_status,
+    project?.planning_town_planning,
+    project?.planning_bal,
+    project?.planning_septic,
+  ]);
 
   const disabled = !project?.id || isSaving;
 
@@ -223,23 +220,31 @@ export default function PlanningMain({ project, onUpdate }) {
           </h3>
           <div>
             <label htmlFor="town-planning-select" style={labelStyle}>
-              Requirement
+              Status
             </label>
             <select
               id="town-planning-select"
-              value={townPlanningRequirement}
-              onChange={handleTownPlanningRequirementChange}
+              value={townPlanningStatus}
+              onChange={(e) =>
+                void handleStatusChange(
+                  "planning_town_planning",
+                  "planning_town_planning_requested_at",
+                  "planning_town_planning_received_at",
+                  e.target.value,
+                  setTownPlanningStatus
+                )
+              }
               disabled={disabled}
               style={selectStyle}
             >
-              {PLANNING_NA_REQUIRED_OPTIONS.map((opt) => (
+              {PLANNING_STATUS_OPTIONS.map((opt) => (
                 <option key={opt} value={opt}>
                   {opt}
                 </option>
               ))}
             </select>
           </div>
-          {townPlanningRequirement === "Required" ? (
+          {showStampControls(townPlanningStatus) ? (
             <RequestedReceivedControls
               requestedAt={project?.planning_town_planning_requested_at}
               receivedAt={project?.planning_town_planning_received_at}
@@ -256,23 +261,31 @@ export default function PlanningMain({ project, onUpdate }) {
           </h3>
           <div>
             <label htmlFor="bal-select" style={labelStyle}>
-              Requirement
+              Status
             </label>
             <select
               id="bal-select"
-              value={balRequirement}
-              onChange={handleBalRequirementChange}
+              value={balStatus}
+              onChange={(e) =>
+                void handleStatusChange(
+                  "planning_bal",
+                  "planning_bal_requested_at",
+                  "planning_bal_received_at",
+                  e.target.value,
+                  setBalStatus
+                )
+              }
               disabled={disabled}
               style={selectStyle}
             >
-              {PLANNING_NA_REQUIRED_OPTIONS.map((opt) => (
+              {PLANNING_STATUS_OPTIONS.map((opt) => (
                 <option key={opt} value={opt}>
                   {opt}
                 </option>
               ))}
             </select>
           </div>
-          {balRequirement === "Required" ? (
+          {showStampControls(balStatus) ? (
             <RequestedReceivedControls
               requestedAt={project?.planning_bal_requested_at}
               receivedAt={project?.planning_bal_received_at}
@@ -294,24 +307,34 @@ export default function PlanningMain({ project, onUpdate }) {
             <select
               id="septic-select"
               value={septicStatus}
-              onChange={handleSepticChange}
+              onChange={(e) =>
+                void handleStatusChange(
+                  "planning_septic",
+                  "planning_septic_requested_at",
+                  "planning_septic_received_at",
+                  e.target.value,
+                  setSepticStatus
+                )
+              }
               disabled={disabled}
               style={selectStyle}
             >
-              {SEPTIC_OPTIONS.map((opt) => (
+              {PLANNING_STATUS_OPTIONS.map((opt) => (
                 <option key={opt} value={opt}>
                   {opt}
                 </option>
               ))}
             </select>
           </div>
-          <RequestedReceivedControls
-            requestedAt={project?.planning_septic_requested_at}
-            receivedAt={project?.planning_septic_received_at}
-            onRequested={() => void saveField("planning_septic_requested_at", new Date().toISOString())}
-            onReceived={() => void saveField("planning_septic_received_at", new Date().toISOString())}
-            disabled={disabled}
-          />
+          {showStampControls(septicStatus) ? (
+            <RequestedReceivedControls
+              requestedAt={project?.planning_septic_requested_at}
+              receivedAt={project?.planning_septic_received_at}
+              onRequested={() => void saveField("planning_septic_requested_at", new Date().toISOString())}
+              onReceived={() => void saveField("planning_septic_received_at", new Date().toISOString())}
+              disabled={disabled}
+            />
+          ) : null}
         </section>
 
         <section aria-labelledby="building-permit-title" style={columnStyle}>
