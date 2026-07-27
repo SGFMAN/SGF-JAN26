@@ -23,6 +23,7 @@ import { isUserAdmin, getApiHeaders } from "../utils/auth";
 import { computeProjectFolderPathFromRecord } from "../utils/projectFolderPath";
 import { projectPath, portalProjectPath } from "../utils/projectUrl";
 import useIsMobile from "../hooks/useIsMobile";
+import { usePlanningAccess } from "../hooks/usePlanningAccess";
 import ProjectPageMobile from "../mobile/ProjectPageMobile";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { mergeDestructiveButtonStyle, destructiveButtonUsesSavedStyle } from "../utils/uiButtonStyles.js";
@@ -158,7 +159,7 @@ const MENU_OPTIONS = [
   { label: "Site Visit", key: "site-visit" },
   { label: "Contract", key: "contract" },
   { label: "Planning - OLD", key: "planning-old", hidden: true },
-  { label: "Planning", key: "planning" },
+  { label: "Planning", key: "planning", requiresPlanningAccess: true },
   { label: "Planning - Underconstruction", key: "planning-underconstruction", adminOnly: true },
   { label: "Variations", key: "variations" },
   { label: "Admin", key: "admin" },
@@ -193,6 +194,7 @@ export default function ProjectPage() {
   const [allProjects, setAllProjects] = useState([]);
   const [showProjectMenu, setShowProjectMenu] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const { hasPlanning, ready: planningAccessReady } = usePlanningAccess();
   const [, setUiButtonStyleRevision] = useState(0);
   const updateTimeoutRef = useRef(null);
   const [renovationDupOpen, setRenovationDupOpen] = useState(false);
@@ -248,6 +250,8 @@ export default function ProjectPage() {
         setActiveView("overview");
       } else if (viewParam === "planning-underconstruction" && !isAdmin) {
         setActiveView("overview");
+      } else if (viewParam === "planning" && planningAccessReady && !hasPlanning) {
+        setActiveView("overview");
       } else {
         setActiveView(viewParam);
       }
@@ -256,7 +260,7 @@ export default function ProjectPage() {
     } else if (isMobile) {
       setActiveView("overview");
     }
-  }, [token, location.search, isPortalProjectPath, isMobile, isAdmin]);
+  }, [token, location.search, isPortalProjectPath, isMobile, isAdmin, hasPlanning, planningAccessReady]);
 
   // Non-admins cannot stay on admin-only planning underconstruction
   useEffect(() => {
@@ -264,6 +268,13 @@ export default function ProjectPage() {
       setActiveView("overview");
     }
   }, [activeView, isAdmin]);
+
+  // Users without Planning permission cannot stay on Planning
+  useEffect(() => {
+    if (activeView === "planning" && planningAccessReady && !hasPlanning) {
+      setActiveView("overview");
+    }
+  }, [activeView, hasPlanning, planningAccessReady]);
 
   // Set default menu view for Construction Phase projects
   useEffect(() => {
@@ -945,7 +956,8 @@ export default function ProjectPage() {
               (item) =>
                 !item.hidden &&
                 !(isPortalProjectPath && item.key === "admin") &&
-                !(item.adminOnly && !isAdmin)
+                !(item.adminOnly && !isAdmin) &&
+                !(item.requiresPlanningAccess && !hasPlanning)
             )
             .map((item) => {
             return (
@@ -1097,7 +1109,7 @@ export default function ProjectPage() {
               {activeView === "planning-old" && (
                 <PlanningOld project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
               )}
-              {activeView === "planning" && (
+              {activeView === "planning" && hasPlanning && (
                 <PlanningMain project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
               )}
               {activeView === "planning-underconstruction" && isAdmin && (

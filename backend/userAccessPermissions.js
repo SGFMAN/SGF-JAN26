@@ -2,6 +2,7 @@ const ACCESS_AREAS = [
   { key: "admin", label: "Admin" },
   { key: "managers", label: "Managers" },
   { key: "sales", label: "Sales" },
+  { key: "planning", label: "Planning" },
 ];
 
 const ACCESS_AREA_KEYS = new Set(ACCESS_AREAS.map((area) => area.key));
