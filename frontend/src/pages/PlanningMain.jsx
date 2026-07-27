@@ -1,5 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { UI } from "../utils/uiThemeTokens.js";
+import {
+  BUILDING_PERMIT_OPTIONS,
+  PLANNING_STATUS_OPTIONS,
+  normalizeBuildingPermit,
+  normalizePlanningStatus,
+  showPlanningStampControls,
+} from "../constants/planningStatusFields.js";
 
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
@@ -7,8 +14,6 @@ const PAGE_TEXT = UI.pageText;
 const FIELD_OUTLINE = `1px solid ${UI.outline || "#000"}`;
 const API_URL = "";
 
-const PLANNING_STATUS_OPTIONS = ["Not Selected", "Not Required", "Required", "Completed"];
-const BUILDING_PERMIT_OPTIONS = ["Not Submitted", "Submitted", "Completed"];
 const STAMP_BUTTON_LABELS = ["Requested", "Received"];
 
 /** Fit width from longest label (ch) + padding for select chevron / button padding. */
@@ -113,28 +118,10 @@ const columnStyle = {
   boxSizing: "border-box",
 };
 
-function normalizePlanningStatus(value) {
-  const t = value != null ? String(value).trim() : "";
-  if (PLANNING_STATUS_OPTIONS.includes(t)) return t;
-  if (t === "N/A") return "Not Required";
-  if (t === "Complete" || t === "Permit Complete") return "Completed";
-  return "Not Selected";
-}
-
-function normalizeBuildingPermit(value) {
-  const t = value != null ? String(value).trim() : "";
-  if (BUILDING_PERMIT_OPTIONS.includes(t)) return t;
-  if (t === "Sent") return "Submitted";
-  if (t === "Complete") return "Completed";
-  return "Not Submitted";
-}
-
-function showStampControls(status) {
-  return status === "Required" || status === "Completed";
-}
-
 /**
- * Main Planning page: Town Planning, BAL, Septic, Building Permit.
+ * Temporary Planning page.
+ * Town Planning / BAL / Building Permit use the same project fields as
+ * Planning underconstruction. Septic is temporary-page only.
  */
 export default function PlanningMain({ project, onUpdate }) {
   const [isSaving, setIsSaving] = useState(false);
@@ -273,7 +260,7 @@ export default function PlanningMain({ project, onUpdate }) {
               ))}
             </select>
           </div>
-          {showStampControls(townPlanningStatus) ? (
+          {showPlanningStampControls(townPlanningStatus) ? (
             <RequestedReceivedControls
               requestedAt={project?.planning_town_planning_requested_at}
               receivedAt={project?.planning_town_planning_received_at}
@@ -314,7 +301,7 @@ export default function PlanningMain({ project, onUpdate }) {
               ))}
             </select>
           </div>
-          {showStampControls(balStatus) ? (
+          {showPlanningStampControls(balStatus) ? (
             <RequestedReceivedControls
               requestedAt={project?.planning_bal_requested_at}
               receivedAt={project?.planning_bal_received_at}
@@ -355,7 +342,7 @@ export default function PlanningMain({ project, onUpdate }) {
               ))}
             </select>
           </div>
-          {showStampControls(septicStatus) ? (
+          {showPlanningStampControls(septicStatus) ? (
             <RequestedReceivedControls
               requestedAt={project?.planning_septic_requested_at}
               receivedAt={project?.planning_septic_received_at}

@@ -1,5 +1,9 @@
 import { STREAM, INDICATOR, UI } from "./uiThemeTokens.js";
 import { getOverviewIndicatorStyle } from "./uiButtonStyles.js";
+import {
+  normalizeBuildingPermit,
+  normalizePlanningStatus,
+} from "../constants/planningStatusFields.js";
 
 const PAGE_TEXT = UI.pageText;
 
@@ -128,35 +132,16 @@ function getContractStatusIndicator(project) {
   return indicatorRed();
 }
 
-function normalizeTownPlanningStatus(raw) {
-  const t = raw != null ? String(raw).trim() : "";
-  if (!t) return "Not Selected";
-  if (t === "N/A") return "Not Required";
-  if (t === "Complete" || t === "Permit Complete") return "Completed";
-  if (
-    t === "Not Selected" ||
-    t === "Not Required" ||
-    t === "Required" ||
-    t === "Completed" ||
-    t === "No Planning Required" ||
-    t === "Planning Permit Issued" ||
-    t === "Planning Required"
-  ) {
-    return t;
-  }
-  return "Not Selected";
-}
-
 function getTownPlanningStatus(project) {
   // Prefer Planning page field; fall back to legacy planning_status for older records.
   const fromPlanningPage = field(project, "planning_town_planning", "planningTownPlanning");
   if (fromPlanningPage != null && String(fromPlanningPage).trim() !== "") {
-    return normalizeTownPlanningStatus(fromPlanningPage);
+    return normalizePlanningStatus(fromPlanningPage);
   }
   const legacy = field(project, "planning_status", "planningStatus");
   if (legacy === "No Planning Required" || legacy === "Planning Permit Issued") return "Completed";
   if (legacy === "Planning Required") return "Required";
-  return normalizeTownPlanningStatus(legacy);
+  return normalizePlanningStatus(legacy);
 }
 
 function getTownPlanningStatusIndicator(project) {
@@ -181,18 +166,8 @@ function getFootingCertificationStatusIndicator(project) {
   return indicatorRed();
 }
 
-function normalizeBuildingPermitStatus(raw) {
-  const t = raw != null ? String(raw).trim() : "";
-  if (t === "Sent") return "Submitted";
-  if (t === "Complete") return "Completed";
-  if (t === "Not Submitted" || t === "Submitted" || t === "Completed") return t;
-  return "Not Submitted";
-}
-
 function getBuildingPermitStatus(project) {
-  return normalizeBuildingPermitStatus(
-    field(project, "building_permit_status", "buildingPermitStatus")
-  );
+  return normalizeBuildingPermit(field(project, "building_permit_status", "buildingPermitStatus"));
 }
 
 function getBuildingPermitStatusIndicator(project) {

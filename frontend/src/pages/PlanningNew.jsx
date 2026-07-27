@@ -4,6 +4,13 @@ import { isFullFivePercentDepositPaid } from "../utils/projectDeposit";
 import { portalProjectPath, projectPath } from "../utils/projectUrl";
 import { isSecretAreaProject, unlockSecretAreaSession } from "../utils/secretAreaProject";
 import SiteVisit from "./SiteVisit";
+import {
+  BUILDING_PERMIT_OPTIONS,
+  PLANNING_STATUS_OPTIONS,
+  normalizeBuildingPermit,
+  normalizePlanningStatus,
+  showPlanningStampControls,
+} from "../constants/planningStatusFields.js";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -705,21 +712,18 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
     void saveField("planning_written_advice_received_at", new Date().toISOString());
   }
 
-  const townPlanningRequirement =
-    project?.planning_town_planning != null && String(project.planning_town_planning).trim() === "Required"
-      ? "Required"
-      : "N/A";
+  const townPlanningStatus = normalizePlanningStatus(project?.planning_town_planning);
 
-  async function handleTownPlanningRequirementChange(e) {
-    const next = e.target.value === "Required" ? "Required" : "N/A";
-    if (next === "N/A") {
+  async function handleTownPlanningStatusChange(e) {
+    const next = normalizePlanningStatus(e.target.value);
+    if (next === "Not Selected" || next === "Not Required") {
       await saveJobFileFields({
-        planning_town_planning: "N/A",
+        planning_town_planning: next,
         planning_town_planning_requested_at: null,
         planning_town_planning_received_at: null,
       });
     } else {
-      await saveField("planning_town_planning", "Required");
+      await saveField("planning_town_planning", next);
     }
   }
 
@@ -765,19 +769,18 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
     void saveField("planning_land_flooding_cc_received_at", new Date().toISOString());
   }
 
-  const balRequirement =
-    project?.planning_bal != null && String(project.planning_bal).trim() === "Required" ? "Required" : "N/A";
+  const balStatus = normalizePlanningStatus(project?.planning_bal);
 
-  async function handleBalRequirementChange(e) {
-    const next = e.target.value === "Required" ? "Required" : "N/A";
-    if (next === "N/A") {
+  async function handleBalStatusChange(e) {
+    const next = normalizePlanningStatus(e.target.value);
+    if (next === "Not Selected" || next === "Not Required") {
       await saveJobFileFields({
-        planning_bal: "N/A",
+        planning_bal: next,
         planning_bal_requested_at: null,
         planning_bal_received_at: null,
       });
     } else {
-      await saveField("planning_bal", "Required");
+      await saveField("planning_bal", next);
     }
   }
 
@@ -787,6 +790,13 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
 
   function handleBalStampReceived() {
     void saveField("planning_bal_received_at", new Date().toISOString());
+  }
+
+  const buildingPermitStatus = normalizeBuildingPermit(project?.building_permit_status);
+
+  async function handleBuildingPermitStatusChange(e) {
+    const next = normalizeBuildingPermit(e.target.value);
+    await saveField("building_permit_status", next);
   }
 
   function handleFootingCertificationStampRequested() {
@@ -1737,14 +1747,10 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                   </h3>
                   <div
                     style={{
-                      display: "grid",
-                      gridTemplateColumns:
-                        townPlanningRequirement === "Required"
-                          ? "minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)"
-                          : "minmax(0, 280px)",
-                      gap: "20px",
-                      alignItems: "start",
-                      maxWidth: "760px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "16px",
+                      maxWidth: "320px",
                     }}
                   >
                     <div>
@@ -1758,12 +1764,12 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                           fontWeight: 500,
                         }}
                       >
-                        Requirement
+                        Status
                       </label>
                       <select
                         id="town-planning-select"
-                        value={townPlanningRequirement}
-                        onChange={handleTownPlanningRequirementChange}
+                        value={townPlanningStatus}
+                        onChange={handleTownPlanningStatusChange}
                         disabled={!project?.id}
                         style={{
                           width: "100%",
@@ -1776,66 +1782,21 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                           boxSizing: "border-box",
                         }}
                       >
-                        {PLANNING_NA_REQUIRED_OPTIONS.map((opt) => (
+                        {PLANNING_STATUS_OPTIONS.map((opt) => (
                           <option key={opt} value={opt}>
                             {opt}
                           </option>
                         ))}
                       </select>
                     </div>
-                    {townPlanningRequirement === "Required" ? (
-                      <>
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
-                          <button
-                            type="button"
-                            onClick={handleTownPlanningStampRequested}
-                            disabled={!project?.id || isSaving}
-                            style={{
-                              border: "none",
-                              background: MONUMENT,
-                              color: PAGE_TEXT,
-                              borderRadius: "8px",
-                              padding: "8px 16px",
-                              fontSize: "0.95rem",
-                              fontWeight: 500,
-                              cursor: !project?.id || isSaving ? "not-allowed" : "pointer",
-                              opacity: !project?.id || isSaving ? 0.65 : 1,
-                            }}
-                          >
-                            Requested
-                          </button>
-                          {project?.planning_town_planning_requested_at ? (
-                            <div style={{ fontSize: "0.82rem", color: "var(--sgf-text-primary)", lineHeight: 1.35, maxWidth: "100%", wordBreak: "break-word" }}>
-                              {formatWrittenAdviceDateTime(project.planning_town_planning_requested_at)}
-                            </div>
-                          ) : null}
-                        </div>
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
-                          <button
-                            type="button"
-                            onClick={handleTownPlanningStampReceived}
-                            disabled={!project?.id || isSaving}
-                            style={{
-                              border: "none",
-                              background: MONUMENT,
-                              color: PAGE_TEXT,
-                              borderRadius: "8px",
-                              padding: "8px 16px",
-                              fontSize: "0.95rem",
-                              fontWeight: 500,
-                              cursor: !project?.id || isSaving ? "not-allowed" : "pointer",
-                              opacity: !project?.id || isSaving ? 0.65 : 1,
-                            }}
-                          >
-                            Received
-                          </button>
-                          {project?.planning_town_planning_received_at ? (
-                            <div style={{ fontSize: "0.82rem", color: "var(--sgf-text-primary)", lineHeight: 1.35, maxWidth: "100%", wordBreak: "break-word" }}>
-                              {formatWrittenAdviceDateTime(project.planning_town_planning_received_at)}
-                            </div>
-                          ) : null}
-                        </div>
-                      </>
+                    {showPlanningStampControls(townPlanningStatus) ? (
+                      <RequestedReceivedControls
+                        requestedAt={project?.planning_town_planning_requested_at}
+                        receivedAt={project?.planning_town_planning_received_at}
+                        onRequested={handleTownPlanningStampRequested}
+                        onReceived={handleTownPlanningStampReceived}
+                        disabled={!project?.id || isSaving}
+                      />
                     ) : null}
                   </div>
                 </div>
@@ -2130,11 +2091,10 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                   </h3>
                   <div
                     style={{
-                      display: "grid",
-                      gridTemplateColumns: balRequirement === "Required" ? "minmax(0, 280px) minmax(0, 1fr)" : "minmax(0, 280px)",
-                      gap: "20px",
-                      alignItems: "start",
-                      maxWidth: "760px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "16px",
+                      maxWidth: "320px",
                     }}
                   >
                     <div>
@@ -2148,12 +2108,12 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                           fontWeight: 500,
                         }}
                       >
-                        Requirement
+                        Status
                       </label>
                       <select
                         id="bal-select"
-                        value={balRequirement}
-                        onChange={handleBalRequirementChange}
+                        value={balStatus}
+                        onChange={handleBalStatusChange}
                         disabled={!project?.id}
                         style={{
                           width: "100%",
@@ -2166,14 +2126,14 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                           boxSizing: "border-box",
                         }}
                       >
-                        {PLANNING_NA_REQUIRED_OPTIONS.map((opt) => (
+                        {PLANNING_STATUS_OPTIONS.map((opt) => (
                           <option key={opt} value={opt}>
                             {opt}
                           </option>
                         ))}
                       </select>
                     </div>
-                    {balRequirement === "Required" ? (
+                    {showPlanningStampControls(balStatus) ? (
                       <RequestedReceivedControls
                         requestedAt={project?.planning_bal_requested_at}
                         receivedAt={project?.planning_bal_received_at}
@@ -2182,6 +2142,50 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                         disabled={!project?.id || isSaving}
                       />
                     ) : null}
+                  </div>
+                </div>
+              )}
+
+              {planningSection === "Building Permit" && (
+                <div role="region" aria-labelledby="building-permit-title">
+                  <h3 id="building-permit-title" style={{ margin: "0 0 16px 0", color: MONUMENT, fontSize: "1.1rem" }}>
+                    Building Permit
+                  </h3>
+                  <div style={{ maxWidth: "320px" }}>
+                    <label
+                      htmlFor="building-permit-select"
+                      style={{
+                        display: "block",
+                        fontSize: "0.9rem",
+                        color: UI.textMuted,
+                        marginBottom: "6px",
+                        fontWeight: 500,
+                      }}
+                    >
+                      Status
+                    </label>
+                    <select
+                      id="building-permit-select"
+                      value={buildingPermitStatus}
+                      onChange={handleBuildingPermitStatusChange}
+                      disabled={!project?.id || isSaving}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid #ddd",
+                        fontSize: "1rem",
+                        color: MONUMENT,
+                        background: WHITE,
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      {BUILDING_PERMIT_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               )}
@@ -2267,6 +2271,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                 planningSection !== "Town Planning" &&
                 planningSection !== "Land Subject to Flooding" &&
                 planningSection !== "BAL" &&
+                planningSection !== "Building Permit" &&
                 planningSection !== "Footing Certification" &&
                 planningSection !== "Energy Report" && (
                   <div>
