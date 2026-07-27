@@ -15,6 +15,7 @@ const FIELD_OUTLINE = `1px solid ${UI.outline || "#000"}`;
 const API_URL = "";
 
 const STAMP_BUTTON_LABELS = ["Requested", "Received"];
+const ENERGY_SPECS_OPTIONS = ["Not Completed", "Completed"];
 
 /** Fit width from longest label (ch) + padding for select chevron / button padding. */
 function fitWidthCh(labels, extraCh = 3.5) {
@@ -23,7 +24,7 @@ function fitWidthCh(labels, extraCh = 3.5) {
 }
 
 const SHARED_SELECT_WIDTH = fitWidthCh(
-  [...PLANNING_STATUS_OPTIONS, ...BUILDING_PERMIT_OPTIONS],
+  [...PLANNING_STATUS_OPTIONS, ...BUILDING_PERMIT_OPTIONS, ...ENERGY_SPECS_OPTIONS],
   3.75
 );
 const SHARED_BUTTON_WIDTH = fitWidthCh(STAMP_BUTTON_LABELS, 3.25);
@@ -35,6 +36,11 @@ function formatDateTime(iso) {
   const d = new Date(t);
   if (Number.isNaN(d.getTime())) return t;
   return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+function normalizeEnergySpecs(value) {
+  const t = value != null ? String(value).trim() : "";
+  return t === "Completed" ? "Completed" : "Not Completed";
 }
 
 function RequestedReceivedControls({ requestedAt, receivedAt, onRequested, onReceived, disabled }) {
@@ -105,9 +111,10 @@ const selectStyle = {
   boxSizing: "border-box",
 };
 
-const columnStyle = {
+const panelStyle = {
   minWidth: 0,
-  height: "100%",
+  minHeight: 0,
+  flex: 1,
   display: "flex",
   flexDirection: "column",
   gap: "12px",
@@ -116,12 +123,22 @@ const columnStyle = {
   borderRadius: "8px",
   padding: "16px",
   boxSizing: "border-box",
+  overflow: "auto",
+};
+
+const stackColumnStyle = {
+  minWidth: 0,
+  minHeight: 0,
+  height: "100%",
+  display: "flex",
+  flexDirection: "column",
+  gap: "20px",
 };
 
 /**
- * Temporary Planning page.
- * Town Planning / BAL / Building Permit use the same project fields as
- * Planning underconstruction. Septic is temporary-page only.
+ * Temporary Planning page — 4 columns × 2 panels.
+ * Town Planning / BAL / Building Permit / Energy Report / Footing Certification
+ * share fields with Planning underconstruction. Septic is temporary-page only.
  */
 export default function PlanningMain({ project, onUpdate }) {
   const [isSaving, setIsSaving] = useState(false);
@@ -133,6 +150,9 @@ export default function PlanningMain({ project, onUpdate }) {
   );
   const [balStatus, setBalStatus] = useState(normalizePlanningStatus(project?.planning_bal));
   const [septicStatus, setSepticStatus] = useState(normalizePlanningStatus(project?.planning_septic));
+  const [energySpecsAddedToPlans, setEnergySpecsAddedToPlans] = useState(
+    normalizeEnergySpecs(project?.planning_energy_specs_added_to_plans)
+  );
 
   async function saveFields(fields) {
     if (!project?.id) return false;
@@ -189,17 +209,25 @@ export default function PlanningMain({ project, onUpdate }) {
     void saveField("building_permit_status", newValue);
   }
 
+  function handleEnergySpecsChange(e) {
+    const next = normalizeEnergySpecs(e.target.value);
+    setEnergySpecsAddedToPlans(next);
+    void saveField("planning_energy_specs_added_to_plans", next);
+  }
+
   useEffect(() => {
     setBuildingPermitStatus(normalizeBuildingPermit(project?.building_permit_status));
     setTownPlanningStatus(normalizePlanningStatus(project?.planning_town_planning));
     setBalStatus(normalizePlanningStatus(project?.planning_bal));
     setSepticStatus(normalizePlanningStatus(project?.planning_septic));
+    setEnergySpecsAddedToPlans(normalizeEnergySpecs(project?.planning_energy_specs_added_to_plans));
   }, [
     project?.id,
     project?.building_permit_status,
     project?.planning_town_planning,
     project?.planning_bal,
     project?.planning_septic,
+    project?.planning_energy_specs_added_to_plans,
   ]);
 
   const disabled = !project?.id || isSaving;
@@ -230,152 +258,216 @@ export default function PlanningMain({ project, onUpdate }) {
           minHeight: 0,
         }}
       >
-        <section aria-labelledby="town-planning-title" style={columnStyle}>
-          <h3 id="town-planning-title" style={{ margin: 0, color: MONUMENT, fontSize: "1.1rem" }}>
-            Town planning
-          </h3>
-          <div>
-            <label htmlFor="town-planning-select" style={labelStyle}>
-              Status
-            </label>
-            <select
-              id="town-planning-select"
-              value={townPlanningStatus}
-              onChange={(e) =>
-                void handleStatusChange(
-                  "planning_town_planning",
-                  "planning_town_planning_requested_at",
-                  "planning_town_planning_received_at",
-                  e.target.value,
-                  setTownPlanningStatus
-                )
-              }
-              disabled={disabled}
-              style={selectStyle}
-            >
-              {PLANNING_STATUS_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </div>
-          {showPlanningStampControls(townPlanningStatus) ? (
+        {/* Column 1: Town Planning / Energy Report */}
+        <div style={stackColumnStyle}>
+          <section aria-labelledby="town-planning-title" style={panelStyle}>
+            <h3 id="town-planning-title" style={{ margin: 0, color: MONUMENT, fontSize: "1.1rem" }}>
+              Town planning
+            </h3>
+            <div>
+              <label htmlFor="town-planning-select" style={labelStyle}>
+                Status
+              </label>
+              <select
+                id="town-planning-select"
+                value={townPlanningStatus}
+                onChange={(e) =>
+                  void handleStatusChange(
+                    "planning_town_planning",
+                    "planning_town_planning_requested_at",
+                    "planning_town_planning_received_at",
+                    e.target.value,
+                    setTownPlanningStatus
+                  )
+                }
+                disabled={disabled}
+                style={selectStyle}
+              >
+                {PLANNING_STATUS_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {showPlanningStampControls(townPlanningStatus) ? (
+              <RequestedReceivedControls
+                requestedAt={project?.planning_town_planning_requested_at}
+                receivedAt={project?.planning_town_planning_received_at}
+                onRequested={() => void saveField("planning_town_planning_requested_at", new Date().toISOString())}
+                onReceived={() => void saveField("planning_town_planning_received_at", new Date().toISOString())}
+                disabled={disabled}
+              />
+            ) : null}
+          </section>
+
+          <section aria-labelledby="energy-report-title" style={panelStyle}>
+            <h3 id="energy-report-title" style={{ margin: 0, color: MONUMENT, fontSize: "1.1rem" }}>
+              Energy report
+            </h3>
             <RequestedReceivedControls
-              requestedAt={project?.planning_town_planning_requested_at}
-              receivedAt={project?.planning_town_planning_received_at}
-              onRequested={() => void saveField("planning_town_planning_requested_at", new Date().toISOString())}
-              onReceived={() => void saveField("planning_town_planning_received_at", new Date().toISOString())}
+              requestedAt={project?.planning_energy_report_requested_at}
+              receivedAt={project?.planning_energy_report_received_at}
+              onRequested={() => void saveField("planning_energy_report_requested_at", new Date().toISOString())}
+              onReceived={() => void saveField("planning_energy_report_received_at", new Date().toISOString())}
               disabled={disabled}
             />
-          ) : null}
-        </section>
+            <div>
+              <label htmlFor="energy-specs-added-select" style={labelStyle}>
+                Energy Specs Added to Plans
+              </label>
+              <select
+                id="energy-specs-added-select"
+                value={energySpecsAddedToPlans}
+                onChange={handleEnergySpecsChange}
+                disabled={disabled}
+                style={selectStyle}
+              >
+                {ENERGY_SPECS_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </section>
+        </div>
 
-        <section aria-labelledby="bal-title" style={columnStyle}>
-          <h3 id="bal-title" style={{ margin: 0, color: MONUMENT, fontSize: "1.1rem" }}>
-            BAL
-          </h3>
-          <div>
-            <label htmlFor="bal-select" style={labelStyle}>
-              Status
-            </label>
-            <select
-              id="bal-select"
-              value={balStatus}
-              onChange={(e) =>
-                void handleStatusChange(
-                  "planning_bal",
-                  "planning_bal_requested_at",
-                  "planning_bal_received_at",
-                  e.target.value,
-                  setBalStatus
-                )
+        {/* Column 2: BAL / Footing Certification */}
+        <div style={stackColumnStyle}>
+          <section aria-labelledby="bal-title" style={panelStyle}>
+            <h3 id="bal-title" style={{ margin: 0, color: MONUMENT, fontSize: "1.1rem" }}>
+              BAL
+            </h3>
+            <div>
+              <label htmlFor="bal-select" style={labelStyle}>
+                Status
+              </label>
+              <select
+                id="bal-select"
+                value={balStatus}
+                onChange={(e) =>
+                  void handleStatusChange(
+                    "planning_bal",
+                    "planning_bal_requested_at",
+                    "planning_bal_received_at",
+                    e.target.value,
+                    setBalStatus
+                  )
+                }
+                disabled={disabled}
+                style={selectStyle}
+              >
+                {PLANNING_STATUS_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {showPlanningStampControls(balStatus) ? (
+              <RequestedReceivedControls
+                requestedAt={project?.planning_bal_requested_at}
+                receivedAt={project?.planning_bal_received_at}
+                onRequested={() => void saveField("planning_bal_requested_at", new Date().toISOString())}
+                onReceived={() => void saveField("planning_bal_received_at", new Date().toISOString())}
+                disabled={disabled}
+              />
+            ) : null}
+          </section>
+
+          <section aria-labelledby="footing-certification-title" style={panelStyle}>
+            <h3 id="footing-certification-title" style={{ margin: 0, color: MONUMENT, fontSize: "1.1rem" }}>
+              Footing certification
+            </h3>
+            <RequestedReceivedControls
+              requestedAt={project?.planning_footing_certification_requested_at}
+              receivedAt={project?.planning_footing_certification_received_at}
+              onRequested={() =>
+                void saveField("planning_footing_certification_requested_at", new Date().toISOString())
+              }
+              onReceived={() =>
+                void saveField("planning_footing_certification_received_at", new Date().toISOString())
               }
               disabled={disabled}
-              style={selectStyle}
-            >
-              {PLANNING_STATUS_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </div>
-          {showPlanningStampControls(balStatus) ? (
-            <RequestedReceivedControls
-              requestedAt={project?.planning_bal_requested_at}
-              receivedAt={project?.planning_bal_received_at}
-              onRequested={() => void saveField("planning_bal_requested_at", new Date().toISOString())}
-              onReceived={() => void saveField("planning_bal_received_at", new Date().toISOString())}
-              disabled={disabled}
             />
-          ) : null}
-        </section>
+          </section>
+        </div>
 
-        <section aria-labelledby="septic-title" style={columnStyle}>
-          <h3 id="septic-title" style={{ margin: 0, color: MONUMENT, fontSize: "1.1rem" }}>
-            Septic
-          </h3>
-          <div>
-            <label htmlFor="septic-select" style={labelStyle}>
-              Status
-            </label>
-            <select
-              id="septic-select"
-              value={septicStatus}
-              onChange={(e) =>
-                void handleStatusChange(
-                  "planning_septic",
-                  "planning_septic_requested_at",
-                  "planning_septic_received_at",
-                  e.target.value,
-                  setSepticStatus
-                )
-              }
-              disabled={disabled}
-              style={selectStyle}
-            >
-              {PLANNING_STATUS_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </div>
-          {showPlanningStampControls(septicStatus) ? (
-            <RequestedReceivedControls
-              requestedAt={project?.planning_septic_requested_at}
-              receivedAt={project?.planning_septic_received_at}
-              onRequested={() => void saveField("planning_septic_requested_at", new Date().toISOString())}
-              onReceived={() => void saveField("planning_septic_received_at", new Date().toISOString())}
-              disabled={disabled}
-            />
-          ) : null}
-        </section>
+        {/* Column 3: Septic / empty */}
+        <div style={stackColumnStyle}>
+          <section aria-labelledby="septic-title" style={panelStyle}>
+            <h3 id="septic-title" style={{ margin: 0, color: MONUMENT, fontSize: "1.1rem" }}>
+              Septic
+            </h3>
+            <div>
+              <label htmlFor="septic-select" style={labelStyle}>
+                Status
+              </label>
+              <select
+                id="septic-select"
+                value={septicStatus}
+                onChange={(e) =>
+                  void handleStatusChange(
+                    "planning_septic",
+                    "planning_septic_requested_at",
+                    "planning_septic_received_at",
+                    e.target.value,
+                    setSepticStatus
+                  )
+                }
+                disabled={disabled}
+                style={selectStyle}
+              >
+                {PLANNING_STATUS_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {showPlanningStampControls(septicStatus) ? (
+              <RequestedReceivedControls
+                requestedAt={project?.planning_septic_requested_at}
+                receivedAt={project?.planning_septic_received_at}
+                onRequested={() => void saveField("planning_septic_requested_at", new Date().toISOString())}
+                onReceived={() => void saveField("planning_septic_received_at", new Date().toISOString())}
+                disabled={disabled}
+              />
+            ) : null}
+          </section>
 
-        <section aria-labelledby="building-permit-title" style={columnStyle}>
-          <h3 id="building-permit-title" style={{ margin: 0, color: MONUMENT, fontSize: "1.1rem" }}>
-            Building Permit
-          </h3>
-          <div>
-            <label htmlFor="building-permit-select" style={labelStyle}>
-              Status
-            </label>
-            <select
-              id="building-permit-select"
-              value={buildingPermitStatus}
-              onChange={handleBuildingPermitChange}
-              disabled={disabled}
-              style={selectStyle}
-            >
-              {BUILDING_PERMIT_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </div>
-        </section>
+          <section aria-label="Reserved" style={panelStyle} />
+        </div>
+
+        {/* Column 4: Building Permit / empty */}
+        <div style={stackColumnStyle}>
+          <section aria-labelledby="building-permit-title" style={panelStyle}>
+            <h3 id="building-permit-title" style={{ margin: 0, color: MONUMENT, fontSize: "1.1rem" }}>
+              Building Permit
+            </h3>
+            <div>
+              <label htmlFor="building-permit-select" style={labelStyle}>
+                Status
+              </label>
+              <select
+                id="building-permit-select"
+                value={buildingPermitStatus}
+                onChange={handleBuildingPermitChange}
+                disabled={disabled}
+                style={selectStyle}
+              >
+                {BUILDING_PERMIT_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </section>
+
+          <section aria-label="Reserved" style={panelStyle} />
+        </div>
       </div>
     </div>
   );
