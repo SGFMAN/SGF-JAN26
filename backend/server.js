@@ -1314,6 +1314,7 @@ async function ensureSchema() {
       "planning_building_permit_received_at",
       "planning_pic_requested_at",
       "planning_pic_received_at",
+      "planning_sewer_connection",
       ...PROJECT_PAYMENT_COLUMNS,
     ]);
     await ensureProjectPaymentColumns(pool);
@@ -1321,6 +1322,7 @@ async function ensureSchema() {
       "ui_button_styles_json",
       "ui_theme_color_overrides_json",
       "colour_section_ranges_json",
+      "planning_manager_layout_json",
       "timesheet_export_path",
       "colours_and_finishes_path",
       "holding_amount",
@@ -1549,6 +1551,7 @@ async function ensureSchema() {
     'planning_bal_specs_added_to_plans',
     'planning_building_permit_requested_at', 'planning_building_permit_received_at',
     'planning_pic_requested_at', 'planning_pic_received_at',
+    'planning_sewer_connection',
     'construction_payments_paid',
     ...PROJECT_PAYMENT_COLUMNS];
   await addMissingColumns(pool, "projects", columnsToAdd);
@@ -1888,6 +1891,13 @@ async function ensureSchema() {
       console.log(`Error adding column colour_section_ranges_json:`, e.message);
     }
   }
+  try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN planning_manager_layout_json TEXT`);
+  } catch (e) {
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column planning_manager_layout_json:`, e.message);
+    }
+  }
   // Drawing Settings page: notification emails (VIC / QLD / Investor Streams)
   for (const col of [
     "drawings_vic_design_to_salesperson_email",
@@ -2046,7 +2056,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, access_token, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, colours_plan_trace_polygon, roof_colour, cladding_colour, baseboards_colour, roof_style, windowframes_colour, windowsurrounds_colour, door_colour, slidingdoor_colour, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, planning_written_advice, planning_written_advice_requested_at, planning_written_advice_received_at, planning_town_planning, planning_town_planning_requested_at, planning_town_planning_received_at, planning_land_flooding_regulation, planning_land_flooding_fpa_requested_at, planning_land_flooding_fpa_received_at, planning_land_flooding_cc_requested_at, planning_land_flooding_cc_received_at, planning_bal, planning_bal_requested_at, planning_bal_received_at, planning_septic, planning_septic_requested_at, planning_septic_received_at, planning_footing_certification_requested_at, planning_footing_certification_received_at, planning_energy_report_requested_at, planning_energy_report_received_at, planning_energy_specs_added_to_plans, planning_bal_specs_added_to_plans, planning_building_permit_requested_at, planning_building_permit_received_at, planning_pic_requested_at, planning_pic_received_at, construction_payments_paid, pre_engagement_required, pre_engagement_paid, deposit_required, deposit_paid, base_required, base_paid, frame_required, frame_paid, lock_up_required, lock_up_paid, fix_required, fix_paid, final_required, final_paid, duplicate_source_project_id, project_lat, project_lng, project_geocoded_at, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects WHERE id = $1",
+      "SELECT id, access_token, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, colours_plan_trace_polygon, roof_colour, cladding_colour, baseboards_colour, roof_style, windowframes_colour, windowsurrounds_colour, door_colour, slidingdoor_colour, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, planning_written_advice, planning_written_advice_requested_at, planning_written_advice_received_at, planning_town_planning, planning_town_planning_requested_at, planning_town_planning_received_at, planning_land_flooding_regulation, planning_land_flooding_fpa_requested_at, planning_land_flooding_fpa_received_at, planning_land_flooding_cc_requested_at, planning_land_flooding_cc_received_at, planning_bal, planning_bal_requested_at, planning_bal_received_at, planning_septic, planning_septic_requested_at, planning_septic_received_at, planning_footing_certification_requested_at, planning_footing_certification_received_at, planning_energy_report_requested_at, planning_energy_report_received_at, planning_energy_specs_added_to_plans, planning_bal_specs_added_to_plans, planning_building_permit_requested_at, planning_building_permit_received_at, planning_pic_requested_at, planning_pic_received_at, planning_sewer_connection, construction_payments_paid, pre_engagement_required, pre_engagement_paid, deposit_required, deposit_paid, base_required, base_paid, frame_required, frame_paid, lock_up_required, lock_up_paid, fix_required, fix_paid, final_required, final_paid, duplicate_source_project_id, project_lat, project_lng, project_geocoded_at, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects WHERE id = $1",
       [id]
     );
     
@@ -2582,7 +2592,8 @@ app.put("/api/projects/:id", async (req, res) => {
       planning_building_permit_requested_at,
       planning_building_permit_received_at,
       planning_pic_requested_at,
-      planning_pic_received_at } = req.body || {};
+      planning_pic_received_at,
+      planning_sewer_connection } = req.body || {};
     // Convert empty strings to null; stringify numbers for DB text columns.
     const processValue = (val) => {
       if (val === undefined) return null;
@@ -2651,14 +2662,24 @@ app.put("/api/projects/:id", async (req, res) => {
       if (typeof val === "string" && val.trim() === "Required") return "Required";
       return "N/A";
     };
-    /** Town planning / BAL / Septic: Not Selected | Not Required | Required | Completed; undefined = skip. */
+    /** Town planning / BAL / Sewer: Not Selected | Not Required | Incomplete | Complete; undefined = skip. */
     const processTownPlanning = (val) => {
       if (val === undefined || val === null) return null;
       if (typeof val !== "string") return "Not Selected";
       const t = val.trim();
       if (t === "N/A") return "Not Required";
-      if (t === "Complete" || t === "Permit Complete") return "Completed";
-      const allowed = new Set(["Not Selected", "Not Required", "Required", "Completed"]);
+      if (t === "Required") return "Incomplete";
+      if (
+        t === "Completed" ||
+        t === "Complete" ||
+        t === "Permit Complete" ||
+        t === "Completed:PIC" ||
+        t === "Completed:Septic"
+      ) {
+        return "Complete";
+      }
+      if (t === "PIC" || t === "Septic") return "Incomplete";
+      const allowed = new Set(["Not Selected", "Not Required", "Incomplete", "Complete"]);
       return allowed.has(t) ? t : "Not Selected";
     };
     /** Land subject to flooding: N/A | REG 153 | REG 154 | REG 153 & REG 154; undefined = skip COALESCE. */
@@ -2675,6 +2696,7 @@ app.put("/api/projects/:id", async (req, res) => {
       if (typeof val === "string" && val.trim() === "Completed") return "Completed";
       return "Not Completed";
     };
+    const processSewerConnection = (val) => processTownPlanning(val);
     /**
      * If the client sends a doc status in this PUT, the stored file path must match that status:
      * anything other than "Received" clears the path (handles partial bodies that omit path keys).
@@ -2875,9 +2897,10 @@ app.put("/api/projects/:id", async (req, res) => {
         planning_building_permit_received_at = CASE $159 WHEN '__SKIP__' THEN planning_building_permit_received_at ELSE $159 END,
         planning_pic_requested_at = CASE $160 WHEN '__SKIP__' THEN planning_pic_requested_at ELSE $160 END,
         planning_pic_received_at = CASE $161 WHEN '__SKIP__' THEN planning_pic_received_at ELSE $161 END,
-        salesperson = COALESCE($162, salesperson),
+        planning_sewer_connection = COALESCE($162, planning_sewer_connection),
+        salesperson = COALESCE($163, salesperson),
         updated_at = NOW()
-      WHERE id = $163
+      WHERE id = $164
       RETURNING *
       `,
       [
@@ -3043,6 +3066,7 @@ app.put("/api/projects/:id", async (req, res) => {
         processJfDocDate(planning_building_permit_received_at),
         processJfDocDate(planning_pic_requested_at),
         processJfDocDate(planning_pic_received_at),
+        processSewerConnection(planning_sewer_connection),
         processValue(salesperson),
         id
       ]
@@ -5134,6 +5158,116 @@ app.put("/api/colour-section-ranges", async (req, res) => {
   } catch (e) {
     console.error("Error saving colour section ranges:", e);
     return res.status(500).json({ error: e.message || "Failed to save colour section ranges" });
+  }
+});
+
+const PLANNING_MANAGER_COL_COUNT = 78;
+const PLANNING_MANAGER_ROW_COUNT = 300;
+const PLANNING_MANAGER_MIN_COL_WIDTH = 40;
+const PLANNING_MANAGER_MIN_ROW_HEIGHT = 16;
+
+function sanitizePlanningManagerNumberArray(raw, expectedLength, minValue) {
+  if (!Array.isArray(raw) || raw.length !== expectedLength) return null;
+  const next = raw.map((v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.max(minValue, Math.round(n)) : null;
+  });
+  return next.every((n) => n != null) ? next : null;
+}
+
+function parsePlanningManagerLayoutColumn(raw) {
+  let obj = raw;
+  if (obj == null || obj === "") return { colWidths: null, rowHeights: null, rowsCustomized: false };
+  if (typeof obj === "string") {
+    try {
+      obj = JSON.parse(obj);
+    } catch {
+      return { colWidths: null, rowHeights: null, rowsCustomized: false };
+    }
+  }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+    return { colWidths: null, rowHeights: null, rowsCustomized: false };
+  }
+  const colWidths = sanitizePlanningManagerNumberArray(
+    obj.colWidths,
+    PLANNING_MANAGER_COL_COUNT,
+    PLANNING_MANAGER_MIN_COL_WIDTH
+  );
+  const rowsCustomized = Boolean(obj.rowsCustomized);
+  const rowHeights = rowsCustomized
+    ? sanitizePlanningManagerNumberArray(
+        obj.rowHeights,
+        PLANNING_MANAGER_ROW_COUNT,
+        PLANNING_MANAGER_MIN_ROW_HEIGHT
+      )
+    : null;
+  return {
+    colWidths,
+    rowHeights,
+    rowsCustomized: Boolean(rowHeights),
+  };
+}
+
+function normalizePlanningManagerLayout(body) {
+  const parsed = parsePlanningManagerLayoutColumn(body && typeof body === "object" ? body : {});
+  return {
+    colWidths: parsed.colWidths,
+    rowsCustomized: parsed.rowsCustomized,
+    rowHeights: parsed.rowsCustomized ? parsed.rowHeights : undefined,
+  };
+}
+
+// Shared Planning Manager sheet column/row sizes (Managers → Planning Manager)
+app.get("/api/planning-manager-layout", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  try {
+    const r = await pool.query("SELECT planning_manager_layout_json FROM settings WHERE id = 1");
+    const layout = parsePlanningManagerLayoutColumn(r.rows[0]?.planning_manager_layout_json);
+    return res.json({ ok: true, layout });
+  } catch (e) {
+    console.error("Error fetching planning manager layout:", e);
+    return res.status(500).json({ error: e.message || "Failed to fetch planning manager layout" });
+  }
+});
+
+app.put("/api/planning-manager-layout", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const incoming = normalizePlanningManagerLayout(body.layout ?? body);
+    const existingRow = await pool.query(
+      "SELECT planning_manager_layout_json FROM settings WHERE id = 1"
+    );
+    const existing = parsePlanningManagerLayoutColumn(
+      existingRow.rows[0]?.planning_manager_layout_json
+    );
+    const colWidths = incoming.colWidths || existing.colWidths;
+    const rowsCustomized = incoming.rowsCustomized
+      ? true
+      : Boolean(existing.rowsCustomized && existing.rowHeights);
+    const rowHeights = incoming.rowsCustomized
+      ? incoming.rowHeights
+      : existing.rowHeights;
+    if (!colWidths && !rowsCustomized) {
+      return res.status(400).json({ error: "Invalid planning manager layout" });
+    }
+    const json = JSON.stringify({
+      colWidths,
+      rowsCustomized,
+      rowHeights: rowsCustomized ? rowHeights : undefined,
+    });
+    await pool.query(
+      `INSERT INTO settings (id, planning_manager_layout_json, updated_at)
+       VALUES (1, $1, NOW())
+       ON CONFLICT (id) DO UPDATE SET planning_manager_layout_json = EXCLUDED.planning_manager_layout_json, updated_at = NOW()`,
+      [json]
+    );
+    return res.json({ ok: true, layout: parsePlanningManagerLayoutColumn(json) });
+  } catch (e) {
+    console.error("Error saving planning manager layout:", e);
+    return res.status(500).json({ error: e.message || "Failed to save planning manager layout" });
   }
 });
 

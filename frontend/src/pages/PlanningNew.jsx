@@ -5,11 +5,11 @@ import { portalProjectPath, projectPath } from "../utils/projectUrl";
 import { isSecretAreaProject, unlockSecretAreaSession } from "../utils/secretAreaProject";
 import SiteVisit from "./SiteVisit";
 import {
-  PLANNING_STATUS_OPTIONS,
-  SPECS_ADDED_OPTIONS,
+  PLANNING_REQUIREMENT_SELECT_OPTIONS,
+  MANDATORY_PLANNING_SELECT_OPTIONS,
   normalizePlanningStatus,
-  normalizeSpecsAdded,
-  showPlanningStampControls,
+  normalizeMandatoryPlanningStatus,
+  planningRequirementSelectValue,
 } from "../constants/planningStatusFields.js";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -166,16 +166,10 @@ function formatWrittenAdviceDateTime(iso) {
 const PLANNING_NA_REQUIRED_OPTIONS = ["N/A", "Required"];
 
 const LAND_FLOODING_REG_OPTIONS = ["N/A", "REG 153", "REG 154", "REG 153 & REG 154"];
-const ENERGY_SPECS_OPTIONS = ["Not Completed", "Completed"];
 
 function landFloodingRegulationFromProject(project) {
   const t = (project?.planning_land_flooding_regulation ?? "").toString().trim();
   return LAND_FLOODING_REG_OPTIONS.includes(t) ? t : "N/A";
-}
-
-function energySpecsAddedToPlansFromProject(project) {
-  const t = (project?.planning_energy_specs_added_to_plans ?? "").toString().trim();
-  return ENERGY_SPECS_OPTIONS.includes(t) ? t : "Not Completed";
 }
 
 function mergeStampButtonStyle(styleId, disabled) {
@@ -348,8 +342,7 @@ const PLANNING_CATEGORIES = [
   "Footing Certification",
   "Energy Report",
   "Windows",
-  "Sewer PIC",
-  "Septic Approval",
+  "Sewer Connection",
   "Warranty Insurance",
   "Building Permit",
   "Asset Protection",
@@ -455,6 +448,7 @@ function getDepositStatus(depositValue, projectCostValue) {
 }
 
 function resolvePlanningSection(initial) {
+  if (initial === "Sewer PIC" || initial === "Septic Approval") return "Sewer Connection";
   if (initial && PLANNING_CATEGORIES.includes(initial)) return initial;
   return PLANNING_CATEGORIES[0];
 }
@@ -552,11 +546,8 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
   }, [jfReceivedModalRowKey]);
 
   useEffect(() => {
-    if (
-      initialPlanningSection &&
-      PLANNING_CATEGORIES.includes(initialPlanningSection)
-    ) {
-      setPlanningSection(initialPlanningSection);
+    if (initialPlanningSection) {
+      setPlanningSection(resolvePlanningSection(initialPlanningSection));
     }
   }, [initialPlanningSection, project?.access_token]);
 
@@ -776,22 +767,6 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
     }
   }
 
-  function handleTownPlanningStampRequested() {
-    void saveField("planning_town_planning_requested_at", new Date().toISOString());
-  }
-
-  function handleTownPlanningStampReceived() {
-    void saveField("planning_town_planning_received_at", new Date().toISOString());
-  }
-
-  function handleTownPlanningStampClearRequested() {
-    void saveField("planning_town_planning_requested_at", null);
-  }
-
-  function handleTownPlanningStampClearReceived() {
-    void saveField("planning_town_planning_received_at", null);
-  }
-
   const landFloodingRegulation = landFloodingRegulationFromProject(project);
 
   async function handleLandFloodingRegulationChange(e) {
@@ -841,97 +816,40 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
     }
   }
 
-  function handleBalStampRequested() {
-    void saveField("planning_bal_requested_at", new Date().toISOString());
+  const sewerConnection = normalizePlanningStatus(project?.planning_sewer_connection);
+
+  async function handleSewerConnectionChange(e) {
+    const next = normalizePlanningStatus(e.target.value);
+    await saveField("planning_sewer_connection", next);
   }
 
-  function handleBalStampReceived() {
-    void saveField("planning_bal_received_at", new Date().toISOString());
-  }
+  const energyStatus = normalizeMandatoryPlanningStatus(
+    null,
+    project?.planning_energy_report_received_at
+  );
+  const footingStatus = normalizeMandatoryPlanningStatus(
+    null,
+    project?.planning_footing_certification_received_at
+  );
+  const buildingPermitStatus = normalizeMandatoryPlanningStatus(
+    null,
+    project?.planning_building_permit_received_at
+  );
 
-  function handleBalStampClearRequested() {
-    void saveField("planning_bal_requested_at", null);
-  }
-
-  function handleBalStampClearReceived() {
-    void saveField("planning_bal_received_at", null);
-  }
-
-  const balSpecsAddedToPlans = normalizeSpecsAdded(project?.planning_bal_specs_added_to_plans);
-
-  async function handleBalSpecsAddedToPlansChange(e) {
-    await saveField("planning_bal_specs_added_to_plans", normalizeSpecsAdded(e.target.value));
-  }
-
-  function handleBuildingPermitStampRequested() {
-    void saveField("planning_building_permit_requested_at", new Date().toISOString());
-  }
-
-  function handleBuildingPermitStampReceived() {
-    void saveField("planning_building_permit_received_at", new Date().toISOString());
-  }
-
-  function handleBuildingPermitStampClearRequested() {
-    void saveField("planning_building_permit_requested_at", null);
-  }
-
-  function handleBuildingPermitStampClearReceived() {
-    void saveField("planning_building_permit_received_at", null);
-  }
-
-  function handlePicStampRequested() {
-    void saveField("planning_pic_requested_at", new Date().toISOString());
-  }
-
-  function handlePicStampReceived() {
-    void saveField("planning_pic_received_at", new Date().toISOString());
-  }
-
-  function handlePicStampClearRequested() {
-    void saveField("planning_pic_requested_at", null);
-  }
-
-  function handlePicStampClearReceived() {
-    void saveField("planning_pic_received_at", null);
-  }
-
-  function handleFootingCertificationStampRequested() {
-    void saveField("planning_footing_certification_requested_at", new Date().toISOString());
-  }
-
-  function handleFootingCertificationStampReceived() {
-    void saveField("planning_footing_certification_received_at", new Date().toISOString());
-  }
-
-  function handleFootingCertificationStampClearRequested() {
-    void saveField("planning_footing_certification_requested_at", null);
-  }
-
-  function handleFootingCertificationStampClearReceived() {
-    void saveField("planning_footing_certification_received_at", null);
-  }
-
-  function handleEnergyReportStampRequested() {
-    void saveField("planning_energy_report_requested_at", new Date().toISOString());
-  }
-
-  function handleEnergyReportStampReceived() {
-    void saveField("planning_energy_report_received_at", new Date().toISOString());
-  }
-
-  function handleEnergyReportStampClearRequested() {
-    void saveField("planning_energy_report_requested_at", null);
-  }
-
-  function handleEnergyReportStampClearReceived() {
-    void saveField("planning_energy_report_received_at", null);
-  }
-
-  const energySpecsAddedToPlans = energySpecsAddedToPlansFromProject(project);
-
-  async function handleEnergySpecsAddedToPlansChange(e) {
-    const next = e.target.value === "Completed" ? "Completed" : "Not Completed";
-    await saveField("planning_energy_specs_added_to_plans", next);
+  async function handleMandatoryPlanningStatusChange(requestedKey, receivedKey, nextRaw) {
+    const status = normalizeMandatoryPlanningStatus(nextRaw);
+    if (status === "Complete") {
+      const now = new Date().toISOString();
+      await saveJobFileFields({
+        [requestedKey]: now,
+        [receivedKey]: now,
+      });
+    } else {
+      await saveJobFileFields({
+        [requestedKey]: null,
+        [receivedKey]: null,
+      });
+    }
   }
 
   async function savePlanningJfUploadForRow(row, file) {
@@ -1880,9 +1798,9 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                       </label>
                       <select
                         id="town-planning-select"
-                        value={townPlanningStatus}
+                        value={planningRequirementSelectValue(townPlanningStatus)}
                         onChange={handleTownPlanningStatusChange}
-                        disabled={!project?.id}
+                        disabled={!project?.id || isSaving}
                         style={{
                           width: "100%",
                           padding: "10px 12px",
@@ -1894,24 +1812,13 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                           boxSizing: "border-box",
                         }}
                       >
-                        {PLANNING_STATUS_OPTIONS.map((opt) => (
+                        {PLANNING_REQUIREMENT_SELECT_OPTIONS.map((opt) => (
                           <option key={opt} value={opt}>
                             {opt}
                           </option>
                         ))}
                       </select>
                     </div>
-                    {showPlanningStampControls(townPlanningStatus) ? (
-                      <RequestedReceivedControls
-                        requestedAt={project?.planning_town_planning_requested_at}
-                        receivedAt={project?.planning_town_planning_received_at}
-                        onRequested={handleTownPlanningStampRequested}
-                        onReceived={handleTownPlanningStampReceived}
-                        onClearRequested={handleTownPlanningStampClearRequested}
-                        onClearReceived={handleTownPlanningStampClearReceived}
-                        disabled={!project?.id || isSaving}
-                      />
-                    ) : null}
                   </div>
                 </div>
               )}
@@ -2226,9 +2133,9 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                       </label>
                       <select
                         id="bal-select"
-                        value={balStatus}
+                        value={planningRequirementSelectValue(balStatus)}
                         onChange={handleBalStatusChange}
-                        disabled={!project?.id}
+                        disabled={!project?.id || isSaving}
                         style={{
                           width: "100%",
                           padding: "10px 12px",
@@ -2240,62 +2147,66 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                           boxSizing: "border-box",
                         }}
                       >
-                        {PLANNING_STATUS_OPTIONS.map((opt) => (
+                        {PLANNING_REQUIREMENT_SELECT_OPTIONS.map((opt) => (
                           <option key={opt} value={opt}>
                             {opt}
                           </option>
                         ))}
                       </select>
                     </div>
-                    {showPlanningStampControls(balStatus) ? (
-                      <RequestedReceivedControls
-                        requestedAt={project?.planning_bal_requested_at}
-                        receivedAt={project?.planning_bal_received_at}
-                        onRequested={handleBalStampRequested}
-                        onReceived={handleBalStampReceived}
-                        onClearRequested={handleBalStampClearRequested}
-                        onClearReceived={handleBalStampClearReceived}
+                  </div>
+                </div>
+              )}
+
+              {planningSection === "Sewer Connection" && (
+                <div role="region" aria-labelledby="sewer-connection-title">
+                  <h3 id="sewer-connection-title" style={{ margin: "0 0 16px 0", color: MONUMENT, fontSize: "1.1rem" }}>
+                    Sewer Connection
+                  </h3>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "16px",
+                      maxWidth: "320px",
+                    }}
+                  >
+                    <div>
+                      <label
+                        htmlFor="sewer-connection-select"
+                        style={{
+                          display: "block",
+                          fontSize: "0.9rem",
+                          color: UI.textMuted,
+                          marginBottom: "6px",
+                          fontWeight: 500,
+                        }}
+                      >
+                        Status
+                      </label>
+                      <select
+                        id="sewer-connection-select"
+                        value={planningRequirementSelectValue(sewerConnection)}
+                        onChange={handleSewerConnectionChange}
                         disabled={!project?.id || isSaving}
-                      />
-                    ) : null}
-                    {showPlanningStampControls(balStatus) ? (
-                      <div>
-                        <label
-                          htmlFor="bal-specs-added-select"
-                          style={{
-                            display: "block",
-                            fontSize: "0.9rem",
-                            color: UI.textMuted,
-                            marginBottom: "6px",
-                            fontWeight: 500,
-                          }}
-                        >
-                          BAL Specs Added to Plans
-                        </label>
-                        <select
-                          id="bal-specs-added-select"
-                          value={balSpecsAddedToPlans}
-                          onChange={handleBalSpecsAddedToPlansChange}
-                          disabled={!project?.id || isSaving}
-                          style={{
-                            width: "100%",
-                            padding: "10px 12px",
-                            borderRadius: "8px",
-                            border: "1px solid #ddd",
-                            fontSize: "1rem",
-                            color: MONUMENT,
-                            background: WHITE,
-                            boxSizing: "border-box",
-                          }}
-                        >
-                          {SPECS_ADDED_OPTIONS.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    ) : null}
+                        style={{
+                          width: "100%",
+                          padding: "10px 12px",
+                          borderRadius: "8px",
+                          border: "1px solid #ddd",
+                          fontSize: "1rem",
+                          color: MONUMENT,
+                          background: WHITE,
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        {PLANNING_REQUIREMENT_SELECT_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2305,32 +2216,48 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                   <h3 id="building-permit-title" style={{ margin: "0 0 16px 0", color: MONUMENT, fontSize: "1.1rem" }}>
                     Building Permit
                   </h3>
-                  <RequestedReceivedControls
-                    requestedAt={project?.planning_building_permit_requested_at}
-                    receivedAt={project?.planning_building_permit_received_at}
-                    onRequested={handleBuildingPermitStampRequested}
-                    onReceived={handleBuildingPermitStampReceived}
-                    onClearRequested={handleBuildingPermitStampClearRequested}
-                    onClearReceived={handleBuildingPermitStampClearReceived}
-                    disabled={!project?.id || isSaving}
-                  />
-                </div>
-              )}
-
-              {planningSection === "Sewer PIC" && (
-                <div role="region" aria-labelledby="pic-title">
-                  <h3 id="pic-title" style={{ margin: "0 0 16px 0", color: MONUMENT, fontSize: "1.1rem" }}>
-                    PIC
-                  </h3>
-                  <RequestedReceivedControls
-                    requestedAt={project?.planning_pic_requested_at}
-                    receivedAt={project?.planning_pic_received_at}
-                    onRequested={handlePicStampRequested}
-                    onReceived={handlePicStampReceived}
-                    onClearRequested={handlePicStampClearRequested}
-                    onClearReceived={handlePicStampClearReceived}
-                    disabled={!project?.id || isSaving}
-                  />
+                  <div style={{ maxWidth: "320px" }}>
+                    <label
+                      htmlFor="building-permit-select"
+                      style={{
+                        display: "block",
+                        fontSize: "0.9rem",
+                        color: UI.textMuted,
+                        marginBottom: "6px",
+                        fontWeight: 500,
+                      }}
+                    >
+                      Status
+                    </label>
+                    <select
+                      id="building-permit-select"
+                      value={buildingPermitStatus}
+                      onChange={(e) =>
+                        void handleMandatoryPlanningStatusChange(
+                          "planning_building_permit_requested_at",
+                          "planning_building_permit_received_at",
+                          e.target.value
+                        )
+                      }
+                      disabled={!project?.id || isSaving}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid #ddd",
+                        fontSize: "1rem",
+                        color: MONUMENT,
+                        background: WHITE,
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      {MANDATORY_PLANNING_SELECT_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               )}
 
@@ -2339,15 +2266,48 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                   <h3 id="footing-certification-title" style={{ margin: "0 0 16px 0", color: MONUMENT, fontSize: "1.1rem" }}>
                     Footing certification
                   </h3>
-                  <RequestedReceivedControls
-                    requestedAt={project?.planning_footing_certification_requested_at}
-                    receivedAt={project?.planning_footing_certification_received_at}
-                    onRequested={handleFootingCertificationStampRequested}
-                    onReceived={handleFootingCertificationStampReceived}
-                    onClearRequested={handleFootingCertificationStampClearRequested}
-                    onClearReceived={handleFootingCertificationStampClearReceived}
-                    disabled={!project?.id || isSaving}
-                  />
+                  <div style={{ maxWidth: "320px" }}>
+                    <label
+                      htmlFor="footing-select"
+                      style={{
+                        display: "block",
+                        fontSize: "0.9rem",
+                        color: UI.textMuted,
+                        marginBottom: "6px",
+                        fontWeight: 500,
+                      }}
+                    >
+                      Status
+                    </label>
+                    <select
+                      id="footing-select"
+                      value={footingStatus}
+                      onChange={(e) =>
+                        void handleMandatoryPlanningStatusChange(
+                          "planning_footing_certification_requested_at",
+                          "planning_footing_certification_received_at",
+                          e.target.value
+                        )
+                      }
+                      disabled={!project?.id || isSaving}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid #ddd",
+                        fontSize: "1rem",
+                        color: MONUMENT,
+                        background: WHITE,
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      {MANDATORY_PLANNING_SELECT_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               )}
 
@@ -2356,55 +2316,47 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                   <h3 id="energy-report-title" style={{ margin: "0 0 16px 0", color: MONUMENT, fontSize: "1.1rem" }}>
                     Energy report
                   </h3>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "20px", maxWidth: "760px" }}>
-                    <div>
-                      <RequestedReceivedControls
-                        requestedAt={project?.planning_energy_report_requested_at}
-                        receivedAt={project?.planning_energy_report_received_at}
-                        onRequested={handleEnergyReportStampRequested}
-                        onReceived={handleEnergyReportStampReceived}
-                        onClearRequested={handleEnergyReportStampClearRequested}
-                        onClearReceived={handleEnergyReportStampClearReceived}
-                        disabled={!project?.id || isSaving}
-                      />
-                    </div>
-
-                    <div style={{ maxWidth: "320px" }}>
-                      <label
-                        htmlFor="energy-specs-added-select"
-                        style={{
-                          display: "block",
-                          fontSize: "0.9rem",
-                          color: UI.textMuted,
-                          marginBottom: "6px",
-                          fontWeight: 500,
-                        }}
-                      >
-                        Energy Specs Added to Plans
-                      </label>
-                      <select
-                        id="energy-specs-added-select"
-                        value={energySpecsAddedToPlans}
-                        onChange={handleEnergySpecsAddedToPlansChange}
-                        disabled={!project?.id || isSaving}
-                        style={{
-                          width: "100%",
-                          padding: "10px 12px",
-                          borderRadius: "8px",
-                          border: "1px solid #ddd",
-                          fontSize: "1rem",
-                          color: MONUMENT,
-                          background: WHITE,
-                          boxSizing: "border-box",
-                        }}
-                      >
-                        {ENERGY_SPECS_OPTIONS.map((opt) => (
-                          <option key={opt} value={opt}>
-                            {opt}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                  <div style={{ maxWidth: "320px" }}>
+                    <label
+                      htmlFor="energy-report-select"
+                      style={{
+                        display: "block",
+                        fontSize: "0.9rem",
+                        color: UI.textMuted,
+                        marginBottom: "6px",
+                        fontWeight: 500,
+                      }}
+                    >
+                      Status
+                    </label>
+                    <select
+                      id="energy-report-select"
+                      value={energyStatus}
+                      onChange={(e) =>
+                        void handleMandatoryPlanningStatusChange(
+                          "planning_energy_report_requested_at",
+                          "planning_energy_report_received_at",
+                          e.target.value
+                        )
+                      }
+                      disabled={!project?.id || isSaving}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid #ddd",
+                        fontSize: "1rem",
+                        color: MONUMENT,
+                        background: WHITE,
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      {MANDATORY_PLANNING_SELECT_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               )}
@@ -2419,8 +2371,8 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                 planningSection !== "Town Planning" &&
                 planningSection !== "Land Subject to Flooding" &&
                 planningSection !== "BAL" &&
+                planningSection !== "Sewer Connection" &&
                 planningSection !== "Building Permit" &&
-                planningSection !== "Sewer PIC" &&
                 planningSection !== "Footing Certification" &&
                 planningSection !== "Energy Report" && (
                   <div>

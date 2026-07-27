@@ -129,6 +129,12 @@ function getContractStatusIndicator(project) {
   return indicatorRed();
 }
 
+function getRequirementStatusIndicator(status) {
+  if (status === "Not Required" || status === "Complete") return indicatorGreen();
+  if (status === "Incomplete") return indicatorOrange();
+  return indicatorRed();
+}
+
 function getTownPlanningStatus(project) {
   // Prefer Planning page field; fall back to legacy planning_status for older records.
   const fromPlanningPage = field(project, "planning_town_planning", "planningTownPlanning");
@@ -136,89 +142,72 @@ function getTownPlanningStatus(project) {
     return normalizePlanningStatus(fromPlanningPage);
   }
   const legacy = field(project, "planning_status", "planningStatus");
-  if (legacy === "No Planning Required" || legacy === "Planning Permit Issued") return "Completed";
-  if (legacy === "Planning Required") return "Required";
+  if (legacy === "No Planning Required" || legacy === "Planning Permit Issued") return "Complete";
+  if (legacy === "Planning Required") return "Incomplete";
   return normalizePlanningStatus(legacy);
 }
 
 function getTownPlanningStatusIndicator(project) {
-  const status = getTownPlanningStatus(project);
-  if (status === "Not Required" || status === "Completed") return indicatorGreen();
-  if (status === "Required") return indicatorOrange();
-  return indicatorRed();
+  return getRequirementStatusIndicator(getTownPlanningStatus(project));
 }
 
-/** Stamp-based statuses: no requested → red; requested only → orange; requested+received → green. */
+/** Mandatory items (Energy / Footing / Building Permit): Incomplete → orange; Complete → green. */
 function hasStampDate(value) {
   return value != null && String(value).trim() !== "";
 }
 
-function getRequestedReceivedLabel(requestedAt, receivedAt) {
-  if (hasStampDate(requestedAt) && hasStampDate(receivedAt)) return "Received";
-  if (hasStampDate(requestedAt)) return "Requested";
-  return "Not Requested";
+function getMandatoryStatusLabel(receivedAt) {
+  return hasStampDate(receivedAt) ? "Complete" : "Incomplete";
 }
 
-function getRequestedReceivedIndicator(requestedAt, receivedAt) {
-  if (hasStampDate(requestedAt) && hasStampDate(receivedAt)) return indicatorGreen();
-  if (hasStampDate(requestedAt)) return indicatorOrange();
-  return indicatorRed();
+function getMandatoryStatusIndicator(receivedAt) {
+  return hasStampDate(receivedAt) ? indicatorGreen() : indicatorOrange();
 }
 
 function getEnergyReportStatus(project) {
-  return getRequestedReceivedLabel(
-    field(project, "planning_energy_report_requested_at", "planningEnergyReportRequestedAt"),
+  return getMandatoryStatusLabel(
     field(project, "planning_energy_report_received_at", "planningEnergyReportReceivedAt")
   );
 }
 
 function getEnergyReportStatusIndicator(project) {
-  return getRequestedReceivedIndicator(
-    field(project, "planning_energy_report_requested_at", "planningEnergyReportRequestedAt"),
+  return getMandatoryStatusIndicator(
     field(project, "planning_energy_report_received_at", "planningEnergyReportReceivedAt")
   );
 }
 
 function getFootingCertificationStatus(project) {
-  return getRequestedReceivedLabel(
-    field(project, "planning_footing_certification_requested_at", "planningFootingCertificationRequestedAt"),
+  return getMandatoryStatusLabel(
     field(project, "planning_footing_certification_received_at", "planningFootingCertificationReceivedAt")
   );
 }
 
 function getFootingCertificationStatusIndicator(project) {
-  return getRequestedReceivedIndicator(
-    field(project, "planning_footing_certification_requested_at", "planningFootingCertificationRequestedAt"),
+  return getMandatoryStatusIndicator(
     field(project, "planning_footing_certification_received_at", "planningFootingCertificationReceivedAt")
   );
 }
 
 function getBuildingPermitStatus(project) {
-  return getRequestedReceivedLabel(
-    field(project, "planning_building_permit_requested_at", "planningBuildingPermitRequestedAt"),
+  return getMandatoryStatusLabel(
     field(project, "planning_building_permit_received_at", "planningBuildingPermitReceivedAt")
   );
 }
 
 function getBuildingPermitStatusIndicator(project) {
-  return getRequestedReceivedIndicator(
-    field(project, "planning_building_permit_requested_at", "planningBuildingPermitRequestedAt"),
+  return getMandatoryStatusIndicator(
     field(project, "planning_building_permit_received_at", "planningBuildingPermitReceivedAt")
   );
 }
 
-function getPicStatus(project) {
-  return getRequestedReceivedLabel(
-    field(project, "planning_pic_requested_at", "planningPicRequestedAt"),
-    field(project, "planning_pic_received_at", "planningPicReceivedAt")
+function getSewerConnectionStatus(project) {
+  return normalizePlanningStatus(
+    field(project, "planning_sewer_connection", "planningSewerConnection")
   );
 }
 
-function getPicStatusIndicator(project) {
-  return getRequestedReceivedIndicator(
-    field(project, "planning_pic_requested_at", "planningPicRequestedAt"),
-    field(project, "planning_pic_received_at", "planningPicReceivedAt")
-  );
+function getSewerConnectionStatusIndicator(project) {
+  return getRequirementStatusIndicator(getSewerConnectionStatus(project));
 }
 
 function getSurveySoilsStatusText(project) {
@@ -327,10 +316,10 @@ export function buildDesignPhaseStatusTiles(project) {
       view: "planning",
     },
     {
-      key: "pic",
-      label: "PIC",
-      value: getPicStatus(project),
-      indicatorStyle: getPicStatusIndicator(project),
+      key: "sewer-connection",
+      label: "Sewer Connection",
+      value: getSewerConnectionStatus(project),
+      indicatorStyle: getSewerConnectionStatusIndicator(project),
       view: "planning",
     },
   ];

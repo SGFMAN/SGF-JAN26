@@ -161,7 +161,7 @@ const MENU_OPTIONS = [
   { label: "Planning - OLD", key: "planning-old", hidden: true },
   { label: "Planning", key: "planning", requiresPlanningAccess: true },
   { label: "Planning - Underconstruction", key: "planning-underconstruction", adminOnly: true },
-  { label: "Variations", key: "variations" },
+  { label: "Variations", key: "variations", adminOnly: true },
   { label: "Admin", key: "admin" },
 ];
 
@@ -171,7 +171,7 @@ const CONSTRUCTION_MENU_OPTIONS = [
   { label: "Project Info", key: "project-info" },
   { label: "Client Info", key: "client-info" },
   { label: "Robes", key: "robes" },
-  { label: "Variations", key: "variations" },
+  { label: "Variations", key: "variations", adminOnly: true },
   { label: "Payments", key: "payments" },
 ];
 
@@ -248,7 +248,10 @@ export default function ProjectPage() {
     if (viewParam && allowedKeys.some((opt) => opt.key === viewParam)) {
       if (isPortalProjectPath && viewParam === "admin") {
         setActiveView("overview");
-      } else if (viewParam === "planning-underconstruction" && !isAdmin) {
+      } else if (
+        (viewParam === "planning-underconstruction" || viewParam === "variations") &&
+        !isAdmin
+      ) {
         setActiveView("overview");
       } else if (viewParam === "planning" && planningAccessReady && !hasPlanning) {
         setActiveView("overview");
@@ -262,9 +265,12 @@ export default function ProjectPage() {
     }
   }, [token, location.search, isPortalProjectPath, isMobile, isAdmin, hasPlanning, planningAccessReady]);
 
-  // Non-admins cannot stay on admin-only planning underconstruction
+  // Non-admins cannot stay on admin-only views
   useEffect(() => {
-    if (activeView === "planning-underconstruction" && !isAdmin) {
+    if (
+      (activeView === "planning-underconstruction" || activeView === "variations") &&
+      !isAdmin
+    ) {
       setActiveView("overview");
     }
   }, [activeView, isAdmin]);
@@ -1122,7 +1128,7 @@ export default function ProjectPage() {
                 />
               )}
               {activeView === "admin" && <Admin project={project} onUpdate={updateProject} />}
-              {activeView === "variations" && <Variations project={project} />}
+              {activeView === "variations" && isAdmin && <Variations project={project} />}
               {activeView === "payments" && (
                 <Payments
                   project={project}

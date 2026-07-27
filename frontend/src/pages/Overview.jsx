@@ -502,51 +502,20 @@ export default function Overview({ project }) {
   function getPlanningPermitStatusIndicator() {
     const raw = project?.planning_town_planning ?? project?.planning_status ?? "Not Selected";
     const status = String(raw).trim();
-    if (status === "Not Required" || status === "Completed" || status === "N/A" || status === "No Planning Required" || status === "Planning Permit Issued") {
+    if (
+      status === "Not Required" ||
+      status === "Complete" ||
+      status === "Completed" ||
+      status === "N/A" ||
+      status === "No Planning Required" ||
+      status === "Planning Permit Issued"
+    ) {
       return indicatorGreen();
     }
-    if (status === "Required" || status === "Planning Required") {
+    if (status === "Incomplete" || status === "Required" || status === "Planning Required") {
       return indicatorOrange();
     }
     return indicatorRed();
-  }
-
-  function stampHasDate(value) {
-    return value != null && String(value).trim() !== "";
-  }
-
-  function getRequestedReceivedIndicatorFromStamps(requestedAt, receivedAt) {
-    if (stampHasDate(requestedAt) && stampHasDate(receivedAt)) return indicatorGreen();
-    if (stampHasDate(requestedAt)) return indicatorOrange();
-    return indicatorRed();
-  }
-
-  function getEnergyReportStatusIndicator() {
-    return getRequestedReceivedIndicatorFromStamps(
-      project?.planning_energy_report_requested_at,
-      project?.planning_energy_report_received_at
-    );
-  }
-
-  function getFootingCertificationStatusIndicator() {
-    return getRequestedReceivedIndicatorFromStamps(
-      project?.planning_footing_certification_requested_at,
-      project?.planning_footing_certification_received_at
-    );
-  }
-
-  function getBuildingPermitStatusIndicator() {
-    return getRequestedReceivedIndicatorFromStamps(
-      project?.planning_building_permit_requested_at,
-      project?.planning_building_permit_received_at
-    );
-  }
-
-  function getPicStatusIndicator() {
-    return getRequestedReceivedIndicatorFromStamps(
-      project?.planning_pic_requested_at,
-      project?.planning_pic_received_at
-    );
   }
 
   // Get survey and soils status text
@@ -609,39 +578,27 @@ export default function Overview({ project }) {
     // Check deposit status - must be fully paid
     if (!isDepositFullyPaid()) return false;
 
-    // Check town planning - must be Not Required or Completed (legacy planning_status also accepted)
+    // Check town planning - must be Not Required or Complete (legacy values also accepted)
     const townPlanningRaw = project?.planning_town_planning ?? project?.planning_status ?? "Not Selected";
     const townPlanning = String(townPlanningRaw).trim();
     const townPlanningOk =
       townPlanning === "Not Required" ||
+      townPlanning === "Complete" ||
       townPlanning === "Completed" ||
       townPlanning === "N/A" ||
       townPlanning === "No Planning Required" ||
       townPlanning === "Planning Permit Issued";
     if (!townPlanningOk) return false;
 
-    // Energy / footing / building permit: must have both requested and received stamps
-    const stampDone = (requestedAt, receivedAt) =>
-      requestedAt != null &&
-      String(requestedAt).trim() !== "" &&
-      receivedAt != null &&
-      String(receivedAt).trim() !== "";
-    if (
-      !stampDone(project?.planning_energy_report_requested_at, project?.planning_energy_report_received_at)
-    ) {
+    // Energy / footing / building permit: Complete button sets received stamp
+    const completeDone = (receivedAt) => receivedAt != null && String(receivedAt).trim() !== "";
+    if (!completeDone(project?.planning_energy_report_received_at)) {
       return false;
     }
-    if (
-      !stampDone(
-        project?.planning_footing_certification_requested_at,
-        project?.planning_footing_certification_received_at
-      )
-    ) {
+    if (!completeDone(project?.planning_footing_certification_received_at)) {
       return false;
     }
-    if (
-      !stampDone(project?.planning_building_permit_requested_at, project?.planning_building_permit_received_at)
-    ) {
+    if (!completeDone(project?.planning_building_permit_received_at)) {
       return false;
     }
 
