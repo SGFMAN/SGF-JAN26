@@ -13,6 +13,7 @@ import Windows from "./Windows";
 import SiteVisit from "./SiteVisit";
 import Contract from "./Contract";
 import PlanningOld from "./Planning";
+import PlanningMain from "./PlanningMain";
 import Planning from "./PlanningNew";
 import Admin from "./Admin";
 import Robes from "./Robes";
@@ -1097,12 +1098,7 @@ export default function ProjectPage() {
                 <PlanningOld project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
               )}
               {activeView === "planning" && (
-                <div style={{ padding: "8px 4px" }}>
-                  <h2 style={{ margin: "0 0 12px", fontSize: "1.35rem", color: MONUMENT }}>Planning</h2>
-                  <p style={{ margin: 0, color: UI.textMuted, fontSize: "1rem", lineHeight: 1.45 }}>
-                    Planning section placeholder — content coming soon.
-                  </p>
-                </div>
+                <PlanningMain project={project} onUpdate={isPortalProjectPath ? () => {} : updateProject} />
               )}
               {activeView === "planning-underconstruction" && isAdmin && (
                 <Planning

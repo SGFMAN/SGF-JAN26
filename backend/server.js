@@ -1306,6 +1306,9 @@ async function ensureSchema() {
       "windowsurrounds_colour",
       "door_colour",
       "slidingdoor_colour",
+      "planning_septic",
+      "planning_septic_requested_at",
+      "planning_septic_received_at",
       ...PROJECT_PAYMENT_COLUMNS,
     ]);
     await ensureProjectPaymentColumns(pool);
@@ -1534,6 +1537,7 @@ async function ensureSchema() {
     'planning_land_flooding_cc_requested_at',
     'planning_land_flooding_cc_received_at',
     'planning_bal', 'planning_bal_requested_at', 'planning_bal_received_at',
+    'planning_septic', 'planning_septic_requested_at', 'planning_septic_received_at',
     'planning_footing_certification_requested_at', 'planning_footing_certification_received_at',
     'planning_energy_report_requested_at', 'planning_energy_report_received_at',
     'planning_energy_specs_added_to_plans', 'construction_payments_paid',
@@ -2033,7 +2037,7 @@ app.get("/api/projects/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, access_token, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, colours_plan_trace_polygon, roof_colour, cladding_colour, baseboards_colour, roof_style, windowframes_colour, windowsurrounds_colour, door_colour, slidingdoor_colour, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, planning_written_advice, planning_written_advice_requested_at, planning_written_advice_received_at, planning_town_planning, planning_town_planning_requested_at, planning_town_planning_received_at, planning_land_flooding_regulation, planning_land_flooding_fpa_requested_at, planning_land_flooding_fpa_received_at, planning_land_flooding_cc_requested_at, planning_land_flooding_cc_received_at, planning_bal, planning_bal_requested_at, planning_bal_received_at, planning_footing_certification_requested_at, planning_footing_certification_received_at, planning_energy_report_requested_at, planning_energy_report_received_at, planning_energy_specs_added_to_plans, construction_payments_paid, pre_engagement_required, pre_engagement_paid, deposit_required, deposit_paid, base_required, base_paid, frame_required, frame_paid, lock_up_required, lock_up_paid, fix_required, fix_paid, final_required, final_paid, duplicate_source_project_id, project_lat, project_lng, project_geocoded_at, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects WHERE id = $1",
+      "SELECT id, access_token, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, colours_plan_trace_polygon, roof_colour, cladding_colour, baseboards_colour, roof_style, windowframes_colour, windowsurrounds_colour, door_colour, slidingdoor_colour, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, planning_written_advice, planning_written_advice_requested_at, planning_written_advice_received_at, planning_town_planning, planning_town_planning_requested_at, planning_town_planning_received_at, planning_land_flooding_regulation, planning_land_flooding_fpa_requested_at, planning_land_flooding_fpa_received_at, planning_land_flooding_cc_requested_at, planning_land_flooding_cc_received_at, planning_bal, planning_bal_requested_at, planning_bal_received_at, planning_septic, planning_septic_requested_at, planning_septic_received_at, planning_footing_certification_requested_at, planning_footing_certification_received_at, planning_energy_report_requested_at, planning_energy_report_received_at, planning_energy_specs_added_to_plans, construction_payments_paid, pre_engagement_required, pre_engagement_paid, deposit_required, deposit_paid, base_required, base_paid, frame_required, frame_paid, lock_up_required, lock_up_paid, fix_required, fix_paid, final_required, final_paid, duplicate_source_project_id, project_lat, project_lng, project_geocoded_at, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects WHERE id = $1",
       [id]
     );
     
@@ -2557,6 +2561,9 @@ app.put("/api/projects/:id", async (req, res) => {
       planning_bal,
       planning_bal_requested_at,
       planning_bal_received_at,
+      planning_septic,
+      planning_septic_requested_at,
+      planning_septic_received_at,
       planning_footing_certification_requested_at,
       planning_footing_certification_received_at,
       planning_energy_report_requested_at,
@@ -2643,6 +2650,15 @@ app.put("/api/projects/:id", async (req, res) => {
       if (val === undefined || val === null) return null;
       if (typeof val === "string" && val.trim() === "Completed") return "Completed";
       return "Not Completed";
+    };
+    /** Planning septic: Not Required | Required | Complete; undefined = skip COALESCE. */
+    const processPlanningSeptic = (val) => {
+      if (val === undefined || val === null) return null;
+      if (typeof val !== "string") return "Not Required";
+      const t = val.trim();
+      if (t === "Required" || t === "Complete") return t;
+      if (t === "Permit Complete") return "Complete";
+      return "Not Required";
     };
     /**
      * If the client sends a doc status in this PUT, the stored file path must match that status:
@@ -2836,9 +2852,12 @@ app.put("/api/projects/:id", async (req, res) => {
         planning_energy_report_requested_at = CASE $151 WHEN '__SKIP__' THEN planning_energy_report_requested_at ELSE $151 END,
         planning_energy_report_received_at = CASE $152 WHEN '__SKIP__' THEN planning_energy_report_received_at ELSE $152 END,
         planning_energy_specs_added_to_plans = COALESCE($153, planning_energy_specs_added_to_plans),
-        salesperson = COALESCE($154, salesperson),
+        planning_septic = COALESCE($154, planning_septic),
+        planning_septic_requested_at = CASE $155 WHEN '__SKIP__' THEN planning_septic_requested_at ELSE $155 END,
+        planning_septic_received_at = CASE $156 WHEN '__SKIP__' THEN planning_septic_received_at ELSE $156 END,
+        salesperson = COALESCE($157, salesperson),
         updated_at = NOW()
-      WHERE id = $155
+      WHERE id = $158
       RETURNING *
       `,
       [
@@ -2996,6 +3015,9 @@ app.put("/api/projects/:id", async (req, res) => {
         processJfDocDate(planning_energy_report_requested_at),
         processJfDocDate(planning_energy_report_received_at),
         processEnergySpecsAddedToPlans(planning_energy_specs_added_to_plans),
+        processPlanningSeptic(planning_septic),
+        processJfDocDate(planning_septic_requested_at),
+        processJfDocDate(planning_septic_received_at),
         processValue(salesperson),
         id
       ]
@@ -5025,27 +5047,6 @@ app.put("/api/ui-theme-colors", async (req, res) => {
 });
 
 function parseColourSectionRangesColumn(raw) {
-  if (raw == null || raw === "") {
-    return {
-      external: "colorbond",
-      windows: "",
-      hybrid_flooring_affordable: "",
-      hybrid_flooring_superior: "",
-      tiles: "",
-      kitchen_cabinets: "",
-      kitchen_benchtops_laminate: "",
-      kitchen_benchtops_stone: "",
-    };
-  }
-  let obj = raw;
-  if (typeof raw === "string") {
-    try {
-      obj = JSON.parse(raw);
-    } catch {
-      obj = {};
-    }
-  }
-  if (!obj || typeof obj !== "object" || Array.isArray(obj)) obj = {};
   const keys = [
     "external",
     "windows",
@@ -5056,11 +5057,22 @@ function parseColourSectionRangesColumn(raw) {
     "kitchen_benchtops_laminate",
     "kitchen_benchtops_stone",
   ];
+  const empty = {};
+  for (const key of keys) empty[key] = "";
+  if (raw == null || raw === "") return empty;
+  let obj = raw;
+  if (typeof raw === "string") {
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      obj = {};
+    }
+  }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) obj = {};
   const out = {};
   for (const key of keys) {
     out[key] = obj[key] == null ? "" : String(obj[key]).trim();
   }
-  if (!out.external) out.external = "colorbond";
   return out;
 }
 

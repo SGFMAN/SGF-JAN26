@@ -118,7 +118,11 @@ export default function PolytecKitchenCube() {
         const ranges = normalizeColourSectionRanges(rangesData.ranges);
         const rangeKey = String(ranges.kitchen_cabinets || "").trim();
         if (!rangeKey) {
-          throw new Error("Select a Kitchen Cabinets range in Colour Settings");
+          if (!cancelled) {
+            setCatalogue(null);
+            setListError("");
+          }
+          return;
         }
 
         if (rangeKey === COLORBOND_RANGE_KEY) {
@@ -334,7 +338,7 @@ export default function PolytecKitchenCube() {
               minHeight: "42px",
             }}
           >
-            <option value="">{loadingList ? "Loading…" : "Select a finish"}</option>
+            <option value="">{loadingList ? "Loading..." : "Nothing selected"}</option>
             {subgroups.map((sg) => (
               <optgroup key={sg.id} label={sg.name}>
                 {(sg.samples || []).map((sample) => (

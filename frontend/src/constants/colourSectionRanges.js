@@ -27,7 +27,6 @@ export const COLORBOND_RANGE_KEY = "colorbond";
 export function emptyColourSectionRanges() {
   const out = {};
   for (const key of COLOUR_SECTION_RANGE_KEYS) out[key] = "";
-  out.external = COLORBOND_RANGE_KEY;
   return out;
 }
 
@@ -39,7 +38,6 @@ export function normalizeColourSectionRanges(raw) {
     const v = String(raw[key]).trim();
     base[key] = v;
   }
-  if (!base.external) base.external = COLORBOND_RANGE_KEY;
   return base;
 }
 

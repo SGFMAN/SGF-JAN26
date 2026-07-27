@@ -38,7 +38,9 @@ function mergeColoursButtonStyle(styleId, fallback) {
 }
 
 const COLOURS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
-const COLORBOND_COLOUR_OPTIONS = ["Select", ...COLORBOND_COLOURS.map((c) => c.name)];
+const NOTHING_SELECTED = "Nothing selected";
+const UNWIRED_COLOUR_OPTIONS = [NOTHING_SELECTED];
+const COLORBOND_COLOUR_OPTIONS = [NOTHING_SELECTED, ...COLORBOND_COLOURS.map((c) => c.name)];
 const ROOF_STYLE_OPTIONS = COLOURS_ROOF_STYLE_OPTIONS;
 const COLOUR_PAGE_CATEGORIES = ["External", "Flooring", "Kitchen", "Bathroom", "Bedrooms"];
 const COLOURS_CATEGORY_FIT_WIDTH = `calc(${Math.max(...COLOUR_PAGE_CATEGORIES.map((s) => s.length))}ch + 28px)`;
@@ -57,15 +59,21 @@ const COLOURS_FIELD_SELECT_STYLE = {
 };
 
 function colourOrSelect(value) {
-  return value && String(value).trim() ? String(value).trim() : "Select";
+  const v = value && String(value).trim() ? String(value).trim() : "";
+  if (!v || v === "Select" || v === NOTHING_SELECTED) return NOTHING_SELECTED;
+  return v;
 }
 
 function roofStyleOrSelect(value) {
-  return normalizeRoofStyle(colourOrSelect(value));
+  const v = value && String(value).trim() ? String(value).trim() : "Select";
+  if (!v || v === NOTHING_SELECTED) return "Select";
+  return normalizeRoofStyle(v === "Select" ? "Select" : v);
 }
 
 function colourForSave(value) {
-  return value === "Select" || value == null || value === "" ? null : value;
+  return value === "Select" || value === NOTHING_SELECTED || value == null || value === ""
+    ? null
+    : value;
 }
 
 export default function Colours({ project, onUpdate }) {
@@ -86,7 +94,8 @@ export default function Colours({ project, onUpdate }) {
   const [doorColour, setDoorColour] = useState(
     colourOrSelect(project?.door_colour ?? project?.front_door_colour)
   );
-  const [externalColourOptions, setExternalColourOptions] = useState(COLORBOND_COLOUR_OPTIONS);
+  const [externalColourOptions, setExternalColourOptions] = useState(UNWIRED_COLOUR_OPTIONS);
+  const [windowsColourOptions, setWindowsColourOptions] = useState(UNWIRED_COLOUR_OPTIONS);
   const [colourSaveStatus, setColourSaveStatus] = useState(""); // "", "saving", "saved", "error"
   const colourSaveStatusTimerRef = useRef(null);
   const colourEditGenRef = useRef(0);
@@ -133,6 +142,19 @@ export default function Colours({ project, onUpdate }) {
   
   useEffect(() => {
     let cancelled = false;
+
+    async function optionsForRangeKey(rangeKey) {
+      const key = String(rangeKey || "").trim();
+      if (!key) return UNWIRED_COLOUR_OPTIONS;
+      if (key === COLORBOND_RANGE_KEY) return COLORBOND_COLOUR_OPTIONS;
+      const catRes = await fetch(`${API_URL}/api/colour-groups/${encodeURIComponent(key)}/catalogue`, {
+        headers: getApiHeaders(),
+      });
+      const catalogue = await catRes.json().catch(() => ({}));
+      if (!catRes.ok) throw new Error(catalogue.error || `Failed (${catRes.status})`);
+      return [NOTHING_SELECTED, ...colourOptionLabelsFromCatalogue(catalogue)];
+    }
+
     (async () => {
       try {
         const res = await fetch(`${API_URL}/api/colour-section-ranges`, {
@@ -141,23 +163,20 @@ export default function Colours({ project, onUpdate }) {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
         const ranges = normalizeColourSectionRanges(data.ranges);
-        const rangeKey = ranges.external || COLORBOND_RANGE_KEY;
-        if (rangeKey === COLORBOND_RANGE_KEY) {
-          if (!cancelled) setExternalColourOptions(COLORBOND_COLOUR_OPTIONS);
-          return;
-        }
-        const catRes = await fetch(`${API_URL}/api/colour-groups/${encodeURIComponent(rangeKey)}/catalogue`, {
-          headers: getApiHeaders(),
-        });
-        const catalogue = await catRes.json().catch(() => ({}));
-        if (!catRes.ok) throw new Error(catalogue.error || `Failed (${catRes.status})`);
-        const labels = colourOptionLabelsFromCatalogue(catalogue);
+        const [externalOpts, windowsOpts] = await Promise.all([
+          optionsForRangeKey(ranges.external),
+          optionsForRangeKey(ranges.windows),
+        ]);
         if (!cancelled) {
-          setExternalColourOptions(["Select", ...labels]);
+          setExternalColourOptions(externalOpts);
+          setWindowsColourOptions(windowsOpts);
         }
       } catch (e) {
         console.error(e);
-        if (!cancelled) setExternalColourOptions(COLORBOND_COLOUR_OPTIONS);
+        if (!cancelled) {
+          setExternalColourOptions(UNWIRED_COLOUR_OPTIONS);
+          setWindowsColourOptions(UNWIRED_COLOUR_OPTIONS);
+        }
       }
     })();
     return () => {
@@ -166,10 +185,10 @@ export default function Colours({ project, onUpdate }) {
   }, []);
 
   const externalFieldOptions = useMemo(() => {
-    const base = externalColourOptions.length ? externalColourOptions : COLORBOND_COLOUR_OPTIONS;
+    const base = externalColourOptions.length ? externalColourOptions : UNWIRED_COLOUR_OPTIONS;
     const extras = [claddingColour, baseboardsColour, roofColour, windowSurroundsColour, doorColour]
       .map((v) => colourOrSelect(v))
-      .filter((v) => v && v !== "Select" && !base.includes(v));
+      .filter((v) => v && v !== NOTHING_SELECTED && !base.includes(v));
     return extras.length ? [...base, ...extras] : base;
   }, [
     externalColourOptions,
@@ -179,6 +198,15 @@ export default function Colours({ project, onUpdate }) {
     windowSurroundsColour,
     doorColour,
   ]);
+
+  const windowFramesFieldOptions = useMemo(() => {
+    const base = windowsColourOptions.length ? windowsColourOptions : UNWIRED_COLOUR_OPTIONS;
+    const current = colourOrSelect(windowFramesColour);
+    if (current && current !== NOTHING_SELECTED && !base.includes(current)) {
+      return [...base, current];
+    }
+    return base;
+  }, [windowsColourOptions, windowFramesColour]);
 
   useEffect(() => {
     valuesRef.current = {
@@ -1309,7 +1337,7 @@ export default function Colours({ project, onUpdate }) {
                     label: "Window frames",
                     value: windowFramesColour,
                     onChange: handleWindowFramesColourChange,
-                    options: COLORBOND_COLOUR_OPTIONS,
+                    options: windowFramesFieldOptions,
                   },
                   {
                     label: "Window surrounds",

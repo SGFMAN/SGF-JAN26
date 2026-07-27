@@ -94,6 +94,10 @@ function imageUrlForSample(sampleId, imageFilename, updatedAt = null) {
 function mapSampleRow(row) {
   if (!row) return null;
   const imageFilename = row.image_filename || null;
+  const r = row.r == null || row.r === "" ? null : Number(row.r);
+  const g = row.g == null || row.g === "" ? null : Number(row.g);
+  const b = row.b == null || row.b === "" ? null : Number(row.b);
+  const hasRgb = Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b);
   return {
     id: row.id,
     name: row.name,
@@ -103,6 +107,9 @@ function mapSampleRow(row) {
     sort_order: row.sort_order,
     image_filename: imageFilename,
     image_url: imageUrlForSample(row.id, imageFilename, row.updated_at),
+    r: hasRgb ? r : null,
+    g: hasRgb ? g : null,
+    b: hasRgb ? b : null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -151,6 +158,16 @@ async function ensurePolytecColourTables(pool) {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS colour_samples_subgroup_id_idx ON colour_samples (subgroup_id);
   `);
+  // RGB swatches for Colorbond-style ranges (nullable; image-based samples leave these null).
+  for (const col of ["r", "g", "b"]) {
+    try {
+      await pool.query(`ALTER TABLE colour_samples ADD COLUMN ${col} INTEGER`);
+    } catch (e) {
+      if (!String(e.message || "").includes("already exists") && !String(e.message || "").includes("duplicate column")) {
+        console.log(`Error adding colour_samples.${col}:`, e.message);
+      }
+    }
+  }
 }
 
 async function listGroupCatalogue(pool, groupKey) {
@@ -170,7 +187,7 @@ async function listGroupCatalogue(pool, groupKey) {
     [group.id]
   );
   const samplesRes = await pool.query(
-    `SELECT s.id, s.subgroup_id, s.name, s.image_filename, s.sort_order, s.created_at, s.updated_at,
+    `SELECT s.id, s.subgroup_id, s.name, s.image_filename, s.r, s.g, s.b, s.sort_order, s.created_at, s.updated_at,
             sg.name AS subgroup_name, g.name AS group_name
      FROM colour_samples s
      JOIN colour_subgroups sg ON sg.id = s.subgroup_id

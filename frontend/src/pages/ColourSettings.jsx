@@ -777,13 +777,14 @@ export default function ColourSettings() {
                   whiteSpace: "nowrap",
                 }}
               >
-                Colorbond
+                Colorbond [{COLORBOND_COLOURS.length}]
               </div>
             </div>
 
             {colourGroups.map((group) => {
               const isSelected = selectedGroup === group.key;
-              const label = group.name || group.key;
+              const sampleCount = Number(group.sample_count) || 0;
+              const label = `${group.name || group.key} [${sampleCount}]`;
               return (
                 <div
                   key={group.id}
@@ -888,19 +889,32 @@ export default function ColourSettings() {
                         backgroundColor: hex,
                       }}
                     />
-                    <div
-                      style={{
-                        flex: 1,
-                        minWidth: 0,
-                        fontSize: "0.85rem",
-                        fontWeight: 500,
-                        color: MONUMENT,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {colour.name}
+                    <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+                      <div
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          fontSize: "0.85rem",
+                          fontWeight: 500,
+                          color: MONUMENT,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {colour.name}
+                      </div>
+                      <div
+                        style={{
+                          flexShrink: 0,
+                          fontSize: "0.85rem",
+                          fontWeight: 500,
+                          color: UI.textMuted,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Colorbond
+                      </div>
                     </div>
                   </div>
                 );
@@ -933,8 +947,22 @@ export default function ColourSettings() {
                         e.currentTarget.style.background = "transparent";
                       }}
                     >
-                      <div style={listSwatchStyle}>
-                        {sample.image_url ? (
+                      <div
+                        style={{
+                          ...listSwatchStyle,
+                          ...(sample.r != null && sample.g != null && sample.b != null
+                            ? {
+                                backgroundColor: `#${[sample.r, sample.g, sample.b]
+                                  .map((x) => {
+                                    const hex = Number(x).toString(16);
+                                    return hex.length === 1 ? `0${hex}` : hex;
+                                  })
+                                  .join("")}`,
+                              }
+                            : null),
+                        }}
+                      >
+                        {sample.r != null && sample.g != null && sample.b != null ? null : sample.image_url ? (
                           <AuthedImg
                             src={sample.image_url}
                             alt={sample.name}
@@ -1058,7 +1086,7 @@ export default function ColourSettings() {
                         cursor: sectionRangesSaving ? "not-allowed" : "pointer",
                       }}
                     >
-                      <option value="">Select range…</option>
+                      <option value="">Nothing selected</option>
                       {rangeSelectOptions.map((opt) => (
                         <option key={opt.key} value={opt.key}>
                           {opt.label}
