@@ -207,9 +207,18 @@ function getBuildingPermitStatusIndicator(project) {
   );
 }
 
+function getPicStatus(project) {
+  return getRequestedReceivedLabel(
+    field(project, "planning_pic_requested_at", "planningPicRequestedAt"),
+    field(project, "planning_pic_received_at", "planningPicReceivedAt")
+  );
+}
+
 function getPicStatusIndicator(project) {
-  const pic = field(project, "pic", "pic");
-  return (pic || "No") === "Yes" ? indicatorGreen() : indicatorRed();
+  return getRequestedReceivedIndicator(
+    field(project, "planning_pic_requested_at", "planningPicRequestedAt"),
+    field(project, "planning_pic_received_at", "planningPicReceivedAt")
+  );
 }
 
 function getSurveySoilsStatusText(project) {
@@ -320,7 +329,7 @@ export function buildDesignPhaseStatusTiles(project) {
     {
       key: "pic",
       label: "PIC",
-      value: field(project, "pic", "pic") === "Yes" ? "Yes" : "No",
+      value: getPicStatus(project),
       indicatorStyle: getPicStatusIndicator(project),
       view: "planning",
     },

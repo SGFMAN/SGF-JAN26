@@ -11,6 +11,7 @@ import {
 
 const REQUESTED_BUTTON_STYLE_ID = 1;
 const RECEIVED_BUTTON_STYLE_ID = 5;
+const CLEAR_BUTTON_STYLE_ID = 6;
 
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
@@ -70,7 +71,7 @@ function RequestedReceivedControls({
 }) {
   const requestedStyle = mergeStampButtonStyle(REQUESTED_BUTTON_STYLE_ID, disabled);
   const receivedStyle = mergeStampButtonStyle(RECEIVED_BUTTON_STYLE_ID, disabled);
-  const clearStyle = {
+  const clearFallback = {
     border: FIELD_OUTLINE,
     background: WHITE,
     color: MONUMENT,
@@ -78,6 +79,10 @@ function RequestedReceivedControls({
     padding: "4px 8px",
     fontSize: "0.75rem",
     fontWeight: 500,
+  };
+  const clearSaved = buildSavedButtonStyle(CLEAR_BUTTON_STYLE_ID, true);
+  const clearStyle = {
+    ...(clearSaved || clearFallback),
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.65 : 1,
     flexShrink: 0,
@@ -502,10 +507,21 @@ export default function PlanningMain({ project, onUpdate }) {
           </section>
         </div>
 
-        {/* Column 4: reserved */}
+        {/* Column 4: reserved / PIC */}
         <div style={stackColumnStyle}>
           <section aria-label="Reserved" style={panelStyle} />
-          <section aria-label="Reserved" style={panelStyle} />
+
+          <section aria-labelledby="pic-title" style={panelStyle}>
+            <h3 id="pic-title" style={{ margin: 0, color: MONUMENT, fontSize: "1.1rem" }}>
+              PIC
+            </h3>
+            <RequestedReceivedControls
+              requestedAt={project?.planning_pic_requested_at}
+              receivedAt={project?.planning_pic_received_at}
+              disabled={disabled}
+              {...stampHandlers("planning_pic_requested_at", "planning_pic_received_at")}
+            />
+          </section>
         </div>
       </div>
     </div>

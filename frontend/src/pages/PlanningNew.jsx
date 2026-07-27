@@ -17,6 +17,7 @@ import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 
 const REQUESTED_BUTTON_STYLE_ID = 1;
 const RECEIVED_BUTTON_STYLE_ID = 5;
+const CLEAR_BUTTON_STYLE_ID = 6;
 const MONUMENT = UI.textPrimary;
 const TILE_BLUE = "#63a7e8";
 const WHITE = UI.cardBg;
@@ -207,7 +208,7 @@ function RequestedReceivedControls({
 }) {
   const requestedStyle = mergeStampButtonStyle(REQUESTED_BUTTON_STYLE_ID, disabled);
   const receivedStyle = mergeStampButtonStyle(RECEIVED_BUTTON_STYLE_ID, disabled);
-  const clearStyle = {
+  const clearFallback = {
     border: "1px solid #ddd",
     background: WHITE,
     color: MONUMENT,
@@ -215,6 +216,10 @@ function RequestedReceivedControls({
     padding: "4px 8px",
     fontSize: "0.75rem",
     fontWeight: 500,
+  };
+  const clearSaved = buildSavedButtonStyle(CLEAR_BUTTON_STYLE_ID, true);
+  const clearStyle = {
+    ...(clearSaved || clearFallback),
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.65 : 1,
   };
@@ -872,6 +877,22 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
 
   function handleBuildingPermitStampClearReceived() {
     void saveField("planning_building_permit_received_at", null);
+  }
+
+  function handlePicStampRequested() {
+    void saveField("planning_pic_requested_at", new Date().toISOString());
+  }
+
+  function handlePicStampReceived() {
+    void saveField("planning_pic_received_at", new Date().toISOString());
+  }
+
+  function handlePicStampClearRequested() {
+    void saveField("planning_pic_requested_at", null);
+  }
+
+  function handlePicStampClearReceived() {
+    void saveField("planning_pic_received_at", null);
   }
 
   function handleFootingCertificationStampRequested() {
@@ -2296,6 +2317,23 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                 </div>
               )}
 
+              {planningSection === "Sewer PIC" && (
+                <div role="region" aria-labelledby="pic-title">
+                  <h3 id="pic-title" style={{ margin: "0 0 16px 0", color: MONUMENT, fontSize: "1.1rem" }}>
+                    PIC
+                  </h3>
+                  <RequestedReceivedControls
+                    requestedAt={project?.planning_pic_requested_at}
+                    receivedAt={project?.planning_pic_received_at}
+                    onRequested={handlePicStampRequested}
+                    onReceived={handlePicStampReceived}
+                    onClearRequested={handlePicStampClearRequested}
+                    onClearReceived={handlePicStampClearReceived}
+                    disabled={!project?.id || isSaving}
+                  />
+                </div>
+              )}
+
               {planningSection === "Footing Certification" && (
                 <div role="region" aria-labelledby="footing-certification-title">
                   <h3 id="footing-certification-title" style={{ margin: "0 0 16px 0", color: MONUMENT, fontSize: "1.1rem" }}>
@@ -2382,6 +2420,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                 planningSection !== "Land Subject to Flooding" &&
                 planningSection !== "BAL" &&
                 planningSection !== "Building Permit" &&
+                planningSection !== "Sewer PIC" &&
                 planningSection !== "Footing Certification" &&
                 planningSection !== "Energy Report" && (
                   <div>

@@ -543,7 +543,10 @@ export default function Overview({ project }) {
   }
 
   function getPicStatusIndicator() {
-    return (project?.pic || "No") === "Yes" ? indicatorGreen() : indicatorRed();
+    return getRequestedReceivedIndicatorFromStamps(
+      project?.planning_pic_requested_at,
+      project?.planning_pic_received_at
+    );
   }
 
   // Get survey and soils status text
