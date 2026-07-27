@@ -4,6 +4,7 @@ import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
+const FIELD_OUTLINE = `1px solid ${UI.outline || "#000"}`;
 const API_URL = "";
 
 const PLANNING_STATUS_OPTIONS = ["Not Selected", "Not Required", "Required", "Completed"];
@@ -101,9 +102,15 @@ const selectStyle = {
 
 const columnStyle = {
   minWidth: 0,
+  height: "100%",
   display: "flex",
   flexDirection: "column",
   gap: "12px",
+  background: WHITE,
+  border: FIELD_OUTLINE,
+  borderRadius: "8px",
+  padding: "16px",
+  boxSizing: "border-box",
 };
 
 function normalizePlanningStatus(value) {
@@ -203,15 +210,29 @@ export default function PlanningMain({ project, onUpdate }) {
   const disabled = !project?.id || isSaving;
 
   return (
-    <div style={{ padding: "8px 4px" }}>
-      <h2 style={{ margin: "0 0 24px", fontSize: "1.35rem", color: MONUMENT }}>Planning</h2>
+    <div
+      style={{
+        padding: "8px 4px",
+        display: "flex",
+        flexDirection: "column",
+        flex: 1,
+        minHeight: 0,
+        height: "100%",
+        boxSizing: "border-box",
+      }}
+    >
+      <h2 style={{ margin: "0 0 24px", fontSize: "1.35rem", color: MONUMENT, flexShrink: 0 }}>
+        Planning
+      </h2>
 
       <div
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-          gap: "24px",
-          alignItems: "start",
+          gap: "20px",
+          alignItems: "stretch",
+          flex: 1,
+          minHeight: 0,
         }}
       >
         <section aria-labelledby="town-planning-title" style={columnStyle}>
