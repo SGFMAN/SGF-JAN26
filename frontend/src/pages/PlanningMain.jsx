@@ -8,7 +8,7 @@ const FIELD_OUTLINE = `1px solid ${UI.outline || "#000"}`;
 const API_URL = "";
 
 const PLANNING_STATUS_OPTIONS = ["Not Selected", "Not Required", "Required", "Completed"];
-const BUILDING_PERMIT_OPTIONS = ["Not Submitted", "Sent", "Complete"];
+const BUILDING_PERMIT_OPTIONS = ["Not Submitted", "Submitted", "Completed"];
 const STAMP_BUTTON_LABELS = ["Requested", "Received"];
 
 /** Fit width from longest label (ch) + padding for select chevron / button padding. */
@@ -121,6 +121,14 @@ function normalizePlanningStatus(value) {
   return "Not Selected";
 }
 
+function normalizeBuildingPermit(value) {
+  const t = value != null ? String(value).trim() : "";
+  if (BUILDING_PERMIT_OPTIONS.includes(t)) return t;
+  if (t === "Sent") return "Submitted";
+  if (t === "Complete") return "Completed";
+  return "Not Submitted";
+}
+
 function showStampControls(status) {
   return status === "Required" || status === "Completed";
 }
@@ -131,7 +139,7 @@ function showStampControls(status) {
 export default function PlanningMain({ project, onUpdate }) {
   const [isSaving, setIsSaving] = useState(false);
   const [buildingPermitStatus, setBuildingPermitStatus] = useState(
-    project?.building_permit_status || "Not Submitted"
+    normalizeBuildingPermit(project?.building_permit_status)
   );
   const [townPlanningStatus, setTownPlanningStatus] = useState(
     normalizePlanningStatus(project?.planning_town_planning)
@@ -189,13 +197,13 @@ export default function PlanningMain({ project, onUpdate }) {
   }
 
   function handleBuildingPermitChange(e) {
-    const newValue = e.target.value;
+    const newValue = normalizeBuildingPermit(e.target.value);
     setBuildingPermitStatus(newValue);
     void saveField("building_permit_status", newValue);
   }
 
   useEffect(() => {
-    setBuildingPermitStatus(project?.building_permit_status || "Not Submitted");
+    setBuildingPermitStatus(normalizeBuildingPermit(project?.building_permit_status));
     setTownPlanningStatus(normalizePlanningStatus(project?.planning_town_planning));
     setBalStatus(normalizePlanningStatus(project?.planning_bal));
     setSepticStatus(normalizePlanningStatus(project?.planning_septic));

@@ -1112,9 +1112,10 @@ export default function StatusManager() {
                 };
                 
                 const getBuildingPermitStatusColor = () => {
-                  const status = project.building_permit_status || "Not Submitted";
-                  if (status === "Complete") return COLOR_GREEN;
-                  if (status === "Sent") return COLOR_ORANGE;
+                  const raw = project.building_permit_status || "Not Submitted";
+                  const status = raw === "Complete" ? "Completed" : raw === "Sent" ? "Submitted" : raw;
+                  if (status === "Completed") return COLOR_GREEN;
+                  if (status === "Submitted") return COLOR_ORANGE;
                   return COLOR_RED;
                 };
 

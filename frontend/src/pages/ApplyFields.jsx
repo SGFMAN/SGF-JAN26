@@ -99,7 +99,7 @@ const FIELD_DEFINITIONS = {
   },
   building_permit_status: {
     label: "Building Permit",
-    values: ["Not Submitted", "Sent", "Complete"],
+    values: ["Not Submitted", "Submitted", "Completed"],
     defaultValue: "Not Submitted",
   },
   status: {

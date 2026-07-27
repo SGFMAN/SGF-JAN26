@@ -128,11 +128,41 @@ function getContractStatusIndicator(project) {
   return indicatorRed();
 }
 
-function getPlanningPermitStatusIndicator(project) {
-  const status = field(project, "planning_status", "planningStatus") || "Not Selected";
-  if (status === "No Planning Required" || status === "Planning Permit Issued") {
-    return indicatorGreen();
+function normalizeTownPlanningStatus(raw) {
+  const t = raw != null ? String(raw).trim() : "";
+  if (!t) return "Not Selected";
+  if (t === "N/A") return "Not Required";
+  if (t === "Complete" || t === "Permit Complete") return "Completed";
+  if (
+    t === "Not Selected" ||
+    t === "Not Required" ||
+    t === "Required" ||
+    t === "Completed" ||
+    t === "No Planning Required" ||
+    t === "Planning Permit Issued" ||
+    t === "Planning Required"
+  ) {
+    return t;
   }
+  return "Not Selected";
+}
+
+function getTownPlanningStatus(project) {
+  // Prefer Planning page field; fall back to legacy planning_status for older records.
+  const fromPlanningPage = field(project, "planning_town_planning", "planningTownPlanning");
+  if (fromPlanningPage != null && String(fromPlanningPage).trim() !== "") {
+    return normalizeTownPlanningStatus(fromPlanningPage);
+  }
+  const legacy = field(project, "planning_status", "planningStatus");
+  if (legacy === "No Planning Required" || legacy === "Planning Permit Issued") return "Completed";
+  if (legacy === "Planning Required") return "Required";
+  return normalizeTownPlanningStatus(legacy);
+}
+
+function getTownPlanningStatusIndicator(project) {
+  const status = getTownPlanningStatus(project);
+  if (status === "Not Required" || status === "Completed") return indicatorGreen();
+  if (status === "Required") return indicatorOrange();
   return indicatorRed();
 }
 
@@ -151,10 +181,24 @@ function getFootingCertificationStatusIndicator(project) {
   return indicatorRed();
 }
 
+function normalizeBuildingPermitStatus(raw) {
+  const t = raw != null ? String(raw).trim() : "";
+  if (t === "Sent") return "Submitted";
+  if (t === "Complete") return "Completed";
+  if (t === "Not Submitted" || t === "Submitted" || t === "Completed") return t;
+  return "Not Submitted";
+}
+
+function getBuildingPermitStatus(project) {
+  return normalizeBuildingPermitStatus(
+    field(project, "building_permit_status", "buildingPermitStatus")
+  );
+}
+
 function getBuildingPermitStatusIndicator(project) {
-  const status = field(project, "building_permit_status", "buildingPermitStatus") || "Not Submitted";
-  if (status === "Complete") return indicatorGreen();
-  if (status === "Sent") return indicatorOrange();
+  const status = getBuildingPermitStatus(project);
+  if (status === "Completed") return indicatorGreen();
+  if (status === "Submitted") return indicatorOrange();
   return indicatorRed();
 }
 
@@ -241,10 +285,10 @@ export function buildDesignPhaseStatusTiles(project) {
       view: "survey-soil",
     },
     {
-      key: "planning",
-      label: "Planning Permit",
-      value: field(project, "planning_status", "planningStatus") || "Not Selected",
-      indicatorStyle: getPlanningPermitStatusIndicator(project),
+      key: "town-planning",
+      label: "Town Planning",
+      value: getTownPlanningStatus(project),
+      indicatorStyle: getTownPlanningStatusIndicator(project),
       view: "planning",
     },
     {
@@ -265,7 +309,7 @@ export function buildDesignPhaseStatusTiles(project) {
     {
       key: "building-permit",
       label: "Building Permit",
-      value: field(project, "building_permit_status", "buildingPermitStatus") || "Not Submitted",
+      value: getBuildingPermitStatus(project),
       indicatorStyle: getBuildingPermitStatusIndicator(project),
       view: "planning",
     },

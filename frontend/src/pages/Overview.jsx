@@ -500,9 +500,13 @@ export default function Overview({ project }) {
   }
 
   function getPlanningPermitStatusIndicator() {
-    const status = project?.planning_status || "Not Selected";
-    if (status === "No Planning Required" || status === "Planning Permit Issued") {
+    const raw = project?.planning_town_planning ?? project?.planning_status ?? "Not Selected";
+    const status = String(raw).trim();
+    if (status === "Not Required" || status === "Completed" || status === "N/A" || status === "No Planning Required" || status === "Planning Permit Issued") {
       return indicatorGreen();
+    }
+    if (status === "Required" || status === "Planning Required") {
+      return indicatorOrange();
     }
     return indicatorRed();
   }
@@ -522,9 +526,10 @@ export default function Overview({ project }) {
   }
 
   function getBuildingPermitStatusIndicator() {
-    const status = project?.building_permit_status || "Not Submitted";
-    if (status === "Complete") return indicatorGreen();
-    if (status === "Sent") return indicatorOrange();
+    const raw = project?.building_permit_status || "Not Submitted";
+    const status = raw === "Sent" ? "Submitted" : raw === "Complete" ? "Completed" : raw;
+    if (status === "Completed") return indicatorGreen();
+    if (status === "Submitted") return indicatorOrange();
     return indicatorRed();
   }
 
@@ -592,11 +597,16 @@ export default function Overview({ project }) {
     // Check deposit status - must be fully paid
     if (!isDepositFullyPaid()) return false;
 
-    // Check planning permit status - must be "No Planning Required" or "Planning Permit Issued"
-    const planningStatus = project?.planning_status || "Not Selected";
-    if (planningStatus !== "No Planning Required" && planningStatus !== "Planning Permit Issued") {
-      return false;
-    }
+    // Check town planning - must be Not Required or Completed (legacy planning_status also accepted)
+    const townPlanningRaw = project?.planning_town_planning ?? project?.planning_status ?? "Not Selected";
+    const townPlanning = String(townPlanningRaw).trim();
+    const townPlanningOk =
+      townPlanning === "Not Required" ||
+      townPlanning === "Completed" ||
+      townPlanning === "N/A" ||
+      townPlanning === "No Planning Required" ||
+      townPlanning === "Planning Permit Issued";
+    if (!townPlanningOk) return false;
 
     // Check energy report status - must be "Complete"
     const energyReportStatus = project?.energy_report_status || "Not Submitted";
@@ -606,9 +616,11 @@ export default function Overview({ project }) {
     const footingCertificationStatus = project?.footing_certification_status || "Not Submitted";
     if (footingCertificationStatus !== "Complete") return false;
 
-    // Check building permit status - must be "Complete"
-    const buildingPermitStatus = project?.building_permit_status || "Not Submitted";
-    if (buildingPermitStatus !== "Complete") return false;
+    // Check building permit status - must be Completed
+    const buildingPermitRaw = project?.building_permit_status || "Not Submitted";
+    const buildingPermitStatus =
+      buildingPermitRaw === "Complete" ? "Completed" : buildingPermitRaw === "Sent" ? "Submitted" : buildingPermitRaw;
+    if (buildingPermitStatus !== "Completed") return false;
 
     // All checks passed
     return true;
