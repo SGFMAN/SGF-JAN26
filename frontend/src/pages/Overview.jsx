@@ -511,26 +511,35 @@ export default function Overview({ project }) {
     return indicatorRed();
   }
 
-  function getEnergyReportStatusIndicator() {
-    const status = project?.energy_report_status || "Not Submitted";
-    if (status === "Complete") return indicatorGreen();
-    if (status === "Sent") return indicatorOrange();
+  function stampHasDate(value) {
+    return value != null && String(value).trim() !== "";
+  }
+
+  function getRequestedReceivedIndicatorFromStamps(requestedAt, receivedAt) {
+    if (stampHasDate(requestedAt) && stampHasDate(receivedAt)) return indicatorGreen();
+    if (stampHasDate(requestedAt)) return indicatorOrange();
     return indicatorRed();
+  }
+
+  function getEnergyReportStatusIndicator() {
+    return getRequestedReceivedIndicatorFromStamps(
+      project?.planning_energy_report_requested_at,
+      project?.planning_energy_report_received_at
+    );
   }
 
   function getFootingCertificationStatusIndicator() {
-    const status = project?.footing_certification_status || "Not Submitted";
-    if (status === "Complete") return indicatorGreen();
-    if (status === "Sent") return indicatorOrange();
-    return indicatorRed();
+    return getRequestedReceivedIndicatorFromStamps(
+      project?.planning_footing_certification_requested_at,
+      project?.planning_footing_certification_received_at
+    );
   }
 
   function getBuildingPermitStatusIndicator() {
-    const raw = project?.building_permit_status || "Not Submitted";
-    const status = raw === "Sent" ? "Submitted" : raw === "Complete" ? "Completed" : raw;
-    if (status === "Completed") return indicatorGreen();
-    if (status === "Submitted") return indicatorOrange();
-    return indicatorRed();
+    return getRequestedReceivedIndicatorFromStamps(
+      project?.planning_building_permit_requested_at,
+      project?.planning_building_permit_received_at
+    );
   }
 
   function getPicStatusIndicator() {
@@ -608,19 +617,30 @@ export default function Overview({ project }) {
       townPlanning === "Planning Permit Issued";
     if (!townPlanningOk) return false;
 
-    // Check energy report status - must be "Complete"
-    const energyReportStatus = project?.energy_report_status || "Not Submitted";
-    if (energyReportStatus !== "Complete") return false;
-
-    // Check footing certification status - must be "Complete"
-    const footingCertificationStatus = project?.footing_certification_status || "Not Submitted";
-    if (footingCertificationStatus !== "Complete") return false;
-
-    // Check building permit status - must be Completed
-    const buildingPermitRaw = project?.building_permit_status || "Not Submitted";
-    const buildingPermitStatus =
-      buildingPermitRaw === "Complete" ? "Completed" : buildingPermitRaw === "Sent" ? "Submitted" : buildingPermitRaw;
-    if (buildingPermitStatus !== "Completed") return false;
+    // Energy / footing / building permit: must have both requested and received stamps
+    const stampDone = (requestedAt, receivedAt) =>
+      requestedAt != null &&
+      String(requestedAt).trim() !== "" &&
+      receivedAt != null &&
+      String(receivedAt).trim() !== "";
+    if (
+      !stampDone(project?.planning_energy_report_requested_at, project?.planning_energy_report_received_at)
+    ) {
+      return false;
+    }
+    if (
+      !stampDone(
+        project?.planning_footing_certification_requested_at,
+        project?.planning_footing_certification_received_at
+      )
+    ) {
+      return false;
+    }
+    if (
+      !stampDone(project?.planning_building_permit_requested_at, project?.planning_building_permit_received_at)
+    ) {
+      return false;
+    }
 
     // All checks passed
     return true;

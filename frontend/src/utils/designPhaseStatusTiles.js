@@ -1,9 +1,6 @@
 import { STREAM, INDICATOR, UI } from "./uiThemeTokens.js";
 import { getOverviewIndicatorStyle } from "./uiButtonStyles.js";
-import {
-  normalizeBuildingPermit,
-  normalizePlanningStatus,
-} from "../constants/planningStatusFields.js";
+import { normalizePlanningStatus } from "../constants/planningStatusFields.js";
 
 const PAGE_TEXT = UI.pageText;
 
@@ -151,30 +148,63 @@ function getTownPlanningStatusIndicator(project) {
   return indicatorRed();
 }
 
-function getEnergyReportStatusIndicator(project) {
-  const status = field(project, "energy_report_status", "energyReportStatus") || "Not Submitted";
-  if (status === "Complete") return indicatorGreen();
-  if (status === "Sent") return indicatorOrange();
+/** Stamp-based statuses: no requested → red; requested only → orange; requested+received → green. */
+function hasStampDate(value) {
+  return value != null && String(value).trim() !== "";
+}
+
+function getRequestedReceivedLabel(requestedAt, receivedAt) {
+  if (hasStampDate(requestedAt) && hasStampDate(receivedAt)) return "Received";
+  if (hasStampDate(requestedAt)) return "Requested";
+  return "Not Requested";
+}
+
+function getRequestedReceivedIndicator(requestedAt, receivedAt) {
+  if (hasStampDate(requestedAt) && hasStampDate(receivedAt)) return indicatorGreen();
+  if (hasStampDate(requestedAt)) return indicatorOrange();
   return indicatorRed();
+}
+
+function getEnergyReportStatus(project) {
+  return getRequestedReceivedLabel(
+    field(project, "planning_energy_report_requested_at", "planningEnergyReportRequestedAt"),
+    field(project, "planning_energy_report_received_at", "planningEnergyReportReceivedAt")
+  );
+}
+
+function getEnergyReportStatusIndicator(project) {
+  return getRequestedReceivedIndicator(
+    field(project, "planning_energy_report_requested_at", "planningEnergyReportRequestedAt"),
+    field(project, "planning_energy_report_received_at", "planningEnergyReportReceivedAt")
+  );
+}
+
+function getFootingCertificationStatus(project) {
+  return getRequestedReceivedLabel(
+    field(project, "planning_footing_certification_requested_at", "planningFootingCertificationRequestedAt"),
+    field(project, "planning_footing_certification_received_at", "planningFootingCertificationReceivedAt")
+  );
 }
 
 function getFootingCertificationStatusIndicator(project) {
-  const status =
-    field(project, "footing_certification_status", "footingCertificationStatus") || "Not Submitted";
-  if (status === "Complete") return indicatorGreen();
-  if (status === "Sent") return indicatorOrange();
-  return indicatorRed();
+  return getRequestedReceivedIndicator(
+    field(project, "planning_footing_certification_requested_at", "planningFootingCertificationRequestedAt"),
+    field(project, "planning_footing_certification_received_at", "planningFootingCertificationReceivedAt")
+  );
 }
 
 function getBuildingPermitStatus(project) {
-  return normalizeBuildingPermit(field(project, "building_permit_status", "buildingPermitStatus"));
+  return getRequestedReceivedLabel(
+    field(project, "planning_building_permit_requested_at", "planningBuildingPermitRequestedAt"),
+    field(project, "planning_building_permit_received_at", "planningBuildingPermitReceivedAt")
+  );
 }
 
 function getBuildingPermitStatusIndicator(project) {
-  const status = getBuildingPermitStatus(project);
-  if (status === "Completed") return indicatorGreen();
-  if (status === "Submitted") return indicatorOrange();
-  return indicatorRed();
+  return getRequestedReceivedIndicator(
+    field(project, "planning_building_permit_requested_at", "planningBuildingPermitRequestedAt"),
+    field(project, "planning_building_permit_received_at", "planningBuildingPermitReceivedAt")
+  );
 }
 
 function getPicStatusIndicator(project) {
@@ -269,15 +299,14 @@ export function buildDesignPhaseStatusTiles(project) {
     {
       key: "energy",
       label: "Energy Report",
-      value: field(project, "energy_report_status", "energyReportStatus") || "Not Submitted",
+      value: getEnergyReportStatus(project),
       indicatorStyle: getEnergyReportStatusIndicator(project),
       view: "planning",
     },
     {
       key: "footing",
       label: "Footing Certification",
-      value:
-        field(project, "footing_certification_status", "footingCertificationStatus") || "Not Submitted",
+      value: getFootingCertificationStatus(project),
       indicatorStyle: getFootingCertificationStatusIndicator(project),
       view: "planning",
     },

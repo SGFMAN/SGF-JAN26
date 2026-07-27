@@ -5,14 +5,18 @@ import { portalProjectPath, projectPath } from "../utils/projectUrl";
 import { isSecretAreaProject, unlockSecretAreaSession } from "../utils/secretAreaProject";
 import SiteVisit from "./SiteVisit";
 import {
-  BUILDING_PERMIT_OPTIONS,
   PLANNING_STATUS_OPTIONS,
-  normalizeBuildingPermit,
+  SPECS_ADDED_OPTIONS,
   normalizePlanningStatus,
+  normalizeSpecsAdded,
   showPlanningStampControls,
 } from "../constants/planningStatusFields.js";
 
 import { UI } from "../utils/uiThemeTokens.js";
+import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
+
+const REQUESTED_BUTTON_STYLE_ID = 1;
+const RECEIVED_BUTTON_STYLE_ID = 5;
 const MONUMENT = UI.textPrimary;
 const TILE_BLUE = "#63a7e8";
 const WHITE = UI.cardBg;
@@ -173,21 +177,43 @@ function energySpecsAddedToPlansFromProject(project) {
   return ENERGY_SPECS_OPTIONS.includes(t) ? t : "Not Completed";
 }
 
-function RequestedReceivedControls({
-  requestedAt,
-  receivedAt,
-  onRequested,
-  onReceived,
-  disabled,
-  maxWidth = "520px",
-}) {
-  const buttonStyle = {
+function mergeStampButtonStyle(styleId, disabled) {
+  const fallback = {
     border: "none",
     background: MONUMENT,
     color: PAGE_TEXT,
     borderRadius: "8px",
     padding: "8px 16px",
     fontSize: "0.95rem",
+    fontWeight: 500,
+  };
+  const saved = buildSavedButtonStyle(styleId, true);
+  return {
+    ...(saved || fallback),
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.65 : 1,
+  };
+}
+
+function RequestedReceivedControls({
+  requestedAt,
+  receivedAt,
+  onRequested,
+  onReceived,
+  onClearRequested,
+  onClearReceived,
+  disabled,
+  maxWidth = "520px",
+}) {
+  const requestedStyle = mergeStampButtonStyle(REQUESTED_BUTTON_STYLE_ID, disabled);
+  const receivedStyle = mergeStampButtonStyle(RECEIVED_BUTTON_STYLE_ID, disabled);
+  const clearStyle = {
+    border: "1px solid #ddd",
+    background: WHITE,
+    color: MONUMENT,
+    borderRadius: "6px",
+    padding: "4px 8px",
+    fontSize: "0.75rem",
     fontWeight: 500,
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.65 : 1,
@@ -211,16 +237,34 @@ function RequestedReceivedControls({
       }}
     >
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
-        <button type="button" onClick={onRequested} disabled={disabled} style={buttonStyle}>
+        <button type="button" onClick={onRequested} disabled={disabled} style={requestedStyle}>
           Requested
         </button>
-        {requestedAt ? <div style={textStyle}>{formatWrittenAdviceDateTime(requestedAt)}</div> : null}
+        {requestedAt ? (
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
+            <div style={textStyle}>{formatWrittenAdviceDateTime(requestedAt)}</div>
+            {typeof onClearRequested === "function" ? (
+              <button type="button" onClick={onClearRequested} disabled={disabled} style={clearStyle} title="Clear date">
+                Clear
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
-        <button type="button" onClick={onReceived} disabled={disabled} style={buttonStyle}>
+        <button type="button" onClick={onReceived} disabled={disabled} style={receivedStyle}>
           Received
         </button>
-        {receivedAt ? <div style={textStyle}>{formatWrittenAdviceDateTime(receivedAt)}</div> : null}
+        {receivedAt ? (
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
+            <div style={textStyle}>{formatWrittenAdviceDateTime(receivedAt)}</div>
+            {typeof onClearReceived === "function" ? (
+              <button type="button" onClick={onClearReceived} disabled={disabled} style={clearStyle} title="Clear date">
+                Clear
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -735,6 +779,14 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
     void saveField("planning_town_planning_received_at", new Date().toISOString());
   }
 
+  function handleTownPlanningStampClearRequested() {
+    void saveField("planning_town_planning_requested_at", null);
+  }
+
+  function handleTownPlanningStampClearReceived() {
+    void saveField("planning_town_planning_received_at", null);
+  }
+
   const landFloodingRegulation = landFloodingRegulationFromProject(project);
 
   async function handleLandFloodingRegulationChange(e) {
@@ -792,11 +844,34 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
     void saveField("planning_bal_received_at", new Date().toISOString());
   }
 
-  const buildingPermitStatus = normalizeBuildingPermit(project?.building_permit_status);
+  function handleBalStampClearRequested() {
+    void saveField("planning_bal_requested_at", null);
+  }
 
-  async function handleBuildingPermitStatusChange(e) {
-    const next = normalizeBuildingPermit(e.target.value);
-    await saveField("building_permit_status", next);
+  function handleBalStampClearReceived() {
+    void saveField("planning_bal_received_at", null);
+  }
+
+  const balSpecsAddedToPlans = normalizeSpecsAdded(project?.planning_bal_specs_added_to_plans);
+
+  async function handleBalSpecsAddedToPlansChange(e) {
+    await saveField("planning_bal_specs_added_to_plans", normalizeSpecsAdded(e.target.value));
+  }
+
+  function handleBuildingPermitStampRequested() {
+    void saveField("planning_building_permit_requested_at", new Date().toISOString());
+  }
+
+  function handleBuildingPermitStampReceived() {
+    void saveField("planning_building_permit_received_at", new Date().toISOString());
+  }
+
+  function handleBuildingPermitStampClearRequested() {
+    void saveField("planning_building_permit_requested_at", null);
+  }
+
+  function handleBuildingPermitStampClearReceived() {
+    void saveField("planning_building_permit_received_at", null);
   }
 
   function handleFootingCertificationStampRequested() {
@@ -807,12 +882,28 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
     void saveField("planning_footing_certification_received_at", new Date().toISOString());
   }
 
+  function handleFootingCertificationStampClearRequested() {
+    void saveField("planning_footing_certification_requested_at", null);
+  }
+
+  function handleFootingCertificationStampClearReceived() {
+    void saveField("planning_footing_certification_received_at", null);
+  }
+
   function handleEnergyReportStampRequested() {
     void saveField("planning_energy_report_requested_at", new Date().toISOString());
   }
 
   function handleEnergyReportStampReceived() {
     void saveField("planning_energy_report_received_at", new Date().toISOString());
+  }
+
+  function handleEnergyReportStampClearRequested() {
+    void saveField("planning_energy_report_requested_at", null);
+  }
+
+  function handleEnergyReportStampClearReceived() {
+    void saveField("planning_energy_report_received_at", null);
   }
 
   const energySpecsAddedToPlans = energySpecsAddedToPlansFromProject(project);
@@ -1795,6 +1886,8 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                         receivedAt={project?.planning_town_planning_received_at}
                         onRequested={handleTownPlanningStampRequested}
                         onReceived={handleTownPlanningStampReceived}
+                        onClearRequested={handleTownPlanningStampClearRequested}
+                        onClearReceived={handleTownPlanningStampClearReceived}
                         disabled={!project?.id || isSaving}
                       />
                     ) : null}
@@ -2139,8 +2232,48 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                         receivedAt={project?.planning_bal_received_at}
                         onRequested={handleBalStampRequested}
                         onReceived={handleBalStampReceived}
+                        onClearRequested={handleBalStampClearRequested}
+                        onClearReceived={handleBalStampClearReceived}
                         disabled={!project?.id || isSaving}
                       />
+                    ) : null}
+                    {showPlanningStampControls(balStatus) ? (
+                      <div>
+                        <label
+                          htmlFor="bal-specs-added-select"
+                          style={{
+                            display: "block",
+                            fontSize: "0.9rem",
+                            color: UI.textMuted,
+                            marginBottom: "6px",
+                            fontWeight: 500,
+                          }}
+                        >
+                          BAL Specs Added to Plans
+                        </label>
+                        <select
+                          id="bal-specs-added-select"
+                          value={balSpecsAddedToPlans}
+                          onChange={handleBalSpecsAddedToPlansChange}
+                          disabled={!project?.id || isSaving}
+                          style={{
+                            width: "100%",
+                            padding: "10px 12px",
+                            borderRadius: "8px",
+                            border: "1px solid #ddd",
+                            fontSize: "1rem",
+                            color: MONUMENT,
+                            background: WHITE,
+                            boxSizing: "border-box",
+                          }}
+                        >
+                          {SPECS_ADDED_OPTIONS.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     ) : null}
                   </div>
                 </div>
@@ -2151,42 +2284,15 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                   <h3 id="building-permit-title" style={{ margin: "0 0 16px 0", color: MONUMENT, fontSize: "1.1rem" }}>
                     Building Permit
                   </h3>
-                  <div style={{ maxWidth: "320px" }}>
-                    <label
-                      htmlFor="building-permit-select"
-                      style={{
-                        display: "block",
-                        fontSize: "0.9rem",
-                        color: UI.textMuted,
-                        marginBottom: "6px",
-                        fontWeight: 500,
-                      }}
-                    >
-                      Status
-                    </label>
-                    <select
-                      id="building-permit-select"
-                      value={buildingPermitStatus}
-                      onChange={handleBuildingPermitStatusChange}
-                      disabled={!project?.id || isSaving}
-                      style={{
-                        width: "100%",
-                        padding: "10px 12px",
-                        borderRadius: "8px",
-                        border: "1px solid #ddd",
-                        fontSize: "1rem",
-                        color: MONUMENT,
-                        background: WHITE,
-                        boxSizing: "border-box",
-                      }}
-                    >
-                      {BUILDING_PERMIT_OPTIONS.map((opt) => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <RequestedReceivedControls
+                    requestedAt={project?.planning_building_permit_requested_at}
+                    receivedAt={project?.planning_building_permit_received_at}
+                    onRequested={handleBuildingPermitStampRequested}
+                    onReceived={handleBuildingPermitStampReceived}
+                    onClearRequested={handleBuildingPermitStampClearRequested}
+                    onClearReceived={handleBuildingPermitStampClearReceived}
+                    disabled={!project?.id || isSaving}
+                  />
                 </div>
               )}
 
@@ -2200,6 +2306,8 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                     receivedAt={project?.planning_footing_certification_received_at}
                     onRequested={handleFootingCertificationStampRequested}
                     onReceived={handleFootingCertificationStampReceived}
+                    onClearRequested={handleFootingCertificationStampClearRequested}
+                    onClearReceived={handleFootingCertificationStampClearReceived}
                     disabled={!project?.id || isSaving}
                   />
                 </div>
@@ -2217,6 +2325,8 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                         receivedAt={project?.planning_energy_report_received_at}
                         onRequested={handleEnergyReportStampRequested}
                         onReceived={handleEnergyReportStampReceived}
+                        onClearRequested={handleEnergyReportStampClearRequested}
+                        onClearReceived={handleEnergyReportStampClearReceived}
                         disabled={!project?.id || isSaving}
                       />
                     </div>

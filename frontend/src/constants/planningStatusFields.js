@@ -2,6 +2,7 @@
 
 export const PLANNING_STATUS_OPTIONS = ["Not Selected", "Not Required", "Required", "Completed"];
 export const BUILDING_PERMIT_OPTIONS = ["Not Submitted", "Submitted", "Completed"];
+export const SPECS_ADDED_OPTIONS = ["Not Completed", "Completed"];
 
 export function normalizePlanningStatus(value) {
   const t = value != null ? String(value).trim() : "";
@@ -17,6 +18,11 @@ export function normalizeBuildingPermit(value) {
   if (t === "Sent") return "Submitted";
   if (t === "Complete") return "Completed";
   return "Not Submitted";
+}
+
+export function normalizeSpecsAdded(value) {
+  const t = value != null ? String(value).trim() : "";
+  return t === "Completed" ? "Completed" : "Not Completed";
 }
 
 export function showPlanningStampControls(status) {
