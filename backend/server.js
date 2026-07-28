@@ -5210,18 +5210,34 @@ function sanitizePlanningManagerNumberArray(raw, expectedLength, minValue) {
   return next.every((n) => n != null) ? next : null;
 }
 
+function sanitizePlanningManagerProjectOrder(raw) {
+  if (!Array.isArray(raw)) return null;
+  const out = [];
+  const seen = new Set();
+  for (const v of raw) {
+    const n = Number(v);
+    if (!Number.isFinite(n) || seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+    if (out.length >= 5000) break;
+  }
+  return out.length ? out : null;
+}
+
 function parsePlanningManagerLayoutColumn(raw) {
   let obj = raw;
-  if (obj == null || obj === "") return { colWidths: null, rowHeights: null, rowsCustomized: false };
+  if (obj == null || obj === "") {
+    return { colWidths: null, rowHeights: null, rowsCustomized: false, projectOrder: null };
+  }
   if (typeof obj === "string") {
     try {
       obj = JSON.parse(obj);
     } catch {
-      return { colWidths: null, rowHeights: null, rowsCustomized: false };
+      return { colWidths: null, rowHeights: null, rowsCustomized: false, projectOrder: null };
     }
   }
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
-    return { colWidths: null, rowHeights: null, rowsCustomized: false };
+    return { colWidths: null, rowHeights: null, rowsCustomized: false, projectOrder: null };
   }
   const colWidths = sanitizePlanningManagerNumberArray(
     obj.colWidths,
@@ -5236,10 +5252,12 @@ function parsePlanningManagerLayoutColumn(raw) {
         PLANNING_MANAGER_MIN_ROW_HEIGHT
       )
     : null;
+  const projectOrder = sanitizePlanningManagerProjectOrder(obj.projectOrder);
   return {
     colWidths,
     rowHeights,
     rowsCustomized: Boolean(rowHeights),
+    projectOrder,
   };
 }
 
@@ -5249,6 +5267,8 @@ function normalizePlanningManagerLayout(body) {
     colWidths: parsed.colWidths,
     rowsCustomized: parsed.rowsCustomized,
     rowHeights: parsed.rowsCustomized ? parsed.rowHeights : undefined,
+    projectOrder: parsed.projectOrder,
+    projectOrderProvided: Array.isArray(body?.projectOrder),
   };
 }
 
@@ -5277,7 +5297,8 @@ app.put("/api/planning-manager-layout", async (req, res) => {
   }
   try {
     const body = req.body && typeof req.body === "object" ? req.body : {};
-    const incoming = normalizePlanningManagerLayout(body.layout ?? body);
+    const layoutBody = body.layout && typeof body.layout === "object" ? body.layout : body;
+    const incoming = normalizePlanningManagerLayout(layoutBody);
     const existingRow = await pool.query(
       "SELECT planning_manager_layout_json FROM settings WHERE id = 1"
     );
@@ -5291,13 +5312,17 @@ app.put("/api/planning-manager-layout", async (req, res) => {
     const rowHeights = incoming.rowsCustomized
       ? incoming.rowHeights
       : existing.rowHeights;
-    if (!colWidths && !rowsCustomized) {
+    const projectOrder = Object.prototype.hasOwnProperty.call(layoutBody, "projectOrder")
+      ? sanitizePlanningManagerProjectOrder(layoutBody.projectOrder)
+      : existing.projectOrder;
+    if (!colWidths && !rowsCustomized && !projectOrder) {
       return res.status(400).json({ error: "Invalid planning manager layout" });
     }
     const json = JSON.stringify({
       colWidths,
       rowsCustomized,
       rowHeights: rowsCustomized ? rowHeights : undefined,
+      projectOrder: projectOrder || undefined,
     });
     await pool.query(
       `INSERT INTO settings (id, planning_manager_layout_json, updated_at)

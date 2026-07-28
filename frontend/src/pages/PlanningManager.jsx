@@ -210,13 +210,54 @@ function sanitizeRowHeights(raw) {
   return next.every((n) => n != null) ? next : null;
 }
 
+function sanitizeProjectOrder(raw) {
+  if (!Array.isArray(raw)) return null;
+  const out = [];
+  const seen = new Set();
+  for (const v of raw) {
+    const n = Number(v);
+    if (!Number.isFinite(n) || seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+  }
+  return out.length ? out : null;
+}
+
 function normalizeLayoutPayload(raw) {
   if (!raw || typeof raw !== "object") return null;
   const colWidths = sanitizeColWidths(raw.colWidths);
   const rowsCustomized = Boolean(raw.rowsCustomized);
   const rowHeights = rowsCustomized ? sanitizeRowHeights(raw.rowHeights) : null;
-  if (!colWidths && !rowHeights) return null;
-  return { colWidths, rowHeights, rowsCustomized: Boolean(rowHeights) };
+  const projectOrder = sanitizeProjectOrder(raw.projectOrder);
+  if (!colWidths && !rowHeights && !projectOrder) return null;
+  return {
+    colWidths,
+    rowHeights,
+    rowsCustomized: Boolean(rowHeights),
+    projectOrder,
+  };
+}
+
+function applyProjectOrder(list, projectOrder) {
+  const items = Array.isArray(list) ? [...list] : [];
+  const alphaSort = (a, b) =>
+    projectLabel(a).localeCompare(projectLabel(b), undefined, { sensitivity: "base" });
+  if (!projectOrder?.length) {
+    items.sort(alphaSort);
+    return items;
+  }
+  const byId = new Map(items.map((p) => [Number(p.id), p]));
+  const ordered = [];
+  const used = new Set();
+  for (const id of projectOrder) {
+    const p = byId.get(Number(id));
+    if (!p || used.has(p.id)) continue;
+    ordered.push(p);
+    used.add(p.id);
+  }
+  const rest = items.filter((p) => !used.has(p.id));
+  rest.sort(alphaSort);
+  return [...ordered, ...rest];
 }
 
 async function fetchSharedLayout() {
@@ -228,12 +269,15 @@ async function fetchSharedLayout() {
   return normalizeLayoutPayload(data.layout);
 }
 
-async function persistSharedLayout(colWidths, rowHeights, rowsCustomized) {
+async function persistSharedLayout(colWidths, rowHeights, rowsCustomized, projectOrder) {
   const layout = {
     colWidths,
     rowsCustomized: Boolean(rowsCustomized),
     rowHeights: rowsCustomized ? rowHeights : undefined,
   };
+  if (projectOrder !== undefined) {
+    layout.projectOrder = projectOrder;
+  }
   const res = await fetch(`${API_URL}/api/planning-manager-layout`, {
     method: "PUT",
     headers: getApiHeaders(),
@@ -287,6 +331,11 @@ export default function PlanningManager() {
   const [draftspersonUsers, setDraftspersonUsers] = useState([]);
   const [draftspersonMenu, setDraftspersonMenu] = useState(null); // { projectId, top, left, width }
   const [sheetCells, setSheetCells] = useState({}); // { [projectId]: { [colIndex]: value } }
+  const [projectDrag, setProjectDrag] = useState(null); // { fromIndex, toIndex } | null
+  const projectOrderRef = useRef(null);
+  const projectDragRef = useRef(null);
+  const projectsRef = useRef(projects);
+  projectsRef.current = projects;
 
   const resizeRef = useRef(null);
   const userResizedRowsRef = useRef(false);
@@ -299,7 +348,12 @@ export default function PlanningManager() {
   const queueSaveLayout = useCallback((nextCols, nextRows, rowsCustomized) => {
     if (saveLayoutTimerRef.current) clearTimeout(saveLayoutTimerRef.current);
     saveLayoutTimerRef.current = setTimeout(() => {
-      persistSharedLayout(nextCols, nextRows, rowsCustomized).catch((err) => {
+      persistSharedLayout(
+        nextCols,
+        nextRows,
+        rowsCustomized,
+        projectOrderRef.current ?? undefined
+      ).catch((err) => {
         console.error("Failed to save planning manager layout:", err);
       });
     }, 250);
@@ -384,10 +438,9 @@ export default function PlanningManager() {
           const state = String(p?.state || "").trim().toUpperCase();
           return state === "VIC" || state === "VICTORIA";
         });
-        list.sort((a, b) =>
-          projectLabel(a).localeCompare(projectLabel(b), undefined, { sensitivity: "base" })
-        );
-        setProjects(list);
+        const ordered = applyProjectOrder(list, layout?.projectOrder);
+        projectOrderRef.current = ordered.map((p) => p.id);
+        setProjects(ordered);
         setSheetCells(cells && typeof cells === "object" ? cells : {});
         if (layout?.colWidths) setColWidths(layout.colWidths);
         if (layout?.rowsCustomized && layout.rowHeights) {
@@ -455,6 +508,8 @@ export default function PlanningManager() {
     }
     return offsets;
   }, [rowHeights, baseRowHeight]);
+  const rowOffsetsRef = useRef(rowOffsets);
+  rowOffsetsRef.current = rowOffsets;
 
   const totalWidth = colOffsets[COL_COUNT];
   const totalHeight = rowOffsets[ROW_COUNT];
@@ -605,6 +660,75 @@ export default function PlanningManager() {
     }
   }
 
+  function reorderProject(fromIndex, toIndex) {
+    const list = projectsRef.current;
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= list.length ||
+      toIndex >= list.length
+    ) {
+      return;
+    }
+    const next = [...list];
+    const [item] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, item);
+    projectOrderRef.current = next.map((p) => Number(p.id));
+    setProjects(next);
+    queueSaveLayout(
+      colWidthsRef.current,
+      rowHeightsRef.current,
+      userResizedRowsRef.current
+    );
+  }
+
+  function projectIndexAtClientY(clientY) {
+    const viewport = sheetViewportRef.current;
+    const count = projectsRef.current.length;
+    if (!viewport || count <= 0) return null;
+    const rect = viewport.getBoundingClientRect();
+    const colW = colWidthsRef.current?.[0] || DEFAULT_COL_WIDTH;
+    // Always sample inside column A so horizontal mouse drift never targets other cols.
+    const sampleX = rect.left + ROW_HEADER_WIDTH + Math.min(20, Math.max(4, colW / 2));
+    const hits = document.elementsFromPoint(sampleX, clientY);
+    for (const el of hits) {
+      const node = el.closest?.("[data-project-index]");
+      if (!node || !viewport.contains(node)) continue;
+      const idx = Number(node.getAttribute("data-project-index"));
+      if (Number.isFinite(idx) && idx >= 0 && idx < count) return idx;
+    }
+    const yInBody = viewport.scrollTop + (clientY - rect.top) - COL_HEADER_HEIGHT;
+    const offsets = rowOffsetsRef.current;
+    const firstRow = DATA_START_ROW;
+    const lastRow = DATA_START_ROW + count - 1;
+    if (yInBody < offsets[firstRow]) return 0;
+    if (yInBody >= offsets[lastRow + 1]) return count - 1;
+    let lo = firstRow;
+    let hi = lastRow;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (yInBody < offsets[mid]) hi = mid - 1;
+      else if (yInBody >= offsets[mid + 1]) lo = mid + 1;
+      else return mid - DATA_START_ROW;
+    }
+    return Math.max(0, Math.min(count - 1, lo - DATA_START_ROW));
+  }
+
+  function startProjectDrag(projectIndex, e) {
+    if (e.button !== 0 || projects.length <= 1) return;
+    if (projectIndex < 0 || projectIndex >= projects.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    selectCell(DATA_START_ROW + projectIndex, 0);
+    projectDragRef.current = {
+      fromIndex: projectIndex,
+      startY: e.clientY,
+      dragging: false,
+      toIndex: projectIndex,
+    };
+  }
+
   async function stampDateOnCell(rowIndex, colIndex) {
     if (rowIndex < DATA_START_ROW || colIndex < 2) return;
     const projectIndex = rowIndex - DATA_START_ROW;
@@ -690,6 +814,31 @@ export default function PlanningManager() {
 
   useEffect(() => {
     function onMove(e) {
+      const drag = projectDragRef.current;
+      if (drag) {
+        // Vertical-only: ignore horizontal movement entirely.
+        if (!drag.dragging && Math.abs(e.clientY - drag.startY) >= 5) {
+          drag.dragging = true;
+          setProjectDrag({ fromIndex: drag.fromIndex, toIndex: drag.fromIndex });
+        }
+        if (drag.dragging) {
+          const toIndex = projectIndexAtClientY(e.clientY);
+          if (toIndex != null && toIndex !== drag.toIndex) {
+            drag.toIndex = toIndex;
+            setProjectDrag({ fromIndex: drag.fromIndex, toIndex });
+          }
+          const viewport = sheetViewportRef.current;
+          if (viewport) {
+            const rect = viewport.getBoundingClientRect();
+            const edge = 40;
+            const topLimit = rect.top + COL_HEADER_HEIGHT + edge;
+            if (e.clientY < topLimit) viewport.scrollTop -= 14;
+            else if (e.clientY > rect.bottom - edge) viewport.scrollTop += 14;
+          }
+        }
+        return;
+      }
+
       const active = resizeRef.current;
       if (!active) return;
       if (active.type === "col") {
@@ -711,6 +860,16 @@ export default function PlanningManager() {
       }
     }
     function onUp(e) {
+      const drag = projectDragRef.current;
+      if (drag) {
+        if (drag.dragging && drag.toIndex !== drag.fromIndex) {
+          reorderProject(drag.fromIndex, drag.toIndex);
+        }
+        projectDragRef.current = null;
+        setProjectDrag(null);
+        return;
+      }
+
       const active = resizeRef.current;
       if (!active) return;
       if (active.type === "col") {
@@ -735,9 +894,11 @@ export default function PlanningManager() {
     }
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
     return () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
     };
   }, [queueSaveLayout]);
 
@@ -1192,9 +1353,20 @@ export default function PlanningManager() {
                     </div>
 
                     {/* Frozen column A */}
+                    {(() => {
+                      const projectIndex = rowIndex - DATA_START_ROW;
+                      const addressText = cellValue(rowIndex, 0);
+                      const isDragging = projectDrag?.fromIndex === projectIndex;
+                      const isDropTarget =
+                        projectDrag &&
+                        projectDrag.toIndex === projectIndex &&
+                        projectDrag.fromIndex !== projectIndex;
+                      return (
                     <div
-                      title={cellValue(rowIndex, 0) || undefined}
+                      title={addressText ? `${addressText} (drag to reorder)` : "Drag to reorder"}
+                      data-project-index={projectIndex}
                       onClick={(e) => selectCell(rowIndex, 0, e)}
+                      onPointerDown={(e) => startProjectDrag(projectIndex, e)}
                       style={{
                         position: "sticky",
                         left: ROW_HEADER_WIDTH,
@@ -1203,7 +1375,9 @@ export default function PlanningManager() {
                         minWidth: colWidths[0],
                         height: h,
                         borderRight: `1px solid ${GRID_LINE}`,
-                        borderBottom: `1px solid ${GRID_LINE}`,
+                        borderBottom: isDropTarget
+                          ? `2px solid ${HEADING_BLUE}`
+                          : `1px solid ${GRID_LINE}`,
                         boxSizing: "border-box",
                         padding: "0 6px 2px",
                         display: "flex",
@@ -1220,11 +1394,15 @@ export default function PlanningManager() {
                         background: COL_A_FILL,
                         boxShadow: isSelected(rowIndex, 0) ? SELECTION_OUTLINE : undefined,
                         flexShrink: 0,
-                        cursor: "cell",
+                        cursor: projectDrag ? "grabbing" : "grab",
+                        opacity: isDragging ? 0.45 : 1,
+                        touchAction: "none",
                       }}
                     >
-                      {cellValue(rowIndex, 0)}
+                      {addressText}
                     </div>
+                      );
+                    })()}
 
                     {colStart > 1 ? (
                       <div style={{ width: colOffsets[colStart] - colOffsets[1], flexShrink: 0 }} />
