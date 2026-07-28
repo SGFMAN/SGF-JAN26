@@ -317,12 +317,24 @@ function normalizeLayoutPayload(raw) {
   };
 }
 
+function projectStartDateKey(project) {
+  if (project?.year == null || project.year === "") return "9999-99-99";
+  const y = String(project.year).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(y)) return y.slice(0, 10);
+  if (/^\d{4}$/.test(y)) return `${y}-01-01`;
+  return "9999-99-99";
+}
+
 function applyProjectOrder(list, projectOrder) {
   const items = Array.isArray(list) ? [...list] : [];
-  const alphaSort = (a, b) =>
-    projectLabel(a).localeCompare(projectLabel(b), undefined, { sensitivity: "base" });
+  // Tabs without a saved order (everything except the already-ordered VIC 2025 list) sort by start date.
+  const dateSort = (a, b) => {
+    const byDate = projectStartDateKey(a).localeCompare(projectStartDateKey(b));
+    if (byDate !== 0) return byDate;
+    return projectLabel(a).localeCompare(projectLabel(b), undefined, { sensitivity: "base" });
+  };
   if (!projectOrder?.length) {
-    items.sort(alphaSort);
+    items.sort(dateSort);
     return items;
   }
   const byId = new Map(items.map((p) => [Number(p.id), p]));
@@ -335,7 +347,7 @@ function applyProjectOrder(list, projectOrder) {
     used.add(p.id);
   }
   const rest = items.filter((p) => !used.has(p.id));
-  rest.sort(alphaSort);
+  rest.sort(dateSort);
   return [...ordered, ...rest];
 }
 
