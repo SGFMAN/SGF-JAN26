@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { isUserAdmin, getApiHeaders } from "../utils/auth";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { UI } from "../utils/uiThemeTokens.js";
@@ -10,6 +10,7 @@ import {
   isDraftspersonAssigned,
 } from "../utils/draftspersonSentinel";
 import { isHotlistStatus, isCancelledStatus, isOnHoldFlag } from "../utils/projectStatus";
+import { projectPath } from "../utils/projectUrl";
 import {
   getPlanningManagerColMapping,
   formatPlanningManagerSheetDate,
@@ -37,7 +38,7 @@ const SELECTION_OUTLINE = `inset 0 0 0 2px ${HEADING_BLUE}`;
 const API_URL = "";
 
 const COL_COUNT = 78; // A–BZ
-const ROW_COUNT = 500;
+const ROW_COUNT = 200;
 const VISIBLE_ROWS = 23;
 const DATA_START_ROW = 2; // row 1 = titles; row 2 reserved for Sent/Received later
 const ROW_HEADER_WIDTH = 48;
@@ -236,18 +237,83 @@ function sanitizeProjectOrder(raw) {
   return out.length ? out : null;
 }
 
+function sanitizeProjectOrders(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const out = {};
+  for (const [key, val] of Object.entries(raw)) {
+    const k = String(key || "").trim();
+    if (!k) continue;
+    const order = sanitizeProjectOrder(val);
+    if (order) out[k] = order;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+function sanitizeActiveTab(raw) {
+  const s = String(raw || "").trim();
+  if (!/^(VIC|QLD) \d{4}$/.test(s)) return null;
+  return s;
+}
+
+function normalizeProjectState(state) {
+  const s = String(state || "").trim().toUpperCase();
+  if (s === "VIC" || s === "VICTORIA") return "VIC";
+  if (s === "QLD" || s === "QUEENSLAND") return "QLD";
+  return null;
+}
+
+function projectCalendarYear(project) {
+  if (project?.year == null || project.year === "") return null;
+  const y = String(project.year).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(y)) return parseInt(y.slice(0, 4), 10);
+  if (/^\d{4}$/.test(y)) return parseInt(y, 10);
+  return null;
+}
+
+function projectTabKey(project) {
+  const state = normalizeProjectState(project?.state);
+  const year = projectCalendarYear(project);
+  if (!state || !year) return null;
+  return `${state} ${year}`;
+}
+
+function buildSheetTabs(projectList) {
+  const keys = new Set();
+  for (const p of projectList || []) {
+    const key = projectTabKey(p);
+    if (key) keys.add(key);
+  }
+  const stateRank = { VIC: 0, QLD: 1 };
+  return Array.from(keys).sort((a, b) => {
+    const [as, ay] = a.split(" ");
+    const [bs, by] = b.split(" ");
+    const sr = (stateRank[as] ?? 99) - (stateRank[bs] ?? 99);
+    if (sr !== 0) return sr;
+    return Number(ay) - Number(by);
+  });
+}
+
 function normalizeLayoutPayload(raw) {
   if (!raw || typeof raw !== "object") return null;
   const colWidths = sanitizeColWidths(raw.colWidths);
   const rowsCustomized = Boolean(raw.rowsCustomized);
   const rowHeights = rowsCustomized ? sanitizeRowHeights(raw.rowHeights) : null;
-  const projectOrder = sanitizeProjectOrder(raw.projectOrder);
-  if (!colWidths && !rowHeights && !projectOrder) return null;
+  const legacyOrder = sanitizeProjectOrder(raw.projectOrder);
+  let projectOrders = sanitizeProjectOrders(raw.projectOrders);
+  if (legacyOrder?.length) {
+    projectOrders = { ...(projectOrders || {}) };
+    if (!projectOrders["VIC 2025"]?.length) {
+      projectOrders["VIC 2025"] = legacyOrder;
+    }
+  }
+  const activeTab = sanitizeActiveTab(raw.activeTab);
+  if (!colWidths && !rowHeights && !projectOrders && !activeTab) return null;
   return {
     colWidths,
     rowHeights,
     rowsCustomized: Boolean(rowHeights),
-    projectOrder,
+    projectOrders,
+    activeTab,
   };
 }
 
@@ -282,14 +348,20 @@ async function fetchSharedLayout() {
   return normalizeLayoutPayload(data.layout);
 }
 
-async function persistSharedLayout(colWidths, rowHeights, rowsCustomized, projectOrder) {
+async function persistSharedLayout(colWidths, rowHeights, rowsCustomized, { projectOrders, activeTab } = {}) {
   const layout = {
     colWidths,
     rowsCustomized: Boolean(rowsCustomized),
     rowHeights: rowsCustomized ? rowHeights : undefined,
   };
-  if (projectOrder !== undefined) {
-    layout.projectOrder = projectOrder;
+  if (projectOrders !== undefined) {
+    layout.projectOrders = projectOrders;
+    if (projectOrders?.["VIC 2025"]) {
+      layout.projectOrder = projectOrders["VIC 2025"];
+    }
+  }
+  if (activeTab !== undefined) {
+    layout.activeTab = activeTab;
   }
   const res = await fetch(`${API_URL}/api/planning-manager-layout`, {
     method: "PUT",
@@ -327,8 +399,11 @@ async function persistCellValue(projectId, colIndex, value) {
 
 export default function PlanningManager() {
   const logo = useAppLogo();
+  const navigate = useNavigate();
   const [isAdmin, setIsAdmin] = useState(false);
-  const [projects, setProjects] = useState([]);
+  const [allProjects, setAllProjects] = useState([]);
+  const [activeTab, setActiveTab] = useState("VIC 2025");
+  const [projectOrders, setProjectOrders] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [sheetReady, setSheetReady] = useState(false);
@@ -346,9 +421,19 @@ export default function PlanningManager() {
   const [sheetCells, setSheetCells] = useState({}); // { [projectId]: { [colIndex]: value } }
   const [moveRowModal, setMoveRowModal] = useState(null); // { projectIndex, label, inputValue } | null
   const [projectSearch, setProjectSearch] = useState("");
-  const projectOrderRef = useRef(null);
-  const projectsRef = useRef(projects);
+  const projectOrdersRef = useRef({});
+  const activeTabRef = useRef(activeTab);
   const moveRowInputRef = useRef(null);
+  activeTabRef.current = activeTab;
+  projectOrdersRef.current = projectOrders;
+
+  const sheetTabs = useMemo(() => buildSheetTabs(allProjects), [allProjects]);
+
+  const projects = useMemo(() => {
+    const list = allProjects.filter((p) => projectTabKey(p) === activeTab);
+    return applyProjectOrder(list, projectOrders[activeTab]);
+  }, [allProjects, activeTab, projectOrders]);
+  const projectsRef = useRef(projects);
   projectsRef.current = projects;
 
   const resizeRef = useRef(null);
@@ -362,12 +447,10 @@ export default function PlanningManager() {
   const queueSaveLayout = useCallback((nextCols, nextRows, rowsCustomized) => {
     if (saveLayoutTimerRef.current) clearTimeout(saveLayoutTimerRef.current);
     saveLayoutTimerRef.current = setTimeout(() => {
-      persistSharedLayout(
-        nextCols,
-        nextRows,
-        rowsCustomized,
-        projectOrderRef.current ?? undefined
-      ).catch((err) => {
+      persistSharedLayout(nextCols, nextRows, rowsCustomized, {
+        projectOrders: projectOrdersRef.current ?? {},
+        activeTab: activeTabRef.current ?? undefined,
+      }).catch((err) => {
         console.error("Failed to save planning manager layout:", err);
       });
     }, 250);
@@ -449,12 +532,20 @@ export default function PlanningManager() {
         if (cancelled) return;
         const list = (Array.isArray(data) ? [...data] : []).filter((p) => {
           if (isHotlistStatus(p?.status)) return false;
-          const state = String(p?.state || "").trim().toUpperCase();
-          return state === "VIC" || state === "VICTORIA";
+          return projectTabKey(p) != null;
         });
-        const ordered = applyProjectOrder(list, layout?.projectOrder);
-        projectOrderRef.current = ordered.map((p) => p.id);
-        setProjects(ordered);
+        const orders = { ...(layout?.projectOrders || {}) };
+        const tabs = buildSheetTabs(list);
+        let nextTab = layout?.activeTab && tabs.includes(layout.activeTab) ? layout.activeTab : null;
+        if (!nextTab) {
+          if (tabs.includes("VIC 2025")) nextTab = "VIC 2025";
+          else nextTab = tabs[0] || "VIC 2025";
+        }
+        setAllProjects(list);
+        setProjectOrders(orders);
+        projectOrdersRef.current = orders;
+        setActiveTab(nextTab);
+        activeTabRef.current = nextTab;
         setSheetCells(cells && typeof cells === "object" ? cells : {});
         if (layout?.colWidths) setColWidths(layout.colWidths);
         if (layout?.rowsCustomized && layout.rowHeights) {
@@ -464,7 +555,7 @@ export default function PlanningManager() {
       } catch (err) {
         if (!cancelled) {
           setError(err.message || "Failed to load projects");
-          setProjects([]);
+          setAllProjects([]);
         }
       } finally {
         if (!cancelled) {
@@ -647,7 +738,7 @@ export default function PlanningManager() {
       project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "";
     const previous = project.draftsperson;
 
-    setProjects((prev) =>
+    setAllProjects((prev) =>
       prev.map((p) => (p.id === project.id ? { ...p, draftsperson: newDraftsperson } : p))
     );
     setDraftspersonMenu(null);
@@ -665,15 +756,22 @@ export default function PlanningManager() {
       if (!response.ok) throw new Error("Failed to update draftsperson");
     } catch (err) {
       console.error("Error updating draftsperson:", err);
-      setProjects((prev) =>
+      setAllProjects((prev) =>
         prev.map((p) => (p.id === project.id ? { ...p, draftsperson: previous } : p))
       );
       alert("Failed to update draftsperson");
     }
   }
 
-  function reorderProject(fromIndex, toIndex) {
-    const list = projectsRef.current;
+  function reorderProject(fromIndex, toIndex, tabKey = activeTabRef.current) {
+    const tab = tabKey || activeTabRef.current;
+    const list =
+      tab === activeTabRef.current
+        ? projectsRef.current
+        : applyProjectOrder(
+            allProjects.filter((p) => projectTabKey(p) === tab),
+            projectOrdersRef.current?.[tab]
+          );
     if (
       fromIndex === toIndex ||
       fromIndex < 0 ||
@@ -686,8 +784,12 @@ export default function PlanningManager() {
     const next = [...list];
     const [item] = next.splice(fromIndex, 1);
     next.splice(toIndex, 0, item);
-    projectOrderRef.current = next.map((p) => Number(p.id));
-    setProjects(next);
+    const order = next.map((p) => Number(p.id));
+    setProjectOrders((prev) => {
+      const merged = { ...prev, [tab]: order };
+      projectOrdersRef.current = merged;
+      return merged;
+    });
     queueSaveLayout(
       colWidthsRef.current,
       rowHeightsRef.current,
@@ -695,15 +797,39 @@ export default function PlanningManager() {
     );
   }
 
-  function openMoveRowModal(projectIndex) {
-    if (projectIndex < 0 || projectIndex >= projects.length) return;
-    const project = projects[projectIndex];
+  function selectSheetTab(tabKey) {
+    if (!tabKey || tabKey === activeTabRef.current) return;
+    setActiveTab(tabKey);
+    activeTabRef.current = tabKey;
+    setSelectedCell(null);
+    setDraftspersonMenu(null);
+    setProjectSearch("");
+    queueSaveLayout(
+      colWidthsRef.current,
+      rowHeightsRef.current,
+      userResizedRowsRef.current
+    );
+  }
+
+  function openMoveRowModal(projectIndex, tabKey = activeTabRef.current) {
+    const tab = tabKey || activeTabRef.current;
+    if (tab !== activeTabRef.current) {
+      setActiveTab(tab);
+      activeTabRef.current = tab;
+    }
+    const list = applyProjectOrder(
+      allProjects.filter((p) => projectTabKey(p) === tab),
+      projectOrdersRef.current?.[tab]
+    );
+    if (projectIndex < 0 || projectIndex >= list.length) return;
+    const project = list[projectIndex];
     const sheetRow = DATA_START_ROW + projectIndex + 1;
     selectCell(DATA_START_ROW + projectIndex, 0);
     setMoveRowModal({
       projectIndex,
       label: projectLabel(project) || "Project",
       inputValue: String(sheetRow),
+      tabKey: tab,
     });
   }
 
@@ -711,19 +837,26 @@ export default function PlanningManager() {
     const q = projectSearch.trim().toLowerCase();
     if (!q) return [];
     const out = [];
-    for (let i = 0; i < projects.length; i += 1) {
-      const label = projectLabel(projects[i]);
-      if (!label || !label.toLowerCase().includes(q)) continue;
-      out.push({
-        projectIndex: i,
-        label,
-        sheetRow: DATA_START_ROW + i + 1,
-        cancelled: projectShowsRed(projects[i]),
-      });
-      if (out.length >= 12) break;
+    for (const tab of sheetTabs) {
+      const list = applyProjectOrder(
+        allProjects.filter((p) => projectTabKey(p) === tab),
+        projectOrders[tab]
+      );
+      for (let i = 0; i < list.length; i += 1) {
+        const label = projectLabel(list[i]);
+        if (!label || !label.toLowerCase().includes(q)) continue;
+        out.push({
+          tabKey: tab,
+          projectIndex: i,
+          label,
+          sheetRow: DATA_START_ROW + i + 1,
+          cancelled: projectShowsRed(list[i]),
+        });
+        if (out.length >= 12) return out;
+      }
     }
     return out;
-  }, [projectSearch, projects]);
+  }, [projectSearch, allProjects, projectOrders, sheetTabs]);
 
   function confirmMoveRowModal() {
     if (!moveRowModal) return;
@@ -732,14 +865,22 @@ export default function PlanningManager() {
       alert("Enter a valid row number");
       return;
     }
-    const firstProjectRow = DATA_START_ROW + 1;
-    const listLen = projectsRef.current.length;
-    if (listLen <= 0) {
+    const tab = moveRowModal.tabKey || activeTabRef.current;
+    if (tab && tab !== activeTabRef.current) {
+      setActiveTab(tab);
+      activeTabRef.current = tab;
+    }
+    const list = applyProjectOrder(
+      allProjects.filter((p) => projectTabKey(p) === tab),
+      projectOrdersRef.current?.[tab]
+    );
+    if (list.length <= 0) {
       setMoveRowModal(null);
       return;
     }
-    const targetIndex = Math.max(0, Math.min(listLen - 1, rowNum - firstProjectRow));
-    reorderProject(moveRowModal.projectIndex, targetIndex);
+    const firstProjectRow = DATA_START_ROW + 1;
+    const targetIndex = Math.max(0, Math.min(list.length - 1, rowNum - firstProjectRow));
+    reorderProject(moveRowModal.projectIndex, targetIndex, tab);
     setMoveRowModal(null);
   }
 
@@ -760,7 +901,7 @@ export default function PlanningManager() {
       const hasDate = previous != null && String(previous).trim() !== "";
       const nextValue = hasDate ? null : planningManagerTodayIsoDate();
 
-      setProjects((prev) =>
+      setAllProjects((prev) =>
         prev.map((p) => (p.id === project.id ? { ...p, [field]: nextValue } : p))
       );
       setSelectedCell({ row: rowIndex, col: colIndex });
@@ -777,13 +918,13 @@ export default function PlanningManager() {
         }
         const data = await res.json().catch(() => ({}));
         if (data && Object.prototype.hasOwnProperty.call(data, "value")) {
-          setProjects((prev) =>
+          setAllProjects((prev) =>
             prev.map((p) => (p.id === project.id ? { ...p, [field]: data.value } : p))
           );
         }
       } catch (err) {
         console.error("Error saving planning manager date:", err);
-        setProjects((prev) =>
+        setAllProjects((prev) =>
           prev.map((p) => (p.id === project.id ? { ...p, [field]: previous } : p))
         );
         alert(hasDate ? "Failed to clear date" : "Failed to save date");
@@ -1011,11 +1152,11 @@ export default function PlanningManager() {
                 ) : (
                   projectSearchMatches.map((match) => (
                     <button
-                      key={`${match.projectIndex}-${match.sheetRow}`}
+                      key={`${match.tabKey}-${match.projectIndex}`}
                       type="button"
                       title={match.label}
                       onClick={() => {
-                        openMoveRowModal(match.projectIndex);
+                        openMoveRowModal(match.projectIndex, match.tabKey);
                         setProjectSearch("");
                       }}
                       style={{
@@ -1037,7 +1178,7 @@ export default function PlanningManager() {
                       }}
                     >
                       <span style={{ color: HEADER_TEXT, fontWeight: 500, marginRight: 8 }}>
-                        R{match.sheetRow}
+                        {match.tabKey} · R{match.sheetRow}
                       </span>
                       {match.label}
                     </button>
@@ -1475,6 +1616,12 @@ export default function PlanningManager() {
                     <div
                       title={addressText || undefined}
                       onClick={(e) => selectCell(rowIndex, 0, e)}
+                      onDoubleClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (!project?.access_token) return;
+                        navigate(projectPath(project, { view: "overview" }));
+                      }}
                       style={{
                         position: "sticky",
                         left: ROW_HEADER_WIDTH,
@@ -1622,6 +1769,66 @@ export default function PlanningManager() {
             </div>
           </div>
           )}
+
+          {sheetReady ? (
+            <div
+              style={{
+                flexShrink: 0,
+                display: "flex",
+                alignItems: "flex-end",
+                gap: 2,
+                padding: "0 8px",
+                background: HEADER_BG,
+                borderTop: `1px solid ${HEADER_GRID_LINE}`,
+                minHeight: 28,
+                overflowX: "auto",
+                overflowY: "hidden",
+              }}
+            >
+              {sheetTabs.length === 0 ? (
+                <div
+                  style={{
+                    padding: "4px 12px",
+                    fontSize: 12,
+                    color: UI.textMuted,
+                    fontFamily: SHEET_FONT,
+                  }}
+                >
+                  No state/year tabs
+                </div>
+              ) : (
+                sheetTabs.map((tab) => {
+                  const selected = tab === activeTab;
+                  return (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => selectSheetTab(tab)}
+                      style={{
+                        flexShrink: 0,
+                        border: `1px solid ${HEADER_GRID_LINE}`,
+                        borderBottom: selected ? `1px solid ${WHITE}` : `1px solid ${HEADER_GRID_LINE}`,
+                        marginBottom: selected ? -1 : 0,
+                        borderTopLeftRadius: 4,
+                        borderTopRightRadius: 4,
+                        padding: "4px 14px",
+                        background: selected ? WHITE : "#e8e8e8",
+                        color: selected ? ADDRESS_TEXT : HEADER_TEXT,
+                        fontSize: 12,
+                        fontWeight: selected ? 700 : 500,
+                        fontFamily: SHEET_FONT,
+                        cursor: "pointer",
+                        position: "relative",
+                        zIndex: selected ? 2 : 1,
+                      }}
+                    >
+                      {tab}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          ) : null}
         </div>
       </div>
 

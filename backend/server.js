@@ -5197,7 +5197,7 @@ app.put("/api/colour-section-ranges", async (req, res) => {
 });
 
 const PLANNING_MANAGER_COL_COUNT = 78;
-const PLANNING_MANAGER_ROW_COUNT = 500;
+const PLANNING_MANAGER_ROW_COUNT = 200;
 const PLANNING_MANAGER_MIN_COL_WIDTH = 40;
 const PLANNING_MANAGER_MIN_ROW_HEIGHT = 16;
 
@@ -5237,20 +5237,59 @@ function sanitizePlanningManagerProjectOrder(raw) {
   return out.length ? out : null;
 }
 
+function sanitizePlanningManagerProjectOrders(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const out = {};
+  for (const [key, val] of Object.entries(raw)) {
+    const k = String(key || "").trim();
+    if (!k) continue;
+    const order = sanitizePlanningManagerProjectOrder(val);
+    if (order) out[k] = order;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+function sanitizePlanningManagerActiveTab(raw) {
+  const s = String(raw || "").trim();
+  if (!/^(VIC|QLD) \d{4}$/.test(s)) return null;
+  return s;
+}
+
 function parsePlanningManagerLayoutColumn(raw) {
   let obj = raw;
   if (obj == null || obj === "") {
-    return { colWidths: null, rowHeights: null, rowsCustomized: false, projectOrder: null };
+    return {
+      colWidths: null,
+      rowHeights: null,
+      rowsCustomized: false,
+      projectOrder: null,
+      projectOrders: null,
+      activeTab: null,
+    };
   }
   if (typeof obj === "string") {
     try {
       obj = JSON.parse(obj);
     } catch {
-      return { colWidths: null, rowHeights: null, rowsCustomized: false, projectOrder: null };
+      return {
+        colWidths: null,
+        rowHeights: null,
+        rowsCustomized: false,
+        projectOrder: null,
+        projectOrders: null,
+        activeTab: null,
+      };
     }
   }
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
-    return { colWidths: null, rowHeights: null, rowsCustomized: false, projectOrder: null };
+    return {
+      colWidths: null,
+      rowHeights: null,
+      rowsCustomized: false,
+      projectOrder: null,
+      projectOrders: null,
+      activeTab: null,
+    };
   }
   const colWidths = sanitizePlanningManagerNumberArray(
     obj.colWidths,
@@ -5261,12 +5300,23 @@ function parsePlanningManagerLayoutColumn(raw) {
   const rowHeights = rowsCustomized
     ? sanitizePlanningManagerRowHeights(obj.rowHeights)
     : null;
-  const projectOrder = sanitizePlanningManagerProjectOrder(obj.projectOrder);
+  const legacyOrder = sanitizePlanningManagerProjectOrder(obj.projectOrder);
+  let projectOrders = sanitizePlanningManagerProjectOrders(obj.projectOrders);
+  // Preserve the existing shared order as VIC 2025 (the list already ordered in Planning Manager).
+  if (legacyOrder?.length) {
+    projectOrders = { ...(projectOrders || {}) };
+    if (!projectOrders["VIC 2025"]?.length) {
+      projectOrders["VIC 2025"] = legacyOrder;
+    }
+  }
+  const activeTab = sanitizePlanningManagerActiveTab(obj.activeTab);
   return {
     colWidths,
     rowHeights,
     rowsCustomized: Boolean(rowHeights),
-    projectOrder,
+    projectOrder: legacyOrder,
+    projectOrders,
+    activeTab,
   };
 }
 
@@ -5277,7 +5327,14 @@ function normalizePlanningManagerLayout(body) {
     rowsCustomized: parsed.rowsCustomized,
     rowHeights: parsed.rowsCustomized ? parsed.rowHeights : undefined,
     projectOrder: parsed.projectOrder,
+    projectOrders: parsed.projectOrders,
+    activeTab: parsed.activeTab,
     projectOrderProvided: Array.isArray(body?.projectOrder),
+    projectOrdersProvided:
+      body?.projectOrders != null &&
+      typeof body.projectOrders === "object" &&
+      !Array.isArray(body.projectOrders),
+    activeTabProvided: Object.prototype.hasOwnProperty.call(body || {}, "activeTab"),
   };
 }
 
@@ -5321,17 +5378,29 @@ app.put("/api/planning-manager-layout", async (req, res) => {
     const rowHeights = incoming.rowsCustomized
       ? incoming.rowHeights
       : existing.rowHeights;
-    const projectOrder = Object.prototype.hasOwnProperty.call(layoutBody, "projectOrder")
-      ? sanitizePlanningManagerProjectOrder(layoutBody.projectOrder)
-      : existing.projectOrder;
-    if (!colWidths && !rowsCustomized && !projectOrder) {
+    const projectOrders = incoming.projectOrdersProvided
+      ? incoming.projectOrders
+      : existing.projectOrders;
+    const activeTab = incoming.activeTabProvided
+      ? incoming.activeTab
+      : existing.activeTab;
+    // Keep legacy projectOrder only as fallback seed for VIC 2025 if no map yet.
+    const projectOrder =
+      projectOrders?.["VIC 2025"] ||
+      (Object.prototype.hasOwnProperty.call(layoutBody, "projectOrder")
+        ? sanitizePlanningManagerProjectOrder(layoutBody.projectOrder)
+        : existing.projectOrder);
+    if (!colWidths && !rowsCustomized && !projectOrders && !activeTab && !projectOrder) {
       return res.status(400).json({ error: "Invalid planning manager layout" });
     }
     const json = JSON.stringify({
       colWidths,
       rowsCustomized,
       rowHeights: rowsCustomized ? rowHeights : undefined,
-      projectOrder: projectOrder || undefined,
+      projectOrders: projectOrders || undefined,
+      activeTab: activeTab || undefined,
+      // Retain legacy key until clients fully move to projectOrders.
+      projectOrder: projectOrders?.["VIC 2025"] || projectOrder || undefined,
     });
     await pool.query(
       `INSERT INTO settings (id, planning_manager_layout_json, updated_at)
