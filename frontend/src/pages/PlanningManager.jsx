@@ -336,6 +336,7 @@ export default function PlanningManager() {
   const [draftspersonMenu, setDraftspersonMenu] = useState(null); // { projectId, top, left, width }
   const [sheetCells, setSheetCells] = useState({}); // { [projectId]: { [colIndex]: value } }
   const [moveRowModal, setMoveRowModal] = useState(null); // { projectIndex, label, inputValue } | null
+  const [projectSearch, setProjectSearch] = useState("");
   const projectOrderRef = useRef(null);
   const projectsRef = useRef(projects);
   const moveRowInputRef = useRef(null);
@@ -697,6 +698,24 @@ export default function PlanningManager() {
     });
   }
 
+  const projectSearchMatches = useMemo(() => {
+    const q = projectSearch.trim().toLowerCase();
+    if (!q) return [];
+    const out = [];
+    for (let i = 0; i < projects.length; i += 1) {
+      const label = projectLabel(projects[i]);
+      if (!label || !label.toLowerCase().includes(q)) continue;
+      out.push({
+        projectIndex: i,
+        label,
+        sheetRow: DATA_START_ROW + i + 1,
+        cancelled: isCancelledStatus(projects[i]?.status),
+      });
+      if (out.length >= 12) break;
+    }
+    return out;
+  }, [projectSearch, projects]);
+
   function confirmMoveRowModal() {
     if (!moveRowModal) return;
     const rowNum = parseInt(String(moveRowModal.inputValue).trim(), 10);
@@ -902,9 +921,107 @@ export default function PlanningManager() {
         <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
           <img src={logo} alt="SGF Logo" style={{ width: "120px", height: "auto" }} />
         </Link>
-        <h1 style={{ margin: 0, fontSize: "2.4rem", fontWeight: 700, color: PAGE_TEXT, letterSpacing: "1px" }}>
-          Managers
-        </h1>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 16,
+            flexWrap: "wrap",
+            maxWidth: "calc(100% - 280px)",
+          }}
+        >
+          <h1 style={{ margin: 0, fontSize: "2.4rem", fontWeight: 700, color: PAGE_TEXT, letterSpacing: "1px" }}>
+            Managers
+          </h1>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "stretch",
+              gap: 8,
+              position: "relative",
+              zIndex: 20,
+            }}
+          >
+            <input
+              type="search"
+              value={projectSearch}
+              placeholder="Search project…"
+              onChange={(e) => setProjectSearch(e.target.value)}
+              style={{
+                width: 220,
+                padding: "8px 12px",
+                fontSize: 14,
+                fontFamily: SHEET_FONT,
+                border: `1px solid ${HEADER_GRID_LINE}`,
+                borderRadius: 6,
+                background: WHITE,
+                color: ADDRESS_TEXT,
+                boxSizing: "border-box",
+              }}
+            />
+            {projectSearch.trim() ? (
+              <div
+                style={{
+                  width: 320,
+                  maxHeight: 280,
+                  overflowY: "auto",
+                  background: WHITE,
+                  border: `1px solid ${HEADER_GRID_LINE}`,
+                  borderRadius: 6,
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.16)",
+                }}
+              >
+                {projectSearchMatches.length === 0 ? (
+                  <div
+                    style={{
+                      padding: "10px 12px",
+                      fontSize: 13,
+                      color: UI.textMuted,
+                      fontFamily: SHEET_FONT,
+                    }}
+                  >
+                    No matches
+                  </div>
+                ) : (
+                  projectSearchMatches.map((match) => (
+                    <button
+                      key={`${match.projectIndex}-${match.sheetRow}`}
+                      type="button"
+                      title={match.label}
+                      onClick={() => {
+                        openMoveRowModal(match.projectIndex);
+                        setProjectSearch("");
+                      }}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "8px 12px",
+                        border: "none",
+                        borderBottom: `1px solid ${HEADER_GRID_LINE}`,
+                        background: WHITE,
+                        color: match.cancelled ? CANCELLED_TEXT : ADDRESS_TEXT,
+                        fontSize: 13,
+                        fontWeight: 600,
+                        fontFamily: SHEET_FONT,
+                        cursor: "pointer",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <span style={{ color: HEADER_TEXT, fontWeight: 500, marginRight: 8 }}>
+                        R{match.sheetRow}
+                      </span>
+                      {match.label}
+                    </button>
+                  ))
+                )}
+              </div>
+            ) : null}
+          </div>
+        </div>
       </div>
 
       <div
@@ -1331,13 +1448,8 @@ export default function PlanningManager() {
                       const cancelled = isCancelledStatus(project?.status);
                       return (
                     <div
-                      title={addressText ? `${addressText} (double-click to move)` : undefined}
+                      title={addressText || undefined}
                       onClick={(e) => selectCell(rowIndex, 0, e)}
-                      onDoubleClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        openMoveRowModal(projectIndex);
-                      }}
                       style={{
                         position: "sticky",
                         left: ROW_HEADER_WIDTH,
