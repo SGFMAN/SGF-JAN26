@@ -9,7 +9,7 @@ import {
   normalizeDraftspersonField,
   isDraftspersonAssigned,
 } from "../utils/draftspersonSentinel";
-import { isHotlistStatus, isCancelledStatus } from "../utils/projectStatus";
+import { isHotlistStatus, isCancelledStatus, isOnHoldFlag } from "../utils/projectStatus";
 import {
   getPlanningManagerColMapping,
   formatPlanningManagerSheetDate,
@@ -172,17 +172,26 @@ function projectLabel(project) {
   const abbrevRaw = classification ? CLASSIFICATION_ABBREV_MAP[classification] : "";
   const abbrev = abbrevRaw ? String(abbrevRaw).toUpperCase() : "";
 
+  let label = "";
   if (suburb || street) {
     const suburbOut = suburb.toUpperCase();
     let address = "";
     if (suburbOut && street) address = `${suburbOut} - ${street}`;
     else address = suburbOut || street;
-    if (abbrev) return `${address} (${abbrev})`;
-    return address;
+    label = abbrev ? `${address} (${abbrev})` : address;
+  } else {
+    const name = project?.name != null ? String(project.name).trim() : "";
+    if (name) label = abbrev ? `${name} (${abbrev})` : name;
+    else label = `Project #${project?.id ?? ""}`;
   }
-  const name = project?.name != null ? String(project.name).trim() : "";
-  if (name) return abbrev ? `${name} (${abbrev})` : name;
-  return `Project #${project?.id ?? ""}`;
+
+  if (isOnHoldFlag(project)) label = `${label} (ON HOLD)`;
+  if (isCancelledStatus(project?.status)) label = `${label} (CANCELLED)`;
+  return label;
+}
+
+function projectShowsRed(project) {
+  return isCancelledStatus(project?.status) || isOnHoldFlag(project);
 }
 
 function buildDefaultColWidths() {
@@ -709,7 +718,7 @@ export default function PlanningManager() {
         projectIndex: i,
         label,
         sheetRow: DATA_START_ROW + i + 1,
-        cancelled: isCancelledStatus(projects[i]?.status),
+        cancelled: projectShowsRed(projects[i]),
       });
       if (out.length >= 12) break;
     }
@@ -1461,7 +1470,7 @@ export default function PlanningManager() {
                           ? projects[projectIndex]
                           : null;
                       const addressText = cellValue(rowIndex, 0);
-                      const cancelled = isCancelledStatus(project?.status);
+                      const showRed = projectShowsRed(project);
                       return (
                     <div
                       title={addressText || undefined}
@@ -1483,8 +1492,8 @@ export default function PlanningManager() {
                         overflow: "hidden",
                         whiteSpace: "nowrap",
                         textOverflow: "ellipsis",
-                        color: cancelled ? CANCELLED_TEXT : ADDRESS_TEXT,
-                        WebkitTextFillColor: cancelled ? CANCELLED_TEXT : ADDRESS_TEXT,
+                        color: showRed ? CANCELLED_TEXT : ADDRESS_TEXT,
+                        WebkitTextFillColor: showRed ? CANCELLED_TEXT : ADDRESS_TEXT,
                         fontWeight: 900,
                         fontSize: "15px",
                         fontFamily: SHEET_FONT,
