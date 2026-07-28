@@ -5255,41 +5255,45 @@ function sanitizePlanningManagerActiveTab(raw) {
   return s;
 }
 
+function sanitizePlanningManagerCustomizedTabs(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const v of raw) {
+    const s = sanitizePlanningManagerActiveTab(v);
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
+}
+
+function emptyPlanningManagerLayout() {
+  return {
+    colWidths: null,
+    rowHeights: null,
+    rowsCustomized: false,
+    projectOrder: null,
+    projectOrders: null,
+    activeTab: null,
+    customizedTabs: [],
+  };
+}
+
 function parsePlanningManagerLayoutColumn(raw) {
   let obj = raw;
   if (obj == null || obj === "") {
-    return {
-      colWidths: null,
-      rowHeights: null,
-      rowsCustomized: false,
-      projectOrder: null,
-      projectOrders: null,
-      activeTab: null,
-    };
+    return emptyPlanningManagerLayout();
   }
   if (typeof obj === "string") {
     try {
       obj = JSON.parse(obj);
     } catch {
-      return {
-        colWidths: null,
-        rowHeights: null,
-        rowsCustomized: false,
-        projectOrder: null,
-        projectOrders: null,
-        activeTab: null,
-      };
+      return emptyPlanningManagerLayout();
     }
   }
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
-    return {
-      colWidths: null,
-      rowHeights: null,
-      rowsCustomized: false,
-      projectOrder: null,
-      projectOrders: null,
-      activeTab: null,
-    };
+    return emptyPlanningManagerLayout();
   }
   const colWidths = sanitizePlanningManagerNumberArray(
     obj.colWidths,
@@ -5310,6 +5314,7 @@ function parsePlanningManagerLayoutColumn(raw) {
     }
   }
   const activeTab = sanitizePlanningManagerActiveTab(obj.activeTab);
+  const customizedTabs = sanitizePlanningManagerCustomizedTabs(obj.customizedTabs);
   return {
     colWidths,
     rowHeights,
@@ -5317,6 +5322,7 @@ function parsePlanningManagerLayoutColumn(raw) {
     projectOrder: legacyOrder,
     projectOrders,
     activeTab,
+    customizedTabs,
   };
 }
 
@@ -5329,12 +5335,14 @@ function normalizePlanningManagerLayout(body) {
     projectOrder: parsed.projectOrder,
     projectOrders: parsed.projectOrders,
     activeTab: parsed.activeTab,
+    customizedTabs: parsed.customizedTabs,
     projectOrderProvided: Array.isArray(body?.projectOrder),
     projectOrdersProvided:
       body?.projectOrders != null &&
       typeof body.projectOrders === "object" &&
       !Array.isArray(body.projectOrders),
     activeTabProvided: Object.prototype.hasOwnProperty.call(body || {}, "activeTab"),
+    customizedTabsProvided: Array.isArray(body?.customizedTabs),
   };
 }
 
@@ -5384,6 +5392,9 @@ app.put("/api/planning-manager-layout", async (req, res) => {
     const activeTab = incoming.activeTabProvided
       ? incoming.activeTab
       : existing.activeTab;
+    const customizedTabs = incoming.customizedTabsProvided
+      ? incoming.customizedTabs
+      : existing.customizedTabs;
     // Keep legacy projectOrder only as fallback seed for VIC 2025 if no map yet.
     const projectOrder =
       projectOrders?.["VIC 2025"] ||
@@ -5399,6 +5410,7 @@ app.put("/api/planning-manager-layout", async (req, res) => {
       rowHeights: rowsCustomized ? rowHeights : undefined,
       projectOrders: projectOrders || undefined,
       activeTab: activeTab || undefined,
+      customizedTabs: customizedTabs?.length ? customizedTabs : undefined,
       // Retain legacy key until clients fully move to projectOrders.
       projectOrder: projectOrders?.["VIC 2025"] || projectOrder || undefined,
     });

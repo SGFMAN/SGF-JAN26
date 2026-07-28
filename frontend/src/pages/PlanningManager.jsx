@@ -16,6 +16,7 @@ import {
   formatPlanningManagerSheetDate,
   planningManagerTodayIsoDate,
 } from "../utils/planningManagerColumnFields";
+import { normalizeProjectYearToISO } from "../utils/salesTotalsCompute";
 
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
@@ -255,6 +256,9 @@ function sanitizeActiveTab(raw) {
   return s;
 }
 
+/** Only VIC 2025 keeps the migrated custom order by default; other tabs date-sort until manually reordered. */
+const SEEDED_CUSTOM_ORDER_TAB = "VIC 2025";
+
 function normalizeProjectState(state) {
   const s = String(state || "").trim().toUpperCase();
   if (s === "VIC" || s === "VICTORIA") return "VIC";
@@ -263,6 +267,8 @@ function normalizeProjectState(state) {
 }
 
 function projectCalendarYear(project) {
+  const iso = normalizeProjectYearToISO(project?.year);
+  if (iso) return parseInt(iso.slice(0, 4), 10);
   if (project?.year == null || project.year === "") return null;
   const y = String(project.year).trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(y)) return parseInt(y.slice(0, 4), 10);
@@ -293,6 +299,19 @@ function buildSheetTabs(projectList) {
   });
 }
 
+function sanitizeCustomizedTabs(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const v of raw) {
+    const s = sanitizeActiveTab(v);
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
+}
+
 function normalizeLayoutPayload(raw) {
   if (!raw || typeof raw !== "object") return null;
   const colWidths = sanitizeColWidths(raw.colWidths);
@@ -302,11 +321,12 @@ function normalizeLayoutPayload(raw) {
   let projectOrders = sanitizeProjectOrders(raw.projectOrders);
   if (legacyOrder?.length) {
     projectOrders = { ...(projectOrders || {}) };
-    if (!projectOrders["VIC 2025"]?.length) {
-      projectOrders["VIC 2025"] = legacyOrder;
+    if (!projectOrders[SEEDED_CUSTOM_ORDER_TAB]?.length) {
+      projectOrders[SEEDED_CUSTOM_ORDER_TAB] = legacyOrder;
     }
   }
   const activeTab = sanitizeActiveTab(raw.activeTab);
+  const customizedTabs = sanitizeCustomizedTabs(raw.customizedTabs);
   if (!colWidths && !rowHeights && !projectOrders && !activeTab) return null;
   return {
     colWidths,
@@ -314,24 +334,30 @@ function normalizeLayoutPayload(raw) {
     rowsCustomized: Boolean(rowHeights),
     projectOrders,
     activeTab,
+    customizedTabs,
   };
 }
 
 function projectStartDateKey(project) {
-  if (project?.year == null || project.year === "") return "9999-99-99";
-  const y = String(project.year).trim();
-  if (/^\d{4}-\d{2}-\d{2}/.test(y)) return y.slice(0, 10);
-  if (/^\d{4}$/.test(y)) return `${y}-01-01`;
-  return "9999-99-99";
+  const iso = normalizeProjectYearToISO(project?.year);
+  if (iso) return iso;
+  if (project?.updated_at) {
+    const u = String(project.updated_at).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(u)) return u.slice(0, 10);
+  }
+  // Stable fallback so equal/missing dates don't reshuffle as alphabetical suburb order.
+  const id = Number(project?.id);
+  return Number.isFinite(id) ? `9999-99-99-${String(id).padStart(8, "0")}` : "9999-99-99-99999999";
 }
 
 function applyProjectOrder(list, projectOrder) {
   const items = Array.isArray(list) ? [...list] : [];
-  // Tabs without a saved order (everything except the already-ordered VIC 2025 list) sort by start date.
   const dateSort = (a, b) => {
     const byDate = projectStartDateKey(a).localeCompare(projectStartDateKey(b));
     if (byDate !== 0) return byDate;
-    return projectLabel(a).localeCompare(projectLabel(b), undefined, { sensitivity: "base" });
+    const ida = Number(a?.id) || 0;
+    const idb = Number(b?.id) || 0;
+    return ida - idb;
   };
   if (!projectOrder?.length) {
     items.sort(dateSort);
@@ -351,6 +377,14 @@ function applyProjectOrder(list, projectOrder) {
   return [...ordered, ...rest];
 }
 
+function orderForTab(tabKey, projectOrders, customizedTabs) {
+  if (tabKey === SEEDED_CUSTOM_ORDER_TAB) return projectOrders?.[tabKey];
+  if (Array.isArray(customizedTabs) && customizedTabs.includes(tabKey)) {
+    return projectOrders?.[tabKey];
+  }
+  return null;
+}
+
 async function fetchSharedLayout() {
   const res = await fetch(`${API_URL}/api/planning-manager-layout`, {
     headers: getApiHeaders(),
@@ -360,7 +394,12 @@ async function fetchSharedLayout() {
   return normalizeLayoutPayload(data.layout);
 }
 
-async function persistSharedLayout(colWidths, rowHeights, rowsCustomized, { projectOrders, activeTab } = {}) {
+async function persistSharedLayout(
+  colWidths,
+  rowHeights,
+  rowsCustomized,
+  { projectOrders, activeTab, customizedTabs } = {}
+) {
   const layout = {
     colWidths,
     rowsCustomized: Boolean(rowsCustomized),
@@ -368,12 +407,15 @@ async function persistSharedLayout(colWidths, rowHeights, rowsCustomized, { proj
   };
   if (projectOrders !== undefined) {
     layout.projectOrders = projectOrders;
-    if (projectOrders?.["VIC 2025"]) {
-      layout.projectOrder = projectOrders["VIC 2025"];
+    if (projectOrders?.[SEEDED_CUSTOM_ORDER_TAB]) {
+      layout.projectOrder = projectOrders[SEEDED_CUSTOM_ORDER_TAB];
     }
   }
   if (activeTab !== undefined) {
     layout.activeTab = activeTab;
+  }
+  if (customizedTabs !== undefined) {
+    layout.customizedTabs = customizedTabs;
   }
   const res = await fetch(`${API_URL}/api/planning-manager-layout`, {
     method: "PUT",
@@ -416,6 +458,7 @@ export default function PlanningManager() {
   const [allProjects, setAllProjects] = useState([]);
   const [activeTab, setActiveTab] = useState("VIC 2025");
   const [projectOrders, setProjectOrders] = useState({});
+  const [customizedTabs, setCustomizedTabs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [sheetReady, setSheetReady] = useState(false);
@@ -434,17 +477,19 @@ export default function PlanningManager() {
   const [moveRowModal, setMoveRowModal] = useState(null); // { projectIndex, label, inputValue } | null
   const [projectSearch, setProjectSearch] = useState("");
   const projectOrdersRef = useRef({});
+  const customizedTabsRef = useRef([]);
   const activeTabRef = useRef(activeTab);
   const moveRowInputRef = useRef(null);
   activeTabRef.current = activeTab;
   projectOrdersRef.current = projectOrders;
+  customizedTabsRef.current = customizedTabs;
 
   const sheetTabs = useMemo(() => buildSheetTabs(allProjects), [allProjects]);
 
   const projects = useMemo(() => {
     const list = allProjects.filter((p) => projectTabKey(p) === activeTab);
-    return applyProjectOrder(list, projectOrders[activeTab]);
-  }, [allProjects, activeTab, projectOrders]);
+    return applyProjectOrder(list, orderForTab(activeTab, projectOrders, customizedTabs));
+  }, [allProjects, activeTab, projectOrders, customizedTabs]);
   const projectsRef = useRef(projects);
   projectsRef.current = projects;
 
@@ -462,6 +507,7 @@ export default function PlanningManager() {
       persistSharedLayout(nextCols, nextRows, rowsCustomized, {
         projectOrders: projectOrdersRef.current ?? {},
         activeTab: activeTabRef.current ?? undefined,
+        customizedTabs: customizedTabsRef.current ?? [],
       }).catch((err) => {
         console.error("Failed to save planning manager layout:", err);
       });
@@ -547,15 +593,18 @@ export default function PlanningManager() {
           return projectTabKey(p) != null;
         });
         const orders = { ...(layout?.projectOrders || {}) };
+        const customized = layout?.customizedTabs || [];
         const tabs = buildSheetTabs(list);
         let nextTab = layout?.activeTab && tabs.includes(layout.activeTab) ? layout.activeTab : null;
         if (!nextTab) {
-          if (tabs.includes("VIC 2025")) nextTab = "VIC 2025";
-          else nextTab = tabs[0] || "VIC 2025";
+          if (tabs.includes(SEEDED_CUSTOM_ORDER_TAB)) nextTab = SEEDED_CUSTOM_ORDER_TAB;
+          else nextTab = tabs[0] || SEEDED_CUSTOM_ORDER_TAB;
         }
         setAllProjects(list);
         setProjectOrders(orders);
         projectOrdersRef.current = orders;
+        setCustomizedTabs(customized);
+        customizedTabsRef.current = customized;
         setActiveTab(nextTab);
         activeTabRef.current = nextTab;
         setSheetCells(cells && typeof cells === "object" ? cells : {});
@@ -782,7 +831,7 @@ export default function PlanningManager() {
         ? projectsRef.current
         : applyProjectOrder(
             allProjects.filter((p) => projectTabKey(p) === tab),
-            projectOrdersRef.current?.[tab]
+            orderForTab(tab, projectOrdersRef.current, customizedTabsRef.current)
           );
     if (
       fromIndex === toIndex ||
@@ -802,6 +851,14 @@ export default function PlanningManager() {
       projectOrdersRef.current = merged;
       return merged;
     });
+    if (tab !== SEEDED_CUSTOM_ORDER_TAB) {
+      setCustomizedTabs((prev) => {
+        if (prev.includes(tab)) return prev;
+        const merged = [...prev, tab];
+        customizedTabsRef.current = merged;
+        return merged;
+      });
+    }
     queueSaveLayout(
       colWidthsRef.current,
       rowHeightsRef.current,
@@ -831,7 +888,7 @@ export default function PlanningManager() {
     }
     const list = applyProjectOrder(
       allProjects.filter((p) => projectTabKey(p) === tab),
-      projectOrdersRef.current?.[tab]
+      orderForTab(tab, projectOrdersRef.current, customizedTabsRef.current)
     );
     if (projectIndex < 0 || projectIndex >= list.length) return;
     const project = list[projectIndex];
@@ -852,7 +909,7 @@ export default function PlanningManager() {
     for (const tab of sheetTabs) {
       const list = applyProjectOrder(
         allProjects.filter((p) => projectTabKey(p) === tab),
-        projectOrders[tab]
+        orderForTab(tab, projectOrders, customizedTabs)
       );
       for (let i = 0; i < list.length; i += 1) {
         const label = projectLabel(list[i]);
@@ -868,7 +925,7 @@ export default function PlanningManager() {
       }
     }
     return out;
-  }, [projectSearch, allProjects, projectOrders, sheetTabs]);
+  }, [projectSearch, allProjects, projectOrders, customizedTabs, sheetTabs]);
 
   function confirmMoveRowModal() {
     if (!moveRowModal) return;
@@ -884,7 +941,7 @@ export default function PlanningManager() {
     }
     const list = applyProjectOrder(
       allProjects.filter((p) => projectTabKey(p) === tab),
-      projectOrdersRef.current?.[tab]
+      orderForTab(tab, projectOrdersRef.current, customizedTabsRef.current)
     );
     if (list.length <= 0) {
       setMoveRowModal(null);
