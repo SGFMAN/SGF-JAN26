@@ -1973,7 +1973,7 @@ export default function Drawings({
     if (isSendingDraftingEmail) return false;
 
     if (!newDrawingUploadKind) {
-      alert("Please select whether these drawings are concept, working, or for certifier.");
+      alert("Please select whether these drawings are concept, working, or post approval.");
       return false;
     }
 
@@ -4089,7 +4089,7 @@ export default function Drawings({
                         setNewDrawingUploadKind("certifier");
                       }}
                     />
-                    For Certifier
+                    Post Approval
                   </label>
                 </div>
                 <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginTop: "8px" }}>

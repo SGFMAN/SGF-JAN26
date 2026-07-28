@@ -3,6 +3,18 @@ import { Link } from "react-router-dom";
 import { isUserAdmin, getApiHeaders } from "../utils/auth";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { UI } from "../utils/uiThemeTokens.js";
+import { CLASSIFICATION_ABBREV_MAP } from "../utils/classifications";
+import {
+  DRAFTSPERSON_UNASSIGNED,
+  normalizeDraftspersonField,
+  isDraftspersonAssigned,
+} from "../utils/draftspersonSentinel";
+import { isHotlistStatus } from "../utils/projectStatus";
+import {
+  getPlanningManagerColMapping,
+  formatPlanningManagerSheetDate,
+  planningManagerTodayIsoDate,
+} from "../utils/planningManagerColumnFields";
 
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
@@ -17,6 +29,9 @@ const HEADING_BLUE = "rgb(21, 13, 247)";
 const HEADER_SELECT_BG = "rgb(180, 198, 231)";
 const ADDRESS_TEXT = "#000000";
 const COL_A_FILL = "rgb(218, 242, 208)";
+const COL_YELLOW = "rgb(255, 230, 153)";
+const COL_LIGHT_BLUE = HEADER_SELECT_BG;
+const COL_BAL_FILL = "rgb(198, 89, 17)";
 const SELECTION_OUTLINE = `inset 0 0 0 2px ${HEADING_BLUE}`;
 const API_URL = "";
 
@@ -31,6 +46,14 @@ const MIN_COL_WIDTH = 40;
 const MIN_ROW_HEIGHT = 16;
 const COL_HEADER_HEIGHT = 28;
 const TITLE_BAND_BG = "#e8e8e8";
+const SHEET_FONT = "Calibri, Candara, Segoe UI, Arial, sans-serif";
+const SHEET_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Fallback display for legacy blob cells (cols not yet mapped to project fields). */
+function formatSheetDate(date = new Date()) {
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${dd}-${SHEET_MONTHS[date.getMonth()]}`;
+}
 
 /**
  * Row 1 merged title cells (0-based col indices).
@@ -39,7 +62,7 @@ const TITLE_BAND_BG = "#e8e8e8";
  */
 const SHEET_TITLE_BLOCKS = [
   { startCol: 0, colSpan: 1, label: "Project Address" }, // A
-  { startCol: 1, colSpan: 1, label: "Draftsperson" }, // B
+  { startCol: 1, colSpan: 1, label: "DRAFTSPERSON" }, // B
   { startCol: 2, colSpan: 2, label: "Land Channel - Zones & Overlays" }, // C–D
   { startCol: 4, colSpan: 2, label: "Land Data - Title & Covenants" }, // E–F
   { startCol: 6, colSpan: 2, label: "DBYD - Stormwater" }, // G–H
@@ -88,6 +111,18 @@ function buildRow2Subheadings() {
 
 const ROW2_SUBHEADINGS = buildRow2Subheadings();
 
+/** Column body/title fill (null = default band/white). */
+function columnFill(colIndex) {
+  if (colIndex === 0) return COL_A_FILL;
+  if (colIndex === 1) return COL_YELLOW; // Draftsperson
+  if (colIndex === 18) return COL_LIGHT_BLUE; // Job File Created
+  if (colIndex === 36 || colIndex === 37) return COL_BAL_FILL; // BAL Required
+  if (colIndex === 40) return COL_YELLOW; // Energy Specs Added to Plans
+  if (colIndex === 41 || colIndex === 42) return COL_LIGHT_BLUE; // Windows
+  if (colIndex === 47 || colIndex === 48) return COL_A_FILL; // Building Permit
+  return null;
+}
+
 
 const inactiveLinkStyle = {
   background: "transparent",
@@ -128,13 +163,25 @@ function colLetter(index) {
 
 const COL_LETTERS = Array.from({ length: COL_COUNT }, (_, i) => colLetter(i));
 
+/** SUBURB - Street (SSD) — classification acronym from project rectangles. */
 function projectLabel(project) {
+  const suburb = project?.suburb != null ? String(project.suburb).trim() : "";
+  const street = project?.street != null ? String(project.street).trim() : "";
+  const classification = project?.classification != null ? String(project.classification).trim() : "";
+  const abbrevRaw = classification ? CLASSIFICATION_ABBREV_MAP[classification] : "";
+  const abbrev = abbrevRaw ? String(abbrevRaw).toUpperCase() : "";
+
+  if (suburb || street) {
+    const suburbOut = suburb.toUpperCase();
+    let address = "";
+    if (suburbOut && street) address = `${suburbOut} - ${street}`;
+    else address = suburbOut || street;
+    if (abbrev) return `${address} (${abbrev})`;
+    return address;
+  }
   const name = project?.name != null ? String(project.name).trim() : "";
-  if (name) return name;
-  const parts = [project?.street, project?.suburb]
-    .map((s) => (s == null ? "" : String(s).trim()))
-    .filter(Boolean);
-  return parts.join(", ") || `Project #${project?.id ?? ""}`;
+  if (name) return abbrev ? `${name} (${abbrev})` : name;
+  return `Project #${project?.id ?? ""}`;
 }
 
 function buildDefaultColWidths() {
@@ -198,6 +245,29 @@ async function persistSharedLayout(colWidths, rowHeights, rowsCustomized) {
   }
 }
 
+async function fetchSharedCells() {
+  const res = await fetch(`${API_URL}/api/planning-manager-cells`, {
+    headers: getApiHeaders(),
+  });
+  if (!res.ok) throw new Error(`Failed to load sheet cells (${res.status})`);
+  const data = await res.json().catch(() => ({}));
+  return data.cells && typeof data.cells === "object" ? data.cells : {};
+}
+
+async function persistCellValue(projectId, colIndex, value) {
+  const res = await fetch(`${API_URL}/api/planning-manager-cells`, {
+    method: "PUT",
+    headers: getApiHeaders(),
+    body: JSON.stringify({ projectId, colIndex, value }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to save cell (${res.status})`);
+  }
+  const data = await res.json().catch(() => ({}));
+  return data.cells && typeof data.cells === "object" ? data.cells : null;
+}
+
 export default function PlanningManager() {
   const logo = useAppLogo();
   const [isAdmin, setIsAdmin] = useState(false);
@@ -214,6 +284,9 @@ export default function PlanningManager() {
   const [scrollLeft, setScrollLeft] = useState(0);
   const [viewportSize, setViewportSize] = useState({ w: 800, h: 600 });
   const [selectedCell, setSelectedCell] = useState(null); // { row, col } | null
+  const [draftspersonUsers, setDraftspersonUsers] = useState([]);
+  const [draftspersonMenu, setDraftspersonMenu] = useState(null); // { projectId, top, left, width }
+  const [sheetCells, setSheetCells] = useState({}); // { [projectId]: { [colIndex]: value } }
 
   const resizeRef = useRef(null);
   const userResizedRowsRef = useRef(false);
@@ -240,23 +313,82 @@ export default function PlanningManager() {
     let cancelled = false;
     (async () => {
       try {
+        const usersResponse = await fetch(`${API_URL}/api/users`, { headers: getApiHeaders() });
+        if (!usersResponse.ok) throw new Error("Failed to fetch users");
+        const allUsers = await usersResponse.json();
+        if (cancelled) return;
+        const draftspersons = (Array.isArray(allUsers) ? allUsers : []).filter((user) => {
+          if (!user.positions || !Array.isArray(user.positions)) return false;
+          return user.positions.some((position) => {
+            const positionName = position.name ? position.name.toLowerCase() : "";
+            return (
+              positionName === "architectural draftsperson" ||
+              positionName === "architectural graduate"
+            );
+          });
+        });
+        draftspersons.sort((a, b) =>
+          String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" })
+        );
+        setDraftspersonUsers(draftspersons);
+      } catch (err) {
+        console.error("Failed to load draftspersons:", err);
+        if (!cancelled) setDraftspersonUsers([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!draftspersonMenu) return undefined;
+    function onDocPointerDown(e) {
+      const t = e.target;
+      if (t?.closest?.("[data-draftsperson-menu]") || t?.closest?.("[data-draftsperson-arrow]")) return;
+      setDraftspersonMenu(null);
+    }
+    function onKey(e) {
+      if (e.key === "Escape") setDraftspersonMenu(null);
+    }
+    document.addEventListener("pointerdown", onDocPointerDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDocPointerDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [draftspersonMenu]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
         setLoading(true);
         setError(null);
-        const [projectsRes, layout] = await Promise.all([
+        const [projectsRes, layout, cells] = await Promise.all([
           fetch(`${API_URL}/api/projects`, { headers: getApiHeaders() }),
           fetchSharedLayout().catch((err) => {
             console.error("Failed to load planning manager layout:", err);
             return null;
           }),
+          fetchSharedCells().catch((err) => {
+            console.error("Failed to load planning manager cells:", err);
+            return {};
+          }),
         ]);
         if (!projectsRes.ok) throw new Error(`Failed to fetch projects: ${projectsRes.statusText}`);
         const data = await projectsRes.json();
         if (cancelled) return;
-        const list = Array.isArray(data) ? [...data] : [];
+        const list = (Array.isArray(data) ? [...data] : []).filter((p) => {
+          if (isHotlistStatus(p?.status)) return false;
+          const state = String(p?.state || "").trim().toUpperCase();
+          return state === "VIC" || state === "VICTORIA";
+        });
         list.sort((a, b) =>
           projectLabel(a).localeCompare(projectLabel(b), undefined, { sensitivity: "base" })
         );
         setProjects(list);
+        setSheetCells(cells && typeof cells === "object" ? cells : {});
         if (layout?.colWidths) setColWidths(layout.colWidths);
         if (layout?.rowsCustomized && layout.rowHeights) {
           userResizedRowsRef.current = true;
@@ -358,13 +490,23 @@ export default function PlanningManager() {
   const cellValue = useCallback(
     (rowIndex, colIndex) => {
       if (rowIndex < DATA_START_ROW) return "";
-      if (colIndex === 0) {
-        const projectIndex = rowIndex - DATA_START_ROW;
-        if (projectIndex < projects.length) return projectLabel(projects[projectIndex]);
+      const projectIndex = rowIndex - DATA_START_ROW;
+      if (projectIndex < 0 || projectIndex >= projects.length) return "";
+      const project = projects[projectIndex];
+      if (colIndex === 0) return projectLabel(project);
+      if (colIndex === 1) {
+        const normalized = normalizeDraftspersonField(project?.draftsperson);
+        if (!isDraftspersonAssigned(normalized)) return "";
+        return normalized.toUpperCase();
       }
-      return "";
+      const mapping = getPlanningManagerColMapping(colIndex);
+      if (mapping?.field) {
+        return formatPlanningManagerSheetDate(project?.[mapping.field]);
+      }
+      const stored = sheetCells?.[String(project.id)]?.[String(colIndex)];
+      return stored != null ? String(stored) : "";
     },
-    [projects]
+    [projects, sheetCells]
   );
 
   const titleBandHeight = rowHeights[0] ?? baseRowHeight;
@@ -410,6 +552,141 @@ export default function PlanningManager() {
   const selectedRow = selectedCell?.row ?? null;
   const selectedCol = selectedCell?.col ?? null;
   const isSelected = (row, col) => selectedRow === row && selectedCol === col;
+
+  function openDraftspersonMenu(project, anchorEl) {
+    if (!project?.id || !anchorEl) return;
+    const rect = anchorEl.getBoundingClientRect();
+    const menuWidth = Math.max(180, colWidths[1] || DEFAULT_COL_WIDTH);
+    let left = rect.right - menuWidth;
+    if (left < 8) left = 8;
+    if (left + menuWidth > window.innerWidth - 8) left = Math.max(8, window.innerWidth - menuWidth - 8);
+    let top = rect.bottom + 2;
+    const estimatedH = Math.min(280, 36 + (draftspersonUsers.length + 1) * 32);
+    if (top + estimatedH > window.innerHeight - 8) {
+      top = Math.max(8, rect.top - estimatedH - 2);
+    }
+    setDraftspersonMenu({
+      projectId: project.id,
+      top,
+      left,
+      width: menuWidth,
+    });
+  }
+
+  async function saveDraftsperson(project, selectedValue) {
+    if (!project?.id) return;
+    const newDraftsperson = normalizeDraftspersonField(selectedValue);
+    const projectName =
+      project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "";
+    const previous = project.draftsperson;
+
+    setProjects((prev) =>
+      prev.map((p) => (p.id === project.id ? { ...p, draftsperson: newDraftsperson } : p))
+    );
+    setDraftspersonMenu(null);
+
+    try {
+      const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
+        method: "PUT",
+        headers: getApiHeaders(),
+        body: JSON.stringify({
+          name: projectName,
+          status: project.status || null,
+          draftsperson: newDraftsperson,
+        }),
+      });
+      if (!response.ok) throw new Error("Failed to update draftsperson");
+    } catch (err) {
+      console.error("Error updating draftsperson:", err);
+      setProjects((prev) =>
+        prev.map((p) => (p.id === project.id ? { ...p, draftsperson: previous } : p))
+      );
+      alert("Failed to update draftsperson");
+    }
+  }
+
+  async function stampDateOnCell(rowIndex, colIndex) {
+    if (rowIndex < DATA_START_ROW || colIndex < 2) return;
+    const projectIndex = rowIndex - DATA_START_ROW;
+    if (projectIndex < 0 || projectIndex >= projects.length) return;
+    const project = projects[projectIndex];
+    if (!project?.id) return;
+
+    const mapping = getPlanningManagerColMapping(colIndex);
+    if (mapping?.readOnly) return;
+
+    // Mapped project fields (C–R): store on the project so other pages can read them.
+    if (mapping?.field) {
+      const field = mapping.field;
+      const previous = project[field] ?? null;
+      const hasDate = previous != null && String(previous).trim() !== "";
+      const nextValue = hasDate ? null : planningManagerTodayIsoDate();
+
+      setProjects((prev) =>
+        prev.map((p) => (p.id === project.id ? { ...p, [field]: nextValue } : p))
+      );
+      setSelectedCell({ row: rowIndex, col: colIndex });
+
+      try {
+        const res = await fetch(`${API_URL}/api/projects/${project.id}/planning-manager-date`, {
+          method: "PUT",
+          headers: getApiHeaders(),
+          body: JSON.stringify({ field, value: nextValue }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `Failed to save (${res.status})`);
+        }
+        const data = await res.json().catch(() => ({}));
+        if (data && Object.prototype.hasOwnProperty.call(data, "value")) {
+          setProjects((prev) =>
+            prev.map((p) => (p.id === project.id ? { ...p, [field]: data.value } : p))
+          );
+        }
+      } catch (err) {
+        console.error("Error saving planning manager date:", err);
+        setProjects((prev) =>
+          prev.map((p) => (p.id === project.id ? { ...p, [field]: previous } : p))
+        );
+        alert(hasDate ? "Failed to clear date" : "Failed to save date");
+      }
+      return;
+    }
+
+    // Legacy blob cells for columns not yet mapped to project fields.
+    const projectKey = String(project.id);
+    const colKey = String(colIndex);
+    const previous = sheetCells?.[projectKey]?.[colKey];
+    const hasDate = previous != null && String(previous).trim() !== "";
+    const nextValue = hasDate ? "" : formatSheetDate();
+
+    setSheetCells((prev) => {
+      const next = { ...prev, [projectKey]: { ...(prev[projectKey] || {}) } };
+      if (!nextValue) {
+        delete next[projectKey][colKey];
+        if (!Object.keys(next[projectKey]).length) delete next[projectKey];
+      } else {
+        next[projectKey][colKey] = nextValue;
+      }
+      return next;
+    });
+    setSelectedCell({ row: rowIndex, col: colIndex });
+
+    try {
+      const saved = await persistCellValue(project.id, colIndex, nextValue || null);
+      if (saved) setSheetCells(saved);
+    } catch (err) {
+      console.error("Error saving sheet date:", err);
+      setSheetCells((prev) => {
+        const next = { ...prev, [projectKey]: { ...(prev[projectKey] || {}) } };
+        if (previous == null || previous === "") delete next[projectKey][colKey];
+        else next[projectKey][colKey] = previous;
+        if (!Object.keys(next[projectKey] || {}).length) delete next[projectKey];
+        return next;
+      });
+      alert(hasDate ? "Failed to clear date" : "Failed to save date");
+    }
+  }
 
   useEffect(() => {
     function onMove(e) {
@@ -592,14 +869,15 @@ export default function PlanningManager() {
             onScroll={(e) => {
               setScrollTop(e.currentTarget.scrollTop);
               setScrollLeft(e.currentTarget.scrollLeft);
+              setDraftspersonMenu(null);
             }}
             style={{
               flex: 1,
               minHeight: 0,
               overflow: "auto",
               background: WHITE,
-              fontFamily: "Calibri, Candara, Segoe UI, Arial, sans-serif",
-              fontSize: "14px",
+              fontFamily: SHEET_FONT,
+              fontSize: "15px",
               userSelect: "none",
             }}
           >
@@ -649,7 +927,7 @@ export default function PlanningManager() {
                     justifyContent: "center",
                     color: HEADER_TEXT,
                     fontWeight: 600,
-                    fontSize: "13px",
+                    fontSize: "14px",
                     boxSizing: "border-box",
                     flexShrink: 0,
                     background: colSelected
@@ -707,7 +985,7 @@ export default function PlanningManager() {
                     alignItems: "center",
                     justifyContent: "center",
                     color: HEADER_TEXT,
-                    fontSize: "12px",
+                    fontSize: "13px",
                     fontWeight: 600,
                   }}
                 >
@@ -732,6 +1010,7 @@ export default function PlanningManager() {
                   const w = blockWidth(block.startCol, block.colSpan);
                   const isColA = block.startCol === 0;
                   const selected = isSelected(0, block.startCol);
+                  const fill = columnFill(block.startCol);
                   return (
                     <div
                       key={`title-${block.startCol}`}
@@ -753,10 +1032,12 @@ export default function PlanningManager() {
                         justifyContent: "center",
                         textAlign: "center",
                         color: HEADING_BLUE,
-                        fontWeight: 700,
-                        fontSize: "13px",
+                        fontWeight: 900,
+                        fontSize: "14px",
                         lineHeight: 1.25,
-                        background: isColA ? COL_A_FILL : TITLE_BAND_BG,
+                        fontFamily: SHEET_FONT,
+                        WebkitTextStroke: "0.35px currentColor",
+                        background: fill || TITLE_BAND_BG,
                         boxShadow: selected ? SELECTION_OUTLINE : undefined,
                         flexShrink: 0,
                         overflow: "hidden",
@@ -796,7 +1077,7 @@ export default function PlanningManager() {
                     alignItems: "center",
                     justifyContent: "center",
                     color: HEADER_TEXT,
-                    fontSize: "12px",
+                    fontSize: "13px",
                     fontWeight: 600,
                   }}
                 >
@@ -819,6 +1100,7 @@ export default function PlanningManager() {
                 {Array.from({ length: COL_COUNT }, (_, colIndex) => {
                   const label = ROW2_SUBHEADINGS[colIndex];
                   const selected = isSelected(1, colIndex);
+                  const fill = columnFill(colIndex);
                   return (
                     <div
                       key={`sub-${colIndex}`}
@@ -833,15 +1115,17 @@ export default function PlanningManager() {
                         borderRight: `1px solid ${GRID_LINE}`,
                         borderBottom: `1px solid ${GRID_LINE}`,
                         boxSizing: "border-box",
-                        background: colIndex === 0 ? COL_A_FILL : HEADER_BG,
+                        background: fill || HEADER_BG,
                         boxShadow: selected ? SELECTION_OUTLINE : undefined,
                         flexShrink: 0,
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
                         color: HEADING_BLUE,
-                        fontSize: "12px",
-                        fontWeight: 700,
+                        fontSize: "13px",
+                        fontWeight: 900,
+                        fontFamily: SHEET_FONT,
+                        WebkitTextStroke: "0.3px currentColor",
                         cursor: "cell",
                       }}
                     >
@@ -884,7 +1168,7 @@ export default function PlanningManager() {
                         alignItems: "center",
                         justifyContent: "center",
                         color: HEADER_TEXT,
-                        fontSize: "12px",
+                        fontSize: "13px",
                         fontWeight: 600,
                         boxSizing: "border-box",
                         flexShrink: 0,
@@ -929,8 +1213,10 @@ export default function PlanningManager() {
                         whiteSpace: "nowrap",
                         textOverflow: "ellipsis",
                         color: ADDRESS_TEXT,
-                        fontWeight: 700,
-                        fontSize: "14px",
+                        fontWeight: 900,
+                        fontSize: "15px",
+                        fontFamily: SHEET_FONT,
+                        WebkitTextStroke: "0.35px currentColor",
                         background: COL_A_FILL,
                         boxShadow: isSelected(rowIndex, 0) ? SELECTION_OUTLINE : undefined,
                         flexShrink: 0,
@@ -950,11 +1236,23 @@ export default function PlanningManager() {
                       const colIndex = Math.max(colStart, 1) + j;
                       const value = cellValue(rowIndex, colIndex);
                       const selected = isSelected(rowIndex, colIndex);
+                      const fill = columnFill(colIndex);
+                      const projectIndex = rowIndex - DATA_START_ROW;
+                      const project =
+                        colIndex === 1 && projectIndex >= 0 && projectIndex < projects.length
+                          ? projects[projectIndex]
+                          : null;
+                      const isDraftCol = colIndex === 1 && project;
                       return (
                         <div
                           key={colIndex}
                           title={value || undefined}
                           onClick={(e) => selectCell(rowIndex, colIndex, e)}
+                          onDoubleClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (colIndex >= 2) stampDateOnCell(rowIndex, colIndex);
+                          }}
                           style={{
                             position: "relative",
                             zIndex: selected ? 2 : 0,
@@ -964,23 +1262,69 @@ export default function PlanningManager() {
                             borderRight: `1px solid ${GRID_LINE}`,
                             borderBottom: `1px solid ${GRID_LINE}`,
                             boxSizing: "border-box",
-                            padding: "0 6px 2px",
+                            padding: isDraftCol ? "0 14px 2px 14px" : "0 6px 2px",
                             display: "flex",
                             alignItems: "flex-end",
-                            justifyContent: "flex-start",
+                            justifyContent: isDraftCol ? "center" : "flex-start",
                             overflow: "hidden",
                             whiteSpace: "nowrap",
                             textOverflow: "ellipsis",
-                            color: MONUMENT,
-                            fontWeight: 400,
-                            fontSize: "14px",
-                            background: WHITE,
+                            color: colIndex === 1 ? ADDRESS_TEXT : MONUMENT,
+                            fontWeight: colIndex === 1 ? 700 : 400,
+                            fontSize: "15px",
+                            fontFamily: SHEET_FONT,
+                            background: fill || WHITE,
                             boxShadow: selected ? SELECTION_OUTLINE : undefined,
                             flexShrink: 0,
                             cursor: "cell",
                           }}
                         >
-                          {value}
+                          <span
+                            style={{
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              minWidth: 0,
+                              flex: isDraftCol ? "0 1 auto" : 1,
+                              textAlign: isDraftCol ? "center" : "left",
+                            }}
+                          >
+                            {value}
+                          </span>
+                          {isDraftCol ? (
+                            <button
+                              type="button"
+                              data-draftsperson-arrow
+                              title="Select draftsperson"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                selectCell(rowIndex, colIndex);
+                                openDraftspersonMenu(project, e.currentTarget);
+                              }}
+                              style={{
+                                position: "absolute",
+                                right: 1,
+                                bottom: 1,
+                                width: 12,
+                                height: 10,
+                                padding: 0,
+                                margin: 0,
+                                border: "none",
+                                background: "transparent",
+                                color: HEADER_TEXT,
+                                fontSize: "8px",
+                                lineHeight: 1,
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                zIndex: 3,
+                              }}
+                            >
+                              ▼
+                            </button>
+                          ) : null}
                         </div>
                       );
                     })}
@@ -997,6 +1341,66 @@ export default function PlanningManager() {
           )}
         </div>
       </div>
+
+      {draftspersonMenu ? (
+        <div
+          data-draftsperson-menu
+          style={{
+            position: "fixed",
+            top: draftspersonMenu.top,
+            left: draftspersonMenu.left,
+            width: draftspersonMenu.width,
+            maxHeight: 280,
+            overflowY: "auto",
+            zIndex: 10000,
+            background: WHITE,
+            border: `1px solid ${HEADER_GRID_LINE}`,
+            boxShadow: "0 6px 20px rgba(0,0,0,0.18)",
+            borderRadius: "4px",
+          }}
+        >
+          {(() => {
+            const project = projects.find((p) => p.id === draftspersonMenu.projectId);
+            const current = normalizeDraftspersonField(project?.draftsperson);
+            const options = [
+              { value: DRAFTSPERSON_UNASSIGNED, label: "None" },
+              ...draftspersonUsers.map((dp) => ({
+                value: dp.name || "",
+                label: (dp.name || "").toUpperCase(),
+              })),
+            ];
+            return options.map((opt) => {
+              const active = current === normalizeDraftspersonField(opt.value);
+              return (
+                <button
+                  key={opt.value || "none"}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (project) saveDraftsperson(project, opt.value);
+                  }}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "8px 10px",
+                    border: "none",
+                    borderBottom: `1px solid ${HEADER_GRID_LINE}`,
+                    background: active ? COL_YELLOW : WHITE,
+                    color: ADDRESS_TEXT,
+                    fontSize: "13px",
+                    fontWeight: active ? 700 : 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            });
+          })()}
+        </div>
+      ) : null}
     </div>
   );
 }
