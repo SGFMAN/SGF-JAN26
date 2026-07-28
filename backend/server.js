@@ -1315,6 +1315,10 @@ async function ensureSchema() {
       "planning_pic_requested_at",
       "planning_pic_received_at",
       "planning_sewer_connection",
+      "planning_land_channel_zones_overlays_sent_at",
+      "planning_land_channel_zones_overlays_received_at",
+      "planning_land_data_title_covenants_sent_at",
+      "planning_land_data_title_covenants_received_at",
       ...PROJECT_PAYMENT_COLUMNS,
     ]);
     await ensureProjectPaymentColumns(pool);
