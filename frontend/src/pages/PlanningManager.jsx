@@ -927,20 +927,30 @@ export default function PlanningManager() {
             alignItems: "center",
             justifyContent: "center",
             gap: 16,
-            flexWrap: "wrap",
             maxWidth: "calc(100% - 280px)",
+            flexShrink: 1,
+            minWidth: 0,
           }}
         >
-          <h1 style={{ margin: 0, fontSize: "2.4rem", fontWeight: 700, color: PAGE_TEXT, letterSpacing: "1px" }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "2.4rem",
+              fontWeight: 700,
+              color: PAGE_TEXT,
+              letterSpacing: "1px",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+            }}
+          >
             Managers
           </h1>
           <div
             style={{
-              display: "flex",
-              alignItems: "stretch",
-              gap: 8,
               position: "relative",
-              zIndex: 20,
+              zIndex: 40,
+              flexShrink: 0,
+              height: 36,
             }}
           >
             <input
@@ -950,7 +960,8 @@ export default function PlanningManager() {
               onChange={(e) => setProjectSearch(e.target.value)}
               style={{
                 width: 220,
-                padding: "8px 12px",
+                height: 36,
+                padding: "0 12px",
                 fontSize: 14,
                 fontFamily: SHEET_FONT,
                 border: `1px solid ${HEADER_GRID_LINE}`,
@@ -963,13 +974,18 @@ export default function PlanningManager() {
             {projectSearch.trim() ? (
               <div
                 style={{
+                  position: "absolute",
+                  left: "100%",
+                  top: 0,
+                  marginLeft: 8,
                   width: 320,
-                  maxHeight: 280,
+                  maxHeight: 320,
                   overflowY: "auto",
                   background: WHITE,
                   border: `1px solid ${HEADER_GRID_LINE}`,
                   borderRadius: 6,
-                  boxShadow: "0 8px 24px rgba(0,0,0,0.16)",
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+                  zIndex: 50,
                 }}
               >
                 {projectSearchMatches.length === 0 ? (
