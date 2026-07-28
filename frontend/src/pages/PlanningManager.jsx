@@ -9,7 +9,7 @@ import {
   normalizeDraftspersonField,
   isDraftspersonAssigned,
 } from "../utils/draftspersonSentinel";
-import { isHotlistStatus } from "../utils/projectStatus";
+import { isHotlistStatus, isCancelledStatus } from "../utils/projectStatus";
 import {
   getPlanningManagerColMapping,
   formatPlanningManagerSheetDate,
@@ -28,6 +28,7 @@ const HEADER_TEXT = "#333333";
 const HEADING_BLUE = "rgb(21, 13, 247)";
 const HEADER_SELECT_BG = "rgb(180, 198, 231)";
 const ADDRESS_TEXT = "#000000";
+const CANCELLED_TEXT = "#ff0000";
 const COL_A_FILL = "rgb(218, 242, 208)";
 const COL_YELLOW = "rgb(255, 230, 153)";
 const COL_LIGHT_BLUE = HEADER_SELECT_BG;
@@ -36,7 +37,7 @@ const SELECTION_OUTLINE = `inset 0 0 0 2px ${HEADING_BLUE}`;
 const API_URL = "";
 
 const COL_COUNT = 78; // A–BZ
-const ROW_COUNT = 300;
+const ROW_COUNT = 500;
 const VISIBLE_ROWS = 23;
 const DATA_START_ROW = 2; // row 1 = titles; row 2 reserved for Sent/Received later
 const ROW_HEADER_WIDTH = 48;
@@ -202,12 +203,15 @@ function sanitizeColWidths(raw) {
 }
 
 function sanitizeRowHeights(raw) {
-  if (!Array.isArray(raw) || raw.length !== ROW_COUNT) return null;
-  const next = raw.map((v) => {
-    const n = Number(v);
-    return Number.isFinite(n) ? Math.max(MIN_ROW_HEIGHT, Math.round(n)) : null;
-  });
-  return next.every((n) => n != null) ? next : null;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const next = [];
+  for (let i = 0; i < ROW_COUNT; i += 1) {
+    const source = i < raw.length ? raw[i] : raw[raw.length - 1];
+    const n = Number(source);
+    if (!Number.isFinite(n)) return null;
+    next.push(Math.max(MIN_ROW_HEIGHT, Math.round(n)));
+  }
+  return next;
 }
 
 function sanitizeProjectOrder(raw) {
@@ -331,10 +335,10 @@ export default function PlanningManager() {
   const [draftspersonUsers, setDraftspersonUsers] = useState([]);
   const [draftspersonMenu, setDraftspersonMenu] = useState(null); // { projectId, top, left, width }
   const [sheetCells, setSheetCells] = useState({}); // { [projectId]: { [colIndex]: value } }
-  const [projectDrag, setProjectDrag] = useState(null); // { fromIndex, toIndex } | null
+  const [moveRowModal, setMoveRowModal] = useState(null); // { projectIndex, label, inputValue } | null
   const projectOrderRef = useRef(null);
-  const projectDragRef = useRef(null);
   const projectsRef = useRef(projects);
+  const moveRowInputRef = useRef(null);
   projectsRef.current = projects;
 
   const resizeRef = useRef(null);
@@ -508,8 +512,6 @@ export default function PlanningManager() {
     }
     return offsets;
   }, [rowHeights, baseRowHeight]);
-  const rowOffsetsRef = useRef(rowOffsets);
-  rowOffsetsRef.current = rowOffsets;
 
   const totalWidth = colOffsets[COL_COUNT];
   const totalHeight = rowOffsets[ROW_COUNT];
@@ -683,50 +685,34 @@ export default function PlanningManager() {
     );
   }
 
-  function projectIndexAtClientY(clientY) {
-    const viewport = sheetViewportRef.current;
-    const count = projectsRef.current.length;
-    if (!viewport || count <= 0) return null;
-    const rect = viewport.getBoundingClientRect();
-    const colW = colWidthsRef.current?.[0] || DEFAULT_COL_WIDTH;
-    // Always sample inside column A so horizontal mouse drift never targets other cols.
-    const sampleX = rect.left + ROW_HEADER_WIDTH + Math.min(20, Math.max(4, colW / 2));
-    const hits = document.elementsFromPoint(sampleX, clientY);
-    for (const el of hits) {
-      const node = el.closest?.("[data-project-index]");
-      if (!node || !viewport.contains(node)) continue;
-      const idx = Number(node.getAttribute("data-project-index"));
-      if (Number.isFinite(idx) && idx >= 0 && idx < count) return idx;
-    }
-    const yInBody = viewport.scrollTop + (clientY - rect.top) - COL_HEADER_HEIGHT;
-    const offsets = rowOffsetsRef.current;
-    const firstRow = DATA_START_ROW;
-    const lastRow = DATA_START_ROW + count - 1;
-    if (yInBody < offsets[firstRow]) return 0;
-    if (yInBody >= offsets[lastRow + 1]) return count - 1;
-    let lo = firstRow;
-    let hi = lastRow;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (yInBody < offsets[mid]) hi = mid - 1;
-      else if (yInBody >= offsets[mid + 1]) lo = mid + 1;
-      else return mid - DATA_START_ROW;
-    }
-    return Math.max(0, Math.min(count - 1, lo - DATA_START_ROW));
+  function openMoveRowModal(projectIndex) {
+    if (projectIndex < 0 || projectIndex >= projects.length) return;
+    const project = projects[projectIndex];
+    const sheetRow = DATA_START_ROW + projectIndex + 1;
+    selectCell(DATA_START_ROW + projectIndex, 0);
+    setMoveRowModal({
+      projectIndex,
+      label: projectLabel(project) || "Project",
+      inputValue: String(sheetRow),
+    });
   }
 
-  function startProjectDrag(projectIndex, e) {
-    if (e.button !== 0 || projects.length <= 1) return;
-    if (projectIndex < 0 || projectIndex >= projects.length) return;
-    e.preventDefault();
-    e.stopPropagation();
-    selectCell(DATA_START_ROW + projectIndex, 0);
-    projectDragRef.current = {
-      fromIndex: projectIndex,
-      startY: e.clientY,
-      dragging: false,
-      toIndex: projectIndex,
-    };
+  function confirmMoveRowModal() {
+    if (!moveRowModal) return;
+    const rowNum = parseInt(String(moveRowModal.inputValue).trim(), 10);
+    if (!Number.isFinite(rowNum)) {
+      alert("Enter a valid row number");
+      return;
+    }
+    const firstProjectRow = DATA_START_ROW + 1;
+    const listLen = projectsRef.current.length;
+    if (listLen <= 0) {
+      setMoveRowModal(null);
+      return;
+    }
+    const targetIndex = Math.max(0, Math.min(listLen - 1, rowNum - firstProjectRow));
+    reorderProject(moveRowModal.projectIndex, targetIndex);
+    setMoveRowModal(null);
   }
 
   async function stampDateOnCell(rowIndex, colIndex) {
@@ -814,31 +800,6 @@ export default function PlanningManager() {
 
   useEffect(() => {
     function onMove(e) {
-      const drag = projectDragRef.current;
-      if (drag) {
-        // Vertical-only: ignore horizontal movement entirely.
-        if (!drag.dragging && Math.abs(e.clientY - drag.startY) >= 5) {
-          drag.dragging = true;
-          setProjectDrag({ fromIndex: drag.fromIndex, toIndex: drag.fromIndex });
-        }
-        if (drag.dragging) {
-          const toIndex = projectIndexAtClientY(e.clientY);
-          if (toIndex != null && toIndex !== drag.toIndex) {
-            drag.toIndex = toIndex;
-            setProjectDrag({ fromIndex: drag.fromIndex, toIndex });
-          }
-          const viewport = sheetViewportRef.current;
-          if (viewport) {
-            const rect = viewport.getBoundingClientRect();
-            const edge = 40;
-            const topLimit = rect.top + COL_HEADER_HEIGHT + edge;
-            if (e.clientY < topLimit) viewport.scrollTop -= 14;
-            else if (e.clientY > rect.bottom - edge) viewport.scrollTop += 14;
-          }
-        }
-        return;
-      }
-
       const active = resizeRef.current;
       if (!active) return;
       if (active.type === "col") {
@@ -860,16 +821,6 @@ export default function PlanningManager() {
       }
     }
     function onUp(e) {
-      const drag = projectDragRef.current;
-      if (drag) {
-        if (drag.dragging && drag.toIndex !== drag.fromIndex) {
-          reorderProject(drag.fromIndex, drag.toIndex);
-        }
-        projectDragRef.current = null;
-        setProjectDrag(null);
-        return;
-      }
-
       const active = resizeRef.current;
       if (!active) return;
       if (active.type === "col") {
@@ -901,6 +852,22 @@ export default function PlanningManager() {
       window.removeEventListener("pointercancel", onUp);
     };
   }, [queueSaveLayout]);
+
+  useEffect(() => {
+    if (!moveRowModal) return undefined;
+    const t = window.setTimeout(() => {
+      moveRowInputRef.current?.focus?.();
+      moveRowInputRef.current?.select?.();
+    }, 0);
+    function onKey(e) {
+      if (e.key === "Escape") setMoveRowModal(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [moveRowModal]);
 
   const { start: rowStart, end: rowEnd } = visibleRowRange;
   const { start: colStart, end: colEnd } = visibleColRange;
@@ -1355,18 +1322,21 @@ export default function PlanningManager() {
                     {/* Frozen column A */}
                     {(() => {
                       const projectIndex = rowIndex - DATA_START_ROW;
+                      const project =
+                        projectIndex >= 0 && projectIndex < projects.length
+                          ? projects[projectIndex]
+                          : null;
                       const addressText = cellValue(rowIndex, 0);
-                      const isDragging = projectDrag?.fromIndex === projectIndex;
-                      const isDropTarget =
-                        projectDrag &&
-                        projectDrag.toIndex === projectIndex &&
-                        projectDrag.fromIndex !== projectIndex;
+                      const cancelled = isCancelledStatus(project?.status);
                       return (
                     <div
-                      title={addressText ? `${addressText} (drag to reorder)` : "Drag to reorder"}
-                      data-project-index={projectIndex}
+                      title={addressText ? `${addressText} (double-click to move)` : undefined}
                       onClick={(e) => selectCell(rowIndex, 0, e)}
-                      onPointerDown={(e) => startProjectDrag(projectIndex, e)}
+                      onDoubleClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openMoveRowModal(projectIndex);
+                      }}
                       style={{
                         position: "sticky",
                         left: ROW_HEADER_WIDTH,
@@ -1375,9 +1345,7 @@ export default function PlanningManager() {
                         minWidth: colWidths[0],
                         height: h,
                         borderRight: `1px solid ${GRID_LINE}`,
-                        borderBottom: isDropTarget
-                          ? `2px solid ${HEADING_BLUE}`
-                          : `1px solid ${GRID_LINE}`,
+                        borderBottom: `1px solid ${GRID_LINE}`,
                         boxSizing: "border-box",
                         padding: "0 6px 2px",
                         display: "flex",
@@ -1386,7 +1354,8 @@ export default function PlanningManager() {
                         overflow: "hidden",
                         whiteSpace: "nowrap",
                         textOverflow: "ellipsis",
-                        color: ADDRESS_TEXT,
+                        color: cancelled ? CANCELLED_TEXT : ADDRESS_TEXT,
+                        WebkitTextFillColor: cancelled ? CANCELLED_TEXT : ADDRESS_TEXT,
                         fontWeight: 900,
                         fontSize: "15px",
                         fontFamily: SHEET_FONT,
@@ -1394,9 +1363,7 @@ export default function PlanningManager() {
                         background: COL_A_FILL,
                         boxShadow: isSelected(rowIndex, 0) ? SELECTION_OUTLINE : undefined,
                         flexShrink: 0,
-                        cursor: projectDrag ? "grabbing" : "grab",
-                        opacity: isDragging ? 0.45 : 1,
-                        touchAction: "none",
+                        cursor: "cell",
                       }}
                     >
                       {addressText}
@@ -1577,6 +1544,137 @@ export default function PlanningManager() {
               );
             });
           })()}
+        </div>
+      ) : null}
+
+      {moveRowModal ? (
+        <div
+          role="presentation"
+          onClick={() => setMoveRowModal(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 10050,
+            background: "rgba(0,0,0,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Move project to row"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 360,
+              background: WHITE,
+              borderRadius: 8,
+              border: `1px solid ${HEADER_GRID_LINE}`,
+              boxShadow: "0 12px 40px rgba(0,0,0,0.22)",
+              padding: "20px 22px",
+              fontFamily: SHEET_FONT,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 700,
+                color: ADDRESS_TEXT,
+                marginBottom: 6,
+              }}
+            >
+              Move to row
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                color: HEADER_TEXT,
+                marginBottom: 14,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+              title={moveRowModal.label}
+            >
+              {moveRowModal.label}
+            </div>
+            <label
+              style={{
+                display: "block",
+                fontSize: 13,
+                fontWeight: 600,
+                color: HEADER_TEXT,
+                marginBottom: 6,
+              }}
+            >
+              Row number
+            </label>
+            <input
+              ref={moveRowInputRef}
+              type="number"
+              min={DATA_START_ROW + 1}
+              step={1}
+              value={moveRowModal.inputValue}
+              onChange={(e) =>
+                setMoveRowModal((prev) =>
+                  prev ? { ...prev, inputValue: e.target.value } : prev
+                )
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  confirmMoveRowModal();
+                }
+              }}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: "8px 10px",
+                fontSize: 16,
+                fontFamily: SHEET_FONT,
+                border: `1px solid ${HEADER_GRID_LINE}`,
+                borderRadius: 4,
+                marginBottom: 16,
+              }}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setMoveRowModal(null)}
+                style={{
+                  padding: "8px 14px",
+                  border: `1px solid ${HEADER_GRID_LINE}`,
+                  borderRadius: 4,
+                  background: WHITE,
+                  color: ADDRESS_TEXT,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmMoveRowModal}
+                style={{
+                  padding: "8px 14px",
+                  border: "none",
+                  borderRadius: 4,
+                  background: HEADING_BLUE,
+                  color: WHITE,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Move
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

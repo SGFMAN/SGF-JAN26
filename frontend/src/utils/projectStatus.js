@@ -19,7 +19,7 @@ export function isHotlistStatus(status) {
 }
 
 export function isCancelledStatus(status) {
-  return normalizeStatus(status) === "Cancelled";
+  return normalizeStatus(status).toLowerCase() === "cancelled";
 }
 
 export function isCompleteStatus(status) {

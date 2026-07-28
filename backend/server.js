@@ -5197,7 +5197,7 @@ app.put("/api/colour-section-ranges", async (req, res) => {
 });
 
 const PLANNING_MANAGER_COL_COUNT = 78;
-const PLANNING_MANAGER_ROW_COUNT = 300;
+const PLANNING_MANAGER_ROW_COUNT = 500;
 const PLANNING_MANAGER_MIN_COL_WIDTH = 40;
 const PLANNING_MANAGER_MIN_ROW_HEIGHT = 16;
 
@@ -5208,6 +5208,19 @@ function sanitizePlanningManagerNumberArray(raw, expectedLength, minValue) {
     return Number.isFinite(n) ? Math.max(minValue, Math.round(n)) : null;
   });
   return next.every((n) => n != null) ? next : null;
+}
+
+/** Accept older saved layouts with a different row count by padding/truncating. */
+function sanitizePlanningManagerRowHeights(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const next = [];
+  for (let i = 0; i < PLANNING_MANAGER_ROW_COUNT; i += 1) {
+    const source = i < raw.length ? raw[i] : raw[raw.length - 1];
+    const n = Number(source);
+    if (!Number.isFinite(n)) return null;
+    next.push(Math.max(PLANNING_MANAGER_MIN_ROW_HEIGHT, Math.round(n)));
+  }
+  return next;
 }
 
 function sanitizePlanningManagerProjectOrder(raw) {
@@ -5246,11 +5259,7 @@ function parsePlanningManagerLayoutColumn(raw) {
   );
   const rowsCustomized = Boolean(obj.rowsCustomized);
   const rowHeights = rowsCustomized
-    ? sanitizePlanningManagerNumberArray(
-        obj.rowHeights,
-        PLANNING_MANAGER_ROW_COUNT,
-        PLANNING_MANAGER_MIN_ROW_HEIGHT
-      )
+    ? sanitizePlanningManagerRowHeights(obj.rowHeights)
     : null;
   const projectOrder = sanitizePlanningManagerProjectOrder(obj.projectOrder);
   return {
