@@ -867,7 +867,8 @@ export default function PlanningManager() {
       window.clearTimeout(t);
       window.removeEventListener("keydown", onKey);
     };
-  }, [moveRowModal]);
+    // Only when the modal opens for a project — not on each keystroke.
+  }, [moveRowModal?.projectIndex]);
 
   const { start: rowStart, end: rowEnd } = visibleRowRange;
   const { start: colStart, end: colEnd } = visibleColRange;
