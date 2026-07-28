@@ -1,5 +1,6 @@
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import pdfjsWorker from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
+import { getApiHeaders } from "./auth";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -57,7 +58,9 @@ async function renderPdfFirstPageToCanvas(file) {
 
 /** Load a PDF from URL and keep the document open for page navigation. */
 export async function loadPdfDocumentFromUrl(url) {
-  const response = await fetch(url);
+  const headers = getApiHeaders();
+  delete headers["Content-Type"];
+  const response = await fetch(url, { headers, credentials: "include" });
   if (!response.ok) {
     throw new Error("Could not load plan PDF");
   }

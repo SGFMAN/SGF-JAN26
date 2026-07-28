@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
+import AuthedPdfFrame from "../components/AuthedPdfFrame";
 import { useSalesAccess } from "../hooks/useSalesAccess";
 import {
   getProjectClientEmailsForDrawings,
@@ -4882,13 +4883,12 @@ export default function Drawings({
             </div>
 
             <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-              <iframe
-                src={(() => {
-                  const base =
-                    drawingsPdfSrcOverride || `${API_URL}/api/files/drawings/${project.id}`;
-                  const sep = base.includes("?") ? "&" : "?";
-                  return `${base}${sep}t=${new Date().getTime()}`;
-                })()}
+              <AuthedPdfFrame
+                src={
+                  drawingsPdfSrcOverride || `${API_URL}/api/files/drawings/${project.id}`
+                }
+                title="Drawings PDF"
+                errorLabel="Could not load drawings"
                 style={{
                   width: "100%",
                   height: "100%",
@@ -4897,7 +4897,6 @@ export default function Drawings({
                   borderRadius: "8px",
                   minHeight: 0,
                 }}
-                title="Drawings PDF"
               />
             </div>
           </div>
