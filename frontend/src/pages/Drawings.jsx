@@ -38,6 +38,7 @@ import {
   applyWorkingDrawingsApprovalRules,
   newDrawingHistoryEntryFields,
   parseDrawingsHistory,
+  formatDrawingApprovalDateLabel,
 } from "../utils/drawingsStatusRules";
 
 import { getApiHeaders } from "../utils/auth";
@@ -440,8 +441,14 @@ export default function Drawings({
       return;
     }
 
-    const { history: updatedHistory, drawingsStatus: nextStatus, drawings_holder, drawings_holder_date } =
-      applyConceptApprovalRules(drawingsHistory);
+    const {
+      history: updatedHistory,
+      drawingsStatus: nextStatus,
+      drawings_holder,
+      drawings_holder_date,
+      drawings_concept_approved_date,
+      drawings_working_approved_date,
+    } = applyConceptApprovalRules(drawingsHistory);
 
     // Save updated history and status
     const projectName = project?.street && project?.suburb 
@@ -453,6 +460,7 @@ export default function Drawings({
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
+          ...getApiHeaders(),
         },
         body: JSON.stringify({
           name: projectName,
@@ -517,6 +525,18 @@ export default function Drawings({
       if (!response.ok) {
         throw new Error("Failed to update drawings status");
       }
+
+      await fetch(`${API_URL}/api/projects/${project.id}/drawing-approval-dates`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...getApiHeaders(),
+        },
+        body: JSON.stringify({
+          drawings_concept_approved_date,
+          drawings_working_approved_date,
+        }),
+      });
 
       setDrawingsStatus(nextStatus);
       valuesRef.current.drawingsStatus = nextStatus;
@@ -549,8 +569,17 @@ export default function Drawings({
       return;
     }
 
-    const { history: updatedHistory, drawingsStatus: nextStatus, drawings_holder, drawings_holder_date } =
-      applyWorkingDrawingsApprovalRules(drawingsHistory);
+    const {
+      history: updatedHistory,
+      drawingsStatus: nextStatus,
+      drawings_holder,
+      drawings_holder_date,
+      drawings_concept_approved_date,
+      drawings_working_approved_date,
+    } = applyWorkingDrawingsApprovalRules(
+      drawingsHistory,
+      project?.drawings_concept_approved_date
+    );
 
     // Save updated history and status
     const projectName = project?.street && project?.suburb 
@@ -562,6 +591,7 @@ export default function Drawings({
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
+          ...getApiHeaders(),
         },
         body: JSON.stringify({
           name: projectName,
@@ -626,6 +656,18 @@ export default function Drawings({
       if (!response.ok) {
         throw new Error("Failed to update drawings status");
       }
+
+      await fetch(`${API_URL}/api/projects/${project.id}/drawing-approval-dates`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...getApiHeaders(),
+        },
+        body: JSON.stringify({
+          drawings_concept_approved_date,
+          drawings_working_approved_date,
+        }),
+      });
 
       setDrawingsStatus(nextStatus);
       valuesRef.current.drawingsStatus = nextStatus;
@@ -867,6 +909,18 @@ export default function Drawings({
         const errorText = await response.text().catch(() => response.statusText);
         throw new Error(`Failed to clear drawing data: ${errorText}`);
       }
+
+      await fetch(`${API_URL}/api/projects/${project.id}/drawing-approval-dates`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...getApiHeaders(),
+        },
+        body: JSON.stringify({
+          drawings_concept_approved_date: null,
+          drawings_working_approved_date: null,
+        }),
+      });
 
       // Update local state
       setDrawingsStatus("Not Assigned");
@@ -1981,7 +2035,7 @@ export default function Drawings({
     setIsSendingDraftingEmail(true);
     try {
       let drawingsHistory = parseDrawingsHistory(project?.drawings_history);
-      const { history: historyWithRules, drawingsStatus: nextDrawingsStatus } =
+      const { history: historyWithRules, drawingsStatus: nextDrawingsStatus, drawings_concept_approved_date, drawings_working_approved_date } =
         applyDrawingUploadKindRules(
           drawingsHistory,
           newDrawingUploadKind,
@@ -2071,6 +2125,20 @@ export default function Drawings({
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: response.statusText }));
         throw new Error(errorData.error || "Failed to save drawing upload status");
+      }
+
+      if (newDrawingUploadKind === "concept" || newDrawingUploadKind === "working") {
+        await fetch(`${API_URL}/api/projects/${project.id}/drawing-approval-dates`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            ...getApiHeaders(),
+          },
+          body: JSON.stringify({
+            drawings_concept_approved_date: drawings_concept_approved_date ?? null,
+            drawings_working_approved_date: drawings_working_approved_date ?? null,
+          }),
+        });
       }
 
       setDrawingsStatus(nextDrawingsStatus);
@@ -3286,7 +3354,14 @@ export default function Drawings({
                                 userSelect: "none",
                               }}
                             >
-                              Working Drawings Approved
+                              {(() => {
+                                const d = formatDrawingApprovalDateLabel(
+                                  drawing.workingDrawingsApprovedDate
+                                );
+                                return d
+                                  ? `Working Drawings Approved ${d}`
+                                  : "Working Drawings Approved";
+                              })()}
                             </span>
                           ) : drawing.conceptApproved ? (
                             <span
@@ -3305,7 +3380,12 @@ export default function Drawings({
                                 userSelect: "none",
                               }}
                             >
-                              Concept Approved
+                              {(() => {
+                                const d = formatDrawingApprovalDateLabel(
+                                  drawing.conceptApprovedDate
+                                );
+                                return d ? `Concept Approved ${d}` : "Concept Approved";
+                              })()}
                             </span>
                           ) : null}
                         </div>

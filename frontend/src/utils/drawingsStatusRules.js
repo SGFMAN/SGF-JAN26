@@ -9,10 +9,30 @@ export const DRAWINGS_STATUS = {
 
 export const DRAWINGS_HOLDER_DESIGN_TEAM = "design team";
 
+const SHEET_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+export function todayIsoDate() {
+  return new Date().toISOString().split("T")[0];
+}
+
+/** Display dd-Mmm from ISO YYYY-MM-DD (approval banners / planning sheet). */
+export function formatDrawingApprovalDateLabel(raw) {
+  if (raw == null || raw === "") return "";
+  const s = String(raw).trim();
+  if (!s) return "";
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const day = parseInt(s.slice(8, 10), 10);
+    const month = parseInt(s.slice(5, 7), 10) - 1;
+    if (!Number.isFinite(day) || month < 0 || month > 11) return "";
+    return `${String(day).padStart(2, "0")}-${SHEET_MONTHS[month]}`;
+  }
+  return s;
+}
+
 export function getDrawingsHolderResetOnApproval() {
   return {
     drawings_holder: DRAWINGS_HOLDER_DESIGN_TEAM,
-    drawings_holder_date: new Date().toISOString().split("T")[0],
+    drawings_holder_date: todayIsoDate(),
   };
 }
 
@@ -65,9 +85,13 @@ export function applyConceptUploadRules(drawingsHistory) {
     history: updateLatestRevisionFlags(drawingsHistory, {
       conceptApproved: false,
       workingDrawingsApproved: false,
+      conceptApprovedDate: null,
+      workingDrawingsApprovedDate: null,
       uploadKind: "concept",
     }),
     drawingsStatus: DRAWINGS_STATUS.CONCEPT_STAGE,
+    drawings_concept_approved_date: null,
+    drawings_working_approved_date: null,
   };
 }
 
@@ -77,9 +101,13 @@ export function applyWorkingUploadRules(drawingsHistory) {
     history: updateLatestRevisionFlags(drawingsHistory, {
       conceptApproved: false,
       workingDrawingsApproved: false,
+      conceptApprovedDate: null,
+      workingDrawingsApprovedDate: null,
       uploadKind: "working",
     }),
     drawingsStatus: DRAWINGS_STATUS.WORKING_STAGE,
+    drawings_concept_approved_date: null,
+    drawings_working_approved_date: null,
   };
 }
 
@@ -108,24 +136,43 @@ export function applyDrawingUploadKindRules(drawingsHistory, uploadKind, current
 
 /** Approve Concept button / client portal. */
 export function applyConceptApprovalRules(drawingsHistory) {
+  const today = todayIsoDate();
   return {
     history: updateLatestRevisionFlags(drawingsHistory, {
       conceptApproved: true,
       workingDrawingsApproved: false,
+      conceptApprovedDate: today,
+      workingDrawingsApprovedDate: null,
     }),
     drawingsStatus: DRAWINGS_STATUS.WORKING_STAGE,
+    drawings_concept_approved_date: today,
+    drawings_working_approved_date: null,
     ...getDrawingsHolderResetOnApproval(),
   };
 }
 
-/** Approve Working Drawings button. */
-export function applyWorkingDrawingsApprovalRules(drawingsHistory) {
+/**
+ * Approve Working Drawings button.
+ * Updates working-approved date to today; keeps existing concept date when present.
+ */
+export function applyWorkingDrawingsApprovalRules(drawingsHistory, existingConceptDate) {
+  const today = todayIsoDate();
+  const latest = getLatestDrawingEntry(drawingsHistory);
+  const priorConcept =
+    (latest?.conceptApprovedDate && String(latest.conceptApprovedDate).trim()) ||
+    (existingConceptDate != null && String(existingConceptDate).trim()) ||
+    "";
+  const conceptDate = priorConcept || today;
   return {
     history: updateLatestRevisionFlags(drawingsHistory, {
       conceptApproved: true,
       workingDrawingsApproved: true,
+      conceptApprovedDate: conceptDate,
+      workingDrawingsApprovedDate: today,
     }),
     drawingsStatus: DRAWINGS_STATUS.COMPLETE,
+    drawings_concept_approved_date: conceptDate,
+    drawings_working_approved_date: today,
     ...getDrawingsHolderResetOnApproval(),
   };
 }
@@ -134,5 +181,7 @@ export function newDrawingHistoryEntryFields() {
   return {
     conceptApproved: false,
     workingDrawingsApproved: false,
+    conceptApprovedDate: null,
+    workingDrawingsApprovedDate: null,
   };
 }

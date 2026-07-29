@@ -9,10 +9,14 @@ const DRAWINGS_STATUS = {
 
 const DRAWINGS_HOLDER_DESIGN_TEAM = "design team";
 
+function todayIsoDate() {
+  return new Date().toISOString().split("T")[0];
+}
+
 function getDrawingsHolderResetOnApproval() {
   return {
     drawings_holder: DRAWINGS_HOLDER_DESIGN_TEAM,
-    drawings_holder_date: new Date().toISOString().split("T")[0],
+    drawings_holder_date: todayIsoDate(),
   };
 }
 
@@ -27,6 +31,11 @@ function parseDrawingsHistory(historyValue) {
   }
 }
 
+function getLatestDrawingEntry(drawingsHistory) {
+  if (!Array.isArray(drawingsHistory) || drawingsHistory.length === 0) return null;
+  return drawingsHistory[drawingsHistory.length - 1];
+}
+
 function updateLatestRevisionFlags(drawingsHistory, flags) {
   if (!Array.isArray(drawingsHistory) || drawingsHistory.length === 0) {
     return drawingsHistory;
@@ -38,23 +47,39 @@ function updateLatestRevisionFlags(drawingsHistory, flags) {
 }
 
 function applyConceptApprovalRules(drawingsHistory) {
+  const today = todayIsoDate();
   return {
     history: updateLatestRevisionFlags(drawingsHistory, {
       conceptApproved: true,
       workingDrawingsApproved: false,
+      conceptApprovedDate: today,
+      workingDrawingsApprovedDate: null,
     }),
     drawingsStatus: DRAWINGS_STATUS.WORKING_STAGE,
+    drawings_concept_approved_date: today,
+    drawings_working_approved_date: null,
     ...getDrawingsHolderResetOnApproval(),
   };
 }
 
-function applyWorkingDrawingsApprovalRules(drawingsHistory) {
+function applyWorkingDrawingsApprovalRules(drawingsHistory, existingConceptDate) {
+  const today = todayIsoDate();
+  const latest = getLatestDrawingEntry(drawingsHistory);
+  const priorConcept =
+    (latest?.conceptApprovedDate && String(latest.conceptApprovedDate).trim()) ||
+    (existingConceptDate != null && String(existingConceptDate).trim()) ||
+    "";
+  const conceptDate = priorConcept || today;
   return {
     history: updateLatestRevisionFlags(drawingsHistory, {
       conceptApproved: true,
       workingDrawingsApproved: true,
+      conceptApprovedDate: conceptDate,
+      workingDrawingsApprovedDate: today,
     }),
     drawingsStatus: DRAWINGS_STATUS.COMPLETE,
+    drawings_concept_approved_date: conceptDate,
+    drawings_working_approved_date: today,
     ...getDrawingsHolderResetOnApproval(),
   };
 }
@@ -65,4 +90,5 @@ module.exports = {
   applyConceptApprovalRules,
   applyWorkingDrawingsApprovalRules,
   getDrawingsHolderResetOnApproval,
+  todayIsoDate,
 };

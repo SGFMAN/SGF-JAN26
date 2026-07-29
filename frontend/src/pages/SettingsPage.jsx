@@ -11,6 +11,7 @@ import StreamsSettings from "./StreamsSettings";
 import MapsSettings from "./MapsSettings";
 import UISettings from "./UISettings";
 import PaymentsSettings from "./PaymentsSettings";
+import PlanningSettings from "./PlanningSettings";
 import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -28,6 +29,7 @@ const menuOptions = [
   { key: "file", label: "File Settings" },
   { key: "maps", label: "Maps" },
   { key: "payments", label: "Payments" },
+  { key: "planning", label: "Planning" },
   { key: "emailSettings", label: "SMTP Settings" },
   { key: "streams", label: "Streams" },
   { key: "ui", label: "UI" },
@@ -65,6 +67,8 @@ export default function SettingsPage() {
         return <MapsSettings />;
       case "payments":
         return <PaymentsSettings />;
+      case "planning":
+        return <PlanningSettings />;
       case "streams":
         return <StreamsSettings />;
       case "streamSettings":

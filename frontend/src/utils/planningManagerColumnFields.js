@@ -31,6 +31,9 @@ export const PLANNING_MANAGER_COL_FIELD = {
   17: { field: "planning_jf_property_info_report_received_at" },
   // Job File Created (S) — project start date (`year`)
   18: { field: "year", readOnly: true },
+  // Concept / Working Drawings approvals (T–U) — set only via Drawings approve buttons
+  19: { field: "drawings_concept_approved_date", readOnly: true },
+  20: { field: "drawings_working_approved_date", readOnly: true },
 };
 
 export const PLANNING_MANAGER_WRITABLE_DATE_FIELDS = Object.values(PLANNING_MANAGER_COL_FIELD)
