@@ -41,8 +41,20 @@ const DRAWING_MANAGER_STATUS_SECTIONS = [
   "Working Drawing Stage",
 ];
 
-function sortProjectsAlphabetically(projectsList) {
+function getHolderDaysNum(project) {
+  if (!project?.drawings_holder_date) return 0;
+  const holderDate = new Date(project.drawings_holder_date);
+  if (Number.isNaN(holderDate.getTime())) return 0;
+  const today = new Date();
+  const diffTime = Math.abs(today - holderDate);
+  return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+}
+
+/** Highest holder-days first; suburb/street as tiebreaker. */
+function sortProjectsByDaysDescending(projectsList) {
   return [...projectsList].sort((a, b) => {
+    const daysDiff = getHolderDaysNum(b) - getHolderDaysNum(a);
+    if (daysDiff !== 0) return daysDiff;
     const suburbA = (a.suburb || "").toLowerCase();
     const suburbB = (b.suburb || "").toLowerCase();
     if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
@@ -65,7 +77,7 @@ function groupProjectsByDrawingStatus(projectsList) {
     groups[getDrawingManagerStatusBucket(project)].push(project);
   }
   for (const title of DRAWING_MANAGER_STATUS_SECTIONS) {
-    groups[title] = sortProjectsAlphabetically(groups[title]);
+    groups[title] = sortProjectsByDaysDescending(groups[title]);
   }
   return groups;
 }
@@ -359,7 +371,7 @@ export default function DrawingManager() {
         return true;
       });
       const visibleProjects = designPhaseProjects.filter(shouldShowInDrawingManagerList);
-      setProjects(sortProjectsAlphabetically(visibleProjects));
+      setProjects(visibleProjects);
     } catch (err) {
       setError(err.message);
       console.error("Error fetching projects:", err);
@@ -688,14 +700,7 @@ export default function DrawingManager() {
   // Helper function to get holder display with days
   function getHolderDisplayForSort(project) {
     const holder = project.drawings_holder || "design team";
-    let daysNum = 0;
-    if (project.drawings_holder_date) {
-      const holderDate = new Date(project.drawings_holder_date);
-      const today = new Date();
-      const diffTime = Math.abs(today - holderDate);
-      daysNum = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    }
-    return { holder: holder, daysNum: daysNum };
+    return { holder: holder, daysNum: getHolderDaysNum(project) };
   }
 
   // Sort function
