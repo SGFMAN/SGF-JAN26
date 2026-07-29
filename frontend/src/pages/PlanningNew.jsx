@@ -165,7 +165,7 @@ function formatWrittenAdviceDateTime(iso) {
 
 const PLANNING_NA_REQUIRED_OPTIONS = ["N/A", "Required"];
 
-const LAND_FLOODING_REG_OPTIONS = ["N/A", "REG 153", "REG 154", "REG 153 & REG 154"];
+const LAND_FLOODING_REG_OPTIONS = ["N/A", "Required", "REG 153", "REG 154", "REG 153 & REG 154"];
 
 function landFloodingRegulationFromProject(project) {
   const t = (project?.planning_land_flooding_regulation ?? "").toString().trim();

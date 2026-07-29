@@ -2,7 +2,15 @@
  * Planning Manager column → project DB field mapping (0-based cols).
  * Sent columns use *_sent_at or existing JF *_requested_at.
  * Received columns use *_received_at.
+ *
+ * kind:
+ *   (default) date stamp via double-click
+ *   note     — dropdown Date / Note / Clear
+ *   select   — dropdown of fixed options
+ *   naDate   — dropdown N/A / Date
  */
+
+export const FLOODING_REGULATION_OPTIONS = ["N/A", "Required", "REG 153", "REG 154"];
 
 export const PLANNING_MANAGER_COL_FIELD = {
   // Land Channel - Zones & Overlays (C–D)
@@ -49,14 +57,34 @@ export const PLANNING_MANAGER_COL_FIELD = {
   28: { field: "planning_mgr_tp_requested", kind: "note" },
   29: { field: "planning_mgr_tp_received", kind: "note" },
   30: { field: "planning_mgr_tp_needed", kind: "note" },
+  // Flooding (AF) + Melb Water / Council Sent–Received (AG–AJ)
+  31: {
+    field: "planning_land_flooding_regulation",
+    kind: "select",
+    options: FLOODING_REGULATION_OPTIONS,
+  },
+  32: { field: "planning_land_flooding_fpa_requested_at", kind: "naDate" },
+  33: { field: "planning_land_flooding_fpa_received_at", kind: "naDate" },
+  34: { field: "planning_land_flooding_cc_requested_at", kind: "naDate" },
+  35: { field: "planning_land_flooding_cc_received_at", kind: "naDate" },
 };
+
+const DROPDOWN_KINDS = new Set(["note", "select", "naDate"]);
+
+export function isPlanningManagerDropdownCol(mapping) {
+  return Boolean(mapping?.kind && DROPDOWN_KINDS.has(mapping.kind));
+}
 
 export const PLANNING_MANAGER_NOTE_FIELDS = Object.values(PLANNING_MANAGER_COL_FIELD)
   .filter((m) => m.kind === "note" && m.field)
   .map((m) => m.field);
 
+export const PLANNING_MANAGER_SELECT_FIELDS = Object.values(PLANNING_MANAGER_COL_FIELD)
+  .filter((m) => m.field && (m.kind === "note" || m.kind === "select" || m.kind === "naDate"))
+  .map((m) => m.field);
+
 export const PLANNING_MANAGER_WRITABLE_DATE_FIELDS = Object.values(PLANNING_MANAGER_COL_FIELD)
-  .filter((m) => m.field && !m.readOnly && m.kind !== "note")
+  .filter((m) => m.field && !m.readOnly && !DROPDOWN_KINDS.has(m.kind))
   .map((m) => m.field);
 
 const SHEET_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -92,4 +120,30 @@ export function planningManagerTodayIsoDate() {
 
 export function getPlanningManagerColMapping(colIndex) {
   return PLANNING_MANAGER_COL_FIELD[colIndex] || null;
+}
+
+/** Menu items for a dropdown-mapped Planning Manager cell. */
+export function getPlanningManagerDropdownOptions(mapping) {
+  if (!mapping?.kind) return [];
+  if (mapping.kind === "note") {
+    return [
+      { label: "Date", value: "__date__" },
+      { label: "Note", value: "__note__" },
+      { label: "Clear", value: "__clear__" },
+    ];
+  }
+  if (mapping.kind === "naDate") {
+    return [
+      { label: "N/A", value: "N/A" },
+      { label: "Date", value: "__date__" },
+      { label: "Note", value: "__note__" },
+    ];
+  }
+  if (mapping.kind === "select" && Array.isArray(mapping.options)) {
+    return [
+      ...mapping.options.map((opt) => ({ label: opt, value: opt })),
+      { label: "Note", value: "__note__" },
+    ];
+  }
+  return [];
 }

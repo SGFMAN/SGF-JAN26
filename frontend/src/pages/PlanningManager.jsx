@@ -17,6 +17,8 @@ import {
   getPlanningManagerColMapping,
   formatPlanningManagerSheetDate,
   planningManagerTodayIsoDate,
+  isPlanningManagerDropdownCol,
+  getPlanningManagerDropdownOptions,
 } from "../utils/planningManagerColumnFields";
 import { normalizeProjectYearToISO } from "../utils/salesTotalsCompute";
 
@@ -506,7 +508,7 @@ export default function PlanningManager() {
   const [sheetCells, setSheetCells] = useState({}); // { [projectId]: { [colIndex]: value } }
   const [moveRowModal, setMoveRowModal] = useState(null); // { projectIndex, label, inputValue } | null
   const [projectSearch, setProjectSearch] = useState("");
-  const [tpMenu, setTpMenu] = useState(null); // { projectId, colIndex, field, top, left, width }
+  const [tpMenu, setTpMenu] = useState(null); // { projectId, colIndex, field, kind, options, top, left, width }
   const [tpNoteEdit, setTpNoteEdit] = useState(null); // { projectId, colIndex, field, draft }
   const tpNoteInputRef = useRef(null);
   const projectOrdersRef = useRef({});
@@ -600,7 +602,7 @@ export default function PlanningManager() {
     if (!tpMenu) return undefined;
     function onDocPointerDown(e) {
       const t = e.target;
-      if (t?.closest?.("[data-tp-menu]") || t?.closest?.("[data-tp-arrow]")) return;
+      if (t?.closest?.("[data-pm-menu]") || t?.closest?.("[data-pm-arrow]")) return;
       setTpMenu(null);
     }
     function onKey(e) {
@@ -777,9 +779,9 @@ export default function PlanningManager() {
       const mapping = getPlanningManagerColMapping(colIndex);
       if (mapping?.field) {
         const raw = project?.[mapping.field];
-        if (mapping.kind === "note") {
+        if (mapping.kind === "note" || mapping.kind === "select" || mapping.kind === "naDate") {
           if (raw == null || String(raw).trim() === "") return "";
-          // Dates show as dd-Mmm; free-text notes show as typed.
+          // Dates show as dd-Mmm; free-text / N/A / select labels show as stored.
           return formatPlanningManagerSheetDate(raw) || String(raw).trim();
         }
         return formatPlanningManagerSheetDate(raw);
@@ -1019,15 +1021,21 @@ export default function PlanningManager() {
     setMoveRowModal(null);
   }
 
-  function openTownPlanningMenu(project, colIndex, mapping, anchorEl) {
+  function openPlanningManagerCellMenu(project, colIndex, mapping, anchorEl) {
     if (!project?.id || !mapping?.field || !anchorEl) return;
+    if (!isPlanningManagerDropdownCol(mapping)) return;
+    const options = getPlanningManagerDropdownOptions(mapping);
+    if (!options.length) return;
     const rect = anchorEl.getBoundingClientRect();
-    const menuWidth = Math.max(120, Math.min(160, colWidths[colIndex] || DEFAULT_COL_WIDTH));
+    const menuWidth = Math.max(
+      120,
+      Math.min(200, Math.max(colWidths[colIndex] || DEFAULT_COL_WIDTH, 140))
+    );
     let left = rect.right - menuWidth;
     if (left < 8) left = 8;
     if (left + menuWidth > window.innerWidth - 8) left = Math.max(8, window.innerWidth - menuWidth - 8);
     let top = rect.bottom + 2;
-    const estimatedH = 36 + 3 * 32;
+    const estimatedH = 36 + options.length * 32;
     if (top + estimatedH > window.innerHeight - 8) {
       top = Math.max(8, rect.top - estimatedH - 2);
     }
@@ -1037,6 +1045,8 @@ export default function PlanningManager() {
       projectId: project.id,
       colIndex,
       field: mapping.field,
+      kind: mapping.kind,
+      options,
       top,
       left,
       width: menuWidth,
@@ -1047,7 +1057,7 @@ export default function PlanningManager() {
     }
   }
 
-  async function saveTownPlanningValue(projectId, field, nextValue) {
+  async function savePlanningManagerSelectValue(projectId, field, nextValue) {
     if (!projectId || !field) return;
     const previous = projects.find((p) => p.id === projectId)?.[field] ?? null;
     const value = nextValue != null && String(nextValue).trim() !== "" ? String(nextValue).trim() : null;
@@ -1073,7 +1083,7 @@ export default function PlanningManager() {
         );
       }
     } catch (err) {
-      console.error("Error saving town planning cell:", err);
+      console.error("Error saving planning manager cell:", err);
       setAllProjects((prev) =>
         prev.map((p) => (p.id === projectId ? { ...p, [field]: previous } : p))
       );
@@ -1098,24 +1108,26 @@ export default function PlanningManager() {
     if (!tpNoteEdit) return;
     const { projectId, field, draft } = tpNoteEdit;
     setTpNoteEdit(null);
-    void saveTownPlanningValue(projectId, field, draft);
+    void savePlanningManagerSelectValue(projectId, field, draft);
   }
 
-  async function handleTownPlanningMenuAction(action) {
+  async function handlePlanningManagerMenuPick(pickedValue) {
     if (!tpMenu) return;
     const { projectId, colIndex, field } = tpMenu;
     setTpMenu(null);
-    if (action === "date") {
-      void saveTownPlanningValue(projectId, field, planningManagerTodayIsoDate());
+    if (pickedValue === "__date__") {
+      void savePlanningManagerSelectValue(projectId, field, planningManagerTodayIsoDate());
       return;
     }
-    if (action === "clear") {
-      void saveTownPlanningValue(projectId, field, null);
+    if (pickedValue === "__clear__") {
+      void savePlanningManagerSelectValue(projectId, field, null);
       return;
     }
-    if (action === "note") {
+    if (pickedValue === "__note__") {
       beginTownPlanningNoteEdit(projectId, colIndex, field);
+      return;
     }
+    void savePlanningManagerSelectValue(projectId, field, pickedValue);
   }
 
   async function stampDateOnCell(rowIndex, colIndex) {
@@ -1127,8 +1139,8 @@ export default function PlanningManager() {
 
     const mapping = getPlanningManagerColMapping(colIndex);
     if (mapping?.readOnly) return;
-    // Town Planning cells use the dropdown — no double-click stamp.
-    if (mapping?.kind === "note") return;
+    // Dropdown cells use the arrow menu — no double-click stamp.
+    if (isPlanningManagerDropdownCol(mapping)) return;
 
     // Mapped project fields (C–R): store on the project so other pages can read them.
     if (mapping?.field) {
@@ -1910,7 +1922,7 @@ export default function PlanningManager() {
                           : null;
                       const mapping = getPlanningManagerColMapping(colIndex);
                       const isDraftCol = colIndex === 1 && project;
-                      const isTpCol = mapping?.kind === "note" && project;
+                      const isPmDropdownCol = isPlanningManagerDropdownCol(mapping) && project;
                       const isEditingTpNote =
                         Boolean(
                           tpNoteEdit &&
@@ -1939,7 +1951,7 @@ export default function PlanningManager() {
                             boxSizing: "border-box",
                             padding: isDraftCol
                               ? "0 14px 2px 14px"
-                              : isTpCol
+                              : isPmDropdownCol
                                 ? "0 14px 2px 6px"
                                 : "0 6px 2px",
                             display: "flex",
@@ -2043,16 +2055,21 @@ export default function PlanningManager() {
                               ▼
                             </button>
                           ) : null}
-                          {isTpCol && !isEditingTpNote ? (
+                          {isPmDropdownCol && !isEditingTpNote ? (
                             <button
                               type="button"
-                              data-tp-arrow
-                              title="Town Planning"
+                              data-pm-arrow
+                              title="Select"
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
                                 selectCell(rowIndex, colIndex);
-                                openTownPlanningMenu(project, colIndex, mapping, e.currentTarget);
+                                openPlanningManagerCellMenu(
+                                  project,
+                                  colIndex,
+                                  mapping,
+                                  e.currentTarget
+                                );
                               }}
                               style={{
                                 position: "absolute",
@@ -2216,51 +2233,64 @@ export default function PlanningManager() {
 
       {tpMenu ? (
         <div
-          data-tp-menu
+          data-pm-menu
           style={{
             position: "fixed",
             top: tpMenu.top,
             left: tpMenu.left,
             width: tpMenu.width,
+            maxHeight: 280,
+            overflowY: "auto",
             zIndex: 10000,
             background: WHITE,
             border: `1px solid ${HEADER_GRID_LINE}`,
             boxShadow: "0 6px 20px rgba(0,0,0,0.18)",
             borderRadius: "4px",
-            overflow: "hidden",
           }}
         >
-          {[
-            { action: "date", label: "Date" },
-            { action: "note", label: "Note" },
-            { action: "clear", label: "Clear" },
-          ].map((opt, idx, arr) => (
-            <button
-              key={opt.action}
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                void handleTownPlanningMenuAction(opt.action);
-              }}
-              style={{
-                display: "block",
-                width: "100%",
-                textAlign: "left",
-                padding: "8px 10px",
-                border: "none",
-                borderBottom: idx < arr.length - 1 ? `1px solid ${HEADER_GRID_LINE}` : "none",
-                background: WHITE,
-                color: ADDRESS_TEXT,
-                fontSize: "13px",
-                fontWeight: 500,
-                cursor: "pointer",
-                fontFamily: SHEET_FONT,
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
+          {(() => {
+            const project = projects.find((p) => p.id === tpMenu.projectId);
+            const currentRaw =
+              project?.[tpMenu.field] != null ? String(project[tpMenu.field]).trim() : "";
+            const currentDisplay =
+              formatPlanningManagerSheetDate(currentRaw) || currentRaw;
+            return (tpMenu.options || []).map((opt, idx, arr) => {
+              const active =
+                opt.value === "__date__"
+                  ? Boolean(currentRaw && /^\d{4}-\d{2}-\d{2}/.test(currentRaw))
+                  : opt.value === "__clear__" || opt.value === "__note__"
+                    ? false
+                    : currentRaw === opt.value || currentDisplay === opt.label;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void handlePlanningManagerMenuPick(opt.value);
+                  }}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "8px 10px",
+                    border: "none",
+                    borderBottom:
+                      idx < arr.length - 1 ? `1px solid ${HEADER_GRID_LINE}` : "none",
+                    background: active ? COL_YELLOW : WHITE,
+                    color: ADDRESS_TEXT,
+                    fontSize: "13px",
+                    fontWeight: active ? 700 : 500,
+                    cursor: "pointer",
+                    fontFamily: SHEET_FONT,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            });
+          })()}
         </div>
       ) : null}
 

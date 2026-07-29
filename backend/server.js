@@ -2747,12 +2747,12 @@ app.put("/api/projects/:id", async (req, res) => {
       const allowed = new Set(["Not Selected", "Not Required", "Incomplete", "Complete"]);
       return allowed.has(t) ? t : "Not Selected";
     };
-    /** Land subject to flooding: N/A | REG 153 | REG 154 | REG 153 & REG 154; undefined = skip COALESCE. */
+    /** Land subject to flooding: N/A | Required | REG 153 | REG 154 | REG 153 & REG 154; undefined = skip COALESCE. */
     const processLandFloodingRegulation = (val) => {
       if (val === undefined || val === null) return null;
       if (typeof val !== "string") return "N/A";
       const t = val.trim();
-      const allowed = new Set(["N/A", "REG 153", "REG 154", "REG 153 & REG 154"]);
+      const allowed = new Set(["N/A", "Required", "REG 153", "REG 154", "REG 153 & REG 154"]);
       return allowed.has(t) ? t : "N/A";
     };
     /** Energy specs added to plans: Not Completed | Completed; undefined = skip COALESCE. */
@@ -5534,6 +5534,11 @@ const PLANNING_MANAGER_SELECT_FIELDS = new Set([
   "planning_mgr_tp_requested",
   "planning_mgr_tp_received",
   "planning_mgr_tp_needed",
+  "planning_land_flooding_regulation",
+  "planning_land_flooding_fpa_requested_at",
+  "planning_land_flooding_fpa_received_at",
+  "planning_land_flooding_cc_requested_at",
+  "planning_land_flooding_cc_received_at",
 ]);
 
 function parsePlanningMgrTpOptions(raw) {
