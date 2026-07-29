@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { getApiHeaders } from "../utils/auth";
 import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
+import ModalBackdrop from "../components/ModalBackdrop";
 import { UI } from "../utils/uiThemeTokens.js";
 import { CLASSIFICATION_ABBREV_MAP } from "../utils/classifications";
 import { collapseLinkedProjectsForPlanning } from "../utils/duplicateProjectLinks";
@@ -2059,22 +2060,9 @@ export default function PlanningManager() {
       ) : null}
 
       {tpNoteModal ? (
-        <div
-          role="presentation"
-          onClick={() => {
-            if (!tpNoteModal.saving) setTpNoteModal(null);
-          }}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 10060,
-            background: "rgba(0,0,0,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16,
-            pointerEvents: "auto",
-          }}
+        <ModalBackdrop
+          zIndex={10060}
+          style={{ background: "rgba(0,0,0,0.45)", padding: 16 }}
         >
           <div
             role="dialog"
@@ -2198,7 +2186,7 @@ export default function PlanningManager() {
               </button>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       ) : null}
 
       {moveRowModal ? (
