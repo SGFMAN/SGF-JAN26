@@ -835,22 +835,72 @@ export default function PlanningManager() {
     [projects, sheetCells]
   );
 
-  // Copy / paste selected cell (skipped while inline-editing — browser handles the input).
+  // Copy / paste + arrow-key navigation (skipped while inline-editing).
   useEffect(() => {
+    function ensureCellVisible(row, col) {
+      const el = sheetViewportRef.current;
+      if (!el) return;
+      const cellLeft = colOffsets[col] ?? 0;
+      const cellRight = colOffsets[col + 1] ?? cellLeft;
+      const cellTop = rowOffsets[row] ?? 0;
+      const cellBottom = rowOffsets[row + 1] ?? cellTop;
+      const viewLeft = el.scrollLeft;
+      const viewTop = el.scrollTop;
+      const bodyW = Math.max(0, el.clientWidth - ROW_HEADER_WIDTH);
+      const bodyH = Math.max(0, el.clientHeight - COL_HEADER_HEIGHT);
+      let nextLeft = viewLeft;
+      let nextTop = viewTop;
+      // Col A is sticky — only scroll horizontally for other columns.
+      if (col > 0) {
+        if (cellLeft < viewLeft) nextLeft = cellLeft;
+        else if (cellRight > viewLeft + bodyW) nextLeft = Math.max(0, cellRight - bodyW);
+      }
+      if (cellTop < viewTop) nextTop = cellTop;
+      else if (cellBottom > viewTop + bodyH) nextTop = Math.max(0, cellBottom - bodyH);
+      if (nextLeft !== viewLeft || nextTop !== viewTop) {
+        el.scrollLeft = nextLeft;
+        el.scrollTop = nextTop;
+      }
+    }
+
     function onKey(e) {
       if (cellEditRef.current) return;
       if (!selectedCell) return;
+
+      // Don't steal keys from other focused inputs.
+      const active = document.activeElement;
+      const tag = active?.tagName?.toLowerCase?.() || "";
+      if (tag === "input" || tag === "textarea" || active?.isContentEditable) return;
+
       const { row, col } = selectedCell;
+      const arrowKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
+      if (arrowKeys.includes(e.key)) {
+        if (row < 0 || col < 0) return;
+        e.preventDefault();
+        let nextRow = row;
+        let nextCol = col;
+        if (e.key === "ArrowUp") nextRow = Math.max(DATA_START_ROW, row - 1);
+        if (e.key === "ArrowDown") nextRow = Math.min(ROW_COUNT - 1, row + 1);
+        if (e.key === "ArrowLeft") nextCol = Math.max(0, col - 1);
+        if (e.key === "ArrowRight") nextCol = Math.min(COL_COUNT - 1, col + 1);
+        if (nextRow === row && nextCol === col) return;
+        if (emptyClickEditTimerRef.current) {
+          window.clearTimeout(emptyClickEditTimerRef.current);
+          emptyClickEditTimerRef.current = null;
+        }
+        setTpMenu(null);
+        setDraftspersonMenu(null);
+        setManualDatePicker(null);
+        setSelectedCell({ row: nextRow, col: nextCol });
+        ensureCellVisible(nextRow, nextCol);
+        return;
+      }
+
       if (row < DATA_START_ROW || col < 0) return;
       const isMod = e.ctrlKey || e.metaKey;
       if (!isMod) return;
       const key = String(e.key || "").toLowerCase();
       if (key !== "c" && key !== "v") return;
-
-      // Don't steal copy/paste from other focused inputs.
-      const active = document.activeElement;
-      const tag = active?.tagName?.toLowerCase?.() || "";
-      if (tag === "input" || tag === "textarea" || active?.isContentEditable) return;
 
       if (key === "c") {
         const text = cellValue(row, col) || "";
@@ -879,7 +929,7 @@ export default function PlanningManager() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedCell, cellValue, projects]);
+  }, [selectedCell, cellValue, projects, colOffsets, rowOffsets]);
 
   const titleBandHeight = rowHeights[0] ?? baseRowHeight;
   const subHeadingRowHeight = rowHeights[1] ?? baseRowHeight;
