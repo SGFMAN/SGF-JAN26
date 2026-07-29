@@ -87,6 +87,13 @@ export function planningManagerCellAllowsManualDate(mapping) {
   return Boolean(mapping.field);
 }
 
+/** Writable data cells (not address/draftsperson, not read-only mapped fields). */
+export function planningManagerCellAllowsFreeEdit(colIndex, mapping) {
+  if (colIndex < 2) return false;
+  if (mapping?.readOnly) return false;
+  return true;
+}
+
 export const PLANNING_MANAGER_NOTE_FIELDS = Object.values(PLANNING_MANAGER_COL_FIELD)
   .filter((m) => m.kind === "note" && m.field)
   .map((m) => m.field);

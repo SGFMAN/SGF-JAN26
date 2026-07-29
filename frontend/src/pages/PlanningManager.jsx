@@ -20,6 +20,7 @@ import {
   isPlanningManagerDropdownCol,
   getPlanningManagerDropdownOptions,
   planningManagerCellAllowsManualDate,
+  planningManagerCellAllowsFreeEdit,
 } from "../utils/planningManagerColumnFields";
 import { normalizeProjectYearToISO } from "../utils/salesTotalsCompute";
 
@@ -510,12 +511,15 @@ export default function PlanningManager() {
   const [moveRowModal, setMoveRowModal] = useState(null); // { projectIndex, label, inputValue } | null
   const [projectSearch, setProjectSearch] = useState("");
   const [tpMenu, setTpMenu] = useState(null); // { projectId, colIndex, field, kind, options, top, left, width }
-  const [tpNoteEdit, setTpNoteEdit] = useState(null); // { projectId, colIndex, field, draft }
+  const [cellEdit, setCellEdit] = useState(null); // { projectId, colIndex, field, saveAs, draft }
   // TEMP: right-click calendar to set historical dates — remove later
   const [manualDatePicker, setManualDatePicker] = useState(null);
   // manualDatePicker: { projectId, colIndex, field, saveAs, draft, top, left }
-  const tpNoteInputRef = useRef(null);
+  const cellEditInputRef = useRef(null);
   const manualDateInputRef = useRef(null);
+  const cellEditRef = useRef(null);
+  const emptyClickEditTimerRef = useRef(null);
+  cellEditRef.current = cellEdit;
   const projectOrdersRef = useRef({});
   const customizedTabsRef = useRef([]);
   const activeTabRef = useRef(activeTab);
@@ -622,13 +626,68 @@ export default function PlanningManager() {
   }, [tpMenu]);
 
   useEffect(() => {
-    if (!tpNoteEdit) return undefined;
+    if (!cellEdit) return undefined;
     const t = window.setTimeout(() => {
-      tpNoteInputRef.current?.focus?.();
-      tpNoteInputRef.current?.select?.();
+      cellEditInputRef.current?.focus?.();
+      cellEditInputRef.current?.select?.();
     }, 0);
     return () => window.clearTimeout(t);
-  }, [tpNoteEdit?.projectId, tpNoteEdit?.colIndex]);
+  }, [cellEdit?.projectId, cellEdit?.colIndex]);
+
+  // Copy / paste selected cell (skipped while inline-editing — browser handles the input).
+  useEffect(() => {
+    function onKey(e) {
+      if (cellEditRef.current) return;
+      if (!selectedCell) return;
+      const { row, col } = selectedCell;
+      if (row < DATA_START_ROW || col < 0) return;
+      const isMod = e.ctrlKey || e.metaKey;
+      if (!isMod) return;
+      const key = String(e.key || "").toLowerCase();
+      if (key !== "c" && key !== "v") return;
+
+      // Don't steal copy/paste from other focused inputs.
+      const active = document.activeElement;
+      const tag = active?.tagName?.toLowerCase?.() || "";
+      if (tag === "input" || tag === "textarea" || active?.isContentEditable) return;
+
+      if (key === "c") {
+        const text = cellValue(row, col) || "";
+        e.preventDefault();
+        void navigator.clipboard.writeText(text).catch((err) => {
+          console.error("Copy failed:", err);
+        });
+        return;
+      }
+
+      if (key === "v") {
+        const projectIndex = row - DATA_START_ROW;
+        if (projectIndex < 0 || projectIndex >= projects.length) return;
+        const project = projects[projectIndex];
+        const mapping = getPlanningManagerColMapping(col);
+        if (!project?.id || !planningManagerCellAllowsFreeEdit(col, mapping)) return;
+        e.preventDefault();
+        void navigator.clipboard
+          .readText()
+          .then((text) => writeCellClipboardText(project, col, mapping, text))
+          .catch((err) => {
+            console.error("Paste failed:", err);
+            alert("Could not read clipboard");
+          });
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedCell, cellValue, projects]);
+
+  useEffect(() => {
+    return () => {
+      if (emptyClickEditTimerRef.current) {
+        window.clearTimeout(emptyClickEditTimerRef.current);
+        emptyClickEditTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // TEMP: right-click date picker — remove later
   useEffect(() => {
@@ -812,12 +871,9 @@ export default function PlanningManager() {
       const mapping = getPlanningManagerColMapping(colIndex);
       if (mapping?.field) {
         const raw = project?.[mapping.field];
-        if (mapping.kind === "note" || mapping.kind === "select" || mapping.kind === "naDate") {
-          if (raw == null || String(raw).trim() === "") return "";
-          // Dates show as dd-Mmm; free-text / N/A / select labels show as stored.
-          return formatPlanningManagerSheetDate(raw) || String(raw).trim();
-        }
-        return formatPlanningManagerSheetDate(raw);
+        if (raw == null || String(raw).trim() === "") return "";
+        // Dates show as dd-Mmm; free-text / N/A / select labels show as stored.
+        return formatPlanningManagerSheetDate(raw) || String(raw).trim();
       }
       const stored = sheetCells?.[String(project.id)]?.[String(colIndex)];
       return stored != null ? String(stored) : "";
@@ -881,14 +937,14 @@ export default function PlanningManager() {
     if (top + estimatedH > window.innerHeight - 8) {
       top = Math.max(8, rect.top - estimatedH - 2);
     }
+    setTpMenu(null);
+    setCellEdit(null);
     setDraftspersonMenu({
       projectId: project.id,
       top,
       left,
       width: menuWidth,
     });
-    setTpMenu(null);
-    setTpNoteEdit(null);
   }
 
   async function saveDraftsperson(project, selectedValue) {
@@ -1073,7 +1129,7 @@ export default function PlanningManager() {
       top = Math.max(8, rect.top - estimatedH - 2);
     }
     setDraftspersonMenu(null);
-    setTpNoteEdit(null);
+    setCellEdit(null);
     setTpMenu({
       projectId: project.id,
       colIndex,
@@ -1124,24 +1180,108 @@ export default function PlanningManager() {
     }
   }
 
+  function beginCellEdit(project, colIndex, mapping, initialDraft) {
+    if (!project?.id || !planningManagerCellAllowsFreeEdit(colIndex, mapping)) return;
+    const saveAs = mapping?.field ? "select" : "blob";
+    setTpMenu(null);
+    setManualDatePicker(null);
+    setCellEdit({
+      projectId: project.id,
+      colIndex,
+      field: mapping?.field || null,
+      saveAs,
+      draft: initialDraft != null ? String(initialDraft) : "",
+    });
+  }
+
+  function cancelCellEdit() {
+    setCellEdit(null);
+  }
+
+  async function commitCellEdit() {
+    const edit = cellEditRef.current;
+    if (!edit) return;
+    const { projectId, colIndex, field, saveAs, draft } = edit;
+    setCellEdit(null);
+    const trimmed = draft != null ? String(draft).trim() : "";
+    if (saveAs === "select" && field) {
+      void savePlanningManagerSelectValue(projectId, field, trimmed || null);
+      return;
+    }
+    // Legacy blob cell
+    const projectKey = String(projectId);
+    const colKey = String(colIndex);
+    const previous = sheetCells?.[projectKey]?.[colKey];
+    const nextValue = trimmed || "";
+    setSheetCells((prev) => {
+      const next = { ...prev, [projectKey]: { ...(prev[projectKey] || {}) } };
+      if (!nextValue) {
+        delete next[projectKey][colKey];
+        if (!Object.keys(next[projectKey]).length) delete next[projectKey];
+      } else {
+        next[projectKey][colKey] = nextValue;
+      }
+      return next;
+    });
+    try {
+      const saved = await persistCellValue(projectId, colIndex, nextValue || null);
+      if (saved) setSheetCells(saved);
+    } catch (err) {
+      console.error("Error saving typed sheet cell:", err);
+      setSheetCells((prev) => {
+        const next = { ...prev, [projectKey]: { ...(prev[projectKey] || {}) } };
+        if (previous == null || previous === "") delete next[projectKey][colKey];
+        else next[projectKey][colKey] = previous;
+        if (!Object.keys(next[projectKey] || {}).length) delete next[projectKey];
+        return next;
+      });
+      alert(err.message || "Failed to save");
+    }
+  }
+
+  async function writeCellClipboardText(project, colIndex, mapping, text) {
+    if (!project?.id || !planningManagerCellAllowsFreeEdit(colIndex, mapping)) return;
+    const trimmed = text != null ? String(text).trim() : "";
+    if (mapping?.field) {
+      void savePlanningManagerSelectValue(project.id, mapping.field, trimmed || null);
+      return;
+    }
+    const projectKey = String(project.id);
+    const colKey = String(colIndex);
+    const previous = sheetCells?.[projectKey]?.[colKey];
+    setSheetCells((prev) => {
+      const next = { ...prev, [projectKey]: { ...(prev[projectKey] || {}) } };
+      if (!trimmed) {
+        delete next[projectKey][colKey];
+        if (!Object.keys(next[projectKey]).length) delete next[projectKey];
+      } else {
+        next[projectKey][colKey] = trimmed;
+      }
+      return next;
+    });
+    try {
+      const saved = await persistCellValue(project.id, colIndex, trimmed || null);
+      if (saved) setSheetCells(saved);
+    } catch (err) {
+      console.error("Error pasting sheet cell:", err);
+      setSheetCells((prev) => {
+        const next = { ...prev, [projectKey]: { ...(prev[projectKey] || {}) } };
+        if (previous == null || previous === "") delete next[projectKey][colKey];
+        else next[projectKey][colKey] = previous;
+        if (!Object.keys(next[projectKey] || {}).length) delete next[projectKey];
+        return next;
+      });
+      alert(err.message || "Failed to paste");
+    }
+  }
+
   function beginTownPlanningNoteEdit(projectId, colIndex, field) {
     const project = projects.find((p) => p.id === projectId);
+    if (!project) return;
+    const mapping = getPlanningManagerColMapping(colIndex);
     const current = project?.[field] != null ? String(project[field]).trim() : "";
-    // Show display form for ISO dates so the user edits what they see.
     const draft = formatPlanningManagerSheetDate(current) || current;
-    setTpMenu(null);
-    setTpNoteEdit({ projectId, colIndex, field, draft });
-  }
-
-  function cancelTownPlanningNoteEdit() {
-    setTpNoteEdit(null);
-  }
-
-  function commitTownPlanningNoteEdit() {
-    if (!tpNoteEdit) return;
-    const { projectId, field, draft } = tpNoteEdit;
-    setTpNoteEdit(null);
-    void savePlanningManagerSelectValue(projectId, field, draft);
+    beginCellEdit(project, colIndex, mapping || { field }, draft);
   }
 
   async function handlePlanningManagerMenuPick(pickedValue) {
@@ -1164,6 +1304,11 @@ export default function PlanningManager() {
   }
 
   async function stampDateOnCell(rowIndex, colIndex) {
+    if (emptyClickEditTimerRef.current) {
+      window.clearTimeout(emptyClickEditTimerRef.current);
+      emptyClickEditTimerRef.current = null;
+    }
+    setCellEdit(null);
     if (rowIndex < DATA_START_ROW || colIndex < 2) return;
     const projectIndex = rowIndex - DATA_START_ROW;
     if (projectIndex < 0 || projectIndex >= projects.length) return;
@@ -1281,7 +1426,7 @@ export default function PlanningManager() {
 
     setDraftspersonMenu(null);
     setTpMenu(null);
-    setTpNoteEdit(null);
+    setCellEdit(null);
     setSelectedCell({ row: rowIndex, col: colIndex });
     setManualDatePicker({
       projectId: project.id,
@@ -2075,21 +2220,44 @@ export default function PlanningManager() {
                       const mapping = getPlanningManagerColMapping(colIndex);
                       const isDraftCol = colIndex === 1 && project;
                       const isPmDropdownCol = isPlanningManagerDropdownCol(mapping) && project;
-                      const isEditingTpNote =
+                      const canFreeEdit =
+                        Boolean(project) && planningManagerCellAllowsFreeEdit(colIndex, mapping);
+                      const isEditingCell =
                         Boolean(
-                          tpNoteEdit &&
+                          cellEdit &&
                             project &&
-                            tpNoteEdit.projectId === project.id &&
-                            tpNoteEdit.colIndex === colIndex
+                            cellEdit.projectId === project.id &&
+                            cellEdit.colIndex === colIndex
                         );
                       return (
                         <div
                           key={colIndex}
-                          title={isEditingTpNote ? undefined : value || undefined}
-                          onClick={(e) => selectCell(rowIndex, colIndex, e)}
+                          title={isEditingCell ? undefined : value || undefined}
+                          onClick={(e) => {
+                            selectCell(rowIndex, colIndex, e);
+                            if (emptyClickEditTimerRef.current) {
+                              window.clearTimeout(emptyClickEditTimerRef.current);
+                              emptyClickEditTimerRef.current = null;
+                            }
+                            if (
+                              canFreeEdit &&
+                              !isEditingCell &&
+                              !(value || "").trim()
+                            ) {
+                              // Delay so double-click date stamp can cancel this.
+                              emptyClickEditTimerRef.current = window.setTimeout(() => {
+                                emptyClickEditTimerRef.current = null;
+                                beginCellEdit(project, colIndex, mapping, "");
+                              }, 250);
+                            }
+                          }}
                           onDoubleClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
+                            if (emptyClickEditTimerRef.current) {
+                              window.clearTimeout(emptyClickEditTimerRef.current);
+                              emptyClickEditTimerRef.current = null;
+                            }
                             if (colIndex >= 2) stampDateOnCell(rowIndex, colIndex);
                           }}
                           onContextMenu={(e) => {
@@ -2106,7 +2274,7 @@ export default function PlanningManager() {
                           }}
                           style={{
                             position: "relative",
-                            zIndex: selected || isEditingTpNote ? 2 : 0,
+                            zIndex: selected || isEditingCell ? 2 : 0,
                             width: colWidths[colIndex],
                             minWidth: colWidths[colIndex],
                             height: h,
@@ -2134,26 +2302,26 @@ export default function PlanningManager() {
                             cursor: "cell",
                           }}
                         >
-                          {isEditingTpNote ? (
+                          {isEditingCell ? (
                             <input
-                              ref={tpNoteInputRef}
+                              ref={cellEditInputRef}
                               type="text"
-                              value={tpNoteEdit.draft}
+                              value={cellEdit.draft}
                               onChange={(e) =>
-                                setTpNoteEdit((prev) =>
+                                setCellEdit((prev) =>
                                   prev ? { ...prev, draft: e.target.value } : prev
                                 )
                               }
                               onClick={(e) => e.stopPropagation()}
                               onDoubleClick={(e) => e.stopPropagation()}
-                              onBlur={() => commitTownPlanningNoteEdit()}
+                              onBlur={() => void commitCellEdit()}
                               onKeyDown={(e) => {
                                 if (e.key === "Enter") {
                                   e.preventDefault();
-                                  commitTownPlanningNoteEdit();
+                                  void commitCellEdit();
                                 } else if (e.key === "Escape") {
                                   e.preventDefault();
-                                  cancelTownPlanningNoteEdit();
+                                  cancelCellEdit();
                                 }
                               }}
                               style={{
@@ -2219,7 +2387,7 @@ export default function PlanningManager() {
                               ▼
                             </button>
                           ) : null}
-                          {isPmDropdownCol && !isEditingTpNote ? (
+                          {isPmDropdownCol && !isEditingCell ? (
                             <button
                               type="button"
                               data-pm-arrow

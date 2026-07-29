@@ -5601,7 +5601,7 @@ app.put("/api/projects/:id/planning-manager-date", async (req, res) => {
   }
 });
 
-/** Save a Planning Manager select-column value (Town Planning Requested / Received / Needed). */
+/** Save free-text / select / note values (also used for typed text on date columns). */
 app.put("/api/projects/:id/planning-manager-select", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   if (!requireStaffUserId(req, res)) return;
@@ -5613,7 +5613,10 @@ app.put("/api/projects/:id/planning-manager-select", async (req, res) => {
   try {
     const body = req.body && typeof req.body === "object" ? req.body : {};
     const field = body.field != null ? String(body.field).trim() : "";
-    if (!PLANNING_MANAGER_SELECT_FIELDS.has(field)) {
+    if (
+      !PLANNING_MANAGER_SELECT_FIELDS.has(field) &&
+      !PLANNING_MANAGER_WRITABLE_DATE_FIELDS.has(field)
+    ) {
       return res.status(400).json({ error: "Invalid planning manager select field" });
     }
     let value = body.value;
