@@ -75,6 +75,18 @@ export function isPlanningManagerDropdownCol(mapping) {
   return Boolean(mapping?.kind && DROPDOWN_KINDS.has(mapping.kind));
 }
 
+/**
+ * TEMP: right-click calendar for correcting historical dates.
+ * True for double-click date columns and dropdowns that include Date.
+ */
+export function planningManagerCellAllowsManualDate(mapping) {
+  if (mapping?.readOnly) return false;
+  if (!mapping) return true; // unmapped blob cells — double-click date stamp
+  if (mapping.kind === "select") return false; // no Date option
+  if (mapping.kind === "note" || mapping.kind === "naDate") return true;
+  return Boolean(mapping.field);
+}
+
 export const PLANNING_MANAGER_NOTE_FIELDS = Object.values(PLANNING_MANAGER_COL_FIELD)
   .filter((m) => m.kind === "note" && m.field)
   .map((m) => m.field);

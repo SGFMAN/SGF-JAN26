@@ -19,6 +19,7 @@ import {
   planningManagerTodayIsoDate,
   isPlanningManagerDropdownCol,
   getPlanningManagerDropdownOptions,
+  planningManagerCellAllowsManualDate,
 } from "../utils/planningManagerColumnFields";
 import { normalizeProjectYearToISO } from "../utils/salesTotalsCompute";
 
@@ -510,7 +511,11 @@ export default function PlanningManager() {
   const [projectSearch, setProjectSearch] = useState("");
   const [tpMenu, setTpMenu] = useState(null); // { projectId, colIndex, field, kind, options, top, left, width }
   const [tpNoteEdit, setTpNoteEdit] = useState(null); // { projectId, colIndex, field, draft }
+  // TEMP: right-click calendar to set historical dates — remove later
+  const [manualDatePicker, setManualDatePicker] = useState(null);
+  // manualDatePicker: { projectId, colIndex, field, saveAs, draft, top, left }
   const tpNoteInputRef = useRef(null);
+  const manualDateInputRef = useRef(null);
   const projectOrdersRef = useRef({});
   const customizedTabsRef = useRef([]);
   const activeTabRef = useRef(activeTab);
@@ -624,6 +629,34 @@ export default function PlanningManager() {
     }, 0);
     return () => window.clearTimeout(t);
   }, [tpNoteEdit?.projectId, tpNoteEdit?.colIndex]);
+
+  // TEMP: right-click date picker — remove later
+  useEffect(() => {
+    if (!manualDatePicker) return undefined;
+    const t = window.setTimeout(() => {
+      manualDateInputRef.current?.focus?.();
+      try {
+        manualDateInputRef.current?.showPicker?.();
+      } catch {
+        /* showPicker may throw if not triggered by user gesture in some browsers */
+      }
+    }, 0);
+    function onDocPointerDown(e) {
+      const el = e.target;
+      if (el?.closest?.("[data-manual-date-picker]")) return;
+      setManualDatePicker(null);
+    }
+    function onKey(e) {
+      if (e.key === "Escape") setManualDatePicker(null);
+    }
+    document.addEventListener("pointerdown", onDocPointerDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.clearTimeout(t);
+      document.removeEventListener("pointerdown", onDocPointerDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [manualDatePicker?.projectId, manualDatePicker?.colIndex]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1212,6 +1245,125 @@ export default function PlanningManager() {
         return next;
       });
       alert(hasDate ? "Failed to clear date" : "Failed to save date");
+    }
+  }
+
+  /** TEMP: right-click calendar for historical date correction — remove later */
+  function openManualDatePicker(project, rowIndex, colIndex, clientX, clientY) {
+    if (!project?.id || colIndex < 2 || rowIndex < DATA_START_ROW) return;
+    const mapping = getPlanningManagerColMapping(colIndex);
+    if (!planningManagerCellAllowsManualDate(mapping)) return;
+
+    let currentRaw = "";
+    if (mapping?.field) {
+      currentRaw = project[mapping.field] != null ? String(project[mapping.field]).trim() : "";
+    } else {
+      currentRaw =
+        sheetCells?.[String(project.id)]?.[String(colIndex)] != null
+          ? String(sheetCells[String(project.id)][String(colIndex)]).trim()
+          : "";
+    }
+    let draft = planningManagerTodayIsoDate();
+    if (/^\d{4}-\d{2}-\d{2}/.test(currentRaw)) {
+      draft = currentRaw.slice(0, 10);
+    }
+
+    let saveAs = "blob";
+    if (mapping?.kind === "note" || mapping?.kind === "naDate") saveAs = "select";
+    else if (mapping?.field) saveAs = "date";
+
+    const pickerW = 220;
+    const pickerH = 120;
+    let left = clientX;
+    let top = clientY;
+    if (left + pickerW > window.innerWidth - 8) left = Math.max(8, window.innerWidth - pickerW - 8);
+    if (top + pickerH > window.innerHeight - 8) top = Math.max(8, window.innerHeight - pickerH - 8);
+
+    setDraftspersonMenu(null);
+    setTpMenu(null);
+    setTpNoteEdit(null);
+    setSelectedCell({ row: rowIndex, col: colIndex });
+    setManualDatePicker({
+      projectId: project.id,
+      colIndex,
+      field: mapping?.field || null,
+      saveAs,
+      draft,
+      top,
+      left,
+    });
+  }
+
+  async function applyManualDatePicker() {
+    if (!manualDatePicker) return;
+    const { projectId, colIndex, field, saveAs, draft } = manualDatePicker;
+    const iso = draft != null ? String(draft).trim().slice(0, 10) : "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+      alert("Pick a valid date");
+      return;
+    }
+    setManualDatePicker(null);
+
+    if (saveAs === "select" && field) {
+      void savePlanningManagerSelectValue(projectId, field, iso);
+      return;
+    }
+
+    if (saveAs === "date" && field) {
+      const previous = projects.find((p) => p.id === projectId)?.[field] ?? null;
+      setAllProjects((prev) =>
+        prev.map((p) => (p.id === projectId ? { ...p, [field]: iso } : p))
+      );
+      try {
+        const res = await fetch(`${API_URL}/api/projects/${projectId}/planning-manager-date`, {
+          method: "PUT",
+          headers: getApiHeaders(),
+          body: JSON.stringify({ field, value: iso }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `Failed to save (${res.status})`);
+        }
+        const data = await res.json().catch(() => ({}));
+        if (data && Object.prototype.hasOwnProperty.call(data, "value")) {
+          setAllProjects((prev) =>
+            prev.map((p) => (p.id === projectId ? { ...p, [field]: data.value } : p))
+          );
+        }
+      } catch (err) {
+        console.error("Error saving manual planning date:", err);
+        setAllProjects((prev) =>
+          prev.map((p) => (p.id === projectId ? { ...p, [field]: previous } : p))
+        );
+        alert(err.message || "Failed to save date");
+      }
+      return;
+    }
+
+    // Legacy blob cell
+    const projectKey = String(projectId);
+    const colKey = String(colIndex);
+    const [y, m, d] = iso.split("-").map((n) => parseInt(n, 10));
+    const display = formatSheetDate(new Date(y, m - 1, d));
+    const previous = sheetCells?.[projectKey]?.[colKey];
+    setSheetCells((prev) => {
+      const next = { ...prev, [projectKey]: { ...(prev[projectKey] || {}) } };
+      next[projectKey][colKey] = display;
+      return next;
+    });
+    try {
+      const saved = await persistCellValue(projectId, colIndex, display);
+      if (saved) setSheetCells(saved);
+    } catch (err) {
+      console.error("Error saving manual sheet date:", err);
+      setSheetCells((prev) => {
+        const next = { ...prev, [projectKey]: { ...(prev[projectKey] || {}) } };
+        if (previous == null || previous === "") delete next[projectKey][colKey];
+        else next[projectKey][colKey] = previous;
+        if (!Object.keys(next[projectKey] || {}).length) delete next[projectKey];
+        return next;
+      });
+      alert(err.message || "Failed to save date");
     }
   }
 
@@ -1940,6 +2092,18 @@ export default function PlanningManager() {
                             e.stopPropagation();
                             if (colIndex >= 2) stampDateOnCell(rowIndex, colIndex);
                           }}
+                          onContextMenu={(e) => {
+                            if (
+                              !project ||
+                              colIndex < 2 ||
+                              !planningManagerCellAllowsManualDate(mapping)
+                            ) {
+                              return;
+                            }
+                            e.preventDefault();
+                            e.stopPropagation();
+                            openManualDatePicker(project, rowIndex, colIndex, e.clientX, e.clientY);
+                          }}
                           style={{
                             position: "relative",
                             zIndex: selected || isEditingTpNote ? 2 : 0,
@@ -2291,6 +2455,100 @@ export default function PlanningManager() {
               );
             });
           })()}
+        </div>
+      ) : null}
+
+      {/* TEMP: right-click calendar for historical dates — remove later */}
+      {manualDatePicker ? (
+        <div
+          data-manual-date-picker
+          style={{
+            position: "fixed",
+            top: manualDatePicker.top,
+            left: manualDatePicker.left,
+            zIndex: 10070,
+            background: WHITE,
+            border: `1px solid ${HEADER_GRID_LINE}`,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+            borderRadius: 6,
+            padding: "12px 14px",
+            fontFamily: SHEET_FONT,
+            minWidth: 200,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              color: HEADER_TEXT,
+              marginBottom: 8,
+            }}
+          >
+            Set date
+          </div>
+          <input
+            ref={manualDateInputRef}
+            type="date"
+            value={manualDatePicker.draft}
+            onChange={(e) =>
+              setManualDatePicker((prev) =>
+                prev ? { ...prev, draft: e.target.value } : prev
+              )
+            }
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void applyManualDatePicker();
+              }
+            }}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "6px 8px",
+              fontSize: 14,
+              fontFamily: SHEET_FONT,
+              border: `1px solid ${HEADER_GRID_LINE}`,
+              borderRadius: 4,
+              marginBottom: 10,
+              color: ADDRESS_TEXT,
+            }}
+          />
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => setManualDatePicker(null)}
+              style={{
+                padding: "6px 12px",
+                border: `1px solid ${HEADER_GRID_LINE}`,
+                borderRadius: 4,
+                background: WHITE,
+                color: ADDRESS_TEXT,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: SHEET_FONT,
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void applyManualDatePicker()}
+              style={{
+                padding: "6px 12px",
+                border: "none",
+                borderRadius: 4,
+                background: HEADING_BLUE,
+                color: WHITE,
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: SHEET_FONT,
+              }}
+            >
+              Set
+            </button>
+          </div>
         </div>
       ) : null}
 
