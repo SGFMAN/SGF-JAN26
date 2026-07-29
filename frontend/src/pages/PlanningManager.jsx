@@ -634,52 +634,6 @@ export default function PlanningManager() {
     return () => window.clearTimeout(t);
   }, [cellEdit?.projectId, cellEdit?.colIndex]);
 
-  // Copy / paste selected cell (skipped while inline-editing — browser handles the input).
-  useEffect(() => {
-    function onKey(e) {
-      if (cellEditRef.current) return;
-      if (!selectedCell) return;
-      const { row, col } = selectedCell;
-      if (row < DATA_START_ROW || col < 0) return;
-      const isMod = e.ctrlKey || e.metaKey;
-      if (!isMod) return;
-      const key = String(e.key || "").toLowerCase();
-      if (key !== "c" && key !== "v") return;
-
-      // Don't steal copy/paste from other focused inputs.
-      const active = document.activeElement;
-      const tag = active?.tagName?.toLowerCase?.() || "";
-      if (tag === "input" || tag === "textarea" || active?.isContentEditable) return;
-
-      if (key === "c") {
-        const text = cellValue(row, col) || "";
-        e.preventDefault();
-        void navigator.clipboard.writeText(text).catch((err) => {
-          console.error("Copy failed:", err);
-        });
-        return;
-      }
-
-      if (key === "v") {
-        const projectIndex = row - DATA_START_ROW;
-        if (projectIndex < 0 || projectIndex >= projects.length) return;
-        const project = projects[projectIndex];
-        const mapping = getPlanningManagerColMapping(col);
-        if (!project?.id || !planningManagerCellAllowsFreeEdit(col, mapping)) return;
-        e.preventDefault();
-        void navigator.clipboard
-          .readText()
-          .then((text) => writeCellClipboardText(project, col, mapping, text))
-          .catch((err) => {
-            console.error("Paste failed:", err);
-            alert("Could not read clipboard");
-          });
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selectedCell, cellValue, projects]);
-
   useEffect(() => {
     return () => {
       if (emptyClickEditTimerRef.current) {
@@ -880,6 +834,52 @@ export default function PlanningManager() {
     },
     [projects, sheetCells]
   );
+
+  // Copy / paste selected cell (skipped while inline-editing — browser handles the input).
+  useEffect(() => {
+    function onKey(e) {
+      if (cellEditRef.current) return;
+      if (!selectedCell) return;
+      const { row, col } = selectedCell;
+      if (row < DATA_START_ROW || col < 0) return;
+      const isMod = e.ctrlKey || e.metaKey;
+      if (!isMod) return;
+      const key = String(e.key || "").toLowerCase();
+      if (key !== "c" && key !== "v") return;
+
+      // Don't steal copy/paste from other focused inputs.
+      const active = document.activeElement;
+      const tag = active?.tagName?.toLowerCase?.() || "";
+      if (tag === "input" || tag === "textarea" || active?.isContentEditable) return;
+
+      if (key === "c") {
+        const text = cellValue(row, col) || "";
+        e.preventDefault();
+        void navigator.clipboard.writeText(text).catch((err) => {
+          console.error("Copy failed:", err);
+        });
+        return;
+      }
+
+      if (key === "v") {
+        const projectIndex = row - DATA_START_ROW;
+        if (projectIndex < 0 || projectIndex >= projects.length) return;
+        const project = projects[projectIndex];
+        const mapping = getPlanningManagerColMapping(col);
+        if (!project?.id || !planningManagerCellAllowsFreeEdit(col, mapping)) return;
+        e.preventDefault();
+        void navigator.clipboard
+          .readText()
+          .then((text) => writeCellClipboardText(project, col, mapping, text))
+          .catch((err) => {
+            console.error("Paste failed:", err);
+            alert("Could not read clipboard");
+          });
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedCell, cellValue, projects]);
 
   const titleBandHeight = rowHeights[0] ?? baseRowHeight;
   const subHeadingRowHeight = rowHeights[1] ?? baseRowHeight;
