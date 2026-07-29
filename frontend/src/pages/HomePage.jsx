@@ -28,6 +28,7 @@ import StateFilterButtons from "../components/StateFilterButtons";
 import { UI, MENU, STREAM, INDICATOR, outlineBorder } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
+import { buildDuplicateChainGroups } from "../utils/duplicateProjectLinks";
 const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
 const SECTION_GREY = UI.panelBg;
@@ -158,39 +159,6 @@ const STREAM_SORT_ORDER = [
   "Create Cash Flow",
   "Fresh Start Advisory",
 ];
-
-/** Pair renovation source + single copy for Design Phase grid (chain layout). */
-function buildDuplicateChainGroups(items) {
-  const byId = new Map(items.map((p) => [p.id, p]));
-  const used = new Set();
-  const groups = [];
-  for (const p of items) {
-    if (used.has(p.id)) continue;
-    const raw = p.duplicate_source_project_id;
-    if (raw != null && String(raw).trim() !== "") {
-      const srcId = Number(raw);
-      const src = Number.isFinite(srcId) ? byId.get(srcId) : null;
-      if (src && !used.has(src.id)) {
-        groups.push({ type: "pair", a: src, b: p });
-        used.add(src.id);
-        used.add(p.id);
-        continue;
-      }
-    }
-    const copy = items.find(
-      (c) => !used.has(c.id) && Number(c.duplicate_source_project_id) === p.id
-    );
-    if (copy) {
-      groups.push({ type: "pair", a: p, b: copy });
-      used.add(p.id);
-      used.add(copy.id);
-      continue;
-    }
-    groups.push({ type: "single", project: p });
-    used.add(p.id);
-  }
-  return groups;
-}
 
 const CHAIN_OUTLINE_GREY = "#7a7a7e";
 const CHAIN_GOLD_LIGHT = "#E8C547";

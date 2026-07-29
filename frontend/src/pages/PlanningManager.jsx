@@ -5,6 +5,7 @@ import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { UI } from "../utils/uiThemeTokens.js";
 import { CLASSIFICATION_ABBREV_MAP } from "../utils/classifications";
+import { collapseLinkedProjectsForPlanning } from "../utils/duplicateProjectLinks";
 import {
   DRAFTSPERSON_UNASSIGNED,
   normalizeDraftspersonField,
@@ -167,13 +168,24 @@ function colLetter(index) {
 
 const COL_LETTERS = Array.from({ length: COL_COUNT }, (_, i) => colLetter(i));
 
-/** SUBURB - Street (SSD) — classification acronym from project rectangles. */
+/** Classification acronym from project rectangles (e.g. SSD, REN). */
+function classificationAbbrev(project) {
+  const classification = project?.classification != null ? String(project.classification).trim() : "";
+  const abbrevRaw = classification ? CLASSIFICATION_ABBREV_MAP[classification] : "";
+  return abbrevRaw ? String(abbrevRaw).toUpperCase() : "";
+}
+
+/** SUBURB - Street (SSD)(REN) — linked jobs share one row with both acronyms. */
 function projectLabel(project) {
   const suburb = project?.suburb != null ? String(project.suburb).trim() : "";
   const street = project?.street != null ? String(project.street).trim() : "";
-  const classification = project?.classification != null ? String(project.classification).trim() : "";
-  const abbrevRaw = classification ? CLASSIFICATION_ABBREV_MAP[classification] : "";
-  const abbrev = abbrevRaw ? String(abbrevRaw).toUpperCase() : "";
+  const partner = project?._planningLinkPartner;
+  const abbrevs = [];
+  const primaryAbbrev = classificationAbbrev(project);
+  if (primaryAbbrev) abbrevs.push(primaryAbbrev);
+  const partnerAbbrev = classificationAbbrev(partner);
+  if (partnerAbbrev && !abbrevs.includes(partnerAbbrev)) abbrevs.push(partnerAbbrev);
+  const abbrevSuffix = abbrevs.map((a) => `(${a})`).join("");
 
   let label = "";
   if (suburb || street) {
@@ -181,20 +193,24 @@ function projectLabel(project) {
     let address = "";
     if (suburbOut && street) address = `${suburbOut} - ${street}`;
     else address = suburbOut || street;
-    label = abbrev ? `${address} (${abbrev})` : address;
+    label = abbrevSuffix ? `${address} ${abbrevSuffix}` : address;
   } else {
     const name = project?.name != null ? String(project.name).trim() : "";
-    if (name) label = abbrev ? `${name} (${abbrev})` : name;
+    if (name) label = abbrevSuffix ? `${name} ${abbrevSuffix}` : name;
     else label = `Project #${project?.id ?? ""}`;
   }
 
-  if (isOnHoldFlag(project)) label = `${label} (ON HOLD)`;
-  if (isCancelledStatus(project?.status)) label = `${label} (CANCELLED)`;
+  if (isOnHoldFlag(project) || isOnHoldFlag(partner)) label = `${label} (ON HOLD)`;
+  if (isCancelledStatus(project?.status) || isCancelledStatus(partner?.status)) {
+    label = `${label} (CANCELLED)`;
+  }
   return label;
 }
 
 function projectShowsRed(project) {
-  return isCancelledStatus(project?.status) || isOnHoldFlag(project);
+  if (isCancelledStatus(project?.status) || isOnHoldFlag(project)) return true;
+  const partner = project?._planningLinkPartner;
+  return Boolean(partner && (isCancelledStatus(partner?.status) || isOnHoldFlag(partner)));
 }
 
 function buildDefaultColWidths() {
@@ -364,7 +380,13 @@ function applyProjectOrder(list, projectOrder) {
     items.sort(dateSort);
     return items;
   }
-  const byId = new Map(items.map((p) => [Number(p.id), p]));
+  // Map both primary and linked-partner ids to the collapsed row.
+  const byId = new Map();
+  for (const p of items) {
+    byId.set(Number(p.id), p);
+    const partnerId = Number(p?._planningLinkPartner?.id);
+    if (Number.isFinite(partnerId)) byId.set(partnerId, p);
+  }
   const ordered = [];
   const used = new Set();
   for (const id of projectOrder) {
@@ -384,6 +406,13 @@ function orderForTab(tabKey, projectOrders, customizedTabs) {
     return projectOrders?.[tabKey];
   }
   return null;
+}
+
+function projectsForPlanningTab(allProjects, tab, projectOrders, customizedTabs) {
+  const list = collapseLinkedProjectsForPlanning(
+    (allProjects || []).filter((p) => projectTabKey(p) === tab)
+  );
+  return applyProjectOrder(list, orderForTab(tab, projectOrders, customizedTabs));
 }
 
 async function fetchSharedLayout() {
@@ -488,8 +517,7 @@ export default function PlanningManager() {
   const sheetTabs = useMemo(() => buildSheetTabs(allProjects), [allProjects]);
 
   const projects = useMemo(() => {
-    const list = allProjects.filter((p) => projectTabKey(p) === activeTab);
-    return applyProjectOrder(list, orderForTab(activeTab, projectOrders, customizedTabs));
+    return projectsForPlanningTab(allProjects, activeTab, projectOrders, customizedTabs);
   }, [allProjects, activeTab, projectOrders, customizedTabs]);
   const projectsRef = useRef(projects);
   projectsRef.current = projects;
@@ -827,9 +855,11 @@ export default function PlanningManager() {
     const list =
       tab === activeTabRef.current
         ? projectsRef.current
-        : applyProjectOrder(
-            allProjects.filter((p) => projectTabKey(p) === tab),
-            orderForTab(tab, projectOrdersRef.current, customizedTabsRef.current)
+        : projectsForPlanningTab(
+            allProjects,
+            tab,
+            projectOrdersRef.current,
+            customizedTabsRef.current
           );
     if (
       fromIndex === toIndex ||
@@ -884,9 +914,11 @@ export default function PlanningManager() {
       setActiveTab(tab);
       activeTabRef.current = tab;
     }
-    const list = applyProjectOrder(
-      allProjects.filter((p) => projectTabKey(p) === tab),
-      orderForTab(tab, projectOrdersRef.current, customizedTabsRef.current)
+    const list = projectsForPlanningTab(
+      allProjects,
+      tab,
+      projectOrdersRef.current,
+      customizedTabsRef.current
     );
     if (projectIndex < 0 || projectIndex >= list.length) return;
     const project = list[projectIndex];
@@ -904,10 +936,7 @@ export default function PlanningManager() {
     const q = projectSearch.trim().toLowerCase();
     if (!q) return [];
     const tab = activeTab;
-    const list = applyProjectOrder(
-      allProjects.filter((p) => projectTabKey(p) === tab),
-      orderForTab(tab, projectOrders, customizedTabs)
-    );
+    const list = projectsForPlanningTab(allProjects, tab, projectOrders, customizedTabs);
     const out = [];
     for (let i = 0; i < list.length; i += 1) {
       const label = projectLabel(list[i]);
@@ -936,9 +965,11 @@ export default function PlanningManager() {
       setActiveTab(tab);
       activeTabRef.current = tab;
     }
-    const list = applyProjectOrder(
-      allProjects.filter((p) => projectTabKey(p) === tab),
-      orderForTab(tab, projectOrdersRef.current, customizedTabsRef.current)
+    const list = projectsForPlanningTab(
+      allProjects,
+      tab,
+      projectOrdersRef.current,
+      customizedTabsRef.current
     );
     if (list.length <= 0) {
       setMoveRowModal(null);
