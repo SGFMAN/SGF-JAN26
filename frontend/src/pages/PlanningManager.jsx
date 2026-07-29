@@ -3,7 +3,6 @@ import { Link, useNavigate } from "react-router-dom";
 import { getApiHeaders } from "../utils/auth";
 import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
-import ModalBackdrop from "../components/ModalBackdrop";
 import { UI } from "../utils/uiThemeTokens.js";
 import { CLASSIFICATION_ABBREV_MAP } from "../utils/classifications";
 import { collapseLinkedProjectsForPlanning } from "../utils/duplicateProjectLinks";
@@ -507,8 +506,9 @@ export default function PlanningManager() {
   const [sheetCells, setSheetCells] = useState({}); // { [projectId]: { [colIndex]: value } }
   const [moveRowModal, setMoveRowModal] = useState(null); // { projectIndex, label, inputValue } | null
   const [projectSearch, setProjectSearch] = useState("");
-  const [tpNoteModal, setTpNoteModal] = useState(null);
-  // tpNoteModal: { projectId, field, title, draft, saving }
+  const [tpMenu, setTpMenu] = useState(null); // { projectId, colIndex, field, top, left, width }
+  const [tpNoteEdit, setTpNoteEdit] = useState(null); // { projectId, colIndex, field, draft }
+  const tpNoteInputRef = useRef(null);
   const projectOrdersRef = useRef({});
   const customizedTabsRef = useRef([]);
   const activeTabRef = useRef(activeTab);
@@ -595,6 +595,33 @@ export default function PlanningManager() {
       window.removeEventListener("keydown", onKey);
     };
   }, [draftspersonMenu]);
+
+  useEffect(() => {
+    if (!tpMenu) return undefined;
+    function onDocPointerDown(e) {
+      const t = e.target;
+      if (t?.closest?.("[data-tp-menu]") || t?.closest?.("[data-tp-arrow]")) return;
+      setTpMenu(null);
+    }
+    function onKey(e) {
+      if (e.key === "Escape") setTpMenu(null);
+    }
+    document.addEventListener("pointerdown", onDocPointerDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDocPointerDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [tpMenu]);
+
+  useEffect(() => {
+    if (!tpNoteEdit) return undefined;
+    const t = window.setTimeout(() => {
+      tpNoteInputRef.current?.focus?.();
+      tpNoteInputRef.current?.select?.();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [tpNoteEdit?.projectId, tpNoteEdit?.colIndex]);
 
   useEffect(() => {
     let cancelled = false;
@@ -749,7 +776,13 @@ export default function PlanningManager() {
       }
       const mapping = getPlanningManagerColMapping(colIndex);
       if (mapping?.field) {
-        return formatPlanningManagerSheetDate(project?.[mapping.field]);
+        const raw = project?.[mapping.field];
+        if (mapping.kind === "note") {
+          if (raw == null || String(raw).trim() === "") return "";
+          // Dates show as dd-Mmm; free-text notes show as typed.
+          return formatPlanningManagerSheetDate(raw) || String(raw).trim();
+        }
+        return formatPlanningManagerSheetDate(raw);
       }
       const stored = sheetCells?.[String(project.id)]?.[String(colIndex)];
       return stored != null ? String(stored) : "";
@@ -819,6 +852,8 @@ export default function PlanningManager() {
       left,
       width: menuWidth,
     });
+    setTpMenu(null);
+    setTpNoteEdit(null);
   }
 
   async function saveDraftsperson(project, selectedValue) {
@@ -984,47 +1019,48 @@ export default function PlanningManager() {
     setMoveRowModal(null);
   }
 
-  function columnNoteTitle(colIndex) {
-    if (colIndex === 28) return "Town Planning — Requested";
-    if (colIndex === 29) return "Town Planning — Received";
-    if (colIndex === 30) return "Town Planning Needed";
-    return "Town Planning";
-  }
-
-  function openTownPlanningNoteModal(project, colIndex, mapping) {
-    if (!project?.id || !mapping?.field) return;
-    const current = project[mapping.field] != null ? String(project[mapping.field]).trim() : "";
+  function openTownPlanningMenu(project, colIndex, mapping, anchorEl) {
+    if (!project?.id || !mapping?.field || !anchorEl) return;
+    const rect = anchorEl.getBoundingClientRect();
+    const menuWidth = Math.max(120, Math.min(160, colWidths[colIndex] || DEFAULT_COL_WIDTH));
+    let left = rect.right - menuWidth;
+    if (left < 8) left = 8;
+    if (left + menuWidth > window.innerWidth - 8) left = Math.max(8, window.innerWidth - menuWidth - 8);
+    let top = rect.bottom + 2;
+    const estimatedH = 36 + 3 * 32;
+    if (top + estimatedH > window.innerHeight - 8) {
+      top = Math.max(8, rect.top - estimatedH - 2);
+    }
+    setDraftspersonMenu(null);
+    setTpNoteEdit(null);
+    setTpMenu({
+      projectId: project.id,
+      colIndex,
+      field: mapping.field,
+      top,
+      left,
+      width: menuWidth,
+    });
     const projectIndex = projects.findIndex((p) => p.id === project.id);
     if (projectIndex >= 0) {
       setSelectedCell({ row: DATA_START_ROW + projectIndex, col: colIndex });
     }
-    setTpNoteModal({
-      projectId: project.id,
-      field: mapping.field,
-      title: columnNoteTitle(colIndex),
-      draft: current,
-      saving: false,
-    });
   }
 
-  async function confirmTownPlanningNoteModal() {
-    if (!tpNoteModal || tpNoteModal.saving) return;
-    const { projectId, field, draft } = tpNoteModal;
-    const trimmed = draft != null ? String(draft).trim() : "";
-    let nextValue = trimmed || null;
-    // If user typed a display date like 29-Jul, keep as typed; ISO dates stay ISO.
+  async function saveTownPlanningValue(projectId, field, nextValue) {
+    if (!projectId || !field) return;
     const previous = projects.find((p) => p.id === projectId)?.[field] ?? null;
+    const value = nextValue != null && String(nextValue).trim() !== "" ? String(nextValue).trim() : null;
 
-    setTpNoteModal((prev) => (prev ? { ...prev, saving: true } : prev));
     setAllProjects((prev) =>
-      prev.map((p) => (p.id === projectId ? { ...p, [field]: nextValue } : p))
+      prev.map((p) => (p.id === projectId ? { ...p, [field]: value } : p))
     );
 
     try {
       const res = await fetch(`${API_URL}/api/projects/${projectId}/planning-manager-select`, {
         method: "PUT",
         headers: getApiHeaders(),
-        body: JSON.stringify({ field, value: nextValue }),
+        body: JSON.stringify({ field, value }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -1036,14 +1072,49 @@ export default function PlanningManager() {
           prev.map((p) => (p.id === projectId ? { ...p, [field]: data.value } : p))
         );
       }
-      setTpNoteModal(null);
     } catch (err) {
-      console.error("Error saving town planning note:", err);
+      console.error("Error saving town planning cell:", err);
       setAllProjects((prev) =>
         prev.map((p) => (p.id === projectId ? { ...p, [field]: previous } : p))
       );
-      setTpNoteModal((prev) => (prev ? { ...prev, saving: false } : prev));
       alert(err.message || "Failed to save");
+    }
+  }
+
+  function beginTownPlanningNoteEdit(projectId, colIndex, field) {
+    const project = projects.find((p) => p.id === projectId);
+    const current = project?.[field] != null ? String(project[field]).trim() : "";
+    // Show display form for ISO dates so the user edits what they see.
+    const draft = formatPlanningManagerSheetDate(current) || current;
+    setTpMenu(null);
+    setTpNoteEdit({ projectId, colIndex, field, draft });
+  }
+
+  function cancelTownPlanningNoteEdit() {
+    setTpNoteEdit(null);
+  }
+
+  function commitTownPlanningNoteEdit() {
+    if (!tpNoteEdit) return;
+    const { projectId, field, draft } = tpNoteEdit;
+    setTpNoteEdit(null);
+    void saveTownPlanningValue(projectId, field, draft);
+  }
+
+  async function handleTownPlanningMenuAction(action) {
+    if (!tpMenu) return;
+    const { projectId, colIndex, field } = tpMenu;
+    setTpMenu(null);
+    if (action === "date") {
+      void saveTownPlanningValue(projectId, field, planningManagerTodayIsoDate());
+      return;
+    }
+    if (action === "clear") {
+      void saveTownPlanningValue(projectId, field, null);
+      return;
+    }
+    if (action === "note") {
+      beginTownPlanningNoteEdit(projectId, colIndex, field);
     }
   }
 
@@ -1056,10 +1127,8 @@ export default function PlanningManager() {
 
     const mapping = getPlanningManagerColMapping(colIndex);
     if (mapping?.readOnly) return;
-    if (mapping?.kind === "note") {
-      openTownPlanningNoteModal(project, colIndex, mapping);
-      return;
-    }
+    // Town Planning cells use the dropdown — no double-click stamp.
+    if (mapping?.kind === "note") return;
 
     // Mapped project fields (C–R): store on the project so other pages can read them.
     if (mapping?.field) {
@@ -1836,14 +1905,23 @@ export default function PlanningManager() {
                       const fill = columnFill(colIndex);
                       const projectIndex = rowIndex - DATA_START_ROW;
                       const project =
-                        colIndex === 1 && projectIndex >= 0 && projectIndex < projects.length
+                        projectIndex >= 0 && projectIndex < projects.length
                           ? projects[projectIndex]
                           : null;
+                      const mapping = getPlanningManagerColMapping(colIndex);
                       const isDraftCol = colIndex === 1 && project;
+                      const isTpCol = mapping?.kind === "note" && project;
+                      const isEditingTpNote =
+                        Boolean(
+                          tpNoteEdit &&
+                            project &&
+                            tpNoteEdit.projectId === project.id &&
+                            tpNoteEdit.colIndex === colIndex
+                        );
                       return (
                         <div
                           key={colIndex}
-                          title={value || undefined}
+                          title={isEditingTpNote ? undefined : value || undefined}
                           onClick={(e) => selectCell(rowIndex, colIndex, e)}
                           onDoubleClick={(e) => {
                             e.preventDefault();
@@ -1852,14 +1930,18 @@ export default function PlanningManager() {
                           }}
                           style={{
                             position: "relative",
-                            zIndex: selected ? 2 : 0,
+                            zIndex: selected || isEditingTpNote ? 2 : 0,
                             width: colWidths[colIndex],
                             minWidth: colWidths[colIndex],
                             height: h,
                             borderRight: `1px solid ${GRID_LINE}`,
                             borderBottom: `1px solid ${GRID_LINE}`,
                             boxSizing: "border-box",
-                            padding: isDraftCol ? "0 14px 2px 14px" : "0 6px 2px",
+                            padding: isDraftCol
+                              ? "0 14px 2px 14px"
+                              : isTpCol
+                                ? "0 14px 2px 6px"
+                                : "0 6px 2px",
                             display: "flex",
                             alignItems: "flex-end",
                             justifyContent: isDraftCol ? "center" : "flex-start",
@@ -1876,18 +1958,57 @@ export default function PlanningManager() {
                             cursor: "cell",
                           }}
                         >
-                          <span
-                            style={{
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                              minWidth: 0,
-                              flex: isDraftCol ? "0 1 auto" : 1,
-                              textAlign: isDraftCol ? "center" : "left",
-                            }}
-                          >
-                            {value}
-                          </span>
+                          {isEditingTpNote ? (
+                            <input
+                              ref={tpNoteInputRef}
+                              type="text"
+                              value={tpNoteEdit.draft}
+                              onChange={(e) =>
+                                setTpNoteEdit((prev) =>
+                                  prev ? { ...prev, draft: e.target.value } : prev
+                                )
+                              }
+                              onClick={(e) => e.stopPropagation()}
+                              onDoubleClick={(e) => e.stopPropagation()}
+                              onBlur={() => commitTownPlanningNoteEdit()}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  commitTownPlanningNoteEdit();
+                                } else if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  cancelTownPlanningNoteEdit();
+                                }
+                              }}
+                              style={{
+                                width: "100%",
+                                minWidth: 0,
+                                flex: 1,
+                                border: "none",
+                                outline: "none",
+                                padding: 0,
+                                margin: 0,
+                                background: "transparent",
+                                color: ADDRESS_TEXT,
+                                fontSize: "15px",
+                                fontFamily: SHEET_FONT,
+                                boxSizing: "border-box",
+                              }}
+                            />
+                          ) : (
+                            <span
+                              style={{
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                minWidth: 0,
+                                flex: isDraftCol ? "0 1 auto" : 1,
+                                textAlign: isDraftCol ? "center" : "left",
+                              }}
+                            >
+                              {value}
+                            </span>
+                          )}
                           {isDraftCol ? (
                             <button
                               type="button"
@@ -1898,6 +2019,40 @@ export default function PlanningManager() {
                                 e.stopPropagation();
                                 selectCell(rowIndex, colIndex);
                                 openDraftspersonMenu(project, e.currentTarget);
+                              }}
+                              style={{
+                                position: "absolute",
+                                right: 1,
+                                bottom: 1,
+                                width: 12,
+                                height: 10,
+                                padding: 0,
+                                margin: 0,
+                                border: "none",
+                                background: "transparent",
+                                color: HEADER_TEXT,
+                                fontSize: "8px",
+                                lineHeight: 1,
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                zIndex: 3,
+                              }}
+                            >
+                              ▼
+                            </button>
+                          ) : null}
+                          {isTpCol && !isEditingTpNote ? (
+                            <button
+                              type="button"
+                              data-tp-arrow
+                              title="Town Planning"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                selectCell(rowIndex, colIndex);
+                                openTownPlanningMenu(project, colIndex, mapping, e.currentTarget);
                               }}
                               style={{
                                 position: "absolute",
@@ -2059,134 +2214,54 @@ export default function PlanningManager() {
         </div>
       ) : null}
 
-      {tpNoteModal ? (
-        <ModalBackdrop
-          zIndex={10060}
-          style={{ background: "rgba(0,0,0,0.45)", padding: 16 }}
+      {tpMenu ? (
+        <div
+          data-tp-menu
+          style={{
+            position: "fixed",
+            top: tpMenu.top,
+            left: tpMenu.left,
+            width: tpMenu.width,
+            zIndex: 10000,
+            background: WHITE,
+            border: `1px solid ${HEADER_GRID_LINE}`,
+            boxShadow: "0 6px 20px rgba(0,0,0,0.18)",
+            borderRadius: "4px",
+            overflow: "hidden",
+          }}
         >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={tpNoteModal.title}
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "100%",
-              maxWidth: 420,
-              background: WHITE,
-              borderRadius: 8,
-              border: `1px solid ${HEADER_GRID_LINE}`,
-              boxShadow: "0 12px 40px rgba(0,0,0,0.22)",
-              padding: "20px 22px",
-              fontFamily: SHEET_FONT,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 16,
-                fontWeight: 700,
-                color: ADDRESS_TEXT,
-                marginBottom: 16,
+          {[
+            { action: "date", label: "Date" },
+            { action: "note", label: "Note" },
+            { action: "clear", label: "Clear" },
+          ].map((opt, idx, arr) => (
+            <button
+              key={opt.action}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                void handleTownPlanningMenuAction(opt.action);
               }}
-            >
-              {tpNoteModal.title}
-            </div>
-
-            <label
               style={{
                 display: "block",
-                fontSize: 13,
-                fontWeight: 600,
-                color: HEADER_TEXT,
-                marginBottom: 6,
-              }}
-            >
-              Note
-            </label>
-            <textarea
-              autoFocus
-              rows={4}
-              value={tpNoteModal.draft}
-              disabled={tpNoteModal.saving}
-              onChange={(e) =>
-                setTpNoteModal((prev) => (prev ? { ...prev, draft: e.target.value } : prev))
-              }
-              placeholder="Type a note…"
-              style={{
                 width: "100%",
-                boxSizing: "border-box",
+                textAlign: "left",
                 padding: "8px 10px",
-                fontSize: 15,
-                fontFamily: SHEET_FONT,
-                border: `1px solid ${HEADER_GRID_LINE}`,
-                borderRadius: 4,
-                marginBottom: 12,
-                resize: "vertical",
-                color: ADDRESS_TEXT,
-              }}
-            />
-
-            <button
-              type="button"
-              disabled={tpNoteModal.saving}
-              onClick={() =>
-                setTpNoteModal((prev) =>
-                  prev ? { ...prev, draft: planningManagerTodayIsoDate() } : prev
-                )
-              }
-              style={{
-                padding: "6px 12px",
-                border: `1px solid ${HEADER_GRID_LINE}`,
-                borderRadius: 4,
+                border: "none",
+                borderBottom: idx < arr.length - 1 ? `1px solid ${HEADER_GRID_LINE}` : "none",
                 background: WHITE,
                 color: ADDRESS_TEXT,
-                fontSize: 13,
-                fontWeight: 600,
+                fontSize: "13px",
+                fontWeight: 500,
                 cursor: "pointer",
-                marginBottom: 16,
+                fontFamily: SHEET_FONT,
               }}
             >
-              Date
+              {opt.label}
             </button>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <button
-                type="button"
-                disabled={tpNoteModal.saving}
-                onClick={() => setTpNoteModal(null)}
-                style={{
-                  padding: "8px 14px",
-                  border: `1px solid ${HEADER_GRID_LINE}`,
-                  borderRadius: 4,
-                  background: WHITE,
-                  color: ADDRESS_TEXT,
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={tpNoteModal.saving}
-                onClick={() => void confirmTownPlanningNoteModal()}
-                style={{
-                  padding: "8px 14px",
-                  border: "none",
-                  borderRadius: 4,
-                  background: HEADING_BLUE,
-                  color: WHITE,
-                  fontSize: 14,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  opacity: tpNoteModal.saving ? 0.7 : 1,
-                }}
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </ModalBackdrop>
+          ))}
+        </div>
       ) : null}
 
       {moveRowModal ? (

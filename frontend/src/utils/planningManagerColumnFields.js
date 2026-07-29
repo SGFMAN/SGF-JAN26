@@ -45,7 +45,7 @@ export const PLANNING_MANAGER_COL_FIELD = {
   26: { field: "planning_footing_certification_received_at" },
   // Site Visit - Plans Updated (AB)
   27: { field: "planning_site_visit_plans_updated_at" },
-  // Town Planning note/date columns (AC–AE) — modal: type a note or stamp today's date
+  // Town Planning columns (AC–AE) — dropdown: Date / Note / Clear
   28: { field: "planning_mgr_tp_requested", kind: "note" },
   29: { field: "planning_mgr_tp_received", kind: "note" },
   30: { field: "planning_mgr_tp_needed", kind: "note" },
