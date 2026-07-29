@@ -15,7 +15,7 @@ export function normalizeStatus(status) {
 }
 
 export function isHotlistStatus(status) {
-  return normalizeStatus(status) === "Hotlist";
+  return normalizeStatus(status).toLowerCase() === "hotlist";
 }
 
 export function isCancelledStatus(status) {
@@ -23,16 +23,18 @@ export function isCancelledStatus(status) {
 }
 
 export function isCompleteStatus(status) {
-  return normalizeStatus(status) === "Complete";
+  const s = normalizeStatus(status).toLowerCase();
+  return s === "complete" || s === "completed";
 }
 
 export function isConstructionPhaseStatus(status) {
-  return normalizeStatus(status) === "Construction Phase";
+  const s = normalizeStatus(status).toLowerCase();
+  return s === "construction phase" || s === "in construction";
 }
 
-/** True only when `project.status` is exactly Design Phase. */
+/** True only when `project.status` is Design Phase. */
 export function isDesignPhaseStatus(status) {
-  return normalizeStatus(status) === "Design Phase";
+  return normalizeStatus(status).toLowerCase() === "design phase";
 }
 
 /** on_hold checkbox / API flag (blue sash). */

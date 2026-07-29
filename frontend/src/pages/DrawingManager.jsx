@@ -3,6 +3,8 @@ import {
   isDesignPhaseStatus,
   isHotlistStatus,
   isCancelledStatus,
+  isCompleteStatus,
+  isConstructionPhaseStatus,
   isOnHoldFlag,
 } from "../utils/projectStatus";
 import { Link } from "react-router-dom";
@@ -354,6 +356,17 @@ export default function DrawingManager() {
     return !isLatestRevisionWorkingDrawingsApproved(project);
   }
 
+  /** Drawing Manager is Design Phase only — never construction / complete / cancelled / hotlist. */
+  function isDrawingManagerEligibleProject(project) {
+    if (isHotlistStatus(project?.status)) return false;
+    if (isCancelledStatus(project?.status)) return false;
+    if (isCompleteStatus(project?.status)) return false;
+    if (isConstructionPhaseStatus(project?.status)) return false;
+    if (!isDesignPhaseStatus(project?.status)) return false;
+    if (project?.classification === "Home Office / Studio") return false;
+    return shouldShowInDrawingManagerList(project);
+  }
+
   async function fetchProjects() {
     try {
       setLoading(true);
@@ -363,14 +376,9 @@ export default function DrawingManager() {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
       const data = await response.json();
-      // Design pipeline by status. Exclude Home Office/Studio, Drawings Complete, and working-drawings-approved (see shouldShowInDrawingManagerList).
-      const designPhaseProjects = data.filter((project) => {
-        if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
-        if (!isDesignPhaseStatus(project.status)) return false;
-        if (project.classification === "Home Office / Studio") return false;
-        return true;
-      });
-      const visibleProjects = designPhaseProjects.filter(shouldShowInDrawingManagerList);
+      const visibleProjects = (Array.isArray(data) ? data : []).filter(
+        isDrawingManagerEligibleProject
+      );
       setProjects(visibleProjects);
     } catch (err) {
       setError(err.message);
