@@ -506,6 +506,9 @@ export default function PlanningManager() {
   const [sheetCells, setSheetCells] = useState({}); // { [projectId]: { [colIndex]: value } }
   const [moveRowModal, setMoveRowModal] = useState(null); // { projectIndex, label, inputValue } | null
   const [projectSearch, setProjectSearch] = useState("");
+  const [tpSelectModal, setTpSelectModal] = useState(null);
+  // tpSelectModal: { projectId, field, title, value, options, draft, adding, addText, saving }
+  const [tpOptionsCache, setTpOptionsCache] = useState(null);
   const projectOrdersRef = useRef({});
   const customizedTabsRef = useRef([]);
   const activeTabRef = useRef(activeTab);
@@ -746,7 +749,11 @@ export default function PlanningManager() {
       }
       const mapping = getPlanningManagerColMapping(colIndex);
       if (mapping?.field) {
-        return formatPlanningManagerSheetDate(project?.[mapping.field]);
+        const raw = project?.[mapping.field];
+        if (mapping.kind === "select") {
+          return raw != null && String(raw).trim() !== "" ? String(raw).trim() : "";
+        }
+        return formatPlanningManagerSheetDate(raw);
       }
       const stored = sheetCells?.[String(project.id)]?.[String(colIndex)];
       return stored != null ? String(stored) : "";
@@ -981,6 +988,104 @@ export default function PlanningManager() {
     setMoveRowModal(null);
   }
 
+  async function loadTownPlanningOptions() {
+    if (Array.isArray(tpOptionsCache)) return tpOptionsCache;
+    try {
+      const res = await fetch(`${API_URL}/api/planning-manager-town-planning-options`, {
+        headers: getApiHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed to load options (${res.status})`);
+      const options = Array.isArray(data.options) ? data.options : [];
+      setTpOptionsCache(options);
+      return options;
+    } catch (err) {
+      console.error("Failed to load town planning options:", err);
+      return [];
+    }
+  }
+
+  async function openTownPlanningSelectModal(project, colIndex, mapping) {
+    if (!project?.id || !mapping?.field) return;
+    const options = await loadTownPlanningOptions();
+    const current = project[mapping.field] != null ? String(project[mapping.field]).trim() : "";
+    const projectIndex = projects.findIndex((p) => p.id === project.id);
+    if (projectIndex >= 0) {
+      setSelectedCell({ row: DATA_START_ROW + projectIndex, col: colIndex });
+    }
+    setTpSelectModal({
+      projectId: project.id,
+      field: mapping.field,
+      title: columnSelectTitle(colIndex),
+      value: current,
+      options,
+      draft: current,
+      adding: false,
+      addText: "",
+      saving: false,
+    });
+  }
+
+  function columnSelectTitle(colIndex) {
+    if (colIndex === 28) return "Town Planning — Requested";
+    if (colIndex === 29) return "Town Planning — Received";
+    if (colIndex === 30) return "Town Planning Needed";
+    return "Town Planning";
+  }
+
+  async function addTownPlanningOption(text) {
+    const trimmed = String(text || "").trim();
+    if (!trimmed) return null;
+    const res = await fetch(`${API_URL}/api/planning-manager-town-planning-options`, {
+      method: "PUT",
+      headers: getApiHeaders(),
+      body: JSON.stringify({ add: trimmed }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Failed to add option (${res.status})`);
+    const options = Array.isArray(data.options) ? data.options : [];
+    setTpOptionsCache(options);
+    return options;
+  }
+
+  async function confirmTownPlanningSelectModal() {
+    if (!tpSelectModal || tpSelectModal.saving) return;
+    const { projectId, field, draft } = tpSelectModal;
+    const nextValue = draft != null && String(draft).trim() !== "" ? String(draft).trim() : null;
+    const previous = projects.find((p) => p.id === projectId)?.[field] ?? null;
+
+    setTpSelectModal((prev) => (prev ? { ...prev, saving: true } : prev));
+    setAllProjects((prev) =>
+      prev.map((p) => (p.id === projectId ? { ...p, [field]: nextValue } : p))
+    );
+
+    try {
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/planning-manager-select`, {
+        method: "PUT",
+        headers: getApiHeaders(),
+        body: JSON.stringify({ field, value: nextValue }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Failed to save (${res.status})`);
+      }
+      const data = await res.json().catch(() => ({}));
+      if (data && Object.prototype.hasOwnProperty.call(data, "value")) {
+        setAllProjects((prev) =>
+          prev.map((p) => (p.id === projectId ? { ...p, [field]: data.value } : p))
+        );
+      }
+      setTpSelectModal(null);
+    } catch (err) {
+      console.error("Error saving town planning select:", err);
+      setAllProjects((prev) =>
+        prev.map((p) => (p.id === projectId ? { ...p, [field]: previous } : p))
+      );
+      setTpSelectModal((prev) => (prev ? { ...prev, saving: false } : prev));
+      alert(err.message || "Failed to save selection");
+    }
+  }
+
   async function stampDateOnCell(rowIndex, colIndex) {
     if (rowIndex < DATA_START_ROW || colIndex < 2) return;
     const projectIndex = rowIndex - DATA_START_ROW;
@@ -990,6 +1095,10 @@ export default function PlanningManager() {
 
     const mapping = getPlanningManagerColMapping(colIndex);
     if (mapping?.readOnly) return;
+    if (mapping?.kind === "select") {
+      await openTownPlanningSelectModal(project, colIndex, mapping);
+      return;
+    }
 
     // Mapped project fields (C–R): store on the project so other pages can read them.
     if (mapping?.field) {
@@ -1986,6 +2095,257 @@ export default function PlanningManager() {
               );
             });
           })()}
+        </div>
+      ) : null}
+
+      {tpSelectModal ? (
+        <div
+          role="presentation"
+          onClick={() => {
+            if (!tpSelectModal.saving) setTpSelectModal(null);
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 10060,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+            pointerEvents: "auto",
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={tpSelectModal.title}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 420,
+              background: WHITE,
+              borderRadius: 8,
+              border: `1px solid ${HEADER_GRID_LINE}`,
+              boxShadow: "0 12px 40px rgba(0,0,0,0.22)",
+              padding: "20px 22px",
+              fontFamily: SHEET_FONT,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 700,
+                color: ADDRESS_TEXT,
+                marginBottom: 16,
+              }}
+            >
+              {tpSelectModal.title}
+            </div>
+
+            {!tpSelectModal.adding ? (
+              <>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: HEADER_TEXT,
+                    marginBottom: 6,
+                  }}
+                >
+                  Selection
+                </label>
+                <select
+                  value={tpSelectModal.draft || ""}
+                  disabled={tpSelectModal.saving}
+                  onChange={(e) =>
+                    setTpSelectModal((prev) =>
+                      prev ? { ...prev, draft: e.target.value } : prev
+                    )
+                  }
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    padding: "8px 10px",
+                    fontSize: 15,
+                    fontFamily: SHEET_FONT,
+                    border: `1px solid ${HEADER_GRID_LINE}`,
+                    borderRadius: 4,
+                    marginBottom: 12,
+                    background: WHITE,
+                    color: ADDRESS_TEXT,
+                  }}
+                >
+                  <option value="">(None)</option>
+                  {(() => {
+                    const opts = [...(tpSelectModal.options || [])];
+                    const draft = (tpSelectModal.draft || "").trim();
+                    if (draft && !opts.some((o) => o === draft)) opts.unshift(draft);
+                    return opts.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ));
+                  })()}
+                </select>
+                <button
+                  type="button"
+                  disabled={tpSelectModal.saving}
+                  onClick={() =>
+                    setTpSelectModal((prev) =>
+                      prev ? { ...prev, adding: true, addText: "" } : prev
+                    )
+                  }
+                  style={{
+                    padding: "6px 12px",
+                    border: `1px solid ${HEADER_GRID_LINE}`,
+                    borderRadius: 4,
+                    background: WHITE,
+                    color: ADDRESS_TEXT,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    marginBottom: 16,
+                  }}
+                >
+                  Add…
+                </button>
+              </>
+            ) : (
+              <>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: HEADER_TEXT,
+                    marginBottom: 6,
+                  }}
+                >
+                  New option
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={tpSelectModal.addText}
+                  disabled={tpSelectModal.saving}
+                  onChange={(e) =>
+                    setTpSelectModal((prev) =>
+                      prev ? { ...prev, addText: e.target.value } : prev
+                    )
+                  }
+                  onKeyDown={async (e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      try {
+                        const options = await addTownPlanningOption(tpSelectModal.addText);
+                        if (!options) return;
+                        const added = String(tpSelectModal.addText).trim();
+                        setTpSelectModal((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                options,
+                                draft: added,
+                                adding: false,
+                                addText: "",
+                              }
+                            : prev
+                        );
+                      } catch (err) {
+                        alert(err.message || "Failed to add option");
+                      }
+                    }
+                    if (e.key === "Escape") {
+                      setTpSelectModal((prev) =>
+                        prev ? { ...prev, adding: false, addText: "" } : prev
+                      );
+                    }
+                  }}
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    padding: "8px 10px",
+                    fontSize: 15,
+                    fontFamily: SHEET_FONT,
+                    border: `1px solid ${HEADER_GRID_LINE}`,
+                    borderRadius: 4,
+                    marginBottom: 16,
+                  }}
+                />
+              </>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button
+                type="button"
+                disabled={tpSelectModal.saving}
+                onClick={() => {
+                  if (tpSelectModal.adding) {
+                    setTpSelectModal((prev) =>
+                      prev ? { ...prev, adding: false, addText: "" } : prev
+                    );
+                    return;
+                  }
+                  setTpSelectModal(null);
+                }}
+                style={{
+                  padding: "8px 14px",
+                  border: `1px solid ${HEADER_GRID_LINE}`,
+                  borderRadius: 4,
+                  background: WHITE,
+                  color: ADDRESS_TEXT,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={tpSelectModal.saving}
+                onClick={async () => {
+                  if (tpSelectModal.adding) {
+                    try {
+                      const options = await addTownPlanningOption(tpSelectModal.addText);
+                      if (!options) return;
+                      const added = String(tpSelectModal.addText).trim();
+                      setTpSelectModal((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              options,
+                              draft: added,
+                              adding: false,
+                              addText: "",
+                            }
+                          : prev
+                      );
+                    } catch (err) {
+                      alert(err.message || "Failed to add option");
+                    }
+                    return;
+                  }
+                  await confirmTownPlanningSelectModal();
+                }}
+                style={{
+                  padding: "8px 14px",
+                  border: "none",
+                  borderRadius: 4,
+                  background: HEADING_BLUE,
+                  color: WHITE,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  opacity: tpSelectModal.saving ? 0.7 : 1,
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
 

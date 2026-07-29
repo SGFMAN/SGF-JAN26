@@ -34,10 +34,29 @@ export const PLANNING_MANAGER_COL_FIELD = {
   // Concept / Working Drawings approvals (T–U) — set only via Drawings approve buttons
   19: { field: "drawings_concept_approved_date", readOnly: true },
   20: { field: "drawings_working_approved_date", readOnly: true },
+  // JCA Land Survey (V–W)
+  21: { field: "planning_jca_land_survey_sent_at" },
+  22: { field: "planning_jca_land_survey_received_at" },
+  // Soil Test Melbourne (X–Y)
+  23: { field: "planning_soil_test_melbourne_sent_at" },
+  24: { field: "planning_soil_test_melbourne_received_at" },
+  // Footing Certification (Z–AA) — existing JF requested/received
+  25: { field: "planning_footing_certification_requested_at" },
+  26: { field: "planning_footing_certification_received_at" },
+  // Site Visit - Plans Updated (AB)
+  27: { field: "planning_site_visit_plans_updated_at" },
+  // Town Planning select columns (AC–AE) — modal dropdown, shared options list
+  28: { field: "planning_mgr_tp_requested", kind: "select" },
+  29: { field: "planning_mgr_tp_received", kind: "select" },
+  30: { field: "planning_mgr_tp_needed", kind: "select" },
 };
 
+export const PLANNING_MANAGER_SELECT_FIELDS = Object.values(PLANNING_MANAGER_COL_FIELD)
+  .filter((m) => m.kind === "select" && m.field)
+  .map((m) => m.field);
+
 export const PLANNING_MANAGER_WRITABLE_DATE_FIELDS = Object.values(PLANNING_MANAGER_COL_FIELD)
-  .filter((m) => m.field && !m.readOnly)
+  .filter((m) => m.field && !m.readOnly && m.kind !== "select")
   .map((m) => m.field);
 
 const SHEET_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
