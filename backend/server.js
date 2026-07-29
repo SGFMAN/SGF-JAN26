@@ -579,6 +579,18 @@ async function isManagersRequest(req) {
   }
 }
 
+async function isDrawingRequest(req) {
+  try {
+    if (!pool) return false;
+    const userId = getStaffUserIdFromRequest(req);
+    if (!Number.isFinite(userId)) return false;
+    return userHasAccessGrant(pool, userId, "drawing");
+  } catch (e) {
+    console.error("Error checking drawing access:", e);
+    return false;
+  }
+}
+
 /** Hotlist group: require identity, then Sales grant (401 vs 403). */
 async function requireHotlistSalesAccess(req, res) {
   if (!requireStaffUserId(req, res)) return false;
@@ -5976,6 +5988,9 @@ app.post("/api/emails/smtp-test", async (req, res) => {
 // Per-project Drawing Manager notes (projects.drawing_manager_notes)
 app.put("/api/projects/:id/drawing-manager-notes", async (req, res) => {
   if (!requireStaffUserId(req, res)) return;
+  if (!(await isDrawingRequest(req))) {
+    return res.status(403).json({ error: "Drawing access required" });
+  }
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {

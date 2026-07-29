@@ -3,6 +3,7 @@ import { isDesignPhaseStatus, isHotlistStatus, isCancelledStatus } from "../util
 import { Link } from "react-router-dom";
 import { getStateFilter } from "../utils/stateFilter";
 import { isUserAdmin } from "../utils/auth";
+import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { projectPath } from "../utils/projectUrl";
 
@@ -62,6 +63,7 @@ export default function StatusManager() {
   const [newItemInput, setNewItemInput] = useState("");
   const [showAllStatuses, setShowAllStatuses] = useState(true); // Toggle between all statuses and earliest incomplete
   const [isAdmin, setIsAdmin] = useState(false);
+  const { hasDrawing } = useDrawingAccess();
 
   useEffect(() => {
     fetchProjects();
@@ -854,7 +856,7 @@ export default function StatusManager() {
               Planning Manager
             </Link>
           )}
-          {isAdmin && (
+          {hasDrawing && (
             <Link
               to="/managers/drawing-manager"
               style={{

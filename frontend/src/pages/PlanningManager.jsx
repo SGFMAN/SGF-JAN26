@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { isUserAdmin, getApiHeaders } from "../utils/auth";
+import { getApiHeaders } from "../utils/auth";
+import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { UI } from "../utils/uiThemeTokens.js";
 import { CLASSIFICATION_ABBREV_MAP } from "../utils/classifications";
@@ -454,7 +455,7 @@ async function persistCellValue(projectId, colIndex, value) {
 export default function PlanningManager() {
   const logo = useAppLogo();
   const navigate = useNavigate();
-  const [isAdmin, setIsAdmin] = useState(false);
+  const { hasDrawing } = useDrawingAccess();
   const [allProjects, setAllProjects] = useState([]);
   const [activeTab, setActiveTab] = useState("VIC 2025");
   const [projectOrders, setProjectOrders] = useState({});
@@ -512,10 +513,6 @@ export default function PlanningManager() {
         console.error("Failed to save planning manager layout:", err);
       });
     }, 250);
-  }, []);
-
-  useEffect(() => {
-    (async () => setIsAdmin(await isUserAdmin()))();
   }, []);
 
   useEffect(() => {
@@ -1302,7 +1299,7 @@ export default function PlanningManager() {
           <Link to="/managers/planning-manager" style={activeLinkStyle}>
             Planning Manager
           </Link>
-          {isAdmin ? (
+          {hasDrawing ? (
             <Link to="/managers/drawing-manager" style={inactiveLinkStyle}>
               Drawing Manager
             </Link>

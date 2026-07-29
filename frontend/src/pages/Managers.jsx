@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { isUserAdmin } from "../utils/auth";
+import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -14,6 +15,7 @@ export default function Managers() {
   const logo = useAppLogo();
   const navigate = useNavigate();
   const [isAdmin, setIsAdmin] = useState(false);
+  const { hasDrawing } = useDrawingAccess();
 
   useEffect(() => {
     (async () => setIsAdmin(await isUserAdmin()))();
@@ -222,7 +224,7 @@ export default function Managers() {
               Planning Manager
             </Link>
           )}
-          {isAdmin && (
+          {hasDrawing && (
             <Link
               to="/managers/drawing-manager"
               style={{

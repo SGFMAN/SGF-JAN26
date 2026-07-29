@@ -8,6 +8,7 @@ import { Link } from "react-router-dom";
 import { getStateFilter } from "../utils/stateFilter";
 import { projectPath } from "../utils/projectUrl";
 import { isUserAdmin } from "../utils/auth";
+import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
 
 import StateFilterButtons from "../components/StateFilterButtons";
@@ -28,6 +29,7 @@ export default function ColourManager() {
   const [sortOrder, setSortOrder] = useState("asc"); // "asc" or "desc"
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [isAdmin, setIsAdmin] = useState(false);
+  const { hasDrawing } = useDrawingAccess();
 
   useEffect(() => {
     fetchProjects();
@@ -376,7 +378,7 @@ const data = await response.json();
               Planning Manager
             </Link>
           )}
-          {isAdmin && (
+          {hasDrawing && (
             <Link
               to="/managers/drawing-manager"
               style={{

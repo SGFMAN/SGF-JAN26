@@ -20,7 +20,8 @@ import ContractManager from "./pages/ContractManager";
 import ColourManager from "./pages/ColourManager";
 import StatusManager from "./pages/StatusManager";
 import PlanningManager from "./pages/PlanningManager";
-import AdminDrawingManagerRoute from "./components/AdminDrawingManagerRoute";
+import DrawingManager from "./pages/DrawingManager";
+import DrawingAccessRoute from "./components/DrawingAccessRoute";
 import AdminAccessRoute from "./components/AdminAccessRoute";
 import SalesAccessRoute from "./components/SalesAccessRoute";
 import ManagersAccessRoute from "./components/ManagersAccessRoute";
@@ -122,7 +123,7 @@ export default function App() {
             <Route path="/managers/colour-manager" element={<Auth><ManagersAccessRoute><ColourManager /></ManagersAccessRoute></Auth>} />
             <Route path="/managers/status-manager" element={<Auth><ManagersAccessRoute><StatusManager /></ManagersAccessRoute></Auth>} />
             <Route path="/managers/planning-manager" element={<Auth><ManagersAccessRoute><AdminAccessRoute><PlanningManager /></AdminAccessRoute></ManagersAccessRoute></Auth>} />
-            <Route path="/managers/drawing-manager" element={<Auth><ManagersAccessRoute><AdminDrawingManagerRoute /></ManagersAccessRoute></Auth>} />
+            <Route path="/managers/drawing-manager" element={<Auth><ManagersAccessRoute><DrawingAccessRoute><DrawingManager /></DrawingAccessRoute></ManagersAccessRoute></Auth>} />
             <Route path="/sales" element={<Auth><SalesAccessRoute><Sales /></SalesAccessRoute></Auth>} />
             <Route path="/sales-totals" element={<Auth><SalesAccessRoute><SalesTotals /></SalesAccessRoute></Auth>} />
             <Route path="/sales-analytics" element={<Auth><SalesAccessRoute><SalesAnalytics /></SalesAccessRoute></Auth>} />

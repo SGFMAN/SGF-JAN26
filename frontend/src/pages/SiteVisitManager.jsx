@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter } from "../utils/stateFilter";
 import { CLASSIFICATION_BADGE_MAP } from "../utils/classifications";
+import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
 
 import StateFilterButtons from "../components/StateFilterButtons";
@@ -57,6 +58,7 @@ export default function SiteVisitManager() {
   const [groups, setGroups] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [stateFilter, setStateFilter] = useState(getStateFilter());
+  const { hasDrawing } = useDrawingAccess();
 
   useEffect(() => {
     fetchProjects();
@@ -392,7 +394,7 @@ export default function SiteVisitManager() {
               Planning Manager
             </Link>
           )}
-          {isAdmin && (
+          {hasDrawing && (
             <Link
               to="/managers/drawing-manager"
               style={{

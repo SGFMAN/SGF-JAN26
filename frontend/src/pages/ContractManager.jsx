@@ -7,6 +7,7 @@ import {
   isHotlistStatus,
   isCancelledStatus,
 } from "../utils/projectStatus";
+import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { projectPath } from "../utils/projectUrl";
 
@@ -32,6 +33,7 @@ export default function ContractManager() {
   const [sortOrder, setSortOrder] = useState("asc"); // "asc" or "desc"
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [isAdmin, setIsAdmin] = useState(false);
+  const { hasDrawing } = useDrawingAccess();
 
   useEffect(() => {
     fetchProjects();
@@ -434,7 +436,7 @@ export default function ContractManager() {
               Planning Manager
             </Link>
           )}
-          {isAdmin && (
+          {hasDrawing && (
             <Link
               to="/managers/drawing-manager"
               style={{
