@@ -45,18 +45,18 @@ export const PLANNING_MANAGER_COL_FIELD = {
   26: { field: "planning_footing_certification_received_at" },
   // Site Visit - Plans Updated (AB)
   27: { field: "planning_site_visit_plans_updated_at" },
-  // Town Planning select columns (AC–AE) — modal dropdown, shared options list
-  28: { field: "planning_mgr_tp_requested", kind: "select" },
-  29: { field: "planning_mgr_tp_received", kind: "select" },
-  30: { field: "planning_mgr_tp_needed", kind: "select" },
+  // Town Planning note/date columns (AC–AE) — modal: type a note or stamp today's date
+  28: { field: "planning_mgr_tp_requested", kind: "note" },
+  29: { field: "planning_mgr_tp_received", kind: "note" },
+  30: { field: "planning_mgr_tp_needed", kind: "note" },
 };
 
-export const PLANNING_MANAGER_SELECT_FIELDS = Object.values(PLANNING_MANAGER_COL_FIELD)
-  .filter((m) => m.kind === "select" && m.field)
+export const PLANNING_MANAGER_NOTE_FIELDS = Object.values(PLANNING_MANAGER_COL_FIELD)
+  .filter((m) => m.kind === "note" && m.field)
   .map((m) => m.field);
 
 export const PLANNING_MANAGER_WRITABLE_DATE_FIELDS = Object.values(PLANNING_MANAGER_COL_FIELD)
-  .filter((m) => m.field && !m.readOnly && m.kind !== "select")
+  .filter((m) => m.field && !m.readOnly && m.kind !== "note")
   .map((m) => m.field);
 
 const SHEET_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
