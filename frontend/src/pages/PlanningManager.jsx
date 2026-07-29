@@ -903,27 +903,26 @@ export default function PlanningManager() {
   const projectSearchMatches = useMemo(() => {
     const q = projectSearch.trim().toLowerCase();
     if (!q) return [];
+    const tab = activeTab;
+    const list = applyProjectOrder(
+      allProjects.filter((p) => projectTabKey(p) === tab),
+      orderForTab(tab, projectOrders, customizedTabs)
+    );
     const out = [];
-    for (const tab of sheetTabs) {
-      const list = applyProjectOrder(
-        allProjects.filter((p) => projectTabKey(p) === tab),
-        orderForTab(tab, projectOrders, customizedTabs)
-      );
-      for (let i = 0; i < list.length; i += 1) {
-        const label = projectLabel(list[i]);
-        if (!label || !label.toLowerCase().includes(q)) continue;
-        out.push({
-          tabKey: tab,
-          projectIndex: i,
-          label,
-          sheetRow: DATA_START_ROW + i + 1,
-          cancelled: projectShowsRed(list[i]),
-        });
-        if (out.length >= 12) return out;
-      }
+    for (let i = 0; i < list.length; i += 1) {
+      const label = projectLabel(list[i]);
+      if (!label || !label.toLowerCase().includes(q)) continue;
+      out.push({
+        tabKey: tab,
+        projectIndex: i,
+        label,
+        sheetRow: DATA_START_ROW + i + 1,
+        cancelled: projectShowsRed(list[i]),
+      });
+      if (out.length >= 12) return out;
     }
     return out;
-  }, [projectSearch, allProjects, projectOrders, customizedTabs, sheetTabs]);
+  }, [projectSearch, allProjects, projectOrders, customizedTabs, activeTab]);
 
   function confirmMoveRowModal() {
     if (!moveRowModal) return;
