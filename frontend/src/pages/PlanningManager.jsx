@@ -587,6 +587,7 @@ export default function PlanningManager() {
         if (cancelled) return;
         const list = (Array.isArray(data) ? [...data] : []).filter((p) => {
           if (isHotlistStatus(p?.status)) return false;
+          if ((p?.classification || "").trim() === "Home Office / Studio") return false;
           return projectTabKey(p) != null;
         });
         const orders = { ...(layout?.projectOrders || {}) };
