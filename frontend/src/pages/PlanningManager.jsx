@@ -2279,6 +2279,8 @@ export default function PlanningManager() {
                             cellEdit.projectId === project.id &&
                             cellEdit.colIndex === colIndex
                         );
+                      const showRed = projectShowsRed(project);
+                      const cellTextColor = showRed ? CANCELLED_TEXT : ADDRESS_TEXT;
                       return (
                         <div
                           key={colIndex}
@@ -2338,11 +2340,11 @@ export default function PlanningManager() {
                                 : "0 6px 2px",
                             display: "flex",
                             alignItems: "flex-end",
-                            justifyContent: isDraftCol ? "center" : "flex-start",
+                            justifyContent: "center",
                             overflow: "hidden",
                             whiteSpace: "nowrap",
                             textOverflow: "ellipsis",
-                            color: colIndex === 1 ? ADDRESS_TEXT : MONUMENT,
+                            color: cellTextColor,
                             fontWeight: colIndex === 1 ? 700 : 400,
                             fontSize: "15px",
                             fontFamily: SHEET_FONT,
@@ -2383,10 +2385,11 @@ export default function PlanningManager() {
                                 padding: 0,
                                 margin: 0,
                                 background: "transparent",
-                                color: ADDRESS_TEXT,
+                                color: cellTextColor,
                                 fontSize: "15px",
                                 fontFamily: SHEET_FONT,
                                 boxSizing: "border-box",
+                                textAlign: "center",
                               }}
                             />
                           ) : (
@@ -2396,8 +2399,8 @@ export default function PlanningManager() {
                                 textOverflow: "ellipsis",
                                 whiteSpace: "nowrap",
                                 minWidth: 0,
-                                flex: isDraftCol ? "0 1 auto" : 1,
-                                textAlign: isDraftCol ? "center" : "left",
+                                flex: 1,
+                                textAlign: "center",
                               }}
                             >
                               {value}
