@@ -16,27 +16,27 @@ const WHITE = UI.cardBg;
 const API_URL = "";
 
 const SECTION_HIGHLIGHT = {
-  padding: "6px 8px",
+  padding: "9px 10px",
   borderRadius: "8px",
-  marginBottom: "8px",
+  marginBottom: "12px",
   boxSizing: "border-box",
 };
 
 const COMPACT_MONEY_INPUT_STYLE = {
   width: "100%",
-  padding: "6px 10px",
+  padding: "8px 11px",
   borderRadius: "8px",
   border: "none",
-  fontSize: "0.9rem",
+  fontSize: "0.95rem",
   color: MONUMENT,
   background: WHITE,
   boxSizing: "border-box",
 };
 
 const COMPACT_LABEL_STYLE = {
-  fontSize: "0.8rem",
+  fontSize: "0.85rem",
   color: UI.textMuted,
-  marginBottom: "3px",
+  marginBottom: "4px",
 };
 
 /** Stored editable money fields (paid + pre-engagement amount). */
@@ -79,10 +79,10 @@ function paymentFieldsFromProject(project) {
 
 const MONEY_INPUT_STYLE = {
   width: "100%",
-  padding: "6px 10px",
+  padding: "8px 11px",
   borderRadius: "8px",
   border: "none",
-  fontSize: "0.9rem",
+  fontSize: "0.95rem",
   color: MONUMENT,
   background: WHITE,
   boxSizing: "border-box",
@@ -113,8 +113,8 @@ function PaymentAmountPaidRow({
   const colStyle = { flex: "1", minWidth: 0 };
 
   return (
-    <div style={{ marginBottom: "8px", ...style }}>
-      <div style={{ display: "flex", gap: "6px", alignItems: "flex-end" }}>
+    <div style={{ marginBottom: "12px", ...style }}>
+      <div style={{ display: "flex", gap: "8px", alignItems: "flex-end" }}>
         <div style={colStyle}>
           <div style={COMPACT_LABEL_STYLE}>
             {stage} Amount
@@ -419,14 +419,14 @@ export default function Admin({ project, onUpdate }) {
 
   return (
     <div>
-      <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: "8px", color: MONUMENT }}>
+      <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: "12px", color: MONUMENT }}>
         Admin
       </h2>
       {project && (
-        <div style={{ marginTop: "8px", display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "flex-start" }}>
+        <div style={{ marginTop: "12px", display: "flex", gap: "20px", flexWrap: "wrap", alignItems: "flex-start" }}>
           {/* Column 1 */}
           <div style={{ flex: "1", minWidth: "200px" }}>
-            <div style={{ marginBottom: "12px" }}>
+            <div style={{ marginBottom: "14px" }}>
               <div style={COMPACT_LABEL_STYLE}>
                 Stream
               </div>
@@ -436,10 +436,10 @@ export default function Admin({ project, onUpdate }) {
                 onChange={handleStreamChange}
                 style={{
                   width: "100%",
-                  padding: "6px 10px",
+                  padding: "8px 11px",
                   borderRadius: "8px",
                   border: "none",
-                  fontSize: "0.9rem",
+                  fontSize: "0.95rem",
                   color: MONUMENT,
                   background: WHITE,
                   boxSizing: "border-box",
@@ -456,7 +456,7 @@ export default function Admin({ project, onUpdate }) {
                 ))}
               </select>
             </div>
-            <div style={{ marginBottom: "12px" }}>
+            <div style={{ marginBottom: "14px" }}>
               <div style={{ ...COMPACT_LABEL_STYLE, display: "flex", gap: "12px", alignItems: "baseline" }}>
                 <div style={{ flex: "1", minWidth: 0 }}>Start Date</div>
                 <div style={{ flex: "0 0 auto", width: "5.5rem", textAlign: "center" }}>Project Days</div>
@@ -469,10 +469,10 @@ export default function Admin({ project, onUpdate }) {
                   style={{
                     flex: "1",
                     minWidth: 0,
-                    padding: "6px 10px",
+                    padding: "8px 11px",
                     borderRadius: "8px",
                     border: "none",
-                    fontSize: "0.9rem",
+                    fontSize: "0.95rem",
                     color: MONUMENT,
                     background: WHITE,
                     boxSizing: "border-box",
@@ -496,10 +496,10 @@ export default function Admin({ project, onUpdate }) {
                     flex: "0 0 auto",
                     width: "5.5rem",
                     minWidth: "5.5rem",
-                    padding: "6px 8px",
+                    padding: "8px 8px",
                     borderRadius: "8px",
                     border: "none",
-                    fontSize: "0.9rem",
+                    fontSize: "0.95rem",
                     color: MONUMENT,
                     background: WHITE,
                     boxSizing: "border-box",
@@ -509,7 +509,7 @@ export default function Admin({ project, onUpdate }) {
                 />
               </div>
             </div>
-            <div style={{ marginBottom: "12px" }}>
+            <div style={{ marginBottom: "14px" }}>
               <div style={COMPACT_LABEL_STYLE}>
                 Salesperson
               </div>
@@ -519,10 +519,10 @@ export default function Admin({ project, onUpdate }) {
                 onChange={handleSalespersonChange}
                 style={{
                   width: "100%",
-                  padding: "6px 10px",
+                  padding: "8px 11px",
                   borderRadius: "8px",
                   border: "none",
-                  fontSize: "0.9rem",
+                  fontSize: "0.95rem",
                   color: MONUMENT,
                   background: WHITE,
                   boxSizing: "border-box",
@@ -595,8 +595,8 @@ export default function Admin({ project, onUpdate }) {
                     display: "flex",
                     alignItems: "center",
                     color: MONUMENT,
-                    fontSize: "0.85rem",
-                    lineHeight: 1.35,
+                    fontSize: "0.9rem",
+                    lineHeight: 1.4,
                   }}
                 >
                   Pre-engagement not required if signed up prior to 30th July 2026
