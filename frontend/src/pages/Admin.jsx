@@ -16,10 +16,27 @@ const WHITE = UI.cardBg;
 const API_URL = "";
 
 const SECTION_HIGHLIGHT = {
-  padding: "12px",
+  padding: "6px 8px",
   borderRadius: "8px",
-  marginBottom: "16px",
+  marginBottom: "8px",
   boxSizing: "border-box",
+};
+
+const COMPACT_MONEY_INPUT_STYLE = {
+  width: "100%",
+  padding: "6px 10px",
+  borderRadius: "8px",
+  border: "none",
+  fontSize: "0.9rem",
+  color: MONUMENT,
+  background: WHITE,
+  boxSizing: "border-box",
+};
+
+const COMPACT_LABEL_STYLE = {
+  fontSize: "0.8rem",
+  color: UI.textMuted,
+  marginBottom: "3px",
 };
 
 /** Stored editable money fields (paid + pre-engagement amount). */
@@ -62,10 +79,10 @@ function paymentFieldsFromProject(project) {
 
 const MONEY_INPUT_STYLE = {
   width: "100%",
-  padding: "10px 12px",
+  padding: "6px 10px",
   borderRadius: "8px",
   border: "none",
-  fontSize: "1rem",
+  fontSize: "0.9rem",
   color: MONUMENT,
   background: WHITE,
   boxSizing: "border-box",
@@ -96,10 +113,10 @@ function PaymentAmountPaidRow({
   const colStyle = { flex: "1", minWidth: 0 };
 
   return (
-    <div style={{ marginBottom: "16px", ...style }}>
-      <div style={{ display: "flex", gap: "8px", alignItems: "flex-end" }}>
+    <div style={{ marginBottom: "8px", ...style }}>
+      <div style={{ display: "flex", gap: "6px", alignItems: "flex-end" }}>
         <div style={colStyle}>
-          <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
+          <div style={COMPACT_LABEL_STYLE}>
             {stage} Amount
           </div>
           {amountEditable ? (
@@ -125,7 +142,7 @@ function PaymentAmountPaidRow({
           )}
         </div>
         <div style={colStyle}>
-          <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
+          <div style={COMPACT_LABEL_STYLE}>
             {stage} Paid
           </div>
           <input
@@ -140,7 +157,7 @@ function PaymentAmountPaidRow({
           />
         </div>
         <div style={colStyle}>
-          <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
+          <div style={COMPACT_LABEL_STYLE}>
             {stage} Owed
           </div>
           <input
@@ -402,15 +419,15 @@ export default function Admin({ project, onUpdate }) {
 
   return (
     <div>
-      <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT }}>
+      <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: "8px", color: MONUMENT }}>
         Admin
       </h2>
       {project && (
-        <div style={{ marginTop: "24px", display: "flex", gap: "24px", flexWrap: "wrap" }}>
+        <div style={{ marginTop: "8px", display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "flex-start" }}>
           {/* Column 1 */}
           <div style={{ flex: "1", minWidth: "200px" }}>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
+            <div style={{ marginBottom: "12px" }}>
+              <div style={COMPACT_LABEL_STYLE}>
                 Stream
               </div>
               <select
@@ -419,10 +436,10 @@ export default function Admin({ project, onUpdate }) {
                 onChange={handleStreamChange}
                 style={{
                   width: "100%",
-                  padding: "10px 12px",
+                  padding: "6px 10px",
                   borderRadius: "8px",
                   border: "none",
-                  fontSize: "1rem",
+                  fontSize: "0.9rem",
                   color: MONUMENT,
                   background: WHITE,
                   boxSizing: "border-box",
@@ -439,8 +456,8 @@ export default function Admin({ project, onUpdate }) {
                 ))}
               </select>
             </div>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", display: "flex", gap: "12px", alignItems: "baseline" }}>
+            <div style={{ marginBottom: "12px" }}>
+              <div style={{ ...COMPACT_LABEL_STYLE, display: "flex", gap: "12px", alignItems: "baseline" }}>
                 <div style={{ flex: "1", minWidth: 0 }}>Start Date</div>
                 <div style={{ flex: "0 0 auto", width: "5.5rem", textAlign: "center" }}>Project Days</div>
               </div>
@@ -452,10 +469,10 @@ export default function Admin({ project, onUpdate }) {
                   style={{
                     flex: "1",
                     minWidth: 0,
-                    padding: "10px 12px",
+                    padding: "6px 10px",
                     borderRadius: "8px",
                     border: "none",
-                    fontSize: "1rem",
+                    fontSize: "0.9rem",
                     color: MONUMENT,
                     background: WHITE,
                     boxSizing: "border-box",
@@ -479,10 +496,10 @@ export default function Admin({ project, onUpdate }) {
                     flex: "0 0 auto",
                     width: "5.5rem",
                     minWidth: "5.5rem",
-                    padding: "10px 8px",
+                    padding: "6px 8px",
                     borderRadius: "8px",
                     border: "none",
-                    fontSize: "1rem",
+                    fontSize: "0.9rem",
                     color: MONUMENT,
                     background: WHITE,
                     boxSizing: "border-box",
@@ -492,8 +509,8 @@ export default function Admin({ project, onUpdate }) {
                 />
               </div>
             </div>
-            <div style={{ marginBottom: "16px" }}>
-              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
+            <div style={{ marginBottom: "12px" }}>
+              <div style={COMPACT_LABEL_STYLE}>
                 Salesperson
               </div>
               <select
@@ -502,10 +519,10 @@ export default function Admin({ project, onUpdate }) {
                 onChange={handleSalespersonChange}
                 style={{
                   width: "100%",
-                  padding: "10px 12px",
+                  padding: "6px 10px",
                   borderRadius: "8px",
                   border: "none",
-                  fontSize: "1rem",
+                  fontSize: "0.9rem",
                   color: MONUMENT,
                   background: WHITE,
                   boxSizing: "border-box",
@@ -528,68 +545,83 @@ export default function Admin({ project, onUpdate }) {
             </div>
           </div>
 
-          {/* Column 2 — all payment fields */}
-          <div style={{ flex: "1", minWidth: "220px" }}>
-            <div style={{ ...SECTION_HIGHLIGHT, background: STREAM.streamGreenLight }}>
-              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
-                Project Cost
+          {/* Columns 2–3 — payments + note beside pre-engagement */}
+          <div style={{ flex: "2", minWidth: "440px", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", gap: "16px", alignItems: "stretch" }}>
+              <div style={{ flex: 1, ...SECTION_HIGHLIGHT, background: STREAM.streamGreenLight }}>
+                <div style={COMPACT_LABEL_STYLE}>
+                  Project Cost
+                </div>
+                <input
+                  type="text"
+                  name="projectCost"
+                  value={projectCost}
+                  onChange={handleProjectCostChange}
+                  onBlur={handleProjectCostBlur}
+                  placeholder="$0"
+                  style={COMPACT_MONEY_INPUT_STYLE}
+                  autoComplete="off"
+                />
               </div>
-              <input
-                type="text"
-                name="projectCost"
-                value={projectCost}
-                onChange={handleProjectCostChange}
-                onBlur={handleProjectCostBlur}
-                placeholder="$0"
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "1rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                }}
-                autoComplete="off"
-              />
+              <div style={{ flex: 1 }} />
             </div>
             {PAYMENT_ROWS.filter((row) => row.amountKey === "pre_engagement").map((row) => (
               <div
                 key={row.stage}
-                style={{ ...SECTION_HIGHLIGHT, background: STREAM.vicBlueLight }}
+                style={{ display: "flex", gap: "16px", alignItems: "stretch" }}
               >
-                <PaymentAmountPaidRow
-                  stage={row.stage}
-                  amountEditable={row.amountStored}
-                  amountValue={formatCalculatedAmount(calculatedAmounts[row.amountKey])}
-                  paidKey={row.paidKey}
-                  paymentFields={paymentFields}
-                  onChange={handlePaymentFieldChange}
-                  onBlur={handlePaymentFieldBlur}
-                  style={{ marginBottom: 0 }}
-                />
+                <div
+                  style={{
+                    flex: 1,
+                    ...SECTION_HIGHLIGHT,
+                    background: STREAM.vicBlueLight,
+                  }}
+                >
+                  <PaymentAmountPaidRow
+                    stage={row.stage}
+                    amountEditable={row.amountStored}
+                    amountValue={formatCalculatedAmount(calculatedAmounts[row.amountKey])}
+                    paidKey={row.paidKey}
+                    paymentFields={paymentFields}
+                    onChange={handlePaymentFieldChange}
+                    onBlur={handlePaymentFieldBlur}
+                    style={{ marginBottom: 0 }}
+                  />
+                </div>
+                <div
+                  style={{
+                    flex: 1,
+                    ...SECTION_HIGHLIGHT,
+                    display: "flex",
+                    alignItems: "center",
+                    color: MONUMENT,
+                    fontSize: "0.85rem",
+                    lineHeight: 1.35,
+                  }}
+                >
+                  Pre-engagement not required if signed up prior to 30th July 2026
+                </div>
               </div>
             ))}
-            <div style={{ ...SECTION_HIGHLIGHT, background: MENU.purpleLight, marginBottom: 0 }}>
-              {PAYMENT_ROWS.filter((row) => row.amountKey !== "pre_engagement").map((row, index, rows) => (
-                <PaymentAmountPaidRow
-                  key={row.stage}
-                  stage={row.stage}
-                  amountEditable={row.amountStored}
-                  amountValue={formatCalculatedAmount(calculatedAmounts[row.amountKey])}
-                  paidKey={row.paidKey}
-                  paymentFields={paymentFields}
-                  onChange={handlePaymentFieldChange}
-                  onBlur={handlePaymentFieldBlur}
-                  style={index === rows.length - 1 ? { marginBottom: 0 } : undefined}
-                />
-              ))}
+            <div style={{ display: "flex", gap: "16px", alignItems: "stretch" }}>
+              <div style={{ flex: 1, ...SECTION_HIGHLIGHT, background: MENU.purpleLight, marginBottom: 0 }}>
+                {PAYMENT_ROWS.filter((row) => row.amountKey !== "pre_engagement").map((row, index, rows) => (
+                  <PaymentAmountPaidRow
+                    key={row.stage}
+                    stage={row.stage}
+                    amountEditable={row.amountStored}
+                    amountValue={formatCalculatedAmount(calculatedAmounts[row.amountKey])}
+                    paidKey={row.paidKey}
+                    paymentFields={paymentFields}
+                    onChange={handlePaymentFieldChange}
+                    onBlur={handlePaymentFieldBlur}
+                    style={index === rows.length - 1 ? { marginBottom: 0 } : undefined}
+                  />
+                ))}
+              </div>
+              <div style={{ flex: 1 }} />
             </div>
           </div>
-
-          {/* Column 3 — reserved */}
-          <div style={{ flex: "1", minWidth: "200px" }} />
 
           {/* Column 4 — reserved */}
           <div style={{ flex: "1", minWidth: "200px" }} />
