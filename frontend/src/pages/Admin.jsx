@@ -9,11 +9,18 @@ import {
   formatCalculatedAmount,
 } from "../utils/paymentStageAmounts";
 import { FALLBACK_STREAMS, fetchStreams, projectStreamOptions } from "../utils/streamsCatalog";
-import { UI } from "../utils/uiThemeTokens.js";
+import { UI, STREAM, MENU } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
 const API_URL = "";
+
+const SECTION_HIGHLIGHT = {
+  padding: "12px",
+  borderRadius: "8px",
+  marginBottom: "16px",
+  boxSizing: "border-box",
+};
 
 /** Stored editable money fields (paid + pre-engagement amount). */
 const PAYMENT_STORED_KEYS = [
@@ -78,6 +85,7 @@ function PaymentAmountPaidRow({
   paymentFields,
   onChange,
   onBlur,
+  style,
 }) {
   const amountDisplay = amountEditable
     ? paymentFields.pre_engagement_required || ""
@@ -88,7 +96,7 @@ function PaymentAmountPaidRow({
   const colStyle = { flex: "1", minWidth: 0 };
 
   return (
-    <div style={{ marginBottom: "16px" }}>
+    <div style={{ marginBottom: "16px", ...style }}>
       <div style={{ display: "flex", gap: "8px", alignItems: "flex-end" }}>
         <div style={colStyle}>
           <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
@@ -522,7 +530,7 @@ export default function Admin({ project, onUpdate }) {
 
           {/* Column 2 — all payment fields */}
           <div style={{ flex: "1", minWidth: "220px" }}>
-            <div style={{ marginBottom: "16px" }}>
+            <div style={{ ...SECTION_HIGHLIGHT, background: STREAM.streamGreenLight }}>
               <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Project Cost
               </div>
@@ -546,18 +554,38 @@ export default function Admin({ project, onUpdate }) {
                 autoComplete="off"
               />
             </div>
-            {PAYMENT_ROWS.map((row) => (
-              <PaymentAmountPaidRow
+            {PAYMENT_ROWS.filter((row) => row.amountKey === "pre_engagement").map((row) => (
+              <div
                 key={row.stage}
-                stage={row.stage}
-                amountEditable={row.amountStored}
-                amountValue={formatCalculatedAmount(calculatedAmounts[row.amountKey])}
-                paidKey={row.paidKey}
-                paymentFields={paymentFields}
-                onChange={handlePaymentFieldChange}
-                onBlur={handlePaymentFieldBlur}
-              />
+                style={{ ...SECTION_HIGHLIGHT, background: STREAM.vicBlueLight }}
+              >
+                <PaymentAmountPaidRow
+                  stage={row.stage}
+                  amountEditable={row.amountStored}
+                  amountValue={formatCalculatedAmount(calculatedAmounts[row.amountKey])}
+                  paidKey={row.paidKey}
+                  paymentFields={paymentFields}
+                  onChange={handlePaymentFieldChange}
+                  onBlur={handlePaymentFieldBlur}
+                  style={{ marginBottom: 0 }}
+                />
+              </div>
             ))}
+            <div style={{ ...SECTION_HIGHLIGHT, background: MENU.purpleLight, marginBottom: 0 }}>
+              {PAYMENT_ROWS.filter((row) => row.amountKey !== "pre_engagement").map((row, index, rows) => (
+                <PaymentAmountPaidRow
+                  key={row.stage}
+                  stage={row.stage}
+                  amountEditable={row.amountStored}
+                  amountValue={formatCalculatedAmount(calculatedAmounts[row.amountKey])}
+                  paidKey={row.paidKey}
+                  paymentFields={paymentFields}
+                  onChange={handlePaymentFieldChange}
+                  onBlur={handlePaymentFieldBlur}
+                  style={index === rows.length - 1 ? { marginBottom: 0 } : undefined}
+                />
+              ))}
+            </div>
           </div>
 
           {/* Column 3 — reserved */}
