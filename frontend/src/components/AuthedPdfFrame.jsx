@@ -5,6 +5,8 @@ import { getApiHeaders } from "../utils/auth";
  * Renders a PDF from an API URL that requires staff auth.
  * Plain iframe/src cannot send X-User-Id, so those requests 401 ("Not authenticated")
  * when only the legacy header is available (e.g. after a server restart clears sessions).
+ *
+ * Optional resolveErrorMessage({ status, message }) overrides the failed-state text.
  */
 export default function AuthedPdfFrame({
   src,
@@ -13,9 +15,13 @@ export default function AuthedPdfFrame({
   className,
   loadingLabel = "Loading PDF…",
   errorLabel = "Could not load PDF",
+  resolveErrorMessage,
 }) {
   const [blobUrl, setBlobUrl] = useState(null);
   const [failed, setFailed] = useState(false);
+  const [failStatus, setFailStatus] = useState(null);
+  const [failMessage, setFailMessage] = useState("");
+  const [failCode, setFailCode] = useState(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -23,6 +29,9 @@ export default function AuthedPdfFrame({
     let objectUrl = null;
 
     setFailed(false);
+    setFailStatus(null);
+    setFailMessage("");
+    setFailCode(null);
 
     if (!src) {
       setBlobUrl(null);
@@ -46,7 +55,12 @@ export default function AuthedPdfFrame({
         const res = await fetch(src, { headers, credentials: "include" });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || `Failed (${res.status})`);
+          const message = err.error || `Failed (${res.status})`;
+          const error = new Error(message);
+          error.status = res.status;
+          error.serverMessage = message;
+          error.code = err.code || null;
+          throw error;
         }
         const blob = await res.blob();
         objectUrl = URL.createObjectURL(blob);
@@ -54,9 +68,12 @@ export default function AuthedPdfFrame({
           setBlobUrl(objectUrl);
           setLoading(false);
         }
-      } catch {
+      } catch (err) {
         if (!cancelled) {
           setFailed(true);
+          setFailStatus(err?.status ?? null);
+          setFailMessage(err?.serverMessage || err?.message || "Unknown error");
+          setFailCode(err?.code || null);
           setBlobUrl(null);
           setLoading(false);
         }
@@ -70,6 +87,10 @@ export default function AuthedPdfFrame({
   }, [src]);
 
   if (failed) {
+    const displayError =
+      typeof resolveErrorMessage === "function"
+        ? resolveErrorMessage({ status: failStatus, message: failMessage, code: failCode })
+        : failMessage || errorLabel;
     return (
       <div
         className={className}
@@ -79,10 +100,13 @@ export default function AuthedPdfFrame({
           justifyContent: "center",
           color: "#cc3333",
           fontSize: 14,
+          textAlign: "center",
+          padding: 24,
+          lineHeight: 1.45,
           ...style,
         }}
       >
-        {errorLabel}
+        {displayError}
       </div>
     );
   }

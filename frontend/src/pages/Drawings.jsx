@@ -4968,7 +4968,19 @@ export default function Drawings({
                   drawingsPdfSrcOverride || `${API_URL}/api/files/drawings/${project.id}`
                 }
                 title="Drawings PDF"
-                errorLabel="Could not load drawings"
+                resolveErrorMessage={({ status, message, code }) => {
+                  const msg = message != null ? String(message) : "";
+                  const missingFile =
+                    code === "DRAWINGS_FILE_MISSING" ||
+                    status === 404 ||
+                    /drawings pdf file does not exist/i.test(msg) ||
+                    /drawings pdf not found/i.test(msg);
+                  if (missingFile) {
+                    return "The drawings last uploaded are not where they should be. Likely they have been superceded and the drafting team is working on a new version.";
+                  }
+                  const reason = msg.trim() || (status != null ? `HTTP ${status}` : "an unknown error");
+                  return `Whoops, something's not right. The reason is due to ${reason}.`;
+                }}
                 style={{
                   width: "100%",
                   height: "100%",

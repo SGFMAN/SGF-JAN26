@@ -9391,7 +9391,10 @@ app.get("/api/files/drawings/:id", async (req, res) => {
     let drawingsPdfPath = resolveStoredFilesystemPath(projectRow.drawings_pdf_location);
 
     if (!drawingsPdfPath) {
-      return res.status(404).json({ error: "Drawings PDF not found for this project" });
+      return res.status(404).json({
+        error: "Drawings PDF not found for this project",
+        code: "DRAWINGS_FILE_MISSING",
+      });
     }
 
     // Check if file exists
@@ -9405,7 +9408,10 @@ app.get("/api/files/drawings/:id", async (req, res) => {
       const projectYear = folderYearFromProjectYear(projectRow.year);
       const fileName = path.basename(drawingsPdfPath || "").trim();
       if (!stateUpper || !projectYear || !fileName) {
-        return res.status(404).json({ error: "Drawings PDF file does not exist" });
+        return res.status(404).json({
+          error: "Drawings PDF file does not exist",
+          code: "DRAWINGS_FILE_MISSING",
+        });
       }
 
       const settingsResult = await pool.query(
@@ -9417,7 +9423,10 @@ app.get("/api/files/drawings/:id", async (req, res) => {
           ? String(st.root_directory_qld || st.root_directory || "").trim()
           : String(st.root_directory || "").trim();
       if (!rootDir) {
-        return res.status(404).json({ error: "Drawings PDF file does not exist" });
+        return res.status(404).json({
+          error: "Drawings PDF file does not exist",
+          code: "DRAWINGS_FILE_MISSING",
+        });
       }
 
       const matchedProjectFolderPath = await findBestProjectFolderPathLenient(
@@ -9428,7 +9437,10 @@ app.get("/api/files/drawings/:id", async (req, res) => {
         projectRow.street
       );
       if (!matchedProjectFolderPath) {
-        return res.status(404).json({ error: "Drawings PDF file does not exist" });
+        return res.status(404).json({
+          error: "Drawings PDF file does not exist",
+          code: "DRAWINGS_FILE_MISSING",
+        });
       }
       const recoveredPath = path.join(matchedProjectFolderPath, "2. PUBLISHED PLANS", fileName);
 
@@ -9441,7 +9453,10 @@ app.get("/api/files/drawings/:id", async (req, res) => {
           [recoveredPath, id]
         );
       } catch {
-        return res.status(404).json({ error: "Drawings PDF file does not exist" });
+        return res.status(404).json({
+          error: "Drawings PDF file does not exist",
+          code: "DRAWINGS_FILE_MISSING",
+        });
       }
     }
 
