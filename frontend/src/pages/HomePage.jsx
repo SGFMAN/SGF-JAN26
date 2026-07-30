@@ -29,6 +29,7 @@ import { UI, MENU, STREAM, INDICATOR, outlineBorder } from "../utils/uiThemeToke
 import { streamColorHover } from "../utils/streamColors.js";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 import { buildDuplicateChainGroups } from "../utils/duplicateProjectLinks";
+import { newJobPreEngagementPaymentFields } from "../utils/projectDeposit";
 const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
 const SECTION_GREY = UI.panelBg;
@@ -340,7 +341,6 @@ export default function HomePage() {
         street: formData.street || null,
         state: formData.state || null,
         stream: formData.stream || null,
-        deposit: formData.deposit || null, // Deposit amount (formatted with commas)
         project_cost: formData.projectCost || null, // Project cost (formatted with commas)
         salesperson: formData.salesperson || null,
         specs: formData.specs || null,
@@ -354,6 +354,7 @@ export default function HomePage() {
         client1_phone: formData.phone || null,
         // Store current date in YYYY-MM-DD format
         year: new Date().toISOString().split('T')[0],
+        ...newJobPreEngagementPaymentFields(formData),
       }),
     });
 

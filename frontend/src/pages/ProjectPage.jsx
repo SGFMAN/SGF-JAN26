@@ -22,6 +22,7 @@ import Payments from "./Payments";
 import { isUserAdmin, getApiHeaders } from "../utils/auth";
 import { computeProjectFolderPathFromRecord } from "../utils/projectFolderPath";
 import { projectPath, portalProjectPath } from "../utils/projectUrl";
+import { newJobPreEngagementPaymentFields } from "../utils/projectDeposit";
 import useIsMobile from "../hooks/useIsMobile";
 import { usePlanningAccess } from "../hooks/usePlanningAccess";
 import ProjectPageMobile from "../mobile/ProjectPageMobile";
@@ -567,7 +568,6 @@ export default function ProjectPage() {
         street: formData.street || null,
         state: formData.state || null,
         stream: formData.stream || null,
-        deposit: formData.deposit || null,
         project_cost: formData.projectCost || null,
         salesperson: formData.salesperson || null,
         specs: formData.specs || null,
@@ -588,6 +588,7 @@ export default function ProjectPage() {
           Number.isFinite(Number(formData.renovationDuplicateSourceId))
             ? Number(formData.renovationDuplicateSourceId)
             : null,
+        ...newJobPreEngagementPaymentFields(formData),
       }),
     });
     if (!response.ok) {

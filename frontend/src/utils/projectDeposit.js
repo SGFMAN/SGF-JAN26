@@ -45,3 +45,29 @@ export function isFullFivePercentDepositPaid(depositValue, projectCostValue, dep
   const paid = parseMoneyToInt(depositValue);
   return full > 0 && paid >= full;
 }
+
+/**
+ * Payment fields for brand-new jobs from the new-project modal.
+ * Amount chosen (pre-engagement / holding / other) → pre_engagement_paid.
+ * Required amount always comes from payment settings (pre_engagement_amount).
+ * Does not set legacy deposit / deposit_paid.
+ */
+export function newJobPreEngagementPaymentFields(formData) {
+  const paidRaw = formData?.deposit ?? "";
+  const requiredRaw = formData?.preEngagementRequired ?? "";
+  const paid = parseMoneyToInt(paidRaw);
+  const required = parseMoneyToInt(requiredRaw);
+  return {
+    pre_engagement_paid: paid > 0 ? formatMoneyInput(paid) : null,
+    pre_engagement_required: required > 0 ? formatMoneyInput(required) : null,
+  };
+}
+
+/** Amount paid at job start for email tokens (pre-engagement paid, else legacy deposit). */
+export function getNewJobAmountPaid(project) {
+  if (!project || typeof project !== "object") return "";
+  if (project.pre_engagement_paid != null && project.pre_engagement_paid !== "") {
+    return project.pre_engagement_paid;
+  }
+  return project.deposit ?? "";
+}

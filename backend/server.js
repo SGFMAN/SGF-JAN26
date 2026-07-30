@@ -2501,11 +2501,22 @@ app.post("/api/projects", async (req, res) => {
   if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    let { name, status, suburb, street, state, stream, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, specs, classification, year, duplicate_source_project_id, duplicateSourceProjectId } = req.body || {};
+    let { name, status, suburb, street, state, stream, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, specs, classification, year, duplicate_source_project_id, duplicateSourceProjectId, pre_engagement_required, pre_engagement_paid } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
     name = normalizeAddressHyphensForFilesystem(String(name).trim());
     suburb = suburb ? normalizeAddressHyphensForFilesystem(String(suburb).trim()) : suburb;
     street = street ? normalizeAddressHyphensForFilesystem(String(street).trim()) : street;
+
+    const normalizeMoney = (val) => {
+      if (val === undefined || val === null || val === "") return null;
+      if (typeof val === "string") {
+        const digits = val.replace(/[^0-9]/g, "");
+        return digits === "" ? null : digits;
+      }
+      return String(val);
+    };
+    const preEngagementRequiredVal = normalizeMoney(pre_engagement_required);
+    const preEngagementPaidVal = normalizeMoney(pre_engagement_paid);
 
     let duplicateSourceProjectIdVal = null;
     const dupRaw = duplicate_source_project_id ?? duplicateSourceProjectId;
@@ -2555,8 +2566,8 @@ app.post("/api/projects", async (req, res) => {
     const holderDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
     
     const r = await pool.query(
-      `INSERT INTO projects (name, status, suburb, street, state, stream, year, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, specs, classification, project_log, drawings_holder, drawings_holder_date, duplicate_source_project_id, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done') RETURNING *`,
+      `INSERT INTO projects (name, status, suburb, street, state, stream, year, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, specs, classification, project_log, drawings_holder, drawings_holder_date, duplicate_source_project_id, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, pre_engagement_required, pre_engagement_paid) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', $35, $36) RETURNING *`,
       [
         name.trim(),
         (status || "Design Phase").trim(),
@@ -2592,6 +2603,8 @@ app.post("/api/projects", async (req, res) => {
         'design team',  // drawings_holder - default to "design team"
         holderDate,  // drawings_holder_date - set to today
         duplicateSourceProjectIdVal,
+        preEngagementRequiredVal,
+        preEngagementPaidVal,
       ]
     );
 

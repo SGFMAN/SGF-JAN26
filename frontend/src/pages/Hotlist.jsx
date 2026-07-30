@@ -12,6 +12,7 @@ import HotlistSidebarSection from "../components/HotlistSidebarSection";
 import ManagersSalesMenuGroup from "../components/ManagersSalesMenuGroup";
 import { isUserAdmin, getApiHeaders } from "../utils/auth";
 import { projectPath } from "../utils/projectUrl";
+import { newJobPreEngagementPaymentFields } from "../utils/projectDeposit";
 import {
   generalEmailStateCode,
   resolveHotlistSoldFromEmail,
@@ -844,7 +845,6 @@ export default function Hotlist() {
       const updateData = {
         name: projectName,
         project_cost: formData.projectCost || null,
-        deposit: formData.deposit || null,
         stream: formData.stream || null,
         salesperson: formData.salesperson || null,
         specs: formData.specs || null,
@@ -855,12 +855,31 @@ export default function Hotlist() {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
+          ...getApiHeaders(),
         },
         body: JSON.stringify(updateData),
       });
 
       if (!updateResponse.ok) {
         console.error("Failed to update project with additional data");
+      }
+
+      const paymentFields = newJobPreEngagementPaymentFields(formData);
+      if (paymentFields.pre_engagement_paid || paymentFields.pre_engagement_required) {
+        const paymentResponse = await fetch(
+          `${API_URL}/api/projects/${newProject.id}/payment-fields`,
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              ...getApiHeaders(),
+            },
+            body: JSON.stringify(paymentFields),
+          }
+        );
+        if (!paymentResponse.ok) {
+          console.error("Failed to update project pre-engagement payment fields");
+        }
       }
 
       await fetchHotlist();
@@ -874,6 +893,10 @@ export default function Hotlist() {
         access_token: accessToken || newProject.access_token,
         project_cost: formData.projectCost || newProject.project_cost,
         deposit: formData.deposit || newProject.deposit,
+        pre_engagement_paid:
+          paymentFields.pre_engagement_paid || newProject.pre_engagement_paid,
+        pre_engagement_required:
+          paymentFields.pre_engagement_required || newProject.pre_engagement_required,
         stream: formData.stream || newProject.stream,
         salesperson: formData.salesperson || newProject.salesperson,
         specs: formData.specs || newProject.specs,

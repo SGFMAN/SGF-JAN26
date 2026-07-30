@@ -7,6 +7,7 @@ import {
   resolveNewProjectTeamToEmailsFromStream,
 } from "../utils/streamNewProjectEmail";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
+import { getNewJobAmountPaid } from "../utils/projectDeposit";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -92,12 +93,13 @@ export default function NewProject_6_EmailInternal({
 
     let depositPaid = "$0";
     let depositNum = 0;
-    if (project.deposit != null && project.deposit !== "") {
-      if (typeof project.deposit === "string") {
-        const cleaned = project.deposit.replace(/[$,\s]/g, "");
+    const amountPaidRaw = getNewJobAmountPaid(project);
+    if (amountPaidRaw != null && amountPaidRaw !== "") {
+      if (typeof amountPaidRaw === "string") {
+        const cleaned = amountPaidRaw.replace(/[$,\s]/g, "");
         depositNum = parseFloat(cleaned);
       } else {
-        depositNum = Number(project.deposit);
+        depositNum = Number(amountPaidRaw);
       }
       if (!isNaN(depositNum) && depositNum > 0) {
         depositPaid = `$${depositNum.toLocaleString()}`;

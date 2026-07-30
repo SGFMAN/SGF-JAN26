@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { newJobPreEngagementPaymentFields } from "../utils/projectDeposit";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -42,7 +43,6 @@ export default function NewProject_5_PDFUpload({
         street: formData.street || null,
         state: formData.state || null,
         stream: formData.stream || null,
-        deposit: formData.deposit || null,
         project_cost: formData.projectCost || null,
         salesperson: formData.salesperson || null,
         specs: formData.specs || null,
@@ -54,6 +54,7 @@ export default function NewProject_5_PDFUpload({
         client1_email: formData.email || null,
         client1_phone: formData.phone || null,
         year: new Date().toISOString().split("T")[0],
+        ...newJobPreEngagementPaymentFields(formData),
       }),
     });
 
