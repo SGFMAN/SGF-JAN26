@@ -29,7 +29,7 @@ import useAppLogo from "../hooks/useAppLogo.js";
 import StateFilterButtons from "../components/StateFilterButtons";
 import { UI, BANNER, INDICATOR } from "../utils/uiThemeTokens.js";
 import { getThemeBannerColors, readStoredUiThemeId } from "../themes/applyUiTheme";
-import { getLoggedInUserId } from "../utils/auth";
+import { getLoggedInUserId, getApiHeaders } from "../utils/auth";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
@@ -582,9 +582,8 @@ export default function DrawingManager() {
     try {
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: getApiHeaders(),
+        credentials: "include",
         body: JSON.stringify({
           name: projectName,
           status: project.status || null,

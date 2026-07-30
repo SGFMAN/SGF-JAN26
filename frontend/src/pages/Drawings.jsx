@@ -1445,7 +1445,8 @@ export default function Drawings({
     try {
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getApiHeaders(),
+        credentials: "include",
         body: JSON.stringify({
           name: projectName,
           status: project?.status || null,
@@ -1504,10 +1505,14 @@ export default function Drawings({
           building_permit_status: project?.building_permit_status || null,
         }),
       });
-      if (!response.ok) throw new Error("Failed to save sent to client date");
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to save sent to client date");
+      }
       if (onUpdate) onUpdate();
     } catch (err) {
       console.error("Error saving sent_to_client_date:", err);
+      throw err;
     }
   }
 
@@ -2010,8 +2015,15 @@ export default function Drawings({
       });
 
       if (emailDrawingsFlowKind === "client") {
-        await saveDrawingsHolder("client");
-        await saveSentToClientDateForCurrentRevision();
+        try {
+          await saveDrawingsHolder("client");
+          await saveSentToClientDateForCurrentRevision();
+        } catch (markErr) {
+          console.error("Email sent, but failed to mark drawings as with client:", markErr);
+          alert(
+            `Email sent, but drawings were not marked as with client: ${markErr.message || "save failed"}`
+          );
+        }
       }
 
       setVicSmtpFromOptions([]);
@@ -2328,9 +2340,8 @@ export default function Drawings({
 
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: getApiHeaders(),
+        credentials: "include",
         body: JSON.stringify({
           name: projectName,
           status: project?.status || null,
@@ -2394,20 +2405,18 @@ export default function Drawings({
       });
 
       if (!response.ok) {
-        throw new Error("Failed to save drawings holder");
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to save drawings holder");
       }
 
-      // Update local state optimistically
       setDrawingsHolder(holder);
-      
-      // Success - local state already updated, no need to call onUpdate
-      console.log("Drawings holder saved successfully");
+      if (onUpdate) onUpdate();
     } catch (error) {
       console.error("Error saving drawings holder:", error);
-      // Revert on error by calling onUpdate to refresh from server
       if (onUpdate) {
         onUpdate();
       }
+      throw error;
     }
   }
 
@@ -2418,7 +2427,11 @@ export default function Drawings({
 
   async function finishEmailPreviewFlow() {
     if (emailPreviewType === "sales") {
-      await saveDrawingsHolder("design team");
+      try {
+        await saveDrawingsHolder("design team");
+      } catch (err) {
+        alert(err.message || "Failed to update drawings holder");
+      }
       setShowSalesNotesModal(false);
       setSalesNotesForRevision(null);
       setSalesNotesText("");
