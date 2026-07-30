@@ -200,6 +200,66 @@ function resolveStoredFilesystemPath(location) {
   return path.normalize(s);
 }
 
+/**
+ * Resolve drawings PDF on disk (normalize path + recover if suburb/street folder renamed).
+ * Optionally self-heals projects.drawings_pdf_location when recovery succeeds.
+ * @returns {Promise<string|null>} absolute path or null if missing
+ */
+async function resolveAccessibleDrawingsPdfPath(pool, projectRow, { selfHeal = false, projectId = null } = {}) {
+  let drawingsPdfPath = resolveStoredFilesystemPath(projectRow?.drawings_pdf_location);
+  if (!drawingsPdfPath) return null;
+
+  try {
+    await fs.access(drawingsPdfPath);
+    return drawingsPdfPath;
+  } catch {
+    // Recovery: rebuild expected folder from current project fields and try same filename.
+  }
+
+  const stateUpper = (projectRow.state || "").toString().toUpperCase().trim();
+  const projectYear = folderYearFromProjectYear(projectRow.year);
+  const fileName = path.basename(drawingsPdfPath || "").trim();
+  if (!stateUpper || !projectYear || !fileName) return null;
+
+  const settingsResult = await pool.query(
+    "SELECT root_directory, root_directory_qld FROM settings WHERE id = 1"
+  );
+  const st = settingsResult.rows[0] || {};
+  const rootDir =
+    stateUpper === "QLD"
+      ? String(st.root_directory_qld || st.root_directory || "").trim()
+      : String(st.root_directory || "").trim();
+  if (!rootDir) return null;
+
+  const matchedProjectFolderPath = await findBestProjectFolderPathLenient(
+    rootDir,
+    projectYear,
+    stateUpper,
+    projectRow.suburb,
+    projectRow.street
+  );
+  if (!matchedProjectFolderPath) return null;
+
+  const recoveredPath = path.join(matchedProjectFolderPath, "2. PUBLISHED PLANS", fileName);
+  try {
+    await fs.access(recoveredPath);
+  } catch {
+    return null;
+  }
+
+  if (selfHeal && projectId != null && Number.isFinite(Number(projectId))) {
+    try {
+      await pool.query(
+        "UPDATE projects SET drawings_pdf_location = $1, updated_at = NOW() WHERE id = $2",
+        [recoveredPath, projectId]
+      );
+    } catch (e) {
+      console.warn("resolveAccessibleDrawingsPdfPath: failed to self-heal path:", e.message);
+    }
+  }
+  return recoveredPath;
+}
+
 /** En dash / em dash / Unicode minus → ASCII hyphen (job folder names must match on disk). */
 function normalizeAddressHyphensForFilesystem(s) {
   if (s == null) return "";
@@ -6795,7 +6855,7 @@ app.post("/api/emails/send-drawings", async (req, res) => {
   let drawingsPdfPath = null;
   try {
     const projectResult = await pool.query(
-      "SELECT suburb, street, state, salesperson, drawings_pdf_location FROM projects WHERE id = $1",
+      "SELECT suburb, street, state, year, salesperson, drawings_pdf_location FROM projects WHERE id = $1",
       [projectId]
     );
 
@@ -6804,19 +6864,18 @@ app.post("/api/emails/send-drawings", async (req, res) => {
     }
 
     project = projectResult.rows[0];
-    drawingsPdfPath = project.drawings_pdf_location;
 
-    // Only check for PDF file if we need to attach it
+    // Same path resolution/recovery as GET /api/files/drawings/:id
     if (attachPdf) {
+      drawingsPdfPath = await resolveAccessibleDrawingsPdfPath(pool, project, {
+        selfHeal: true,
+        projectId,
+      });
       if (!drawingsPdfPath) {
-        return res.status(404).json({ error: "Drawings PDF not found for this project" });
-      }
-
-      // Check if file exists
-      try {
-        await fs.access(drawingsPdfPath);
-      } catch (e) {
-        return res.status(404).json({ error: "Drawings PDF file does not exist on disk" });
+        return res.status(404).json({
+          error: "Drawings PDF file does not exist on disk",
+          code: "DRAWINGS_FILE_MISSING",
+        });
       }
     }
   } catch (e) {
@@ -9388,76 +9447,16 @@ app.get("/api/files/drawings/:id", async (req, res) => {
     }
 
     const projectRow = projectResult.rows[0];
-    let drawingsPdfPath = resolveStoredFilesystemPath(projectRow.drawings_pdf_location);
+    const drawingsPdfPath = await resolveAccessibleDrawingsPdfPath(pool, projectRow, {
+      selfHeal: true,
+      projectId: id,
+    });
 
     if (!drawingsPdfPath) {
       return res.status(404).json({
-        error: "Drawings PDF not found for this project",
+        error: "Drawings PDF file does not exist",
         code: "DRAWINGS_FILE_MISSING",
       });
-    }
-
-    // Check if file exists
-    try {
-      await fs.access(drawingsPdfPath);
-    } catch (e) {
-      // Recovery path:
-      // If suburb/street/year changed after drawings path was first saved (e.g. "St" -> "Street"),
-      // rebuild expected folder from current project fields and try same filename there.
-      const stateUpper = (projectRow.state || "").toString().toUpperCase().trim();
-      const projectYear = folderYearFromProjectYear(projectRow.year);
-      const fileName = path.basename(drawingsPdfPath || "").trim();
-      if (!stateUpper || !projectYear || !fileName) {
-        return res.status(404).json({
-          error: "Drawings PDF file does not exist",
-          code: "DRAWINGS_FILE_MISSING",
-        });
-      }
-
-      const settingsResult = await pool.query(
-        "SELECT root_directory, root_directory_qld FROM settings WHERE id = 1"
-      );
-      const st = settingsResult.rows[0] || {};
-      const rootDir =
-        stateUpper === "QLD"
-          ? String(st.root_directory_qld || st.root_directory || "").trim()
-          : String(st.root_directory || "").trim();
-      if (!rootDir) {
-        return res.status(404).json({
-          error: "Drawings PDF file does not exist",
-          code: "DRAWINGS_FILE_MISSING",
-        });
-      }
-
-      const matchedProjectFolderPath = await findBestProjectFolderPathLenient(
-        rootDir,
-        projectYear,
-        stateUpper,
-        projectRow.suburb,
-        projectRow.street
-      );
-      if (!matchedProjectFolderPath) {
-        return res.status(404).json({
-          error: "Drawings PDF file does not exist",
-          code: "DRAWINGS_FILE_MISSING",
-        });
-      }
-      const recoveredPath = path.join(matchedProjectFolderPath, "2. PUBLISHED PLANS", fileName);
-
-      try {
-        await fs.access(recoveredPath);
-        drawingsPdfPath = recoveredPath;
-        // Self-heal saved path so future opens are fast and stable.
-        await pool.query(
-          "UPDATE projects SET drawings_pdf_location = $1, updated_at = NOW() WHERE id = $2",
-          [recoveredPath, id]
-        );
-      } catch {
-        return res.status(404).json({
-          error: "Drawings PDF file does not exist",
-          code: "DRAWINGS_FILE_MISSING",
-        });
-      }
     }
 
     // Read and send the file
