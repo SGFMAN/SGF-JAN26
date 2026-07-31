@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { isUserAdmin } from "../utils/auth";
 import { useDrawingAccess } from "../hooks/useDrawingAccess";
+import { useManagersAccess } from "../hooks/useManagersAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -15,16 +16,42 @@ export default function Managers() {
   const logo = useAppLogo();
   const navigate = useNavigate();
   const [isAdmin, setIsAdmin] = useState(false);
-  const { hasDrawing } = useDrawingAccess();
+  const { hasDrawing, ready: drawingReady } = useDrawingAccess();
+  const { hasManagers, ready: managersReady } = useManagersAccess();
 
   useEffect(() => {
     (async () => setIsAdmin(await isUserAdmin()))();
   }, []);
 
-  // Redirect to Site Visit Manager by default
+  // Default landing: Site Visit if Managers; Drawing Manager if Drawing-only.
   useEffect(() => {
-    navigate("/managers/site-visit-manager", { replace: true });
-  }, [navigate]);
+    if (!managersReady || !drawingReady) return;
+    if (hasManagers) {
+      navigate("/managers/site-visit-manager", { replace: true });
+      return;
+    }
+    if (hasDrawing) {
+      navigate("/managers/drawing-manager", { replace: true });
+    }
+  }, [navigate, hasManagers, hasDrawing, managersReady, drawingReady]);
+
+  const navLinkStyle = {
+    background: "transparent",
+    color: UI.textSecondary,
+    border: "none",
+    borderRadius: "10px",
+    padding: "8px 8px",
+    fontSize: "0.95rem",
+    fontWeight: 500,
+    textAlign: "center",
+    textDecoration: "none",
+    letterSpacing: "0.5px",
+    cursor: "pointer",
+    transition: "background 0.18s, color 0.15s",
+    marginBottom: "0px",
+    lineHeight: "1.4",
+    display: "block",
+  };
   
   return (
     <div
@@ -110,144 +137,54 @@ export default function Managers() {
           }}
         >
           {/* Menu Buttons */}
-          <Link
-            to="/managers/site-visit-manager"
-            style={{
-              background: WHITE,
-              color: MONUMENT,
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              outline: `1px solid ${UI.outline}`,
-              boxShadow: "0 2px 4px rgba(50,50,51,.04)",
-              display: "block",
-            }}
-          >
-            Site Visit Manager
-          </Link>
-          <Link
-            to="/managers/contract-manager"
-            style={{
-              background: "transparent",
-              color: UI.textSecondary,
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            Contract Manager
-          </Link>
-          <Link
-            to="/managers/colour-manager"
-            style={{
-              background: "transparent",
-              color: UI.textSecondary,
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            Colour Manager
-          </Link>
-          <Link
-            to="/managers/status-manager"
-            style={{
-              background: "transparent",
-              color: UI.textSecondary,
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            Status Manager
-          </Link>
-          {isAdmin && (
-            <Link
-              to="/managers/planning-manager"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Planning Manager
-            </Link>
-          )}
-          {hasDrawing && (
+          {hasManagers ? (
+            <>
+              <Link
+                to="/managers/site-visit-manager"
+                style={{
+                  ...navLinkStyle,
+                  background: WHITE,
+                  color: MONUMENT,
+                  outline: `1px solid ${UI.outline}`,
+                  boxShadow: "0 2px 4px rgba(50,50,51,.04)",
+                }}
+              >
+                Site Visit Manager
+              </Link>
+              <Link to="/managers/contract-manager" style={navLinkStyle}>
+                Contract Manager
+              </Link>
+              <Link to="/managers/colour-manager" style={navLinkStyle}>
+                Colour Manager
+              </Link>
+              <Link to="/managers/status-manager" style={navLinkStyle}>
+                Status Manager
+              </Link>
+              {isAdmin ? (
+                <Link to="/managers/planning-manager" style={navLinkStyle}>
+                  Planning Manager
+                </Link>
+              ) : null}
+            </>
+          ) : null}
+          {hasDrawing ? (
             <Link
               to="/managers/drawing-manager"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
+              style={
+                hasManagers
+                  ? navLinkStyle
+                  : {
+                      ...navLinkStyle,
+                      background: WHITE,
+                      color: MONUMENT,
+                      outline: `1px solid ${UI.outline}`,
+                      boxShadow: "0 2px 4px rgba(50,50,51,.04)",
+                    }
+              }
             >
               Drawing Manager
             </Link>
-          )}
+          ) : null}
           <div style={{ flex: 1 }} />
           <Link
             to="/projects"

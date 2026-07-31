@@ -4,7 +4,6 @@ import { useSalesAccess } from "../hooks/useSalesAccess";
 import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import ManagersSidebarLink from "./ManagersSidebarLink";
 import SalesSidebarLink from "./SalesSidebarLink";
-import DrawingManagerSidebarLink from "./DrawingManagerSidebarLink";
 import { UI, MENU } from "../utils/uiThemeTokens";
 
 export default function ManagersSalesMenuGroup() {
@@ -16,6 +15,7 @@ export default function ManagersSalesMenuGroup() {
     return null;
   }
 
+  // Drawing users need the Managers hub entry to reach Drawing Manager (no separate main-menu item).
   if (!hasManagers && !hasSales && !hasDrawing) {
     return null;
   }
@@ -34,7 +34,6 @@ export default function ManagersSalesMenuGroup() {
     >
       <ManagersSidebarLink />
       <SalesSidebarLink />
-      <DrawingManagerSidebarLink />
     </div>
   );
 }

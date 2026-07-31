@@ -25,6 +25,7 @@ import DrawingAccessRoute from "./components/DrawingAccessRoute";
 import AdminAccessRoute from "./components/AdminAccessRoute";
 import SalesAccessRoute from "./components/SalesAccessRoute";
 import ManagersAccessRoute from "./components/ManagersAccessRoute";
+import ManagersHubAccessRoute from "./components/ManagersHubAccessRoute";
 import Sales from "./pages/Sales";
 import SalesTotals from "./pages/SalesTotals";
 import SalesAnalytics from "./pages/SalesAnalytics";
@@ -117,7 +118,7 @@ export default function App() {
             <Route path="/all-projects" element={<Auth><AllProjects /></Auth>} />
             <Route path="/cancelled" element={<Auth><Cancelled /></Auth>} />
             <Route path="/on-hold" element={<Auth><OnHold /></Auth>} />
-            <Route path="/managers" element={<Auth><ManagersAccessRoute><Managers /></ManagersAccessRoute></Auth>} />
+            <Route path="/managers" element={<Auth><ManagersHubAccessRoute><Managers /></ManagersHubAccessRoute></Auth>} />
             <Route path="/managers/site-visit-manager" element={<Auth><ManagersAccessRoute><SiteVisitManager /></ManagersAccessRoute></Auth>} />
             <Route path="/managers/contract-manager" element={<Auth><ManagersAccessRoute><ContractManager /></ManagersAccessRoute></Auth>} />
             <Route path="/managers/colour-manager" element={<Auth><ManagersAccessRoute><ColourManager /></ManagersAccessRoute></Auth>} />

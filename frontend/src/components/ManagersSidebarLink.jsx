@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { useManagersAccess } from "../hooks/useManagersAccess";
+import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import { UI } from "../utils/uiThemeTokens";
 
 const DEFAULT_STYLE = {
@@ -21,10 +22,15 @@ const DEFAULT_STYLE = {
   display: "block",
 };
 
+/** Managers hub — Managers permission, or Drawing (to reach Drawing Manager only). */
 export default function ManagersSidebarLink({ style = DEFAULT_STYLE }) {
-  const { hasManagers, ready } = useManagersAccess();
+  const { hasManagers, ready: managersReady } = useManagersAccess();
+  const { hasDrawing, ready: drawingReady } = useDrawingAccess();
 
-  if (!ready || !hasManagers) {
+  if (!managersReady || !drawingReady) {
+    return null;
+  }
+  if (!hasManagers && !hasDrawing) {
     return null;
   }
 
