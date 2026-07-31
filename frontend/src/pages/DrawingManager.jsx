@@ -11,11 +11,7 @@ import { Link } from "react-router-dom";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { getStateFilter } from "../utils/stateFilter";
 import { projectPath } from "../utils/projectUrl";
-import {
-  resolveNewProjectClientFrom,
-  resolveNewProjectClientToEmails,
-  findSalespersonUserInList,
-} from "../utils/streamNewProjectEmail";
+import { resolveNewProjectClientToEmails } from "../utils/streamNewProjectEmail";
 import {
   DRAFTSPERSON_UNASSIGNED,
   normalizeDraftspersonField,
@@ -226,18 +222,15 @@ export default function DrawingManager() {
   async function openReminderEmailModal(project) {
     const mainEmail = (getMainEmailContact(project) || "").trim();
     try {
-      const [templateResponse, settingsResponse, usersResponse] = await Promise.all([
+      const [templateResponse, settingsResponse] = await Promise.all([
         fetch(`${API_URL}/api/email-templates`),
         fetch(`${API_URL}/api/settings`),
-        fetch(`${API_URL}/api/users`),
       ]);
       if (!templateResponse.ok) {
         throw new Error("Failed to fetch email templates");
       }
       const templates = await templateResponse.json();
       const settings = settingsResponse.ok ? await settingsResponse.json() : {};
-      const users = usersResponse.ok ? await usersResponse.json() : [];
-      const salespersonUser = findSalespersonUserInList(users, project?.salesperson);
       const template = templates.find((t) => t.name === "DRAWINGS - Reminder");
       if (!template) {
         alert('Email template "DRAWINGS - Reminder" not found. Please create it in Settings → Email Templates.');
@@ -255,6 +248,13 @@ export default function DrawingManager() {
       const contact3 = project?.client3_active === "true" && project?.client3_email ? project.client3_email : "";
 
       const userTokens = await resolveLoggedInUserEmailTokens();
+      const fromEmail = String(userTokens.UserEmail || "").trim();
+      if (!fromEmail) {
+        alert(
+          "Your user account has no email address set. Add it under Settings → Users so Drawing Reminder emails can send From your email."
+        );
+        return;
+      }
       const tokenMap = {
         ProjectName: projectName,
         projectname: projectName,
@@ -282,14 +282,14 @@ export default function DrawingManager() {
         username: userTokens.UserName,
         UserPosition: userTokens.UserPosition,
         userposition: userTokens.UserPosition,
-        UserEmail: userTokens.UserEmail,
-        useremail: userTokens.UserEmail,
+        UserEmail: fromEmail,
+        useremail: fromEmail,
       };
 
       setSelectedProjectForReminder(project);
       const streamTo = resolveNewProjectClientToEmails(settings, project);
       setReminderEmailTo(streamTo.join(", ") || mainEmail || "");
-      setReminderEmailFrom(resolveNewProjectClientFrom(settings, project, salespersonUser));
+      setReminderEmailFrom(fromEmail);
       setReminderEmailSubject(applyTemplateTokens(template.subject || "", tokenMap));
       setReminderEmailBody(applyTemplateTokens(template.body || "", tokenMap));
       setShowReminderModal(true);
