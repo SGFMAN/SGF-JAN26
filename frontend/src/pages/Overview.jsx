@@ -5,6 +5,7 @@ import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { PROCESS_RULES, getRequirementStatus, getUnmetRequirements, getMetRequirements } from "../utils/ProcessRules";
 import { DRAFTSPERSON_UNASSIGNED } from "../utils/draftspersonSentinel";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
+import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 import {
   resolveNewProjectClientFrom,
   resolveNewProjectClientToEmails,
@@ -315,7 +316,7 @@ export default function Overview({ project }) {
       replaced = replaced.replace(/{Draftsperson}/g, draftspersonName);
     }
 
-    return replaced;
+    return replaceLoggedInUserEmailTokens(replaced);
   }
 
   async function handleSendTest() {

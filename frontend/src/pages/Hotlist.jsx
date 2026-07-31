@@ -13,6 +13,7 @@ import ManagersSalesMenuGroup from "../components/ManagersSalesMenuGroup";
 import { isUserAdmin, getApiHeaders } from "../utils/auth";
 import { projectPath } from "../utils/projectUrl";
 import { newJobPreEngagementPaymentFields } from "../utils/projectDeposit";
+import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 import {
   generalEmailStateCode,
   resolveHotlistSoldFromEmail,
@@ -719,8 +720,12 @@ export default function Hotlist() {
 
       setSoldEmailTo(resolvedTo);
       setSoldEmailFrom(fromAddress);
-      setSoldEmailSubject(replaceSoldTokens(template.subject || "", item));
-      setSoldEmailBody(replaceSoldTokens(template.body || "", item));
+      setSoldEmailSubject(
+        await replaceLoggedInUserEmailTokens(replaceSoldTokens(template.subject || "", item))
+      );
+      setSoldEmailBody(
+        await replaceLoggedInUserEmailTokens(replaceSoldTokens(template.body || "", item))
+      );
     } catch (err) {
       console.error("Error preparing sold email:", err);
       alert(`Failed to prepare sold email: ${err.message || "Unknown error"}`);

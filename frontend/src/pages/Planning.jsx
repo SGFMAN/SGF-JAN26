@@ -6,6 +6,7 @@ import {
   resolveNewProjectTeamToEmailsFromStream,
 } from "../utils/streamNewProjectEmail";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
+import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -220,7 +221,7 @@ export default function Planning({ project, onUpdate }) {
         .replace(/\n/g, "<br>");
     }
 
-    return replaced;
+    return replaceLoggedInUserEmailTokens(replaced);
   }
 
   async function handleOrganiseInspection() {

@@ -682,6 +682,54 @@ export default function EmailTemplate() {
               >
                 {"{ProjectName}"}
               </button>
+              <button
+                type="button"
+                onClick={() => insertToken("subject", "UserName")}
+                style={{
+                  padding: "6px 12px",
+                  fontSize: "0.85rem",
+                  fontWeight: 500,
+                  color: MONUMENT,
+                  background: WHITE,
+                  border: `1px solid ${SECTION_GREY}`,
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                }}
+              >
+                {"{UserName}"}
+              </button>
+              <button
+                type="button"
+                onClick={() => insertToken("subject", "UserPosition")}
+                style={{
+                  padding: "6px 12px",
+                  fontSize: "0.85rem",
+                  fontWeight: 500,
+                  color: MONUMENT,
+                  background: WHITE,
+                  border: `1px solid ${SECTION_GREY}`,
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                }}
+              >
+                {"{UserPosition}"}
+              </button>
+              <button
+                type="button"
+                onClick={() => insertToken("subject", "UserEmail")}
+                style={{
+                  padding: "6px 12px",
+                  fontSize: "0.85rem",
+                  fontWeight: 500,
+                  color: MONUMENT,
+                  background: WHITE,
+                  border: `1px solid ${SECTION_GREY}`,
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                }}
+              >
+                {"{UserEmail}"}
+              </button>
             </div>
             <input
               type="text"
@@ -874,6 +922,54 @@ export default function EmailTemplate() {
             }}
           >
             {"{SalespersonEmail}"}
+          </button>
+          <button
+            type="button"
+            onClick={() => insertToken("body", "UserName")}
+            style={{
+              padding: "6px 12px",
+              fontSize: "0.85rem",
+              fontWeight: 500,
+              color: MONUMENT,
+              background: WHITE,
+              border: `1px solid ${SECTION_GREY}`,
+              borderRadius: "6px",
+              cursor: "pointer",
+            }}
+          >
+            {"{UserName}"}
+          </button>
+          <button
+            type="button"
+            onClick={() => insertToken("body", "UserPosition")}
+            style={{
+              padding: "6px 12px",
+              fontSize: "0.85rem",
+              fontWeight: 500,
+              color: MONUMENT,
+              background: WHITE,
+              border: `1px solid ${SECTION_GREY}`,
+              borderRadius: "6px",
+              cursor: "pointer",
+            }}
+          >
+            {"{UserPosition}"}
+          </button>
+          <button
+            type="button"
+            onClick={() => insertToken("body", "UserEmail")}
+            style={{
+              padding: "6px 12px",
+              fontSize: "0.85rem",
+              fontWeight: 500,
+              color: MONUMENT,
+              background: WHITE,
+              border: `1px solid ${SECTION_GREY}`,
+              borderRadius: "6px",
+              cursor: "pointer",
+            }}
+          >
+            {"{UserEmail}"}
           </button>
           <button
             type="button"

@@ -9,6 +9,7 @@ import {
 import { CLASSIFICATION_OPTIONS, CLASSIFICATION_ABBREV_MAP as CLASSIFICATION_MAP } from "../utils/classifications";
 import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
+import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 import { FALLBACK_STREAMS, fetchStreams, projectStreamOptions } from "../utils/streamsCatalog";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -419,7 +420,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
         .replace(/\n/g, "<br>");
     }
 
-    return replaced;
+    return replaceLoggedInUserEmailTokens(replaced);
   }
 
   // Prepare and show email modal for new job

@@ -5,6 +5,7 @@ import { enAU } from "date-fns/locale";
 import "react-day-picker/style.css";
 import { isUserAdmin } from "../utils/auth";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
+import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import useAppLogo from "../hooks/useAppLogo.js";
 
@@ -313,7 +314,7 @@ export default function SiteVisitPlanner() {
     // Site Visit Scheduled Period (AM/PM)
     replaced = replaced.replace(/{SiteVisitScheduledPeriod}/g, project.site_visit_scheduled_period || "");
 
-    return replaced;
+    return replaceLoggedInUserEmailTokens(replaced);
   }
 
   // Get projects in the selected group (excluding Hotlist projects), in the order of group.projectIds

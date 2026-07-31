@@ -628,11 +628,22 @@ export default function PlanningManager() {
   useEffect(() => {
     if (!cellEdit) return undefined;
     const t = window.setTimeout(() => {
-      cellEditInputRef.current?.focus?.();
-      cellEditInputRef.current?.select?.();
+      const input = cellEditInputRef.current;
+      if (!input) return;
+      input.focus?.();
+      if (cellEdit.selectAll) {
+        input.select?.();
+      } else {
+        const end = String(input.value || "").length;
+        try {
+          input.setSelectionRange(end, end);
+        } catch {
+          /* ignore */
+        }
+      }
     }, 0);
     return () => window.clearTimeout(t);
-  }, [cellEdit?.projectId, cellEdit?.colIndex]);
+  }, [cellEdit?.projectId, cellEdit?.colIndex, cellEdit?.selectAll]);
 
   useEffect(() => {
     return () => {
@@ -897,6 +908,41 @@ export default function PlanningManager() {
       }
 
       if (row < DATA_START_ROW || col < 0) return;
+
+      // Type / Backspace / Delete on a highlighted free-edit cell starts editing immediately.
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && col >= 2) {
+        const projectIndex = row - DATA_START_ROW;
+        if (projectIndex >= 0 && projectIndex < projects.length) {
+          const project = projects[projectIndex];
+          const mapping = getPlanningManagerColMapping(col);
+          const canTypeEdit =
+            Boolean(project) &&
+            planningManagerCellAllowsFreeEdit(col, mapping) &&
+            !isPlanningManagerDropdownCol(mapping);
+          if (canTypeEdit) {
+            const isPrintable = e.key.length === 1;
+            if (isPrintable) {
+              e.preventDefault();
+              if (emptyClickEditTimerRef.current) {
+                window.clearTimeout(emptyClickEditTimerRef.current);
+                emptyClickEditTimerRef.current = null;
+              }
+              beginCellEdit(project, col, mapping, e.key, { selectAll: false });
+              return;
+            }
+            if (e.key === "Backspace" || e.key === "Delete") {
+              e.preventDefault();
+              if (emptyClickEditTimerRef.current) {
+                window.clearTimeout(emptyClickEditTimerRef.current);
+                emptyClickEditTimerRef.current = null;
+              }
+              beginCellEdit(project, col, mapping, "", { selectAll: false });
+              return;
+            }
+          }
+        }
+      }
+
       const isMod = e.ctrlKey || e.metaKey;
       if (!isMod) return;
       const key = String(e.key || "").toLowerCase();
@@ -916,7 +962,13 @@ export default function PlanningManager() {
         if (projectIndex < 0 || projectIndex >= projects.length) return;
         const project = projects[projectIndex];
         const mapping = getPlanningManagerColMapping(col);
-        if (!project?.id || !planningManagerCellAllowsFreeEdit(col, mapping)) return;
+        if (
+          !project?.id ||
+          !planningManagerCellAllowsFreeEdit(col, mapping) ||
+          isPlanningManagerDropdownCol(mapping)
+        ) {
+          return;
+        }
         e.preventDefault();
         void navigator.clipboard
           .readText()
@@ -1230,8 +1282,10 @@ export default function PlanningManager() {
     }
   }
 
-  function beginCellEdit(project, colIndex, mapping, initialDraft) {
+  function beginCellEdit(project, colIndex, mapping, initialDraft, options = {}) {
     if (!project?.id || !planningManagerCellAllowsFreeEdit(colIndex, mapping)) return;
+    // Dropdown columns are edited via the arrow menu only.
+    if (isPlanningManagerDropdownCol(mapping)) return;
     const saveAs = mapping?.field ? "select" : "blob";
     setTpMenu(null);
     setManualDatePicker(null);
@@ -1241,6 +1295,7 @@ export default function PlanningManager() {
       field: mapping?.field || null,
       saveAs,
       draft: initialDraft != null ? String(initialDraft) : "",
+      selectAll: options.selectAll === true,
     });
   }
 
@@ -1331,7 +1386,18 @@ export default function PlanningManager() {
     const mapping = getPlanningManagerColMapping(colIndex);
     const current = project?.[field] != null ? String(project[field]).trim() : "";
     const draft = formatPlanningManagerSheetDate(current) || current;
-    beginCellEdit(project, colIndex, mapping || { field }, draft);
+    // Note path is opened from the dropdown menu — bypass dropdown edit lock.
+    const saveAs = "select";
+    setTpMenu(null);
+    setManualDatePicker(null);
+    setCellEdit({
+      projectId: project.id,
+      colIndex,
+      field: field || mapping?.field || null,
+      saveAs,
+      draft: draft != null ? String(draft) : "",
+      selectAll: true,
+    });
   }
 
   async function handlePlanningManagerMenuPick(pickedValue) {
@@ -2270,8 +2336,6 @@ export default function PlanningManager() {
                       const mapping = getPlanningManagerColMapping(colIndex);
                       const isDraftCol = colIndex === 1 && project;
                       const isPmDropdownCol = isPlanningManagerDropdownCol(mapping) && project;
-                      const canFreeEdit =
-                        Boolean(project) && planningManagerCellAllowsFreeEdit(colIndex, mapping);
                       const isEditingCell =
                         Boolean(
                           cellEdit &&
@@ -2290,17 +2354,6 @@ export default function PlanningManager() {
                             if (emptyClickEditTimerRef.current) {
                               window.clearTimeout(emptyClickEditTimerRef.current);
                               emptyClickEditTimerRef.current = null;
-                            }
-                            if (
-                              canFreeEdit &&
-                              !isEditingCell &&
-                              !(value || "").trim()
-                            ) {
-                              // Delay so double-click date stamp can cancel this.
-                              emptyClickEditTimerRef.current = window.setTimeout(() => {
-                                emptyClickEditTimerRef.current = null;
-                                beginCellEdit(project, colIndex, mapping, "");
-                              }, 250);
                             }
                           }}
                           onDoubleClick={(e) => {

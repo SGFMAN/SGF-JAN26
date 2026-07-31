@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import AuthedPdfFrame from "../components/AuthedPdfFrame";
-import { useSalesAccess } from "../hooks/useSalesAccess";
+import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import {
   getProjectClientEmailsForDrawings,
   getStreamExtraDrawingEmails,
@@ -16,6 +16,7 @@ import {
   isDraftspersonAssigned,
 } from "../utils/draftspersonSentinel";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
+import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 import {
   resolveConceptApprovedFrom,
   resolveConceptApprovedToEmails,
@@ -100,8 +101,8 @@ export default function Drawings({
   showClearDrawingData = false,
 }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
-  const { hasSales, ready: salesAccessReady } = useSalesAccess();
-  const canApproveDrawings = salesAccessReady && hasSales;
+  const { hasDrawing, ready: drawingAccessReady } = useDrawingAccess();
+  const canApproveDrawings = drawingAccessReady && hasDrawing;
   const [drawingsStatus, setDrawingsStatus] = useState(project?.drawings_status || "Not Assigned");
   const [draftsperson, setDraftsperson] = useState(normalizeDraftspersonField(project?.draftsperson));
   const [drawingsHolder, setDrawingsHolder] = useState(project?.drawings_holder || "design team");
@@ -783,8 +784,8 @@ export default function Drawings({
 
     setEmailPreviewTo(previewToList.join(", "));
     setEmailPreviewFrom(previewFrom);
-    setEmailPreviewSubject(previewSubject);
-    setEmailPreviewBody(previewBody);
+    setEmailPreviewSubject(await replaceLoggedInUserEmailTokens(previewSubject));
+    setEmailPreviewBody(await replaceLoggedInUserEmailTokens(previewBody));
     setEmailPreviewType(isConcept ? "concept_approval" : "working_approval");
     setShowEmailPreviewModal(true);
   }
@@ -1833,8 +1834,8 @@ export default function Drawings({
       return {
         ok: true,
         template,
-        subject,
-        body,
+        subject: await replaceLoggedInUserEmailTokens(subject),
+        body: await replaceLoggedInUserEmailTokens(body),
         activeClientEmails,
       };
     } catch (error) {
@@ -2304,8 +2305,8 @@ export default function Drawings({
       // Open preview modal
       setEmailPreviewTo(previewToResolved.join(", "));
       setEmailPreviewFrom(previewFromResolved);
-      setEmailPreviewSubject(subject);
-      setEmailPreviewBody(body);
+      setEmailPreviewSubject(await replaceLoggedInUserEmailTokens(subject));
+      setEmailPreviewBody(await replaceLoggedInUserEmailTokens(body));
       setEmailPreviewType("drafting"); // Mark as drafting notes email
       setShowEmailPreviewModal(true);
     } catch (error) {
@@ -2606,8 +2607,8 @@ export default function Drawings({
 
       setEmailPreviewTo(previewToResolved.join(", "));
       setEmailPreviewFrom(previewFromResolved);
-      setEmailPreviewSubject(subject);
-      setEmailPreviewBody(body);
+      setEmailPreviewSubject(await replaceLoggedInUserEmailTokens(subject));
+      setEmailPreviewBody(await replaceLoggedInUserEmailTokens(body));
       setEmailPreviewType("sales"); // Mark as sales notes email
       setShowEmailPreviewModal(true);
     } catch (error) {

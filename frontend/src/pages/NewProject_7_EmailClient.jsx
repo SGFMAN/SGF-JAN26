@@ -8,6 +8,7 @@ import {
 } from "../utils/streamNewProjectEmail";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { getNewJobAmountPaid } from "../utils/projectDeposit";
+import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -135,7 +136,7 @@ export default function NewProject_7_EmailClient({
         .replace(/\n/g, "<br>");
     }
 
-    return replaced;
+    return replaceLoggedInUserEmailTokens(replaced);
   }
 
   async function prepareClientEmail(project) {

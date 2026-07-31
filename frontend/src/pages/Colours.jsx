@@ -12,6 +12,7 @@ import { UI, MENU } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 import { isUserAdmin, getApiHeaders } from "../utils/auth";
+import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
 import {
   COLORBOND_RANGE_KEY,
@@ -637,7 +638,7 @@ export default function Colours({ project, onUpdate }) {
                            .replace(/\{ClientName\}/g, clientName)
                            .replace(/\{ProjectName\}/g, projectName)
                            .replace(/\{ColourConsultant\}/g, colourConsultantName);
-          setEmailSubject(subject);
+          setEmailSubject(await replaceLoggedInUserEmailTokens(subject));
           
           // Replace tokens in body
           if (template.body) {
@@ -647,7 +648,7 @@ export default function Colours({ project, onUpdate }) {
                        .replace(/\{ClientName\}/g, clientName)
                        .replace(/\{ProjectName\}/g, projectName)
                        .replace(/\{ColourConsultant\}/g, colourConsultantName);
-            setEmailBody(body);
+            setEmailBody(await replaceLoggedInUserEmailTokens(body));
           } else {
             setEmailBody("");
           }

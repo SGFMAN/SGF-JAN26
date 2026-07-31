@@ -6650,6 +6650,10 @@ app.post("/api/emails/send", parseEmailSendRequest, async (req, res) => {
   const secure = process.env.SMTP_SECURE === "true";
 
   try {
+    const userTok = await applyStaffUserEmailTokenSubstitution(pool, req, htmlBody, subject);
+    htmlBody = userTok.html;
+    subject = userTok.subject;
+
     const transporter = nodemailer.createTransport({
       host,
       port,
@@ -6849,6 +6853,73 @@ async function applyDrawingsSalespersonTokenSubstitution(pool, htmlBody, subject
   return { html, subject: subjectOut };
 }
 
+/** Logged-in staff tokens: {UserName}, {UserPosition}, {UserEmail}. */
+async function fetchStaffUserEmailTokens(pool, userId) {
+  const id = Number(userId);
+  if (!pool || !Number.isFinite(id)) {
+    return { UserName: "", UserPosition: "", UserEmail: "" };
+  }
+  try {
+    const r = await pool.query(
+      `SELECT u.name, u.email,
+        COALESCE(
+          (SELECT p.name FROM positions p WHERE p.id = u.primary_position_id),
+          (SELECT p.name FROM positions p
+           INNER JOIN user_positions up ON p.id = up.position_id
+           WHERE up.user_id = u.id AND TRIM(p.name) <> 'Admin'
+           ORDER BY p.name ASC LIMIT 1),
+          (SELECT p.name FROM positions p
+           INNER JOIN user_positions up ON p.id = up.position_id
+           WHERE up.user_id = u.id
+           ORDER BY p.name ASC LIMIT 1)
+        ) AS position_name
+       FROM users u
+       WHERE u.id = $1
+       LIMIT 1`,
+      [id]
+    );
+    if (!r.rows.length) {
+      return { UserName: "", UserPosition: "", UserEmail: "" };
+    }
+    const row0 = r.rows[0];
+    return {
+      UserName: String(row0.name || "").trim(),
+      UserPosition: String(row0.position_name || "").trim(),
+      UserEmail: String(row0.email || "").trim(),
+    };
+  } catch (e) {
+    console.error("fetchStaffUserEmailTokens:", e);
+    return { UserName: "", UserPosition: "", UserEmail: "" };
+  }
+}
+
+function applyStaffUserEmailTokensToText(text, tokens) {
+  if (text == null) return text;
+  let out = String(text);
+  out = out.replace(/\{UserName\}/g, tokens?.UserName ?? "");
+  out = out.replace(/\{UserPosition\}/g, tokens?.UserPosition ?? "");
+  out = out.replace(/\{UserEmail\}/g, tokens?.UserEmail ?? "");
+  return out;
+}
+
+async function applyStaffUserEmailTokenSubstitution(pool, req, htmlBody, subject) {
+  const h = String(htmlBody ?? "");
+  const sub = subject == null ? "" : String(subject);
+  if (
+    !/\{UserName\}/.test(h + sub) &&
+    !/\{UserPosition\}/.test(h + sub) &&
+    !/\{UserEmail\}/.test(h + sub)
+  ) {
+    return { html: h, subject: sub };
+  }
+  const userId = getStaffUserIdFromRequest(req);
+  const tokens = await fetchStaffUserEmailTokens(pool, userId);
+  return {
+    html: applyStaffUserEmailTokensToText(h, tokens),
+    subject: applyStaffUserEmailTokensToText(sub, tokens),
+  };
+}
+
 // Send drawings PDF via email with attachment
 app.post("/api/emails/send-drawings", async (req, res) => {
   if (!requireStaffUserId(req, res)) return;
@@ -7033,6 +7104,9 @@ app.post("/api/emails/send-drawings", async (req, res) => {
     const spTokens = await applyDrawingsSalespersonTokenSubstitution(pool, htmlBody, subject, project);
     htmlBody = spTokens.html;
     subject = spTokens.subject;
+    const userTok = await applyStaffUserEmailTokenSubstitution(pool, req, htmlBody, subject);
+    htmlBody = userTok.html;
+    subject = userTok.subject;
 
     const recipientEmail = recipientEmails.join(", ");
     
@@ -7354,6 +7428,11 @@ app.post("/api/emails/send-colours", async (req, res) => {
                          .replace(/\{ColourConsultant\}/g, colourConsultantName)
                          .replace(/\{Draftsperson\}/g, draftspersonName)
                          .replace(/\{DRAFTSPERSON\}/g, draftspersonName);
+    }
+    {
+      const userTok = await applyStaffUserEmailTokenSubstitution(pool, req, htmlBody, subject);
+      htmlBody = userTok.html;
+      subject = userTok.subject;
     }
     
     // Convert newlines to HTML breaks
@@ -7758,6 +7837,11 @@ app.post("/api/emails/send-colours-reminder", async (req, res) => {
                          .replace(/\{ColourConsultant\}/g, colourConsultantName)
                          .replace(/\{Draftsperson\}/g, draftspersonName)
                          .replace(/\{DRAFTSPERSON\}/g, draftspersonName);
+    }
+    {
+      const userTok = await applyStaffUserEmailTokenSubstitution(pool, req, htmlBody, subject);
+      htmlBody = userTok.html;
+      subject = userTok.subject;
     }
     
     // Convert newlines to HTML breaks
@@ -8779,6 +8863,11 @@ app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
                          .replace(/\{Draftsperson\}/g, draftspersonName)
                          .replace(/\{DRAFTSPERSON\}/g, draftspersonName);
     }
+    {
+      const userTok = await applyStaffUserEmailTokenSubstitution(pool, req, htmlBody, subject);
+      htmlBody = userTok.html;
+      subject = userTok.subject;
+    }
     
     // Convert newlines to HTML breaks
     htmlBody = htmlBody.replace(/\n/g, "<br>");
@@ -9262,6 +9351,11 @@ Date Required: ${windowDateRequired || "N/A"}`;
       // If "<b>Scope</b>" not found, append at the end
       htmlBody = htmlBody + "\n\n" + windowInfo;
     }
+  }
+  {
+    const userTok = await applyStaffUserEmailTokenSubstitution(pool, req, htmlBody, subject);
+    htmlBody = userTok.html;
+    subject = userTok.subject;
   }
   
   // Convert newlines to HTML breaks

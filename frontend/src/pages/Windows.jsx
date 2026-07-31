@@ -5,6 +5,7 @@ import {
   parseEmailGeneralJson,
 } from "../utils/emailGeneralSettings";
 import { getApiHeaders } from "../utils/auth";
+import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 
 import { UI, INDICATOR } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
@@ -383,7 +384,7 @@ export default function Windows({ project, onUpdate, showResetWindowData = false
           .replace(/\{STREET\}/g, street)
           .replace(/\{ProjectName\}/g, projectName);
 
-        setEmailBody(body);
+        setEmailBody(await replaceLoggedInUserEmailTokens(body));
       } else {
         setEmailBody("");
       }

@@ -22,6 +22,7 @@ import {
   isDraftspersonAssigned,
 } from "../utils/draftspersonSentinel";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
+import { resolveLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 import { isLatestRevisionWorkingDrawingsApproved } from "../utils/drawingsStatusRules";
 import useAppLogo from "../hooks/useAppLogo.js";
@@ -253,6 +254,7 @@ export default function DrawingManager() {
       const contact2 = project?.client2_active === "true" && project?.client2_email ? project.client2_email : "";
       const contact3 = project?.client3_active === "true" && project?.client3_email ? project.client3_email : "";
 
+      const userTokens = await resolveLoggedInUserEmailTokens();
       const tokenMap = {
         ProjectName: projectName,
         projectname: projectName,
@@ -276,6 +278,12 @@ export default function DrawingManager() {
         suburb: project?.suburb || "",
         State: project?.state || "",
         state: project?.state || "",
+        UserName: userTokens.UserName,
+        username: userTokens.UserName,
+        UserPosition: userTokens.UserPosition,
+        userposition: userTokens.UserPosition,
+        UserEmail: userTokens.UserEmail,
+        useremail: userTokens.UserEmail,
       };
 
       setSelectedProjectForReminder(project);
