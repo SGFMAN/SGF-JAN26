@@ -126,6 +126,34 @@ export function formatDepositPaidToken(project) {
 }
 
 /**
+ * `{DepositBalance}` — settings pre_engagement_amount minus amount paid.
+ * Never negative (overpay → `$0`).
+ */
+export function formatDepositBalanceToken(project, settings) {
+  const required = parseMoneyToInt(settings?.pre_engagement_amount);
+  const paid = parseMoneyToInt(getNewJobAmountPaid(project));
+  const balance = Math.max(0, required - paid);
+  if (balance > 0) return `$${balance.toLocaleString()}`;
+  return "$0";
+}
+
+/** Replace `{DepositBalance}` using settings (fetches `/api/settings` if needed). */
+export async function replaceDepositBalanceToken(text, project, settings, apiBaseUrl = "") {
+  if (!text || !String(text).includes("{DepositBalance}")) return text;
+  let s = settings;
+  if (!s) {
+    try {
+      const base = apiBaseUrl == null ? "" : String(apiBaseUrl);
+      const res = await fetch(`${base}/api/settings`);
+      s = res.ok ? await res.json() : {};
+    } catch {
+      s = {};
+    }
+  }
+  return String(text).replace(/{DepositBalance}/g, formatDepositBalanceToken(project, s));
+}
+
+/**
  * `{DepositStatus}` from new-project deposit type dropdown.
  * DepositPaid remains the raw amount; this is the sentence used in emails.
  */

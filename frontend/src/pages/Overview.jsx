@@ -6,7 +6,11 @@ import { PROCESS_RULES, getRequirementStatus, getUnmetRequirements, getMetRequir
 import { DRAFTSPERSON_UNASSIGNED } from "../utils/draftspersonSentinel";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
-import { formatDepositPaidToken, formatDepositStatusToken } from "../utils/projectDeposit";
+import {
+  formatDepositPaidToken,
+  formatDepositStatusToken,
+  replaceDepositBalanceToken,
+} from "../utils/projectDeposit";
 import {
   resolveNewProjectClientFrom,
   resolveNewProjectClientToEmails,
@@ -246,6 +250,7 @@ export default function Overview({ project }) {
 
     replaced = replaced.replace(/{DepositPaid}/g, formatDepositPaidToken(project));
     replaced = replaced.replace(/{DepositStatus}/g, formatDepositStatusToken(project));
+    replaced = await replaceDepositBalanceToken(replaced, project, opts.settings, API_URL);
 
     replaced = replaced.replace(/{Contact1}/g, project.client1_email && project.client1_active ? project.client1_email : "");
     replaced = replaced.replace(/{Contact2}/g, project.client2_email && project.client2_active ? project.client2_email : "");
@@ -322,8 +327,8 @@ export default function Overview({ project }) {
       return;
     }
 
-    const subject = await replaceTokens(template.subject || "", project);
-    const htmlBody = await replaceTokens(template.body || "", project, { html: true });
+    const subject = await replaceTokens(template.subject || "", project, { settings });
+    const htmlBody = await replaceTokens(template.body || "", project, { html: true, settings });
 
     // Open preview modal with pre-filled data
     setPreviewTo(toAddresses.join(", "));

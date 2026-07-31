@@ -6,7 +6,11 @@ import "react-day-picker/style.css";
 import { isUserAdmin } from "../utils/auth";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
-import { formatDepositPaidToken, formatDepositStatusToken } from "../utils/projectDeposit";
+import {
+  formatDepositPaidToken,
+  formatDepositStatusToken,
+  replaceDepositBalanceToken,
+} from "../utils/projectDeposit";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import useAppLogo from "../hooks/useAppLogo.js";
 
@@ -250,6 +254,7 @@ export default function SiteVisitPlanner() {
 
     replaced = replaced.replace(/{DepositPaid}/g, formatDepositPaidToken(project));
     replaced = replaced.replace(/{DepositStatus}/g, formatDepositStatusToken(project));
+    replaced = await replaceDepositBalanceToken(replaced, project, opts.settings, API_URL);
 
     replaced = replaced.replace(/{Contact1}/g, project.client1_email && project.client1_active === 'true' ? project.client1_email : "");
     replaced = replaced.replace(/{Contact2}/g, project.client2_email && project.client2_active === 'true' ? project.client2_email : "");

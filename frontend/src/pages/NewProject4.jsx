@@ -10,7 +10,11 @@ import { CLASSIFICATION_OPTIONS, CLASSIFICATION_ABBREV_MAP as CLASSIFICATION_MAP
 import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
-import { formatDepositPaidToken, formatDepositStatusToken } from "../utils/projectDeposit";
+import {
+  formatDepositPaidToken,
+  formatDepositStatusToken,
+  replaceDepositBalanceToken,
+} from "../utils/projectDeposit";
 import { FALLBACK_STREAMS, fetchStreams, projectStreamOptions } from "../utils/streamsCatalog";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -364,6 +368,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
 
     replaced = replaced.replace(/{DepositPaid}/g, formatDepositPaidToken(project));
     replaced = replaced.replace(/{DepositStatus}/g, formatDepositStatusToken(project));
+    replaced = await replaceDepositBalanceToken(replaced, project, opts.settings, API_URL);
 
     replaced = replaced.replace(/{Contact1}/g, project.client1_email && project.client1_active ? project.client1_email : "");
     replaced = replaced.replace(/{Contact2}/g, project.client2_email && project.client2_active ? project.client2_email : "");
@@ -450,8 +455,8 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
         return;
       }
 
-      const subject = await replaceTokens(template.subject || "", project);
-      const htmlBody = await replaceTokens(template.body || "", project, { html: true });
+      const subject = await replaceTokens(template.subject || "", project, { settings });
+      const htmlBody = await replaceTokens(template.body || "", project, { html: true, settings });
 
       console.log("Setting email modal state");
       // Set email modal state

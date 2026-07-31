@@ -7,7 +7,11 @@ import {
   findSalespersonUserInList,
 } from "../utils/streamNewProjectEmail";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
-import { formatDepositPaidToken, formatDepositStatusToken } from "../utils/projectDeposit";
+import {
+  formatDepositPaidToken,
+  formatDepositStatusToken,
+  replaceDepositBalanceToken,
+} from "../utils/projectDeposit";
 import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -65,7 +69,7 @@ export default function NewProject_7_EmailClient({
     }
   }
 
-  /** Replace tokens: Contact1, ProjectName, ClientName, Salesperson, SalespersonPosition, DepositPaid, DepositStatus, ProjectCost */
+  /** Replace tokens: Contact1, ProjectName, ClientName, Salesperson, SalespersonPosition, DepositPaid, DepositStatus, DepositBalance, ProjectCost */
   async function replaceTokens(text, project, opts = {}) {
     if (!text || !project) return text;
     const html = !!opts.html;
@@ -91,6 +95,7 @@ export default function NewProject_7_EmailClient({
 
     replaced = replaced.replace(/{DepositPaid}/g, formatDepositPaidToken(project));
     replaced = replaced.replace(/{DepositStatus}/g, formatDepositStatusToken(project));
+    replaced = await replaceDepositBalanceToken(replaced, project, opts.settings, API_URL);
 
     const hasPosition = replaced.includes("{SalespersonPosition}");
     if (hasPosition) {
@@ -154,8 +159,8 @@ export default function NewProject_7_EmailClient({
         return;
       }
 
-      const subject = await replaceTokens(template.subject || "", project);
-      const htmlBody = await replaceTokens(template.body || "", project, { html: true });
+      const subject = await replaceTokens(template.subject || "", project, { settings });
+      const htmlBody = await replaceTokens(template.body || "", project, { html: true, settings });
 
       setEmailTo(toAddresses.join(", "));
       setEmailFrom(clientFrom);
