@@ -253,7 +253,7 @@ export default function Planning({ project, onUpdate }) {
       const toAddresses = resolveNewProjectTeamToEmailsFromStream(settings, project);
       if (!fromAddress || !String(fromAddress).trim()) {
         alert(
-          "No valid From address. Under Settings → Email Settings → General → New Project → Email to Team, set From for Sales Manager and/or Other for this project's state, or the legacy Team Email — From."
+          "No valid From address. Under Settings → Email Settings → General → New Project → Email to Team, set Team Email — From for this project's state (VIC or QLD column)."
         );
         return;
       }

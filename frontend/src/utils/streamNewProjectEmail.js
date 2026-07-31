@@ -158,35 +158,19 @@ export function getStreamNewProjectRow(settings, project) {
 }
 
 /**
- * Regional role for Sales Manager vs Other: matches `getGeneralNewProjectBranch` (QLD column iff state is QLD;
- * otherwise vic column → VIC regional roles).
+ * New Project team internal From: single SMTP From from General (VIC/QLD branch).
+ * `salespersonUser` kept for call-site compatibility (unused).
  */
-function newProjectRegionalRoleStateCode(project) {
-  return generalEmailStateCode(project) === "QLD" ? "QLD" : "VIC";
-}
-
-/**
- * New Project team internal From: Sales Manager vs Other buckets (per VIC/QLD branch), with legacy `teamEmailFrom` fallback.
- * Pass `salespersonUser` from `/api/users` when available so manager vs other is resolved correctly.
- */
-export function resolveNewProjectTeamFrom(settings, project, salespersonUser) {
+export function resolveNewProjectTeamFrom(settings, project, _salespersonUser) {
   const np = getGeneralNewProjectBranch(settings, project);
-  const base = np.teamEmailFrom != null ? String(np.teamEmailFrom).trim() : "";
+  const from = np.teamEmailFrom != null ? String(np.teamEmailFrom).trim() : "";
+  if (from) return from;
+  // Legacy fallback if only old Sales Manager / Other buckets were saved
   const mgr =
     np.teamEmailFromSalesManager != null ? String(np.teamEmailFromSalesManager).trim() : "";
-  const oth = np.teamEmailFromOther != null ? String(np.teamEmailFromOther).trim() : "";
-  const roleState = newProjectRegionalRoleStateCode(project);
-
-  if (salespersonUser) {
-    const chosen = userIsRegionalSalesManager(salespersonUser, roleState) ? mgr : oth;
-    if (chosen) return chosen;
-    return base;
-  }
-
-  // No matched user: still use configured buckets (Other then Sales Manager) before legacy From.
-  if (oth) return oth;
   if (mgr) return mgr;
-  return base;
+  const oth = np.teamEmailFromOther != null ? String(np.teamEmailFromOther).trim() : "";
+  return oth;
 }
 
 /** Team internal “To” list from General New Project only. */

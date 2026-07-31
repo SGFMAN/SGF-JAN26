@@ -118,11 +118,15 @@ export function normalizeNewProjectBranchFromRaw(npRaw) {
   if (teamToEmpty && np.emailToTeam != null) {
     np.teamEmailTo = String(np.emailToTeam || "").trim();
   }
-  // Single Client From: prefer explicit From, else migrate from old Sales Manager / Other buckets
+  // Single Client/Team From: prefer explicit From, else migrate from old Sales Manager / Other buckets
   const clientFrom =
     trim(np.clientEmailFrom) ||
     trim(np.clientEmailFromSalesManager) ||
     trim(np.clientEmailFromOther);
+  const teamFrom =
+    trim(np.teamEmailFrom) ||
+    trim(np.teamEmailFromSalesManager) ||
+    trim(np.teamEmailFromOther);
   return {
     clientEmailFrom: clientFrom,
     clientEmailFromSalesManager: trim(np.clientEmailFromSalesManager),
@@ -130,7 +134,7 @@ export function normalizeNewProjectBranchFromRaw(npRaw) {
     clientEmailTo: normalizeNewProjectClientToToken(np.clientEmailTo),
     // Second To is an SMTP From-list address (literal email), not a contact token
     clientEmailTo2: trim(np.clientEmailTo2),
-    teamEmailFrom: trim(np.teamEmailFrom),
+    teamEmailFrom: teamFrom,
     teamEmailFromSalesManager: trim(np.teamEmailFromSalesManager),
     teamEmailFromOther: trim(np.teamEmailFromOther),
     teamEmailTo: coerceNewProjectTeamEmailToArray(np.teamEmailTo),

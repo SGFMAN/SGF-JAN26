@@ -168,7 +168,7 @@ export default function NewProject_6_EmailInternal({
       const teamFrom = resolveNewProjectTeamFrom(settings, project, salespersonUser);
       if (!teamFrom || !String(teamFrom).trim()) {
         alert(
-          "No From address for the new job email. Under Settings → Email Settings → General → New Project → Email to Team, set From for Sales Manager and/or Other for this project's state (VIC or QLD column), or the legacy Team Email — From."
+          "No From address for the new job email. Under Settings → Email Settings → General → New Project → Email to Team, set Team Email — From for this project's state (VIC or QLD column)."
         );
         setIsPreparing(false);
         return;

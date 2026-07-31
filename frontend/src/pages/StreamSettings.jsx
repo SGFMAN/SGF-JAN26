@@ -202,7 +202,10 @@ const NEW_PROJECT_SECTIONS = [
   },
   {
     title: "Email to Team",
-    fields: [{ key: "teamEmailTo", label: "Team Email - To", selectKind: "teamEmailToList" }],
+    fields: [
+      { key: "teamEmailFrom", label: "Team Email - From", selectKind: "smtp" },
+      { key: "teamEmailTo", label: "Team Email - To", selectKind: "teamEmailToList" },
+    ],
   },
 ];
 
@@ -918,7 +921,11 @@ export default function StreamSettings() {
     if (fieldKey === "clientEmailTo") {
       v = canonicalizeNewProjectClientToToken(v);
     }
-    if (fieldKey === "clientEmailTo2" || fieldKey === "clientEmailFrom") {
+    if (
+      fieldKey === "clientEmailTo2" ||
+      fieldKey === "clientEmailFrom" ||
+      fieldKey === "teamEmailFrom"
+    ) {
       v = v == null ? "" : String(v).trim();
     }
     if (fieldKey === "teamEmailTo") {
@@ -1609,10 +1616,8 @@ export default function StreamSettings() {
                 </div>
                 <p style={{ margin: "0 0 12px", fontSize: "0.86rem", color: UI.textMuted, lineHeight: 1.45 }}>
                   One set of addresses for all streams. VIC vs QLD follows the project&apos;s state when sending.
-                  Email to Client uses two To dropdowns (both recipients are included) and one From. Email to Team still
-                  sets From separately for Sales Manager and Other; at send time, users with the VIC or QLD Sales Manager
-                  position use the Sales Manager From, everyone else uses Other. If those team From buckets are empty, the
-                  legacy single Team Email — From is used. New-job client templates follow state and deposit type.
+                  Email to Client uses two To dropdowns (both recipients are included) and one From. Email to Team uses one
+                  From and the existing Team Email — To list. New-job client templates follow state and deposit type.
                 </p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "12px" }}>
                   {[
@@ -1698,113 +1703,8 @@ export default function StreamSettings() {
                                 </div>
                                 {sectionExpanded ? (
                                   <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                                    {section.title === "Email to Client" ? (
+                                    {section.title === "Email to Client" || section.title === "Email to Team" ? (
                                       <>
-                                        {section.fields.map(({ key, label, selectKind = "smtp" }) => (
-                                          <div key={key} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                            <span
-                                              style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}
-                                            >
-                                              {label}
-                                            </span>
-                                            {selectKind === "client1ContactTo" ? (
-                                              <NewProjectClientEmailToSelect
-                                                value={data[key] || ""}
-                                                disabled={saving}
-                                                onValueChange={(next) =>
-                                                  updateGeneralNewProjectField(region, key, next)
-                                                }
-                                                onCommit={flushPersistGeneralNewProject}
-                                              />
-                                            ) : (
-                                              <DrawingNotifySmtpSelect
-                                                smtpOptions={smtpSlotEmails}
-                                                value={data[key] || ""}
-                                                disabled={saving}
-                                                onValueChange={(next) =>
-                                                  updateGeneralNewProjectField(region, key, next)
-                                                }
-                                                onCommit={flushPersistGeneralNewProject}
-                                              />
-                                            )}
-                                          </div>
-                                        ))}
-                                      </>
-                                    ) : section.title === "Email to Team" ? (
-                                      <>
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            flexDirection: "column",
-                                            gap: "12px",
-                                          }}
-                                        >
-                                          <span
-                                            style={{
-                                              fontSize: "0.78rem",
-                                              fontWeight: 600,
-                                              color: `${MONUMENT}b3`,
-                                            }}
-                                          >
-                                            Team Email - From
-                                          </span>
-                                          <div
-                                            style={{ display: "flex", flexDirection: "column", gap: "10px" }}
-                                          >
-                                            <div
-                                              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
-                                            >
-                                              <span
-                                                style={{
-                                                  fontSize: "0.78rem",
-                                                  fontWeight: 600,
-                                                  color: `${MONUMENT}b3`,
-                                                }}
-                                              >
-                                                Sales Manager
-                                              </span>
-                                              <DrawingNotifySmtpSelect
-                                                smtpOptions={smtpSlotEmails}
-                                                value={data.teamEmailFromSalesManager || ""}
-                                                disabled={saving}
-                                                onValueChange={(next) =>
-                                                  updateGeneralNewProjectField(
-                                                    region,
-                                                    "teamEmailFromSalesManager",
-                                                    next
-                                                  )
-                                                }
-                                                onCommit={flushPersistGeneralNewProject}
-                                              />
-                                            </div>
-                                            <div
-                                              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
-                                            >
-                                              <span
-                                                style={{
-                                                  fontSize: "0.78rem",
-                                                  fontWeight: 600,
-                                                  color: `${MONUMENT}b3`,
-                                                }}
-                                              >
-                                                Other
-                                              </span>
-                                              <DrawingNotifySmtpSelect
-                                                smtpOptions={smtpSlotEmails}
-                                                value={data.teamEmailFromOther || ""}
-                                                disabled={saving}
-                                                onValueChange={(next) =>
-                                                  updateGeneralNewProjectField(
-                                                    region,
-                                                    "teamEmailFromOther",
-                                                    next
-                                                  )
-                                                }
-                                                onCommit={flushPersistGeneralNewProject}
-                                              />
-                                            </div>
-                                          </div>
-                                        </div>
                                         {section.fields.map(({ key, label, selectKind = "smtp" }) => (
                                           <div key={key} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                             <span
