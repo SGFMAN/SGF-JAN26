@@ -196,7 +196,7 @@ const NEW_PROJECT_SECTIONS = [
     title: "Email to Client",
     fields: [
       { key: "clientEmailTo", label: "Client Email - To", selectKind: "client1ContactTo" },
-      { key: "clientEmailTo2", label: "Client Email - To 2", selectKind: "client1ContactTo" },
+      { key: "clientEmailTo2", label: "Client Email - To 2", selectKind: "smtp" },
       { key: "clientEmailFrom", label: "Client Email - From", selectKind: "smtp" },
     ],
   },
@@ -910,8 +910,11 @@ export default function StreamSettings() {
 
   function updateGeneralNewProjectField(region, fieldKey, value) {
     let v = value;
-    if (fieldKey === "clientEmailTo" || fieldKey === "clientEmailTo2") {
+    if (fieldKey === "clientEmailTo") {
       v = canonicalizeNewProjectClientToToken(v);
+    }
+    if (fieldKey === "clientEmailTo2" || fieldKey === "clientEmailFrom") {
+      v = v == null ? "" : String(v).trim();
     }
     if (fieldKey === "teamEmailTo") {
       v = coerceNewProjectTeamEmailToArray(v);

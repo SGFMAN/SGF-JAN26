@@ -128,7 +128,8 @@ export function normalizeNewProjectBranchFromRaw(npRaw) {
     clientEmailFromSalesManager: trim(np.clientEmailFromSalesManager),
     clientEmailFromOther: trim(np.clientEmailFromOther),
     clientEmailTo: normalizeNewProjectClientToToken(np.clientEmailTo),
-    clientEmailTo2: normalizeNewProjectClientToToken(np.clientEmailTo2),
+    // Second To is an SMTP From-list address (literal email), not a contact token
+    clientEmailTo2: trim(np.clientEmailTo2),
     teamEmailFrom: trim(np.teamEmailFrom),
     teamEmailFromSalesManager: trim(np.teamEmailFromSalesManager),
     teamEmailFromOther: trim(np.teamEmailFromOther),

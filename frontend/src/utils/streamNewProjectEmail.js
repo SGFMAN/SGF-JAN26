@@ -211,14 +211,20 @@ export function resolveNewProjectClientFrom(settings, project, _salespersonUser)
   return oth;
 }
 
-/** Client “To” from General — both To dropdowns (`{Contact1|2|3}`), unique merged list. */
+/** Client “To” from General — contact token To + SMTP To 2, unique merged list. */
 export function resolveNewProjectClientToEmails(settings, project) {
   const np = getGeneralNewProjectBranch(settings, project);
-  const tokens = [np.clientEmailTo, np.clientEmailTo2]
-    .map((t) => (t == null ? "" : String(t).trim()))
-    .filter(Boolean);
-  if (tokens.length === 0) return [];
-  return expandProjectContactTokensInToAddresses(tokens, project);
+  const contactToken = np.clientEmailTo != null ? String(np.clientEmailTo).trim() : "";
+  const smtpTo2 = np.clientEmailTo2 != null ? String(np.clientEmailTo2).trim() : "";
+  const fromContact = contactToken
+    ? expandProjectContactTokensInToAddresses([contactToken], project)
+    : [];
+  const out = [...fromContact];
+  if (smtpTo2) {
+    const seen = new Set(out.map((e) => e.toLowerCase()));
+    if (!seen.has(smtpTo2.toLowerCase())) out.push(smtpTo2);
+  }
+  return out;
 }
 
 /** Placeholder project for Stream Settings email preview (no API). */
