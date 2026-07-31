@@ -621,6 +621,7 @@ function NewProjectClientEmailToSelect({ value, disabled, onValueChange, onCommi
       disabled={disabled}
       onChange={(e) => {
         onValueChange(canonicalizeNewProjectClientToToken(e.target.value));
+        if (typeof onCommit === "function") onCommit();
       }}
       onBlur={onCommit}
       style={selectStyle}
@@ -648,7 +649,11 @@ function DrawingNotifySmtpSelect({ smtpOptions, value, disabled, onValueChange, 
     <select
       value={resolved}
       disabled={disabled}
-      onChange={(e) => onValueChange(e.target.value)}
+      onChange={(e) => {
+        onValueChange(e.target.value);
+        // Persist on change — blur alone can miss saves when the section collapses/unmounts
+        if (typeof onCommit === "function") onCommit();
+      }}
       onBlur={onCommit}
       style={selectStyle}
     >
@@ -920,23 +925,23 @@ export default function StreamSettings() {
       v = coerceNewProjectTeamEmailToArray(v);
     }
     const branchKey = region === "qld" ? "qld" : "vic";
-    setEmailGeneral((prev) => {
-      const npRoot =
-        prev.newProject && typeof prev.newProject === "object"
-          ? prev.newProject
-          : { vic: defaultNewProjectState(), qld: defaultNewProjectState() };
-      const mergedBranch = {
-        ...defaultNewProjectState(),
-        ...(npRoot[branchKey] && typeof npRoot[branchKey] === "object" ? npRoot[branchKey] : {}),
-        [fieldKey]: v,
-      };
-      const next = {
-        ...prev,
-        newProject: { ...npRoot, [branchKey]: mergedBranch },
-      };
-      emailGeneralRef.current = next;
-      return next;
-    });
+    // Build next synchronously so onChange → onCommit can persist the new value immediately
+    const prev = emailGeneralRef.current || parseEmailGeneralJson(null);
+    const npRoot =
+      prev.newProject && typeof prev.newProject === "object"
+        ? prev.newProject
+        : { vic: defaultNewProjectState(), qld: defaultNewProjectState() };
+    const mergedBranch = {
+      ...defaultNewProjectState(),
+      ...(npRoot[branchKey] && typeof npRoot[branchKey] === "object" ? npRoot[branchKey] : {}),
+      [fieldKey]: v,
+    };
+    const next = {
+      ...prev,
+      newProject: { ...npRoot, [branchKey]: mergedBranch },
+    };
+    emailGeneralRef.current = next;
+    setEmailGeneral(next);
   }
 
   function flushPersistGeneralNewProject() {
