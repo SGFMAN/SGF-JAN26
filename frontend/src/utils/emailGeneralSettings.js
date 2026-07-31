@@ -28,6 +28,18 @@ const EMPTY_DEPOSIT_BALANCE_BRANCH = {
 
 const NEW_PROJECT_CLIENT_TO_TOKEN = "{Contact1}";
 
+/** Normalize a Client Email — To selection to `{Contact1|2|3}` or "". */
+export function normalizeNewProjectClientToToken(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
+  const key = s.toLowerCase();
+  if (key === "{contact1}" || key === "contact1") return "{Contact1}";
+  if (key === "{contact2}" || key === "contact2") return "{Contact2}";
+  if (key === "{contact3}" || key === "contact3") return "{Contact3}";
+  // Legacy: previous truthy To values were Contact1-only
+  return NEW_PROJECT_CLIENT_TO_TOKEN;
+}
+
 function uniqueTrimmedEmails(list) {
   const seen = new Set();
   const out = [];
@@ -82,6 +94,7 @@ export function normalizeNewProjectBranchFromRaw(npRaw) {
     clientEmailFromSalesManager: "",
     clientEmailFromOther: "",
     clientEmailTo: "",
+    clientEmailTo2: "",
     teamEmailFrom: "",
     teamEmailFromSalesManager: "",
     teamEmailFromOther: "",
@@ -105,12 +118,17 @@ export function normalizeNewProjectBranchFromRaw(npRaw) {
   if (teamToEmpty && np.emailToTeam != null) {
     np.teamEmailTo = String(np.emailToTeam || "").trim();
   }
-  const c = String(np.clientEmailTo ?? "").trim();
+  // Single Client From: prefer explicit From, else migrate from old Sales Manager / Other buckets
+  const clientFrom =
+    trim(np.clientEmailFrom) ||
+    trim(np.clientEmailFromSalesManager) ||
+    trim(np.clientEmailFromOther);
   return {
-    clientEmailFrom: trim(np.clientEmailFrom),
+    clientEmailFrom: clientFrom,
     clientEmailFromSalesManager: trim(np.clientEmailFromSalesManager),
     clientEmailFromOther: trim(np.clientEmailFromOther),
-    clientEmailTo: c ? NEW_PROJECT_CLIENT_TO_TOKEN : "",
+    clientEmailTo: normalizeNewProjectClientToToken(np.clientEmailTo),
+    clientEmailTo2: normalizeNewProjectClientToToken(np.clientEmailTo2),
     teamEmailFrom: trim(np.teamEmailFrom),
     teamEmailFromSalesManager: trim(np.teamEmailFromSalesManager),
     teamEmailFromOther: trim(np.teamEmailFromOther),
@@ -156,6 +174,7 @@ export function isGeneralNewProjectConfigEmpty(parsedGeneral) {
       !t(b.clientEmailFromSalesManager) &&
       !t(b.clientEmailFromOther) &&
       !t(b.clientEmailTo) &&
+      !t(b.clientEmailTo2) &&
       !t(b.teamEmailFrom) &&
       !t(b.teamEmailFromSalesManager) &&
       !t(b.teamEmailFromOther) &&

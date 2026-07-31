@@ -196,31 +196,29 @@ export function resolveNewProjectTeamToEmailsFromStream(settings, project) {
 }
 
 /**
- * New Project client From: Sales Manager vs Other buckets (per VIC/QLD branch), with legacy `clientEmailFrom` fallback.
- * Pass `salespersonUser` from `/api/users` when available so manager vs other is resolved correctly.
+ * New Project client From: single SMTP From from General (VIC/QLD branch).
+ * `salespersonUser` kept for call-site compatibility (unused).
  */
-export function resolveNewProjectClientFrom(settings, project, salespersonUser) {
+export function resolveNewProjectClientFrom(settings, project, _salespersonUser) {
   const np = getGeneralNewProjectBranch(settings, project);
-  const base = np.clientEmailFrom != null ? String(np.clientEmailFrom).trim() : "";
+  const from = np.clientEmailFrom != null ? String(np.clientEmailFrom).trim() : "";
+  if (from) return from;
+  // Legacy fallback if only old Sales Manager / Other buckets were saved
   const mgr =
     np.clientEmailFromSalesManager != null ? String(np.clientEmailFromSalesManager).trim() : "";
+  if (mgr) return mgr;
   const oth = np.clientEmailFromOther != null ? String(np.clientEmailFromOther).trim() : "";
-  const roleState = newProjectRegionalRoleStateCode(project);
-
-  if (salespersonUser) {
-    const chosen = userIsRegionalSalesManager(salespersonUser, roleState) ? mgr : oth;
-    if (chosen) return chosen;
-    return base;
-  }
-  return base;
+  return oth;
 }
 
-/** Client “To” from General (`{Contact1}` etc.) or []. */
+/** Client “To” from General — both To dropdowns (`{Contact1|2|3}`), unique merged list. */
 export function resolveNewProjectClientToEmails(settings, project) {
   const np = getGeneralNewProjectBranch(settings, project);
-  const token = np.clientEmailTo != null ? String(np.clientEmailTo).trim() : "";
-  if (!token) return [];
-  return expandProjectContactTokensInToAddresses([token], project);
+  const tokens = [np.clientEmailTo, np.clientEmailTo2]
+    .map((t) => (t == null ? "" : String(t).trim()))
+    .filter(Boolean);
+  if (tokens.length === 0) return [];
+  return expandProjectContactTokensInToAddresses(tokens, project);
 }
 
 /** Placeholder project for Stream Settings email preview (no API). */

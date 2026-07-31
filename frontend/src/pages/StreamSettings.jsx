@@ -187,13 +187,18 @@ function drawingsSendClientFieldKeys(fieldGroup) {
 
 const SECTION_OPTIONS = [{ key: "drawings", label: "Drawings" }];
 
-/** Stored on `clientEmailTo`; expanded at send time to `project.client1_email` when active. */
+/** Stored on `clientEmailTo` / `clientEmailTo2`; expanded at send time to active client contact emails. */
 const NEW_PROJECT_CLIENT_TO_TOKEN = "{Contact1}";
+const NEW_PROJECT_CLIENT_TO_TOKENS = ["{Contact1}", "{Contact2}", "{Contact3}"];
 
 const NEW_PROJECT_SECTIONS = [
   {
     title: "Email to Client",
-    fields: [{ key: "clientEmailTo", label: "Client Email - To", selectKind: "client1ContactTo" }],
+    fields: [
+      { key: "clientEmailTo", label: "Client Email - To", selectKind: "client1ContactTo" },
+      { key: "clientEmailTo2", label: "Client Email - To 2", selectKind: "client1ContactTo" },
+      { key: "clientEmailFrom", label: "Client Email - From", selectKind: "smtp" },
+    ],
   },
   {
     title: "Email to Team",
@@ -276,6 +281,7 @@ function defaultNewProjectState() {
     clientEmailFromSalesManager: "",
     clientEmailFromOther: "",
     clientEmailTo: "",
+    clientEmailTo2: "",
     teamEmailFrom: "",
     teamEmailFromSalesManager: "",
     teamEmailFromOther: "",
@@ -597,9 +603,16 @@ function NewProjectTeamEmailToListEditor({ emails, disabled, onListChange, onCom
   );
 }
 
+function canonicalizeNewProjectClientToToken(raw) {
+  const v = raw == null ? "" : String(raw).trim();
+  if (!v) return "";
+  const match = NEW_PROJECT_CLIENT_TO_TOKENS.find((t) => t.toLowerCase() === v.toLowerCase());
+  return match || "";
+}
+
 function NewProjectClientEmailToSelect({ value, disabled, onValueChange, onCommit }) {
   const v = value == null ? "" : String(value).trim();
-  const canonical = /^\{contact1\}$/i.test(v) ? NEW_PROJECT_CLIENT_TO_TOKEN : "";
+  const canonical = canonicalizeNewProjectClientToToken(v);
   const orphan = v !== "" && canonical === "";
 
   return (
@@ -607,17 +620,18 @@ function NewProjectClientEmailToSelect({ value, disabled, onValueChange, onCommi
       value={canonical || (orphan ? v : "")}
       disabled={disabled}
       onChange={(e) => {
-        const next = e.target.value;
-        onValueChange(next === NEW_PROJECT_CLIENT_TO_TOKEN ? NEW_PROJECT_CLIENT_TO_TOKEN : "");
+        onValueChange(canonicalizeNewProjectClientToToken(e.target.value));
       }}
       onBlur={onCommit}
       style={selectStyle}
     >
       <option value="">— None —</option>
-      <option value={NEW_PROJECT_CLIENT_TO_TOKEN}>Client 1 contact email ({NEW_PROJECT_CLIENT_TO_TOKEN})</option>
+      <option value="{Contact1}">Client 1 contact email ({"{Contact1}"})</option>
+      <option value="{Contact2}">Client 2 contact email ({"{Contact2}"})</option>
+      <option value="{Contact3}">Client 3 contact email ({"{Contact3}"})</option>
       {orphan ? (
         <option value={v}>
-          {v} (legacy — pick {NEW_PROJECT_CLIENT_TO_TOKEN} or None)
+          {v} (legacy — pick a Contact token or None)
         </option>
       ) : null}
     </select>
@@ -896,9 +910,8 @@ export default function StreamSettings() {
 
   function updateGeneralNewProjectField(region, fieldKey, value) {
     let v = value;
-    if (fieldKey === "clientEmailTo") {
-      const t = v == null ? "" : String(v).trim();
-      v = !t ? "" : /^\{contact1\}$/i.test(t) ? NEW_PROJECT_CLIENT_TO_TOKEN : "";
+    if (fieldKey === "clientEmailTo" || fieldKey === "clientEmailTo2") {
+      v = canonicalizeNewProjectClientToToken(v);
     }
     if (fieldKey === "teamEmailTo") {
       v = coerceNewProjectTeamEmailToArray(v);
@@ -1588,11 +1601,10 @@ export default function StreamSettings() {
                 </div>
                 <p style={{ margin: "0 0 12px", fontSize: "0.86rem", color: UI.textMuted, lineHeight: 1.45 }}>
                   One set of addresses for all streams. VIC vs QLD follows the project&apos;s state when sending.
-                  Under Email to Client and Email to Team, set From separately for Sales Manager and Other in each state
-                  column. At send time, users with the VIC or QLD Sales Manager position use the Sales Manager From;
-                  everyone else uses Other. If those team From buckets are empty, the legacy single Team Email — From is
-                  used. New-job client templates follow state, deposit, and the same manager vs non-manager rule
-                  (standard vs INTRO templates).
+                  Email to Client uses two To dropdowns (both recipients are included) and one From. Email to Team still
+                  sets From separately for Sales Manager and Other; at send time, users with the VIC or QLD Sales Manager
+                  position use the Sales Manager From, everyone else uses Other. If those team From buckets are empty, the
+                  legacy single Team Email — From is used. New-job client templates follow state and deposit type.
                 </p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "12px" }}>
                   {[
@@ -1696,15 +1708,6 @@ export default function StreamSettings() {
                                                 }
                                                 onCommit={flushPersistGeneralNewProject}
                                               />
-                                            ) : selectKind === "teamEmailToList" ? (
-                                              <NewProjectTeamEmailToListEditor
-                                                emails={data.teamEmailTo}
-                                                disabled={saving}
-                                                onListChange={(next) =>
-                                                  updateGeneralNewProjectField(region, "teamEmailTo", next)
-                                                }
-                                                onCommit={flushPersistGeneralNewProject}
-                                              />
                                             ) : (
                                               <DrawingNotifySmtpSelect
                                                 smtpOptions={smtpSlotEmails}
@@ -1718,79 +1721,6 @@ export default function StreamSettings() {
                                             )}
                                           </div>
                                         ))}
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            flexDirection: "column",
-                                            gap: "12px",
-                                          }}
-                                        >
-                                          <span
-                                            style={{
-                                              fontSize: "0.78rem",
-                                              fontWeight: 600,
-                                              color: `${MONUMENT}b3`,
-                                            }}
-                                          >
-                                            Client Email - From
-                                          </span>
-                                          <div
-                                            style={{ display: "flex", flexDirection: "column", gap: "10px" }}
-                                          >
-                                            <div
-                                              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
-                                            >
-                                              <span
-                                                style={{
-                                                  fontSize: "0.78rem",
-                                                  fontWeight: 600,
-                                                  color: `${MONUMENT}b3`,
-                                                }}
-                                              >
-                                                Sales Manager
-                                              </span>
-                                              <DrawingNotifySmtpSelect
-                                                smtpOptions={smtpSlotEmails}
-                                                value={data.clientEmailFromSalesManager || ""}
-                                                disabled={saving}
-                                                onValueChange={(next) =>
-                                                  updateGeneralNewProjectField(
-                                                    region,
-                                                    "clientEmailFromSalesManager",
-                                                    next
-                                                  )
-                                                }
-                                                onCommit={flushPersistGeneralNewProject}
-                                              />
-                                            </div>
-                                            <div
-                                              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
-                                            >
-                                              <span
-                                                style={{
-                                                  fontSize: "0.78rem",
-                                                  fontWeight: 600,
-                                                  color: `${MONUMENT}b3`,
-                                                }}
-                                              >
-                                                Other
-                                              </span>
-                                              <DrawingNotifySmtpSelect
-                                                smtpOptions={smtpSlotEmails}
-                                                value={data.clientEmailFromOther || ""}
-                                                disabled={saving}
-                                                onValueChange={(next) =>
-                                                  updateGeneralNewProjectField(
-                                                    region,
-                                                    "clientEmailFromOther",
-                                                    next
-                                                  )
-                                                }
-                                                onCommit={flushPersistGeneralNewProject}
-                                              />
-                                            </div>
-                                          </div>
-                                        </div>
                                       </>
                                     ) : section.title === "Email to Team" ? (
                                       <>

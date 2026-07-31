@@ -145,7 +145,7 @@ export default function NewProject_7_EmailClient({
       const clientFrom = resolveNewProjectClientFrom(settings, project, salespersonUser);
       if (!clientFrom || !String(clientFrom).trim()) {
         alert(
-          "No From address for the client email. Under Settings → Email Settings → General → New Project → Email to Client, set From for Sales Manager and/or Other for this project's state (VIC or QLD column)."
+          "No From address for the client email. Under Settings → Email Settings → General → New Project → Email to Client, set Client Email — From for this project's state (VIC or QLD column)."
         );
         setIsPreparing(false);
         return;
@@ -154,7 +154,9 @@ export default function NewProject_7_EmailClient({
       const toAddresses = resolveNewProjectClientToEmails(settings, project);
 
       if (toAddresses.length === 0) {
-        alert("No valid Client Email — To address. Set Settings → Email Settings → General → New Project.");
+        alert(
+          "No valid Client Email — To address. Set Settings → Email Settings → General → New Project → Email to Client (To / To 2)."
+        );
         setIsPreparing(false);
         return;
       }
