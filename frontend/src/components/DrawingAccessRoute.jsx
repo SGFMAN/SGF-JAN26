@@ -3,7 +3,8 @@ import { Navigate } from "react-router-dom";
 import { hasUserAccess } from "../utils/userAccess";
 
 /**
- * Drawing Manager — requires Drawing checked in Settings → Permissions.
+ * Drawing Manager and drawing-gated UI — requires Drawing in Settings → Permissions.
+ * Does not require Managers.
  */
 export default function DrawingAccessRoute({ children }) {
   const [ready, setReady] = useState(false);

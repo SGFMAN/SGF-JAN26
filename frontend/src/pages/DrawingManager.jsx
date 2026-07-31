@@ -22,11 +22,12 @@ import { resolveLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 import { isLatestRevisionWorkingDrawingsApproved } from "../utils/drawingsStatusRules";
 import useAppLogo from "../hooks/useAppLogo.js";
+import { useManagersAccess } from "../hooks/useManagersAccess";
 
 import StateFilterButtons from "../components/StateFilterButtons";
 import { UI, BANNER, INDICATOR } from "../utils/uiThemeTokens.js";
 import { getThemeBannerColors, readStoredUiThemeId } from "../themes/applyUiTheme";
-import { getLoggedInUserId, getApiHeaders } from "../utils/auth";
+import { getLoggedInUserId, getApiHeaders, isUserAdmin } from "../utils/auth";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
@@ -94,6 +95,8 @@ function escapeHtmlForEmailList(s) {
 export default function DrawingManager() {
   const logo = useAppLogo();
   const { runWithEmailOverlay } = useEmailSendOverlay();
+  const { hasManagers } = useManagersAccess();
+  const [isAdmin, setIsAdmin] = useState(false);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -124,7 +127,26 @@ export default function DrawingManager() {
   useEffect(() => {
     fetchProjects();
     fetchDraftspersons();
+    isUserAdmin().then(setIsAdmin).catch(() => setIsAdmin(false));
   }, []);
+
+  const managerNavLinkStyle = {
+    background: "transparent",
+    color: UI.textSecondary,
+    border: "none",
+    borderRadius: "10px",
+    padding: "8px 8px",
+    fontSize: "0.95rem",
+    fontWeight: 500,
+    textAlign: "center",
+    textDecoration: "none",
+    letterSpacing: "0.5px",
+    cursor: "pointer",
+    transition: "background 0.18s, color 0.15s",
+    marginBottom: "0px",
+    lineHeight: "1.4",
+    display: "block",
+  };
 
   function openNotesModalForProject(project) {
     const suburb = project.suburb || "";
@@ -1143,137 +1165,36 @@ export default function DrawingManager() {
             overflowY: "auto",
           }}
         >
-          {/* Menu Buttons */}
-          <Link
-            to="/managers/site-visit-manager"
-            style={{
-              background: "transparent",
-              color: UI.textSecondary,
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            Site Visit Manager
-          </Link>
-          <Link
-            to="/managers/contract-manager"
-            style={{
-              background: "transparent",
-              color: UI.textSecondary,
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            Contract Manager
-          </Link>
-          <Link
-            to="/managers/colour-manager"
-            style={{
-              background: "transparent",
-              color: UI.textSecondary,
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            Colour Manager
-          </Link>
-          <Link
-            to="/managers/status-manager"
-            style={{
-              background: "transparent",
-              color: UI.textSecondary,
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            Status Manager
-          </Link>
-          <Link
-            to="/managers/planning-manager"
-            style={{
-              background: "transparent",
-              color: UI.textSecondary,
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
-              display: "block",
-            }}
-          >
-            Planning Manager
-          </Link>
+          {/* Other Managers pages — Managers permission only */}
+          {hasManagers ? (
+            <>
+              <Link to="/managers/site-visit-manager" style={managerNavLinkStyle}>
+                Site Visit Manager
+              </Link>
+              <Link to="/managers/contract-manager" style={managerNavLinkStyle}>
+                Contract Manager
+              </Link>
+              <Link to="/managers/colour-manager" style={managerNavLinkStyle}>
+                Colour Manager
+              </Link>
+              <Link to="/managers/status-manager" style={managerNavLinkStyle}>
+                Status Manager
+              </Link>
+              {isAdmin ? (
+                <Link to="/managers/planning-manager" style={managerNavLinkStyle}>
+                  Planning Manager
+                </Link>
+              ) : null}
+            </>
+          ) : null}
           <Link
             to="/managers/drawing-manager"
             style={{
+              ...managerNavLinkStyle,
               background: WHITE,
               color: MONUMENT,
-              border: "none",
-              borderRadius: "10px",
-              padding: "8px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              marginBottom: "0px",
-              lineHeight: "1.4",
               outline: `1px solid ${UI.outline}`,
               boxShadow: "0 2px 4px rgba(50,50,51,.04)",
-              display: "block",
             }}
           >
             Drawing Manager

@@ -123,7 +123,7 @@ export default function App() {
             <Route path="/managers/colour-manager" element={<Auth><ManagersAccessRoute><ColourManager /></ManagersAccessRoute></Auth>} />
             <Route path="/managers/status-manager" element={<Auth><ManagersAccessRoute><StatusManager /></ManagersAccessRoute></Auth>} />
             <Route path="/managers/planning-manager" element={<Auth><ManagersAccessRoute><AdminAccessRoute><PlanningManager /></AdminAccessRoute></ManagersAccessRoute></Auth>} />
-            <Route path="/managers/drawing-manager" element={<Auth><ManagersAccessRoute><DrawingAccessRoute><DrawingManager /></DrawingAccessRoute></ManagersAccessRoute></Auth>} />
+            <Route path="/managers/drawing-manager" element={<Auth><DrawingAccessRoute><DrawingManager /></DrawingAccessRoute></Auth>} />
             <Route path="/sales" element={<Auth><SalesAccessRoute><Sales /></SalesAccessRoute></Auth>} />
             <Route path="/sales-totals" element={<Auth><SalesAccessRoute><SalesTotals /></SalesAccessRoute></Auth>} />
             <Route path="/sales-analytics" element={<Auth><SalesAccessRoute><SalesAnalytics /></SalesAccessRoute></Auth>} />

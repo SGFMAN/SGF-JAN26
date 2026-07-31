@@ -1,19 +1,22 @@
 import React from "react";
 import { useManagersAccess } from "../hooks/useManagersAccess";
 import { useSalesAccess } from "../hooks/useSalesAccess";
+import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import ManagersSidebarLink from "./ManagersSidebarLink";
 import SalesSidebarLink from "./SalesSidebarLink";
+import DrawingManagerSidebarLink from "./DrawingManagerSidebarLink";
 import { UI, MENU } from "../utils/uiThemeTokens";
 
 export default function ManagersSalesMenuGroup() {
   const { hasManagers, ready: managersReady } = useManagersAccess();
   const { hasSales, ready: salesReady } = useSalesAccess();
+  const { hasDrawing, ready: drawingReady } = useDrawingAccess();
 
-  if (!managersReady || !salesReady) {
+  if (!managersReady || !salesReady || !drawingReady) {
     return null;
   }
 
-  if (!hasManagers && !hasSales) {
+  if (!hasManagers && !hasSales && !hasDrawing) {
     return null;
   }
 
@@ -31,6 +34,7 @@ export default function ManagersSalesMenuGroup() {
     >
       <ManagersSidebarLink />
       <SalesSidebarLink />
+      <DrawingManagerSidebarLink />
     </div>
   );
 }
