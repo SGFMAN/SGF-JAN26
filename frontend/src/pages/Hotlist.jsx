@@ -870,7 +870,11 @@ export default function Hotlist() {
       }
 
       const paymentFields = newJobPreEngagementPaymentFields(formData);
-      if (paymentFields.pre_engagement_paid || paymentFields.pre_engagement_required) {
+      if (
+        paymentFields.pre_engagement_paid ||
+        paymentFields.pre_engagement_required ||
+        paymentFields.deposit_type
+      ) {
         const paymentResponse = await fetch(
           `${API_URL}/api/projects/${newProject.id}/payment-fields`,
           {
@@ -902,6 +906,9 @@ export default function Hotlist() {
           paymentFields.pre_engagement_paid || newProject.pre_engagement_paid,
         pre_engagement_required:
           paymentFields.pre_engagement_required || newProject.pre_engagement_required,
+        deposit_type: paymentFields.deposit_type || newProject.deposit_type || formData.depositType || "",
+        depositType: formData.depositType || paymentFields.deposit_type || "",
+        newJobDepositType: formData.depositType || paymentFields.deposit_type || "",
         stream: formData.stream || newProject.stream,
         salesperson: formData.salesperson || newProject.salesperson,
         specs: formData.specs || newProject.specs,

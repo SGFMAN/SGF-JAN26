@@ -10,10 +10,8 @@ export const NEW_JOB_DEPOSIT_TYPE = {
   OTHER: "Other",
 };
 
-const NJ_VIC_INTRO_FULL_5 = "NEW JOB - Client Full Deposit - VIC INTRO - 5%";
 const NJ_VIC_INTRO_FULL = "NEW JOB - Client Full Deposit - VIC INTRO";
 const NJ_PART = "NEW JOB - Client Part Deposit";
-const NJ_QLD_INTRO_FULL_5 = "NEW JOB - Client Full Deposit - QLD INTRO - 5%";
 const NJ_QLD_INTRO_FULL = "NEW JOB - Client Full Deposit - QLD INTRO";
 
 function userHasPositionName(user, positionName) {
@@ -42,30 +40,37 @@ function normalizeNewJobDepositType(raw) {
   if (s === NEW_JOB_DEPOSIT_TYPE.FIVE_PERCENT || s === "Full 5%" || s === "5% Deposit") {
     return NEW_JOB_DEPOSIT_TYPE.FIVE_PERCENT;
   }
-  if (s === NEW_JOB_DEPOSIT_TYPE.PRE_ENGAGEMENT || s === "$8,500 Pre-Engagement") {
+  // Stable keys from New Project → Project Cost modal
+  if (s === "pre_engagement" || s === NEW_JOB_DEPOSIT_TYPE.PRE_ENGAGEMENT || s === "$8,500 Pre-Engagement") {
     return NEW_JOB_DEPOSIT_TYPE.PRE_ENGAGEMENT;
   }
-  if (s === NEW_JOB_DEPOSIT_TYPE.HOLDING || s === "$2,000 Holding Deposit") {
+  if (s === "holding" || s === NEW_JOB_DEPOSIT_TYPE.HOLDING || s === "$2,000 Holding Deposit") {
     return NEW_JOB_DEPOSIT_TYPE.HOLDING;
   }
-  if (s === NEW_JOB_DEPOSIT_TYPE.OTHER || s === "Other") {
+  if (s === "other" || s === NEW_JOB_DEPOSIT_TYPE.OTHER || s === "Other") {
+    return NEW_JOB_DEPOSIT_TYPE.OTHER;
+  }
+  const lower = s.toLowerCase();
+  if (lower.includes("pre-engagement") || lower.includes("pre engagement")) {
+    return NEW_JOB_DEPOSIT_TYPE.PRE_ENGAGEMENT;
+  }
+  if (lower.includes("holding")) {
+    return NEW_JOB_DEPOSIT_TYPE.HOLDING;
+  }
+  if (lower === "other" || lower.includes("other deposit")) {
     return NEW_JOB_DEPOSIT_TYPE.OTHER;
   }
   return s;
 }
 
-/** Infer deposit type from stored deposit + project cost when wizard type is unavailable. */
+/** Infer deposit type from stored paid amount when wizard/deposit_type is unavailable. */
 export function inferNewJobDepositTypeFromProject(project) {
-  const depositNum = parseMoneyToInt(project?.deposit ?? project?.deposit_paid);
-  const costNum = parseMoneyToInt(project?.project_cost);
+  const depositNum = parseMoneyToInt(
+    project?.pre_engagement_paid ?? project?.deposit ?? project?.deposit_paid
+  );
+  // Legacy hardcoded amounts when deposit_type was not stored
   if (depositNum === 8500) return NEW_JOB_DEPOSIT_TYPE.PRE_ENGAGEMENT;
   if (depositNum === 2000) return NEW_JOB_DEPOSIT_TYPE.HOLDING;
-  if (costNum > 0) {
-    const fivePercent = Math.floor(costNum / 20);
-    if (depositNum === fivePercent && fivePercent > 0) {
-      return NEW_JOB_DEPOSIT_TYPE.FIVE_PERCENT;
-    }
-  }
   return NEW_JOB_DEPOSIT_TYPE.OTHER;
 }
 
@@ -73,38 +78,26 @@ export function resolveNewJobDepositType(project, depositType) {
   const fromArg = normalizeNewJobDepositType(depositType);
   if (fromArg) return fromArg;
   const fromProject = normalizeNewJobDepositType(
-    project?.newJobDepositType ?? project?.depositType
+    project?.newJobDepositType ?? project?.depositType ?? project?.deposit_type
   );
   if (fromProject) return fromProject;
   return inferNewJobDepositTypeFromProject(project);
 }
 
 /**
- * New job → client email template from project state + deposit type only
- * (salesperson role is ignored for template choice).
+ * New job → client email template from deposit dropdown (same basis as DepositStatus).
+ * Pre-engagement → Full Deposit VIC/QLD INTRO by state; Holding/Other/anything else → Part Deposit.
  */
 export function pickNewJobClientTemplateName(project, depositType) {
-  const st = generalEmailStateCode(project);
   const type = resolveNewJobDepositType(project, depositType);
 
-  // Holding + Other: same template for all states
-  if (
-    type === NEW_JOB_DEPOSIT_TYPE.HOLDING ||
-    type === NEW_JOB_DEPOSIT_TYPE.OTHER ||
-    (type !== NEW_JOB_DEPOSIT_TYPE.FIVE_PERCENT &&
-      type !== NEW_JOB_DEPOSIT_TYPE.PRE_ENGAGEMENT)
-  ) {
-    return NJ_PART;
+  if (type === NEW_JOB_DEPOSIT_TYPE.PRE_ENGAGEMENT) {
+    const st = generalEmailStateCode(project);
+    if (st === "QLD") return NJ_QLD_INTRO_FULL;
+    return NJ_VIC_INTRO_FULL;
   }
 
-  if (st === "QLD") {
-    if (type === NEW_JOB_DEPOSIT_TYPE.FIVE_PERCENT) return NJ_QLD_INTRO_FULL_5;
-    return NJ_QLD_INTRO_FULL; // Pre-Engagement
-  }
-
-  // VIC (and any other/unknown state)
-  if (type === NEW_JOB_DEPOSIT_TYPE.FIVE_PERCENT) return NJ_VIC_INTRO_FULL_5;
-  return NJ_VIC_INTRO_FULL; // Pre-Engagement
+  return NJ_PART;
 }
 
 /** Match `salespersonName` to a user in an already-fetched `/api/users` list. */

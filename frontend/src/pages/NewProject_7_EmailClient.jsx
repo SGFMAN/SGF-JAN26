@@ -7,7 +7,7 @@ import {
   findSalespersonUserInList,
 } from "../utils/streamNewProjectEmail";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
-import { getNewJobAmountPaid } from "../utils/projectDeposit";
+import { formatDepositPaidToken, formatDepositStatusToken } from "../utils/projectDeposit";
 import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -89,37 +89,8 @@ export default function NewProject_7_EmailClient({
     }
     replaced = replaced.replace(/{ProjectCost}/g, projectCostDisplay);
 
-    // Deposit / amount paid at new job
-    let depositPaid = "$0";
-    let depositNum = 0;
-    const amountPaidRaw = getNewJobAmountPaid(project);
-    if (amountPaidRaw != null && amountPaidRaw !== "") {
-      if (typeof amountPaidRaw === "string") {
-        const cleaned = amountPaidRaw.replace(/[$,\s]/g, "");
-        depositNum = parseFloat(cleaned);
-      } else {
-        depositNum = Number(amountPaidRaw);
-      }
-      if (!isNaN(depositNum) && depositNum > 0) {
-        depositPaid = `$${depositNum.toLocaleString()}`;
-      }
-    }
-    replaced = replaced.replace(/{DepositPaid}/g, depositPaid);
-
-    let depositStatus = "$0 only";
-    if (depositNum > 0) {
-      const projectCostNum =
-        typeof project.project_cost === "string"
-          ? parseFloat(project.project_cost.replace(/[$,\s]/g, ""))
-          : Number(project.project_cost || 0);
-      if (!isNaN(projectCostNum) && projectCostNum > 0) {
-        const fullDepositAmount = Math.floor(projectCostNum / 20);
-        depositStatus = depositNum === fullDepositAmount ? "Full Deposit Paid" : `${depositPaid} only`;
-      } else {
-        depositStatus = `${depositPaid} only`;
-      }
-    }
-    replaced = replaced.replace(/{DepositStatus}/g, depositStatus);
+    replaced = replaced.replace(/{DepositPaid}/g, formatDepositPaidToken(project));
+    replaced = replaced.replace(/{DepositStatus}/g, formatDepositStatusToken(project));
 
     const hasPosition = replaced.includes("{SalespersonPosition}");
     if (hasPosition) {

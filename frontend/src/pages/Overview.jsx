@@ -6,6 +6,7 @@ import { PROCESS_RULES, getRequirementStatus, getUnmetRequirements, getMetRequir
 import { DRAFTSPERSON_UNASSIGNED } from "../utils/draftspersonSentinel";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { formatDepositPaidToken, formatDepositStatusToken } from "../utils/projectDeposit";
 import {
   resolveNewProjectClientFrom,
   resolveNewProjectClientToEmails,
@@ -243,35 +244,8 @@ export default function Overview({ project }) {
     replaced = replaced.replace(/{Street}/g, project.street || "");
     replaced = replaced.replace(/{Suburb}/g, project.suburb || "");
 
-    let depositPaid = "$0";
-    let depositNum = 0;
-    if (project.deposit != null && project.deposit !== "") {
-      if (typeof project.deposit === "string") {
-        const cleaned = project.deposit.replace(/[$,\s]/g, "");
-        depositNum = parseFloat(cleaned);
-      } else {
-        depositNum = Number(project.deposit);
-      }
-      if (!isNaN(depositNum) && depositNum > 0) {
-        depositPaid = `$${depositNum.toLocaleString()}`;
-      }
-    }
-    replaced = replaced.replace(/{DepositPaid}/g, depositPaid);
-
-    let depositStatus = "$0 only";
-    if (depositNum > 0) {
-      const projectCostNum =
-        typeof project.project_cost === "string"
-          ? parseFloat(project.project_cost.replace(/[$,\s]/g, ""))
-          : Number(project.project_cost || 0);
-      if (!isNaN(projectCostNum) && projectCostNum > 0) {
-        const fullDepositAmount = Math.floor(projectCostNum / 20);
-        depositStatus = depositNum === fullDepositAmount ? "Full Deposit Paid" : `${depositPaid} only`;
-      } else {
-        depositStatus = `${depositPaid} only`;
-      }
-    }
-    replaced = replaced.replace(/{DepositStatus}/g, depositStatus);
+    replaced = replaced.replace(/{DepositPaid}/g, formatDepositPaidToken(project));
+    replaced = replaced.replace(/{DepositStatus}/g, formatDepositStatusToken(project));
 
     replaced = replaced.replace(/{Contact1}/g, project.client1_email && project.client1_active ? project.client1_email : "");
     replaced = replaced.replace(/{Contact2}/g, project.client2_email && project.client2_active ? project.client2_email : "");
