@@ -1,6 +1,10 @@
 import { STREAM, INDICATOR, UI } from "./uiThemeTokens.js";
 import { getOverviewIndicatorStyle } from "./uiButtonStyles.js";
 import { normalizePlanningStatus } from "../constants/planningStatusFields.js";
+import {
+  getOverviewDepositStatusLabel,
+  getOverviewDepositStatusLevel,
+} from "./projectDeposit.js";
 
 const PAGE_TEXT = UI.pageText;
 
@@ -29,35 +33,22 @@ function field(project, snakeKey, camelKey) {
   return undefined;
 }
 
-function calculateFullDeposit(project) {
-  const cost = field(project, "project_cost", "projectCost");
-  if (!cost) return 0;
-  const costNum = parseInt(String(cost).replace(/[^0-9]/g, ""), 10) || 0;
-  return Math.floor(costNum / 20);
-}
-
-function isDepositFullyPaid(project) {
-  const deposit = field(project, "deposit", "deposit");
-  const cost = field(project, "project_cost", "projectCost");
-  if (!deposit || !cost) return false;
-  const depositNum = parseInt(String(deposit).replace(/[^0-9]/g, ""), 10) || 0;
-  const fullDeposit = calculateFullDeposit(project);
-  return depositNum >= fullDeposit && fullDeposit > 0;
-}
-
 function getDepositStatus(project) {
   const preset = field(project, "deposit_status", "depositStatus");
   if (preset != null && String(preset).trim() !== "") return String(preset);
-
-  const deposit = field(project, "deposit", "deposit");
-  const cost = field(project, "project_cost", "projectCost");
-  if (!deposit || !cost) return "No Deposit";
-  return isDepositFullyPaid(project) ? "Full Deposit" : "Partial Deposit";
+  return getOverviewDepositStatusLabel(project);
 }
 
 function getDepositStatusIndicator(project) {
-  const status = getDepositStatus(project);
-  if (status === "Full Deposit") return indicatorGreen();
+  const preset = field(project, "deposit_status", "depositStatus");
+  if (preset != null && String(preset).trim() !== "") {
+    if (String(preset).trim() === "Full Deposit") return indicatorGreen();
+    if (String(preset).trim() === "Partial Deposit") return indicatorOrange();
+    return indicatorRed();
+  }
+  const level = getOverviewDepositStatusLevel(project);
+  if (level === "complete") return indicatorGreen();
+  if (level === "partial") return indicatorOrange();
   return indicatorRed();
 }
 

@@ -9,6 +9,7 @@ import { projectPath } from "../utils/projectUrl";
 
 import StateFilterButtons from "../components/StateFilterButtons";
 import { UI, INDICATOR } from "../utils/uiThemeTokens.js";
+import { getOverviewDepositStatusLevel } from "../utils/projectDeposit";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
@@ -1062,11 +1063,10 @@ export default function StatusManager() {
                 const COLOR_GREEN = INDICATOR.green;
                 
                 const getDepositStatusColor = () => {
-                  if (!project.deposit || !project.project_cost) return COLOR_RED;
-                  const depositStr = project.deposit.toString().replace(/[^0-9]/g, "");
-                  const depositNum = parseInt(depositStr) || 0;
-                  const fullDeposit = Math.floor(parseInt(project.project_cost.toString().replace(/[^0-9]/g, "")) / 20) || 0;
-                  return depositNum >= fullDeposit && fullDeposit > 0 ? COLOR_GREEN : COLOR_RED;
+                  const level = getOverviewDepositStatusLevel(project);
+                  if (level === "complete") return COLOR_GREEN;
+                  if (level === "partial") return COLOR_ORANGE;
+                  return COLOR_RED;
                 };
                 
                 const getDrawingsStatusColor = () => {

@@ -10,6 +10,8 @@ import {
   formatDepositPaidToken,
   formatDepositStatusToken,
   replaceDepositBalanceToken,
+  isOverviewDepositComplete,
+  getAnyDepositAmountPaid,
 } from "../utils/projectDeposit";
 import {
   resolveNewProjectClientFrom,
@@ -373,40 +375,14 @@ export default function Overview({ project }) {
       alert(err.message || "Failed to send email.");
     }
   }
-  // Calculate full deposit (5% of project cost)
-  function calculateFullDeposit() {
-    if (!project?.project_cost) return 0;
-    const costStr = project.project_cost.toString().replace(/[^0-9]/g, "");
-    const costNum = parseInt(costStr) || 0;
-    return Math.floor(costNum / 20);
-  }
-
-  // Check if deposit is fully paid
-  function isDepositFullyPaid() {
-    if (!project?.deposit || !project?.project_cost) return false;
-    const depositStr = project.deposit.toString().replace(/[^0-9]/g, "");
-    const depositNum = parseInt(depositStr) || 0;
-    const fullDeposit = calculateFullDeposit();
-    return depositNum >= fullDeposit && fullDeposit > 0;
-  }
-
-  // Get deposit status text
-  function getDepositStatus() {
-    if (!project?.deposit || !project?.project_cost) return "No Deposit";
-    return isDepositFullyPaid() ? "Full Deposit" : "Partial Deposit";
-  }
-
   // Indicator styles — Button 2 red, Button 4 orange, Button 5 green (selected colours)
   const indicatorFallbacks = { red: STREAM.qldRed, orange: INDICATOR.orange, green: STREAM.streamGreen, text: PAGE_TEXT };
   const indicatorRed = () => getOverviewIndicatorStyle("red", indicatorFallbacks);
   const indicatorOrange = () => getOverviewIndicatorStyle("orange", indicatorFallbacks);
   const indicatorGreen = () => getOverviewIndicatorStyle("green", indicatorFallbacks);
 
-  // Get deposit status color
-  function getDepositStatusIndicator() {
-    const status = getDepositStatus();
-    if (status === "Full Deposit") return indicatorGreen();
-    return indicatorRed();
+  function isDepositFullyPaid() {
+    return isOverviewDepositComplete(project);
   }
 
   // Get drawings status color
@@ -910,11 +886,11 @@ export default function Overview({ project }) {
     
     // Check Deposit Status
     if (!isDepositFullyPaid()) {
-      const depositAmount = project.deposit ? project.deposit.toString().replace(/[^0-9]/g, "") : "0";
-      const depositFormatted = depositAmount ? `$${parseInt(depositAmount).toLocaleString()}` : "$0";
+      const paid = getAnyDepositAmountPaid(project);
+      const depositFormatted = `$${paid.toLocaleString()}`;
       outstandingItems.push({
         title: "Deposit",
-        message: `Deposit received: ${depositFormatted}. Full deposit payment is required before we can submit the building permit.`
+        message: `Deposit received: ${depositFormatted}. Full deposit / pre-engagement payment is required before we can submit the building permit.`
       });
     }
     

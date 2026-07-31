@@ -53,6 +53,49 @@ export function isFullFivePercentDepositPaid(depositValue, projectCostValue, dep
   return full > 0 && paid >= full;
 }
 
+/** Pre-engagement required dollars on the project (0 if unset). */
+export function getPreEngagementRequiredAmount(project) {
+  return parseMoneyToInt(project?.pre_engagement_required);
+}
+
+/** Best-effort “amount paid toward deposit / pre-engagement” for overview status. */
+export function getAnyDepositAmountPaid(project) {
+  if (!project || typeof project !== "object") return 0;
+  const pePaid = parseMoneyToInt(project.pre_engagement_paid);
+  const legacyPaid = parseMoneyToInt(getDepositPaidValue(project));
+  return Math.max(pePaid, legacyPaid);
+}
+
+/**
+ * Overview / design-phase deposit complete:
+ * - If pre_engagement_required is set → paid >= that amount
+ * - Else → legacy full 5% of project cost paid
+ */
+export function isOverviewDepositComplete(project) {
+  if (!project || typeof project !== "object") return false;
+  const peRequired = getPreEngagementRequiredAmount(project);
+  const paid = getAnyDepositAmountPaid(project);
+  if (peRequired > 0) {
+    return paid >= peRequired;
+  }
+  const fullFive = fullFivePercentDeposit(project.project_cost);
+  return fullFive > 0 && paid >= fullFive;
+}
+
+/** `Full Deposit` | `Partial Deposit` | `No Deposit` */
+export function getOverviewDepositStatusLabel(project) {
+  if (isOverviewDepositComplete(project)) return "Full Deposit";
+  if (getAnyDepositAmountPaid(project) > 0) return "Partial Deposit";
+  return "No Deposit";
+}
+
+/** `complete` (green) | `partial` (orange) | `none` (red) */
+export function getOverviewDepositStatusLevel(project) {
+  if (isOverviewDepositComplete(project)) return "complete";
+  if (getAnyDepositAmountPaid(project) > 0) return "partial";
+  return "none";
+}
+
 /**
  * Payment fields for brand-new jobs from the new-project modal.
  * Amount chosen (pre-engagement / holding / other) → pre_engagement_paid.

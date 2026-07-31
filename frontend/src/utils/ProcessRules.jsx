@@ -1,6 +1,8 @@
 // Process Rules for project workflow
 // These rules define dependencies and order of operations
 
+import { isOverviewDepositComplete } from "./projectDeposit";
+
 export const PROCESS_RULES = {
   buildingPermit: {
     name: "Building Permit Submission",
@@ -46,15 +48,7 @@ export const PROCESS_RULES = {
         field: "deposit",
         value: "Full Deposit",
         label: "The full deposit has been paid",
-        check: (project) => {
-          if (!project?.deposit || !project?.project_cost) return false;
-          const depositStr = project.deposit.toString().replace(/[^0-9]/g, "");
-          const depositNum = parseInt(depositStr) || 0;
-          const projectCostStr = project.project_cost.toString().replace(/[^0-9]/g, "");
-          const projectCostNum = parseInt(projectCostStr) || 0;
-          const fullDeposit = Math.floor(projectCostNum / 20);
-          return depositNum >= fullDeposit && fullDeposit > 0;
-        }
+        check: (project) => isOverviewDepositComplete(project),
       },
       {
         field: "planning_status",
