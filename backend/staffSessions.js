@@ -12,7 +12,8 @@
 
 const crypto = require("crypto");
 
-const SESSION_COOKIE_NAME = "sgf_staff_session";
+// Name bumped when switching off persistent maxAge so old 12h cookies are ignored.
+const SESSION_COOKIE_NAME = "sgf_staff_session_v2";
 
 // Reasonable expiry for daily staff use. Sliding: extended on each validation.
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
@@ -84,7 +85,9 @@ function sessionCookieOptions() {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
-    maxAge: SESSION_TTL_MS,
+    // No maxAge → browser session cookie. Cleared when the browser/app is fully
+    // closed, so a fresh launch requires login again. Same open browser session
+    // still allows email deep-links to skip re-login (RequireAuth adopts cookie).
     path: "/",
   };
 }

@@ -4075,6 +4075,8 @@ app.post("/api/auth/login", async (req, res) => {
         positions,
       });
       res.cookie(SESSION_COOKIE_NAME, sessionToken, sessionCookieOptions());
+      // Drop legacy persistent cookie name (pre session-cookie change)
+      res.clearCookie("sgf_staff_session", { path: "/", sameSite: "lax" });
     } catch (sessionErr) {
       // Never let session issuance break the existing login behaviour.
       console.error("Staff session issue failed (login still succeeds):", sessionErr);
@@ -4139,6 +4141,7 @@ app.post("/api/auth/logout", (req, res) => {
     destroyStaffSession(token);
   }
   res.clearCookie(SESSION_COOKIE_NAME, { ...sessionCookieOptions(), maxAge: undefined });
+  res.clearCookie("sgf_staff_session", { path: "/", sameSite: "lax" });
   res.json({ ok: true });
 });
 
