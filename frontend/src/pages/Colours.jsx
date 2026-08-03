@@ -44,7 +44,43 @@ const UNWIRED_COLOUR_OPTIONS = [NOTHING_SELECTED];
 const COLORBOND_COLOUR_OPTIONS = [NOTHING_SELECTED, ...COLORBOND_COLOURS.map((c) => c.name)];
 const ROOF_STYLE_OPTIONS = COLOURS_ROOF_STYLE_OPTIONS;
 const COLOUR_PAGE_CATEGORIES = ["External", "Flooring", "Kitchen", "Bathroom", "Bedrooms"];
-const COLOURS_CATEGORY_FIT_WIDTH = `calc(${Math.max(...COLOUR_PAGE_CATEGORIES.map((s) => s.length))}ch + 28px)`;
+const COMPLETE_LIST_CATEGORY = "Complete List";
+const COLOUR_TAB_LABELS = [...COLOUR_PAGE_CATEGORIES, COMPLETE_LIST_CATEGORY];
+const COLOURS_CATEGORY_FIT_WIDTH = `calc(${Math.max(...COLOUR_TAB_LABELS.map((s) => s.length))}ch + 28px)`;
+
+/** Complete List: field names only, one column per section. */
+const COMPLETE_LIST_COLUMNS = [
+  {
+    title: "EXTERNAL",
+    fields: [
+      "cladding_colour",
+      "baseboards_colour",
+      "roof_colour",
+      "windowframes_colour",
+      "windowsurrounds_colour",
+      "door_colour",
+      "fascia_gutter_colour",
+      "balustrade_colour",
+    ],
+  },
+  {
+    title: "FLOORING",
+    fields: ["hybrid_colour", "tile1_colour", "carpet_colour"],
+  },
+  {
+    title: "KITCHEN",
+    fields: ["benchtop_colour", "cabinet1_colour", "cabinet2_colour"],
+  },
+  {
+    title: "BATHROOM",
+    fields: ["tile2_colour"],
+  },
+  {
+    // One JSON field stores variable robes × doors (replaces 16 fixed columns).
+    title: "BEDROOMS",
+    fields: ["robe_door_colours"],
+  },
+];
 const COLOURS_ROOF_STYLE_FIT_WIDTH = `calc(${Math.max(...ROOF_STYLE_OPTIONS.map((s) => s.length))}ch + 28px)`;
 const COLOURS_LEFT_COLUMN_WIDTH = "200px";
 const COLOURS_FIELD_SELECT_STYLE = {
@@ -430,7 +466,7 @@ export default function Colours({ project, onUpdate }) {
     valuesRef.current.notes = newNotes;
   }
 
-  async function saveExternalColourField(fieldName, value) {
+  async function saveExternalColourFields(fields) {
     const projectKey = project?.access_token || project?.id;
     if (!projectKey) {
       console.error("Cannot save colours: no project ID");
@@ -443,15 +479,18 @@ export default function Colours({ project, onUpdate }) {
     }
     setColourSaveStatus("saving");
 
+    const body = {};
+    for (const [fieldName, value] of Object.entries(fields || {})) {
+      body[fieldName] = colourForSave(value);
+    }
+
     try {
       const response = await fetch(`${API_URL}/api/projects/${projectKey}/update-colours`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          [fieldName]: colourForSave(value),
-        }),
+        body: JSON.stringify(body),
         keepalive: true,
       });
 
@@ -476,6 +515,10 @@ export default function Colours({ project, onUpdate }) {
         colourSaveStatusTimerRef.current = null;
       }, 4000);
     }
+  }
+
+  async function saveExternalColourField(fieldName, value) {
+    await saveExternalColourFields({ [fieldName]: value });
   }
 
   async function handleRoofColourChange(e) {
@@ -515,7 +558,11 @@ export default function Colours({ project, onUpdate }) {
     colourEditGenRef.current += 1;
     setWindowFramesColour(newValue);
     valuesRef.current.windowFramesColour = newValue;
-    await saveExternalColourField("windowframes_colour", newValue);
+    // Sliding doors always match window frames — keep both columns in sync
+    await saveExternalColourFields({
+      windowframes_colour: newValue,
+      slidingdoor_colour: newValue,
+    });
   }
 
   async function handleWindowSurroundsColourChange(e) {
@@ -1163,6 +1210,45 @@ export default function Colours({ project, onUpdate }) {
   });
   const visualiser3DUsesSavedStyle = Boolean(buildSavedButtonStyle(VISUALISER_3D_BUTTON_ID, true));
 
+  const externalColourFields = [
+    {
+      label: "Cladding",
+      value: claddingColour,
+      onChange: handleCladdingColourChange,
+      options: externalFieldOptions,
+    },
+    {
+      label: "Baseboards",
+      value: baseboardsColour,
+      onChange: handleBaseboardsColourChange,
+      options: externalFieldOptions,
+    },
+    {
+      label: "Roof colour",
+      value: roofColour,
+      onChange: handleRoofColourChange,
+      options: externalFieldOptions,
+    },
+    {
+      label: "Window frames",
+      value: windowFramesColour,
+      onChange: handleWindowFramesColourChange,
+      options: windowFramesFieldOptions,
+    },
+    {
+      label: "Window surrounds",
+      value: windowSurroundsColour,
+      onChange: handleWindowSurroundsColourChange,
+      options: externalFieldOptions,
+    },
+    {
+      label: "Door",
+      value: doorColour,
+      onChange: handleDoorColourChange,
+      options: externalFieldOptions,
+    },
+  ];
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
       <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: 0, color: MONUMENT }}>
@@ -1215,7 +1301,7 @@ export default function Colours({ project, onUpdate }) {
                 gap: "10px",
               }}
             >
-              {COLOUR_PAGE_CATEGORIES.map((category) => {
+              {COLOUR_TAB_LABELS.map((category) => {
                 const selected = activeColourCategory === category;
                 return (
                   <button
@@ -1244,7 +1330,9 @@ export default function Colours({ project, onUpdate }) {
                 );
               })}
 
-              {activeColourCategory === "External" && colourSaveStatus ? (
+              {(activeColourCategory === "External" ||
+                activeColourCategory === COMPLETE_LIST_CATEGORY) &&
+              colourSaveStatus ? (
                 <span
                   style={{
                     fontSize: "0.85rem",
@@ -1315,44 +1403,7 @@ export default function Colours({ project, onUpdate }) {
                   paddingRight: "4px",
                 }}
               >
-                {[
-                  {
-                    label: "Cladding",
-                    value: claddingColour,
-                    onChange: handleCladdingColourChange,
-                    options: externalFieldOptions,
-                  },
-                  {
-                    label: "Baseboards",
-                    value: baseboardsColour,
-                    onChange: handleBaseboardsColourChange,
-                    options: externalFieldOptions,
-                  },
-                  {
-                    label: "Roof colour",
-                    value: roofColour,
-                    onChange: handleRoofColourChange,
-                    options: externalFieldOptions,
-                  },
-                  {
-                    label: "Window frames",
-                    value: windowFramesColour,
-                    onChange: handleWindowFramesColourChange,
-                    options: windowFramesFieldOptions,
-                  },
-                  {
-                    label: "Window surrounds",
-                    value: windowSurroundsColour,
-                    onChange: handleWindowSurroundsColourChange,
-                    options: externalFieldOptions,
-                  },
-                  {
-                    label: "Door",
-                    value: doorColour,
-                    onChange: handleDoorColourChange,
-                    options: externalFieldOptions,
-                  },
-                ].map((field) => (
+                {externalColourFields.map((field) => (
                   <label key={field.label} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                     <span style={{ fontSize: "0.9rem", color: UI.textMuted }}>{field.label}</span>
                     <select value={field.value} onChange={field.onChange} style={COLOURS_FIELD_SELECT_STYLE}>
@@ -1406,6 +1457,58 @@ export default function Colours({ project, onUpdate }) {
                       doorColour,
                     }}
                   />
+                </div>
+              ) : activeColourCategory === COMPLETE_LIST_CATEGORY ? (
+                <div
+                  style={{
+                    flex: 1,
+                    minHeight: 0,
+                    overflowX: "auto",
+                    overflowY: "auto",
+                    display: "flex",
+                    flexDirection: "row",
+                    alignItems: "flex-start",
+                    gap: "24px",
+                    paddingRight: "4px",
+                  }}
+                >
+                  {COMPLETE_LIST_COLUMNS.map((column) => (
+                    <div
+                      key={column.title}
+                      style={{
+                        flex: "1 1 0",
+                        minWidth: "160px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "8px",
+                      }}
+                    >
+                      <h3
+                        style={{
+                          margin: "0 0 4px 0",
+                          fontSize: "1.05rem",
+                          fontWeight: 600,
+                          color: MONUMENT,
+                          letterSpacing: "0.02em",
+                        }}
+                      >
+                        {column.title}
+                      </h3>
+                      {column.fields.map((fieldName) => (
+                        <span
+                          key={fieldName}
+                          style={{
+                            fontSize: "0.85rem",
+                            fontWeight: 500,
+                            color: MONUMENT,
+                            fontFamily: "ui-monospace, Consolas, monospace",
+                          }}
+                        >
+                          {fieldName}
+                        </span>
+                      ))}
+                    </div>
+                  ))}
                 </div>
               ) : activeColourCategory === "Kitchen" ? (
                 <PolytecKitchenCube />
