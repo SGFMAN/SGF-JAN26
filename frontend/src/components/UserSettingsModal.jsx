@@ -388,6 +388,7 @@ function renderSectionContent(selected, open) {
 }
 
 export default function UserSettingsModal({ open, onClose, userName }) {
+  const { theme } = useUiTheme();
   const [selected, setSelected] = useState(MENU_OPTIONS[0].key);
 
   useEffect(() => {
@@ -401,6 +402,9 @@ export default function UserSettingsModal({ open, onClose, userName }) {
   }
 
   const firstName = firstNameFromFullName(userName);
+  // Palette colour keys: buttonPrimary = "Button", textPrimary = "Text - Dark"
+  const closeButtonBackground = theme.colors.buttonPrimary;
+  const closeButtonText = theme.colors.textPrimary;
 
   return (
     <div
@@ -526,8 +530,8 @@ export default function UserSettingsModal({ open, onClose, userName }) {
               onClick={onClose}
               style={{
                 marginTop: "auto",
-                background: UI.buttonPrimary,
-                color: UI.textPrimary,
+                background: closeButtonBackground,
+                color: closeButtonText,
                 border: "none",
                 borderRadius: "10px",
                 padding: "12px 12px",
