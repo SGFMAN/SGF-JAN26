@@ -21,6 +21,7 @@ import {
   SLIDING_DOORS_LAYER_ID,
   ROOF_LAYER_ID,
   DECK_LAYER_ID,
+  FLOORING_LAYER_ID,
   MAX_TRACE_POINTS,
   normalizeCropRect,
   normalizePixelCropRect,
@@ -223,6 +224,8 @@ export default function TracePlanModal({
   }
 
   function layerSelectable(layerId) {
+    // Flooring is auto-derived from External Walls — never drawn manually.
+    if (layerId === FLOORING_LAYER_ID) return false;
     if (
       layerId === INTERNAL_WALLS_LAYER_ID ||
       layerId === WINDOWS_LAYER_ID ||
@@ -235,6 +238,33 @@ export default function TracePlanModal({
       if (!ext?.polygonClosed || (ext.points?.length ?? 0) < 3) return false;
     }
     return true;
+  }
+
+  function flooringTraceFromExternal(ext, metresPerPixel) {
+    if (!ext?.polygonClosed || (ext.points?.length ?? 0) < 3) {
+      return { points: [], polygonClosed: false };
+    }
+    const inner = externalWallInnerBoundarySource(ext.points, metresPerPixel);
+    if (!inner || inner.length < 3) {
+      return { points: [], polygonClosed: false };
+    }
+    return {
+      points: inner.map((p) => ({ x: p.x, y: p.y })),
+      polygonClosed: true,
+    };
+  }
+
+  function withSyncedFlooring(traces) {
+    const ext = traces[EXTERNAL_WALLS_LAYER_ID];
+    const flooring = flooringTraceFromExternal(ext, currentMetresPerPixel());
+    const prev = traces[FLOORING_LAYER_ID] || { points: [], polygonClosed: false };
+    if (
+      prev.polygonClosed === flooring.polygonClosed &&
+      JSON.stringify(prev.points) === JSON.stringify(flooring.points)
+    ) {
+      return traces;
+    }
+    return { ...traces, [FLOORING_LAYER_ID]: flooring };
   }
 
   function selectLayer(layerId) {
@@ -292,7 +322,7 @@ export default function TracePlanModal({
                 ? "Trace and close External Walls before drawing the roof outline or pivot."
                 : layer.id === DECK_LAYER_ID
                   ? "Trace and close External Walls before drawing a deck."
-                : "Trace and close External Walls before drawing internal walls."
+                  : "Trace and close External Walls before drawing internal walls."
       );
       return;
     }
@@ -795,12 +825,27 @@ export default function TracePlanModal({
         .filter(Boolean);
       next[SLIDING_DOORS_LAYER_ID] = { slidingDoors: restoredSliding };
     }
-    setLayerTraces(next);
+    setLayerTraces(withSyncedFlooring(next));
     setNearOrigin(false);
     setHoveredNodeIndex(-1);
     setDraggingNodeIndex(-1);
     setSnapMergeTargetIndex(-1);
   }
+
+  // Keep flooring = inside face of external walls whenever walls or scale change.
+  const externalFlooringSyncKey = (() => {
+    const ext = layerTraces[EXTERNAL_WALLS_LAYER_ID];
+    if (!ext?.polygonClosed || (ext.points?.length ?? 0) < 3) return "empty";
+    return JSON.stringify({
+      pts: ext.points,
+      cal: calibration,
+    });
+  })();
+
+  useEffect(() => {
+    setLayerTraces((prev) => withSyncedFlooring(prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync key encodes walls + scale
+  }, [externalFlooringSyncKey]);
 
   const loadPage = useCallback(
     async (pageNumber, { preserveDraft = false } = {}) => {
@@ -3311,6 +3356,10 @@ export default function TracePlanModal({
           trace.polygonClosed
         );
       }
+      if (layer.id === FLOORING_LAYER_ID) {
+        // Auto layer — dirty state follows External Walls; skip independent check.
+        return false;
+      }
       if (layer.id === ROOF_LAYER_ID) {
         if (saved.page !== currentPage) return true;
         const sourceW = source?.width;
@@ -3627,6 +3676,15 @@ export default function TracePlanModal({
           return pts.length >= 3 ? { points: pts } : null;
         })
         .filter(Boolean);
+      // Flooring is always the inside face of the external wall band.
+      const flooringInner = externalWallInnerBoundarySource(
+        external.points,
+        computeMetresPerPixel(calibration, source.width, source.height)
+      );
+      const normalizedFlooring =
+        flooringInner?.length >= 3
+          ? normalizeTracePoints(flooringInner, source.width, source.height)
+          : [];
       await onSave(
         normalized,
         currentPage,
@@ -3638,7 +3696,8 @@ export default function TracePlanModal({
         normalizedSlidingDoors,
         normalizedRoof,
         normalizedDecks,
-        normalizedRoofPivot
+        normalizedRoofPivot,
+        normalizedFlooring
       );
       savedTraceRef.current = {
         page: currentPage,
@@ -3647,6 +3706,7 @@ export default function TracePlanModal({
         roofPivotLine: normalizedRoofPivot,
         decks: normalizedDecks,
         deckPoints: normalizedDecks[0]?.points ?? [],
+        flooringPoints: normalizedFlooring,
         internalWallSegments: normalizedInternal,
         crop: normalizedCrop,
         windows: normalizedWindows,
@@ -3931,7 +3991,9 @@ export default function TracePlanModal({
               }}
             >
               {TRACE_PLAN_GROUPS.map((group, groupIndex) => {
-                const groupLayers = TRACE_PLAN_LAYERS.filter((l) => l.group === group.id);
+                const groupLayers = TRACE_PLAN_LAYERS.filter(
+                  (l) => l.group === group.id && !l.auto
+                );
                 if (groupLayers.length === 0) return null;
                 return (
                   <div

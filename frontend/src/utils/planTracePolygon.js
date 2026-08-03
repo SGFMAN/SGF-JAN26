@@ -7,6 +7,7 @@ export const DOORS_LAYER_ID = "doors";
 export const SLIDING_DOORS_LAYER_ID = "slidingDoors";
 export const ROOF_LAYER_ID = "roof";
 export const DECK_LAYER_ID = "deck";
+export const FLOORING_LAYER_ID = "flooring";
 
 export const TRACE_PLAN_GROUPS = [
   { id: "external", label: "External" },
@@ -109,15 +110,17 @@ export const TRACE_PLAN_LAYERS = [
     ],
   },
   {
-    id: "flooring",
+    id: FLOORING_LAYER_ID,
     label: "Flooring",
     group: "internal",
+    // Auto-derived from the inside face of External Walls — not drawn by hand.
+    auto: true,
     stroke: "#d97706",
     fillClosed: "rgba(217, 119, 6, 0.22)",
     fillOpen: "rgba(217, 119, 6, 0.12)",
     marker: "#d97706",
     origin: "#b45309",
-    saves: false,
+    saves: true,
   },
   {
     id: INTERNAL_WALLS_LAYER_ID,
@@ -356,6 +359,13 @@ export function parsePlanTraceDecks(rawDecks, legacyDeckPoints) {
   return legacy.length >= 3 ? [{ points: legacy }] : [];
 }
 
+function parseFlooringPoints(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+    .slice(0, MAX_TRACE_POINTS);
+}
+
 export function parsePlanTracePolygon(raw) {
   const empty = {
     page: 1,
@@ -364,6 +374,7 @@ export function parsePlanTracePolygon(raw) {
     roofPivotLine: null,
     decks: [],
     deckPoints: [],
+    flooringPoints: [],
     internalWallSegments: [],
     crop: null,
     windows: [],
@@ -388,6 +399,7 @@ export function parsePlanTracePolygon(raw) {
           .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
           .slice(0, MAX_TRACE_POINTS)
       : [];
+    const flooringPoints = parseFlooringPoints(data?.flooringPoints);
     const decks = parsePlanTraceDecks(data?.decks, data?.deckPoints);
     const deckPoints = decks[0]?.points ?? [];
     const safePage = Number.isFinite(page) && page >= 1 ? page : 1;
@@ -399,6 +411,7 @@ export function parsePlanTracePolygon(raw) {
         roofPivotLine,
         decks,
         deckPoints,
+        flooringPoints,
         internalWallSegments,
         crop,
         windows,
@@ -416,6 +429,7 @@ export function parsePlanTracePolygon(raw) {
       roofPivotLine,
       decks,
       deckPoints,
+      flooringPoints,
       internalWallSegments,
       crop,
       windows,
@@ -431,6 +445,7 @@ export function parsePlanTracePolygon(raw) {
       roofPivotLine: null,
       decks: [],
       deckPoints: [],
+      flooringPoints: [],
       internalWallSegments: [],
       crop: null,
       windows: [],
@@ -452,7 +467,8 @@ export function serializePlanTracePolygon(
   slidingDoors = [],
   roofPoints = [],
   decks = [],
-  roofPivotLine = null
+  roofPivotLine = null,
+  flooringPoints = []
 ) {
   const round = (v) => Math.round(v * 1e6) / 1e6;
   const payload = {
@@ -468,6 +484,11 @@ export function serializePlanTracePolygon(
     .slice(0, MAX_TRACE_POINTS)
     .map((p) => ({ x: round(p.x), y: round(p.y) }));
   if (normalizedRoof.length >= 3) payload.roofPoints = normalizedRoof;
+  const normalizedFlooring = parseFlooringPoints(flooringPoints).map((p) => ({
+    x: round(p.x),
+    y: round(p.y),
+  }));
+  if (normalizedFlooring.length >= 3) payload.flooringPoints = normalizedFlooring;
   const pivot = parsePlanTraceRoofPivotLine(roofPivotLine);
   if (pivot) {
     payload.roofPivotLine = {
