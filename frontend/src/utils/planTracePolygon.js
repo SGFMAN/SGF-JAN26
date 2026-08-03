@@ -113,14 +113,20 @@ export const TRACE_PLAN_LAYERS = [
     id: FLOORING_LAYER_ID,
     label: "Flooring",
     group: "internal",
-    // Auto-derived from the inside face of External Walls — not drawn by hand.
-    auto: true,
+    mode: "flooring",
+    // Base floor is auto-derived from the inside face of External Walls.
+    // Submenu tools draw Hybrid / Tiles / Carpet regions on top (cutting the base).
     stroke: "#d97706",
-    fillClosed: "rgba(217, 119, 6, 0.22)",
-    fillOpen: "rgba(217, 119, 6, 0.12)",
+    fillClosed: "rgba(217, 119, 6, 0.28)",
+    fillOpen: "rgba(217, 119, 6, 0.14)",
     marker: "#d97706",
     origin: "#b45309",
     saves: true,
+    submenu: [
+      { id: "hybrid", label: "Hybrid" },
+      { id: "tiles", label: "Tiles" },
+      { id: "carpet", label: "Carpet" },
+    ],
   },
   {
     id: INTERNAL_WALLS_LAYER_ID,
@@ -161,6 +167,47 @@ export function isDeckTraceLayer(layerId) {
   return layer.mode === "decks";
 }
 
+export function isFlooringTraceLayer(layerId) {
+  const layer = getTracePlanLayer(layerId);
+  return layer.mode === "flooring";
+}
+
+/** Finish overlay colours (distinct from the auto orange base floor). */
+export const FLOORING_FINISH_STYLES = {
+  hybrid: {
+    stroke: "#2563eb",
+    fillClosed: "rgba(37, 99, 235, 0.42)",
+    fillOpen: "rgba(37, 99, 235, 0.2)",
+    marker: "#2563eb",
+    origin: "#1d4ed8",
+    label: "Hybrid",
+  },
+  tiles: {
+    stroke: "#059669",
+    fillClosed: "rgba(5, 150, 105, 0.42)",
+    fillOpen: "rgba(5, 150, 105, 0.2)",
+    marker: "#059669",
+    origin: "#047857",
+    label: "Tiles",
+  },
+  carpet: {
+    stroke: "#7c3aed",
+    fillClosed: "rgba(124, 58, 237, 0.42)",
+    fillOpen: "rgba(124, 58, 237, 0.2)",
+    marker: "#7c3aed",
+    origin: "#6d28d9",
+    label: "Carpet",
+  },
+};
+
+export const FLOORING_FINISH_IDS = ["hybrid", "tiles", "carpet"];
+
+export function flooringRegionsKey(finishId) {
+  if (finishId === "tiles") return "tilesRegions";
+  if (finishId === "carpet") return "carpetRegions";
+  return "hybridRegions";
+}
+
 export function createEmptyLayerTrace(layerId) {
   if (isWindowsTraceLayer(layerId)) {
     return { windows: [] };
@@ -173,6 +220,18 @@ export function createEmptyLayerTrace(layerId) {
   }
   if (isDeckTraceLayer(layerId)) {
     return { decks: [], points: [], polygonClosed: false };
+  }
+  if (isFlooringTraceLayer(layerId)) {
+    return {
+      basePoints: [],
+      baseClosed: false,
+      points: [],
+      polygonClosed: false,
+      finishTool: "hybrid",
+      hybridRegions: [],
+      tilesRegions: [],
+      carpetRegions: [],
+    };
   }
   if (isLineTraceLayer(layerId)) {
     return { segments: [], draftStart: null };
@@ -203,6 +262,17 @@ export function hasLayerDraft(layerId, trace) {
   if (isDeckTraceLayer(layerId)) {
     return (
       (trace.decks?.length ?? 0) > 0 ||
+      (trace.points?.length ?? 0) > 0 ||
+      Boolean(trace.polygonClosed)
+    );
+  }
+  if (isFlooringTraceLayer(layerId)) {
+    return (
+      Boolean(trace.baseClosed) ||
+      (trace.basePoints?.length ?? 0) >= 3 ||
+      (trace.hybridRegions?.length ?? 0) > 0 ||
+      (trace.tilesRegions?.length ?? 0) > 0 ||
+      (trace.carpetRegions?.length ?? 0) > 0 ||
       (trace.points?.length ?? 0) > 0 ||
       Boolean(trace.polygonClosed)
     );
@@ -366,6 +436,17 @@ function parseFlooringPoints(raw) {
     .slice(0, MAX_TRACE_POINTS);
 }
 
+/** Finish region outlines (Hybrid / Tiles / Carpet), same shape as decks. */
+export function parseFlooringRegions(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((region) => {
+      const points = parseFlooringPoints(region?.points ?? region);
+      return points.length >= 3 ? { points } : null;
+    })
+    .filter(Boolean);
+}
+
 export function parsePlanTracePolygon(raw) {
   const empty = {
     page: 1,
@@ -375,6 +456,9 @@ export function parsePlanTracePolygon(raw) {
     decks: [],
     deckPoints: [],
     flooringPoints: [],
+    hybridRegions: [],
+    tilesRegions: [],
+    carpetRegions: [],
     internalWallSegments: [],
     crop: null,
     windows: [],
@@ -400,36 +484,22 @@ export function parsePlanTracePolygon(raw) {
           .slice(0, MAX_TRACE_POINTS)
       : [];
     const flooringPoints = parseFlooringPoints(data?.flooringPoints);
+    const hybridRegions = parseFlooringRegions(data?.hybridRegions);
+    const tilesRegions = parseFlooringRegions(data?.tilesRegions);
+    const carpetRegions = parseFlooringRegions(data?.carpetRegions);
     const decks = parsePlanTraceDecks(data?.decks, data?.deckPoints);
     const deckPoints = decks[0]?.points ?? [];
     const safePage = Number.isFinite(page) && page >= 1 ? page : 1;
-    if (!Array.isArray(points)) {
-      return {
-        page: safePage,
-        points: [],
-        roofPoints,
-        roofPivotLine,
-        decks,
-        deckPoints,
-        flooringPoints,
-        internalWallSegments,
-        crop,
-        windows,
-        doors,
-        slidingDoors,
-        calibration,
-      };
-    }
-    return {
+    const shared = {
       page: safePage,
-      points: points
-        .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
-        .slice(0, MAX_TRACE_POINTS),
       roofPoints,
       roofPivotLine,
       decks,
       deckPoints,
       flooringPoints,
+      hybridRegions,
+      tilesRegions,
+      carpetRegions,
       internalWallSegments,
       crop,
       windows,
@@ -437,22 +507,17 @@ export function parsePlanTracePolygon(raw) {
       slidingDoors,
       calibration,
     };
-  } catch {
+    if (!Array.isArray(points)) {
+      return { ...shared, points: [] };
+    }
     return {
-      page: 1,
-      points: [],
-      roofPoints: [],
-      roofPivotLine: null,
-      decks: [],
-      deckPoints: [],
-      flooringPoints: [],
-      internalWallSegments: [],
-      crop: null,
-      windows: [],
-      doors: [],
-      slidingDoors: [],
-      calibration: null,
+      ...shared,
+      points: points
+        .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+        .slice(0, MAX_TRACE_POINTS),
     };
+  } catch {
+    return empty;
   }
 }
 
@@ -468,7 +533,8 @@ export function serializePlanTracePolygon(
   roofPoints = [],
   decks = [],
   roofPivotLine = null,
-  flooringPoints = []
+  flooringPoints = [],
+  flooringFinishes = null
 ) {
   const round = (v) => Math.round(v * 1e6) / 1e6;
   const payload = {
@@ -489,6 +555,17 @@ export function serializePlanTracePolygon(
     y: round(p.y),
   }));
   if (normalizedFlooring.length >= 3) payload.flooringPoints = normalizedFlooring;
+  const finishes =
+    flooringFinishes && typeof flooringFinishes === "object" ? flooringFinishes : {};
+  for (const finishId of FLOORING_FINISH_IDS) {
+    const key = flooringRegionsKey(finishId);
+    const normalizedRegions = parseFlooringRegions(finishes[key])
+      .map((region) => ({
+        points: region.points.map((p) => ({ x: round(p.x), y: round(p.y) })),
+      }))
+      .filter((region) => region.points.length >= 3);
+    if (normalizedRegions.length) payload[key] = normalizedRegions;
+  }
   const pivot = parsePlanTraceRoofPivotLine(roofPivotLine);
   if (pivot) {
     payload.roofPivotLine = {

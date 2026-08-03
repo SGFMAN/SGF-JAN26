@@ -3,6 +3,7 @@ import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import TracePlanModal from "../components/TracePlanModal";
 import Building3DModal from "../components/Building3DModal.jsx";
 import BuildingElevations from "../components/BuildingElevations.jsx";
+import FlooringPlanPreview from "../components/FlooringPlanPreview.jsx";
 import PolytecKitchenCube from "../components/PolytecKitchenCube.jsx";
 import { resolveNewProjectClientFrom, findSalespersonUserInList } from "../utils/streamNewProjectEmail";
 import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
@@ -145,6 +146,11 @@ export default function Colours({ project, onUpdate }) {
     [project?.colours_plan_trace_polygon]
   );
   const planTraceFootprintPoints = planTrace.points;
+  const planTraceFlooringPoints = planTrace.flooringPoints;
+  const planTraceHybridRegions = planTrace.hybridRegions;
+  const planTraceTilesRegions = planTrace.tilesRegions;
+  const planTraceCarpetRegions = planTrace.carpetRegions;
+  const planTraceInternalWalls = planTrace.internalWallSegments;
   const planTraceRoofPoints = planTrace.roofPoints;
   const planTraceRoofPivotLine = planTrace.roofPivotLine;
   const planTraceDecks = planTrace.decks;
@@ -1120,7 +1126,8 @@ export default function Colours({ project, onUpdate }) {
     roofPoints = [],
     decks = [],
     roofPivotLine = null,
-    flooringPoints = []
+    flooringPoints = [],
+    flooringFinishes = null
   ) {
     const projectKey = project?.access_token || project?.id;
     if (!projectKey) {
@@ -1147,7 +1154,8 @@ export default function Colours({ project, onUpdate }) {
           roofPoints,
           decks,
           roofPivotLine,
-          flooringPoints
+          flooringPoints,
+          flooringFinishes
         ),
       }),
     });
@@ -1460,6 +1468,16 @@ export default function Colours({ project, onUpdate }) {
                     }}
                   />
                 </div>
+              ) : activeColourCategory === "Flooring" ? (
+                <FlooringPlanPreview
+                  externalPoints={planTraceFootprintPoints}
+                  flooringPoints={planTraceFlooringPoints}
+                  hybridRegions={planTraceHybridRegions}
+                  tilesRegions={planTraceTilesRegions}
+                  carpetRegions={planTraceCarpetRegions}
+                  internalWallSegments={planTraceInternalWalls}
+                  calibration={planTraceCalibration}
+                />
               ) : activeColourCategory === COMPLETE_LIST_CATEGORY ? (
                 <div
                   style={{

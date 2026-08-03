@@ -4,12 +4,20 @@ import {
   loadPdfDocumentFromUrl,
   renderPdfDocumentPage,
 } from "../utils/floorPlanCrop";
+import { resolveDeckPolygonSnap, resolveDeckStartSnap } from "../utils/planTraceDeckSnap";
+import {
+  collectFlooringSnapEdges,
+  resolveFlooringPolygonSnap,
+  resolveFlooringStartSnap,
+} from "../utils/planTraceFlooringSnap";
 import {
   createEmptyLayerTraces,
   denormalizeCropRect,
   denormalizeTracePoints,
   denormalizeTraceSegments,
   EXTERNAL_WALLS_LAYER_ID,
+  FLOORING_FINISH_STYLES,
+  flooringRegionsKey,
   hasLayerDraft,
   INTERNAL_WALLS_LAYER_ID,
   isLineTraceLayer,
@@ -17,6 +25,7 @@ import {
   isDoorsTraceLayer,
   isSlidingDoorsTraceLayer,
   isDeckTraceLayer,
+  isFlooringTraceLayer,
   DOORS_LAYER_ID,
   SLIDING_DOORS_LAYER_ID,
   ROOF_LAYER_ID,
@@ -27,11 +36,13 @@ import {
   normalizePixelCropRect,
   normalizeTracePoints,
   normalizeTraceSegments,
+  parseFlooringRegions,
   parsePlanTracePolygon,
   parsePlanTraceRoofPivotLine,
   TRACE_PLAN_GROUPS,
   TRACE_PLAN_LAYERS,
   WINDOWS_LAYER_ID,
+  createEmptyLayerTrace,
 } from "../utils/planTracePolygon";
 import {
   resolveWindowPlacement,
@@ -59,7 +70,6 @@ import {
   resolveOrthoNodeDrag,
   resolvePolygonOrthoSnap,
 } from "../utils/planTraceOrthoSnap";
-import { resolveDeckPolygonSnap, resolveDeckStartSnap } from "../utils/planTraceDeckSnap";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -153,6 +163,7 @@ export default function TracePlanModal({
   const [windowPreview, setWindowPreview] = useState(null);
   const [windowTool, setWindowTool] = useState("add");
   const [deckTool, setDeckTool] = useState("add");
+  const [flooringTool, setFlooringTool] = useState("hybrid");
   const [roofTool, setRoofTool] = useState("outline");
   const [roofPivotDraftStart, setRoofPivotDraftStart] = useState(null);
   const [roofPivotPreviewEnd, setRoofPivotPreviewEnd] = useState(null);  const [hoveredDeckIndex, setHoveredDeckIndex] = useState(-1);
@@ -184,6 +195,7 @@ export default function TracePlanModal({
   const isDoorsLayerActive = isDoorsTraceLayer(activeLayerId);
   const isSlidingDoorsLayerActive = isSlidingDoorsTraceLayer(activeLayerId);
   const isDeckLayerActive = isDeckTraceLayer(activeLayerId);
+  const isFlooringLayerActive = isFlooringTraceLayer(activeLayerId);
   const isRoofLayerActive = activeLayerId === ROOF_LAYER_ID;
   const isRoofPivotTool = isRoofLayerActive && roofTool === "pivot";
   const activeTrace =
@@ -192,9 +204,13 @@ export default function TracePlanModal({
       ? { segments: [], draftStart: null }
       : isDeckTraceLayer(activeLayerId)
         ? { decks: [], points: [], polygonClosed: false }
-        : activeLayerId === ROOF_LAYER_ID
-          ? { points: [], polygonClosed: false, pivotLine: null }
-          : { points: [], polygonClosed: false });
+        : isFlooringTraceLayer(activeLayerId)
+          ? createEmptyLayerTrace(FLOORING_LAYER_ID)
+          : activeLayerId === ROOF_LAYER_ID
+            ? { points: [], polygonClosed: false, pivotLine: null }
+            : { points: [], polygonClosed: false });
+  const flooringFinishStyle =
+    FLOORING_FINISH_STYLES[flooringTool] || FLOORING_FINISH_STYLES.hybrid;
   const points = isLineLayerActive ? [] : (activeTrace.points ?? []);
   const polygonClosed = isLineLayerActive ? false : Boolean(activeTrace.polygonClosed);
   const lineDraftStart = isLineLayerActive ? activeTrace.draftStart : null;
@@ -224,15 +240,14 @@ export default function TracePlanModal({
   }
 
   function layerSelectable(layerId) {
-    // Flooring is auto-derived from External Walls — never drawn manually.
-    if (layerId === FLOORING_LAYER_ID) return false;
     if (
       layerId === INTERNAL_WALLS_LAYER_ID ||
       layerId === WINDOWS_LAYER_ID ||
       layerId === DOORS_LAYER_ID ||
       layerId === SLIDING_DOORS_LAYER_ID ||
       layerId === ROOF_LAYER_ID ||
-      layerId === DECK_LAYER_ID
+      layerId === DECK_LAYER_ID ||
+      layerId === FLOORING_LAYER_ID
     ) {
       const ext = layerTraces[EXTERNAL_WALLS_LAYER_ID];
       if (!ext?.polygonClosed || (ext.points?.length ?? 0) < 3) return false;
@@ -242,29 +257,45 @@ export default function TracePlanModal({
 
   function flooringTraceFromExternal(ext, metresPerPixel) {
     if (!ext?.polygonClosed || (ext.points?.length ?? 0) < 3) {
-      return { points: [], polygonClosed: false };
+      return { basePoints: [], baseClosed: false };
     }
     const inner = externalWallInnerBoundarySource(ext.points, metresPerPixel);
     if (!inner || inner.length < 3) {
-      return { points: [], polygonClosed: false };
+      return { basePoints: [], baseClosed: false };
     }
     return {
-      points: inner.map((p) => ({ x: p.x, y: p.y })),
-      polygonClosed: true,
+      basePoints: inner.map((p) => ({ x: p.x, y: p.y })),
+      baseClosed: true,
     };
   }
 
   function withSyncedFlooring(traces) {
     const ext = traces[EXTERNAL_WALLS_LAYER_ID];
-    const flooring = flooringTraceFromExternal(ext, currentMetresPerPixel());
-    const prev = traces[FLOORING_LAYER_ID] || { points: [], polygonClosed: false };
+    const synced = flooringTraceFromExternal(ext, currentMetresPerPixel());
+    const prev = traces[FLOORING_LAYER_ID] || createEmptyLayerTrace(FLOORING_LAYER_ID);
     if (
-      prev.polygonClosed === flooring.polygonClosed &&
-      JSON.stringify(prev.points) === JSON.stringify(flooring.points)
+      prev.baseClosed === synced.baseClosed &&
+      JSON.stringify(prev.basePoints) === JSON.stringify(synced.basePoints)
     ) {
       return traces;
     }
-    return { ...traces, [FLOORING_LAYER_ID]: flooring };
+    return {
+      ...traces,
+      [FLOORING_LAYER_ID]: {
+        ...prev,
+        basePoints: synced.basePoints,
+        baseClosed: synced.baseClosed,
+      },
+    };
+  }
+
+  function flooringSnapEdges() {
+    const internal = layerTraces[INTERNAL_WALLS_LAYER_ID]?.segments ?? [];
+    return collectFlooringSnapEdges(
+      externalTrace.points,
+      internal,
+      currentMetresPerPixel()
+    );
   }
 
   function selectLayer(layerId) {
@@ -301,6 +332,10 @@ export default function TracePlanModal({
       setHoveredDeckIndex(-1);
       setEditingDeckIndex(-1);
     }
+    if (layerId === FLOORING_LAYER_ID) {
+      setFlooringTool("hybrid");
+      clearPolygonPreview();
+    }
     if (layerId === ROOF_LAYER_ID) {
       setRoofTool("outline");
     }
@@ -322,7 +357,9 @@ export default function TracePlanModal({
                 ? "Trace and close External Walls before drawing the roof outline or pivot."
                 : layer.id === DECK_LAYER_ID
                   ? "Trace and close External Walls before drawing a deck."
-                  : "Trace and close External Walls before drawing internal walls."
+                  : layer.id === FLOORING_LAYER_ID
+                    ? "Trace and close External Walls before drawing flooring finishes."
+                    : "Trace and close External Walls before drawing internal walls."
       );
       return;
     }
@@ -369,6 +406,16 @@ export default function TracePlanModal({
         patchLayerTrace(DECK_LAYER_ID, { points: [], polygonClosed: false });
         setEditingDeckIndex(-1);
       }
+    }
+    if (layer.id === FLOORING_LAYER_ID) {
+      setFlooringTool(item.id);
+      patchLayerTrace(FLOORING_LAYER_ID, {
+        points: [],
+        polygonClosed: false,
+        finishTool: item.id,
+      });
+      clearPolygonPreview();
+      setNearOrigin(false);
     }
     if (layer.id === ROOF_LAYER_ID) {
       setRoofTool(item.id);
@@ -592,6 +639,17 @@ export default function TracePlanModal({
       return start || { point: null, kind: "ortho", guides: [] };
     }
 
+    // Flooring finish first point: snap to inner external or internal wall edges.
+    if (activeLayerId === FLOORING_LAYER_ID && points.length === 0) {
+      if (!hasWalls) return { point: rawCursor, kind: "ortho", guides: [] };
+      const start = resolveFlooringStartSnap(
+        rawCursor,
+        flooringSnapEdges(),
+        orthoSnapThresholdSource()
+      );
+      return start || { point: null, kind: "ortho", guides: [] };
+    }
+
     if (!points.length) {
       return { point: rawCursor, kind: "ortho", guides: [] };
     }
@@ -600,6 +658,12 @@ export default function TracePlanModal({
 
     if (activeLayerId === DECK_LAYER_ID && hasWalls) {
       return resolveDeckPolygonSnap(prev, rawCursor, origin, wallPoints, {
+        snapThreshold: orthoSnapThresholdSource(),
+      });
+    }
+
+    if (activeLayerId === FLOORING_LAYER_ID && hasWalls) {
+      return resolveFlooringPolygonSnap(prev, rawCursor, origin, flooringSnapEdges(), {
         snapThreshold: orthoSnapThresholdSource(),
       });
     }
@@ -824,6 +888,18 @@ export default function TracePlanModal({
         })
         .filter(Boolean);
       next[SLIDING_DOORS_LAYER_ID] = { slidingDoors: restoredSliding };
+    }
+    if (saved.page === pageNumber) {
+      const denormRegions = (list) =>
+        parseFlooringRegions(list).map((region) => ({
+          points: denormalizeTracePoints(region.points, sourceCanvas.width, sourceCanvas.height),
+        }));
+      next[FLOORING_LAYER_ID] = {
+        ...createEmptyLayerTrace(FLOORING_LAYER_ID),
+        hybridRegions: denormRegions(saved.hybridRegions),
+        tilesRegions: denormRegions(saved.tilesRegions),
+        carpetRegions: denormRegions(saved.carpetRegions),
+      };
     }
     setLayerTraces(withSyncedFlooring(next));
     setNearOrigin(false);
@@ -1217,31 +1293,63 @@ export default function TracePlanModal({
         });
       }
 
-      if (!trace.points?.length) {
-        // Allow active empty polygon layers (e.g. deck start) to draw snap preview.
-        if (
-          !isActive ||
-          polygonClosed ||
-          !polygonPreviewPoint ||
-          layer.mode === "lines" ||
-          layer.mode === "windows" ||
-          layer.mode === "doors" ||
-          layer.mode === "slidingDoors" ||
-          layer.mode === "decks"
-        ) {
-          // Deck add with empty draft still needs wall-start snap preview.
-          if (
-            !(
-              isActive &&
-              layer.mode === "decks" &&
-              deckTool === "add" &&
-              !polygonClosed &&
-              polygonPreviewPoint
-            )
-          ) {
-            return;
-          }
+      // Auto orange base floor with finish-region holes, then Hybrid / Tiles / Carpet fills.
+      if (layer.mode === "flooring") {
+        const basePts = trace.basePoints ?? [];
+        const finishEntries = [
+          ...(trace.hybridRegions ?? []).map((r) => ({ points: r.points, finish: "hybrid" })),
+          ...(trace.tilesRegions ?? []).map((r) => ({ points: r.points, finish: "tiles" })),
+          ...(trace.carpetRegions ?? []).map((r) => ({ points: r.points, finish: "carpet" })),
+        ];
+        if (trace.baseClosed && basePts.length >= 3) {
+          ctx.beginPath();
+          basePts.forEach((p, i) => {
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+          });
+          ctx.closePath();
+          finishEntries.forEach((entry) => {
+            const pts = entry.points;
+            if (!pts || pts.length < 3) return;
+            pts.forEach((p, i) => {
+              if (i === 0) ctx.moveTo(p.x, p.y);
+              else ctx.lineTo(p.x, p.y);
+            });
+            ctx.closePath();
+          });
+          ctx.fillStyle = layer.fillClosed;
+          ctx.globalAlpha = isActive ? 1 : 0.72;
+          ctx.fill("evenodd");
+          ctx.globalAlpha = 1;
         }
+        finishEntries.forEach((entry) => {
+          const pts = entry.points;
+          if (!pts || pts.length < 3) return;
+          const style = FLOORING_FINISH_STYLES[entry.finish] || FLOORING_FINISH_STYLES.hybrid;
+          ctx.beginPath();
+          pts.forEach((p, i) => {
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+          });
+          ctx.closePath();
+          ctx.fillStyle = style.fillClosed;
+          ctx.strokeStyle = style.stroke;
+          ctx.lineWidth = (isActive ? 2 : 1.5) / scale;
+          ctx.globalAlpha = isActive ? 1 : 0.8;
+          ctx.fill();
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        });
+        // Fall through so an in-progress finish polygon still draws below.
+      }
+
+      if (!trace.points?.length) {
+        const allowEmptySnapPreview =
+          isActive &&
+          !polygonClosed &&
+          polygonPreviewPoint &&
+          ((layer.mode === "decks" && deckTool === "add") || layer.mode === "flooring");
+        if (!allowEmptySnapPreview) return;
         const guides = polygonSnapGuidesRef.current || [];
         const source = sourceCanvasRef.current;
         const clipPad = Math.max(source?.width || 0, source?.height || 0) * 2;
@@ -1249,6 +1357,10 @@ export default function TracePlanModal({
           polygonSnapKindRef.current === "close-ready" ||
           polygonSnapKindRef.current === "reference" ||
           polygonSnapKindRef.current === "wall";
+        const emptyMarker =
+          layer.mode === "flooring"
+            ? flooringFinishStyle.marker
+            : layer.marker;
         ctx.save();
         guides.forEach((guide) => {
           ctx.beginPath();
@@ -1276,7 +1388,7 @@ export default function TracePlanModal({
           0,
           Math.PI * 2
         );
-        ctx.fillStyle = snapEmphasis ? "rgba(34, 197, 94, 0.4)" : layer.marker;
+        ctx.fillStyle = snapEmphasis ? "rgba(34, 197, 94, 0.4)" : emptyMarker;
         ctx.strokeStyle = snapEmphasis ? "#16a34a" : WHITE;
         ctx.lineWidth = 2 / scale;
         ctx.fill();
@@ -1287,9 +1399,11 @@ export default function TracePlanModal({
 
       const closed = trace.polygonClosed;
       const layerPoints = trace.points;
+      const draftStyle =
+        layer.mode === "flooring" && isActive ? flooringFinishStyle : layer;
 
-      ctx.strokeStyle = layer.stroke;
-      ctx.fillStyle = closed ? layer.fillClosed : layer.fillOpen;
+      ctx.strokeStyle = draftStyle.stroke;
+      ctx.fillStyle = closed ? draftStyle.fillClosed : draftStyle.fillOpen;
       ctx.lineWidth = (isActive ? 2 : 1.5) / scale;
       ctx.globalAlpha = isActive ? 1 : 0.72;
 
@@ -1366,11 +1480,11 @@ export default function TracePlanModal({
           ctx.strokeStyle = "#16a34a";
           ctx.lineWidth = 3 / scale;
         } else if (closed && isNodeActive) {
-          ctx.fillStyle = layer.stroke;
+          ctx.fillStyle = draftStyle.stroke;
           ctx.strokeStyle = WHITE;
           ctx.lineWidth = 2.5 / scale;
         } else {
-          ctx.fillStyle = isOrigin ? layer.origin : layer.marker;
+          ctx.fillStyle = isOrigin ? draftStyle.origin : draftStyle.marker;
           ctx.strokeStyle = WHITE;
           ctx.lineWidth = 2 / scale;
         }
@@ -1413,7 +1527,7 @@ export default function TracePlanModal({
           ctx.beginPath();
           ctx.moveTo(last.x, last.y);
           ctx.lineTo(polygonPreviewPoint.x, polygonPreviewPoint.y);
-          ctx.strokeStyle = snapEmphasis ? "#16a34a" : layer.stroke;
+          ctx.strokeStyle = snapEmphasis ? "#16a34a" : draftStyle.stroke;
           ctx.lineWidth = 2 / scale;
           ctx.globalAlpha = 0.85;
           ctx.stroke();
@@ -1428,7 +1542,7 @@ export default function TracePlanModal({
           0,
           Math.PI * 2
         );
-        ctx.fillStyle = snapEmphasis ? "rgba(34, 197, 94, 0.4)" : layer.marker;
+        ctx.fillStyle = snapEmphasis ? "rgba(34, 197, 94, 0.4)" : draftStyle.marker;
         ctx.strokeStyle = snapEmphasis ? "#16a34a" : WHITE;
         ctx.lineWidth = 2 / scale;
         ctx.fill();
@@ -1777,7 +1891,7 @@ export default function TracePlanModal({
 
   useEffect(() => {
     if (!loading && !loadError) redraw();
-  }, [loading, loadError, pageLoading, layerTraces, activeLayerId, nearOrigin, redraw, viewTick, linePreviewPoint, polygonPreviewPoint, windowPreview, windowTool, hoveredWindowIndex, hoveredResizeIndex, hoveredHeightIndex, resizeWidthM, movingWindowIndex, doorTool, doorPreview, hoveredDoorIndex, movingDoorIndex, slidingDoorTool, slidingDoorPreview, hoveredSlidingDoorIndex, hoveredSlidingResizeIndex, movingSlidingDoorIndex, slidingResizeWidthM, deckTool, hoveredDeckIndex, editingDeckIndex, roofTool, roofPivotDraftStart, roofPivotPreviewEnd, wizardStep, cropRectPx, cropDraftEnd, calibration, calibDraftStart, calibPreviewEnd, pendingCalibLine, showPdfPlan]);
+  }, [loading, loadError, pageLoading, layerTraces, activeLayerId, nearOrigin, redraw, viewTick, linePreviewPoint, polygonPreviewPoint, windowPreview, windowTool, hoveredWindowIndex, hoveredResizeIndex, hoveredHeightIndex, resizeWidthM, movingWindowIndex, doorTool, doorPreview, hoveredDoorIndex, movingDoorIndex, slidingDoorTool, slidingDoorPreview, hoveredSlidingDoorIndex, hoveredSlidingResizeIndex, movingSlidingDoorIndex, slidingResizeWidthM, deckTool, hoveredDeckIndex, editingDeckIndex, flooringTool, roofTool, roofPivotDraftStart, roofPivotPreviewEnd, wizardStep, cropRectPx, cropDraftEnd, calibration, calibDraftStart, calibPreviewEnd, pendingCalibLine, showPdfPlan]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -2150,6 +2264,22 @@ export default function TracePlanModal({
           };
         });
         setEditingDeckIndex(-1);
+      } else if (isFlooringLayerActive) {
+        const closedPts = points.map((p) => ({ x: p.x, y: p.y }));
+        const key = flooringRegionsKey(flooringTool);
+        setLayerTraces((prev) => {
+          const current = prev[FLOORING_LAYER_ID] || createEmptyLayerTrace(FLOORING_LAYER_ID);
+          return {
+            ...prev,
+            [FLOORING_LAYER_ID]: {
+              ...current,
+              [key]: [...(current[key] ?? []), { points: closedPts }],
+              points: [],
+              polygonClosed: false,
+              finishTool: flooringTool,
+            },
+          };
+        });
       } else {
         patchActiveTrace({ polygonClosed: true });
       }
@@ -2170,6 +2300,11 @@ export default function TracePlanModal({
     if (!snap?.point) {
       if (activeLayerId === DECK_LAYER_ID && points.length === 0) {
         alert("Start the deck on an external wall — move closer to a wall edge.");
+      }
+      if (activeLayerId === FLOORING_LAYER_ID && points.length === 0) {
+        alert(
+          "Start on the inside of an external wall or either edge of an internal wall."
+        );
       }
       return;
     }
@@ -2767,7 +2902,7 @@ export default function TracePlanModal({
       if (polygonClosed) {
         updateHoveredNode(pt.x, pt.y);
         clearPolygonPreview();
-      } else if (points.length >= 1 || activeLayerId === DECK_LAYER_ID) {
+      } else if (points.length >= 1 || activeLayerId === DECK_LAYER_ID || activeLayerId === FLOORING_LAYER_ID) {
         const raw = clampSourcePoint(screenToSource(pt.x, pt.y));
         const snap = resolveActivePolygonSnap(raw);
         if (!snap?.point) {
@@ -3308,6 +3443,22 @@ export default function TracePlanModal({
       clearPolygonPreview();
       return;
     }
+    if (isFlooringLayerActive) {
+      patchLayerTrace(FLOORING_LAYER_ID, {
+        points: [],
+        polygonClosed: false,
+        hybridRegions: [],
+        tilesRegions: [],
+        carpetRegions: [],
+        finishTool: flooringTool,
+      });
+      setNearOrigin(false);
+      clearPolygonPreview();
+      setHoveredNodeIndex(-1);
+      setDraggingNodeIndex(-1);
+      setSnapMergeTargetIndex(-1);
+      return;
+    }
     if (isRoofLayerActive) {
       if (isRoofPivotTool) {
         setRoofPivotDraftStart(null);
@@ -3357,8 +3508,39 @@ export default function TracePlanModal({
         );
       }
       if (layer.id === FLOORING_LAYER_ID) {
-        // Auto layer — dirty state follows External Walls; skip independent check.
-        return false;
+        if (saved.page !== currentPage) return true;
+        const sourceW = source?.width;
+        const sourceH = source?.height;
+        if (!sourceW || !sourceH) return true;
+        const normList = (list) =>
+          parseFlooringRegions(list)
+            .map((region) => ({
+              points: normalizeTracePoints(region.points ?? [], sourceW, sourceH),
+            }))
+            .filter((region) => region.points.length >= 3);
+        const draftKey = flooringRegionsKey(flooringTool);
+        const live = {
+          hybridRegions: [...(trace.hybridRegions ?? [])],
+          tilesRegions: [...(trace.tilesRegions ?? [])],
+          carpetRegions: [...(trace.carpetRegions ?? [])],
+        };
+        if ((trace.points?.length ?? 0) >= 3) {
+          live[draftKey] = [
+            ...(live[draftKey] ?? []),
+            { points: trace.points },
+          ];
+        }
+        const normalized = {
+          hybridRegions: normList(live.hybridRegions),
+          tilesRegions: normList(live.tilesRegions),
+          carpetRegions: normList(live.carpetRegions),
+        };
+        const savedFinishes = {
+          hybridRegions: parseFlooringRegions(saved.hybridRegions),
+          tilesRegions: parseFlooringRegions(saved.tilesRegions),
+          carpetRegions: parseFlooringRegions(saved.carpetRegions),
+        };
+        return JSON.stringify(normalized) !== JSON.stringify(savedFinishes);
       }
       if (layer.id === ROOF_LAYER_ID) {
         if (saved.page !== currentPage) return true;
@@ -3685,6 +3867,40 @@ export default function TracePlanModal({
         flooringInner?.length >= 3
           ? normalizeTracePoints(flooringInner, source.width, source.height)
           : [];
+      const flooringLayer =
+        layerTraces[FLOORING_LAYER_ID] || createEmptyLayerTrace(FLOORING_LAYER_ID);
+      const finishesForSave = {
+        hybridRegions: [...(flooringLayer.hybridRegions ?? [])],
+        tilesRegions: [...(flooringLayer.tilesRegions ?? [])],
+        carpetRegions: [...(flooringLayer.carpetRegions ?? [])],
+      };
+      if ((flooringLayer.points?.length ?? 0) >= 3) {
+        const draftKey = flooringRegionsKey(flooringTool);
+        finishesForSave[draftKey] = [
+          ...(finishesForSave[draftKey] ?? []),
+          { points: flooringLayer.points.map((p) => ({ x: p.x, y: p.y })) },
+        ];
+      }
+      const normalizedFinishes = {
+        hybridRegions: finishesForSave.hybridRegions
+          .map((region) => {
+            const pts = normalizeTracePoints(region.points ?? [], source.width, source.height);
+            return pts.length >= 3 ? { points: pts } : null;
+          })
+          .filter(Boolean),
+        tilesRegions: finishesForSave.tilesRegions
+          .map((region) => {
+            const pts = normalizeTracePoints(region.points ?? [], source.width, source.height);
+            return pts.length >= 3 ? { points: pts } : null;
+          })
+          .filter(Boolean),
+        carpetRegions: finishesForSave.carpetRegions
+          .map((region) => {
+            const pts = normalizeTracePoints(region.points ?? [], source.width, source.height);
+            return pts.length >= 3 ? { points: pts } : null;
+          })
+          .filter(Boolean),
+      };
       await onSave(
         normalized,
         currentPage,
@@ -3697,7 +3913,8 @@ export default function TracePlanModal({
         normalizedRoof,
         normalizedDecks,
         normalizedRoofPivot,
-        normalizedFlooring
+        normalizedFlooring,
+        normalizedFinishes
       );
       savedTraceRef.current = {
         page: currentPage,
@@ -3707,6 +3924,9 @@ export default function TracePlanModal({
         decks: normalizedDecks,
         deckPoints: normalizedDecks[0]?.points ?? [],
         flooringPoints: normalizedFlooring,
+        hybridRegions: normalizedFinishes.hybridRegions,
+        tilesRegions: normalizedFinishes.tilesRegions,
+        carpetRegions: normalizedFinishes.carpetRegions,
         internalWallSegments: normalizedInternal,
         crop: normalizedCrop,
         windows: normalizedWindows,
@@ -4055,13 +4275,15 @@ export default function TracePlanModal({
                               }}
                             />
                             <span style={{ lineHeight: 1.25, flex: 1 }}>{layer.label}</span>
-                            {isActive && hasSubmenu && (layer.id === WINDOWS_LAYER_ID || layer.id === DOORS_LAYER_ID || layer.id === SLIDING_DOORS_LAYER_ID || layer.id === DECK_LAYER_ID || layer.id === ROOF_LAYER_ID) && (
+                            {isActive && hasSubmenu && (layer.id === WINDOWS_LAYER_ID || layer.id === DOORS_LAYER_ID || layer.id === SLIDING_DOORS_LAYER_ID || layer.id === DECK_LAYER_ID || layer.id === ROOF_LAYER_ID || layer.id === FLOORING_LAYER_ID) && (
                               <span
                                 style={{
                                   fontSize: "0.68rem",
                                   fontWeight: 600,
                                   textTransform: "capitalize",
-                                  color: layer.stroke,
+                                  color: layer.id === FLOORING_LAYER_ID
+                                    ? flooringFinishStyle.stroke
+                                    : layer.stroke,
                                 }}
                               >
                                 {layer.id === WINDOWS_LAYER_ID
@@ -4072,7 +4294,9 @@ export default function TracePlanModal({
                                       ? slidingDoorTool
                                       : layer.id === ROOF_LAYER_ID
                                         ? roofTool
-                                      : deckTool}
+                                        : layer.id === FLOORING_LAYER_ID
+                                          ? flooringTool
+                                          : deckTool}
                               </span>
                             )}
                             {hasSubmenu && (
@@ -4114,7 +4338,13 @@ export default function TracePlanModal({
                                   (layer.id === DOORS_LAYER_ID && doorTool === item.id) ||
                                   (layer.id === SLIDING_DOORS_LAYER_ID && slidingDoorTool === item.id) ||
                                   (layer.id === DECK_LAYER_ID && deckTool === item.id) ||
-                                  (layer.id === ROOF_LAYER_ID && roofTool === item.id);
+                                  (layer.id === ROOF_LAYER_ID && roofTool === item.id) ||
+                                  (layer.id === FLOORING_LAYER_ID && flooringTool === item.id);
+                                const itemColor =
+                                  layer.id === FLOORING_LAYER_ID
+                                    ? (FLOORING_FINISH_STYLES[item.id] || FLOORING_FINISH_STYLES.hybrid)
+                                        .stroke
+                                    : layer.stroke;
                                 return (
                                   <button
                                     key={item.id}
@@ -4125,7 +4355,7 @@ export default function TracePlanModal({
                                       padding: "7px 10px",
                                       borderRadius: "6px",
                                       border: "none",
-                                      background: itemActive ? layer.stroke : "transparent",
+                                      background: itemActive ? itemColor : "transparent",
                                       color: itemActive ? PAGE_TEXT : MONUMENT,
                                       fontSize: "0.86rem",
                                       fontWeight: itemActive ? 600 : 500,

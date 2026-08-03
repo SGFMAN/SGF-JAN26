@@ -103,9 +103,88 @@ function drawingsPdfAttachmentFileName(project) {
   return base.trim() || "drawings.pdf";
 }
 
-/** Outlook-style attachment chip (visual only — send still attaches via API). */
-function OutlookPdfAttachmentChip({ fileName }) {
+/** Outlook-style attachment chip — draggable to desktop / other apps; send still attaches via API. */
+function OutlookPdfAttachmentChip({ fileName, pdfSrc }) {
   const name = fileName || "drawings.pdf";
+  const [file, setFile] = useState(null);
+  const [dragging, setDragging] = useState(false);
+  const objectUrlRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setFile(null);
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+
+    if (!pdfSrc) return undefined;
+
+    (async () => {
+      try {
+        let blob;
+        if (String(pdfSrc).startsWith("blob:") || String(pdfSrc).startsWith("data:")) {
+          const res = await fetch(pdfSrc);
+          if (!res.ok) return;
+          blob = await res.blob();
+        } else {
+          const headers = getApiHeaders();
+          delete headers["Content-Type"];
+          const res = await fetch(pdfSrc, { headers, credentials: "include" });
+          if (!res.ok) return;
+          blob = await res.blob();
+        }
+        if (cancelled) return;
+        const pdfFile = new File([blob], name, { type: "application/pdf" });
+        const objectUrl = URL.createObjectURL(pdfFile);
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        objectUrlRef.current = objectUrl;
+        setFile(pdfFile);
+      } catch {
+        if (!cancelled) setFile(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+    };
+  }, [pdfSrc, name]);
+
+  function handleDragStart(e) {
+    if (!file || !objectUrlRef.current) {
+      e.preventDefault();
+      return;
+    }
+    setDragging(true);
+    e.dataTransfer.effectAllowed = "copy";
+    try {
+      e.dataTransfer.items.add(file);
+    } catch {
+      // Some browsers reject File on the item list; fall through to DownloadURL.
+    }
+    // Chromium: drag-to-desktop / Explorer fallback when File transfer isn't accepted.
+    e.dataTransfer.setData(
+      "DownloadURL",
+      `application/pdf:${name}:${objectUrlRef.current}`
+    );
+    e.dataTransfer.setData("text/uri-list", objectUrlRef.current);
+    e.dataTransfer.setData("text/plain", name);
+  }
+
+  function handleDragEnd() {
+    setDragging(false);
+  }
+
+  const ready = Boolean(file);
+
   return (
     <div>
       <div
@@ -120,18 +199,28 @@ function OutlookPdfAttachmentChip({ fileName }) {
         Attachments
       </div>
       <div
+        draggable={ready}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
         style={{
           display: "inline-flex",
           alignItems: "center",
           gap: "10px",
           maxWidth: "100%",
           padding: "8px 12px 8px 8px",
-          background: "#f3f2f1",
-          border: "1px solid #edebe9",
+          background: dragging ? "#e8f4fc" : "#f3f2f1",
+          border: `1px solid ${dragging ? "#0078d4" : "#edebe9"}`,
           borderRadius: "4px",
           boxSizing: "border-box",
+          cursor: ready ? (dragging ? "grabbing" : "grab") : "default",
+          opacity: ready ? 1 : 0.7,
+          userSelect: "none",
         }}
-        title={`${name} will be attached when you send`}
+        title={
+          ready
+            ? `${name} — drag to desktop or another email; also attached when you send`
+            : `${name} — preparing file for drag…`
+        }
       >
         <div
           aria-hidden
@@ -146,6 +235,7 @@ function OutlookPdfAttachmentChip({ fileName }) {
             justifyContent: "center",
             paddingBottom: "4px",
             boxShadow: "0 1px 2px rgba(0,0,0,0.12)",
+            pointerEvents: "none",
           }}
         >
           <span
@@ -160,7 +250,7 @@ function OutlookPdfAttachmentChip({ fileName }) {
             PDF
           </span>
         </div>
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, pointerEvents: "none" }}>
           <div
             style={{
               fontSize: "0.9rem",
@@ -182,7 +272,7 @@ function OutlookPdfAttachmentChip({ fileName }) {
               fontFamily: "Segoe UI, Arial, sans-serif",
             }}
           >
-            Adobe PDF Document
+            {ready ? "Adobe PDF Document · drag to move" : "Adobe PDF Document · loading…"}
           </div>
         </div>
       </div>
@@ -4885,6 +4975,19 @@ export default function Drawings({
                 />
               </div>
 
+              {project?.drawings_pdf_location ? (
+                <OutlookPdfAttachmentChip
+                  fileName={drawingsPdfAttachmentFileName(project)}
+                  pdfSrc={
+                    drawingsPdfSrcOverride || `${API_URL}/api/files/drawings/${project.id}`
+                  }
+                />
+              ) : (
+                <div style={{ fontSize: "0.85rem", color: INDICATOR.orange || "#c47b00" }}>
+                  No drawings PDF on file — send will fail until a PDF is uploaded.
+                </div>
+              )}
+
               <div>
                 <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Body
@@ -4913,14 +5016,6 @@ export default function Drawings({
                   }}
                 />
               </div>
-
-              {project?.drawings_pdf_location ? (
-                <OutlookPdfAttachmentChip fileName={drawingsPdfAttachmentFileName(project)} />
-              ) : (
-                <div style={{ fontSize: "0.85rem", color: INDICATOR.orange || "#c47b00" }}>
-                  No drawings PDF on file — send will fail until a PDF is uploaded.
-                </div>
-              )}
 
               <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
                 <button
