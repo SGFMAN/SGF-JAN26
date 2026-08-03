@@ -3,8 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import useAppLogo from "../hooks/useAppLogo.js";
 import {
   setAuthSession,
-  isAuthenticated,
-  verifyServerSession,
+  clearTabAuthStorage,
   locationToRedirectPath,
 } from "../utils/auth";
 import { UI } from "../utils/uiThemeTokens";
@@ -25,37 +24,17 @@ export default function SplashPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(true);
   const [loggingIn, setLoggingIn] = useState(false);
-  const [checkingSession, setCheckingSession] = useState(true);
 
   function redirectAfterAuth() {
     navigate(locationToRedirectPath(location.state?.from, "/projects"), { replace: true });
   }
 
-  // If this browser already has a valid staff session cookie, skip the login form
+  // Fresh launch / login screen: always require password. Do not auto-adopt a
+  // leftover cookie (browsers often keep session cookies after "close window").
+  // Email deep-links skip login via RequireAuth instead.
   useEffect(() => {
-    let cancelled = false;
-    async function adoptExistingSession() {
-      try {
-        if (isAuthenticated()) {
-          if (!cancelled) redirectAfterAuth();
-          return;
-        }
-        const user = await verifyServerSession();
-        if (!cancelled && (user || isAuthenticated())) {
-          redirectAfterAuth();
-          return;
-        }
-      } finally {
-        if (!cancelled) setCheckingSession(false);
-      }
-    }
-    void adoptExistingSession();
-    return () => {
-      cancelled = true;
-    };
-    // Only on mount / when deep-link "from" changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
-  }, [location.state?.from?.pathname, location.state?.from?.search]);
+    clearTabAuthStorage();
+  }, []);
 
   useEffect(() => {
     fetchUsers();
@@ -108,18 +87,6 @@ export default function SplashPage() {
     } finally {
       setLoggingIn(false);
     }
-  }
-
-  if (checkingSession) {
-    return (
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: LIGHT_MONUMENT,
-        }}
-      />
-    );
   }
 
   return (

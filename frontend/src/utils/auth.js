@@ -101,8 +101,8 @@ export function setAuthSession(userId, passwordType, userName) {
       new CustomEvent("sgf-auth-session-change", { detail: { userId: String(userId) } })
     );
   }
-  // Quietly adopt the new HttpOnly session cookie into memory (non-blocking).
-  verifyServerSession();
+  // Quietly adopt the new HttpOnly session cookie into this tab (non-blocking).
+  verifyServerSession({ adoptTabAuth: true });
 }
 
 /**
@@ -172,11 +172,13 @@ export function getVerifiedServerSessionUser() {
 /**
  * Quietly check whether a valid server-side staff session exists.
  *
- * On success, records the user in memory and hydrates this tab's sessionStorage
- * so a new tab (e.g. email drawings link) can skip the login screen when the
- * HttpOnly session cookie is still valid. On failure: no logout/redirect.
+ * @param {{ adoptTabAuth?: boolean }} [options]
+ *   adoptTabAuth: when true, copy identity into this tab's sessionStorage
+ *   (used for email deep-links). Default false so a leftover cookie alone
+ *   cannot skip the login screen on a fresh app launch.
  */
-export async function verifyServerSession() {
+export async function verifyServerSession(options = {}) {
+  const adoptTabAuth = Boolean(options && options.adoptTabAuth);
   try {
     const response = await fetch(`${API_URL}/api/auth/session`, {
       credentials: "same-origin",
@@ -186,8 +188,10 @@ export async function verifyServerSession() {
     }
     const data = await response.json();
     if (data && data.authenticated && data.user) {
-      verifiedServerSessionUser = data.user;
-      hydrateTabAuthFromServerUser(data.user);
+      if (adoptTabAuth) {
+        verifiedServerSessionUser = data.user;
+        hydrateTabAuthFromServerUser(data.user);
+      }
       if (import.meta.env && import.meta.env.DEV) {
         console.log(`Server session verified for ${data.user.name}`);
       }
@@ -197,6 +201,39 @@ export async function verifyServerSession() {
   } catch {
     return null;
   }
+}
+
+/**
+ * Clear this tab's login markers only (sessionStorage + memory).
+ * Does not call logout / does not clear the HttpOnly cookie — so email
+ * deep-links in another tab can still adopt the cookie when appropriate.
+ */
+export function clearTabAuthStorage() {
+  verifiedServerSessionUser = null;
+  clearUserAccessCache();
+  const storage = getAuthStorage();
+  storage.removeItem(AUTH_USER_ID_KEY);
+  storage.removeItem(AUTH_PASSWORD_TYPE_KEY);
+  storage.removeItem(AUTH_USER_NAME_KEY);
+  try {
+    localStorage.removeItem(AUTH_USER_ID_KEY);
+    localStorage.removeItem(AUTH_PASSWORD_TYPE_KEY);
+    localStorage.removeItem(AUTH_USER_NAME_KEY);
+  } catch {
+    // ignore
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("sgf-auth-session-change", { detail: { userId: null } }));
+  }
+}
+
+/** True when this path is a project deep-link (e.g. drawings email). */
+export function isStaffProjectDeepLink(pathname) {
+  if (!pathname || typeof pathname !== "string") return false;
+  return (
+    /^\/project\/[^/]+/i.test(pathname) ||
+    /^\/portal\/projects\/[^/]+/i.test(pathname)
+  );
 }
 
 /** Copy cookie-backed session identity into this tab's sessionStorage (no API call). */

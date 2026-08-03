@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { isAuthenticated, verifyServerSession } from "../utils/auth";
+import {
+  isAuthenticated,
+  verifyServerSession,
+  isStaffProjectDeepLink,
+} from "../utils/auth";
 
 /**
- * Gate staff routes. If this tab has no sessionStorage login yet, check the
- * HttpOnly session cookie first so email deep-links can skip re-login.
+ * Gate staff routes.
+ * - Tab already logged in (sessionStorage) → allow.
+ * - Project deep-link (email) + valid session cookie → adopt and allow.
+ * - Everything else (e.g. fresh open of /projects) → login required, even
+ *   if a leftover cookie still exists in the browser.
  */
 export default function RequireAuth({ children }) {
   const location = useLocation();
@@ -20,15 +27,24 @@ export default function RequireAuth({ children }) {
           setAllowed(true);
           setReady(true);
         }
-        // Refresh cookie session / hydrate in background
-        void verifyServerSession();
+        // Refresh cookie session into memory only when already logged in this tab
+        void verifyServerSession({ adoptTabAuth: true });
         return;
       }
 
-      const user = await verifyServerSession();
-      if (cancelled) return;
-      setAllowed(Boolean(user) || isAuthenticated());
-      setReady(true);
+      // Cold start / new tab without tab login: only skip password for email deep-links
+      if (isStaffProjectDeepLink(location.pathname)) {
+        const user = await verifyServerSession({ adoptTabAuth: true });
+        if (cancelled) return;
+        setAllowed(Boolean(user) || isAuthenticated());
+        setReady(true);
+        return;
+      }
+
+      if (!cancelled) {
+        setAllowed(false);
+        setReady(true);
+      }
     }
 
     void ensureAuth();

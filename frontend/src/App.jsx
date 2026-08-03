@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import SplashPage from "./pages/SplashPage";
 import ClientPortalApp from "./pages/ClientPortalApp";
@@ -45,7 +44,6 @@ import RequireAuth from "./components/RequireAuth";
 import LoggedInUserButton from "./components/LoggedInUserButton";
 import PresenceHeartbeat from "./components/PresenceHeartbeat";
 import { UiThemeProvider } from "./context/UiThemeProvider";
-import { verifyServerSession } from "./utils/auth";
 import { isClientPortalEntry } from "./utils/entryPortal";
 
 function Auth({ children }) {
@@ -59,14 +57,6 @@ export default function App() {
     typeof window !== "undefined" &&
     typeof window.location?.hostname === "string" &&
     window.location.hostname.toLowerCase().endsWith("trycloudflare.com");
-
-  // Adopt HttpOnly staff session into this tab (sessionStorage) when present.
-  // RequireAuth also awaits this so email deep-links can skip re-login.
-  // Skipped on the client portal entry host — staff-only.
-  useEffect(() => {
-    if (isClientEntry) return;
-    void verifyServerSession();
-  }, [isClientEntry]);
 
   if (isClientEntry) {
     return (
