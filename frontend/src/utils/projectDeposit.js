@@ -96,6 +96,36 @@ export function getOverviewDepositStatusLevel(project) {
   return "none";
 }
 
+/** Required dollars for deposit complete (pre-engagement required, else 5% of cost). */
+export function getOverviewDepositRequiredAmount(project) {
+  const peRequired = getPreEngagementRequiredAmount(project);
+  if (peRequired > 0) return peRequired;
+  return fullFivePercentDeposit(project?.project_cost);
+}
+
+/** Amount still owed toward deposit complete (never negative). */
+export function getOverviewDepositOwedAmount(project) {
+  const required = getOverviewDepositRequiredAmount(project);
+  if (required <= 0) return 0;
+  return Math.max(0, required - getAnyDepositAmountPaid(project));
+}
+
+/** Main-menu Deposit Paid filter categories (excludes the special “Deposit Owed” match-all). */
+export function getDepositPaidFilterCategory(project) {
+  if (isOverviewDepositComplete(project)) return "Full Deposit";
+  if (getAnyDepositAmountPaid(project) > 0) return "Partial Deposit";
+  return "No Deposit Paid";
+}
+
+/** Match Deposit Paid filter value, including “Deposit Owed” (owed > 0). */
+export function projectMatchesDepositPaidFilter(project, selectedValue) {
+  if (!selectedValue) return true;
+  if (selectedValue === "Deposit Owed") {
+    return getOverviewDepositOwedAmount(project) > 0;
+  }
+  return getDepositPaidFilterCategory(project) === selectedValue;
+}
+
 /**
  * Payment fields for brand-new jobs from the new-project modal.
  * Amount chosen (pre-engagement / holding / other) → pre_engagement_paid.

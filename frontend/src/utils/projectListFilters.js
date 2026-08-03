@@ -1,5 +1,9 @@
 import { PROJECT_STATUS_OPTIONS } from "./projectStatus";
 import { CLASSIFICATION_OPTIONS } from "./classifications";
+import {
+  getDepositPaidFilterCategory,
+  projectMatchesDepositPaidFilter,
+} from "./projectDeposit";
 
 export const FIELD_DEFINITIONS = {
   window_status: {
@@ -59,7 +63,7 @@ export const FIELD_DEFINITIONS = {
   },
   deposit: {
     label: "Deposit Paid",
-    values: ["Full Deposit", "Partial Deposit"],
+    values: ["Full Deposit", "Partial Deposit", "No Deposit Paid", "Deposit Owed"],
     defaultValue: "Partial Deposit",
   },
   status: {
@@ -124,32 +128,7 @@ export function getEffectiveValue(project, fieldName) {
   let value = project[fieldName];
 
   if (fieldName === "deposit") {
-    const depositValue = value;
-    if (!depositValue || depositValue === null || depositValue === undefined || depositValue === "") {
-      return null;
-    }
-
-    const projectCost = project.project_cost;
-    if (!projectCost || projectCost === null || projectCost === undefined || projectCost === "") {
-      return "Partial Deposit";
-    }
-
-    const depositNumeric = parseInt(depositValue.toString().replace(/[^0-9]/g, "")) || 0;
-    const costNumeric = parseInt(projectCost.toString().replace(/[^0-9]/g, "")) || 0;
-
-    if (costNumeric === 0) {
-      return "Partial Deposit";
-    }
-
-    const fullDepositAmount = Math.floor(costNumeric / 20);
-    if (fullDepositAmount > 0 && depositNumeric >= fullDepositAmount) {
-      return "Full Deposit";
-    }
-    if (depositNumeric > 0) {
-      return "Partial Deposit";
-    }
-
-    return null;
+    return getDepositPaidFilterCategory(project);
   }
 
   if (fieldName === "year" && value) {
@@ -196,12 +175,26 @@ export function getAvailableFieldValues(projects, selectedField, scopeFilter) {
   return Array.from(allValues).sort();
 }
 
-function matchesSearch(project, query) {
-  const q = query.toLowerCase();
+/** Search suburb/street/name plus client contact emails (1–3), ignoring active checkboxes. */
+export function matchesSearch(project, query) {
+  const q = String(query ?? "").trim().toLowerCase();
+  if (!q) return true;
   const suburb = (project.suburb || "").toLowerCase();
   const street = (project.street || "").toLowerCase();
   const name = (project.name || "").toLowerCase();
-  return suburb.includes(q) || street.includes(q) || name.includes(q);
+  if (suburb.includes(q) || street.includes(q) || name.includes(q)) return true;
+
+  // Contact emails — match even when the contact is unchecked / inactive
+  const emails = [
+    project.client1_email,
+    project.client2_email,
+    project.client3_email,
+    project.email, // legacy primary email
+  ];
+  return emails.some((raw) => {
+    const email = String(raw ?? "").trim().toLowerCase();
+    return email !== "" && email.includes(q);
+  });
 }
 
 export function sortProjects(list, sortMode) {
@@ -261,6 +254,9 @@ export function applyProjectListFilters(projects, options) {
 
   if (selectedField && selectedValue) {
     filtered = filtered.filter((project) => {
+      if (selectedField === "deposit") {
+        return projectMatchesDepositPaidFilter(project, selectedValue);
+      }
       const effectiveValue = getEffectiveValue(project, selectedField);
       return effectiveValue === selectedValue;
     });

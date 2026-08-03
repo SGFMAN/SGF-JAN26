@@ -29,7 +29,12 @@ import { UI, MENU, STREAM, INDICATOR, outlineBorder } from "../utils/uiThemeToke
 import { streamColorHover } from "../utils/streamColors.js";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 import { buildDuplicateChainGroups } from "../utils/duplicateProjectLinks";
-import { newJobPreEngagementPaymentFields } from "../utils/projectDeposit";
+import {
+  newJobPreEngagementPaymentFields,
+  getDepositPaidFilterCategory,
+  projectMatchesDepositPaidFilter,
+} from "../utils/projectDeposit";
+import { matchesSearch } from "../utils/projectListFilters";
 const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
 const SECTION_GREY = UI.panelBg;
@@ -104,7 +109,7 @@ const FIELD_DEFINITIONS = {
   },
   deposit: {
     label: "Deposit Paid",
-    values: ["Full Deposit", "Partial Deposit"],
+    values: ["Full Deposit", "Partial Deposit", "No Deposit Paid", "Deposit Owed"],
     defaultValue: "Partial Deposit",
   },
   status: {
@@ -412,38 +417,9 @@ export default function HomePage() {
     
     let value = project[fieldName];
     
-    // Special handling for deposit field: convert to Full Deposit/Partial Deposit based on whether it equals 5% of project cost
+    // Deposit Paid filter: pre-engagement complete, else full 5%, else partial / none
     if (fieldName === "deposit") {
-      const depositValue = value;
-      if (!depositValue || depositValue === null || depositValue === undefined || depositValue === "") {
-        return null; // No deposit - don't show in filter
-      }
-      
-      // Get project cost
-      const projectCost = project.project_cost;
-      if (!projectCost || projectCost === null || projectCost === undefined || projectCost === "") {
-        return "Partial Deposit"; // If no project cost, can't determine if full, so treat as partial
-      }
-      
-      // Extract numeric values (remove $ and commas)
-      const depositNumeric = parseInt(depositValue.toString().replace(/[^0-9]/g, "")) || 0;
-      const costNumeric = parseInt(projectCost.toString().replace(/[^0-9]/g, "")) || 0;
-      
-      if (costNumeric === 0) {
-        return "Partial Deposit"; // Can't calculate if no cost
-      }
-      
-      // Calculate 5% of project cost
-      const fullDepositAmount = Math.floor(costNumeric / 20); // 5% = divide by 20
-      
-      // Match Admin / Planning: full when paid >= canonical 5% (floor(cost/20))
-      if (fullDepositAmount > 0 && depositNumeric >= fullDepositAmount) {
-        return "Full Deposit";
-      } else if (depositNumeric > 0) {
-        return "Partial Deposit";
-      }
-      
-      return null; // No deposit
+      return getDepositPaidFilterCategory(project);
     }
     
     // Special handling for year field: extract year from date
@@ -474,8 +450,7 @@ export default function HomePage() {
     const fieldDef = FIELD_DEFINITIONS[selectedField];
     if (!fieldDef) return [];
 
-    // For deposit field, only show predefined values (Full Deposit, Partial Deposit)
-    // Don't include project values since we calculate them dynamically
+    // For deposit field, only show predefined filter options
     if (selectedField === "deposit") {
       return fieldDef.values;
     }
@@ -528,21 +503,18 @@ export default function HomePage() {
 
     // Then filter by field/value if specified
     if (selectedField && selectedValue) {
-      filtered = filtered.filter(project => {
+      filtered = filtered.filter((project) => {
+        if (selectedField === "deposit") {
+          return projectMatchesDepositPaidFilter(project, selectedValue);
+        }
         const effectiveValue = getEffectiveValue(project, selectedField);
         return effectiveValue === selectedValue;
       });
     }
 
-    // Finally filter by search query if specified
+    // Finally filter by search query if specified (address + client contact emails 1–3)
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(project => {
-        const suburb = (project.suburb || "").toLowerCase();
-        const street = (project.street || "").toLowerCase();
-        const name = (project.name || "").toLowerCase();
-        return suburb.includes(query) || street.includes(query) || name.includes(query);
-      });
+      filtered = filtered.filter((project) => matchesSearch(project, searchQuery));
     }
 
     // Sort based on selected sort mode
