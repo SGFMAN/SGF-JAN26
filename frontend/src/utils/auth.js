@@ -174,8 +174,7 @@ export function getVerifiedServerSessionUser() {
  *
  * @param {{ adoptTabAuth?: boolean }} [options]
  *   adoptTabAuth: when true, copy identity into this tab's sessionStorage
- *   (used for email deep-links). Default false so a leftover cookie alone
- *   cannot skip the login screen on a fresh app launch.
+ *   (only after a live peer tab confirms an open session). Default false.
  */
 export async function verifyServerSession(options = {}) {
   const adoptTabAuth = Boolean(options && options.adoptTabAuth);
@@ -205,8 +204,7 @@ export async function verifyServerSession(options = {}) {
 
 /**
  * Clear this tab's login markers only (sessionStorage + memory).
- * Does not call logout / does not clear the HttpOnly cookie — so email
- * deep-links in another tab can still adopt the cookie when appropriate.
+ * Does not call logout / does not clear the HttpOnly cookie.
  */
 export function clearTabAuthStorage() {
   verifiedServerSessionUser = null;
@@ -234,6 +232,108 @@ export function isStaffProjectDeepLink(pathname) {
     /^\/project\/[^/]+/i.test(pathname) ||
     /^\/portal\/projects\/[^/]+/i.test(pathname)
   );
+}
+
+const STAFF_AUTH_PEER_CHANNEL = "sgf-staff-auth-peers";
+
+/**
+ * Ask other open SGF tabs whether any is already logged in.
+ * Same-tab BroadcastChannel posts are not received here — only a live peer
+ * can answer. If nothing is open, resolves false (password required).
+ */
+export function probeLiveStaffPeerSession(timeoutMs = 350) {
+  if (typeof window === "undefined") {
+    return Promise.resolve(false);
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(Boolean(value));
+    };
+
+    let channel;
+    try {
+      channel = new BroadcastChannel(STAFF_AUTH_PEER_CHANNEL);
+    } catch {
+      finish(false);
+      return;
+    }
+
+    const onMessage = (event) => {
+      if (event?.data?.type === "sgf-auth-pong") {
+        cleanup();
+        finish(true);
+      }
+    };
+
+    const cleanup = () => {
+      try {
+        channel.removeEventListener("message", onMessage);
+        channel.close();
+      } catch {
+        // ignore
+      }
+      window.clearTimeout(timerId);
+    };
+
+    channel.addEventListener("message", onMessage);
+    try {
+      channel.postMessage({ type: "sgf-auth-ping" });
+    } catch {
+      cleanup();
+      finish(false);
+      return;
+    }
+
+    const timerId = window.setTimeout(() => {
+      cleanup();
+      finish(false);
+    }, timeoutMs);
+  });
+}
+
+/**
+ * While this tab is logged in, answer peer pings so email/new-tab flows can
+ * skip re-login only when an open session exists.
+ * Returns a dispose function.
+ */
+export function startStaffAuthPeerResponder() {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+
+  let channel;
+  try {
+    channel = new BroadcastChannel(STAFF_AUTH_PEER_CHANNEL);
+  } catch {
+    return () => {};
+  }
+
+  const onMessage = (event) => {
+    if (event?.data?.type !== "sgf-auth-ping") return;
+    if (!isAuthenticated()) return;
+    try {
+      channel.postMessage({
+        type: "sgf-auth-pong",
+        userId: getLoggedInUserId(),
+      });
+    } catch {
+      // ignore
+    }
+  };
+
+  channel.addEventListener("message", onMessage);
+  return () => {
+    try {
+      channel.removeEventListener("message", onMessage);
+      channel.close();
+    } catch {
+      // ignore
+    }
+  };
 }
 
 /** Copy cookie-backed session identity into this tab's sessionStorage (no API call). */

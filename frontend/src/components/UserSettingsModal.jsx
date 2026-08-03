@@ -527,7 +527,7 @@ export default function UserSettingsModal({ open, onClose, userName }) {
               style={{
                 marginTop: "auto",
                 background: UI.buttonPrimary,
-                color: UI.buttonPrimaryText,
+                color: UI.textPrimary,
                 border: "none",
                 borderRadius: "10px",
                 padding: "12px 12px",

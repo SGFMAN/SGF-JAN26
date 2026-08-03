@@ -3,15 +3,15 @@ import { Navigate, useLocation } from "react-router-dom";
 import {
   isAuthenticated,
   verifyServerSession,
-  isStaffProjectDeepLink,
+  probeLiveStaffPeerSession,
 } from "../utils/auth";
 
 /**
  * Gate staff routes.
- * - Tab already logged in (sessionStorage) → allow.
- * - Project deep-link (email) + valid session cookie → adopt and allow.
- * - Everything else (e.g. fresh open of /projects) → login required, even
- *   if a leftover cookie still exists in the browser.
+ * - This tab already logged in (sessionStorage) → allow.
+ * - Another open SGF tab is logged in + valid cookie → adopt and allow
+ *   (email links / new windows while already using the app).
+ * - No open peer session → login required, even with a leftover cookie.
  */
 export default function RequireAuth({ children }) {
   const location = useLocation();
@@ -27,13 +27,15 @@ export default function RequireAuth({ children }) {
           setAllowed(true);
           setReady(true);
         }
-        // Refresh cookie session into memory only when already logged in this tab
         void verifyServerSession({ adoptTabAuth: true });
         return;
       }
 
-      // Cold start / new tab without tab login: only skip password for email deep-links
-      if (isStaffProjectDeepLink(location.pathname)) {
+      // Only skip password when another tab answers "I'm logged in"
+      const peerAlive = await probeLiveStaffPeerSession();
+      if (cancelled) return;
+
+      if (peerAlive) {
         const user = await verifyServerSession({ adoptTabAuth: true });
         if (cancelled) return;
         setAllowed(Boolean(user) || isAuthenticated());
@@ -41,10 +43,8 @@ export default function RequireAuth({ children }) {
         return;
       }
 
-      if (!cancelled) {
-        setAllowed(false);
-        setReady(true);
-      }
+      setAllowed(false);
+      setReady(true);
     }
 
     void ensureAuth();

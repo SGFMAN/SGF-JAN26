@@ -1,5 +1,9 @@
 import { useEffect } from "react";
-import { getApiHeaders, getLoggedInUserId } from "../utils/auth";
+import {
+  getApiHeaders,
+  getLoggedInUserId,
+  startStaffAuthPeerResponder,
+} from "../utils/auth";
 
 const API_URL = "";
 const HEARTBEAT_MS = 10_000;
@@ -20,10 +24,13 @@ export default function PresenceHeartbeat() {
 
     ping();
     const intervalId = window.setInterval(ping, HEARTBEAT_MS);
+    // Answer cross-tab "is anyone logged in?" probes for email / new-window auth
+    const stopPeerResponder = startStaffAuthPeerResponder();
 
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
+      stopPeerResponder();
     };
   }, []);
 
