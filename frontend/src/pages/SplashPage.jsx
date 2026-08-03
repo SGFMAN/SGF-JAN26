@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import useAppLogo from "../hooks/useAppLogo.js";
-import { setAuthSession } from "../utils/auth";
+import {
+  setAuthSession,
+  isAuthenticated,
+  verifyServerSession,
+  locationToRedirectPath,
+} from "../utils/auth";
 import { UI } from "../utils/uiThemeTokens";
 import { APP_VERSION } from "../utils/appVersion";
 
@@ -20,6 +25,37 @@ export default function SplashPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(true);
   const [loggingIn, setLoggingIn] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  function redirectAfterAuth() {
+    navigate(locationToRedirectPath(location.state?.from, "/projects"), { replace: true });
+  }
+
+  // If this browser already has a valid staff session cookie, skip the login form
+  useEffect(() => {
+    let cancelled = false;
+    async function adoptExistingSession() {
+      try {
+        if (isAuthenticated()) {
+          if (!cancelled) redirectAfterAuth();
+          return;
+        }
+        const user = await verifyServerSession();
+        if (!cancelled && (user || isAuthenticated())) {
+          redirectAfterAuth();
+          return;
+        }
+      } finally {
+        if (!cancelled) setCheckingSession(false);
+      }
+    }
+    void adoptExistingSession();
+    return () => {
+      cancelled = true;
+    };
+    // Only on mount / when deep-link "from" changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
+  }, [location.state?.from?.pathname, location.state?.from?.search]);
 
   useEffect(() => {
     fetchUsers();
@@ -65,15 +101,25 @@ export default function SplashPage() {
 
       const data = await response.json();
       setAuthSession(data.userId, data.passwordType, data.user?.name);
-
-      const redirectTo = location.state?.from?.pathname || "/projects";
-      navigate(redirectTo, { replace: true });
+      redirectAfterAuth();
     } catch (error) {
       console.error("Error logging in:", error);
       alert("Login failed. Please try again.");
     } finally {
       setLoggingIn(false);
     }
+  }
+
+  if (checkingSession) {
+    return (
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: LIGHT_MONUMENT,
+        }}
+      />
+    );
   }
 
   return (

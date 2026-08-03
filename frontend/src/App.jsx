@@ -60,12 +60,12 @@ export default function App() {
     typeof window.location?.hostname === "string" &&
     window.location.hostname.toLowerCase().endsWith("trycloudflare.com");
 
-  // v0.3: quietly adopt the server session (informational/diagnostics only).
-  // Does not gate rendering, redirect, or affect the existing auth flow.
+  // Adopt HttpOnly staff session into this tab (sessionStorage) when present.
+  // RequireAuth also awaits this so email deep-links can skip re-login.
   // Skipped on the client portal entry host — staff-only.
   useEffect(() => {
     if (isClientEntry) return;
-    verifyServerSession();
+    void verifyServerSession();
   }, [isClientEntry]);
 
   if (isClientEntry) {

@@ -172,8 +172,9 @@ export function getVerifiedServerSessionUser() {
 /**
  * Quietly check whether a valid server-side staff session exists.
  *
- * On success, records the user in memory. On any failure it does nothing:
- * no logout, no redirect, no warning. Legacy sessionStorage auth remains.
+ * On success, records the user in memory and hydrates this tab's sessionStorage
+ * so a new tab (e.g. email drawings link) can skip the login screen when the
+ * HttpOnly session cookie is still valid. On failure: no logout/redirect.
  */
 export async function verifyServerSession() {
   try {
@@ -186,6 +187,7 @@ export async function verifyServerSession() {
     const data = await response.json();
     if (data && data.authenticated && data.user) {
       verifiedServerSessionUser = data.user;
+      hydrateTabAuthFromServerUser(data.user);
       if (import.meta.env && import.meta.env.DEV) {
         console.log(`Server session verified for ${data.user.name}`);
       }
@@ -195,4 +197,31 @@ export async function verifyServerSession() {
   } catch {
     return null;
   }
+}
+
+/** Copy cookie-backed session identity into this tab's sessionStorage (no API call). */
+function hydrateTabAuthFromServerUser(user) {
+  if (!user || user.id == null) return;
+  const storage = getAuthStorage();
+  const id = String(user.id);
+  const prevId = storage.getItem(AUTH_USER_ID_KEY);
+  storage.setItem(AUTH_USER_ID_KEY, id);
+  if (user.name) {
+    storage.setItem(AUTH_USER_NAME_KEY, String(user.name));
+  }
+  if (!storage.getItem(AUTH_PASSWORD_TYPE_KEY)) {
+    storage.setItem(AUTH_PASSWORD_TYPE_KEY, "global");
+  }
+  if (prevId !== id && typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("sgf-auth-session-change", { detail: { userId: id } })
+    );
+  }
+}
+
+/** Path+search+hash from a React Router location (for post-login redirects). */
+export function locationToRedirectPath(loc, fallback = "/projects") {
+  if (!loc || typeof loc !== "object") return fallback;
+  const path = `${loc.pathname || ""}${loc.search || ""}${loc.hash || ""}`;
+  return path || fallback;
 }
