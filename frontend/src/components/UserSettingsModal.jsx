@@ -140,10 +140,30 @@ function firstNameFromFullName(fullName) {
 function AccountSettingsContent({ open }) {
   const { themeId } = useUiTheme();
   const [userRecord, setUserRecord] = useState(null);
-  const [password, setPassword] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState("");
+
+  const inputStyle = {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: "8px",
+    border: `1px solid ${UI.outline}`,
+    fontSize: "1rem",
+    color: UI.textPrimary,
+    background: UI.cardBg,
+    boxSizing: "border-box",
+  };
+
+  const labelStyle = {
+    display: "block",
+    fontSize: "0.9rem",
+    color: UI.textMuted,
+    marginBottom: "6px",
+    fontWeight: 500,
+  };
 
   useEffect(() => {
     if (!open) {
@@ -161,7 +181,8 @@ function AccountSettingsContent({ open }) {
     (async () => {
       setLoading(true);
       setSaveStatus("");
-      setPassword("");
+      setCurrentPassword("");
+      setNewPassword("");
       try {
         const response = await fetch("/api/users", { headers: getApiHeaders() });
         if (!response.ok) {
@@ -172,10 +193,9 @@ function AccountSettingsContent({ open }) {
         if (cancelled) return;
 
         if (user) {
-          // Do not load the stored password/hash into the field — show empty so
-          // the user can type a new password to change it.
           setUserRecord(user);
-          setPassword("");
+          setCurrentPassword("");
+          setNewPassword("");
         }
       } catch (error) {
         console.error("Error loading account:", error);
@@ -199,9 +219,14 @@ function AccountSettingsContent({ open }) {
       return;
     }
 
-    const trimmed = password.trim();
-    if (!trimmed) {
-      setSaveStatus("Enter a new password to change it");
+    const currentTrimmed = currentPassword.trim();
+    const newTrimmed = newPassword.trim();
+    if (!currentTrimmed) {
+      setSaveStatus("Enter your current password");
+      return;
+    }
+    if (!newTrimmed) {
+      setSaveStatus("Enter a new password");
       return;
     }
 
@@ -220,7 +245,8 @@ function AccountSettingsContent({ open }) {
           name: userRecord.name,
           email: userRecord.email || null,
           phone: userRecord.phone || null,
-          password: trimmed,
+          currentPassword: currentTrimmed,
+          password: newTrimmed,
           positionIds: userPositionIds,
           primaryPositionId: userRecord.primary_position_id || null,
           uiThemeId: themeId,
@@ -232,7 +258,8 @@ function AccountSettingsContent({ open }) {
         throw new Error(errorData.error || "Failed to save password");
       }
 
-      setPassword("");
+      setCurrentPassword("");
+      setNewPassword("");
       setSaveStatus("Saved");
       window.setTimeout(() => setSaveStatus(""), 2000);
     } catch (error) {
@@ -251,7 +278,14 @@ function AccountSettingsContent({ open }) {
     return <p style={{ margin: 0, color: UI.textMuted }}>Could not load your account.</p>;
   }
 
-  const canSave = Boolean(password.trim()) && !saving;
+  const canSave =
+    Boolean(currentPassword.trim()) && Boolean(newPassword.trim()) && !saving;
+
+  function clearStatusOnEdit() {
+    if (saveStatus && saveStatus !== "Saved") {
+      setSaveStatus("");
+    }
+  }
 
   return (
     <>
@@ -259,28 +293,40 @@ function AccountSettingsContent({ open }) {
         Account
       </h3>
       <div style={{ maxWidth: "400px" }}>
-        <label
-          htmlFor="account-password"
-          style={{
-            display: "block",
-            fontSize: "0.9rem",
-            color: UI.textMuted,
-            marginBottom: "6px",
-            fontWeight: 500,
-          }}
-        >
-          Password
-        </label>
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+        <div style={{ marginBottom: "14px" }}>
+          <label htmlFor="account-current-password" style={labelStyle}>
+            Current password
+          </label>
           <input
-            id="account-password"
+            id="account-current-password"
             type="password"
-            value={password}
+            value={currentPassword}
             onChange={(e) => {
-              setPassword(e.target.value);
-              if (saveStatus && saveStatus !== "Saved") {
-                setSaveStatus("");
+              setCurrentPassword(e.target.value);
+              clearStatusOnEdit();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && canSave) {
+                handleSavePassword();
               }
+            }}
+            placeholder="Enter your current password"
+            autoComplete="current-password"
+            disabled={saving}
+            style={inputStyle}
+          />
+        </div>
+        <div style={{ marginBottom: "14px" }}>
+          <label htmlFor="account-new-password" style={labelStyle}>
+            New password
+          </label>
+          <input
+            id="account-new-password"
+            type="password"
+            value={newPassword}
+            onChange={(e) => {
+              setNewPassword(e.target.value);
+              clearStatusOnEdit();
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && canSave) {
@@ -290,37 +336,28 @@ function AccountSettingsContent({ open }) {
             placeholder="Enter a new password"
             autoComplete="new-password"
             disabled={saving}
-            style={{
-              flex: 1,
-              padding: "10px 12px",
-              borderRadius: "8px",
-              border: `1px solid ${UI.outline}`,
-              fontSize: "1rem",
-              color: UI.textPrimary,
-              background: UI.cardBg,
-              boxSizing: "border-box",
-            }}
+            style={inputStyle}
           />
-          <button
-            type="button"
-            onClick={handleSavePassword}
-            disabled={!canSave}
-            style={{
-              padding: "10px 16px",
-              borderRadius: "8px",
-              border: "none",
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              whiteSpace: "nowrap",
-              cursor: canSave ? "pointer" : "not-allowed",
-              background: canSave ? UI.buttonPrimary : "#666",
-              color: UI.buttonPrimaryText,
-              opacity: canSave ? 1 : 0.6,
-            }}
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
         </div>
+        <button
+          type="button"
+          onClick={handleSavePassword}
+          disabled={!canSave}
+          style={{
+            padding: "10px 16px",
+            borderRadius: "8px",
+            border: "none",
+            fontSize: "0.95rem",
+            fontWeight: 500,
+            whiteSpace: "nowrap",
+            cursor: canSave ? "pointer" : "not-allowed",
+            background: canSave ? UI.buttonPrimary : "#666",
+            color: UI.buttonPrimaryText,
+            opacity: canSave ? 1 : 0.6,
+          }}
+        >
+          {saving ? "Saving…" : "Save password"}
+        </button>
         {saveStatus ? (
           <p
             style={{
@@ -333,7 +370,7 @@ function AccountSettingsContent({ open }) {
           </p>
         ) : null}
         <p style={{ margin: "12px 0 0 0", fontSize: "0.85rem", color: UI.textMuted, lineHeight: 1.4 }}>
-          Leave blank to keep your current password. Enter a new one and click Save to change it.
+          Enter your current password and a new password, then click Save password.
         </p>
       </div>
     </>

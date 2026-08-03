@@ -94,6 +94,102 @@ function mergeActionButtonStyle(styleId, fallback) {
   return saved ? { ...saved, lineHeight: "1.2" } : fallback;
 }
 
+/** Filename shown for the drawings PDF attachment (matches send-drawings naming). */
+function drawingsPdfAttachmentFileName(project) {
+  const loc = project?.drawings_pdf_location;
+  if (!loc) return "drawings.pdf";
+  const raw = String(loc).replace(/\\/g, "/");
+  const base = raw.split("/").pop() || "drawings.pdf";
+  return base.trim() || "drawings.pdf";
+}
+
+/** Outlook-style attachment chip (visual only — send still attaches via API). */
+function OutlookPdfAttachmentChip({ fileName }) {
+  const name = fileName || "drawings.pdf";
+  return (
+    <div>
+      <div
+        style={{
+          display: "block",
+          fontSize: "0.9rem",
+          color: UI.textMuted,
+          marginBottom: "8px",
+          fontWeight: 500,
+        }}
+      >
+        Attachments
+      </div>
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "10px",
+          maxWidth: "100%",
+          padding: "8px 12px 8px 8px",
+          background: "#f3f2f1",
+          border: "1px solid #edebe9",
+          borderRadius: "4px",
+          boxSizing: "border-box",
+        }}
+        title={`${name} will be attached when you send`}
+      >
+        <div
+          aria-hidden
+          style={{
+            width: "32px",
+            height: "40px",
+            flexShrink: 0,
+            background: "#d13438",
+            borderRadius: "2px",
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "center",
+            paddingBottom: "4px",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.12)",
+          }}
+        >
+          <span
+            style={{
+              fontSize: "0.62rem",
+              fontWeight: 700,
+              color: "#fff",
+              letterSpacing: "0.02em",
+              fontFamily: "Segoe UI, Arial, sans-serif",
+            }}
+          >
+            PDF
+          </span>
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: "0.9rem",
+              fontWeight: 600,
+              color: "#0078d4",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              fontFamily: "Segoe UI, Arial, sans-serif",
+            }}
+          >
+            {name}
+          </div>
+          <div
+            style={{
+              fontSize: "0.75rem",
+              color: "#605e5c",
+              marginTop: "2px",
+              fontFamily: "Segoe UI, Arial, sans-serif",
+            }}
+          >
+            Adobe PDF Document
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Drawings({
   project,
   onUpdate,
@@ -4817,6 +4913,14 @@ export default function Drawings({
                   }}
                 />
               </div>
+
+              {project?.drawings_pdf_location ? (
+                <OutlookPdfAttachmentChip fileName={drawingsPdfAttachmentFileName(project)} />
+              ) : (
+                <div style={{ fontSize: "0.85rem", color: INDICATOR.orange || "#c47b00" }}>
+                  No drawings PDF on file — send will fail until a PDF is uploaded.
+                </div>
+              )}
 
               <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
                 <button

@@ -4529,7 +4529,17 @@ app.put("/api/users/:id", async (req, res) => {
   }
 
   try {
-    const { name, email, phone, positionIds, primaryPositionId, password, uiThemeId, ui_theme_id } = req.body || {};
+    const {
+      name,
+      email,
+      phone,
+      positionIds,
+      primaryPositionId,
+      password,
+      currentPassword,
+      uiThemeId,
+      ui_theme_id,
+    } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
 
     const resolvedUiThemeId =
@@ -4543,6 +4553,30 @@ app.put("/api/users/:id", async (req, res) => {
     // existing stored value untouched (unchanged from prior behaviour).
     const incomingPassword =
       password != null && String(password).trim() !== "" ? String(password) : null;
+
+    // Self-service password change (My Settings): require current password.
+    // Admins changing another user's password do not need it.
+    const requesterId = getStaffUserIdFromRequest(req);
+    const isSelfUpdate = requesterId != null && Number(requesterId) === id;
+    if (incomingPassword != null && isSelfUpdate) {
+      const current = currentPassword != null ? String(currentPassword) : "";
+      if (!current.trim()) {
+        return res.status(400).json({ error: "Current password is required to set a new password" });
+      }
+      const existingR = await pool.query(
+        `SELECT COALESCE(password, 'admin') AS password FROM users WHERE id = $1`,
+        [id]
+      );
+      if (existingR.rows.length === 0) {
+        return res.status(404).json({ error: "user not found" });
+      }
+      const storedPassword = existingR.rows[0].password || "admin";
+      const currentOk = await verifyPassword(current, storedPassword);
+      if (!currentOk) {
+        return res.status(401).json({ error: "Current password is incorrect" });
+      }
+    }
+
     const passwordToStore =
       incomingPassword != null ? await toStoredPassword(incomingPassword) : null;
 
