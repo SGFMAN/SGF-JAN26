@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
+  DESIGN_PHASE,
   isDesignPipelineStatus,
   isHotlistStatus,
   isCancelledStatus,
   isCompleteStatus,
   isConstructionPhaseStatus,
   isOnHoldFlag,
+  isPreEngagementPhaseStatus,
 } from "../utils/projectStatus";
 import { Link } from "react-router-dom";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
@@ -642,6 +644,10 @@ export default function DrawingManager() {
 
     const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "";
     const newDraftsperson = normalizeDraftspersonField(selectedValue);
+    const nextStatus =
+      isDraftspersonAssigned(newDraftsperson) && isPreEngagementPhaseStatus(project.status)
+        ? DESIGN_PHASE
+        : project.status || null;
 
     // Optimistically update local state immediately
     setProjects(prevProjects =>
@@ -650,6 +656,7 @@ export default function DrawingManager() {
           ? {
               ...p,
               draftsperson: newDraftsperson,
+              ...(nextStatus ? { status: nextStatus } : {}),
             }
           : p
       )
@@ -663,11 +670,10 @@ export default function DrawingManager() {
         },
         body: JSON.stringify({
           name: projectName,
-          status: project.status || null,
+          status: nextStatus,
           draftsperson: newDraftsperson,
         }),
       });
-
       if (!response.ok) {
         throw new Error("Failed to update draftsperson");
       }

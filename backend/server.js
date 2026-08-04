@@ -746,7 +746,14 @@ const pool = process.env.DATABASE_URL
     })
   : null;
 
-const { DRAFTSPERSON_UNASSIGNED } = require("./draftspersonConstants");
+const {
+  DRAFTSPERSON_UNASSIGNED,
+  isDraftspersonAssigned,
+} = require("./draftspersonConstants");
+
+const STATUS_PRE_ENGAGEMENT = "Pre-Engagement Phase";
+const STATUS_DESIGN = "Design Phase";
+const STATUS_PERMIT = "Permit Phase";
 
 /** For email tokens: empty when unassigned sentinel. */
 function draftspersonTokenDisplay(raw) {
@@ -754,6 +761,10 @@ function draftspersonTokenDisplay(raw) {
   if (!s) return "";
   if (s.toLowerCase() === DRAFTSPERSON_UNASSIGNED.toLowerCase()) return "";
   return s;
+}
+
+function normalizeProjectStatus(status) {
+  return status == null ? "" : String(status).trim();
 }
 
 /** Settings table: smtp_user_1..smtp_pass_16 (for SQL SELECT / RETURNING fragments). */
@@ -2909,6 +2920,29 @@ app.put("/api/projects/:id", async (req, res) => {
     const client2ActiveValue = processBoolean(client2_active);
     const client3ActiveValue = processBoolean(client3_active);
     const onHoldValue = processBoolean(on_hold);
+
+    /**
+     * Auto pipeline: assigning a draftsperson moves Pre-Engagement → Design.
+     * Does not touch Cancelled / Complete / Construction / Hotlist / Permit / etc.
+     */
+    let statusToWrite = status;
+    if (draftsperson !== undefined) {
+      const nextDraftsperson = processDraftsperson(draftsperson);
+      if (nextDraftsperson != null && isDraftspersonAssigned(nextDraftsperson)) {
+        const cur = await pool.query(`SELECT status FROM projects WHERE id = $1`, [id]);
+        const currentStatus = normalizeProjectStatus(cur.rows[0]?.status);
+        const incomingStatus =
+          status === undefined || status === null || status === ""
+            ? ""
+            : normalizeProjectStatus(status);
+        if (
+          currentStatus === STATUS_PRE_ENGAGEMENT &&
+          (!incomingStatus || incomingStatus === STATUS_PRE_ENGAGEMENT)
+        ) {
+          statusToWrite = STATUS_DESIGN;
+        }
+      }
+    }
     
     console.log("Client active values:", {
       client1: client1ActiveValue,
@@ -3092,7 +3126,7 @@ app.put("/api/projects/:id", async (req, res) => {
       `,
       [
         processAddressText(name),
-        processValue(status),
+        processValue(statusToWrite),
         processValue(stream),
         processAddressText(suburb),
         processAddressText(street),
@@ -5891,11 +5925,27 @@ app.put("/api/projects/:id/drawing-approval-dates", async (req, res) => {
       params.push(workingDate);
       sets.push(`drawings_working_approved_date = $${params.length}`);
     }
+    /**
+     * Auto pipeline: Approve Working Drawings (non-null date) moves
+     * Design / Pre-Engagement → Permit.
+     * Clearing the date does not change status. Never touches Cancelled / Complete / etc.
+     */
+    if (workingDate) {
+      const cur = await pool.query(`SELECT status FROM projects WHERE id = $1`, [id]);
+      const currentStatus = normalizeProjectStatus(cur.rows[0]?.status).toLowerCase();
+      if (
+        currentStatus === STATUS_DESIGN.toLowerCase() ||
+        currentStatus === STATUS_PRE_ENGAGEMENT.toLowerCase()
+      ) {
+        params.push(STATUS_PERMIT);
+        sets.push(`status = $${params.length}`);
+      }
+    }
     params.push(id);
     const r = await pool.query(
       `UPDATE projects SET ${sets.join(", ")}, updated_at = NOW()
        WHERE id = $${params.length}
-       RETURNING id, drawings_concept_approved_date, drawings_working_approved_date`,
+       RETURNING id, status, drawings_concept_approved_date, drawings_working_approved_date`,
       params
     );
     if (!r.rows.length) return res.status(404).json({ error: "Project not found" });

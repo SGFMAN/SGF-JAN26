@@ -5,27 +5,71 @@ const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
+const ERROR_BORDER = "1px solid #cc3333";
 
-export default function NewProject({ isOpen, onClose, formData, onFormDataChange, onNext }) {
+const STATE_OPTIONS = ["VIC", "QLD"];
+
+/** Map paste fragments to VIC | QLD, or "" if unknown. */
+function deriveStateFromText(raw) {
+  if (raw == null) return "";
+  const s = String(raw).trim();
+  if (!s) return "";
+  const upper = s.toUpperCase();
+  const abbr = upper.match(/\b(VIC|QLD)\b/);
+  if (abbr) return abbr[1];
+  if (/\bVICTORIA\b/.test(upper)) return "VIC";
+  if (/\bQUEENSLAND\b/.test(upper)) return "QLD";
+  return "";
+}
+
+function isValidState(value) {
+  return STATE_OPTIONS.includes(String(value || "").trim().toUpperCase());
+}
+
+function suburbContainsNumbers(suburb) {
+  return /\d/.test(String(suburb || ""));
+}
+
+/**
+ * @param {object} props
+ * @param {string[]} [props.streamOptions] When provided (hotlist), show + require Stream.
+ */
+export default function NewProject({
+  isOpen,
+  onClose,
+  formData,
+  onFormDataChange,
+  onNext,
+  streamOptions = null,
+}) {
   const [addressPaste, setAddressPaste] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
+  const requireStream = Array.isArray(streamOptions);
 
   if (!isOpen) return null;
 
+  function clearError(name) {
+    setFieldErrors((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  }
+
   function handleChange(e) {
     const { name, value } = e.target;
-    // Replace "/" and "\" with "_" for street and suburb fields
     let processedValue = value;
     if (name === "street" || name === "suburb") {
       processedValue = value.replace(/[/\\]/g, "_");
     }
+    clearError(name);
     onFormDataChange({
       ...formData,
       [name]: processedValue,
     });
   }
 
-  // Address parser: expects format like "30 Macedon St, Hoppers Crossing, VIC 3029, Australia"
-  // Extracts: street, suburb, and state (ignores postcode and country)
   function handleAddressPasteChange(e) {
     const value = e.target.value;
     setAddressPaste(value);
@@ -35,62 +79,52 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
     let state = "";
 
     if (value.includes(",")) {
-      // Split by comma and trim each part
-      const parts = value.split(",").map(part => part.trim()).filter(part => part);
-      
-      // First part = street
-      if (parts.length > 0) {
-        street = parts[0].replace(/[/\\]/g, "_");
-      }
-      
-      // Second part = suburb
-      if (parts.length > 1) {
-        suburb = parts[1].replace(/[/\\]/g, "_");
-      }
-      
-      // Third part (if exists) = state (may include postcode like "VIC 3029")
+      const parts = value.split(",").map((part) => part.trim()).filter((part) => part);
+      if (parts.length > 0) street = parts[0].replace(/[/\\]/g, "_");
+      if (parts.length > 1) suburb = parts[1].replace(/[/\\]/g, "_");
       if (parts.length > 2) {
-        const thirdPart = parts[2];
-        // Extract state abbreviation (2-4 uppercase letters, e.g. "VIC", "NSW", "QLD")
-        const stateMatch = thirdPart.match(/^([A-Z]{2,4})/);
-        if (stateMatch) {
-          state = stateMatch[1];
-        } else {
-          // Fallback: if it looks like a state abbreviation (all uppercase, short)
-          if (/^[A-Z]{2,4}$/.test(thirdPart)) {
-            state = thirdPart;
-          }
-        }
-      }
-    } else {
-      // If no commas, try to parse from space-separated format
-      const parts = value.trim().split(/\s+/);
-      if (parts.length >= 2) {
-        // Last 1-2 words might be suburb/state
-        // Try to find state abbreviation (2-4 uppercase letters)
-        let stateIndex = -1;
-        for (let i = parts.length - 1; i >= 0; i--) {
-          if (/^[A-Z]{2,4}$/.test(parts[i])) {
-            stateIndex = i;
-            state = parts[i];
+        for (let i = 2; i < parts.length; i++) {
+          const derived = deriveStateFromText(parts[i]);
+          if (derived) {
+            state = derived;
             break;
           }
         }
-        
+      }
+      if (!state) state = deriveStateFromText(value);
+    } else {
+      const parts = value.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        let stateIndex = -1;
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const derived = deriveStateFromText(parts[i]);
+          if (derived) {
+            stateIndex = i;
+            state = derived;
+            break;
+          }
+        }
         if (stateIndex > 0) {
-          // Suburb is before state
           suburb = parts.slice(stateIndex - 1, stateIndex).join(" ").replace(/[/\\]/g, "_");
           street = parts.slice(0, stateIndex - 1).join(" ").replace(/[/\\]/g, "_");
         } else {
-          // No state found, treat last word as suburb
           suburb = parts.slice(-1)[0].replace(/[/\\]/g, "_");
           street = parts.slice(0, -1).join(" ").replace(/[/\\]/g, "_");
+          state = deriveStateFromText(value);
         }
       } else {
-        // Fallback: just use as street
         street = value.replace(/[/\\]/g, "_");
+        state = deriveStateFromText(value);
       }
     }
+
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      delete next.street;
+      delete next.suburb;
+      delete next.state;
+      return next;
+    });
 
     onFormDataChange({
       ...formData,
@@ -101,8 +135,52 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
   }
 
   function handleNext() {
+    const state = String(formData.state || "").trim().toUpperCase();
+    const street = String(formData.street || "").trim();
+    const suburb = String(formData.suburb || "").trim();
+    const stream = String(formData.stream || "").trim();
+    const errors = {};
+
+    if (!street) errors.street = "Please enter a street.";
+    if (!suburb) errors.suburb = "Please enter a suburb.";
+    else if (suburbContainsNumbers(suburb)) {
+      errors.suburb = "Suburb contains numbers — please check and correct it.";
+    }
+    if (!isValidState(state)) errors.state = "Please select VIC or QLD.";
+    if (requireStream && !stream) errors.stream = "Please select a stream.";
+
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      return;
+    }
+
+    if (formData.state !== state || formData.street !== street || formData.suburb !== suburb) {
+      onFormDataChange({
+        ...formData,
+        street,
+        suburb,
+        state,
+        ...(requireStream ? { stream } : {}),
+      });
+    }
+    setFieldErrors({});
     onNext();
   }
+
+  const selectedState = isValidState(formData.state)
+    ? String(formData.state).trim().toUpperCase()
+    : "";
+
+  const inputStyle = (hasError) => ({
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: "8px",
+    border: hasError ? ERROR_BORDER : "none",
+    fontSize: "1rem",
+    color: MONUMENT,
+    background: WHITE,
+    boxSizing: "border-box",
+  });
 
   return (
     <div
@@ -154,7 +232,7 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
           <input
             type="text"
             name="addressPaste"
-            placeholder="e.g. 12 Ocean Ave, Bondi"
+            placeholder="e.g. 12 Ocean Ave, Bondi, QLD 2026"
             value={addressPaste}
             onChange={handleAddressPasteChange}
             style={{
@@ -191,16 +269,7 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
             name="street"
             value={formData.street}
             onChange={handleChange}
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              borderRadius: "8px",
-              border: "none",
-              fontSize: "1rem",
-              color: MONUMENT,
-              background: WHITE,
-              boxSizing: "border-box",
-            }}
+            style={inputStyle(!!fieldErrors.street)}
             autoComplete="off"
           />
         </div>
@@ -222,20 +291,11 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
               name="suburb"
               value={formData.suburb}
               onChange={handleChange}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: "none",
-                fontSize: "1rem",
-                color: MONUMENT,
-                background: WHITE,
-                boxSizing: "border-box",
-              }}
+              style={inputStyle(!!fieldErrors.suburb)}
               autoComplete="off"
             />
           </div>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, minWidth: "110px" }}>
             <label
               style={{
                 display: "block",
@@ -247,26 +307,67 @@ export default function NewProject({ isOpen, onClose, formData, onFormDataChange
             >
               State
             </label>
-            <input
-              type="text"
+            <select
               name="state"
-              value={formData.state}
+              value={selectedState}
               onChange={handleChange}
               style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: "none",
-                fontSize: "1rem",
-                color: MONUMENT,
-                background: WHITE,
-                boxSizing: "border-box",
+                ...inputStyle(!!fieldErrors.state),
+                color: selectedState ? MONUMENT : UI.textMuted,
+                cursor: "pointer",
               }}
-              autoComplete="off"
-            />
+            >
+              <option value="">Select…</option>
+              {STATE_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
+        {requireStream ? (
+          <div style={{ marginBottom: "16px" }}>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.9rem",
+                color: UI.textMuted,
+                marginBottom: "6px",
+                fontWeight: 500,
+              }}
+            >
+              Stream
+            </label>
+            <select
+              name="stream"
+              value={formData.stream || ""}
+              onChange={handleChange}
+              style={{
+                ...inputStyle(!!fieldErrors.stream),
+                color: formData.stream ? MONUMENT : UI.textMuted,
+                cursor: "pointer",
+              }}
+            >
+              <option value="">Select stream…</option>
+              {streamOptions.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+              {formData.stream && !streamOptions.includes(formData.stream) ? (
+                <option value={formData.stream}>{formData.stream} (current)</option>
+              ) : null}
+            </select>
+          </div>
+        ) : null}
+
+        {Object.values(fieldErrors).map((msg) => (
+          <p key={msg} style={{ margin: "0 0 6px 0", color: "#cc3333", fontSize: "0.9rem" }}>
+            {msg}
+          </p>
+        ))}
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px" }}>
           <button

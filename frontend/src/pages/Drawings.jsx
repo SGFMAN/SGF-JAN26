@@ -15,6 +15,19 @@ import {
   normalizeDraftspersonField,
   isDraftspersonAssigned,
 } from "../utils/draftspersonSentinel";
+import {
+  DESIGN_PHASE,
+  PERMIT_PHASE,
+  isDesignPhaseStatus,
+  isPreEngagementPhaseStatus,
+} from "../utils/projectStatus";
+
+function statusAfterWorkingDrawingsApproval(currentStatus) {
+  if (isDesignPhaseStatus(currentStatus) || isPreEngagementPhaseStatus(currentStatus)) {
+    return PERMIT_PHASE;
+  }
+  return currentStatus || null;
+}
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 import {
@@ -592,9 +605,15 @@ export default function Drawings({
       ? `${project.street}, ${project.suburb}`.trim() 
       : project?.name || "";
     try {
+      const nextStatus =
+        fieldName === "draftsperson" &&
+        isDraftspersonAssigned(value) &&
+        isPreEngagementPhaseStatus(project?.status)
+          ? DESIGN_PHASE
+          : project?.status || "";
       const updateData = {
         name: projectName,
-        status: project?.status || "",
+        status: nextStatus,
         stream: project?.stream || null,
         suburb: project?.suburb || null,
         street: project?.street || null,
@@ -862,7 +881,7 @@ export default function Drawings({
         },
         body: JSON.stringify({
           name: projectName,
-          status: project?.status || null,
+          status: statusAfterWorkingDrawingsApproval(project?.status),
           stream: project?.stream || null,
           suburb: project?.suburb || null,
           street: project?.street || null,
@@ -924,7 +943,7 @@ export default function Drawings({
         throw new Error("Failed to update drawings status");
       }
 
-      await fetch(`${API_URL}/api/projects/${project.id}/drawing-approval-dates`, {
+      const datesRes = await fetch(`${API_URL}/api/projects/${project.id}/drawing-approval-dates`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -935,6 +954,9 @@ export default function Drawings({
           drawings_working_approved_date,
         }),
       });
+      if (!datesRes.ok) {
+        console.error("Working approval dates save failed:", await datesRes.text().catch(() => ""));
+      }
 
       setDrawingsStatus(nextStatus);
       valuesRef.current.drawingsStatus = nextStatus;
@@ -942,7 +964,7 @@ export default function Drawings({
 
       // Refresh project so the drawings table re-renders (blue highlight)
       if (onUpdate) {
-        onUpdate();
+        onUpdate(true);
       }
       console.log("Working drawings approved successfully");
       return true;

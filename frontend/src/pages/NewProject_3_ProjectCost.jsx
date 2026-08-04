@@ -74,8 +74,10 @@ export default function NewProject_3_ProjectCost({
   const [streamOptions, setStreamOptions] = useState(() => projectStreamOptions(FALLBACK_STREAMS));
   const [preEngagementAmountRaw, setPreEngagementAmountRaw] = useState("");
   const [holdingAmountRaw, setHoldingAmountRaw] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
   const formDataRef = React.useRef(formData);
   formDataRef.current = formData;
+  const ERROR_BORDER = "1px solid #cc3333";
 
   const preEngagementFormatted = formatMoneyDisplay(preEngagementAmountRaw);
   const holdingFormatted = formatMoneyDisplay(holdingAmountRaw);
@@ -201,9 +203,20 @@ export default function NewProject_3_ProjectCost({
 
   if (!isOpen) return null;
 
+  function clearError(name) {
+    setFieldErrors((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  }
+
   function handleChange(e) {
     const { name, value } = e.target;
+    clearError(name);
     if (name === "depositType") {
+      clearError("deposit");
       setDepositType(value);
       if (value === DEPOSIT_TYPE_OTHER) {
         setPreviousDepositType(depositType);
@@ -302,12 +315,39 @@ export default function NewProject_3_ProjectCost({
         customDeposit: formattedAmount,
         preEngagementRequired: preEngagementFormatted || formData.preEngagementRequired || "",
       });
+      clearError("depositType");
+      clearError("deposit");
     } else {
       setDepositType(previousDepositType);
       applyDepositType(previousDepositType);
     }
     setShowDepositModal(false);
     setTempDepositAmount("");
+  }
+
+  function handleNextClick() {
+    const errors = {};
+    const projectCostNum = parseFormattedNumber(formData.projectCost);
+    const depositNum = parseFormattedNumber(actualDepositAmount);
+    const type = normalizeDepositType(depositType || formData.depositType);
+
+    if (!projectCostNum) errors.projectCost = "Please enter a project cost.";
+    if (!type) errors.depositType = "Please select a deposit type.";
+    if (!depositNum) errors.deposit = "Please enter a deposit amount.";
+    if (!String(formData.salesperson || "").trim()) {
+      errors.salesperson = "Please select a salesperson.";
+    }
+    if (!String(formData.specs || "").trim()) errors.specs = "Please select specs.";
+    if (!String(formData.classification || "").trim()) {
+      errors.classification = "Please select a classification.";
+    }
+
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      return;
+    }
+    setFieldErrors({});
+    onNext();
   }
 
   function handleDepositModalCancel() {
@@ -531,7 +571,7 @@ export default function NewProject_3_ProjectCost({
                   width: "100%",
                   padding: "10px 12px",
                   borderRadius: "8px",
-                  border: "none",
+                  border: fieldErrors.projectCost ? ERROR_BORDER : "none",
                   fontSize: "1rem",
                   color: MONUMENT,
                   background: WHITE,
@@ -560,7 +600,7 @@ export default function NewProject_3_ProjectCost({
                   width: "100%",
                   padding: "10px 12px",
                   borderRadius: "8px",
-                  border: "none",
+                  border: fieldErrors.depositType ? ERROR_BORDER : "none",
                   fontSize: "1rem",
                   color: MONUMENT,
                   background: WHITE,
@@ -595,6 +635,8 @@ export default function NewProject_3_ProjectCost({
                   const numericValue = e.target.value.replace(/[^0-9]/g, "");
                   const numeric = parseInt(numericValue) || 0;
                   const formattedValue = numeric > 0 ? `$${formatWithCommas(numeric)}` : "";
+                  clearError("deposit");
+                  clearError("depositType");
                   onFormDataChange({
                     ...formData,
                     deposit: formattedValue,
@@ -613,7 +655,7 @@ export default function NewProject_3_ProjectCost({
                   width: "100%",
                   padding: "10px 12px",
                   borderRadius: "8px",
-                  border: "none",
+                  border: fieldErrors.deposit ? ERROR_BORDER : "none",
                   fontSize: "1rem",
                   color: MONUMENT,
                   background: WHITE,
@@ -646,7 +688,7 @@ export default function NewProject_3_ProjectCost({
                   width: "100%",
                   padding: "10px 12px",
                   borderRadius: "8px",
-                  border: "none",
+                  border: fieldErrors.salesperson ? ERROR_BORDER : "none",
                   fontSize: "1rem",
                   color: MONUMENT,
                   background: WHITE,
@@ -680,7 +722,7 @@ export default function NewProject_3_ProjectCost({
               </label>
               <select
                 name="stream"
-                value={formData.stream}
+                value={formData.stream || ""}
                 onChange={handleChange}
                 style={{
                   width: "100%",
@@ -688,7 +730,7 @@ export default function NewProject_3_ProjectCost({
                   borderRadius: "8px",
                   border: "none",
                   fontSize: "1rem",
-                  color: MONUMENT,
+                  color: formData.stream ? MONUMENT : UI.textMuted,
                   background: WHITE,
                   boxSizing: "border-box",
                   cursor: "pointer",
@@ -700,6 +742,9 @@ export default function NewProject_3_ProjectCost({
                     {option}
                   </option>
                 ))}
+                {formData.stream && !streamOptions.includes(formData.stream) ? (
+                  <option value={formData.stream}>{formData.stream}</option>
+                ) : null}
               </select>
             </div>
           </div>
@@ -724,7 +769,7 @@ export default function NewProject_3_ProjectCost({
                   width: "100%",
                   padding: "10px 12px",
                   borderRadius: "8px",
-                  border: "none",
+                  border: fieldErrors.specs ? ERROR_BORDER : "none",
                   fontSize: "1rem",
                   color: MONUMENT,
                   background: WHITE,
@@ -760,7 +805,7 @@ export default function NewProject_3_ProjectCost({
                   width: "100%",
                   padding: "10px 12px",
                   borderRadius: "8px",
-                  border: "none",
+                  border: fieldErrors.classification ? ERROR_BORDER : "none",
                   fontSize: "1rem",
                   color: MONUMENT,
                   background: WHITE,
@@ -777,6 +822,12 @@ export default function NewProject_3_ProjectCost({
               </select>
             </div>
           </div>
+
+          {Object.values(fieldErrors).map((msg) => (
+            <p key={msg} style={{ margin: "0 0 6px 0", color: "#cc3333", fontSize: "0.9rem" }}>
+              {msg}
+            </p>
+          ))}
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
             <button
@@ -815,7 +866,7 @@ export default function NewProject_3_ProjectCost({
             </button>
             <button
               type="button"
-              onClick={onNext}
+              onClick={handleNextClick}
               style={{
                 background: MONUMENT,
                 color: PAGE_TEXT,

@@ -1,21 +1,76 @@
-import React from "react";
+import React, { useState } from "react";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
+const ERROR_BORDER = "1px solid #cc3333";
 
-export default function NewProject2({ isOpen, onClose, formData, onFormDataChange, onBack, onNext }) {
+function looksLikeEmail(value) {
+  const s = String(value || "").trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+}
+
+export default function NewProject2({
+  isOpen,
+  onClose,
+  formData,
+  onFormDataChange,
+  onBack,
+  onNext,
+  nextLabel = "Next",
+}) {
+  const [fieldErrors, setFieldErrors] = useState({});
+
   if (!isOpen) return null;
+
+  function clearError(name) {
+    setFieldErrors((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  }
 
   function handleChange(e) {
     const { name, value } = e.target;
+    clearError(name);
     onFormDataChange({
       ...formData,
       [name]: value,
     });
   }
+
+  function handleNext() {
+    const clientName = String(formData.clientName || "").trim();
+    const email = String(formData.email || "").trim();
+    const errors = {};
+    if (!clientName) errors.clientName = "Please enter a client name.";
+    if (!email) errors.email = "Please enter an email.";
+    else if (!looksLikeEmail(email)) errors.email = "Please enter a valid email.";
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      return;
+    }
+    setFieldErrors({});
+    if (formData.clientName !== clientName || formData.email !== email) {
+      onFormDataChange({ ...formData, clientName, email });
+    }
+    onNext();
+  }
+
+  const inputStyle = (hasError) => ({
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: "8px",
+    border: hasError ? ERROR_BORDER : "none",
+    fontSize: "1rem",
+    color: MONUMENT,
+    background: WHITE,
+    boxSizing: "border-box",
+  });
 
   return (
     <div
@@ -69,16 +124,7 @@ export default function NewProject2({ isOpen, onClose, formData, onFormDataChang
             name="clientName"
             value={formData.clientName}
             onChange={handleChange}
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              borderRadius: "8px",
-              border: "none",
-              fontSize: "1rem",
-              color: MONUMENT,
-              background: WHITE,
-              boxSizing: "border-box",
-            }}
+            style={inputStyle(!!fieldErrors.clientName)}
             autoComplete="off"
           />
         </div>
@@ -99,16 +145,7 @@ export default function NewProject2({ isOpen, onClose, formData, onFormDataChang
             name="email"
             value={formData.email}
             onChange={handleChange}
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              borderRadius: "8px",
-              border: "none",
-              fontSize: "1rem",
-              color: MONUMENT,
-              background: WHITE,
-              boxSizing: "border-box",
-            }}
+            style={inputStyle(!!fieldErrors.email)}
             autoComplete="off"
           />
         </div>
@@ -129,19 +166,16 @@ export default function NewProject2({ isOpen, onClose, formData, onFormDataChang
             name="phone"
             value={formData.phone}
             onChange={handleChange}
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              borderRadius: "8px",
-              border: "none",
-              fontSize: "1rem",
-              color: MONUMENT,
-              background: WHITE,
-              boxSizing: "border-box",
-            }}
+            style={inputStyle(false)}
             autoComplete="off"
           />
         </div>
+
+        {Object.values(fieldErrors).map((msg) => (
+          <p key={msg} style={{ margin: "0 0 6px 0", color: "#cc3333", fontSize: "0.9rem" }}>
+            {msg}
+          </p>
+        ))}
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
           <button
@@ -180,7 +214,7 @@ export default function NewProject2({ isOpen, onClose, formData, onFormDataChang
           </button>
           <button
             type="button"
-            onClick={onNext}
+            onClick={handleNext}
             style={{
               background: MONUMENT,
               color: PAGE_TEXT,
@@ -193,7 +227,7 @@ export default function NewProject2({ isOpen, onClose, formData, onFormDataChang
               transition: "background 0.17s",
             }}
           >
-            Next
+            {nextLabel}
           </button>
         </div>
       </div>

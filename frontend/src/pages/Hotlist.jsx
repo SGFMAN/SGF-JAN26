@@ -121,7 +121,7 @@ export default function Hotlist() {
   const [soldEmailFrom, setSoldEmailFrom] = useState("");
   const [soldEmailSubject, setSoldEmailSubject] = useState("");
   const [soldEmailBody, setSoldEmailBody] = useState("");
-  const [currentModal, setCurrentModal] = useState(1); // New: 1–3 (address, client, stream). Edit: 1–2. Sold: 3–7 (ProjectCost→…)
+  const [currentModal, setCurrentModal] = useState(1); // New/Edit: 1–2 (address+stream, client). Sold: 3–7 (ProjectCost→…)
   const [createdProjectAccessToken, setCreatedProjectAccessToken] = useState(null);
   const [createdProjectForEmail, setCreatedProjectForEmail] = useState(null);
   /** Stable token for post–sold-flow navigation (survives modal state resets). */
@@ -353,20 +353,15 @@ export default function Hotlist() {
       setCurrentModal(2);
     } else if (currentModal === 2) {
       if (isNewItemOpen) {
-        setCurrentModal(3);
+        // Stream is collected on the address step; save after client details.
+        void handleCreateHotlistItem();
       } else if (isEditItemOpen) {
         handleUpdateHotlistItem();
       } else if (isSoldFlowOpen) {
         setCurrentModal(3);
       }
     } else if (currentModal === 3) {
-      if (isNewItemOpen) {
-        if (!formData.stream || !String(formData.stream).trim()) {
-          alert("Please select a stream for this hotlist entry.");
-          return;
-        }
-        void handleCreateHotlistItem();
-      } else {
+      if (!isNewItemOpen) {
         setCurrentModal(4);
       }
     } else if (currentModal === 4) {
@@ -816,7 +811,7 @@ export default function Hotlist() {
       phone: item.phone || "",
       projectCost: "",
       deposit: "",
-      stream: "",
+      stream: item.stream || "",
       salesperson: "",
       specs: "",
       classification: "",
@@ -1047,7 +1042,12 @@ export default function Hotlist() {
   }
 
   function renderHotlistRow(item, columnAccent) {
-    const displayName = `${item.street || ""}, ${item.suburb || ""}`.trim() || "Unnamed Address";
+    const suburbLabel = (item.suburb || "").trim().toUpperCase();
+    const streetLabel = (item.street || "").trim();
+    const displayName =
+      suburbLabel && streetLabel
+        ? `${suburbLabel} - ${streetLabel}`
+        : suburbLabel || streetLabel || "Unnamed Address";
     const itemIsAgreementSent = isAgreementSent(item);
     const rowBg = getAgreementRowBackground(item);
     const useLightText = itemIsAgreementSent;
@@ -1729,6 +1729,7 @@ export default function Hotlist() {
               formData={formData}
               onFormDataChange={handleFormDataChange}
               onNext={handleModalNext}
+              streamOptions={hotlistProjectStreamOptions}
             />
           )}
           {currentModal === 2 && (
@@ -1739,104 +1740,8 @@ export default function Hotlist() {
               onFormDataChange={handleFormDataChange}
               onBack={handleModalBack}
               onNext={handleModalNext}
+              nextLabel="Save entry"
             />
-          )}
-          {currentModal === 3 && (
-            <div
-              role="dialog"
-              aria-modal="true"
-              style={{
-                position: "fixed",
-                inset: 0,
-                zIndex: 99990,
-                background: "rgba(0,0,0,0.45)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "24px",
-              }}
-              onClick={handleModalClose}
-            >
-              <div
-                style={{
-                  background: WHITE,
-                  borderRadius: "12px",
-                  padding: "24px",
-                  maxWidth: "480px",
-                  width: "100%",
-                  boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <h2 style={{ margin: "0 0 8px 0", fontSize: "1.25rem", color: MONUMENT, fontWeight: 700 }}>
-                  Project stream
-                </h2>
-                <p style={{ margin: "0 0 16px 0", fontSize: "0.95rem", color: "#555", lineHeight: 1.45 }}>
-                  Choose the stream for this hotlist entry. This is the same <strong>stream</strong> field used on projects.
-                </p>
-                <label style={{ display: "block", fontSize: "0.88rem", color: MONUMENT, fontWeight: 600, marginBottom: "8px" }}>
-                  Stream
-                </label>
-                <select
-                  value={formData.stream || ""}
-                  onChange={(e) =>
-                    handleFormDataChange({ ...formData, stream: e.target.value })
-                  }
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: `1px solid ${SECTION_GREY}`,
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    backgroundColor: WHITE,
-                    boxSizing: "border-box",
-                    marginBottom: "20px",
-                  }}
-                >
-                  <option value="" style={{ color: MONUMENT, backgroundColor: WHITE }}>
-                    Select stream…
-                  </option>
-                  {hotlistProjectStreamOptions.map((opt) => (
-                    <option key={opt} value={opt} style={{ color: MONUMENT, backgroundColor: WHITE }}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-                  <button
-                    type="button"
-                    onClick={handleModalBack}
-                    style={{
-                      padding: "10px 18px",
-                      borderRadius: "8px",
-                      border: `1px solid ${SECTION_GREY}`,
-                      background: SECTION_GREY,
-                      color: MONUMENT,
-                      fontWeight: 500,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleModalNext}
-                    style={{
-                      padding: "10px 18px",
-                      borderRadius: "8px",
-                      border: "none",
-                      background: MONUMENT,
-                      color: PAGE_TEXT,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Save entry
-                  </button>
-                </div>
-              </div>
-            </div>
           )}
         </>
       )}
@@ -1850,6 +1755,7 @@ export default function Hotlist() {
               formData={formData}
               onFormDataChange={handleFormDataChange}
               onNext={handleModalNext}
+              streamOptions={hotlistProjectStreamOptions}
             />
           )}
           {currentModal === 2 && (
@@ -1860,6 +1766,7 @@ export default function Hotlist() {
               onFormDataChange={handleFormDataChange}
               onBack={handleModalBack}
               onNext={handleModalNext}
+              nextLabel="Save"
             />
           )}
         </>
