@@ -1459,7 +1459,7 @@ async function ensureSchema() {
     CREATE TABLE IF NOT EXISTS projects (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'Design Phase',
+      status TEXT NOT NULL DEFAULT 'Pre-Engagement Phase',
       suburb TEXT,
       street TEXT,
       client_name TEXT,
@@ -1468,6 +1468,14 @@ async function ensureSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  // New (non-hotlist) projects default to Pre-Engagement Phase; does not rewrite existing rows.
+  try {
+    await pool.query(
+      `ALTER TABLE projects ALTER COLUMN status SET DEFAULT 'Pre-Engagement Phase'`
+    );
+  } catch (e) {
+    console.log("Could not update projects.status default:", e.message);
+  }
   // Create users table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -2482,7 +2490,7 @@ app.post("/api/projects/bulk", async (req, res) => {
          RETURNING id, name`,
         [
           name.trim(),
-          (status || "Design Phase").trim(),
+          (status || "Pre-Engagement Phase").trim(),
           suburb || null,
           street || null,
           (state || "QLD").trim(),
@@ -2610,7 +2618,7 @@ app.post("/api/projects", async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done', $35, $36, $37) RETURNING *`,
       [
         name.trim(),
-        (status || "Design Phase").trim(),
+        (status || "Pre-Engagement Phase").trim(),
         suburb ? suburb.trim() : null,
         street ? street.trim() : null,
         state ? state.trim() : null,
@@ -9797,6 +9805,9 @@ app.get("/api/files/drawings-drag/:token", async (req, res) => {
 /** Re-copy staged drawings PDF onto the Windows clipboard (for paste into Outlook). */
 app.post("/api/files/drawings/:id/copy-file-clipboard", async (req, res) => {
   if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
   try {
     if (process.platform !== "win32") {
       return res.status(400).json({ error: "Clipboard file copy is only supported on Windows" });
@@ -12571,7 +12582,7 @@ app.post("/api/substatuses", async (req, res) => {
   }
 });
 
-// Upgrade hotlist item to project (Sold) - changes status from "Hotlist" to "Design Phase"
+// Upgrade hotlist item to project (Sold) - changes status from "Hotlist" to "Pre-Engagement Phase"
 app.post("/api/hotlist/:id/sold", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   if (!(await requireHotlistSalesAccess(req, res))) return;
@@ -12599,15 +12610,15 @@ app.post("/api/hotlist/:id/sold", async (req, res) => {
     const dateTimeStr = now.toISOString().replace('T', ' ').substring(0, 19);
     const soldDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
     const logEntry = project.project_log 
-      ? `${project.project_log}\n${dateTimeStr} - Status changed from Hotlist to Design Phase (Sold)`
-      : `${dateTimeStr} - Status changed from Hotlist to Design Phase (Sold)`;
+      ? `${project.project_log}\n${dateTimeStr} - Status changed from Hotlist to Pre-Engagement Phase (Sold)`
+      : `${dateTimeStr} - Status changed from Hotlist to Pre-Engagement Phase (Sold)`;
 
-    // Update status to "Design Phase", set start date (year) to Sold date, update log
+    // Update status to "Pre-Engagement Phase", set start date (year) to Sold date, update log
     const updateResult = await pool.query(
       `UPDATE projects 
        SET status = $1, project_log = $2, year = $4, updated_at = NOW()
        WHERE id = $3 RETURNING *`,
-      ["Design Phase", logEntry, id, soldDate]
+      ["Pre-Engagement Phase", logEntry, id, soldDate]
     );
 
     const updatedProject = updateResult.rows[0];

@@ -7,6 +7,8 @@ import SettingsPage from "./pages/SettingsPage";
 import MobilePreviewPage from "./pages/MobilePreviewPage";
 import ApplyFields from "./pages/ApplyFields";
 import FinishedProjects from "./pages/FinishedProjects";
+import PreEngagementPhase from "./pages/PreEngagementPhase";
+import PermitPhase from "./pages/PermitPhase";
 import InConstruction from "./pages/InConstruction";
 import SiteVisitManager from "./pages/SiteVisitManager";
 import SiteVisitPlanner from "./pages/SiteVisitPlanner";
@@ -14,6 +16,7 @@ import Hotlist from "./pages/Hotlist";
 import AllProjects from "./pages/AllProjects";
 import Cancelled from "./pages/Cancelled";
 import OnHold from "./pages/OnHold";
+import Archive from "./pages/Archive";
 import Managers from "./pages/Managers";
 import ContractManager from "./pages/ContractManager";
 import ColourManager from "./pages/ColourManager";
@@ -100,6 +103,8 @@ export default function App() {
             <Route path="/settings/mobile" element={<Auth><AdminAccessRoute><MobilePreviewPage /></AdminAccessRoute></Auth>} />
             <Route path="/apply-fields" element={<Auth><AdminAccessRoute><ApplyFields /></AdminAccessRoute></Auth>} />
             <Route path="/finished-projects" element={<Auth><FinishedProjects /></Auth>} />
+            <Route path="/pre-engagement-phase" element={<Auth><PreEngagementPhase /></Auth>} />
+            <Route path="/permit-phase" element={<Auth><PermitPhase /></Auth>} />
             <Route path="/construction-phase" element={<Auth><InConstruction /></Auth>} />
             <Route path="/in-construction" element={<Navigate to="/construction-phase" replace />} />
             <Route path="/site-visit-manager" element={<Auth><SiteVisitManager /></Auth>} />
@@ -108,6 +113,7 @@ export default function App() {
             <Route path="/all-projects" element={<Auth><AllProjects /></Auth>} />
             <Route path="/cancelled" element={<Auth><Cancelled /></Auth>} />
             <Route path="/on-hold" element={<Auth><OnHold /></Auth>} />
+            <Route path="/archive" element={<Auth><Archive /></Auth>} />
             <Route path="/managers" element={<Auth><ManagersHubAccessRoute><Managers /></ManagersHubAccessRoute></Auth>} />
             <Route path="/managers/site-visit-manager" element={<Auth><ManagersAccessRoute><SiteVisitManager /></ManagersAccessRoute></Auth>} />
             <Route path="/managers/contract-manager" element={<Auth><ManagersAccessRoute><ContractManager /></ManagersAccessRoute></Auth>} />

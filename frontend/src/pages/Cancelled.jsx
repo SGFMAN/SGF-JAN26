@@ -1,14 +1,9 @@
 import React, { useState, useEffect, Fragment, useMemo } from "react";
 import { Link } from "react-router-dom";
-import HotlistSidebarSection from "../components/HotlistSidebarSection";
-import ManagersSalesMenuGroup from "../components/ManagersSalesMenuGroup";
+import ArchiveSidebarMenu from "../components/ArchiveSidebarMenu";
 import ProjectListToolbar from "../components/ProjectListToolbar";
-import {
-  ProjectListNewProjectButton,
-  useProjectListNewProject,
-} from "../components/ProjectListNewProject";
-import { isUserAdmin } from "../utils/auth";
 import { getStateFilter } from "../utils/stateFilter";
+import { useProjectListSearch } from "../utils/projectListSearch";
 import {
   applyProjectListFilters,
   buildProjectListHeadingCount,
@@ -20,12 +15,11 @@ import { getProjectListGroupKey } from "../utils/projectListGrouping";
 import useAppLogo from "../hooks/useAppLogo.js";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
-import { UI, MENU } from "../utils/uiThemeTokens.js";
+import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
-const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 
 const API_URL = "";
@@ -35,26 +29,19 @@ export default function Cancelled() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useProjectListSearch();
   const [selectedField, setSelectedField] = useState("");
   const [selectedValue, setSelectedValue] = useState("");
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [sortMode, setSortMode] = useState("suburb");
-  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    checkAdminStatus();
     fetchProjects();
   }, []);
 
   useEffect(() => {
     setSelectedValue("");
   }, [selectedField]);
-
-  async function checkAdminStatus() {
-    const admin = await isUserAdmin();
-    setIsAdmin(admin);
-  }
 
   async function fetchProjects() {
     try {
@@ -110,8 +97,6 @@ export default function Cancelled() {
     stateFilter,
   });
 
-  const { openNewProject, newProjectModals } = useProjectListNewProject(fetchProjects);
-
   return (
     <div
       className="page-container project-list-page"
@@ -160,7 +145,6 @@ export default function Cancelled() {
             Cancelled{headingCount ? ` ${headingCount}` : ""}
           </h1>
         </div>
-        <ProjectListNewProjectButton isAdmin={isAdmin} onClick={openNewProject} />
       </div>
 
       {/* Sections 2 & 3 */}
@@ -194,255 +178,7 @@ export default function Cancelled() {
             color: MONUMENT,
           }}
         >
-          {/* Menu Buttons */}
-          <HotlistSidebarSection />
-          
-          {/* All Projects, Design Phase, Construction Phase, Finished Projects, Cancelled, On Hold - Light Green */}
-          <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: `1px solid ${UI.outline}` }}>
-            <Link
-              to="/all-projects"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              All Projects
-            </Link>
-            <Link
-              to="/projects"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Design Phase
-            </Link>
-            <Link
-              to="/construction-phase"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Construction Phase
-            </Link>
-            <Link
-              to="/finished-projects"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Finished Projects
-            </Link>
-            <Link
-              to="/cancelled"
-              style={{
-                background: MENU.greenActive,
-                color: MENU.activeText,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Cancelled
-            </Link>
-            <Link
-              to="/on-hold"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              On Hold
-            </Link>
-          </div>
-          
-          <ManagersSalesMenuGroup />
-
-          {/* Email Generator, Maps — Purple (Admin Only) */}
-          {isAdmin && (
-            <div
-              style={{
-                background: MENU.purpleLight,
-                borderRadius: "10px",
-                padding: "4px",
-                display: "flex",
-                flexDirection: "column",
-                gap: "4px",
-                border: `1px solid ${UI.outline}`,
-              }}
-            >
-              <Link
-                to="/email-generator"
-                style={{
-                  background: "transparent",
-                  color: UI.textSecondary,
-                  border: "none",
-                  borderRadius: "10px",
-                  padding: "8px 8px",
-                  fontSize: "0.95rem",
-                  fontWeight: 500,
-                  textAlign: "center",
-                  textDecoration: "none",
-                  letterSpacing: "0.5px",
-                  cursor: "pointer",
-                  transition: "background 0.18s, color 0.15s",
-                  marginBottom: "0px",
-                  lineHeight: "1.4",
-                  display: "block",
-                }}
-              >
-                Email Generator
-              </Link>
-              <Link
-                to="/maps"
-                style={{
-                  background: "transparent",
-                  color: UI.textSecondary,
-                  border: "none",
-                  borderRadius: "10px",
-                  padding: "8px 8px",
-                  fontSize: "0.95rem",
-                  fontWeight: 500,
-                  textAlign: "center",
-                  textDecoration: "none",
-                  letterSpacing: "0.5px",
-                  cursor: "pointer",
-                  transition: "background 0.18s, color 0.15s",
-                  marginBottom: "0px",
-                  lineHeight: "1.4",
-                  display: "block",
-                }}
-              >
-                Maps
-              </Link>
-            </div>
-          )}
-          <div style={{ flex: 1 }} />
-          {isAdmin && (
-            <Link
-              to="/settings"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Settings
-            </Link>
-          )}
-          {isAdmin && (
-            <Link
-              to="/apply-fields"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Apply Fields
-            </Link>
-          )}
+          <ArchiveSidebarMenu activePath="/cancelled" />
         </div>
 
         {/* Section 3: Projects */}
@@ -527,7 +263,6 @@ export default function Cancelled() {
           </div>
         </div>
       </div>
-      {newProjectModals}
     </div>
   );
 }

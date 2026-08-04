@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { getStateFilter } from "../utils/stateFilter";
 import { isUserAdmin } from "../utils/auth";
 import {
-  isDesignPhaseStatus,
+  isDesignPipelineStatus,
   isHotlistStatus,
   isCancelledStatus,
 } from "../utils/projectStatus";
@@ -82,7 +82,7 @@ export default function ContractManager() {
       const data = await response.json();
       const designPhaseProjects = data.filter((project) => {
         if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
-        return isDesignPhaseStatus(project.status);
+        return isDesignPipelineStatus(project.status);
       });
       // Sort by date
       const sortedProjects = sortProjectsByDate(designPhaseProjects, sortOrder);

@@ -11,6 +11,8 @@ import {
   isDesignPhaseStatus,
   isHotlistStatus,
   isOnHoldFlag,
+  isPermitPhaseStatus,
+  isPreEngagementPhaseStatus,
 } from "../utils/projectStatus";
 import MobileStyledFilterButton, {
   MOBILE_STATE_BUTTON_IDS,
@@ -31,14 +33,18 @@ const STATE_OPTION_LABELS = {
 
 const STATUS_FILTERS_ROW_1 = [
   { key: "all", label: "All Projects" },
+  { key: "preEngagement", label: "Pre-Engagement" },
   { key: "design", label: "Design" },
-  { key: "construction", label: "Construction" },
 ];
 
 const STATUS_FILTERS_ROW_2 = [
+  { key: "permit", label: "Permit" },
+  { key: "construction", label: "Construction" },
   { key: "onHold", label: "On Hold" },
-  { key: "cancelled", label: "Cancelled" },
-  { key: "finished", label: "Finished" },
+];
+
+const STATUS_FILTERS_ROW_3 = [
+  { key: "archive", label: "Archive" },
 ];
 
 function matchesStatusFilter(project, statusFilter) {
@@ -46,17 +52,19 @@ function matchesStatusFilter(project, statusFilter) {
 
   switch (statusFilter) {
     case "all":
-      return !isCancelledStatus(project.status);
+      return !isCancelledStatus(project.status) && !isCompleteStatus(project.status);
+    case "preEngagement":
+      return isPreEngagementPhaseStatus(project.status);
     case "design":
       return isDesignPhaseStatus(project.status);
+    case "permit":
+      return isPermitPhaseStatus(project.status);
     case "construction":
       return isConstructionPhaseStatus(project.status);
     case "onHold":
       return isOnHoldFlag(project);
-    case "cancelled":
-      return isCancelledStatus(project.status);
-    case "finished":
-      return isCompleteStatus(project.status);
+    case "archive":
+      return isCompleteStatus(project.status) || isCancelledStatus(project.status);
     default:
       return true;
   }
@@ -174,6 +182,21 @@ export default function MobileProjectsHome({ preview = false, onSelectProject })
           </div>
           <div className="mobile-status-filter-row">
             {STATUS_FILTERS_ROW_2.map(({ key, label }) => {
+              const selected = statusFilter === key;
+              return (
+                <MobileStyledFilterButton
+                  key={key}
+                  styleId={MOBILE_STATUS_BUTTON_IDS[key]}
+                  selected={selected}
+                  onClick={() => setStatusFilter(key)}
+                >
+                  {label}
+                </MobileStyledFilterButton>
+              );
+            })}
+          </div>
+          <div className="mobile-status-filter-row">
+            {STATUS_FILTERS_ROW_3.map(({ key, label }) => {
               const selected = statusFilter === key;
               return (
                 <MobileStyledFilterButton

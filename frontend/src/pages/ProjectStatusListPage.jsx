@@ -1,7 +1,12 @@
 import React, { useState, useEffect, Fragment, useMemo } from "react";
-import { Link } from "react-router-dom";
-import ArchiveSidebarMenu from "../components/ArchiveSidebarMenu";
+import { isHotlistStatus, isCancelledStatus } from "../utils/projectStatus";
+import { Link, useLocation } from "react-router-dom";
+import HotlistSidebarSection from "../components/HotlistSidebarSection";
+import ProjectStatusSidebarSection from "../components/ProjectStatusSidebarSection";
+import AdminToolsSidebarSection from "../components/AdminToolsSidebarSection";
+import ManagersSalesMenuGroup from "../components/ManagersSalesMenuGroup";
 import ProjectListToolbar from "../components/ProjectListToolbar";
+import { isUserAdmin } from "../utils/auth";
 import { getStateFilter } from "../utils/stateFilter";
 import { useProjectListSearch } from "../utils/projectListSearch";
 import {
@@ -12,37 +17,79 @@ import {
 import ProjectRectangleCard from "../components/ProjectRectangleCard";
 import ProjectListGroupHeader from "../components/ProjectListGroupHeader";
 import { getProjectListGroupKey } from "../utils/projectListGrouping";
-import { isCompleteStatus } from "../utils/projectStatus";
 import useAppLogo from "../hooks/useAppLogo.js";
+import { UI, MENU } from "../utils/uiThemeTokens.js";
 
-// COLORBOND® Classic Monument (very dark, almost black-grey)
-import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
-// A bit lighter version for sections
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
 const PAGE_TEXT = UI.pageText;
-
 const API_URL = "";
 
-export default function FinishedProjects() {
+/**
+ * Shared project list page for a single status (Pre-Engagement, Permit, etc.).
+ * Mirrors InConstruction layout; status matching is supplied by the caller.
+ */
+export default function ProjectStatusListPage({
+  title,
+  pathname,
+  matchStatus,
+  emptyLabel,
+}) {
   const logo = useAppLogo();
+  const location = useLocation();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useProjectListSearch();
   const [selectedField, setSelectedField] = useState("");
   const [selectedValue, setSelectedValue] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [sortMode, setSortMode] = useState("suburb");
 
   useEffect(() => {
+    checkAdminStatus();
     fetchProjects();
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
+
+    const handleFocus = () => {
+      if (isMounted && location.pathname === pathname) {
+        fetchProjects();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (isMounted && !document.hidden && location.pathname === pathname) {
+        fetchProjects();
+      }
+    };
+
+    if (location.pathname === pathname) {
+      fetchProjects();
+    }
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [location.pathname, pathname]);
+
+  useEffect(() => {
     setSelectedValue("");
   }, [selectedField]);
+
+  async function checkAdminStatus() {
+    const admin = await isUserAdmin();
+    setIsAdmin(admin);
+  }
 
   async function fetchProjects() {
     try {
@@ -53,7 +100,6 @@ export default function FinishedProjects() {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
       const data = await response.json();
-      console.log("Projects from API:", data);
       setProjects(data);
     } catch (err) {
       setError(err.message);
@@ -63,19 +109,19 @@ export default function FinishedProjects() {
     }
   }
 
-  const scopeFilter = (project) => isCompleteStatus(project.status);
+  const scopeFilter = (project) => {
+    if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
+    return matchStatus(project.status);
+  };
 
-  const scopeProjects = useMemo(
-    () => projects.filter(scopeFilter),
-    [projects]
-  );
+  const scopeProjects = useMemo(() => projects.filter(scopeFilter), [projects]);
 
   const availableValues = useMemo(
     () => getAvailableFieldValues(projects, selectedField, scopeFilter),
     [projects, selectedField]
   );
 
-  const finishedFilteredProjects = useMemo(
+  const filteredProjects = useMemo(
     () =>
       applyProjectListFilters(projects, {
         scopeFilter,
@@ -90,14 +136,14 @@ export default function FinishedProjects() {
 
   const headingCount = buildProjectListHeadingCount({
     totalCount: scopeProjects.length,
-    filteredCount: finishedFilteredProjects.length,
+    filteredCount: filteredProjects.length,
     searchQuery,
     selectedField,
     selectedValue,
     stateFilter,
   });
 
-  const hasFinishedProjects = scopeProjects.length > 0;
+  const hasScopedProjects = scopeProjects.length > 0;
 
   return (
     <div
@@ -110,7 +156,6 @@ export default function FinishedProjects() {
         width: "100vw",
       }}
     >
-      {/* Section 1: Heading */}
       <div
         style={{
           margin: "32px auto 14px auto",
@@ -119,20 +164,13 @@ export default function FinishedProjects() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          position: "relative",
           padding: "0 32px",
           boxSizing: "border-box",
+          position: "relative",
         }}
       >
         <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
-          <img
-            src={logo}
-            alt="SGF Logo"
-            style={{
-              width: "120px",
-              height: "auto",
-            }}
-          />
+          <img src={logo} alt="SGF Logo" style={{ width: "120px", height: "auto" }} />
         </Link>
         <div style={{ display: "flex", alignItems: "center" }}>
           <h1
@@ -144,12 +182,12 @@ export default function FinishedProjects() {
               letterSpacing: "1px",
             }}
           >
-            Completed{headingCount ? ` ${headingCount}` : ""}
+            {title}
+            {headingCount ? ` ${headingCount}` : ""}
           </h1>
         </div>
       </div>
 
-      {/* Sections 2 & 3 */}
       <div
         className="sections-container"
         style={{
@@ -161,7 +199,6 @@ export default function FinishedProjects() {
           gap: "32px",
         }}
       >
-        {/* Section 2: Menu */}
         <div
           className="sidebar-menu"
           style={{
@@ -180,9 +217,16 @@ export default function FinishedProjects() {
             color: MONUMENT,
           }}
         >
-          <ArchiveSidebarMenu activePath="/finished-projects" />
+          <HotlistSidebarSection />
+          <ProjectStatusSidebarSection activePath={location.pathname} stateFilter={stateFilter} />
+          <ManagersSalesMenuGroup />
+
+          {isAdmin && (
+            <AdminToolsSidebarSection activePath={location.pathname} visible={isAdmin} />
+          )}
+          <div style={{ flex: 1 }} />
         </div>
-        {/* Section 3: Projects */}
+
         <div
           className="content-section"
           style={{
@@ -219,50 +263,46 @@ export default function FinishedProjects() {
           />
 
           <div className="project-list-scroll">
-          {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
-          {error && (
-            <p style={{ color: "#cc3333" }}>
-              Error: {error}
-            </p>
-          )}
-          {!loading && !error && finishedFilteredProjects.length === 0 && (
-            <p style={{ color: UI.textMuted }}>
-              {selectedField && selectedValue
-                ? "No projects match the selected filter."
-                : searchQuery.trim()
-                  ? "No projects match your search."
-                  : hasFinishedProjects
-                    ? "No projects match your filters."
-                    : "No completed projects found."}
-            </p>
-          )}
-          {!loading && !error && finishedFilteredProjects.length > 0 && (
-            <div
-              className="projects-grid"
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: "20px",
-                alignItems: "flex-start",
-              }}
-            >
-              {finishedFilteredProjects.map((project, index) => {
-                const prevProject = index > 0 ? finishedFilteredProjects[index - 1] : null;
-                const groupKey = getProjectListGroupKey(project, sortMode);
-                const prevGroupKey = getProjectListGroupKey(prevProject, sortMode);
-                const showGroupHeader = groupKey && groupKey !== prevGroupKey;
+            {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
+            {error && <p style={{ color: "#cc3333" }}>Error: {error}</p>}
+            {!loading && !error && filteredProjects.length === 0 && (
+              <p style={{ color: UI.textMuted }}>
+                {selectedField && selectedValue
+                  ? "No projects match the selected filter."
+                  : searchQuery.trim()
+                    ? "No projects match your search."
+                    : hasScopedProjects
+                      ? "No projects match your filters."
+                      : emptyLabel || `No ${title.toLowerCase()} projects found.`}
+              </p>
+            )}
+            {!loading && !error && filteredProjects.length > 0 && (
+              <div
+                className="projects-grid"
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "20px",
+                  alignItems: "flex-start",
+                }}
+              >
+                {filteredProjects.map((project, index) => {
+                  const prevProject = index > 0 ? filteredProjects[index - 1] : null;
+                  const groupKey = getProjectListGroupKey(project, sortMode);
+                  const prevGroupKey = getProjectListGroupKey(prevProject, sortMode);
+                  const showGroupHeader = groupKey && groupKey !== prevGroupKey;
 
-                return (
-                  <Fragment key={project.id}>
-                    {showGroupHeader && (
-                      <ProjectListGroupHeader label={groupKey} isFirst={index === 0} />
-                    )}
-                    <ProjectRectangleCard project={project} />
-                  </Fragment>
-                );
-              })}
-            </div>
-          )}
+                  return (
+                    <Fragment key={project.id}>
+                      {showGroupHeader && (
+                        <ProjectListGroupHeader label={groupKey} isFirst={index === 0} />
+                      )}
+                      <ProjectRectangleCard project={project} />
+                    </Fragment>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>

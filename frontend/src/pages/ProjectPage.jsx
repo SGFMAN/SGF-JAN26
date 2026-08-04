@@ -563,7 +563,7 @@ export default function ProjectPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: projectName,
-        status: "Design Phase",
+        status: "Pre-Engagement Phase",
         suburb: formData.suburb || null,
         street: formData.street || null,
         state: formData.state || null,

@@ -223,12 +223,15 @@ button:focus-visible {
 
 .page-container.project-list-page > div:first-of-type {
   flex-shrink: 0;
+  /* Slightly higher than the old 32px so the menu starts a bit further up */
+  margin-top: 24px !important;
+  margin-bottom: 14px !important;
 }
 
 .page-container.project-list-page .sections-container {
   flex: 1 1 auto;
   min-height: 0;
-  margin-top: 50px;
+  margin-top: 36px;
   margin-bottom: 32px;
   overflow: hidden;
   align-items: stretch;
@@ -240,6 +243,12 @@ button:focus-visible {
   max-height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge */
+}
+
+.page-container.project-list-page .sidebar-menu::-webkit-scrollbar {
+  display: none; /* Chrome / Safari / Edge */
 }
 
 .page-container.project-list-page .content-section {

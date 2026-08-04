@@ -69,7 +69,7 @@ export const FIELD_DEFINITIONS = {
   status: {
     label: "Project Status",
     values: PROJECT_STATUS_OPTIONS,
-    defaultValue: "Design Phase",
+    defaultValue: "Pre-Engagement Phase",
   },
   year: {
     label: "Year",
@@ -94,7 +94,6 @@ export const PROJECT_LIST_ACTION_BUTTON_LABELS = [
   "VIC Only",
   "QLD Only",
   "All Projects",
-  "+ New Project",
   "Sort by Suburb",
   "Sort By Class",
   "Sort By Stream",

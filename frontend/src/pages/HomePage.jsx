@@ -1,16 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import NewProject from "./NewProject_1_Address";
-import NewProject2 from "./NewProject_2_ClientDetails";
-import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
-import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
-import NewProject_4_FoldersOption from "./NewProject_4_FoldersOption";
-import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
-import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
 import HotlistSidebarSection from "../components/HotlistSidebarSection";
+import ProjectStatusSidebarSection from "../components/ProjectStatusSidebarSection";
+import AdminToolsSidebarSection from "../components/AdminToolsSidebarSection";
 import ManagersSalesMenuGroup from "../components/ManagersSalesMenuGroup";
 import { isUserAdmin } from "../utils/auth";
 import { getStateFilter } from "../utils/stateFilter";
+import { useProjectListSearch } from "../utils/projectListSearch";
 import {
   PROJECT_STATUS_OPTIONS,
   isDesignPhaseStatus,
@@ -25,12 +21,10 @@ import MobileProjectsHome from "../mobile/MobileProjectsHome";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
 import StateFilterButtons from "../components/StateFilterButtons";
-import { UI, MENU, STREAM, INDICATOR, outlineBorder } from "../utils/uiThemeTokens.js";
-import { streamColorHover } from "../utils/streamColors.js";
+import { UI, MENU, INDICATOR, outlineBorder } from "../utils/uiThemeTokens.js";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 import { buildDuplicateChainGroups } from "../utils/duplicateProjectLinks";
 import {
-  newJobPreEngagementPaymentFields,
   getDepositPaidFilterCategory,
   projectMatchesDepositPaidFilter,
 } from "../utils/projectDeposit";
@@ -146,7 +140,6 @@ const DESIGN_PHASE_ACTION_BUTTON_LABELS = [
   "VIC Only",
   "QLD Only",
   "All Projects",
-  "+ New Project",
   "Sort by Suburb",
   "Sort By Class",
   "Sort By Stream",
@@ -228,31 +221,12 @@ export default function HomePage() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useProjectListSearch();
   const [selectedField, setSelectedField] = useState("");
   const [selectedValue, setSelectedValue] = useState("");
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [sortMode, setSortMode] = useState("suburb"); // default view
   const [, setUiButtonStyleRevision] = useState(0);
-  const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
-  const [newProjectStep, setNewProjectStep] = useState(1);
-  const [createdProjectForEmail, setCreatedProjectForEmail] = useState(null);
-  const [newProjectFormData, setNewProjectFormData] = useState({
-    suburb: "",
-    street: "",
-    state: "",
-    stream: "",
-    deposit: "",
-    customDeposit: "",
-    projectCost: "",
-    salesperson: "",
-    specs: "",
-    classification: "",
-    clientName: "",
-    email: "",
-    phone: "",
-    createFolders: true,
-   });
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
@@ -327,86 +301,6 @@ export default function HomePage() {
       console.error("Error fetching projects:", err);
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function handleCreateProject(formData) {
-    // Combine street and suburb into project name
-    const projectName = `${formData.street}, ${formData.suburb}`.trim() || "New Project";
-    
-    const response = await fetch(`${API_URL}/api/projects`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name: projectName,
-        status: "Design Phase",
-        suburb: formData.suburb || null,
-        street: formData.street || null,
-        state: formData.state || null,
-        stream: formData.stream || null,
-        project_cost: formData.projectCost || null, // Project cost (formatted with commas)
-        salesperson: formData.salesperson || null,
-        specs: formData.specs || null,
-        classification: formData.classification || null,
-        client_name: formData.clientName || null,
-        email: formData.email || null,
-        phone: formData.phone || null,
-        // Also populate Contact 1 with the same values
-        client1_name: formData.clientName || null,
-        client1_email: formData.email || null,
-        client1_phone: formData.phone || null,
-        // Store current date in YYYY-MM-DD format
-        year: new Date().toISOString().split('T')[0],
-        ...newJobPreEngagementPaymentFields(formData),
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: response.statusText }));
-      throw new Error(errorData.error || "Failed to create project");
-    }
-
-    const newProject = await response.json();
-    // Refresh projects list
-    await fetchProjects();
-    // Don't close modal here - let NewProject4 handle it after email is sent
-    // Reset form data (but keep modal open for email preview)
-    setNewProjectFormData({
-      suburb: "",
-      street: "",
-      state: "",
-      stream: "",
-      deposit: "",
-      customDeposit: "",
-      projectCost: "",
-      salesperson: "",
-      specs: "",
-      classification: "",
-      clientName: "",
-      email: "",
-      phone: "",
-    });
-    return newProject;
-  }
-
-  // Create project and show email modal (used when "No" is clicked - no folders, no PDF)
-  async function handleCreateProjectAndEmail() {
-    try {
-      // Create the project
-      const newProject = await handleCreateProject(newProjectFormData);
-      
-      // Store project and show email modal (step 6)
-      setCreatedProjectForEmail({
-        ...newProject,
-        newJobDepositType: newProjectFormData.depositType || "",
-        depositType: newProjectFormData.depositType || "",
-      });
-      setNewProjectStep(6); // Go to email modal
-    } catch (error) {
-      console.error("Error creating project:", error);
-      alert(error.message || "Failed to create project");
     }
   }
 
@@ -646,14 +540,6 @@ export default function HomePage() {
           },
         };
 
-  const newProjectButtonStyle = {
-    ...toolbarButtonStyle,
-    background: STREAM.streamGreen,
-    color: PAGE_TEXT,
-    border: outlineBorder,
-    transition: "background 0.2s",
-  };
-
   if (isMobile) {
     return <MobileProjectsHome />;
   }
@@ -706,26 +592,6 @@ export default function HomePage() {
             Design Phase{designPhaseHeadingCount ? ` ${designPhaseHeadingCount}` : ""}
           </h1>
         </div>
-        {isAdmin && (
-          <button
-            type="button"
-            onClick={() => setIsNewProjectOpen(true)}
-            style={{
-              ...newProjectButtonStyle,
-              position: "absolute",
-              top: "20px",
-              right: "32px",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = streamColorHover(STREAM.streamGreen);
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = STREAM.streamGreen;
-            }}
-          >
-            + New Project
-          </button>
-        )}
       </div>
 
       {/* Sections 2 & 3 */}
@@ -761,251 +627,14 @@ export default function HomePage() {
         >
           {/* Menu Buttons */}
           <HotlistSidebarSection />
-                    {/* All Projects, Design Phase, Construction Phase, Finished Projects, Cancelled, On Hold - Light Green */}
-          <div style={{ background: MENU.green, borderRadius: "10px", padding: "4px", display: "flex", flexDirection: "column", gap: "4px", border: outlineBorder }}>
-            <Link
-              to="/all-projects"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              All Projects
-            </Link>
-            <Link
-              to="/projects"
-              style={{
-                background: MENU.greenActive,
-                color: MENU.activeText,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Design Phase
-            </Link>
-            <Link
-              to="/construction-phase"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Construction Phase
-            </Link>
-            <Link
-              to="/finished-projects"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Finished Projects
-            </Link>
-            <Link
-              to="/cancelled"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Cancelled
-            </Link>
-            <Link
-              to="/on-hold"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              On Hold
-            </Link>
-          </div>
+                    <ProjectStatusSidebarSection activePath={location.pathname} stateFilter={stateFilter} />
           
           <ManagersSalesMenuGroup />
 
-          {/* Email Generator, Maps — Purple (Admin Only) */}
           {isAdmin && (
-            <div
-              style={{
-                background: MENU.purpleLight,
-                borderRadius: "10px",
-                padding: "4px",
-                display: "flex",
-                flexDirection: "column",
-                gap: "4px",
-                border: outlineBorder,
-              }}
-            >
-              <Link
-                to="/email-generator"
-                style={{
-                  background: "transparent",
-                  color: UI.textSecondary,
-                  border: "none",
-                  borderRadius: "10px",
-                  padding: "8px 8px",
-                  fontSize: "0.95rem",
-                  fontWeight: 500,
-                  textAlign: "center",
-                  textDecoration: "none",
-                  letterSpacing: "0.5px",
-                  cursor: "pointer",
-                  transition: "background 0.18s, color 0.15s",
-                  marginBottom: "0px",
-                  lineHeight: "1.4",
-                  display: "block",
-                }}
-              >
-                Email Generator
-              </Link>
-              <Link
-                to="/maps"
-                style={{
-                  background: "transparent",
-                  color: UI.textSecondary,
-                  border: "none",
-                  borderRadius: "10px",
-                  padding: "8px 8px",
-                  fontSize: "0.95rem",
-                  fontWeight: 500,
-                  textAlign: "center",
-                  textDecoration: "none",
-                  letterSpacing: "0.5px",
-                  cursor: "pointer",
-                  transition: "background 0.18s, color 0.15s",
-                  marginBottom: "0px",
-                  lineHeight: "1.4",
-                  display: "block",
-                }}
-              >
-                Maps
-              </Link>
-            </div>
+            <AdminToolsSidebarSection activePath={location.pathname} visible={isAdmin} />
           )}
-
           <div style={{ flex: 1 }} />
-          {isAdmin && (
-            <Link
-              to="/settings"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                display: "block",
-              }}
-            >
-              Settings
-            </Link>
-          )}
-          {isAdmin && (
-            <Link
-              to="/apply-fields"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                display: "block",
-              }}
-            >
-              Apply Fields
-            </Link>
-          )}
         </div>
         {/* Section 3: Projects */}
         <div
@@ -1296,206 +925,6 @@ export default function HomePage() {
           </div>
         </div>
       </div>
-      <NewProject
-        isOpen={isNewProjectOpen && newProjectStep === 1}
-        onClose={() => {
-          setIsNewProjectOpen(false);
-          setNewProjectStep(1);
-          setNewProjectFormData({
-            suburb: "",
-            street: "",
-            state: "",
-            stream: "",
-            deposit: "",
-            customDeposit: "",
-            projectCost: "",
-            clientName: "",
-            email: "",
-            phone: "",
-          });
-        }}
-        formData={newProjectFormData}
-        onFormDataChange={setNewProjectFormData}
-        onNext={() => setNewProjectStep(2)}
-      />
-      <NewProject2
-        isOpen={isNewProjectOpen && newProjectStep === 2}
-        onClose={() => {
-          setIsNewProjectOpen(false);
-          setNewProjectStep(1);
-          setNewProjectFormData({
-            suburb: "",
-            street: "",
-            state: "",
-            stream: "",
-            deposit: "",
-            customDeposit: "",
-            projectCost: "",
-            clientName: "",
-            email: "",
-            phone: "",
-          });
-        }}
-        formData={newProjectFormData}
-        onFormDataChange={setNewProjectFormData}
-        onBack={() => setNewProjectStep(1)}
-        onNext={() => setNewProjectStep(3)}
-      />
-      <NewProject_3_ProjectCost
-        isOpen={isNewProjectOpen && newProjectStep === 3}
-        onClose={() => {
-          setIsNewProjectOpen(false);
-          setNewProjectStep(1);
-          setNewProjectFormData({
-            suburb: "",
-            street: "",
-            state: "",
-            stream: "",
-            deposit: "",
-            customDeposit: "",
-            projectCost: "",
-            salesperson: "",
-            clientName: "",
-            email: "",
-            phone: "",
-          });
-        }}
-        formData={newProjectFormData}
-        onFormDataChange={setNewProjectFormData}
-        onBack={() => {
-          setNewProjectStep(2);
-        }}
-        onNext={() => {
-          // Go to folders option modal (step 4)
-          setNewProjectStep(4);
-        }}
-        onCreate={handleCreateProject}
-      />
-      <NewProject_4_FoldersOption
-        isOpen={isNewProjectOpen && newProjectStep === 4}
-        onClose={() => {
-          setIsNewProjectOpen(false);
-          setNewProjectStep(1);
-          setNewProjectFormData({
-            suburb: "",
-            street: "",
-            state: "",
-            stream: "",
-            deposit: "",
-            customDeposit: "",
-            projectCost: "",
-            salesperson: "",
-            clientName: "",
-            email: "",
-            phone: "",
-          });
-        }}
-        formData={newProjectFormData}
-        onFormDataChange={setNewProjectFormData}
-        onBack={() => {
-          setNewProjectStep(3); // Go back to Project Cost
-        }}
-        onYes={() => {
-          // Yes - set flag and go to proposal upload step (step 5)
-          setNewProjectStep(5);
-        }}
-        onNo={async () => {
-          // No - just create project without folders and show email
-          setNewProjectStep(0); // Close modal
-          await new Promise(resolve => setTimeout(resolve, 50));
-          await handleCreateProjectAndEmail();
-        }}
-      />
-      <NewProject_5_PDFUpload
-        isOpen={isNewProjectOpen && newProjectStep === 5}
-        onClose={() => {
-          setIsNewProjectOpen(false);
-          setNewProjectStep(1);
-          setCreatedProjectForEmail(null);
-          setNewProjectFormData({
-            suburb: "",
-            street: "",
-            state: "",
-            stream: "",
-            deposit: "",
-            customDeposit: "",
-            projectCost: "",
-            salesperson: "",
-            clientName: "",
-            email: "",
-            phone: "",
-          });
-        }}
-        formData={newProjectFormData}
-        onFormDataChange={setNewProjectFormData}
-        onBack={() => {
-          // Go back to folders option modal
-          setNewProjectStep(4);
-        }}
-        onNext={async (project) => {
-          // Project was already created and PDF uploaded in handleFileUpload
-          // Use the project passed as parameter, or fall back to formData
-          const projectToUse = project || newProjectFormData.createdProject;
-          if (projectToUse) {
-            setCreatedProjectForEmail({
-              ...projectToUse,
-              newJobDepositType: newProjectFormData.depositType || "",
-              depositType: newProjectFormData.depositType || "",
-            });
-            setNewProjectStep(6); // Go to email modal
-          } else {
-            // Fallback: if project wasn't created yet, create it now
-            // This shouldn't happen, but just in case
-            await handleCreateProjectAndEmail();
-          }
-        }}
-        onCreate={handleCreateProject}
-      />
-      <NewProject_6_EmailInternal
-        isOpen={isNewProjectOpen && newProjectStep === 6}
-        onClose={() => {
-          setIsNewProjectOpen(false);
-          setNewProjectStep(1);
-          setCreatedProjectForEmail(null);
-          setNewProjectFormData({
-            suburb: "",
-            street: "",
-            state: "",
-            stream: "",
-            deposit: "",
-            customDeposit: "",
-            projectCost: "",
-            salesperson: "",
-            clientName: "",
-            email: "",
-            phone: "",
-          });
-        }}
-        createdProjectForEmail={createdProjectForEmail}
-        onSendSuccess={() => setNewProjectStep(7)}
-      />
-      <NewProject_7_EmailClient
-        isOpen={isNewProjectOpen && newProjectStep === 7}
-        onClose={() => {
-          setIsNewProjectOpen(false);
-          setNewProjectStep(1);
-          setCreatedProjectForEmail(null);
-          setNewProjectFormData({
-            suburb: "",
-            street: "",
-            state: "",
-            stream: "",
-            deposit: "",
-            customDeposit: "",
-            projectCost: "",
-            salesperson: "",
-            clientName: "",
-            email: "",
-            phone: "",
-          });
-        }}
-        createdProjectForEmail={createdProjectForEmail}
-      />
     </div>
   );
   }

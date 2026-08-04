@@ -320,7 +320,7 @@ export default function NewProject_5_PDFUpload({
               color: isDragging ? MONUMENT : "#999",
             }}
           >
-            ≡ƒôä
+            📄
           </div>
           {selectedFile ? (
             <>

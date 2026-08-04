@@ -12,6 +12,7 @@ import {
   replaceDepositBalanceToken,
 } from "../utils/projectDeposit";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
+import AdminToolsSidebarSection from "../components/AdminToolsSidebarSection";
 import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI, BANNER } from "../utils/uiThemeTokens.js";
@@ -1083,6 +1084,27 @@ export default function SiteVisitPlanner() {
             All Projects
           </Link>
           <Link
+            to="/pre-engagement-phase"
+            style={{
+              background: "transparent",
+              color: UI.textSecondary,
+              border: "none",
+              borderRadius: "10px",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              textAlign: "center",
+              textDecoration: "none",
+              letterSpacing: "0.5px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              marginBottom: "0px",
+              display: "block",
+            }}
+          >
+            Pre-Engagement
+          </Link>
+          <Link
             to="/projects"
             style={{
               background: "transparent",
@@ -1101,7 +1123,28 @@ export default function SiteVisitPlanner() {
               display: "block",
             }}
           >
-            Design Phase
+            Design
+          </Link>
+          <Link
+            to="/permit-phase"
+            style={{
+              background: "transparent",
+              color: UI.textSecondary,
+              border: "none",
+              borderRadius: "10px",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              textAlign: "center",
+              textDecoration: "none",
+              letterSpacing: "0.5px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              marginBottom: "0px",
+              display: "block",
+            }}
+          >
+            Permit
           </Link>
           <Link
             to="/construction-phase"
@@ -1122,10 +1165,10 @@ export default function SiteVisitPlanner() {
               display: "block",
             }}
           >
-            Construction Phase
+            Construction
           </Link>
           <Link
-            to="/finished-projects"
+            to="/archive"
             style={{
               background: "transparent",
               color: UI.textSecondary,
@@ -1143,7 +1186,7 @@ export default function SiteVisitPlanner() {
               display: "block",
             }}
           >
-            Finished Projects
+            Archive
           </Link>
           <Link
             to="/managers/site-visit-manager"
@@ -1168,52 +1211,7 @@ export default function SiteVisitPlanner() {
           >
             Site Visit Manager
           </Link>
-          {isAdmin && (
-            <Link
-              to="/settings"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "12px 8px",
-                fontSize: "1.05rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                display: "block",
-              }}
-            >
-              Settings
-            </Link>
-          )}
-          {isAdmin && (
-            <Link
-              to="/apply-fields"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "12px 8px",
-                fontSize: "1.05rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                display: "block",
-              }}
-            >
-              Apply Fields
-            </Link>
-          )}
+          <AdminToolsSidebarSection activePath={location.pathname} visible={isAdmin} />
         </div>
 
         {/* Section 3: Content */}

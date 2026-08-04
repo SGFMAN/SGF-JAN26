@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-  isDesignPhaseStatus,
+  isDesignPipelineStatus,
   isHotlistStatus,
   isCancelledStatus,
   isCompleteStatus,
@@ -386,13 +386,13 @@ export default function DrawingManager() {
     return !isLatestRevisionWorkingDrawingsApproved(project);
   }
 
-  /** Drawing Manager is Design Phase only — never construction / complete / cancelled / hotlist. */
+  /** Drawing Manager: Pre-Engagement / Design / Permit — never construction / complete / cancelled / hotlist. */
   function isDrawingManagerEligibleProject(project) {
     if (isHotlistStatus(project?.status)) return false;
     if (isCancelledStatus(project?.status)) return false;
     if (isCompleteStatus(project?.status)) return false;
     if (isConstructionPhaseStatus(project?.status)) return false;
-    if (!isDesignPhaseStatus(project?.status)) return false;
+    if (!isDesignPipelineStatus(project?.status)) return false;
     if (project?.classification === "Home Office / Studio") return false;
     return shouldShowInDrawingManagerList(project);
   }

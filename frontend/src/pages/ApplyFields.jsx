@@ -104,8 +104,15 @@ const FIELD_DEFINITIONS = {
   },
   status: {
     label: "Project Status",
-    values: ["Design Phase", "Construction Phase", "Cancelled", "Complete"],
-    defaultValue: "Design Phase",
+    values: [
+      "Pre-Engagement Phase",
+      "Design Phase",
+      "Permit Phase",
+      "Construction Phase",
+      "Cancelled",
+      "Complete",
+    ],
+    defaultValue: "Pre-Engagement Phase",
   },
   year: {
     label: "Year",

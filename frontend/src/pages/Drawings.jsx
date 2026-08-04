@@ -42,7 +42,7 @@ import {
   formatDrawingApprovalDateLabel,
 } from "../utils/drawingsStatusRules";
 
-import { getApiHeaders } from "../utils/auth";
+import { getApiHeaders, isUserAdmin } from "../utils/auth";
 import { UI, STREAM, MENU, INDICATOR } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
 import { buildSavedButtonStyle, mergeDestructiveButtonStyle, destructiveButtonUsesSavedStyle } from "../utils/uiButtonStyles.js";
@@ -109,8 +109,24 @@ function OutlookPdfAttachmentChip({ fileName, pdfSrc, projectId }) {
   const safeName = name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").replace(/:/g, "-") || "drawings.pdf";
   const [ready, setReady] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [copyState, setCopyState] = useState(""); // "", "copied", "error"
   const dragUrlRef = useRef(""); // absolute http(s) URL for Chromium DownloadURL
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const admin = await isUserAdmin();
+        if (!cancelled) setIsAdmin(Boolean(admin));
+      } catch {
+        if (!cancelled) setIsAdmin(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -314,7 +330,7 @@ function OutlookPdfAttachmentChip({ fileName, pdfSrc, projectId }) {
             </div>
           </div>
         </div>
-        {projectId ? (
+        {projectId && isAdmin ? (
           <button
             type="button"
             onClick={handleCopyForOutlook}

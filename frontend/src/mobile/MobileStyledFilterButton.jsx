@@ -84,11 +84,12 @@ export const MOBILE_STATE_BUTTON_IDS = {
 
 export const MOBILE_STATUS_BUTTON_IDS = {
   all: 5,
+  preEngagement: 4,
   design: 4,
+  permit: 4,
   construction: 4,
   onHold: 4,
-  cancelled: 4,
-  finished: 4,
+  archive: 4,
 };
 
 export function mobileStateFallback(selected, stateKey) {
