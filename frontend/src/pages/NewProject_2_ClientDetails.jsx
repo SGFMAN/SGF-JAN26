@@ -46,14 +46,17 @@ export default function NewProject2({
   function handleNext() {
     const clientName = String(formData.clientName || "").trim();
     const email = String(formData.email || "").trim();
-    const errors = {};
-    if (!clientName) errors.clientName = "Please enter a client name.";
-    if (!email) errors.email = "Please enter an email.";
-    else if (!looksLikeEmail(email)) errors.email = "Please enter a valid email.";
-    if (Object.keys(errors).length) {
-      setFieldErrors(errors);
+
+    // One field at a time — highlight only the first problem.
+    if (!clientName) {
+      setFieldErrors({ clientName: true });
       return;
     }
+    if (!email || !looksLikeEmail(email)) {
+      setFieldErrors({ email: true });
+      return;
+    }
+
     setFieldErrors({});
     if (formData.clientName !== clientName || formData.email !== email) {
       onFormDataChange({ ...formData, clientName, email });
@@ -170,12 +173,6 @@ export default function NewProject2({
             autoComplete="off"
           />
         </div>
-
-        {Object.values(fieldErrors).map((msg) => (
-          <p key={msg} style={{ margin: "0 0 6px 0", color: "#cc3333", fontSize: "0.9rem" }}>
-            {msg}
-          </p>
-        ))}
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
           <button

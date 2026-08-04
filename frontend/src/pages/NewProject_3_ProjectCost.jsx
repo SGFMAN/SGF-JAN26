@@ -326,26 +326,36 @@ export default function NewProject_3_ProjectCost({
   }
 
   function handleNextClick() {
-    const errors = {};
     const projectCostNum = parseFormattedNumber(formData.projectCost);
     const depositNum = parseFormattedNumber(actualDepositAmount);
     const type = normalizeDepositType(depositType || formData.depositType);
 
-    if (!projectCostNum) errors.projectCost = "Please enter a project cost.";
-    if (!type) errors.depositType = "Please select a deposit type.";
-    if (!depositNum) errors.deposit = "Please enter a deposit amount.";
-    if (!String(formData.salesperson || "").trim()) {
-      errors.salesperson = "Please select a salesperson.";
-    }
-    if (!String(formData.specs || "").trim()) errors.specs = "Please select specs.";
-    if (!String(formData.classification || "").trim()) {
-      errors.classification = "Please select a classification.";
-    }
-
-    if (Object.keys(errors).length) {
-      setFieldErrors(errors);
+    // One field at a time — highlight only the first problem.
+    if (!projectCostNum) {
+      setFieldErrors({ projectCost: true });
       return;
     }
+    if (!type) {
+      setFieldErrors({ depositType: true });
+      return;
+    }
+    if (!depositNum) {
+      setFieldErrors({ deposit: true });
+      return;
+    }
+    if (!String(formData.salesperson || "").trim()) {
+      setFieldErrors({ salesperson: true });
+      return;
+    }
+    if (!String(formData.specs || "").trim()) {
+      setFieldErrors({ specs: true });
+      return;
+    }
+    if (!String(formData.classification || "").trim()) {
+      setFieldErrors({ classification: true });
+      return;
+    }
+
     setFieldErrors({});
     onNext();
   }
@@ -822,12 +832,6 @@ export default function NewProject_3_ProjectCost({
               </select>
             </div>
           </div>
-
-          {Object.values(fieldErrors).map((msg) => (
-            <p key={msg} style={{ margin: "0 0 6px 0", color: "#cc3333", fontSize: "0.9rem" }}>
-              {msg}
-            </p>
-          ))}
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
             <button

@@ -139,18 +139,26 @@ export default function NewProject({
     const street = String(formData.street || "").trim();
     const suburb = String(formData.suburb || "").trim();
     const stream = String(formData.stream || "").trim();
-    const errors = {};
 
-    if (!street) errors.street = "Please enter a street.";
-    if (!suburb) errors.suburb = "Please enter a suburb.";
-    else if (suburbContainsNumbers(suburb)) {
-      errors.suburb = "Suburb contains numbers — please check and correct it.";
+    // One field at a time — highlight only the first problem.
+    if (!street) {
+      setFieldErrors({ street: true });
+      return;
     }
-    if (!isValidState(state)) errors.state = "Please select VIC or QLD.";
-    if (requireStream && !stream) errors.stream = "Please select a stream.";
-
-    if (Object.keys(errors).length) {
-      setFieldErrors(errors);
+    if (!suburb) {
+      setFieldErrors({ suburb: true });
+      return;
+    }
+    if (suburbContainsNumbers(suburb)) {
+      setFieldErrors({ suburb: true });
+      return;
+    }
+    if (!isValidState(state)) {
+      setFieldErrors({ state: true });
+      return;
+    }
+    if (requireStream && !stream) {
+      setFieldErrors({ stream: true });
       return;
     }
 
@@ -362,12 +370,6 @@ export default function NewProject({
             </select>
           </div>
         ) : null}
-
-        {Object.values(fieldErrors).map((msg) => (
-          <p key={msg} style={{ margin: "0 0 6px 0", color: "#cc3333", fontSize: "0.9rem" }}>
-            {msg}
-          </p>
-        ))}
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px" }}>
           <button
