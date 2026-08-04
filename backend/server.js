@@ -767,6 +767,27 @@ function normalizeProjectStatus(status) {
   return status == null ? "" : String(status).trim();
 }
 
+/** Match existing sold / colours log timestamps: `YYYY-MM-DD HH:MM:SS`. */
+function formatProjectLogTimestamp(d = new Date()) {
+  return d.toISOString().replace("T", " ").substring(0, 19);
+}
+
+function appendProjectLogLines(currentLog, lines) {
+  const filtered = (Array.isArray(lines) ? lines : []).filter(Boolean);
+  if (!filtered.length) return currentLog == null ? null : String(currentLog);
+  const stamp = formatProjectLogTimestamp();
+  const block = filtered.map((line) => `${stamp} - ${line}`).join("\n");
+  const prev = currentLog == null ? "" : String(currentLog);
+  return prev ? `${prev}\n${block}` : block;
+}
+
+function projectLogChangeLine(label, fromVal, toVal) {
+  const from = normalizeProjectStatus(fromVal) || "(empty)";
+  const to = normalizeProjectStatus(toVal) || "(empty)";
+  if (from === to) return null;
+  return `${label} changed from ${from} to ${to}`;
+}
+
 /** Settings table: smtp_user_1..smtp_pass_16 (for SQL SELECT / RETURNING fragments). */
 const SETTINGS_SMTP_1_16_COLUMNS = Array.from({ length: 16 }, (_, j) => {
   const n = j + 1;
@@ -2921,6 +2942,17 @@ app.put("/api/projects/:id", async (req, res) => {
     const client3ActiveValue = processBoolean(client3_active);
     const onHoldValue = processBoolean(on_hold);
 
+    const beforeRes = await pool.query(
+      `SELECT status, contract_status, supporting_documents_status, water_authority,
+              water_declaration_status, project_log, draftsperson
+       FROM projects WHERE id = $1`,
+      [id]
+    );
+    if (!beforeRes.rows.length) {
+      return res.status(404).json({ error: "not found" });
+    }
+    const before = beforeRes.rows[0];
+
     /**
      * Auto pipeline: assigning a draftsperson moves Pre-Engagement → Design.
      * Does not touch Cancelled / Complete / Construction / Hotlist / Permit / etc.
@@ -2929,8 +2961,7 @@ app.put("/api/projects/:id", async (req, res) => {
     if (draftsperson !== undefined) {
       const nextDraftsperson = processDraftsperson(draftsperson);
       if (nextDraftsperson != null && isDraftspersonAssigned(nextDraftsperson)) {
-        const cur = await pool.query(`SELECT status FROM projects WHERE id = $1`, [id]);
-        const currentStatus = normalizeProjectStatus(cur.rows[0]?.status);
+        const currentStatus = normalizeProjectStatus(before.status);
         const incomingStatus =
           status === undefined || status === null || status === ""
             ? ""
@@ -3310,6 +3341,33 @@ app.put("/api/projects/:id", async (req, res) => {
       } catch (syncErr) {
         console.log("deposit_paid sync after PUT:", syncErr.message);
       }
+    }
+
+    // Project log: status + Contract page / Contract Manager dropdowns
+    try {
+      const after = r.rows[0];
+      const logLines = [
+        projectLogChangeLine("Status", before.status, after.status),
+        projectLogChangeLine("Contract Status", before.contract_status, after.contract_status),
+        projectLogChangeLine(
+          "Supporting Documents Status",
+          before.supporting_documents_status,
+          after.supporting_documents_status
+        ),
+        projectLogChangeLine("Water Authority", before.water_authority, after.water_authority),
+        projectLogChangeLine(
+          "Water Declaration Status",
+          before.water_declaration_status,
+          after.water_declaration_status
+        ),
+      ].filter(Boolean);
+      if (logLines.length) {
+        const nextLog = appendProjectLogLines(before.project_log, logLines);
+        await pool.query(`UPDATE projects SET project_log = $1 WHERE id = $2`, [nextLog, id]);
+        r.rows[0].project_log = nextLog;
+      }
+    } catch (logErr) {
+      console.error("Error appending project log after PUT:", logErr.message || logErr);
     }
 
     console.log("Update successful. Row count:", r.rowCount);
@@ -5930,8 +5988,11 @@ app.put("/api/projects/:id/drawing-approval-dates", async (req, res) => {
      * Design / Pre-Engagement → Permit.
      * Clearing the date does not change status. Never touches Cancelled / Complete / etc.
      */
+    let statusBeforeWorking = null;
     if (workingDate) {
-      const cur = await pool.query(`SELECT status FROM projects WHERE id = $1`, [id]);
+      const cur = await pool.query(`SELECT status, project_log FROM projects WHERE id = $1`, [id]);
+      if (!cur.rows.length) return res.status(404).json({ error: "Project not found" });
+      statusBeforeWorking = cur.rows[0];
       const currentStatus = normalizeProjectStatus(cur.rows[0]?.status).toLowerCase();
       if (
         currentStatus === STATUS_DESIGN.toLowerCase() ||
@@ -5945,10 +6006,28 @@ app.put("/api/projects/:id/drawing-approval-dates", async (req, res) => {
     const r = await pool.query(
       `UPDATE projects SET ${sets.join(", ")}, updated_at = NOW()
        WHERE id = $${params.length}
-       RETURNING id, status, drawings_concept_approved_date, drawings_working_approved_date`,
+       RETURNING id, status, drawings_concept_approved_date, drawings_working_approved_date, project_log`,
       params
     );
     if (!r.rows.length) return res.status(404).json({ error: "Project not found" });
+
+    if (statusBeforeWorking) {
+      const statusLine = projectLogChangeLine(
+        "Status",
+        statusBeforeWorking.status,
+        r.rows[0].status
+      );
+      if (statusLine) {
+        try {
+          const nextLog = appendProjectLogLines(statusBeforeWorking.project_log, [statusLine]);
+          await pool.query(`UPDATE projects SET project_log = $1 WHERE id = $2`, [nextLog, id]);
+          r.rows[0].project_log = nextLog;
+        } catch (logErr) {
+          console.error("Error appending project log after working approval:", logErr);
+        }
+      }
+    }
+
     return res.json({ ok: true, ...r.rows[0] });
   } catch (e) {
     console.error("Error saving drawing approval dates:", e);
