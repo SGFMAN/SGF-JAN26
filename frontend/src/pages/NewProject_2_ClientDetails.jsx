@@ -6,6 +6,29 @@ const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 const ERROR_BORDER = "1px solid #cc3333";
+const ERROR_TEXT = "#cc3333";
+
+/** Label row — when errored, show red message in the same space (no modal resize). */
+function FieldLabel({ children, error }) {
+  return (
+    <label
+      style={{
+        display: "block",
+        fontSize: "0.9rem",
+        color: error ? ERROR_TEXT : UI.textMuted,
+        marginBottom: "6px",
+        fontWeight: 500,
+        lineHeight: 1.25,
+        minHeight: "1.125rem",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      }}
+    >
+      {error || children}
+    </label>
+  );
+}
 
 function looksLikeEmail(value) {
   const s = String(value || "").trim();
@@ -49,11 +72,15 @@ export default function NewProject2({
 
     // One field at a time — highlight only the first problem.
     if (!clientName) {
-      setFieldErrors({ clientName: true });
+      setFieldErrors({ clientName: "Please enter name" });
       return;
     }
-    if (!email || !looksLikeEmail(email)) {
-      setFieldErrors({ email: true });
+    if (!email) {
+      setFieldErrors({ email: "Please enter email" });
+      return;
+    }
+    if (!looksLikeEmail(email)) {
+      setFieldErrors({ email: "Please enter a valid email" });
       return;
     }
 
@@ -111,17 +138,7 @@ export default function NewProject2({
           Client Details
         </h2>
         <div style={{ marginBottom: "16px" }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: "0.9rem",
-              color: UI.textMuted,
-              marginBottom: "6px",
-              fontWeight: 500,
-            }}
-          >
-            Client Name
-          </label>
+          <FieldLabel error={fieldErrors.clientName}>Client Name</FieldLabel>
           <input
             type="text"
             name="clientName"
@@ -132,17 +149,7 @@ export default function NewProject2({
           />
         </div>
         <div style={{ marginBottom: "16px" }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: "0.9rem",
-              color: UI.textMuted,
-              marginBottom: "6px",
-              fontWeight: 500,
-            }}
-          >
-            Email
-          </label>
+          <FieldLabel error={fieldErrors.email}>Email</FieldLabel>
           <input
             type="email"
             name="email"
@@ -153,17 +160,7 @@ export default function NewProject2({
           />
         </div>
         <div style={{ marginBottom: "24px" }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: "0.9rem",
-              color: UI.textMuted,
-              marginBottom: "6px",
-              fontWeight: 500,
-            }}
-          >
-            Phone
-          </label>
+          <FieldLabel>Phone</FieldLabel>
           <input
             type="tel"
             name="phone"

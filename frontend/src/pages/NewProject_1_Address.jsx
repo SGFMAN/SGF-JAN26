@@ -6,8 +6,31 @@ const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 const ERROR_BORDER = "1px solid #cc3333";
+const ERROR_TEXT = "#cc3333";
 
 const STATE_OPTIONS = ["VIC", "QLD"];
+
+/** Label row — when errored, show red message in the same space (no modal resize). */
+function FieldLabel({ children, error }) {
+  return (
+    <label
+      style={{
+        display: "block",
+        fontSize: "0.9rem",
+        color: error ? ERROR_TEXT : UI.textMuted,
+        marginBottom: "6px",
+        fontWeight: 500,
+        lineHeight: 1.25,
+        minHeight: "1.125rem",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      }}
+    >
+      {error || children}
+    </label>
+  );
+}
 
 /** Map paste fragments to VIC | QLD, or "" if unknown. */
 function deriveStateFromText(raw) {
@@ -142,23 +165,23 @@ export default function NewProject({
 
     // One field at a time — highlight only the first problem.
     if (!street) {
-      setFieldErrors({ street: true });
+      setFieldErrors({ street: "Please enter street" });
       return;
     }
     if (!suburb) {
-      setFieldErrors({ suburb: true });
+      setFieldErrors({ suburb: "Please enter suburb" });
       return;
     }
     if (suburbContainsNumbers(suburb)) {
-      setFieldErrors({ suburb: true });
+      setFieldErrors({ suburb: "Please check suburb (contains numbers)" });
       return;
     }
     if (!isValidState(state)) {
-      setFieldErrors({ state: true });
+      setFieldErrors({ state: "Please select state" });
       return;
     }
     if (requireStream && !stream) {
-      setFieldErrors({ stream: true });
+      setFieldErrors({ stream: "Please select stream" });
       return;
     }
 
@@ -261,17 +284,7 @@ export default function NewProject({
           </small>
         </div>
         <div style={{ marginBottom: "16px" }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: "0.9rem",
-              color: UI.textMuted,
-              marginBottom: "6px",
-              fontWeight: 500,
-            }}
-          >
-            Street
-          </label>
+          <FieldLabel error={fieldErrors.street}>Street</FieldLabel>
           <input
             type="text"
             name="street"
@@ -283,17 +296,7 @@ export default function NewProject({
         </div>
         <div style={{ marginBottom: "16px", display: "flex", gap: "12px" }}>
           <div style={{ flex: 3 }}>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.9rem",
-                color: UI.textMuted,
-                marginBottom: "6px",
-                fontWeight: 500,
-              }}
-            >
-              Suburb
-            </label>
+            <FieldLabel error={fieldErrors.suburb}>Suburb</FieldLabel>
             <input
               type="text"
               name="suburb"
@@ -304,17 +307,7 @@ export default function NewProject({
             />
           </div>
           <div style={{ flex: 1, minWidth: "110px" }}>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.9rem",
-                color: UI.textMuted,
-                marginBottom: "6px",
-                fontWeight: 500,
-              }}
-            >
-              State
-            </label>
+            <FieldLabel error={fieldErrors.state}>State</FieldLabel>
             <select
               name="state"
               value={selectedState}
@@ -337,17 +330,7 @@ export default function NewProject({
 
         {requireStream ? (
           <div style={{ marginBottom: "16px" }}>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.9rem",
-                color: UI.textMuted,
-                marginBottom: "6px",
-                fontWeight: 500,
-              }}
-            >
-              Stream
-            </label>
+            <FieldLabel error={fieldErrors.stream}>Stream</FieldLabel>
             <select
               name="stream"
               value={formData.stream || ""}

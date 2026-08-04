@@ -78,6 +78,29 @@ export default function NewProject_3_ProjectCost({
   const formDataRef = React.useRef(formData);
   formDataRef.current = formData;
   const ERROR_BORDER = "1px solid #cc3333";
+  const ERROR_TEXT = "#cc3333";
+
+  /** Label row — when errored, show red message in the same space (no modal resize). */
+  function FieldLabel({ children, error }) {
+    return (
+      <label
+        style={{
+          display: "block",
+          fontSize: "0.9rem",
+          color: error ? ERROR_TEXT : UI.textMuted,
+          marginBottom: "6px",
+          fontWeight: 500,
+          lineHeight: 1.25,
+          minHeight: "1.125rem",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {error || children}
+      </label>
+    );
+  }
 
   const preEngagementFormatted = formatMoneyDisplay(preEngagementAmountRaw);
   const holdingFormatted = formatMoneyDisplay(holdingAmountRaw);
@@ -332,27 +355,27 @@ export default function NewProject_3_ProjectCost({
 
     // One field at a time — highlight only the first problem.
     if (!projectCostNum) {
-      setFieldErrors({ projectCost: true });
+      setFieldErrors({ projectCost: "Please enter project cost" });
       return;
     }
     if (!type) {
-      setFieldErrors({ depositType: true });
+      setFieldErrors({ depositType: "Please select deposit type" });
       return;
     }
     if (!depositNum) {
-      setFieldErrors({ deposit: true });
+      setFieldErrors({ deposit: "Please enter deposit amount" });
       return;
     }
     if (!String(formData.salesperson || "").trim()) {
-      setFieldErrors({ salesperson: true });
+      setFieldErrors({ salesperson: "Please select salesperson" });
       return;
     }
     if (!String(formData.specs || "").trim()) {
-      setFieldErrors({ specs: true });
+      setFieldErrors({ specs: "Please select specs" });
       return;
     }
     if (!String(formData.classification || "").trim()) {
-      setFieldErrors({ classification: true });
+      setFieldErrors({ classification: "Please select classification" });
       return;
     }
 
@@ -560,17 +583,7 @@ export default function NewProject_3_ProjectCost({
           </h2>
           <div style={{ marginBottom: "16px", display: "flex", gap: "12px" }}>
             <div style={{ flex: 1 }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: UI.textMuted,
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Project Cost
-              </label>
+              <FieldLabel error={fieldErrors.projectCost}>Project Cost</FieldLabel>
               <input
                 type="text"
                 name="projectCost"
@@ -591,17 +604,7 @@ export default function NewProject_3_ProjectCost({
               />
             </div>
             <div style={{ flex: 1 }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: UI.textMuted,
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Deposit Type
-              </label>
+              <FieldLabel error={fieldErrors.depositType}>Deposit Type</FieldLabel>
               <select
                 name="depositType"
                 value={depositType}
@@ -625,17 +628,7 @@ export default function NewProject_3_ProjectCost({
               </select>
             </div>
             <div style={{ flex: 1 }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: UI.textMuted,
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Deposit Amount
-              </label>
+              <FieldLabel error={fieldErrors.deposit}>Deposit Amount</FieldLabel>
               <input
                 type="text"
                 name="depositAmount"
@@ -679,17 +672,7 @@ export default function NewProject_3_ProjectCost({
           </div>
           <div style={{ marginBottom: "16px", display: "flex", gap: "12px" }}>
             <div style={{ flex: 1 }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: UI.textMuted,
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Salesperson
-              </label>
+              <FieldLabel error={fieldErrors.salesperson}>Salesperson</FieldLabel>
               <select
                 name="salesperson"
                 value={formData.salesperson || ""}
@@ -719,17 +702,7 @@ export default function NewProject_3_ProjectCost({
               </select>
             </div>
             <div style={{ flex: 1 }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: UI.textMuted,
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Stream
-              </label>
+              <FieldLabel>Stream</FieldLabel>
               <select
                 name="stream"
                 value={formData.stream || ""}
@@ -760,17 +733,7 @@ export default function NewProject_3_ProjectCost({
           </div>
           <div style={{ marginBottom: "24px", display: "flex", gap: "12px" }}>
             <div style={{ flex: 1 }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: UI.textMuted,
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Specs
-              </label>
+              <FieldLabel error={fieldErrors.specs}>Specs</FieldLabel>
               <select
                 name="specs"
                 value={formData.specs || ""}
@@ -796,17 +759,7 @@ export default function NewProject_3_ProjectCost({
               </select>
             </div>
             <div style={{ flex: 1 }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.9rem",
-                  color: UI.textMuted,
-                  marginBottom: "6px",
-                  fontWeight: 500,
-                }}
-              >
-                Classification
-              </label>
+              <FieldLabel error={fieldErrors.classification}>Classification</FieldLabel>
               <select
                 name="classification"
                 value={formData.classification || ""}
