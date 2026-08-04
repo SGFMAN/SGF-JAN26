@@ -103,26 +103,44 @@ function drawingsPdfAttachmentFileName(project) {
   return base.trim() || "drawings.pdf";
 }
 
-/** Outlook-style attachment chip — draggable to desktop / other apps; send still attaches via API. */
-function OutlookPdfAttachmentChip({ fileName, pdfSrc }) {
+/** Outlook-style attachment chip — drag to Explorer/desktop; send still attaches via API. */
+function OutlookPdfAttachmentChip({ fileName, pdfSrc, projectId }) {
   const name = fileName || "drawings.pdf";
-  const [file, setFile] = useState(null);
+  const safeName = name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").replace(/:/g, "-") || "drawings.pdf";
+  const [ready, setReady] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const objectUrlRef = useRef(null);
+  const [copyState, setCopyState] = useState(""); // "", "copied", "error"
+  const dragUrlRef = useRef(""); // absolute http(s) URL for Chromium DownloadURL
 
   useEffect(() => {
     let cancelled = false;
+    setReady(false);
+    setCopyState("");
+    dragUrlRef.current = "";
 
-    setFile(null);
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current);
-      objectUrlRef.current = null;
-    }
-
-    if (!pdfSrc) return undefined;
+    if (!projectId && !pdfSrc) return undefined;
 
     (async () => {
       try {
+        // Prefer server drag-token: Explorer can stream it to the drop folder (blob: cannot).
+        if (projectId) {
+          const res = await fetch(`${API_URL}/api/files/drawings/${projectId}/drag-token`, {
+            method: "POST",
+            headers: getApiHeaders(),
+            credentials: "include",
+          });
+          if (!res.ok) throw new Error("drag-token failed");
+          const data = await res.json();
+          if (cancelled) return;
+          const path = data.urlPath || (data.token ? `/api/files/drawings-drag/${data.token}` : "");
+          if (!path) throw new Error("drag-token missing url");
+          dragUrlRef.current = new URL(path, window.location.origin).href;
+          setReady(true);
+          return;
+        }
+
+        // Fallback when only an in-memory/blob src is available (no project id).
+        if (!pdfSrc) return;
         let blob;
         if (String(pdfSrc).startsWith("blob:") || String(pdfSrc).startsWith("data:")) {
           const res = await fetch(pdfSrc);
@@ -136,54 +154,71 @@ function OutlookPdfAttachmentChip({ fileName, pdfSrc }) {
           blob = await res.blob();
         }
         if (cancelled) return;
-        const pdfFile = new File([blob], name, { type: "application/pdf" });
-        const objectUrl = URL.createObjectURL(pdfFile);
-        if (cancelled) {
-          URL.revokeObjectURL(objectUrl);
-          return;
+        // data: URLs work for DownloadURL; keep under ~4MB to avoid drag payload limits.
+        if (blob.size > 4 * 1024 * 1024) return;
+        const buf = await blob.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let binary = "";
+        const chunk = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunk) {
+          binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
         }
-        objectUrlRef.current = objectUrl;
-        setFile(pdfFile);
+        dragUrlRef.current = `data:application/pdf;base64,${btoa(binary)}`;
+        setReady(true);
       } catch {
-        if (!cancelled) setFile(null);
+        if (!cancelled) {
+          setReady(false);
+          dragUrlRef.current = "";
+        }
       }
     })();
 
     return () => {
       cancelled = true;
-      if (objectUrlRef.current) {
-        URL.revokeObjectURL(objectUrlRef.current);
-        objectUrlRef.current = null;
-      }
     };
-  }, [pdfSrc, name]);
+  }, [projectId, pdfSrc]);
 
   function handleDragStart(e) {
-    if (!file || !objectUrlRef.current) {
+    const url = dragUrlRef.current;
+    if (!url) {
       e.preventDefault();
       return;
     }
     setDragging(true);
-    e.dataTransfer.effectAllowed = "copy";
+    // Only DownloadURL — text/uri-list makes Outlook attach a hyperlink instead of a file.
+    // blob: URLs also make Chrome fall back to a normal Downloads-folder download.
     try {
-      e.dataTransfer.items.add(file);
+      e.dataTransfer.clearData();
     } catch {
-      // Some browsers reject File on the item list; fall through to DownloadURL.
+      // ignore
     }
-    // Chromium: drag-to-desktop / Explorer fallback when File transfer isn't accepted.
-    e.dataTransfer.setData(
-      "DownloadURL",
-      `application/pdf:${name}:${objectUrlRef.current}`
-    );
-    e.dataTransfer.setData("text/uri-list", objectUrlRef.current);
-    e.dataTransfer.setData("text/plain", name);
+    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.setData("DownloadURL", `application/pdf:${safeName}:${url}`);
   }
 
   function handleDragEnd() {
     setDragging(false);
   }
 
-  const ready = Boolean(file);
+  async function handleCopyForOutlook(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!projectId) return;
+    setCopyState("");
+    try {
+      const res = await fetch(`${API_URL}/api/files/drawings/${projectId}/copy-file-clipboard`, {
+        method: "POST",
+        headers: getApiHeaders(),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("copy failed");
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState(""), 2500);
+    } catch {
+      setCopyState("error");
+      window.setTimeout(() => setCopyState(""), 2500);
+    }
+  }
 
   return (
     <div>
@@ -198,83 +233,112 @@ function OutlookPdfAttachmentChip({ fileName, pdfSrc }) {
       >
         Attachments
       </div>
-      <div
-        draggable={ready}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "10px",
-          maxWidth: "100%",
-          padding: "8px 12px 8px 8px",
-          background: dragging ? "#e8f4fc" : "#f3f2f1",
-          border: `1px solid ${dragging ? "#0078d4" : "#edebe9"}`,
-          borderRadius: "4px",
-          boxSizing: "border-box",
-          cursor: ready ? (dragging ? "grabbing" : "grab") : "default",
-          opacity: ready ? 1 : 0.7,
-          userSelect: "none",
-        }}
-        title={
-          ready
-            ? `${name} — drag to desktop or another email; also attached when you send`
-            : `${name} — preparing file for drag…`
-        }
-      >
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
         <div
-          aria-hidden
+          draggable={ready}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
           style={{
-            width: "32px",
-            height: "40px",
-            flexShrink: 0,
-            background: "#d13438",
-            borderRadius: "2px",
-            display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "center",
-            paddingBottom: "4px",
-            boxShadow: "0 1px 2px rgba(0,0,0,0.12)",
-            pointerEvents: "none",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "10px",
+            maxWidth: "100%",
+            padding: "8px 12px 8px 8px",
+            background: dragging ? "#e8f4fc" : "#f3f2f1",
+            border: `1px solid ${dragging ? "#0078d4" : "#edebe9"}`,
+            borderRadius: "4px",
+            boxSizing: "border-box",
+            cursor: ready ? (dragging ? "grabbing" : "grab") : "default",
+            opacity: ready ? 1 : 0.7,
+            userSelect: "none",
           }}
+          title={
+            ready
+              ? `${name} — drag onto desktop or a folder to place the PDF there`
+              : `${name} — preparing file for drag…`
+          }
         >
-          <span
-            style={{
-              fontSize: "0.62rem",
-              fontWeight: 700,
-              color: "#fff",
-              letterSpacing: "0.02em",
-              fontFamily: "Segoe UI, Arial, sans-serif",
-            }}
-          >
-            PDF
-          </span>
-        </div>
-        <div style={{ minWidth: 0, pointerEvents: "none" }}>
           <div
+            aria-hidden
             style={{
-              fontSize: "0.9rem",
-              fontWeight: 600,
-              color: "#0078d4",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              fontFamily: "Segoe UI, Arial, sans-serif",
+              width: "32px",
+              height: "40px",
+              flexShrink: 0,
+              background: "#d13438",
+              borderRadius: "2px",
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "center",
+              paddingBottom: "4px",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.12)",
+              pointerEvents: "none",
             }}
           >
-            {name}
+            <span
+              style={{
+                fontSize: "0.62rem",
+                fontWeight: 700,
+                color: "#fff",
+                letterSpacing: "0.02em",
+                fontFamily: "Segoe UI, Arial, sans-serif",
+              }}
+            >
+              PDF
+            </span>
           </div>
-          <div
-            style={{
-              fontSize: "0.75rem",
-              color: "#605e5c",
-              marginTop: "2px",
-              fontFamily: "Segoe UI, Arial, sans-serif",
-            }}
-          >
-            {ready ? "Adobe PDF Document · drag to move" : "Adobe PDF Document · loading…"}
+          <div style={{ minWidth: 0, pointerEvents: "none" }}>
+            <div
+              style={{
+                fontSize: "0.9rem",
+                fontWeight: 600,
+                color: "#0078d4",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                fontFamily: "Segoe UI, Arial, sans-serif",
+              }}
+            >
+              {name}
+            </div>
+            <div
+              style={{
+                fontSize: "0.75rem",
+                color: "#605e5c",
+                marginTop: "2px",
+                fontFamily: "Segoe UI, Arial, sans-serif",
+              }}
+            >
+              {ready
+                ? "Adobe PDF Document · drag to desktop/folder"
+                : "Adobe PDF Document · loading…"}
+            </div>
           </div>
         </div>
+        {projectId ? (
+          <button
+            type="button"
+            onClick={handleCopyForOutlook}
+            disabled={!ready}
+            title="Browsers can’t drop a real PDF into Outlook. Copy the file, then Ctrl+V in the email to attach it."
+            style={{
+              padding: "8px 12px",
+              fontSize: "0.85rem",
+              fontWeight: 500,
+              color: MONUMENT,
+              background: WHITE,
+              border: `1px solid ${SECTION_GREY}`,
+              borderRadius: "8px",
+              cursor: ready ? "pointer" : "default",
+              opacity: ready ? 1 : 0.6,
+            }}
+          >
+            {copyState === "copied"
+              ? "Copied — paste in Outlook"
+              : copyState === "error"
+                ? "Copy failed"
+                : "Copy for Outlook"}
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -4978,6 +5042,7 @@ export default function Drawings({
               {project?.drawings_pdf_location ? (
                 <OutlookPdfAttachmentChip
                   fileName={drawingsPdfAttachmentFileName(project)}
+                  projectId={project.id}
                   pdfSrc={
                     drawingsPdfSrcOverride || `${API_URL}/api/files/drawings/${project.id}`
                   }

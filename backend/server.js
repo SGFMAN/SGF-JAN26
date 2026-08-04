@@ -9678,6 +9678,141 @@ app.get("/api/files/drawings/:id", async (req, res) => {
   }
 });
 
+/**
+ * Short-lived tokens so Chromium DownloadURL drag-out can fetch the PDF without
+ * staff headers (Explorer streams the URL to the drop folder).
+ * token -> { filePath, fileName, expiresAt }
+ */
+const drawingsDragTokens = new Map();
+const DRAWINGS_DRAG_TOKEN_TTL_MS = 5 * 60 * 1000;
+
+function pruneDrawingsDragTokens() {
+  const now = Date.now();
+  for (const [token, entry] of drawingsDragTokens.entries()) {
+    if (!entry || entry.expiresAt <= now) drawingsDragTokens.delete(token);
+  }
+}
+
+function sanitizeDragFileName(name, fallback = "drawings.pdf") {
+  const raw = String(name || fallback).trim() || fallback;
+  return raw.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").replace(/:/g, "-") || fallback;
+}
+
+async function resolveDrawingsPdfForDrag(projectId) {
+  if (!pool) {
+    const err = new Error("DATABASE_URL not set");
+    err.status = 500;
+    throw err;
+  }
+  const projectResult = await pool.query(
+    "SELECT drawings_pdf_location, suburb, street, state, year FROM projects WHERE id = $1",
+    [projectId]
+  );
+  if (projectResult.rows.length === 0) {
+    const err = new Error("Project not found");
+    err.status = 404;
+    throw err;
+  }
+  const projectRow = projectResult.rows[0];
+  const drawingsPdfPath = await resolveAccessibleDrawingsPdfPath(pool, projectRow, {
+    selfHeal: true,
+    projectId,
+  });
+  if (!drawingsPdfPath) {
+    const err = new Error("Drawings PDF file does not exist");
+    err.status = 404;
+    err.code = "DRAWINGS_FILE_MISSING";
+    throw err;
+  }
+  const fileName = sanitizeDragFileName(path.basename(drawingsPdfPath) || "drawings.pdf");
+  return { drawingsPdfPath, fileName };
+}
+
+async function stageDrawingsPdfOnDisk(drawingsPdfPath, fileName) {
+  const os = require("os");
+  const dir = path.join(os.tmpdir(), "SGF Email Attachments");
+  await fs.mkdir(dir, { recursive: true });
+  const dest = path.join(dir, fileName);
+  await fs.copyFile(drawingsPdfPath, dest);
+  return dest;
+}
+
+function copyFilePathToWindowsClipboard(filePath) {
+  const { execFile } = require("child_process");
+  const literal = String(filePath).replace(/'/g, "''");
+  return new Promise((resolve, reject) => {
+    execFile(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", `Set-Clipboard -Path '${literal}'`],
+      { windowsHide: true, timeout: 15000 },
+      (err) => (err ? reject(err) : resolve())
+    );
+  });
+}
+
+/** Create a drag-out token (+ stage file / put on Windows clipboard for Outlook paste). */
+app.post("/api/files/drawings/:id/drag-token", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
+  try {
+    const { id } = req.params;
+    const { drawingsPdfPath, fileName } = await resolveDrawingsPdfForDrag(id);
+    pruneDrawingsDragTokens();
+    const token = crypto.randomBytes(24).toString("hex");
+    const expiresAt = Date.now() + DRAWINGS_DRAG_TOKEN_TTL_MS;
+    drawingsDragTokens.set(token, { filePath: drawingsPdfPath, fileName, expiresAt });
+
+    res.json({
+      token,
+      urlPath: `/api/files/drawings-drag/${token}`,
+      fileName,
+      expiresAt,
+    });
+  } catch (error) {
+    const status = error.status || 500;
+    if (status >= 500) console.error("Error creating drawings drag token:", error);
+    res.status(status).json({ error: error.message, code: error.code || undefined });
+  }
+});
+
+/** Unauthenticated fetch for Chromium DownloadURL drag-out (token is the secret). */
+app.get("/api/files/drawings-drag/:token", async (req, res) => {
+  try {
+    pruneDrawingsDragTokens();
+    const entry = drawingsDragTokens.get(String(req.params.token || ""));
+    if (!entry || entry.expiresAt <= Date.now()) {
+      return res.status(404).json({ error: "Drag link expired or invalid" });
+    }
+    const fileBuffer = await fs.readFile(entry.filePath);
+    const downloadName = sanitizeDragFileName(entry.fileName);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${downloadName.replace(/"/g, "")}"`);
+    res.setHeader("Cache-Control", "no-store");
+    res.send(fileBuffer);
+  } catch (error) {
+    console.error("Error serving drawings drag token:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/** Re-copy staged drawings PDF onto the Windows clipboard (for paste into Outlook). */
+app.post("/api/files/drawings/:id/copy-file-clipboard", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
+  try {
+    if (process.platform !== "win32") {
+      return res.status(400).json({ error: "Clipboard file copy is only supported on Windows" });
+    }
+    const { id } = req.params;
+    const { drawingsPdfPath, fileName } = await resolveDrawingsPdfForDrag(id);
+    const stagedPath = await stageDrawingsPdfOnDisk(drawingsPdfPath, fileName);
+    await copyFilePathToWindowsClipboard(stagedPath);
+    res.json({ ok: true, stagedPath, fileName });
+  } catch (error) {
+    const status = error.status || 500;
+    if (status >= 500) console.error("Error copying drawings PDF to clipboard:", error);
+    res.status(status).json({ error: error.message, code: error.code || undefined });
+  }
+});
+
 /** Slot letter → DB column for planning job-file uploads (folder `7. PROPERTY INFORMATION`). */
 const PLANNING_JF_FILE_SLOT_COLUMNS = {
   a: "planning_jf_planning_property_report_path",
