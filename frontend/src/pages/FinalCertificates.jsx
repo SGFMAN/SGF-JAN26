@@ -49,9 +49,25 @@ function formatFileSize(bytes) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function isAllowedAttachment(file) {
+  if (!file) return false;
+  const name = String(file.name || "").toLowerCase();
+  const type = String(file.type || "").toLowerCase();
+  if (type === "application/pdf" || name.endsWith(".pdf")) return true;
+  if (
+    type === "application/zip" ||
+    type === "application/x-zip-compressed" ||
+    type === "application/x-zip" ||
+    name.endsWith(".zip")
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Construction → Final Certificates.
- * Drag-drop PDF(s) from the job folder (memory only) → Email opens a preview modal.
+ * Drag-drop PDF or ZIP from the job folder (memory only) → Email opens a preview modal.
  */
 export default function FinalCertificates({ project }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
@@ -75,10 +91,8 @@ export default function FinalCertificates({ project }) {
 
   function addAttachmentFile(file) {
     if (!file) return;
-    const isPdf =
-      file.type === "application/pdf" || String(file.name || "").toLowerCase().endsWith(".pdf");
-    if (!isPdf) {
-      alert("Please drop or select a PDF file.");
+    if (!isAllowedAttachment(file)) {
+      alert("Please drop or select a PDF or ZIP file.");
       return;
     }
     // Single file for now — replace any existing attachment.
@@ -115,7 +129,7 @@ export default function FinalCertificates({ project }) {
 
   async function openEmailModal() {
     if (attachments.length === 0) {
-      alert("Drop or select the final handover PDF first.");
+      alert("Drop or select the final handover PDF or ZIP first.");
       return;
     }
     setPreparingModal(true);
@@ -160,7 +174,7 @@ export default function FinalCertificates({ project }) {
       return;
     }
     if (attachments.length === 0) {
-      alert("Drop or select the final handover PDF first.");
+      alert("Drop or select the final handover PDF or ZIP first.");
       return;
     }
 
@@ -238,7 +252,7 @@ export default function FinalCertificates({ project }) {
             Final Certificates
           </h2>
           <p style={{ margin: 0, color: UI.textMuted, fontSize: "0.9rem", lineHeight: 1.45 }}>
-            Drag the final handover PDF from the project folder. It is not saved here — only
+            Drag the final handover PDF or ZIP from the project folder. It is not saved here — only
             attached when you send the email, then cleared.
           </p>
         </div>
@@ -307,15 +321,15 @@ export default function FinalCertificates({ project }) {
           }}
         >
           <div style={{ fontSize: "0.95rem", fontWeight: 600, color: MONUMENT, marginBottom: "8px" }}>
-            Drop final handover PDF here
+            Drop final handover PDF or ZIP here
           </div>
           <div style={{ fontSize: "0.85rem", color: UI.textMuted }}>
-            or click to browse — PDF only, not stored on this page
+            or click to browse — PDF or ZIP only, not stored on this page
           </div>
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,application/pdf"
+            accept=".pdf,.zip,application/pdf,application/zip,application/x-zip-compressed"
             style={{ display: "none" }}
             onChange={(e) => addAttachmentFile(e.target.files?.[0])}
           />
