@@ -60,9 +60,10 @@ export default function NewProject2({
   function handleChange(e) {
     const { name, value } = e.target;
     clearError(name);
+    const nextValue = name === "phone" ? value.replace(/\D/g, "") : value;
     onFormDataChange({
       ...formData,
-      [name]: value,
+      [name]: nextValue,
     });
   }
 
@@ -84,9 +85,14 @@ export default function NewProject2({
       return;
     }
 
+    const phone = String(formData.phone || "").replace(/\D/g, "");
     setFieldErrors({});
-    if (formData.clientName !== clientName || formData.email !== email) {
-      onFormDataChange({ ...formData, clientName, email });
+    if (
+      formData.clientName !== clientName ||
+      formData.email !== email ||
+      formData.phone !== phone
+    ) {
+      onFormDataChange({ ...formData, clientName, email, phone });
     }
     onNext();
   }

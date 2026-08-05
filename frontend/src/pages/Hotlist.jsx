@@ -1065,6 +1065,12 @@ export default function Hotlist() {
 
     const streamVal = item.stream || "";
     const streamKnown = hotlistProjectStreamOptions.includes(streamVal);
+    const phoneDisplay = (item.phone || "").trim() || "No Number Exists";
+    const contactParts = [
+      (item.client_name || "").trim(),
+      (item.email || "").trim(),
+      phoneDisplay,
+    ].filter(Boolean);
 
     return (
       <div
@@ -1083,40 +1089,51 @@ export default function Hotlist() {
           boxSizing: "border-box",
         }}
       >
-        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", minWidth: "120px" }}>
-          <span
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            gap: "2px",
+            minWidth: "120px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+            <span
+              style={{
+                fontSize: "1rem",
+                fontWeight: 600,
+                color: useLightText ? PAGE_TEXT : MONUMENT,
+              }}
+            >
+              {displayName}
+            </span>
+            {item.state ? (
+              <>
+                <span style={{ color: useLightText ? PAGE_TEXT : MONUMENT, opacity: 0.55 }}>|</span>
+                <span style={{ fontSize: "0.9rem", color: useLightText ? PAGE_TEXT : MONUMENT }}>
+                  {item.state}
+                </span>
+              </>
+            ) : null}
+          </div>
+          <div
             style={{
-              fontSize: "1rem",
-              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              flexWrap: "wrap",
+              fontSize: "0.9rem",
               color: useLightText ? PAGE_TEXT : MONUMENT,
             }}
           >
-            {displayName}
-          </span>
-          {item.state ? (
-            <>
-              <span style={{ color: useLightText ? PAGE_TEXT : MONUMENT, opacity: 0.55 }}>|</span>
-              <span style={{ fontSize: "0.9rem", color: useLightText ? PAGE_TEXT : MONUMENT }}>
-                {item.state}
-              </span>
-            </>
-          ) : null}
-          {item.client_name ? (
-            <>
-              <span style={{ color: useLightText ? PAGE_TEXT : MONUMENT, opacity: 0.55 }}>|</span>
-              <span style={{ fontSize: "0.9rem", color: useLightText ? PAGE_TEXT : MONUMENT }}>
-                {item.client_name}
-              </span>
-            </>
-          ) : null}
-          {item.email ? (
-            <>
-              <span style={{ color: useLightText ? PAGE_TEXT : MONUMENT, opacity: 0.55 }}>|</span>
-              <span style={{ fontSize: "0.9rem", color: useLightText ? PAGE_TEXT : MONUMENT }}>
-                {item.email}
-              </span>
-            </>
-          ) : null}
+            {contactParts.map((part, index) => (
+              <React.Fragment key={`${item.id}-contact-${index}`}>
+                {index > 0 ? <span style={{ opacity: 0.55 }}>|</span> : null}
+                <span>{part}</span>
+              </React.Fragment>
+            ))}
+          </div>
         </div>
         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", flex: "0 1 auto" }}>
           <select
@@ -1124,12 +1141,13 @@ export default function Hotlist() {
             value={streamVal || ""}
             onChange={(e) => handleHotlistStreamChange(item, e.target.value)}
             style={{
-              padding: "6px 8px",
+              padding: "8px 16px",
               borderRadius: "8px",
-              border: `1px solid ${MONUMENT}55`,
-              fontSize: "0.82rem",
-              color: MONUMENT,
-              backgroundColor: WHITE,
+              border: outlineBorder,
+              fontSize: "0.9rem",
+              fontWeight: 500,
+              color: useLightText ? PAGE_TEXT : MONUMENT,
+              background: useLightText ? "rgba(255,255,255,0.22)" : "#e8e8ea",
               minWidth: "160px",
               maxWidth: "220px",
               cursor: "pointer",
@@ -1153,9 +1171,10 @@ export default function Hotlist() {
             type="button"
             onClick={() => openHotlistNotesModal(item)}
             style={{
+              position: "relative",
               background: useLightText ? "rgba(255,255,255,0.22)" : "#e8e8ea",
               color: useLightText ? PAGE_TEXT : MONUMENT,
-              border: useLightText ? "1px solid rgba(255,255,255,0.5)" : `1px solid ${MONUMENT}44`,
+              border: outlineBorder,
               borderRadius: "8px",
               padding: "8px 16px",
               fontSize: "0.9rem",
@@ -1176,14 +1195,15 @@ export default function Hotlist() {
                 aria-hidden="true"
                 title="Has notes"
                 style={{
-                  display: "inline-block",
+                  position: "absolute",
+                  top: "4px",
+                  right: "4px",
                   width: "8px",
                   height: "8px",
-                  marginLeft: "7px",
                   borderRadius: "50%",
                   background: useLightText ? PAGE_TEXT : MONUMENT,
-                  verticalAlign: "middle",
                   boxShadow: useLightText ? "0 0 0 1px rgba(255,255,255,0.35)" : "0 0 0 1px rgba(50,50,51,0.2)",
+                  pointerEvents: "none",
                 }}
               />
             ) : null}
@@ -1195,7 +1215,7 @@ export default function Hotlist() {
               style={{
                 background: accent.agreementBg,
                 color: PAGE_TEXT,
-                border: `1px solid ${accent.agreementBg}`,
+                border: outlineBorder,
                 borderRadius: "8px",
                 padding: "8px 16px",
                 fontSize: "0.9rem",
@@ -1215,7 +1235,7 @@ export default function Hotlist() {
             style={{
               background: STREAM.streamGreen,
               color: PAGE_TEXT,
-              border: `1px solid ${STREAM.streamGreen}`,
+              border: outlineBorder,
               borderRadius: "8px",
               padding: "8px 16px",
               fontSize: "0.9rem",
@@ -1234,7 +1254,7 @@ export default function Hotlist() {
             style={{
               background: PURPLE,
               color: PAGE_TEXT,
-              border: `1px solid ${PURPLE}`,
+              border: outlineBorder,
               borderRadius: "8px",
               padding: "8px 16px",
               fontSize: "0.9rem",
@@ -1253,7 +1273,7 @@ export default function Hotlist() {
             style={{
               background: "#FFA500",
               color: PAGE_TEXT,
-              border: "1px solid #FFA500",
+              border: outlineBorder,
               borderRadius: "8px",
               padding: "8px 16px",
               fontSize: "0.9rem",
@@ -1272,7 +1292,7 @@ export default function Hotlist() {
             style={{
               background: MONUMENT,
               color: PAGE_TEXT,
-              border: "none",
+              border: outlineBorder,
               borderRadius: "8px",
               padding: "8px 16px",
               fontSize: "0.9rem",
@@ -1291,7 +1311,7 @@ export default function Hotlist() {
             style={{
               background: "#cc3333",
               color: PAGE_TEXT,
-              border: "none",
+              border: outlineBorder,
               borderRadius: "8px",
               padding: "8px 16px",
               fontSize: "0.9rem",

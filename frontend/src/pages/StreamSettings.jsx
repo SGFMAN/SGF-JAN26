@@ -2,8 +2,14 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   parseEmailGeneralJson,
   isGeneralNewProjectConfigEmpty,
+  isGeneralDrawingsUploadConfigEmpty,
   normalizeNewProjectBranchFromRaw,
   normalizeDepositBalanceBranch,
+  normalizeDrawingsUploadBranch,
+  normalizeDrawingsFromToBranch,
+  normalizeDrawingsWdsApprovedBranch,
+  drawingsUploadBranchFromStreamDrawings,
+  migrateRemainingGeneralDrawingsFromStream,
   coerceNewProjectTeamEmailToArray,
   emailGeneralJsonForPersist,
 } from "../utils/emailGeneralSettings";
@@ -108,68 +114,18 @@ function seedSalesNotesFromDesignNotesReversed(d) {
   if (!T(d.qldSalesNotesToEmail) && T(d.qldDesignNotesFromEmail)) d.qldSalesNotesToEmail = d.qldDesignNotesFromEmail;
 }
 
-function drawingsUploadFieldKeys(fieldGroup) {
-  if (fieldGroup === "drawingsUpload") {
-    return {
-      label: "Drawings Upload",
-      fromVic: "designToSalespersonFromEmail",
-      fromQld: "qldDesignToSalespersonFromEmail",
-      toVic: "designToSalespersonToEmail",
-      to2Vic: "designToSalespersonToEmail2",
-      toCrmVic: "designToSalespersonCrmToEmail",
-      toQld: "qldDesignToSalespersonToEmail",
-      to2Qld: "qldDesignToSalespersonToEmail2",
-      toCrmQld: "qldDesignToSalespersonCrmToEmail",
-      toConstructionVic: "designToSalespersonConstructionToEmail",
-      toConstruction2Vic: "designToSalespersonConstructionToEmail2",
-      toConstruction3Vic: "designToSalespersonConstructionToEmail3",
-      toConstruction4Vic: "designToSalespersonConstructionToEmail4",
-      toConstructionQld: "qldDesignToSalespersonConstructionToEmail",
-      toConstruction2Qld: "qldDesignToSalespersonConstructionToEmail2",
-      toConstruction3Qld: "qldDesignToSalespersonConstructionToEmail3",
-      toConstruction4Qld: "qldDesignToSalespersonConstructionToEmail4",
-    };
-  }
-  if (fieldGroup === "designNotes") {
-    return {
-      label: "Design Notes",
-      fromVic: "designNotesFromEmail",
-      fromQld: "qldDesignNotesFromEmail",
-      toVic: "designNotesToEmail",
-      toQld: "qldDesignNotesToEmail",
-    };
-  }
-  if (fieldGroup === "salesNotes") {
-    return {
-      label: "Sales Notes",
-      fromVic: "salesNotesFromEmail",
-      fromQld: "qldSalesNotesFromEmail",
-      toVic: "salesNotesToEmail",
-      toQld: "qldSalesNotesToEmail",
-    };
-  }
-  if (fieldGroup === "conceptApproved") {
-    return {
-      label: "Concept Approved",
-      fromVic: "conceptApprovedFromEmail",
-      fromQld: "qldConceptApprovedFromEmail",
-      toVic: "conceptApprovedToEmail",
-      toQld: "qldConceptApprovedToEmail",
-    };
-  }
-  if (fieldGroup === "wdsApproved") {
-    return {
-      label: "WDs Approved",
-      fromVic: "wdsApprovedFromEmail",
-      fromQld: "qldWdsApprovedFromEmail",
-      toVic: "wdsApprovedToEmail",
-      toQld: "qldWdsApprovedToEmail",
-      to2Vic: "wdsApprovedToEmail2",
-      to2Qld: "qldWdsApprovedToEmail2",
-    };
-  }
-  return null;
-}
+/** General Drawings Upload branch field keys (VIC/QLD nested under email_general_json). */
+const GENERAL_DRAWINGS_UPLOAD_FIELDS = {
+  label: "Drawings Upload",
+  from: "fromEmail",
+  toDesign: "toDesignEmail",
+  toDesign2: "toDesignEmail2",
+  toCrm: "toCrmEmail",
+  toConstruction: "toConstructionEmail",
+  toConstruction2: "toConstructionEmail2",
+  toConstruction3: "toConstructionEmail3",
+  toConstruction4: "toConstructionEmail4",
+};
 
 function drawingsSendClientFieldKeys(fieldGroup) {
   if (fieldGroup === "sendDrawingsToClient") {
@@ -236,15 +192,56 @@ function defaultDepositBalanceSectionOpen() {
   return open;
 }
 
-/** Drawings email groups (VIC / QLD columns) — collapsible blue panels like New Project. */
+/** Per-stream Drawings — only Send Drawings to Client stays stream-specific. */
 const DRAWING_EMAIL_SECTIONS = [
-  { id: "drawingsUpload", title: "Drawings Upload", kind: "upload", fieldGroup: "drawingsUpload" },
   { id: "sendDrawingsToClient", title: "Send Drawings to Client", kind: "sendClient", fieldGroup: "sendDrawingsToClient" },
-  { id: "designNotes", title: "Design Notes", kind: "upload", fieldGroup: "designNotes" },
-  { id: "salesNotes", title: "Sales Notes", kind: "upload", fieldGroup: "salesNotes" },
-  { id: "conceptApproved", title: "Concept Approved", kind: "upload", fieldGroup: "conceptApproved" },
-  { id: "wdsApproved", title: "WDs Approved", kind: "upload", fieldGroup: "wdsApproved" },
 ];
+
+/** General → Drawings subsections (shared by all streams; VIC/QLD by project state). */
+const GENERAL_DRAWINGS_SECTIONS = [
+  { id: "drawingsUpload", title: "Drawings Upload", kind: "upload", rootKey: "drawingsUpload" },
+  { id: "designNotes", title: "Design Notes", kind: "fromTo", rootKey: "designNotes" },
+  { id: "salesNotes", title: "Sales Notes", kind: "fromTo", rootKey: "salesNotes" },
+  { id: "conceptApproved", title: "Concept Approved", kind: "fromTo", rootKey: "conceptApproved" },
+  { id: "wdsApproved", title: "WDs Approved", kind: "fromToExtra", rootKey: "wdsApproved" },
+];
+
+function defaultGeneralDrawingsSectionOpen() {
+  const open = { vic: {}, qld: {} };
+  for (const s of GENERAL_DRAWINGS_SECTIONS) {
+    open.vic[s.id] = false;
+    open.qld[s.id] = false;
+  }
+  return open;
+}
+
+function defaultDrawingsUploadBranch() {
+  return normalizeDrawingsUploadBranch({});
+}
+
+function defaultDrawingsFromToBranch() {
+  return normalizeDrawingsFromToBranch({});
+}
+
+function defaultDrawingsWdsApprovedBranch() {
+  return normalizeDrawingsWdsApprovedBranch({});
+}
+
+function emptyGeneralDrawingsRoot(rootKey) {
+  if (rootKey === "drawingsUpload") {
+    return { vic: defaultDrawingsUploadBranch(), qld: defaultDrawingsUploadBranch() };
+  }
+  if (rootKey === "wdsApproved") {
+    return { vic: defaultDrawingsWdsApprovedBranch(), qld: defaultDrawingsWdsApprovedBranch() };
+  }
+  return { vic: defaultDrawingsFromToBranch(), qld: defaultDrawingsFromToBranch() };
+}
+
+function normalizeGeneralDrawingsBranch(rootKey, raw) {
+  if (rootKey === "drawingsUpload") return normalizeDrawingsUploadBranch(raw);
+  if (rootKey === "wdsApproved") return normalizeDrawingsWdsApprovedBranch(raw);
+  return normalizeDrawingsFromToBranch(raw);
+}
 
 function defaultDrawingSectionOpen() {
   const open = { vic: {}, qld: {} };
@@ -680,6 +677,7 @@ const EMAIL_NAV_GENERAL = "general";
 
 const GLOBAL_EMAIL_SECTIONS = [
   { key: "colours", label: "Colours" },
+  { key: "drawings", label: "Drawings" },
   { key: "hotList", label: "Hot List" },
   { key: "depositBalance", label: "Deposit Balance" },
   { key: "windows", label: "Windows" },
@@ -704,6 +702,7 @@ export default function StreamSettings() {
   const [smtpSlotEmails, setSmtpSlotEmails] = useState([]);
   const [newProjectSectionOpen, setNewProjectSectionOpen] = useState(defaultNewProjectSectionOpen);
   const [depositBalanceSectionOpen, setDepositBalanceSectionOpen] = useState(defaultDepositBalanceSectionOpen);
+  const [generalDrawingsSectionOpen, setGeneralDrawingsSectionOpen] = useState(defaultGeneralDrawingsSectionOpen);
   const [drawingSectionOpen, setDrawingSectionOpen] = useState(defaultDrawingSectionOpen);
   const [hotListSoldSectionOpen, setHotListSoldSectionOpen] = useState(false);
   const [windowsOrderingSectionOpen, setWindowsOrderingSectionOpen] = useState(false);
@@ -717,6 +716,9 @@ export default function StreamSettings() {
     }
     if (emailNavScope === EMAIL_NAV_GENERAL && globalEmailSection === "depositBalance") {
       setDepositBalanceSectionOpen(defaultDepositBalanceSectionOpen());
+    }
+    if (emailNavScope === EMAIL_NAV_GENERAL && globalEmailSection === "drawings") {
+      setGeneralDrawingsSectionOpen(defaultGeneralDrawingsSectionOpen());
     }
     if (emailNavScope !== "stream") return;
     if (activeSection === "drawings") {
@@ -771,6 +773,61 @@ export default function StreamSettings() {
             }
           } catch (migErr) {
             console.warn("Could not persist migrated New Project general settings:", migErr);
+          } finally {
+            setSaving(false);
+          }
+        }
+      }
+      if (isGeneralDrawingsUploadConfigEmpty(eg)) {
+        const migratedDrawings = {
+          ...eg,
+          drawingsUpload: {
+            vic: drawingsUploadBranchFromStreamDrawings(rawStreamMap["SGF - VIC"]?.drawings, "vic"),
+            qld: drawingsUploadBranchFromStreamDrawings(rawStreamMap["SGF - QLD"]?.drawings, "qld"),
+          },
+        };
+        if (!isGeneralDrawingsUploadConfigEmpty(migratedDrawings)) {
+          try {
+            setSaving(true);
+            const putRes = await fetch(`${API_URL}/api/settings`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email_general_json: migratedDrawings }),
+            });
+            if (putRes.ok) {
+              data = await putRes.json();
+              eg = parseEmailGeneralJson(data.email_general_json);
+            } else {
+              console.warn("Could not persist migrated Drawings Upload general settings:", await putRes.text());
+            }
+          } catch (migErr) {
+            console.warn("Could not persist migrated Drawings Upload general settings:", migErr);
+          } finally {
+            setSaving(false);
+          }
+        }
+      }
+      {
+        const { next: migratedRest, changed: restChanged } = migrateRemainingGeneralDrawingsFromStream(
+          eg,
+          rawStreamMap
+        );
+        if (restChanged) {
+          try {
+            setSaving(true);
+            const putRes = await fetch(`${API_URL}/api/settings`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email_general_json: migratedRest }),
+            });
+            if (putRes.ok) {
+              data = await putRes.json();
+              eg = parseEmailGeneralJson(data.email_general_json);
+            } else {
+              console.warn("Could not persist migrated General Drawings settings:", await putRes.text());
+            }
+          } catch (migErr) {
+            console.warn("Could not persist migrated General Drawings settings:", migErr);
           } finally {
             setSaving(false);
           }
@@ -916,6 +973,34 @@ export default function StreamSettings() {
     void persistEmailGeneral(emailGeneralRef.current);
   }
 
+  function updateGeneralDrawingsSectionField(rootKey, region, fieldKey, value) {
+    const branchKey = region === "qld" ? "qld" : "vic";
+    setEmailGeneral((prev) => {
+      const root =
+        prev[rootKey] && typeof prev[rootKey] === "object"
+          ? prev[rootKey]
+          : emptyGeneralDrawingsRoot(rootKey);
+      const mergedBranch = {
+        ...normalizeGeneralDrawingsBranch(rootKey, {}),
+        ...(root[branchKey] && typeof root[branchKey] === "object" ? root[branchKey] : {}),
+        [fieldKey]: value == null ? "" : String(value).trim(),
+      };
+      const next = {
+        ...prev,
+        [rootKey]: {
+          ...root,
+          [branchKey]: normalizeGeneralDrawingsBranch(rootKey, mergedBranch),
+        },
+      };
+      emailGeneralRef.current = next;
+      return next;
+    });
+  }
+
+  function flushPersistGeneralDrawings() {
+    void persistEmailGeneral(emailGeneralRef.current);
+  }
+
   function updateGeneralNewProjectField(region, fieldKey, value) {
     let v = value;
     if (fieldKey === "clientEmailTo") {
@@ -1010,6 +1095,16 @@ export default function StreamSettings() {
     ...defaultDepositBalanceState(),
     ...(dbRoot.qld && typeof dbRoot.qld === "object" ? dbRoot.qld : {}),
   };
+  function generalDrawingsBranchFor(rootKey, region) {
+    const root =
+      emailGeneral[rootKey] && typeof emailGeneral[rootKey] === "object"
+        ? emailGeneral[rootKey]
+        : emptyGeneralDrawingsRoot(rootKey);
+    return {
+      ...normalizeGeneralDrawingsBranch(rootKey, {}),
+      ...(root[region] && typeof root[region] === "object" ? root[region] : {}),
+    };
+  }
   const drawingsVicRow = streamSettingsMap[vicKey]?.drawings || defaultDrawingsState();
   const drawingsQldRow = streamSettingsMap[qldKey]?.drawings || defaultDrawingsState();
 
@@ -1213,6 +1308,298 @@ export default function StreamSettings() {
                 <p style={{ margin: 0, fontSize: "0.88rem", color: UI.textMuted, lineHeight: 1.45 }}>
                   Colour email options will go here.
                 </p>
+              </div>
+            </div>
+          ) : globalEmailSection === "drawings" ? (
+            <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}>
+              <div style={{ ...columnPanelStyle, minHeight: "100%" }}>
+                <h4 style={{ ...columnTitleStyle, marginBottom: "10px" }}>Drawings</h4>
+                <p style={{ margin: "0 0 12px", fontSize: "0.86rem", color: UI.textMuted, lineHeight: 1.45 }}>
+                  Shared by all streams. VIC vs QLD follows the project&apos;s state. Send Drawings to Client stays
+                  under each stream.
+                </p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "12px" }}>
+                  {[
+                    { title: "VIC", region: "vic" },
+                    { title: "QLD", region: "qld" },
+                  ].map(({ title, region }) => {
+                    const columnKey = region;
+                    const K = GENERAL_DRAWINGS_UPLOAD_FIELDS;
+                    return (
+                      <div key={title} style={{ ...columnPanelStyle, minHeight: 0 }}>
+                        <h5 style={{ margin: "0 0 8px 0", fontSize: "0.9rem", fontWeight: 700, color: MONUMENT }}>{title}</h5>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                          {GENERAL_DRAWINGS_SECTIONS.map((section) => {
+                            const sectionExpanded = !!generalDrawingsSectionOpen[columnKey]?.[section.id];
+                            const data = generalDrawingsBranchFor(section.rootKey, region);
+                            return (
+                              <div
+                                key={section.id}
+                                style={{
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: sectionExpanded ? "10px" : "0",
+                                  ...NEW_PROJECT_SECTION_BLUE,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    gap: "8px",
+                                    padding: "2px 0 8px 0",
+                                    borderBottom: sectionExpanded ? "1px solid #4d93d955" : "none",
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    disabled={saving}
+                                    onClick={() => {
+                                      setGeneralDrawingsSectionOpen((prev) => {
+                                        const currentlyOpen = !!prev[columnKey]?.[section.id];
+                                        const nextColumnState = {};
+                                        for (const s of GENERAL_DRAWINGS_SECTIONS) {
+                                          nextColumnState[s.id] = false;
+                                        }
+                                        if (!currentlyOpen) {
+                                          nextColumnState[section.id] = true;
+                                        }
+                                        return {
+                                          ...prev,
+                                          [columnKey]: nextColumnState,
+                                        };
+                                      });
+                                    }}
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "space-between",
+                                      gap: "8px",
+                                      flex: 1,
+                                      minWidth: 0,
+                                      margin: 0,
+                                      padding: 0,
+                                      border: "none",
+                                      background: "transparent",
+                                      cursor: saving ? "wait" : "pointer",
+                                      textAlign: "left",
+                                      fontFamily: "inherit",
+                                    }}
+                                  >
+                                    <span
+                                      style={{
+                                        fontSize: "0.82rem",
+                                        fontWeight: 700,
+                                        color: "var(--sgf-text-primary)",
+                                        letterSpacing: "0.02em",
+                                      }}
+                                    >
+                                      {section.title}
+                                    </span>
+                                    <span aria-hidden style={{ fontSize: "0.75rem", color: "var(--sgf-text-primary)", flexShrink: 0 }}>
+                                      {sectionExpanded ? "▾" : "▸"}
+                                    </span>
+                                  </button>
+                                </div>
+                                {sectionExpanded && section.kind === "upload" ? (
+                                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                                    <div style={DRAWINGS_UPLOAD_FROM_GROUP}>
+                                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                        <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                          {K.label} — From
+                                        </span>
+                                        <DrawingNotifySmtpSelect
+                                          smtpOptions={smtpSlotEmails}
+                                          value={data[K.from] || ""}
+                                          disabled={saving}
+                                          onValueChange={(next) =>
+                                            updateGeneralDrawingsSectionField(section.rootKey, region, K.from, next)
+                                          }
+                                          onCommit={flushPersistGeneralDrawings}
+                                        />
+                                      </div>
+                                    </div>
+                                    <div style={DRAWINGS_UPLOAD_DESIGN_GROUP}>
+                                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                        <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                          {K.label} — To [DESIGN]
+                                        </span>
+                                        <DrawingNotifySmtpSelect
+                                          smtpOptions={smtpSlotEmails}
+                                          value={data[K.toDesign] || ""}
+                                          disabled={saving}
+                                          onValueChange={(next) =>
+                                            updateGeneralDrawingsSectionField(section.rootKey, region, K.toDesign, next)
+                                          }
+                                          onCommit={flushPersistGeneralDrawings}
+                                        />
+                                      </div>
+                                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                        <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                          {K.label} — To (additional) [DESIGN]
+                                        </span>
+                                        <DrawingNotifySmtpSelect
+                                          smtpOptions={smtpSlotEmails}
+                                          value={data[K.toDesign2] || ""}
+                                          disabled={saving}
+                                          onValueChange={(next) =>
+                                            updateGeneralDrawingsSectionField(section.rootKey, region, K.toDesign2, next)
+                                          }
+                                          onCommit={flushPersistGeneralDrawings}
+                                        />
+                                      </div>
+                                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                        <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                          {K.label} — To [CRM]
+                                        </span>
+                                        <DrawingNotifySmtpSelect
+                                          smtpOptions={smtpSlotEmails}
+                                          value={data[K.toCrm] || ""}
+                                          disabled={saving}
+                                          onValueChange={(next) =>
+                                            updateGeneralDrawingsSectionField(section.rootKey, region, K.toCrm, next)
+                                          }
+                                          onCommit={flushPersistGeneralDrawings}
+                                        />
+                                      </div>
+                                    </div>
+                                    <div style={DRAWINGS_UPLOAD_CONSTRUCTION_GROUP}>
+                                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                        <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                          {K.label} — To [CONSTRUCTION]
+                                        </span>
+                                        <DrawingNotifySmtpSelect
+                                          smtpOptions={smtpSlotEmails}
+                                          value={data[K.toConstruction] || ""}
+                                          disabled={saving}
+                                          onValueChange={(next) =>
+                                            updateGeneralDrawingsSectionField(
+                                              section.rootKey,
+                                              region,
+                                              K.toConstruction,
+                                              next
+                                            )
+                                          }
+                                          onCommit={flushPersistGeneralDrawings}
+                                        />
+                                      </div>
+                                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                        <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                          {K.label} — To (additional) [CONSTRUCTION]
+                                        </span>
+                                        <DrawingNotifySmtpSelect
+                                          smtpOptions={smtpSlotEmails}
+                                          value={data[K.toConstruction2] || ""}
+                                          disabled={saving}
+                                          onValueChange={(next) =>
+                                            updateGeneralDrawingsSectionField(
+                                              section.rootKey,
+                                              region,
+                                              K.toConstruction2,
+                                              next
+                                            )
+                                          }
+                                          onCommit={flushPersistGeneralDrawings}
+                                        />
+                                      </div>
+                                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                        <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                          {K.label} — To (additional 2) [CONSTRUCTION]
+                                        </span>
+                                        <DrawingNotifySmtpSelect
+                                          smtpOptions={smtpSlotEmails}
+                                          value={data[K.toConstruction3] || ""}
+                                          disabled={saving}
+                                          onValueChange={(next) =>
+                                            updateGeneralDrawingsSectionField(
+                                              section.rootKey,
+                                              region,
+                                              K.toConstruction3,
+                                              next
+                                            )
+                                          }
+                                          onCommit={flushPersistGeneralDrawings}
+                                        />
+                                      </div>
+                                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                        <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                          {K.label} — To (additional 3) [CONSTRUCTION]
+                                        </span>
+                                        <DrawingNotifySmtpSelect
+                                          smtpOptions={smtpSlotEmails}
+                                          value={data[K.toConstruction4] || ""}
+                                          disabled={saving}
+                                          onValueChange={(next) =>
+                                            updateGeneralDrawingsSectionField(
+                                              section.rootKey,
+                                              region,
+                                              K.toConstruction4,
+                                              next
+                                            )
+                                          }
+                                          onCommit={flushPersistGeneralDrawings}
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : null}
+                                {sectionExpanded && (section.kind === "fromTo" || section.kind === "fromToExtra") ? (
+                                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                      <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                        {section.title} — From
+                                      </span>
+                                      <DrawingNotifySmtpSelect
+                                        smtpOptions={smtpSlotEmails}
+                                        value={data.fromEmail || ""}
+                                        disabled={saving}
+                                        onValueChange={(next) =>
+                                          updateGeneralDrawingsSectionField(section.rootKey, region, "fromEmail", next)
+                                        }
+                                        onCommit={flushPersistGeneralDrawings}
+                                      />
+                                    </div>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                      <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                        {section.title} — To
+                                      </span>
+                                      <DrawingNotifySmtpSelect
+                                        smtpOptions={smtpSlotEmails}
+                                        value={data.toEmail || ""}
+                                        disabled={saving}
+                                        onValueChange={(next) =>
+                                          updateGeneralDrawingsSectionField(section.rootKey, region, "toEmail", next)
+                                        }
+                                        onCommit={flushPersistGeneralDrawings}
+                                      />
+                                    </div>
+                                    {section.kind === "fromToExtra" ? (
+                                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                        <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                          {section.title} — To (additional)
+                                        </span>
+                                        <DrawingNotifySmtpSelect
+                                          smtpOptions={smtpSlotEmails}
+                                          value={data.toEmail2 || ""}
+                                          disabled={saving}
+                                          onValueChange={(next) =>
+                                            updateGeneralDrawingsSectionField(section.rootKey, region, "toEmail2", next)
+                                          }
+                                          onCommit={flushPersistGeneralDrawings}
+                                        />
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           ) : globalEmailSection === "hotList" ? (
@@ -1896,195 +2283,57 @@ export default function StreamSettings() {
                                     </span>
                                   </button>
                                 </div>
-                                {sectionExpanded ? (
+                                {sectionExpanded && section.kind === "sendClient" ? (
                                   <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                                    {section.kind === "upload"
-                                      ? (() => {
-                                          const K = drawingsUploadFieldKeys(section.fieldGroup);
-                                          if (!K) return null;
-                                          const fromKey = isQld ? K.fromQld : K.fromVic;
-                                          const toKey = isQld ? K.toQld : K.toVic;
-                                          const to2Key = isQld ? K.to2Qld : K.to2Vic;
-                                          const toCrmKey = isQld ? K.toCrmQld : K.toCrmVic;
-                                          const toConstructionKey = isQld
-                                            ? K.toConstructionQld
-                                            : K.toConstructionVic;
-                                          const toConstruction2Key = isQld
-                                            ? K.toConstruction2Qld
-                                            : K.toConstruction2Vic;
-                                          const toConstruction3Key = isQld
-                                            ? K.toConstruction3Qld
-                                            : K.toConstruction3Vic;
-                                          const toConstruction4Key = isQld
-                                            ? K.toConstruction4Qld
-                                            : K.toConstruction4Vic;
-                                          const isDrawingsUpload = section.fieldGroup === "drawingsUpload";
-                                          const fieldWrapStyle = (groupStyle) =>
-                                            isDrawingsUpload ? groupStyle : { display: "flex", flexDirection: "column", gap: "6px" };
-                                          const toPrimaryLabel = isDrawingsUpload
-                                            ? `${K.label} — To [DESIGN]`
-                                            : `${K.label} — To`;
-                                          const toAdditionalLabel = isDrawingsUpload
-                                            ? `${K.label} — To (additional) [DESIGN]`
-                                            : `${K.label} — To (additional)`;
-                                          return (
-                                            <>
-                                              <div style={fieldWrapStyle(DRAWINGS_UPLOAD_FROM_GROUP)}>
-                                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                                <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                                  {K.label} — From
-                                                </span>
-                                                <DrawingNotifySmtpSelect
-                                                  smtpOptions={smtpSlotEmails}
-                                                  value={d[fromKey] || ""}
-                                                  disabled={saving}
-                                                  onValueChange={(next) => {
-                                                    updateDrawingText(rowKey, fromKey, next);
-                                                  }}
-                                                  onCommit={flushPersist}
-                                                />
-                                                </div>
-                                              </div>
-                                              <div style={fieldWrapStyle(DRAWINGS_UPLOAD_DESIGN_GROUP)}>
-                                              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                                <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                                  {toPrimaryLabel}
-                                                </span>
-                                                <DrawingNotifySmtpSelect
-                                                  smtpOptions={smtpSlotEmails}
-                                                  value={d[toKey] || ""}
-                                                  disabled={saving}
-                                                  onValueChange={(next) => {
-                                                    updateDrawingText(rowKey, toKey, next);
-                                                  }}
-                                                  onCommit={flushPersist}
-                                                />
-                                              </div>
-                                              {to2Key ? (
-                                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                                  <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                                    {toAdditionalLabel}
-                                                  </span>
-                                                  <DrawingNotifySmtpSelect
-                                                    smtpOptions={smtpSlotEmails}
-                                                    value={d[to2Key] || ""}
-                                                    disabled={saving}
-                                                    onValueChange={(next) => {
-                                                      updateDrawingText(rowKey, to2Key, next);
-                                                    }}
-                                                    onCommit={flushPersist}
-                                                  />
-                                                </div>
-                                              ) : null}
-                                              {isDrawingsUpload && toCrmKey ? (
-                                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                                  <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                                    {K.label} — To [CRM]
-                                                  </span>
-                                                  <DrawingNotifySmtpSelect
-                                                    smtpOptions={smtpSlotEmails}
-                                                    value={d[toCrmKey] || ""}
-                                                    disabled={saving}
-                                                    onValueChange={(next) => {
-                                                      updateDrawingText(rowKey, toCrmKey, next);
-                                                    }}
-                                                    onCommit={flushPersist}
-                                                  />
-                                                </div>
-                                              ) : null}
-                                              </div>
-                                              {isDrawingsUpload ? (
-                                              <div style={fieldWrapStyle(DRAWINGS_UPLOAD_CONSTRUCTION_GROUP)}>
-                                              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                                <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                                  {K.label} — To [CONSTRUCTION]
-                                                </span>
-                                                <DrawingNotifySmtpSelect
-                                                  smtpOptions={smtpSlotEmails}
-                                                  value={d[toConstructionKey] || ""}
-                                                  disabled={saving}
-                                                  onValueChange={(next) => {
-                                                    updateDrawingText(rowKey, toConstructionKey, next);
-                                                  }}
-                                                  onCommit={flushPersist}
-                                                />
-                                              </div>
-                                              {toConstruction2Key ? (
-                                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                                  <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                                    {K.label} — To (additional) [CONSTRUCTION]
-                                                  </span>
-                                                  <DrawingNotifySmtpSelect
-                                                    smtpOptions={smtpSlotEmails}
-                                                    value={d[toConstruction2Key] || ""}
-                                                    disabled={saving}
-                                                    onValueChange={(next) => {
-                                                      updateDrawingText(rowKey, toConstruction2Key, next);
-                                                    }}
-                                                    onCommit={flushPersist}
-                                                  />
-                                                </div>
-                                              ) : null}
-                                              {toConstruction3Key ? (
-                                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                                  <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                                    {K.label} — To (additional 2) [CONSTRUCTION]
-                                                  </span>
-                                                  <DrawingNotifySmtpSelect
-                                                    smtpOptions={smtpSlotEmails}
-                                                    value={d[toConstruction3Key] || ""}
-                                                    disabled={saving}
-                                                    onValueChange={(next) => {
-                                                      updateDrawingText(rowKey, toConstruction3Key, next);
-                                                    }}
-                                                    onCommit={flushPersist}
-                                                  />
-                                                </div>
-                                              ) : null}
-                                              {toConstruction4Key ? (
-                                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                                  <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                                    {K.label} — To (additional 3) [CONSTRUCTION]
-                                                  </span>
-                                                  <DrawingNotifySmtpSelect
-                                                    smtpOptions={smtpSlotEmails}
-                                                    value={d[toConstruction4Key] || ""}
-                                                    disabled={saving}
-                                                    onValueChange={(next) => {
-                                                      updateDrawingText(rowKey, toConstruction4Key, next);
-                                                    }}
-                                                    onCommit={flushPersist}
-                                                  />
-                                                </div>
-                                              ) : null}
-                                              </div>
-                                              ) : null}
-                                            </>
-                                          );
-                                        })()
-                                      : section.kind === "sendClient"
-                                        ? (() => {
-                                            const K = drawingsSendClientFieldKeys(section.fieldGroup);
-                                            if (!K) return null;
-                                            const fromKey = isQld ? K.fromQld : K.fromVic;
-                                            const sendKey = isQld ? K.sendQld : K.sendVic;
-                                            const slots = drawingsSendClientExtraSlotDefs(K.extraPrefix);
+                                    {(() => {
+                                      const K = drawingsSendClientFieldKeys(section.fieldGroup);
+                                      if (!K) return null;
+                                      const fromKey = isQld ? K.fromQld : K.fromVic;
+                                      const sendKey = isQld ? K.sendQld : K.sendVic;
+                                      const slots = drawingsSendClientExtraSlotDefs(K.extraPrefix);
+                                      return (
+                                        <>
+                                          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                            <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                              {K.label} — From
+                                            </span>
+                                            <DrawingNotifySmtpSelect
+                                              smtpOptions={smtpSlotEmails}
+                                              value={d[fromKey] || ""}
+                                              disabled={saving}
+                                              onValueChange={(next) => {
+                                                updateDrawingText(rowKey, fromKey, next);
+                                              }}
+                                              onCommit={flushPersist}
+                                            />
+                                          </div>
+                                          <label
+                                            style={{
+                                              display: "flex",
+                                              alignItems: "center",
+                                              gap: "10px",
+                                              fontSize: "0.92rem",
+                                              color: MONUMENT,
+                                              cursor: saving ? "wait" : "pointer",
+                                              fontWeight: 500,
+                                            }}
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={!!d[sendKey]}
+                                              disabled={saving}
+                                              onChange={() => toggleDrawingOption(rowKey, sendKey)}
+                                              style={{ width: "18px", height: "18px", cursor: saving ? "wait" : "pointer" }}
+                                            />
+                                            Send to Clients
+                                          </label>
+                                          {slots.map(({ checkKey, addrKey, label }) => {
+                                            const qldCheckKey = qldDrawingsKey(checkKey);
+                                            const qldAddrKey = qldDrawingsKey(addrKey);
+                                            const useCheckKey = isQld ? qldCheckKey : checkKey;
+                                            const useAddrKey = isQld ? qldAddrKey : addrKey;
                                             return (
-                                              <>
-                                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                                  <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                                    {K.label} — From
-                                                  </span>
-                                                  <DrawingNotifySmtpSelect
-                                                    smtpOptions={smtpSlotEmails}
-                                                    value={d[fromKey] || ""}
-                                                    disabled={saving}
-                                                    onValueChange={(next) => {
-                                                      updateDrawingText(rowKey, fromKey, next);
-                                                    }}
-                                                    onCommit={flushPersist}
-                                                  />
-                                                </div>
+                                              <div key={`${colTitle}-${section.id}-${checkKey}`} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                                 <label
                                                   style={{
                                                     display: "flex",
@@ -2098,57 +2347,29 @@ export default function StreamSettings() {
                                                 >
                                                   <input
                                                     type="checkbox"
-                                                    checked={!!d[sendKey]}
+                                                    checked={!!d[useCheckKey]}
                                                     disabled={saving}
-                                                    onChange={() => toggleDrawingOption(rowKey, sendKey)}
+                                                    onChange={() => toggleDrawingOption(rowKey, useCheckKey)}
                                                     style={{ width: "18px", height: "18px", cursor: saving ? "wait" : "pointer" }}
                                                   />
-                                                  Send to Clients
+                                                  {label}
                                                 </label>
-                                                {slots.map(({ checkKey, addrKey, label }) => {
-                                                  const qldCheckKey = qldDrawingsKey(checkKey);
-                                                  const qldAddrKey = qldDrawingsKey(addrKey);
-                                                  const useCheckKey = isQld ? qldCheckKey : checkKey;
-                                                  const useAddrKey = isQld ? qldAddrKey : addrKey;
-                                                  return (
-                                                    <div key={`${colTitle}-${section.id}-${checkKey}`} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                                      <label
-                                                        style={{
-                                                          display: "flex",
-                                                          alignItems: "center",
-                                                          gap: "10px",
-                                                          fontSize: "0.92rem",
-                                                          color: MONUMENT,
-                                                          cursor: saving ? "wait" : "pointer",
-                                                          fontWeight: 500,
-                                                        }}
-                                                      >
-                                                        <input
-                                                          type="checkbox"
-                                                          checked={!!d[useCheckKey]}
-                                                          disabled={saving}
-                                                          onChange={() => toggleDrawingOption(rowKey, useCheckKey)}
-                                                          style={{ width: "18px", height: "18px", cursor: saving ? "wait" : "pointer" }}
-                                                        />
-                                                        {label}
-                                                      </label>
-                                                      <input
-                                                        type="email"
-                                                        autoComplete="off"
-                                                        placeholder="email@example.com"
-                                                        value={d[useAddrKey] || ""}
-                                                        disabled={saving}
-                                                        onChange={(e) => updateDrawingText(rowKey, useAddrKey, e.target.value)}
-                                                        onBlur={() => flushPersist()}
-                                                        style={inputStyle}
-                                                      />
-                                                    </div>
-                                                  );
-                                                })}
-                                              </>
+                                                <input
+                                                  type="email"
+                                                  autoComplete="off"
+                                                  placeholder="email@example.com"
+                                                  value={d[useAddrKey] || ""}
+                                                  disabled={saving}
+                                                  onChange={(e) => updateDrawingText(rowKey, useAddrKey, e.target.value)}
+                                                  onBlur={() => flushPersist()}
+                                                  style={inputStyle}
+                                                />
+                                              </div>
                                             );
-                                          })()
-                                        : null}
+                                          })}
+                                        </>
+                                      );
+                                    })()}
                                   </div>
                                 ) : null}
                               </div>

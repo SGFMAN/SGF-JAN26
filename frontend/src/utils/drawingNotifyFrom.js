@@ -1,8 +1,17 @@
 /**
- * Drawing notification From/To: only `stream_settings_json[resolvedRow].drawings` (VIC keys or QLD-mapped keys).
+ * Drawing notification From/To:
+ * - Drawings Upload → General `email_general_json.drawingsUpload` (VIC/QLD by project state)
+ * - Other sections → `stream_settings_json[resolvedRow].drawings` (VIC keys or QLD-mapped keys)
  * Each flow reads only its section’s fields — no falling back to other sections or templates for routing.
  */
 
+import {
+  getGeneralConceptApprovedBranch,
+  getGeneralDesignNotesBranch,
+  getGeneralDrawingsUploadBranch,
+  getGeneralSalesNotesBranch,
+  getGeneralWdsApprovedBranch,
+} from "./emailGeneralSettings";
 import { mergeUniqueEmails, resolveStreamSettingsKey } from "./streamDrawingsSettings";
 
 /** Parse template `to_addresses` (array, JSON array string, or comma list) → unique trimmed emails. */
@@ -90,13 +99,6 @@ function drawingFieldKeyForStreamRow(streamKey, vicStyleKey) {
   return q[vicStyleKey] || vicStyleKey;
 }
 
-function drawingValue(drawings, streamKey, vicStyleKey) {
-  if (!drawings || typeof drawings !== "object") return "";
-  const k = drawingFieldKeyForStreamRow(streamKey, vicStyleKey);
-  const v = drawings[k] != null ? String(drawings[k]).trim() : "";
-  return v || "";
-}
-
 function projectStateCode(project) {
   const s = String(project?.state ?? "").trim().toUpperCase();
   if (s === "VIC" || s === "VICTORIA") return "VIC";
@@ -118,222 +120,13 @@ export function resolveRegionalSalespersonName(project) {
   return String(project?.salesperson ?? "").trim();
 }
 
-/**
- * Stream row for Sales Notes email: same resolver as other drawings, then match any `… - VIC`/`… - QLD`
- * row when the primary key is missing (stale stream string on the project).
- */
-function resolveSalesNotesStreamRowKey(project, settings) {
-  const map = parseStreamSettingsMap(settings?.stream_settings_json);
-  const baseRaw = normalizeBaseStream(project?.stream);
-  const baseStr = String(baseRaw || "").trim();
-  if (!baseStr) return "";
-
-  let key = resolveStreamSettingsKey(baseStr, map, project);
-  if (key && map[key] && typeof map[key] === "object") return key;
-
-  const nb = baseStr.replace(/\s*-\s*(VIC|QLD)\s*$/i, "").trim().toLowerCase();
-  const st = projectStateCode(project);
-  const lb = baseStr.toLowerCase();
-  let bestKey = "";
-  let bestScore = -1;
-  for (const k of Object.keys(map)) {
-    const row = map[k];
-    if (!row || typeof row !== "object") continue;
-    const d = row.drawings;
-    if (!d || typeof d !== "object") continue;
-    const hasRouting =
-      drawingValue(d, k, "salesNotesFromEmail") ||
-      drawingValue(d, k, "salesNotesToEmail") ||
-      drawingValue(d, k, "designNotesFromEmail") ||
-      drawingValue(d, k, "designNotesToEmail");
-    if (!hasRouting) continue;
-
-    const lk = k.toLowerCase();
-    let score = 0;
-    if (lk === lb) score += 100;
-    else if (lk.startsWith(lb + " -")) score += 90;
-    const rowBase = k.replace(/\s*-\s*(VIC|QLD)\s*$/i, "").trim().toLowerCase();
-    if (nb && rowBase === nb) score += 70;
-    if (st === "QLD" && / - QLD$/i.test(k)) score += 15;
-    if (st === "VIC" && / - VIC$/i.test(k)) score += 15;
-    if (score > bestScore) {
-      bestScore = score;
-      bestKey = k;
-    }
-  }
-  return bestKey;
-}
-
-/**
- * Stream row for Concept Approved: primary stream key, else best map row that already has Concept Approved From/To set.
- */
-function resolveConceptApprovedStreamRowKey(project, settings) {
-  const map = parseStreamSettingsMap(settings?.stream_settings_json);
-  const baseRaw = normalizeBaseStream(project?.stream);
-  const baseStr = String(baseRaw || "").trim();
-  if (!baseStr) return "";
-
-  let key = resolveStreamSettingsKey(baseStr, map, project);
-  if (key && map[key] && typeof map[key] === "object") return key;
-
-  const nb = baseStr.replace(/\s*-\s*(VIC|QLD)\s*$/i, "").trim().toLowerCase();
-  const st = projectStateCode(project);
-  const lb = baseStr.toLowerCase();
-  let bestKey = "";
-  let bestScore = -1;
-  for (const k of Object.keys(map)) {
-    const row = map[k];
-    if (!row || typeof row !== "object") continue;
-    const d = row.drawings;
-    if (!d || typeof d !== "object") continue;
-    const hasRouting =
-      drawingValue(d, k, "conceptApprovedFromEmail") || drawingValue(d, k, "conceptApprovedToEmail");
-    if (!hasRouting) continue;
-
-    const lk = k.toLowerCase();
-    let score = 0;
-    if (lk === lb) score += 100;
-    else if (lk.startsWith(lb + " -")) score += 90;
-    const rowBase = k.replace(/\s*-\s*(VIC|QLD)\s*$/i, "").trim().toLowerCase();
-    if (nb && rowBase === nb) score += 70;
-    if (st === "QLD" && / - QLD$/i.test(k)) score += 15;
-    if (st === "VIC" && / - VIC$/i.test(k)) score += 15;
-    if (score > bestScore) {
-      bestScore = score;
-      bestKey = k;
-    }
-  }
-  return bestKey;
-}
-
-/**
- * Stream row for WDs Approved: primary stream key, else best map row that already has WDs Approved From/To set.
- */
-function resolveWdsApprovedStreamRowKey(project, settings) {
-  const map = parseStreamSettingsMap(settings?.stream_settings_json);
-  const baseRaw = normalizeBaseStream(project?.stream);
-  const baseStr = String(baseRaw || "").trim();
-  if (!baseStr) return "";
-
-  let key = resolveStreamSettingsKey(baseStr, map, project);
-  if (key && map[key] && typeof map[key] === "object") return key;
-
-  const nb = baseStr.replace(/\s*-\s*(VIC|QLD)\s*$/i, "").trim().toLowerCase();
-  const st = projectStateCode(project);
-  const lb = baseStr.toLowerCase();
-  let bestKey = "";
-  let bestScore = -1;
-  for (const k of Object.keys(map)) {
-    const row = map[k];
-    if (!row || typeof row !== "object") continue;
-    const d = row.drawings;
-    if (!d || typeof d !== "object") continue;
-    const hasRouting =
-      drawingValue(d, k, "wdsApprovedFromEmail") ||
-      drawingValue(d, k, "wdsApprovedToEmail") ||
-      drawingValue(d, k, "wdsApprovedToEmail2");
-    if (!hasRouting) continue;
-
-    const lk = k.toLowerCase();
-    let score = 0;
-    if (lk === lb) score += 100;
-    else if (lk.startsWith(lb + " -")) score += 90;
-    const rowBase = k.replace(/\s*-\s*(VIC|QLD)\s*$/i, "").trim().toLowerCase();
-    if (nb && rowBase === nb) score += 70;
-    if (st === "QLD" && / - QLD$/i.test(k)) score += 15;
-    if (st === "VIC" && / - VIC$/i.test(k)) score += 15;
-    if (score > bestScore) {
-      bestScore = score;
-      bestKey = k;
-    }
-  }
-  return bestKey;
-}
-
-/** Stream row for Drawings Upload (design → sales): primary key, else best row with Upload From/To set. */
-function resolveDesignToSalespersonStreamRowKey(project, settings) {
-  const map = parseStreamSettingsMap(settings?.stream_settings_json);
-  const baseRaw = normalizeBaseStream(project?.stream);
-  const baseStr = String(baseRaw || "").trim();
-  if (!baseStr) return "";
-
-  let key = resolveStreamSettingsKey(baseStr, map, project);
-  if (key && map[key] && typeof map[key] === "object") {
-    const d = map[key].drawings;
-    if (
-      d &&
-      (drawingValue(d, key, "designToSalespersonFromEmail") ||
-        drawingValue(d, key, "designToSalespersonToEmail") ||
-        drawingValue(d, key, "designToSalespersonToEmail2") ||
-        drawingValue(d, key, "designToSalespersonCrmToEmail") ||
-        drawingValue(d, key, "designToSalespersonConstructionToEmail") ||
-        drawingValue(d, key, "designToSalespersonConstructionToEmail2") ||
-        drawingValue(d, key, "designToSalespersonConstructionToEmail3") ||
-        drawingValue(d, key, "designToSalespersonConstructionToEmail4"))
-    ) {
-      return key;
-    }
-  }
-
-  const nb = baseStr.replace(/\s*-\s*(VIC|QLD)\s*$/i, "").trim().toLowerCase();
-  const st = projectStateCode(project);
-  const lb = baseStr.toLowerCase();
-  let bestKey = "";
-  let bestScore = -1;
-  for (const k of Object.keys(map)) {
-    const row = map[k];
-    if (!row || typeof row !== "object") continue;
-    const d = row.drawings;
-    if (!d || typeof d !== "object") continue;
-    const hasRouting =
-      drawingValue(d, k, "designToSalespersonFromEmail") ||
-      drawingValue(d, k, "designToSalespersonToEmail") ||
-      drawingValue(d, k, "designToSalespersonToEmail2") ||
-      drawingValue(d, k, "designToSalespersonCrmToEmail") ||
-      drawingValue(d, k, "designToSalespersonConstructionToEmail") ||
-      drawingValue(d, k, "designToSalespersonConstructionToEmail2") ||
-      drawingValue(d, k, "designToSalespersonConstructionToEmail3") ||
-      drawingValue(d, k, "designToSalespersonConstructionToEmail4");
-    if (!hasRouting) continue;
-
-    const lk = k.toLowerCase();
-    let score = 0;
-    if (lk === lb) score += 100;
-    else if (lk.startsWith(lb + " -")) score += 90;
-    const rowBase = k.replace(/\s*-\s*(VIC|QLD)\s*$/i, "").trim().toLowerCase();
-    if (nb && rowBase === nb) score += 70;
-    if (st === "QLD" && / - QLD$/i.test(k)) score += 15;
-    if (st === "VIC" && / - VIC$/i.test(k)) score += 15;
-    if (score > bestScore) {
-      bestScore = score;
-      bestKey = k;
-    }
-  }
-  return bestKey;
-}
-
-const DESIGN_TO_SALESPERSON_FIELD_KEYS = new Set([
-  "designToSalespersonFromEmail",
-  "designToSalespersonToEmail",
-  "designToSalespersonToEmail2",
-  "designToSalespersonCrmToEmail",
-  "designToSalespersonConstructionToEmail",
-  "designToSalespersonConstructionToEmail2",
-  "designToSalespersonConstructionToEmail3",
-  "designToSalespersonConstructionToEmail4",
-]);
-
 export function isConstructionPhaseProject(project) {
   return String(project?.status ?? "").trim() === "Construction Phase";
 }
 
-/** Per-stream-row `drawings` values only. */
+/** Per-stream-row `drawings` values only (not Drawings Upload — that lives in General). */
 function getDrawingFieldFromStreamRows(settings, project, vicStyleKey) {
-  let streamKey = resolveProjectStreamSettingsRowKey(project, settings);
-  if (DESIGN_TO_SALESPERSON_FIELD_KEYS.has(vicStyleKey)) {
-    const uploadKey = resolveDesignToSalespersonStreamRowKey(project, settings);
-    if (uploadKey) streamKey = uploadKey;
-  }
+  const streamKey = resolveProjectStreamSettingsRowKey(project, settings);
   if (!streamKey) return "";
   const map = parseStreamSettingsMap(settings?.stream_settings_json);
   const row = map[streamKey] && typeof map[streamKey] === "object" ? map[streamKey] : null;
@@ -350,15 +143,16 @@ export function parseSettingsToEmailList(raw) {
 }
 
 /**
+ * General → Drawings → Drawings Upload — From (VIC/QLD by project state).
  * @param {Record<string, unknown> | null | undefined} settings from GET /api/settings
  * @param {Record<string, unknown> | null | undefined} project
  */
 export function resolveDesignToSalespersonFrom(settings, project, _templateFrom) {
-  return getDrawingFieldFromStreamRows(settings, project, "designToSalespersonFromEmail");
+  return getGeneralDrawingsUploadBranch(settings, project).fromEmail || "";
 }
 
 /**
- * To recipients for Drawings Upload (VIC/QLD stream row `drawings`).
+ * To recipients for Drawings Upload (General `email_general_json.drawingsUpload`).
  *
  * Upload modal kind:
  * - certifier → To [CRM] + To (additional) [DESIGN]  (never To [DESIGN])
@@ -368,59 +162,45 @@ export function resolveDesignToSalespersonFrom(settings, project, _templateFrom)
  */
 export function resolveDesignToSalespersonToEmails(settings, project, _templateToEmails, uploadKind) {
   const kind = String(uploadKind || "").trim().toLowerCase();
-  const additionalDesign = parseSettingsToEmailList(
-    getDrawingFieldFromStreamRows(settings, project, "designToSalespersonToEmail2")
-  );
+  const branch = getGeneralDrawingsUploadBranch(settings, project);
+  const additionalDesign = parseSettingsToEmailList(branch.toDesignEmail2);
 
   if (kind === "certifier") {
-    const crm = parseSettingsToEmailList(
-      getDrawingFieldFromStreamRows(settings, project, "designToSalespersonCrmToEmail")
-    );
+    const crm = parseSettingsToEmailList(branch.toCrmEmail);
     // Explicitly exclude primary DESIGN To for certifier uploads.
     return mergeUniqueEmails(crm, additionalDesign);
   }
 
   if (kind === "concept" || kind === "working") {
-    const primary = parseSettingsToEmailList(
-      getDrawingFieldFromStreamRows(settings, project, "designToSalespersonToEmail")
-    );
+    const primary = parseSettingsToEmailList(branch.toDesignEmail);
     // Explicitly exclude CRM for concept/working uploads.
     return mergeUniqueEmails(primary, additionalDesign);
   }
 
   const construction = isConstructionPhaseProject(project);
   if (construction) {
-    const primary = parseSettingsToEmailList(
-      getDrawingFieldFromStreamRows(settings, project, "designToSalespersonConstructionToEmail")
-    );
-    const additional = parseSettingsToEmailList(
-      getDrawingFieldFromStreamRows(settings, project, "designToSalespersonConstructionToEmail2")
-    );
-    const additional2 = parseSettingsToEmailList(
-      getDrawingFieldFromStreamRows(settings, project, "designToSalespersonConstructionToEmail3")
-    );
-    const additional3 = parseSettingsToEmailList(
-      getDrawingFieldFromStreamRows(settings, project, "designToSalespersonConstructionToEmail4")
-    );
+    const primary = parseSettingsToEmailList(branch.toConstructionEmail);
+    const additional = parseSettingsToEmailList(branch.toConstructionEmail2);
+    const additional2 = parseSettingsToEmailList(branch.toConstructionEmail3);
+    const additional3 = parseSettingsToEmailList(branch.toConstructionEmail4);
     return mergeUniqueEmails(primary, additional, additional2, additional3);
   }
-  const primary = parseSettingsToEmailList(
-    getDrawingFieldFromStreamRows(settings, project, "designToSalespersonToEmail")
-  );
+  const primary = parseSettingsToEmailList(branch.toDesignEmail);
   return mergeUniqueEmails(primary, additionalDesign);
 }
 
-/** Stream Settings → Drawings → Design Notes — From only (resolved row from stream + state). */
+/** General → Drawings → Design Notes — From. */
 export function resolveDesignNotesFrom(settings, project, _templateFrom) {
-  return getDrawingFieldFromStreamRows(settings, project, "designNotesFromEmail");
+  return getGeneralDesignNotesBranch(settings, project).fromEmail || "";
 }
 
-/** Stream Settings → Drawings → Design Notes — To only. */
+/** General → Drawings → Design Notes — To. */
 export function resolveDesignNotesToEmails(settings, project, _templateToEmails) {
-  return parseSettingsToEmailList(getDrawingFieldFromStreamRows(settings, project, "designNotesToEmail"));
+  return parseSettingsToEmailList(getGeneralDesignNotesBranch(settings, project).toEmail);
 }
 
 /**
+ * Stream Settings → Drawings → Send Drawings to Client — From (still per-stream).
  * @param {Record<string, unknown> | null | undefined} settings from GET /api/settings
  * @param {Record<string, unknown> | null | undefined} project
  */
@@ -428,31 +208,17 @@ export function resolveSalespersonToClientFrom(settings, project, _templateFrom)
   return getDrawingFieldFromStreamRows(settings, project, "salespersonToClientFromEmail");
 }
 
-/** Sales Notes — To (same row + seed as Stream Settings → Drawings when Sales To is empty). */
+/** General → Drawings → Sales Notes — To (seeds from Design Notes when empty). */
 export function resolveSalesNotesToEmails(settings, project, _templateToEmails) {
-  const streamKey = resolveSalesNotesStreamRowKey(project, settings);
-  if (!streamKey) return [];
-  const map = parseStreamSettingsMap(settings?.stream_settings_json);
-  const row = map[streamKey];
-  const d = row?.drawings && typeof row.drawings === "object" ? row.drawings : null;
-  let raw = drawingValue(d, streamKey, "salesNotesToEmail");
-  if (!raw) raw = drawingValue(d, streamKey, "designNotesFromEmail");
-  return parseSettingsToEmailList(raw);
+  return parseSettingsToEmailList(getGeneralSalesNotesBranch(settings, project).toEmail);
 }
 
 /**
  * DRAWINGS - Sales to Design: From = Sales Notes — From; To = Sales Notes — To.
- * (When Sales From is empty, uses Design Notes — To like Stream Settings seed.)
+ * (When Sales From is empty, uses Design Notes — To like the former Stream Settings seed.)
  */
 export function resolveSalesToDesignFrom(settings, project, _templateFrom) {
-  const streamKey = resolveSalesNotesStreamRowKey(project, settings);
-  if (!streamKey) return "";
-  const map = parseStreamSettingsMap(settings?.stream_settings_json);
-  const row = map[streamKey];
-  const d = row?.drawings && typeof row.drawings === "object" ? row.drawings : null;
-  let v = drawingValue(d, streamKey, "salesNotesFromEmail");
-  if (!v) v = drawingValue(d, streamKey, "designNotesToEmail");
-  return v || "";
+  return getGeneralSalesNotesBranch(settings, project).fromEmail || "";
 }
 
 export function resolveSalesToDesignToEmails(settings, project, _templateToEmails) {
@@ -460,46 +226,28 @@ export function resolveSalesToDesignToEmails(settings, project, _templateToEmail
   return resolveSalesNotesToEmails(settings, project, _templateToEmails);
 }
 
-/** Concept Approved — To only (`conceptApprovedToEmail` / QLD key on resolved row). No fallback to other sections. */
+/** General → Drawings → Concept Approved — To. */
 export function resolveConceptApprovedToEmails(settings, project, _templateToEmails) {
-  const streamKey = resolveConceptApprovedStreamRowKey(project, settings);
-  if (!streamKey) return [];
-  const map = parseStreamSettingsMap(settings?.stream_settings_json);
-  const row = map[streamKey];
-  const d = row?.drawings && typeof row.drawings === "object" ? row.drawings : null;
-  return parseSettingsToEmailList(drawingValue(d, streamKey, "conceptApprovedToEmail"));
+  return parseSettingsToEmailList(getGeneralConceptApprovedBranch(settings, project).toEmail);
 }
 
-/** Concept Approved — From only. No fallback to other sections. */
+/** General → Drawings → Concept Approved — From. */
 export function resolveConceptApprovedFrom(settings, project, _templateFrom) {
-  const streamKey = resolveConceptApprovedStreamRowKey(project, settings);
-  if (!streamKey) return "";
-  const map = parseStreamSettingsMap(settings?.stream_settings_json);
-  const row = map[streamKey];
-  const d = row?.drawings && typeof row.drawings === "object" ? row.drawings : null;
-  return drawingValue(d, streamKey, "conceptApprovedFromEmail");
+  return getGeneralConceptApprovedBranch(settings, project).fromEmail || "";
 }
 
-/** WDs Approved — To recipients; primary + optional additional To merged (same pattern as Drawings Upload QLD second To). */
+/** General → Drawings → WDs Approved — To (primary + additional). */
 export function resolveWdsApprovedToEmails(settings, project, _templateToEmails) {
-  const streamKey = resolveWdsApprovedStreamRowKey(project, settings);
-  if (!streamKey) return [];
-  const map = parseStreamSettingsMap(settings?.stream_settings_json);
-  const row = map[streamKey];
-  const d = row?.drawings && typeof row.drawings === "object" ? row.drawings : null;
-  const primary = parseSettingsToEmailList(drawingValue(d, streamKey, "wdsApprovedToEmail"));
-  const secondary = parseSettingsToEmailList(drawingValue(d, streamKey, "wdsApprovedToEmail2"));
-  return mergeUniqueEmails(primary, secondary);
+  const branch = getGeneralWdsApprovedBranch(settings, project);
+  return mergeUniqueEmails(
+    parseSettingsToEmailList(branch.toEmail),
+    parseSettingsToEmailList(branch.toEmail2)
+  );
 }
 
-/** WDs Approved — From only. */
+/** General → Drawings → WDs Approved — From. */
 export function resolveWdsApprovedFrom(settings, project, _templateFrom) {
-  const streamKey = resolveWdsApprovedStreamRowKey(project, settings);
-  if (!streamKey) return "";
-  const map = parseStreamSettingsMap(settings?.stream_settings_json);
-  const row = map[streamKey];
-  const d = row?.drawings && typeof row.drawings === "object" ? row.drawings : null;
-  return drawingValue(d, streamKey, "wdsApprovedFromEmail");
+  return getGeneralWdsApprovedBranch(settings, project).fromEmail || "";
 }
 
 /**

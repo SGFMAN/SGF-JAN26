@@ -19,6 +19,7 @@ import {
   DESIGN_PHASE,
   PERMIT_PHASE,
   isDesignPhaseStatus,
+  isPermitPhaseStatus,
   isPreEngagementPhaseStatus,
 } from "../utils/projectStatus";
 
@@ -1003,13 +1004,13 @@ export default function Drawings({
       previewToList = resolveConceptApprovedToEmails(settingsData, project, []);
       if (!previewFrom || !String(previewFrom).trim()) {
         alert(
-          "No sender email in Stream Settings → Drawings → Concept Approved — From. Configure Settings → Stream Settings → Drawings."
+          "No sender email in General → Drawings → Concept Approved — From. Configure Settings → Email Settings → General → Drawings."
         );
         return;
       }
       if (!previewToList.length) {
         alert(
-          "No recipient addresses in Stream Settings → Drawings → Concept Approved — To. Configure Settings → Stream Settings → Drawings."
+          "No recipient addresses in General → Drawings → Concept Approved — To. Configure Settings → Email Settings → General → Drawings."
         );
         return;
       }
@@ -1018,13 +1019,13 @@ export default function Drawings({
       previewToList = resolveWdsApprovedToEmails(settingsData, project, []);
       if (!previewFrom || !String(previewFrom).trim()) {
         alert(
-          "No sender email in Stream Settings → Drawings → WDs Approved — From. Configure Settings → Stream Settings → Drawings."
+          "No sender email in General → Drawings → WDs Approved — From. Configure Settings → Email Settings → General → Drawings."
         );
         return;
       }
       if (!previewToList.length) {
         alert(
-          "No recipient addresses in Stream Settings → Drawings → WDs Approved — To. Configure Settings → Stream Settings → Drawings."
+          "No recipient addresses in General → Drawings → WDs Approved — To. Configure Settings → Email Settings → General → Drawings."
         );
         return;
       }
@@ -1454,8 +1455,14 @@ export default function Drawings({
       });
       setNotesText("");
       setMarkupFile(null);
-      newDrawingUploadKindRef.current = "";
-      setNewDrawingUploadKind("");
+      // Permit Phase uploads always use Post Approval (certifier) — no picker shown.
+      if (isPermitPhaseStatus(project?.status)) {
+        newDrawingUploadKindRef.current = "certifier";
+        setNewDrawingUploadKind("certifier");
+      } else {
+        newDrawingUploadKindRef.current = "";
+        setNewDrawingUploadKind("");
+      }
       setShowNotesModal(true);
     } catch (error) {
       console.error("Error saving drawings path:", error);
@@ -2176,7 +2183,9 @@ export default function Drawings({
     }
     const fromVal = resolveDesignToSalespersonFrom(settingsData, project, "");
     if (!fromVal || !String(fromVal).trim()) {
-      alert("No sender email found in Stream Settings for this stream/state.");
+      alert(
+        "No sender email in General → Drawings → Drawings Upload — From. Configure Settings → Email Settings → General → Drawings → Drawings Upload (VIC/QLD column)."
+      );
       return;
     }
 
@@ -2329,7 +2338,11 @@ export default function Drawings({
     if (isSendingDraftingEmail) return false;
 
     if (!newDrawingUploadKind) {
-      alert("Please select whether these drawings are concept, working, or post approval.");
+      alert(
+        isDesignPhaseStatus(project?.status)
+          ? "Please select whether these drawings are concept or working drawings."
+          : "Please select whether these drawings are concept, working, or post approval."
+      );
       return false;
     }
 
@@ -2579,13 +2592,13 @@ export default function Drawings({
             ? "To [CRM] and/or To (additional) [DESIGN]"
             : "To [DESIGN] and/or To (additional) [DESIGN]";
         alert(
-          `No recipient addresses in Stream Settings → Drawings → Drawings Upload — ${toHint}. Configure Settings → Email Settings → Streams → Drawings → Drawings Upload for this stream (VIC/QLD column).`
+          `No recipient addresses in General → Drawings → Drawings Upload — ${toHint}. Configure Settings → Email Settings → General → Drawings → Drawings Upload (VIC/QLD column).`
         );
         return;
       }
       if (!previewFromResolved || !String(previewFromResolved).trim()) {
         alert(
-          "No sender email in Stream Settings → Drawings → Drawings Upload — From. Configure Settings → Email Settings → Streams → Drawings → Drawings Upload for this stream (VIC/QLD column)."
+          "No sender email in General → Drawings → Drawings Upload — From. Configure Settings → Email Settings → General → Drawings → Drawings Upload (VIC/QLD column)."
         );
         return;
       }
@@ -2882,13 +2895,13 @@ export default function Drawings({
 
       if (!previewToResolved.length) {
         alert(
-          "No recipient addresses in Stream Settings → Drawings → Sales Notes — To. Configure Settings → Stream Settings → Drawings."
+          "No recipient addresses in General → Drawings → Sales Notes — To. Configure Settings → Email Settings → General → Drawings."
         );
         return;
       }
       if (!previewFromResolved || !String(previewFromResolved).trim()) {
         alert(
-          "No sender email in Stream Settings → Drawings → Sales Notes — From. Configure Settings → Stream Settings → Drawings."
+          "No sender email in General → Drawings → Sales Notes — From. Configure Settings → Email Settings → General → Drawings."
         );
         return;
       }
@@ -4341,7 +4354,8 @@ export default function Drawings({
               Drafting Notes for {notesForRevision.name}
               {notesForRevision.revision !== null ? ` - Rev ${notesForRevision.revision}` : " (Initial)"}
             </h3>
-            {notesForRevision.isNewDrawing && (
+            {notesForRevision.isNewDrawing &&
+              !isPermitPhaseStatus(project?.status) && (
               <div style={{ marginBottom: "16px" }}>
                 <div
                   style={{
@@ -4396,30 +4410,34 @@ export default function Drawings({
                     />
                     Working drawings
                   </label>
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "10px",
-                      cursor: "pointer",
-                      fontSize: "0.9rem",
-                      color: MONUMENT,
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name="newDrawingUploadKind"
-                      checked={newDrawingUploadKind === "certifier"}
-                      onChange={() => {
-                        newDrawingUploadKindRef.current = "certifier";
-                        setNewDrawingUploadKind("certifier");
+                  {!isDesignPhaseStatus(project?.status) ? (
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        cursor: "pointer",
+                        fontSize: "0.9rem",
+                        color: MONUMENT,
                       }}
-                    />
-                    Post Approval
-                  </label>
+                    >
+                      <input
+                        type="radio"
+                        name="newDrawingUploadKind"
+                        checked={newDrawingUploadKind === "certifier"}
+                        onChange={() => {
+                          newDrawingUploadKindRef.current = "certifier";
+                          setNewDrawingUploadKind("certifier");
+                        }}
+                      />
+                      Post Approval
+                    </label>
+                  ) : null}
                 </div>
                 <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginTop: "8px" }}>
-                  Required — status is set to Concept Stage or Working Drawing Stage for Concept/Working uploads.
+                  {isDesignPhaseStatus(project?.status)
+                    ? "Required — status is set to Concept Stage or Working Drawing Stage."
+                    : "Required — status is set to Concept Stage or Working Drawing Stage for Concept/Working uploads."}
                 </div>
               </div>
             )}
