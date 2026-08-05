@@ -425,9 +425,12 @@ export default function Drawings({
   const [showDraftspersonRequiredModal, setShowDraftspersonRequiredModal] = useState(false);
   const [pendingPdfFile, setPendingPdfFile] = useState(null);
   const [draftspersonModalChoice, setDraftspersonModalChoice] = useState(DRAFTSPERSON_UNASSIGNED);
-  /** When a new PDF is uploaded, user must pick concept / working / certifier before Save and Send. */
+  /** When a new PDF is uploaded in Design Phase, user must pick concept / working before Save and Send. */
   const [newDrawingUploadKind, setNewDrawingUploadKind] = useState("");
   const newDrawingUploadKindRef = useRef("");
+  /** True after this upload flow promotes Pre-Engagement → Design Phase (props may lag). */
+  const [uploadTreatedAsDesignPhase, setUploadTreatedAsDesignPhase] = useState(false);
+  const uploadStatusOverrideRef = useRef(null);
   const [streamSettingsJson, setStreamSettingsJson] = useState({});
   const drawingUploadPreverifiedPublishedPlansDirRef = useRef(null);
   const [drawingsFolderCheckPending, setDrawingsFolderCheckPending] = useState(false);
@@ -1364,7 +1367,7 @@ export default function Drawings({
         },
         body: JSON.stringify({
           name: projectName,
-          status: project?.status || null,
+          status: effectiveProjectStatus(),
           stream: project?.stream || null,
           suburb: project?.suburb || null,
           street: project?.street || null,
@@ -1456,13 +1459,14 @@ export default function Drawings({
       });
       setNotesText("");
       setMarkupFile(null);
-      // Permit Phase uploads always use Post Approval (certifier) — no picker shown.
-      if (isPermitPhaseStatus(project?.status)) {
-        newDrawingUploadKindRef.current = "certifier";
-        setNewDrawingUploadKind("certifier");
-      } else {
+      // Design Phase (incl. just-promoted Pre-Engagement): user picks concept/working.
+      // Other phases: no picker — apply certifier rules so drawings_status is left alone.
+      if (isDesignPhaseUploadFlow()) {
         newDrawingUploadKindRef.current = "";
         setNewDrawingUploadKind("");
+      } else {
+        newDrawingUploadKindRef.current = "certifier";
+        setNewDrawingUploadKind("certifier");
       }
       setShowNotesModal(true);
     } catch (error) {
@@ -1473,6 +1477,66 @@ export default function Drawings({
 
   function hasDraftspersonAssigned() {
     return isDraftspersonAssigned(draftsperson);
+  }
+
+  function effectiveProjectStatus() {
+    return uploadStatusOverrideRef.current || project?.status || null;
+  }
+
+  function isDesignPhaseUploadFlow() {
+    return (
+      uploadTreatedAsDesignPhase ||
+      isDesignPhaseStatus(effectiveProjectStatus()) ||
+      isDesignPhaseStatus(project?.status)
+    );
+  }
+
+  function clearUploadStatusOverride() {
+    uploadStatusOverrideRef.current = null;
+    setUploadTreatedAsDesignPhase(false);
+  }
+
+  /** Pre-Engagement → Design Phase when drawings are uploaded (props may lag; use override). */
+  async function promotePreEngagementToDesignPhaseIfNeeded() {
+    if (!project?.id) return false;
+    if (!isPreEngagementPhaseStatus(project?.status)) return false;
+
+    uploadStatusOverrideRef.current = DESIGN_PHASE;
+    setUploadTreatedAsDesignPhase(true);
+
+    const projectName =
+      project?.street && project?.suburb
+        ? `${project.street}, ${project.suburb}`.trim()
+        : project?.name || "";
+
+    try {
+      const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: projectName,
+          status: DESIGN_PHASE,
+          stream: project?.stream || null,
+          suburb: project?.suburb || null,
+          street: project?.street || null,
+          state: project?.state || null,
+          draftsperson: normalizeDraftspersonField(valuesRef.current.draftsperson),
+          drawings_status: valuesRef.current.drawingsStatus || null,
+        }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => response.statusText);
+        console.error("Failed to promote Pre-Engagement → Design Phase:", errorText);
+        clearUploadStatusOverride();
+        return false;
+      }
+      if (onUpdate) onUpdate(true);
+      return true;
+    } catch (e) {
+      console.error("Failed to promote Pre-Engagement → Design Phase:", e);
+      clearUploadStatusOverride();
+      return false;
+    }
   }
 
   async function beginDrawingPdfUpload(file) {
@@ -1539,6 +1603,7 @@ export default function Drawings({
         setShowDraftspersonRequiredModal(true);
         return;
       }
+      await promotePreEngagementToDesignPhaseIfNeeded();
       await saveDrawingsPath(file);
     } catch (e) {
       console.error("beginDrawingPdfUpload:", e);
@@ -1563,6 +1628,12 @@ export default function Drawings({
       valuesRef.current.drawingsStatus = "Concept Stage";
       await saveField("drawings_status", "Concept Stage");
     }
+    // saveField(draftsperson) also promotes Pre-Engagement → Design Phase; keep override so
+    // saveDrawingsPath does not write the stale Pre-Engagement status from props.
+    if (isPreEngagementPhaseStatus(project?.status)) {
+      uploadStatusOverrideRef.current = DESIGN_PHASE;
+      setUploadTreatedAsDesignPhase(true);
+    }
     await saveField("draftsperson", nameToSave);
     const file = pendingPdfFile;
     setShowDraftspersonRequiredModal(false);
@@ -1578,6 +1649,7 @@ export default function Drawings({
     setPendingPdfFile(null);
     setDraftspersonModalChoice(DRAFTSPERSON_UNASSIGNED);
     drawingUploadPreverifiedPublishedPlansDirRef.current = null;
+    clearUploadStatusOverride();
     setSelectedFile(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -2338,12 +2410,13 @@ export default function Drawings({
     if (!notesForRevision?.isNewDrawing) return true;
     if (isSendingDraftingEmail) return false;
 
-    if (!newDrawingUploadKind) {
-      alert(
-        isDesignPhaseStatus(project?.status)
-          ? "Please select whether these drawings are concept or working drawings."
-          : "Please select whether these drawings are concept, working, or post approval."
-      );
+    const needsUploadKind = isDesignPhaseUploadFlow();
+    const kindToApply = needsUploadKind
+      ? newDrawingUploadKind
+      : newDrawingUploadKind || "certifier";
+
+    if (needsUploadKind && (kindToApply !== "concept" && kindToApply !== "working")) {
+      alert("Please select whether these drawings are concept or working drawings.");
       return false;
     }
 
@@ -2353,7 +2426,7 @@ export default function Drawings({
       const { history: historyWithRules, drawingsStatus: nextDrawingsStatus, drawings_concept_approved_date, drawings_working_approved_date } =
         applyDrawingUploadKindRules(
           drawingsHistory,
-          newDrawingUploadKind,
+          kindToApply,
           valuesRef.current.drawingsStatus || project?.drawings_status || null
         );
 
@@ -2379,7 +2452,7 @@ export default function Drawings({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: projectName,
-          status: project?.status || null,
+          status: effectiveProjectStatus(),
           stream: project?.stream || null,
           suburb: project?.suburb || null,
           street: project?.street || null,
@@ -2442,7 +2515,7 @@ export default function Drawings({
         throw new Error(errorData.error || "Failed to save drawing upload status");
       }
 
-      if (newDrawingUploadKind === "concept" || newDrawingUploadKind === "working") {
+      if (kindToApply === "concept" || kindToApply === "working") {
         await fetch(`${API_URL}/api/projects/${project.id}/drawing-approval-dates`, {
           method: "PUT",
           headers: {
@@ -2579,20 +2652,30 @@ export default function Drawings({
       } catch (e) {
         console.warn("Could not load settings for drawing From override:", e);
       }
+      // Use status override when Pre-Engagement was just promoted to Design Phase.
+      const projectForEmailRouting = {
+        ...project,
+        status: effectiveProjectStatus(),
+      };
       const previewToResolved = resolveDesignToSalespersonToEmails(
         settingsForPreview,
-        project,
+        projectForEmailRouting,
         [],
         uploadKindForEmail
       );
-      const previewFromResolved = resolveDesignToSalespersonFrom(settingsForPreview, project, "");
+      const previewFromResolved = resolveDesignToSalespersonFrom(
+        settingsForPreview,
+        projectForEmailRouting,
+        ""
+      );
 
       if (!previewToResolved.length) {
-        const toHint = isPermitPhaseStatus(project?.status)
+        const statusForHint = projectForEmailRouting.status;
+        const toHint = isPermitPhaseStatus(statusForHint)
           ? "[PERMIT PHASE]"
-          : isConstructionPhaseStatus(project?.status)
+          : isConstructionPhaseStatus(statusForHint)
             ? "[CONSTRUCTION PHASE]"
-            : isDesignPhaseStatus(project?.status)
+            : isDesignPhaseStatus(statusForHint)
               ? "[DESIGN PHASE]"
               : "the matching status group (Design / Permit / Construction Phase)";
         alert(
@@ -2694,6 +2777,7 @@ export default function Drawings({
     setMarkupFile(null);
     newDrawingUploadKindRef.current = "";
     setNewDrawingUploadKind("");
+    clearUploadStatusOverride();
   }
 
   async function handleSendFromPreview() {
@@ -2805,6 +2889,7 @@ export default function Drawings({
     setNewDrawingUploadKind("");
     setIsDraggingMarkup(false);
     setIsSendingDraftingEmail(false);
+    clearUploadStatusOverride();
   }
 
   async function handleSendSalesNotes() {
@@ -4358,8 +4443,7 @@ export default function Drawings({
               Drafting Notes for {notesForRevision.name}
               {notesForRevision.revision !== null ? ` - Rev ${notesForRevision.revision}` : " (Initial)"}
             </h3>
-            {notesForRevision.isNewDrawing &&
-              !isPermitPhaseStatus(project?.status) && (
+            {notesForRevision.isNewDrawing && isDesignPhaseUploadFlow() ? (
               <div style={{ marginBottom: "16px" }}>
                 <div
                   style={{
@@ -4414,37 +4498,12 @@ export default function Drawings({
                     />
                     Working drawings
                   </label>
-                  {!isDesignPhaseStatus(project?.status) ? (
-                    <label
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        cursor: "pointer",
-                        fontSize: "0.9rem",
-                        color: MONUMENT,
-                      }}
-                    >
-                      <input
-                        type="radio"
-                        name="newDrawingUploadKind"
-                        checked={newDrawingUploadKind === "certifier"}
-                        onChange={() => {
-                          newDrawingUploadKindRef.current = "certifier";
-                          setNewDrawingUploadKind("certifier");
-                        }}
-                      />
-                      Post Approval
-                    </label>
-                  ) : null}
                 </div>
                 <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginTop: "8px" }}>
-                  {isDesignPhaseStatus(project?.status)
-                    ? "Required — status is set to Concept Stage or Working Drawing Stage."
-                    : "Required — status is set to Concept Stage or Working Drawing Stage for Concept/Working uploads."}
+                  Required — drawings status is set to Concept Stage or Working Drawing Stage.
                 </div>
               </div>
-            )}
+            ) : null}
             <textarea
               value={notesText}
               onChange={(e) => setNotesText(e.target.value)}
@@ -4526,49 +4585,36 @@ export default function Drawings({
               {/* Show Send Drawings and Cancel for new drawings or current revision */}
               {(notesForRevision.isNewDrawing || notesForRevision.isCurrentRevision) && (
                 <>
+                  {(() => {
+                    const uploadKindBlocking =
+                      notesForRevision.isNewDrawing &&
+                      isDesignPhaseUploadFlow() &&
+                      !newDrawingUploadKind;
+                    const saveDisabled =
+                      notesForRevision.isNewDrawing &&
+                      (uploadKindBlocking || isSendingDraftingEmail);
+                    return (
+                  <>
                   <button
                     onClick={handleSendDrawingsWithNotes}
-                    disabled={
-                      notesForRevision.isNewDrawing &&
-                      (!newDrawingUploadKind || isSendingDraftingEmail)
-                    }
+                    disabled={saveDisabled}
                     style={{
-                      background:
-                        notesForRevision.isNewDrawing &&
-                        (!newDrawingUploadKind || isSendingDraftingEmail)
-                          ? "#b9d5f0"
-                          : "#4D93D9",
+                      background: saveDisabled ? "#b9d5f0" : "#4D93D9",
                       color: WHITE,
                       border: "none",
                       borderRadius: "8px",
                       padding: "10px 20px",
                       fontSize: "0.9rem",
                       fontWeight: 500,
-                      cursor:
-                        notesForRevision.isNewDrawing &&
-                        (!newDrawingUploadKind || isSendingDraftingEmail)
-                          ? "not-allowed"
-                          : "pointer",
+                      cursor: saveDisabled ? "not-allowed" : "pointer",
                       transition: "background 0.2s",
                     }}
                     onMouseEnter={(e) => {
-                      if (
-                        notesForRevision.isNewDrawing &&
-                        (!newDrawingUploadKind || isSendingDraftingEmail)
-                      ) {
-                        return;
-                      }
+                      if (saveDisabled) return;
                       e.currentTarget.style.background = "#3d7bc9";
                     }}
                     onMouseLeave={(e) => {
-                      if (
-                        notesForRevision.isNewDrawing &&
-                        (!newDrawingUploadKind || isSendingDraftingEmail)
-                      ) {
-                        e.currentTarget.style.background = "#b9d5f0";
-                        return;
-                      }
-                      e.currentTarget.style.background = "#4D93D9";
+                      e.currentTarget.style.background = saveDisabled ? "#b9d5f0" : "#4D93D9";
                     }}
                   >
                     {notesForRevision.isNewDrawing ? "Save and Send Drawings" : "Update Notes"}
@@ -4576,31 +4622,33 @@ export default function Drawings({
                   {notesForRevision.isNewDrawing && (
                     <button
                       onClick={handleSkipEmailFromNotes}
-                      disabled={!newDrawingUploadKind || isSendingDraftingEmail}
+                      disabled={saveDisabled}
                       style={{
-                        background: !newDrawingUploadKind || isSendingDraftingEmail ? "#e8e8e9" : WHITE,
+                        background: saveDisabled ? "#e8e8e9" : WHITE,
                         color: MONUMENT,
                         border: `1px solid ${SECTION_GREY}`,
                         borderRadius: "8px",
                         padding: "10px 20px",
                         fontSize: "0.9rem",
                         fontWeight: 500,
-                        cursor:
-                          !newDrawingUploadKind || isSendingDraftingEmail ? "not-allowed" : "pointer",
+                        cursor: saveDisabled ? "not-allowed" : "pointer",
                         transition: "background 0.2s",
                       }}
                       onMouseEnter={(e) => {
-                        if (!newDrawingUploadKind || isSendingDraftingEmail) return;
+                        if (saveDisabled) return;
                         e.currentTarget.style.background = UI.inputBg;
                       }}
                       onMouseLeave={(e) => {
-                        if (!newDrawingUploadKind || isSendingDraftingEmail) return;
+                        if (saveDisabled) return;
                         e.currentTarget.style.background = WHITE;
                       }}
                     >
                       Skip Email
                     </button>
                   )}
+                  </>
+                    );
+                  })()}
                   <button
                     onClick={handleCloseNotesModal}
                     disabled={notesForRevision.isNewDrawing && isSendingDraftingEmail}
