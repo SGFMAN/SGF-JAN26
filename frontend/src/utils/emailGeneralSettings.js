@@ -167,6 +167,7 @@ export function normalizeDrawingsUploadBranch(raw) {
     toDesignEmail: trim(b.toDesignEmail),
     toDesignEmail2: trim(b.toDesignEmail2),
     toCrmEmail: trim(b.toCrmEmail),
+    toCrmEmail2: trim(b.toCrmEmail2),
     toConstructionEmail: trim(b.toConstructionEmail),
     toConstructionEmail2: trim(b.toConstructionEmail2),
     toConstructionEmail3: trim(b.toConstructionEmail3),
@@ -226,6 +227,7 @@ function isDrawingsUploadBranchEmpty(b) {
     n.toDesignEmail ||
     n.toDesignEmail2 ||
     n.toCrmEmail ||
+    n.toCrmEmail2 ||
     n.toConstructionEmail ||
     n.toConstructionEmail2 ||
     n.toConstructionEmail3 ||
@@ -247,10 +249,17 @@ export function getGeneralDepositBalanceBranch(settings, project) {
   return normalizeDepositBalanceBranch(eg.depositBalance?.[key]);
 }
 
-/** Drawings Upload fields for this project (VIC vs QLD from project state — not stream). */
+/**
+ * Drawings Upload fields for this project.
+ * VIC/QLD from project state only — no default to VIC when state is missing.
+ */
 export function getGeneralDrawingsUploadBranch(settings, project) {
   const eg = parseEmailGeneralJson(settings?.email_general_json);
-  const key = generalEmailStateCode(project) === "QLD" ? "qld" : "vic";
+  const code = generalEmailStateCode(project);
+  if (code !== "VIC" && code !== "QLD") {
+    return normalizeDrawingsUploadBranch({});
+  }
+  const key = code === "QLD" ? "qld" : "vic";
   return normalizeDrawingsUploadBranch(eg.drawingsUpload?.[key]);
 }
 

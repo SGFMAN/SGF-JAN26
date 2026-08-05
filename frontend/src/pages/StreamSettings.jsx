@@ -31,13 +31,13 @@ const NEW_PROJECT_SECTION_BLUE = {
   padding: "12px 14px 14px",
   boxSizing: "border-box",
 };
-/** Drawings Upload — grouped field shading (From / Design / Construction). */
+/** Drawings Upload — grouped field shading (From / Design / Permit / Construction). */
 const DRAWINGS_UPLOAD_FROM_GROUP = {
   display: "flex",
   flexDirection: "column",
   gap: "10px",
-  backgroundColor: "#f0f0f2",
-  border: "1px solid #b8b8bc",
+  backgroundColor: "#e8f6ee",
+  border: "1px solid #3d9b6a",
   borderRadius: "10px",
   padding: "12px 14px",
   boxSizing: "border-box",
@@ -48,6 +48,16 @@ const DRAWINGS_UPLOAD_DESIGN_GROUP = {
   gap: "10px",
   backgroundColor: "#e8f2fc",
   border: "1px solid #4d93d9",
+  borderRadius: "10px",
+  padding: "12px 14px",
+  boxSizing: "border-box",
+};
+const DRAWINGS_UPLOAD_PERMIT_GROUP = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "10px",
+  backgroundColor: "#f0e8f8",
+  border: "1px solid #8e5aad",
   borderRadius: "10px",
   padding: "12px 14px",
   boxSizing: "border-box",
@@ -121,6 +131,7 @@ const GENERAL_DRAWINGS_UPLOAD_FIELDS = {
   toDesign: "toDesignEmail",
   toDesign2: "toDesignEmail2",
   toCrm: "toCrmEmail",
+  toCrm2: "toCrmEmail2",
   toConstruction: "toConstructionEmail",
   toConstruction2: "toConstructionEmail2",
   toConstruction3: "toConstructionEmail3",
@@ -975,26 +986,26 @@ export default function StreamSettings() {
 
   function updateGeneralDrawingsSectionField(rootKey, region, fieldKey, value) {
     const branchKey = region === "qld" ? "qld" : "vic";
-    setEmailGeneral((prev) => {
-      const root =
-        prev[rootKey] && typeof prev[rootKey] === "object"
-          ? prev[rootKey]
-          : emptyGeneralDrawingsRoot(rootKey);
-      const mergedBranch = {
-        ...normalizeGeneralDrawingsBranch(rootKey, {}),
-        ...(root[branchKey] && typeof root[branchKey] === "object" ? root[branchKey] : {}),
-        [fieldKey]: value == null ? "" : String(value).trim(),
-      };
-      const next = {
-        ...prev,
-        [rootKey]: {
-          ...root,
-          [branchKey]: normalizeGeneralDrawingsBranch(rootKey, mergedBranch),
-        },
-      };
-      emailGeneralRef.current = next;
-      return next;
-    });
+    // Build next synchronously so onChange → onCommit can persist the new value immediately
+    const prev = emailGeneralRef.current || parseEmailGeneralJson(null);
+    const root =
+      prev[rootKey] && typeof prev[rootKey] === "object"
+        ? prev[rootKey]
+        : emptyGeneralDrawingsRoot(rootKey);
+    const mergedBranch = {
+      ...normalizeGeneralDrawingsBranch(rootKey, {}),
+      ...(root[branchKey] && typeof root[branchKey] === "object" ? root[branchKey] : {}),
+      [fieldKey]: value == null ? "" : String(value).trim(),
+    };
+    const next = {
+      ...prev,
+      [rootKey]: {
+        ...root,
+        [branchKey]: normalizeGeneralDrawingsBranch(rootKey, mergedBranch),
+      },
+    };
+    emailGeneralRef.current = next;
+    setEmailGeneral(next);
   }
 
   function flushPersistGeneralDrawings() {
@@ -1423,7 +1434,7 @@ export default function StreamSettings() {
                                     <div style={DRAWINGS_UPLOAD_DESIGN_GROUP}>
                                       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                         <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                          {K.label} — To [DESIGN]
+                                          [DESIGN PHASE] - 1
                                         </span>
                                         <DrawingNotifySmtpSelect
                                           smtpOptions={smtpSlotEmails}
@@ -1437,7 +1448,7 @@ export default function StreamSettings() {
                                       </div>
                                       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                         <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                          {K.label} — To (additional) [DESIGN]
+                                          [DESIGN PHASE] - 2
                                         </span>
                                         <DrawingNotifySmtpSelect
                                           smtpOptions={smtpSlotEmails}
@@ -1449,9 +1460,11 @@ export default function StreamSettings() {
                                           onCommit={flushPersistGeneralDrawings}
                                         />
                                       </div>
+                                    </div>
+                                    <div style={DRAWINGS_UPLOAD_PERMIT_GROUP}>
                                       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                         <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                          {K.label} — To [CRM]
+                                          [PERMIT PHASE] - 1
                                         </span>
                                         <DrawingNotifySmtpSelect
                                           smtpOptions={smtpSlotEmails}
@@ -1463,11 +1476,25 @@ export default function StreamSettings() {
                                           onCommit={flushPersistGeneralDrawings}
                                         />
                                       </div>
+                                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                        <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                          [PERMIT PHASE] - 2
+                                        </span>
+                                        <DrawingNotifySmtpSelect
+                                          smtpOptions={smtpSlotEmails}
+                                          value={data[K.toCrm2] || ""}
+                                          disabled={saving}
+                                          onValueChange={(next) =>
+                                            updateGeneralDrawingsSectionField(section.rootKey, region, K.toCrm2, next)
+                                          }
+                                          onCommit={flushPersistGeneralDrawings}
+                                        />
+                                      </div>
                                     </div>
                                     <div style={DRAWINGS_UPLOAD_CONSTRUCTION_GROUP}>
                                       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                         <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                          {K.label} — To [CONSTRUCTION]
+                                          [CONSTRUCTION PHASE] - 1
                                         </span>
                                         <DrawingNotifySmtpSelect
                                           smtpOptions={smtpSlotEmails}
@@ -1486,7 +1513,7 @@ export default function StreamSettings() {
                                       </div>
                                       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                         <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                          {K.label} — To (additional) [CONSTRUCTION]
+                                          [CONSTRUCTION PHASE] - 2
                                         </span>
                                         <DrawingNotifySmtpSelect
                                           smtpOptions={smtpSlotEmails}
@@ -1505,7 +1532,7 @@ export default function StreamSettings() {
                                       </div>
                                       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                         <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                          {K.label} — To (additional 2) [CONSTRUCTION]
+                                          [CONSTRUCTION PHASE] - 3
                                         </span>
                                         <DrawingNotifySmtpSelect
                                           smtpOptions={smtpSlotEmails}
@@ -1524,7 +1551,7 @@ export default function StreamSettings() {
                                       </div>
                                       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                         <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                          {K.label} — To (additional 3) [CONSTRUCTION]
+                                          [CONSTRUCTION PHASE] - 4
                                         </span>
                                         <DrawingNotifySmtpSelect
                                           smtpOptions={smtpSlotEmails}

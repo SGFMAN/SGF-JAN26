@@ -18,6 +18,7 @@ import {
 import {
   DESIGN_PHASE,
   PERMIT_PHASE,
+  isConstructionPhaseStatus,
   isDesignPhaseStatus,
   isPermitPhaseStatus,
   isPreEngagementPhaseStatus,
@@ -2587,12 +2588,15 @@ export default function Drawings({
       const previewFromResolved = resolveDesignToSalespersonFrom(settingsForPreview, project, "");
 
       if (!previewToResolved.length) {
-        const toHint =
-          uploadKindForEmail === "certifier"
-            ? "To [CRM] and/or To (additional) [DESIGN]"
-            : "To [DESIGN] and/or To (additional) [DESIGN]";
+        const toHint = isPermitPhaseStatus(project?.status)
+          ? "[PERMIT PHASE]"
+          : isConstructionPhaseStatus(project?.status)
+            ? "[CONSTRUCTION PHASE]"
+            : isDesignPhaseStatus(project?.status)
+              ? "[DESIGN PHASE]"
+              : "the matching status group (Design / Permit / Construction Phase)";
         alert(
-          `No recipient addresses in General → Drawings → Drawings Upload — ${toHint}. Configure Settings → Email Settings → General → Drawings → Drawings Upload (VIC/QLD column).`
+          `No recipient addresses in General → Drawings → Drawings Upload — ${toHint}. Configure Settings → Email Settings → General → Drawings → Drawings Upload (VIC/QLD column for this project's state).`
         );
         return;
       }

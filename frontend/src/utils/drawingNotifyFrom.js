@@ -12,6 +12,11 @@ import {
   getGeneralSalesNotesBranch,
   getGeneralWdsApprovedBranch,
 } from "./emailGeneralSettings";
+import {
+  isConstructionPhaseStatus,
+  isDesignPhaseStatus,
+  isPermitPhaseStatus,
+} from "./projectStatus";
 import { mergeUniqueEmails, resolveStreamSettingsKey } from "./streamDrawingsSettings";
 
 /** Parse template `to_addresses` (array, JSON array string, or comma list) → unique trimmed emails. */
@@ -121,7 +126,7 @@ export function resolveRegionalSalespersonName(project) {
 }
 
 export function isConstructionPhaseProject(project) {
-  return String(project?.status ?? "").trim() === "Construction Phase";
+  return isConstructionPhaseStatus(project?.status);
 }
 
 /** Per-stream-row `drawings` values only (not Drawings Upload — that lives in General). */
@@ -154,39 +159,39 @@ export function resolveDesignToSalespersonFrom(settings, project, _templateFrom)
 /**
  * To recipients for Drawings Upload (General `email_general_json.drawingsUpload`).
  *
- * Upload modal kind:
- * - certifier → To [CRM] + To (additional) [DESIGN]  (never To [DESIGN])
- * - concept / working → To [DESIGN] + To (additional) [DESIGN]  (never CRM)
+ * Choice is by project status + state only (upload kind ignored):
+ * - Design Phase → all filled [DESIGN PHASE] slots
+ * - Permit Phase → all filled [PERMIT PHASE] slots
+ * - Construction Phase → all filled [CONSTRUCTION PHASE] slots
  *
- * When kind is omitted, falls back to [DESIGN]/CONSTRUCTION] by project status (no CRM).
+ * Empty dropdowns are skipped. No cross-group or other fallbacks.
  */
-export function resolveDesignToSalespersonToEmails(settings, project, _templateToEmails, uploadKind) {
-  const kind = String(uploadKind || "").trim().toLowerCase();
+export function resolveDesignToSalespersonToEmails(settings, project, _templateToEmails, _uploadKind) {
+  void _uploadKind;
   const branch = getGeneralDrawingsUploadBranch(settings, project);
-  const additionalDesign = parseSettingsToEmailList(branch.toDesignEmail2);
+  const status = project?.status;
 
-  if (kind === "certifier") {
-    const crm = parseSettingsToEmailList(branch.toCrmEmail);
-    // Explicitly exclude primary DESIGN To for certifier uploads.
-    return mergeUniqueEmails(crm, additionalDesign);
+  if (isDesignPhaseStatus(status)) {
+    return mergeUniqueEmails(
+      parseSettingsToEmailList(branch.toDesignEmail),
+      parseSettingsToEmailList(branch.toDesignEmail2)
+    );
   }
-
-  if (kind === "concept" || kind === "working") {
-    const primary = parseSettingsToEmailList(branch.toDesignEmail);
-    // Explicitly exclude CRM for concept/working uploads.
-    return mergeUniqueEmails(primary, additionalDesign);
+  if (isPermitPhaseStatus(status)) {
+    return mergeUniqueEmails(
+      parseSettingsToEmailList(branch.toCrmEmail),
+      parseSettingsToEmailList(branch.toCrmEmail2)
+    );
   }
-
-  const construction = isConstructionPhaseProject(project);
-  if (construction) {
-    const primary = parseSettingsToEmailList(branch.toConstructionEmail);
-    const additional = parseSettingsToEmailList(branch.toConstructionEmail2);
-    const additional2 = parseSettingsToEmailList(branch.toConstructionEmail3);
-    const additional3 = parseSettingsToEmailList(branch.toConstructionEmail4);
-    return mergeUniqueEmails(primary, additional, additional2, additional3);
+  if (isConstructionPhaseStatus(status)) {
+    return mergeUniqueEmails(
+      parseSettingsToEmailList(branch.toConstructionEmail),
+      parseSettingsToEmailList(branch.toConstructionEmail2),
+      parseSettingsToEmailList(branch.toConstructionEmail3),
+      parseSettingsToEmailList(branch.toConstructionEmail4)
+    );
   }
-  const primary = parseSettingsToEmailList(branch.toDesignEmail);
-  return mergeUniqueEmails(primary, additionalDesign);
+  return [];
 }
 
 /** General → Drawings → Design Notes — From. */
