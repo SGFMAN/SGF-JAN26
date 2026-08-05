@@ -7,6 +7,7 @@ import {
   isCompleteStatus,
   isConstructionPhaseStatus,
   isOnHoldFlag,
+  isPermitPhaseStatus,
   isPreEngagementPhaseStatus,
 } from "../utils/projectStatus";
 import { Link } from "react-router-dom";
@@ -27,7 +28,7 @@ import useAppLogo from "../hooks/useAppLogo.js";
 import { useManagersAccess } from "../hooks/useManagersAccess";
 
 import StateFilterButtons from "../components/StateFilterButtons";
-import { UI, BANNER, INDICATOR } from "../utils/uiThemeTokens.js";
+import { UI, BANNER, INDICATOR, STREAM, MENU, outlineBorder } from "../utils/uiThemeTokens.js";
 import { getThemeBannerColors, readStoredUiThemeId } from "../themes/applyUiTheme";
 import { getLoggedInUserId, getApiHeaders, isUserAdmin } from "../utils/auth";
 const MONUMENT = UI.textPrimary;
@@ -38,13 +39,36 @@ const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const DRAWING_MANAGER_STATUS_SECTIONS = [
-  "Not Assigned",
+  "Pre-Engagement",
   "Concept Stage",
   "Working Drawing Stage",
+  "Permit Phase",
 ];
 
+/** Short tab labels for the section switcher. */
+const DRAWING_MANAGER_TAB_LABELS = {
+  "Pre-Engagement": "Pre-Engagement",
+  "Concept Stage": "Concept",
+  "Working Drawing Stage": "WD",
+  "Permit Phase": "Permit",
+};
+
+/** Equal-width tab fills: VIC blue light, QLD red light, menu purple light, stream green. */
+const DRAWING_MANAGER_TAB_COLORS = {
+  "Pre-Engagement": { fill: STREAM.vicBlueLight, border: STREAM.vicBlue },
+  "Concept Stage": { fill: STREAM.qldRedLight, border: STREAM.qldRed },
+  "Working Drawing Stage": { fill: MENU.purpleLight, border: MENU.purple },
+  "Permit Phase": { fill: STREAM.streamGreen, border: STREAM.streamGreen },
+};
+
+function shouldCountHolderDays(project) {
+  if (!project?.drawings_holder_date) return false;
+  // Stop counting once the job is in Construction Phase.
+  return !isConstructionPhaseStatus(project?.status);
+}
+
 function getHolderDaysNum(project) {
-  if (!project?.drawings_holder_date) return 0;
+  if (!shouldCountHolderDays(project)) return 0;
   const holderDate = new Date(project.drawings_holder_date);
   if (Number.isNaN(holderDate.getTime())) return 0;
   const today = new Date();
@@ -64,11 +88,17 @@ function sortProjectsByDaysDescending(projectsList) {
   });
 }
 
+/**
+ * Pre-Engagement / Permit by project status; Concept & Working Drawing unchanged (drawings_status).
+ * Design Phase with neither Concept nor Working lands in Pre-Engagement (was Not Assigned).
+ */
 function getDrawingManagerStatusBucket(project) {
-  const status = (project?.drawings_status || "").trim();
-  if (status === "Concept Stage") return "Concept Stage";
-  if (status === "Working Drawing Stage") return "Working Drawing Stage";
-  return "Not Assigned";
+  if (isPermitPhaseStatus(project?.status)) return "Permit Phase";
+  if (isPreEngagementPhaseStatus(project?.status)) return "Pre-Engagement";
+  const drawingsStatus = (project?.drawings_status || "").trim();
+  if (drawingsStatus === "Concept Stage") return "Concept Stage";
+  if (drawingsStatus === "Working Drawing Stage") return "Working Drawing Stage";
+  return "Pre-Engagement";
 }
 
 function groupProjectsByDrawingStatus(projectsList) {
@@ -103,6 +133,7 @@ export default function DrawingManager() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [stateFilter, setStateFilter] = useState(getStateFilter());
+  const [activeSectionTab, setActiveSectionTab] = useState(DRAWING_MANAGER_STATUS_SECTIONS[0]);
   const [draftspersonUsers, setDraftspersonUsers] = useState([]);
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [selectedProjectForReminder, setSelectedProjectForReminder] = useState(null);
@@ -444,11 +475,8 @@ export default function DrawingManager() {
     if (holder === "sales team") displayText = "Sales Team";
     if (holder === "client") displayText = "Client";
     let daysText = "";
-    if (project.drawings_holder_date) {
-      const holderDate = new Date(project.drawings_holder_date);
-      const today = new Date();
-      const diffTime = Math.abs(today - holderDate);
-      const daysNum = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    if (shouldCountHolderDays(project)) {
+      const daysNum = getHolderDaysNum(project);
       daysText = `${daysNum} day${daysNum !== 1 ? "s" : ""}`;
     }
     return { text: displayText, days: daysText };
@@ -807,11 +835,8 @@ export default function DrawingManager() {
     if (holder === "client") displayText = "Client";
 
     let daysText = "";
-    if (project.drawings_holder_date) {
-      const holderDate = new Date(project.drawings_holder_date);
-      const today = new Date();
-      const diffTime = Math.abs(today - holderDate);
-      const daysNum = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    if (shouldCountHolderDays(project)) {
+      const daysNum = getHolderDaysNum(project);
       daysText = `${daysNum} day${daysNum !== 1 ? "s" : ""}`;
     }
 
@@ -834,6 +859,35 @@ export default function DrawingManager() {
         sortProjects(grouped[title], sortColumn, sortDirection),
       ])
     );
+  }
+
+  /** Width for draftsperson / drawings-with columns from longest visible text. */
+  function fitColumnWidthFromLabels(labels, { paddingPx = 28, extraCh = 2 } = {}) {
+    const maxLen = Math.max(
+      1,
+      ...labels.map((label) => String(label || "").length)
+    );
+    return `calc(${maxLen + extraCh}ch + ${paddingPx}px)`;
+  }
+
+  function getDraftspersonDrawingsWithColumnWidths(projectsList) {
+    const draftspersonLabels = [
+      "Draftsperson ↑",
+      "None",
+      ...draftspersonUsers.map((dp) => dp.name || ""),
+      ...projectsList.map((p) => getDraftspersonName(p.draftsperson) || "None"),
+    ];
+    const drawingsWithLabels = [
+      "Drawings With ↑",
+      ...projectsList.map((p) => {
+        const holder = getHolderDisplay(p);
+        return holder.days ? `${holder.text} - ${holder.days}` : holder.text;
+      }),
+    ];
+    return {
+      draftsperson: fitColumnWidthFromLabels(draftspersonLabels, { paddingPx: 36, extraCh: 2 }),
+      drawingsWith: fitColumnWidthFromLabels(drawingsWithLabels, { paddingPx: 28, extraCh: 1 }),
+    };
   }
 
   const columnHeaderStyle = {
@@ -958,6 +1012,9 @@ export default function DrawingManager() {
             border: "none",
             cursor: "pointer",
             boxSizing: "border-box",
+            width: "100%",
+            minWidth: 0,
+            whiteSpace: "nowrap",
           }}
         >
           <option value={DRAFTSPERSON_UNASSIGNED}>None</option>
@@ -985,6 +1042,9 @@ export default function DrawingManager() {
             cursor: "pointer",
             transition: "background 0.2s",
             gap: "4px",
+            width: "100%",
+            boxSizing: "border-box",
+            whiteSpace: "nowrap",
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = UI.inputBg;
@@ -1051,7 +1111,7 @@ export default function DrawingManager() {
             onClick={() => openReminderEmailModal(project)}
             style={{
               width: "100%",
-              maxWidth: "96px",
+              maxWidth: "120px",
               padding: "6px 10px",
               background: "#4D93D9",
               color: PAGE_TEXT,
@@ -1061,6 +1121,7 @@ export default function DrawingManager() {
               fontWeight: 600,
               cursor: "pointer",
               transition: "background 0.2s",
+              whiteSpace: "nowrap",
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = "#3d7bc9";
@@ -1069,7 +1130,7 @@ export default function DrawingManager() {
               e.currentTarget.style.background = "#4D93D9";
             }}
           >
-            Email
+            Email Client
           </button>
         </div>
       </React.Fragment>
@@ -1250,111 +1311,168 @@ export default function DrawingManager() {
           }}
         >
           {(() => {
-            // Calculate filtered projects count for the header
-            const filteredProjectsForCount = stateFilter !== "All" 
-              ? projects.filter(project => {
-                  const projectState = (project.state || "").toUpperCase();
-                  return projectState === stateFilter.toUpperCase();
-                })
-              : projects;
-            
+            const groupedProjects = getGroupedProjectsForDisplay();
+            const activeSection =
+              DRAWING_MANAGER_STATUS_SECTIONS.includes(activeSectionTab)
+                ? activeSectionTab
+                : DRAWING_MANAGER_STATUS_SECTIONS[0];
+            const activeProjects = groupedProjects[activeSection] || [];
+            const activeLabel = DRAWING_MANAGER_TAB_LABELS[activeSection] || activeSection;
+
             return (
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", position: "sticky", top: "-24px", background: SECTION_GREY, zIndex: 9, paddingTop: "24px", marginTop: "-24px", paddingBottom: "8px" }}>
-                <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: 0 }}>
-                  Design Phase Projects {filteredProjectsForCount.length > 0 && `(${filteredProjectsForCount.length})`}
-                </h2>
-                <button
-                  onClick={() => {
-                    setEmailListHtml(buildEmailListHtml(getDrawingManagerListProjectsForEmail()));
-                    setShowEmailModal(true);
-                  }}
+              <>
+                <div
                   style={{
-                    padding: "10px 20px",
-                    background: "#4D93D9",
-                    color: PAGE_TEXT,
-                    border: "none",
-                    borderRadius: "8px",
-                    fontSize: "0.9rem",
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    transition: "background 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "#3d7bc9";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "#4D93D9";
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "16px",
+                    marginBottom: "12px",
+                    position: "sticky",
+                    top: "-24px",
+                    background: SECTION_GREY,
+                    zIndex: 9,
+                    paddingTop: "24px",
+                    marginTop: "-24px",
+                    paddingBottom: "8px",
+                    flexWrap: "wrap",
                   }}
                 >
-                  Email List
-                </button>
-              </div>
+                  <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: 0 }}>
+                    {activeLabel} {`(${activeProjects.length})`}
+                  </h2>
+                  <button
+                    onClick={() => {
+                      setEmailListHtml(buildEmailListHtml(getDrawingManagerListProjectsForEmail()));
+                      setShowEmailModal(true);
+                    }}
+                    style={{
+                      padding: "10px 20px",
+                      background: "#4D93D9",
+                      color: PAGE_TEXT,
+                      border: "none",
+                      borderRadius: "8px",
+                      fontSize: "0.9rem",
+                      fontWeight: 500,
+                      cursor: "pointer",
+                      transition: "background 0.2s",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "#3d7bc9";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "#4D93D9";
+                    }}
+                  >
+                    Email List
+                  </button>
+                </div>
+
+                <div
+                  role="tablist"
+                  aria-label="Drawing stage"
+                  style={{
+                    display: "inline-grid",
+                    gridAutoFlow: "column",
+                    gridAutoColumns: "1fr",
+                    gap: "8px",
+                    marginBottom: "16px",
+                    position: "sticky",
+                    top: "36px",
+                    background: SECTION_GREY,
+                    zIndex: 8,
+                    paddingBottom: "8px",
+                    width: "max-content",
+                    maxWidth: "100%",
+                  }}
+                >
+                  {DRAWING_MANAGER_STATUS_SECTIONS.map((sectionTitle) => {
+                    const selected = sectionTitle === activeSection;
+                    const count = (groupedProjects[sectionTitle] || []).length;
+                    const label = DRAWING_MANAGER_TAB_LABELS[sectionTitle] || sectionTitle;
+                    const colors = DRAWING_MANAGER_TAB_COLORS[sectionTitle] || {
+                      fill: WHITE,
+                      border: UI.outline,
+                    };
+                    return (
+                      <button
+                        key={sectionTitle}
+                        type="button"
+                        role="tab"
+                        aria-selected={selected}
+                        onClick={() => setActiveSectionTab(sectionTitle)}
+                        style={{
+                          padding: "10px 14px",
+                          borderRadius: "8px",
+                          border: selected
+                            ? `2px solid ${colors.border}`
+                            : outlineBorder,
+                          background: colors.fill,
+                          color: MONUMENT,
+                          fontSize: "0.9rem",
+                          fontWeight: selected ? 700 : 500,
+                          cursor: "pointer",
+                          lineHeight: 1.2,
+                          textAlign: "center",
+                          width: "100%",
+                          boxSizing: "border-box",
+                          whiteSpace: "nowrap",
+                          opacity: selected ? 1 : 0.85,
+                        }}
+                      >
+                        {label} ({count})
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
+                {error && (
+                  <p style={{ color: INDICATOR.red }}>
+                    Error: {error}
+                  </p>
+                )}
+                {!loading && !error && (() => {
+                  if (
+                    DRAWING_MANAGER_STATUS_SECTIONS.every(
+                      (title) => (groupedProjects[title] || []).length === 0
+                    )
+                  ) {
+                    return <p style={{ color: UI.textMuted }}>No projects found.</p>;
+                  }
+
+                  const { draftsperson: draftspersonColWidth, drawingsWith: drawingsWithColWidth } =
+                    getDraftspersonDrawingsWithColumnWidths(activeProjects);
+                  const gridTemplateColumns = `minmax(0, 1fr) ${draftspersonColWidth} ${drawingsWithColWidth} max-content max-content`;
+
+                  if (activeProjects.length === 0) {
+                    return (
+                      <p style={{ color: UI.textMuted, margin: 0, fontSize: "0.9rem" }}>
+                        No projects in {activeLabel}.
+                      </p>
+                    );
+                  }
+
+                  return (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns,
+                        gap: "12px",
+                      }}
+                    >
+                      {renderSortableColumnHeader("project", "Project", "left")}
+                      {renderSortableColumnHeader("draftsperson", "Draftsperson", "center")}
+                      {renderSortableColumnHeader("drawingsWith", "Drawings With", "center")}
+                      <div style={{ ...columnHeaderStyle, textAlign: "center" }}>Notes</div>
+                      <div style={{ ...columnHeaderStyle, textAlign: "center" }}>Email</div>
+                      {activeProjects.map((project) => renderDrawingManagerProjectRow(project))}
+                    </div>
+                  );
+                })()}
+              </>
             );
           })()}
-
-          {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
-          {error && (
-            <p style={{ color: INDICATOR.red }}>
-              Error: {error}
-            </p>
-          )}
-          {!loading && !error && (
-            <>
-              {(() => {
-                const groupedProjects = getGroupedProjectsForDisplay();
-                const totalCount = DRAWING_MANAGER_STATUS_SECTIONS.reduce(
-                  (sum, title) => sum + groupedProjects[title].length,
-                  0
-                );
-
-                if (totalCount === 0) {
-                  return <p style={{ color: UI.textMuted }}>No Design Phase projects found.</p>;
-                }
-
-                return (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
-                    {DRAWING_MANAGER_STATUS_SECTIONS.map((sectionTitle) => {
-                      const sectionProjects = groupedProjects[sectionTitle];
-                      return (
-                        <section key={sectionTitle}>
-                          <h3
-                            style={{
-                              margin: "0 0 12px 0",
-                              fontSize: "1rem",
-                              fontWeight: 700,
-                              color: MONUMENT,
-                            }}
-                          >
-                            {sectionTitle} ({sectionProjects.length})
-                          </h3>
-                          {sectionProjects.length === 0 ? (
-                            <p style={{ color: UI.textMuted, margin: 0, fontSize: "0.9rem" }}>
-                              No projects
-                            </p>
-                          ) : (
-                            <div
-                              style={{
-                                display: "grid",
-                                gridTemplateColumns: "2fr 1.5fr 1fr 0.65fr 0.8fr",
-                                gap: "12px",
-                              }}
-                            >
-                              {renderSortableColumnHeader("project", "Project", "left")}
-                              {renderSortableColumnHeader("draftsperson", "Draftsperson", "center")}
-                              {renderSortableColumnHeader("drawingsWith", "Drawings With", "center")}
-                              <div style={{ ...columnHeaderStyle, textAlign: "center" }}>Notes</div>
-                              <div style={{ ...columnHeaderStyle, textAlign: "center" }}>Email</div>
-                              {sectionProjects.map((project) => renderDrawingManagerProjectRow(project))}
-                            </div>
-                          )}
-                        </section>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-            </>
-          )}
         </div>
       </div>
 

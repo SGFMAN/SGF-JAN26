@@ -3527,14 +3527,18 @@ export default function Drawings({
           {project?.drawings_holder_date ? (
             <>
               {holderDisplay.text}
-              <br />
-              {(() => {
-                const holderDate = new Date(project.drawings_holder_date);
-                const today = new Date();
-                const diffTime = Math.abs(today - holderDate);
-                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                return `${diffDays} day${diffDays !== 1 ? "s" : ""}`;
-              })()}
+              {!isConstructionPhaseStatus(project?.status) ? (
+                <>
+                  <br />
+                  {(() => {
+                    const holderDate = new Date(project.drawings_holder_date);
+                    const today = new Date();
+                    const diffTime = Math.abs(today - holderDate);
+                    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                    return `${diffDays} day${diffDays !== 1 ? "s" : ""}`;
+                  })()}
+                </>
+              ) : null}
             </>
           ) : (
             "-"
