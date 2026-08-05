@@ -6813,7 +6813,11 @@ async function addLogoToEmail(htmlBody, attachments = []) {
 function parseEmailSendRequest(req, res, next) {
   const contentType = (req.get("content-type") || "").toLowerCase();
   if (contentType.includes("multipart/form-data")) {
-    return upload.single("attachment")(req, res, next);
+    // `attachment` (single, legacy) and/or `attachments` (multiple, e.g. Final Certificates PDF+ZIP)
+    return upload.fields([
+      { name: "attachment", maxCount: 1 },
+      { name: "attachments", maxCount: 10 },
+    ])(req, res, next);
   }
   next();
 }
@@ -6828,7 +6832,7 @@ app.post("/api/emails/send", parseEmailSendRequest, async (req, res) => {
   let projectId;
   let rawAttachments;
 
-  if (req.file) {
+  if (req.file || req.files) {
     const toRaw = String(req.body?.to || "").trim();
     to = toRaw
       .split(",")
@@ -6944,11 +6948,16 @@ app.post("/api/emails/send", parseEmailSendRequest, async (req, res) => {
       }
     }
 
-    if (req.file?.buffer?.length) {
+    const multipartFiles = [];
+    if (req.file) multipartFiles.push(req.file);
+    if (req.files?.attachment) multipartFiles.push(...req.files.attachment);
+    if (req.files?.attachments) multipartFiles.push(...req.files.attachments);
+    for (const uploaded of multipartFiles) {
+      if (!uploaded?.buffer?.length) continue;
       attachments.push({
-        filename: req.file.originalname || "attachment.pdf",
-        content: req.file.buffer,
-        contentType: req.file.mimetype || "application/pdf",
+        filename: uploaded.originalname || "attachment",
+        content: uploaded.buffer,
+        contentType: uploaded.mimetype || "application/octet-stream",
       });
     }
 

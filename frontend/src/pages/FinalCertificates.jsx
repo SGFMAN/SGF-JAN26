@@ -49,33 +49,47 @@ function formatFileSize(bytes) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function isAllowedAttachment(file) {
+function isPdfFile(file) {
   if (!file) return false;
   const name = String(file.name || "").toLowerCase();
   const type = String(file.type || "").toLowerCase();
-  if (type === "application/pdf" || name.endsWith(".pdf")) return true;
-  if (
+  return type === "application/pdf" || name.endsWith(".pdf");
+}
+
+function isZipFile(file) {
+  if (!file) return false;
+  const name = String(file.name || "").toLowerCase();
+  const type = String(file.type || "").toLowerCase();
+  return (
     type === "application/zip" ||
     type === "application/x-zip-compressed" ||
     type === "application/x-zip" ||
     name.endsWith(".zip")
-  ) {
-    return true;
-  }
-  return false;
+  );
+}
+
+function makeAttachmentItem(file, fallbackName) {
+  return {
+    id: `${Date.now()}-${file.name || fallbackName}`,
+    file,
+    name: file.name || fallbackName,
+    size: file.size || 0,
+  };
 }
 
 /**
  * Construction → Final Certificates.
- * Drag-drop PDF or ZIP from the job folder (memory only) → Email opens a preview modal.
+ * Separate PDF + ZIP drop zones (memory only) → Email preview attaches both.
  */
 export default function FinalCertificates({ project }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
-  const fileInputRef = useRef(null);
+  const pdfInputRef = useRef(null);
+  const zipInputRef = useRef(null);
 
-  /** In-memory attachments only — not saved to the project. Ready for multiple later. */
-  const [attachments, setAttachments] = useState([]);
-  const [dragging, setDragging] = useState(false);
+  const [pdfAttachment, setPdfAttachment] = useState(null);
+  const [zipAttachment, setZipAttachment] = useState(null);
+  const [pdfDragging, setPdfDragging] = useState(false);
+  const [zipDragging, setZipDragging] = useState(false);
 
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailTo, setEmailTo] = useState("");
@@ -85,51 +99,68 @@ export default function FinalCertificates({ project }) {
   const [sending, setSending] = useState(false);
   const [preparingModal, setPreparingModal] = useState(false);
 
-  function clearFileInput() {
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }
+  const attachmentList = [pdfAttachment, zipAttachment].filter(Boolean);
+  const hasAnyAttachment = attachmentList.length > 0;
 
-  function addAttachmentFile(file) {
+  function setPdfFile(file) {
     if (!file) return;
-    if (!isAllowedAttachment(file)) {
-      alert("Please drop or select a PDF or ZIP file.");
+    if (!isPdfFile(file)) {
+      alert("Please drop or select a PDF file in the PDF zone.");
       return;
     }
-    // Single file for now — replace any existing attachment.
-    setAttachments([
-      {
-        id: `${Date.now()}-${file.name || "file"}`,
-        file,
-        name: file.name || "Final-Handover-Documents.pdf",
-        size: file.size || 0,
-      },
-    ]);
-    clearFileInput();
+    setPdfAttachment(makeAttachmentItem(file, "Final-Handover.pdf"));
+    if (pdfInputRef.current) pdfInputRef.current.value = "";
   }
 
-  function removeAttachment(id) {
-    setAttachments((prev) => prev.filter((a) => a.id !== id));
-    clearFileInput();
+  function setZipFile(file) {
+    if (!file) return;
+    if (!isZipFile(file)) {
+      alert("Please drop or select a ZIP file in the ZIP zone.");
+      return;
+    }
+    setZipAttachment(makeAttachmentItem(file, "Final-Handover.zip"));
+    if (zipInputRef.current) zipInputRef.current.value = "";
   }
 
   function clearAllAttachments() {
-    setAttachments([]);
-    clearFileInput();
+    setPdfAttachment(null);
+    setZipAttachment(null);
+    if (pdfInputRef.current) pdfInputRef.current.value = "";
+    if (zipInputRef.current) zipInputRef.current.value = "";
   }
 
-  function handleDrop(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragging(false);
-    const files = e.dataTransfer?.files;
-    if (files && files.length > 0) {
-      addAttachmentFile(files[0]);
-    }
+  function makeDropHandlers(kind) {
+    const setDragging = kind === "pdf" ? setPdfDragging : setZipDragging;
+    const applyFile = kind === "pdf" ? setPdfFile : setZipFile;
+    return {
+      onDragEnter: (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragging(true);
+      },
+      onDragOver: (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragging(true);
+      },
+      onDragLeave: (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragging(false);
+      },
+      onDrop: (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragging(false);
+        const files = e.dataTransfer?.files;
+        if (files && files.length > 0) applyFile(files[0]);
+      },
+    };
   }
 
   async function openEmailModal() {
-    if (attachments.length === 0) {
-      alert("Drop or select the final handover PDF or ZIP first.");
+    if (!hasAnyAttachment) {
+      alert("Add the PDF and/or ZIP attachment first.");
       return;
     }
     setPreparingModal(true);
@@ -173,8 +204,8 @@ export default function FinalCertificates({ project }) {
       );
       return;
     }
-    if (attachments.length === 0) {
-      alert("Drop or select the final handover PDF or ZIP first.");
+    if (!hasAnyAttachment) {
+      alert("Add the PDF and/or ZIP attachment first.");
       return;
     }
 
@@ -186,9 +217,10 @@ export default function FinalCertificates({ project }) {
         form.append("from", emailFrom.trim());
         form.append("subject", emailSubject || "");
         form.append("htmlBody", plainTextToEmailHtml(emailBody));
-        // Memory-only attach — omit projectId so proposal PDF is not auto-attached.
-        const first = attachments[0];
-        form.append("attachment", first.file, first.name);
+        // Memory-only — omit projectId so proposal PDF is not auto-attached.
+        for (const item of attachmentList) {
+          form.append("attachments", item.file, item.name);
+        }
 
         const res = await fetch(`${API_URL}/api/emails/send`, {
           method: "POST",
@@ -228,6 +260,82 @@ export default function FinalCertificates({ project }) {
     fontWeight: 500,
   };
 
+  function renderDropZone({
+    title,
+    hint,
+    dragging,
+    handlers,
+    inputRef,
+    accept,
+    onSelect,
+    current,
+    onClear,
+  }) {
+    return (
+      <div>
+        <div style={{ fontSize: "0.9rem", fontWeight: 600, color: MONUMENT, marginBottom: "8px" }}>
+          {title}
+        </div>
+        <div
+          {...handlers}
+          onClick={() => inputRef.current?.click()}
+          style={{
+            border: `2px dashed ${dragging ? MONUMENT : UI.outline}`,
+            borderRadius: "12px",
+            padding: "28px 18px",
+            background: dragging ? "rgba(50,50,51,0.05)" : WHITE,
+            textAlign: "center",
+            cursor: "pointer",
+            transition: "background 0.15s, border-color 0.15s",
+            minHeight: "110px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            boxSizing: "border-box",
+          }}
+        >
+          <div style={{ fontSize: "0.92rem", fontWeight: 600, color: MONUMENT, marginBottom: "6px" }}>
+            {current ? current.name : `Drop ${title} here`}
+          </div>
+          <div style={{ fontSize: "0.82rem", color: UI.textMuted }}>
+            {current ? "Click to replace" : hint}
+          </div>
+          <input
+            ref={inputRef}
+            type="file"
+            accept={accept}
+            style={{ display: "none" }}
+            onChange={(e) => onSelect(e.target.files?.[0])}
+          />
+        </div>
+        {current ? (
+          <div style={{ marginTop: "8px", display: "flex", justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClear();
+              }}
+              style={{
+                padding: "6px 10px",
+                borderRadius: "6px",
+                border: outlineBorder,
+                background: WHITE,
+                color: MONUMENT,
+                fontSize: "0.8rem",
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -252,14 +360,14 @@ export default function FinalCertificates({ project }) {
             Final Certificates
           </h2>
           <p style={{ margin: 0, color: UI.textMuted, fontSize: "0.9rem", lineHeight: 1.45 }}>
-            Drag the final handover PDF or ZIP from the project folder. It is not saved here — only
-            attached when you send the email, then cleared.
+            Drag the PDF and ZIP from the project folder. Files are not saved here — they are only
+            attached when you send, then cleared.
           </p>
         </div>
         <button
           type="button"
           onClick={openEmailModal}
-          disabled={attachments.length === 0}
+          disabled={!hasAnyAttachment}
           style={{
             padding: "10px 20px",
             borderRadius: "8px",
@@ -268,8 +376,8 @@ export default function FinalCertificates({ project }) {
             color: PAGE_TEXT,
             fontSize: "0.95rem",
             fontWeight: 600,
-            cursor: attachments.length === 0 ? "not-allowed" : "pointer",
-            opacity: attachments.length === 0 ? 0.6 : 1,
+            cursor: !hasAnyAttachment ? "not-allowed" : "pointer",
+            opacity: !hasAnyAttachment ? 0.6 : 1,
             flexShrink: 0,
           }}
         >
@@ -286,53 +394,35 @@ export default function FinalCertificates({ project }) {
           maxWidth: "900px",
         }}
       >
-        <div
-          onDragEnter={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setDragging(true);
-          }}
-          onDragOver={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setDragging(true);
-          }}
-          onDragLeave={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setDragging(false);
-          }}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          style={{
-            border: `2px dashed ${dragging ? MONUMENT : UI.outline}`,
-            borderRadius: "12px",
-            padding: "36px 20px",
-            background: dragging ? "rgba(50,50,51,0.05)" : WHITE,
-            textAlign: "center",
-            cursor: "pointer",
-            transition: "background 0.15s, border-color 0.15s",
-            minHeight: "160px",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            boxSizing: "border-box",
-          }}
-        >
-          <div style={{ fontSize: "0.95rem", fontWeight: 600, color: MONUMENT, marginBottom: "8px" }}>
-            Drop final handover PDF or ZIP here
-          </div>
-          <div style={{ fontSize: "0.85rem", color: UI.textMuted }}>
-            or click to browse — PDF or ZIP only, not stored on this page
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.zip,application/pdf,application/zip,application/x-zip-compressed"
-            style={{ display: "none" }}
-            onChange={(e) => addAttachmentFile(e.target.files?.[0])}
-          />
+        <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+          {renderDropZone({
+            title: "PDF",
+            hint: "or click to browse — PDF only",
+            dragging: pdfDragging,
+            handlers: makeDropHandlers("pdf"),
+            inputRef: pdfInputRef,
+            accept: ".pdf,application/pdf",
+            onSelect: setPdfFile,
+            current: pdfAttachment,
+            onClear: () => {
+              setPdfAttachment(null);
+              if (pdfInputRef.current) pdfInputRef.current.value = "";
+            },
+          })}
+          {renderDropZone({
+            title: "ZIP",
+            hint: "or click to browse — ZIP only",
+            dragging: zipDragging,
+            handlers: makeDropHandlers("zip"),
+            inputRef: zipInputRef,
+            accept: ".zip,application/zip,application/x-zip-compressed",
+            onSelect: setZipFile,
+            current: zipAttachment,
+            onClear: () => {
+              setZipAttachment(null);
+              if (zipInputRef.current) zipInputRef.current.value = "";
+            },
+          })}
         </div>
 
         <div
@@ -348,15 +438,23 @@ export default function FinalCertificates({ project }) {
           <div style={{ fontSize: "0.9rem", fontWeight: 600, color: MONUMENT, marginBottom: "12px" }}>
             Attachments
           </div>
-          {attachments.length === 0 ? (
+          {attachmentList.length === 0 ? (
             <p style={{ margin: 0, fontSize: "0.88rem", color: UI.textMuted }}>
-              No file attached yet.
+              No files attached yet.
             </p>
           ) : (
-            <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "8px" }}>
-              {attachments.map((item) => (
+            <ul
+              style={{
+                listStyle: "none",
+                margin: 0,
+                padding: 0,
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+              }}
+            >
+              {pdfAttachment ? (
                 <li
-                  key={item.id}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -368,6 +466,9 @@ export default function FinalCertificates({ project }) {
                   }}
                 >
                   <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: "0.75rem", fontWeight: 600, color: UI.textMuted }}>
+                      PDF
+                    </div>
                     <div
                       style={{
                         fontSize: "0.9rem",
@@ -377,17 +478,20 @@ export default function FinalCertificates({ project }) {
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
                       }}
-                      title={item.name}
+                      title={pdfAttachment.name}
                     >
-                      {item.name}
+                      {pdfAttachment.name}
                     </div>
                     <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginTop: "2px" }}>
-                      {formatFileSize(item.size)}
+                      {formatFileSize(pdfAttachment.size)}
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => removeAttachment(item.id)}
+                    onClick={() => {
+                      setPdfAttachment(null);
+                      if (pdfInputRef.current) pdfInputRef.current.value = "";
+                    }}
                     style={{
                       padding: "6px 10px",
                       borderRadius: "6px",
@@ -403,7 +507,62 @@ export default function FinalCertificates({ project }) {
                     Remove
                   </button>
                 </li>
-              ))}
+              ) : null}
+              {zipAttachment ? (
+                <li
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "12px",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    background: SECTION_GREY,
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: "0.75rem", fontWeight: 600, color: UI.textMuted }}>
+                      ZIP
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "0.9rem",
+                        fontWeight: 600,
+                        color: MONUMENT,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      title={zipAttachment.name}
+                    >
+                      {zipAttachment.name}
+                    </div>
+                    <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginTop: "2px" }}>
+                      {formatFileSize(zipAttachment.size)}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setZipAttachment(null);
+                      if (zipInputRef.current) zipInputRef.current.value = "";
+                    }}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: "6px",
+                      border: outlineBorder,
+                      background: WHITE,
+                      color: MONUMENT,
+                      fontSize: "0.8rem",
+                      fontWeight: 500,
+                      cursor: "pointer",
+                      flexShrink: 0,
+                    }}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ) : null}
             </ul>
           )}
         </div>
@@ -439,8 +598,8 @@ export default function FinalCertificates({ project }) {
               Final Handover Email
             </h3>
             <p style={{ margin: "0 0 16px", fontSize: "0.85rem", color: UI.textMuted }}>
-              To: checked Client Info contacts. Attachment:{" "}
-              {attachments.map((a) => a.name).join(", ") || "—"}
+              To: checked Client Info contacts. Attachments:{" "}
+              {attachmentList.map((a) => a.name).join(", ") || "—"}
             </p>
 
             {preparingModal ? (
@@ -517,7 +676,7 @@ export default function FinalCertificates({ project }) {
               <button
                 type="button"
                 onClick={handleSend}
-                disabled={sending || preparingModal || attachments.length === 0}
+                disabled={sending || preparingModal || !hasAnyAttachment}
                 style={{
                   padding: "10px 20px",
                   fontSize: "0.95rem",
@@ -527,10 +686,8 @@ export default function FinalCertificates({ project }) {
                   border: "none",
                   borderRadius: "8px",
                   cursor:
-                    sending || preparingModal || attachments.length === 0
-                      ? "not-allowed"
-                      : "pointer",
-                  opacity: sending || preparingModal || attachments.length === 0 ? 0.7 : 1,
+                    sending || preparingModal || !hasAnyAttachment ? "not-allowed" : "pointer",
+                  opacity: sending || preparingModal || !hasAnyAttachment ? 0.7 : 1,
                 }}
               >
                 {sending ? "Sending…" : "Send"}
