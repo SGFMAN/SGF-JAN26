@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 
 import { UI } from "../utils/uiThemeTokens.js";
+import EmailBodyEditor, { editorHtmlToStored } from "../components/EmailBodyEditor.jsx";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
@@ -64,6 +65,7 @@ export default function EmailTemplate() {
   const [loading, setLoading] = useState(true);
   const [openSection, setOpenSection] = useState("Colours");
   const [testSending, setTestSending] = useState(false);
+  const bodyEditorRef = useRef(null);
 
   useEffect(() => {
     fetchTemplates();
@@ -112,7 +114,7 @@ export default function EmailTemplate() {
 
   async function sendFormattingTestEmail() {
     const subj = subject.trim() || "(no subject)";
-    const bodyContent = body.trim();
+    const bodyContent = editorHtmlToStored(body);
     try {
       setTestSending(true);
       const settingsRes = await fetch(`${API_URL}/api/settings`);
@@ -200,7 +202,7 @@ export default function EmailTemplate() {
         name: templateName.trim(),
         template_group: templateGroup,
         subject: subject.trim(),
-        body: body.trim(),
+        body: editorHtmlToStored(body),
       };
 
       const savedData = await persistTemplateToApi(templateData, selectedTemplateId);
@@ -360,8 +362,11 @@ export default function EmailTemplate() {
       const currentValue = subject || "";
       setSubject(currentValue + tokenText);
     } else if (field === "body") {
-      const currentValue = body || "";
-      setBody(currentValue + tokenText);
+      if (bodyEditorRef.current?.insertToken) {
+        bodyEditorRef.current.insertToken(tokenText);
+      } else {
+        setBody((current) => `${current || ""}${tokenText}`);
+      }
     }
   }
 
@@ -1052,24 +1057,11 @@ export default function EmailTemplate() {
             {"{ColourConsultant}"}
           </button>
         </div>
-        <textarea
+        <EmailBodyEditor
+          ref={bodyEditorRef}
           value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="Type the email body. Press Enter for a new line (twice for a blank line). HTML like <b> still works — no need to type <br>."
-          style={{
-            width: "100%",
-            flex: 1,
-            padding: "10px 12px",
-            borderRadius: "8px",
-            border: "none",
-            fontSize: "1rem",
-            color: MONUMENT,
-            background: WHITE,
-            boxSizing: "border-box",
-            resize: "none",
-            fontFamily: "inherit",
-            minHeight: 0,
-          }}
+          onChange={setBody}
+          placeholder="Type the email body. Press Enter for a new line (twice for a blank line). Use the toolbar for Bold, Italic, and Underline."
         />
       </div>
       </div>
