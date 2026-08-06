@@ -42,6 +42,8 @@ function plainTextToEmailHtml(text) {
   return paragraphs || "<p></p>";
 }
 
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20MB — reject before send (mail-server friendly)
+
 function formatFileSize(bytes) {
   const n = Number(bytes) || 0;
   if (n < 1024) return `${n} B`;
@@ -77,6 +79,17 @@ function makeAttachmentItem(file, fallbackName) {
   };
 }
 
+function rejectIfTooLarge(file, kindLabel) {
+  if (!file) return true;
+  if ((file.size || 0) > MAX_ATTACHMENT_BYTES) {
+    alert(
+      `That ${kindLabel} is too large (${formatFileSize(file.size)}). Maximum size is 20 MB.`
+    );
+    return true;
+  }
+  return false;
+}
+
 /**
  * Construction → Final Certificates.
  * Separate PDF + ZIP drop zones (memory only) → Email preview attaches both.
@@ -108,6 +121,10 @@ export default function FinalCertificates({ project }) {
       alert("Please drop or select a PDF file in the PDF zone.");
       return;
     }
+    if (rejectIfTooLarge(file, "PDF")) {
+      if (pdfInputRef.current) pdfInputRef.current.value = "";
+      return;
+    }
     setPdfAttachment(makeAttachmentItem(file, "Final-Handover.pdf"));
     if (pdfInputRef.current) pdfInputRef.current.value = "";
   }
@@ -116,6 +133,10 @@ export default function FinalCertificates({ project }) {
     if (!file) return;
     if (!isZipFile(file)) {
       alert("Please drop or select a ZIP file in the ZIP zone.");
+      return;
+    }
+    if (rejectIfTooLarge(file, "ZIP")) {
+      if (zipInputRef.current) zipInputRef.current.value = "";
       return;
     }
     setZipAttachment(makeAttachmentItem(file, "Final-Handover.zip"));
@@ -397,7 +418,7 @@ export default function FinalCertificates({ project }) {
         <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
           {renderDropZone({
             title: "PDF",
-            hint: "or click to browse — PDF only",
+            hint: "or click to browse — PDF only, max 20 MB",
             dragging: pdfDragging,
             handlers: makeDropHandlers("pdf"),
             inputRef: pdfInputRef,
@@ -411,7 +432,7 @@ export default function FinalCertificates({ project }) {
           })}
           {renderDropZone({
             title: "ZIP",
-            hint: "or click to browse — ZIP only",
+            hint: "or click to browse — ZIP only, max 20 MB",
             dragging: zipDragging,
             handlers: makeDropHandlers("zip"),
             inputRef: zipInputRef,
