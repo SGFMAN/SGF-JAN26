@@ -131,31 +131,44 @@ function SummaryStateColumn({ title, accent, summary }) {
   );
 }
 
-function ListStateColumn({ title, accent, summary, showTotal = true, continuation = false }) {
+function ListStateColumn({
+  title,
+  accent,
+  summary,
+  showTotal = true,
+  continuation = false,
+  compact = false,
+}) {
+  const cardPadding = compact ? "14px 16px" : "22px 24px";
+  const stageGap = compact ? "10px" : "16px";
+  const titleSize = compact ? "1.15rem" : "1.35rem";
+  const projectSize = compact ? "0.78rem" : "0.82rem";
+  const projectPad = compact ? "1px 0" : "2px 0";
+
   return (
     <div
       style={{
         width: "100%",
         minWidth: 0,
         background: WHITE,
-        borderRadius: "14px",
+        borderRadius: compact ? "10px" : "14px",
         border: `1px solid ${UI.outline}`,
-        boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
-        padding: "22px 24px",
+        boxShadow: compact ? "none" : "0 2px 12px rgba(0,0,0,0.06)",
+        padding: cardPadding,
         boxSizing: "border-box",
       }}
     >
       <div
         style={{
-          marginBottom: "16px",
-          paddingBottom: "10px",
+          marginBottom: compact ? "10px" : "16px",
+          paddingBottom: compact ? "6px" : "10px",
           borderBottom: `2px solid ${accent}`,
         }}
       >
         <h2
           style={{
             margin: 0,
-            fontSize: "1.35rem",
+            fontSize: titleSize,
             fontWeight: 700,
             color: MONUMENT,
             letterSpacing: "0.5px",
@@ -163,14 +176,14 @@ function ListStateColumn({ title, accent, summary, showTotal = true, continuatio
         >
           {title}
           {continuation ? (
-            <span style={{ fontWeight: 500, fontSize: "0.95rem", marginLeft: "8px", color: UI.textMuted }}>
+            <span style={{ fontWeight: 500, fontSize: "0.9rem", marginLeft: "8px", color: UI.textMuted }}>
               (continued)
             </span>
           ) : null}
         </h2>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: stageGap }}>
         {(summary?.stages || []).map((stage) => (
           <div key={stage.key}>
             <div
@@ -179,21 +192,28 @@ function ListStateColumn({ title, accent, summary, showTotal = true, continuatio
                 justifyContent: "space-between",
                 alignItems: "baseline",
                 gap: "12px",
-                marginBottom: "4px",
-                paddingBottom: "4px",
+                marginBottom: compact ? "2px" : "4px",
+                paddingBottom: compact ? "2px" : "4px",
                 borderBottom: `1px solid ${UI.outline}`,
               }}
             >
-              <span style={{ fontSize: "0.9rem", fontWeight: 700, color: MONUMENT }}>
+              <span style={{ fontSize: compact ? "0.85rem" : "0.9rem", fontWeight: 700, color: MONUMENT }}>
                 {stage.label}
               </span>
-              <span style={{ fontSize: "0.8rem", fontWeight: 600, color: UI.textMuted, whiteSpace: "nowrap" }}>
+              <span
+                style={{
+                  fontSize: compact ? "0.75rem" : "0.8rem",
+                  fontWeight: 600,
+                  color: UI.textMuted,
+                  whiteSpace: "nowrap",
+                }}
+              >
                 {formatStageCount(stage.total, stage.onHold)} · {formatOverviewCurrency(stage.value)}
               </span>
             </div>
 
             {stage.projects.length === 0 ? (
-              <div style={{ padding: "2px 0 0", fontSize: "0.82rem", color: UI.textMuted }}>
+              <div style={{ padding: "2px 0 0", fontSize: projectSize, color: UI.textMuted }}>
                 No projects
               </div>
             ) : (
@@ -206,13 +226,13 @@ function ListStateColumn({ title, accent, summary, showTotal = true, continuatio
                       justifyContent: "space-between",
                       alignItems: "baseline",
                       gap: "10px",
-                      padding: "2px 0",
-                      lineHeight: 1.35,
+                      padding: projectPad,
+                      lineHeight: compact ? 1.25 : 1.35,
                     }}
                   >
                     <span
                       style={{
-                        fontSize: "0.82rem",
+                        fontSize: projectSize,
                         fontWeight: 400,
                         color: MONUMENT,
                         minWidth: 0,
@@ -227,7 +247,7 @@ function ListStateColumn({ title, accent, summary, showTotal = true, continuatio
                         <span
                           style={{
                             marginLeft: "6px",
-                            fontSize: "0.72rem",
+                            fontSize: "0.7rem",
                             color: STREAM.vicBlue,
                             fontWeight: 600,
                           }}
@@ -238,7 +258,7 @@ function ListStateColumn({ title, accent, summary, showTotal = true, continuatio
                     </span>
                     <span
                       style={{
-                        fontSize: "0.82rem",
+                        fontSize: projectSize,
                         fontWeight: 600,
                         color: MONUMENT,
                         whiteSpace: "nowrap",
@@ -263,14 +283,16 @@ function ListStateColumn({ title, accent, summary, showTotal = true, continuatio
               alignItems: "baseline",
               gap: "12px",
               marginTop: "2px",
-              paddingTop: "10px",
+              paddingTop: compact ? "8px" : "10px",
               borderTop: `2px solid ${accent}`,
             }}
           >
-            <span style={{ fontSize: "0.95rem", fontWeight: 700, color: MONUMENT }}>TOTAL</span>
+            <span style={{ fontSize: compact ? "0.9rem" : "0.95rem", fontWeight: 700, color: MONUMENT }}>
+              TOTAL
+            </span>
             <span
               style={{
-                fontSize: "0.95rem",
+                fontSize: compact ? "0.9rem" : "0.95rem",
                 fontWeight: 700,
                 color: MONUMENT,
                 whiteSpace: "nowrap",
@@ -294,6 +316,7 @@ export function ProjectsOverviewListStatePage({
   summary,
   showTotal = true,
   continuation = false,
+  compact = true,
 }) {
   return (
     <ListStateColumn
@@ -302,6 +325,7 @@ export function ProjectsOverviewListStatePage({
       summary={summary}
       showTotal={showTotal}
       continuation={continuation}
+      compact={compact}
     />
   );
 }

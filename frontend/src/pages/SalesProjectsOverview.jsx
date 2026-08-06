@@ -345,7 +345,7 @@ export default function SalesProjectsOverview() {
               }}
               style={{
                 background: SECTION_GREY,
-                padding: "28px 32px",
+                padding: "16px 20px",
                 width: `${CAPTURE_WIDTH_PX}px`,
                 boxSizing: "border-box",
                 marginBottom: "24px",
@@ -353,8 +353,8 @@ export default function SalesProjectsOverview() {
             >
               <h2
                 style={{
-                  margin: "0 0 16px 0",
-                  fontSize: "1.6rem",
+                  margin: "0 0 10px 0",
+                  fontSize: "1.25rem",
                   fontWeight: 700,
                   color: MONUMENT,
                   letterSpacing: "0.5px",
@@ -368,6 +368,7 @@ export default function SalesProjectsOverview() {
                 summary={page.summary}
                 showTotal={page.showTotal}
                 continuation={page.continuation}
+                compact
               />
             </div>
           ))}

@@ -1,27 +1,30 @@
 /**
- * Pack VIC / QLD list data into PDF page models.
+ * Pack VIC / QLD list data into PDF page models for portrait A4 print.
  * - QLD always starts on a new page
  * - Within a state, start a new page before a project that would not fit
+ * - Pack densely; only reserve TOTAL space on the last page of each state
  */
 
 const CAPTURE_WIDTH_PX = 794;
-const MARGIN_MM = 12;
-const PAGE_TITLE_AND_PADDING_PX = 100;
-const CARD_TOP_PX = 100; // padding + state title
-const CARD_BOTTOM_TOTAL_PX = 56;
-const STAGE_HEADER_PX = 40;
-const STAGE_GAP_PX = 16;
-const PROJECT_ROW_PX = 24;
-const EMPTY_STAGE_PX = 24;
+/** Printable margin on A4 (enough for most printers). */
+const MARGIN_MM = 8;
 
-/** Max content height (px) for one portrait A4 page at capture width, excluding outer page title. */
+// Match ProjectsOverviewListStatePage compact PDF chrome (see SalesProjectsOverview)
+const PAGE_TITLE_AND_PADDING_PX = 58;
+const CARD_TOP_PX = 62;
+const CARD_BOTTOM_TOTAL_PX = 40;
+const STAGE_HEADER_PX = 28;
+const STAGE_GAP_PX = 10;
+const PROJECT_ROW_PX = 18;
+const EMPTY_STAGE_PX = 18;
+
+/** Max card body height (px) for one portrait A4 page at capture width. */
 export function getOverviewPdfMaxBodyHeightPx() {
-  // A4 portrait: 210 x 297 mm
   const pageWidthMm = 210;
   const pageHeightMm = 297;
   const usableWidthMm = pageWidthMm - MARGIN_MM * 2;
   const usableHeightMm = pageHeightMm - MARGIN_MM * 2;
-  return Math.floor((usableHeightMm / usableWidthMm) * CAPTURE_WIDTH_PX * 0.92) - PAGE_TITLE_AND_PADDING_PX;
+  return Math.floor((usableHeightMm / usableWidthMm) * CAPTURE_WIDTH_PX) - PAGE_TITLE_AND_PADDING_PX;
 }
 
 function cloneStageShell(stage, projects) {
@@ -55,9 +58,11 @@ function flushPage(pages, draft, stateMeta, { showTotal }) {
 
 function packStatePages(pages, stateMeta, maxBodyPx) {
   const { summary } = stateMeta;
-  let draft = { stages: [], continuation: pages.some((p) => p.stateKey === stateMeta.stateKey), height: CARD_TOP_PX };
-  // First page of this state always starts fresh (caller ensures QLD is new page)
-  draft.continuation = pages.some((p) => p.stateKey === stateMeta.stateKey);
+  let draft = {
+    stages: [],
+    continuation: pages.some((p) => p.stateKey === stateMeta.stateKey),
+    height: CARD_TOP_PX,
+  };
 
   const startNewPage = () => {
     flushPage(pages, draft, stateMeta, { showTotal: false });
@@ -65,21 +70,25 @@ function packStatePages(pages, stateMeta, maxBodyPx) {
   };
 
   for (const stage of summary?.stages || []) {
-    const projects = stage.projects?.length ? stage.projects : [null]; // null = empty placeholder
+    const projects = stage.projects?.length ? stage.projects : [null];
     let stageOpenOnPage = false;
 
     for (const project of projects) {
-      const headerCost = stageOpenOnPage ? 0 : STAGE_HEADER_PX + (draft.stages.length ? STAGE_GAP_PX : 0);
+      const headerCost = stageOpenOnPage
+        ? 0
+        : STAGE_HEADER_PX + (draft.stages.length ? STAGE_GAP_PX : 0);
       const rowCost = project == null ? EMPTY_STAGE_PX : PROJECT_ROW_PX;
       const addCost = headerCost + rowCost;
 
-      if (draft.stages.length > 0 && draft.height + addCost + CARD_BOTTOM_TOTAL_PX > maxBodyPx) {
+      // Mid-pages: fill to the bottom. Do not reserve TOTAL space here.
+      if (draft.stages.length > 0 && draft.height + addCost > maxBodyPx) {
         startNewPage();
         stageOpenOnPage = false;
       }
 
-      // After new page, recompute header cost
-      const headerCost2 = stageOpenOnPage ? 0 : STAGE_HEADER_PX + (draft.stages.length ? STAGE_GAP_PX : 0);
+      const headerCost2 = stageOpenOnPage
+        ? 0
+        : STAGE_HEADER_PX + (draft.stages.length ? STAGE_GAP_PX : 0);
       const addCost2 = headerCost2 + rowCost;
 
       if (!stageOpenOnPage) {
@@ -95,7 +104,7 @@ function packStatePages(pages, stateMeta, maxBodyPx) {
     }
   }
 
-  // Ensure TOTAL fits on last page of this state
+  // Last page of this state needs room for TOTAL
   if (draft.height + CARD_BOTTOM_TOTAL_PX > maxBodyPx && draft.stages.length > 0) {
     startNewPage();
   }
@@ -114,7 +123,7 @@ export function buildProjectsOverviewListPdfPages(overview) {
     {
       stateKey: "VIC",
       title: "VIC",
-      accent: null, // filled by caller / component uses STREAM
+      accent: null,
       summary: overview?.VIC,
     },
     maxBodyPx
