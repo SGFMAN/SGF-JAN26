@@ -135,7 +135,7 @@ function ListStateColumn({ title, accent, summary }) {
   return (
     <div
       style={{
-        flex: 1,
+        width: "100%",
         minWidth: 0,
         background: WHITE,
         borderRadius: "14px",
@@ -290,9 +290,10 @@ export default function ProjectsOverviewColumns({ overview, viewMode = "summary"
     <div
       style={{
         display: "flex",
+        flexDirection: isList ? "column" : "row",
         gap: "24px",
         alignItems: "stretch",
-        flexWrap: "wrap",
+        flexWrap: isList ? "nowrap" : "wrap",
       }}
     >
       {isList ? (

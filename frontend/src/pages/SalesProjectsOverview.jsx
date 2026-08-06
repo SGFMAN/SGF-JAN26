@@ -108,7 +108,10 @@ export default function SalesProjectsOverview() {
         if (!el) {
           throw new Error("Could not render PDF content.");
         }
-        const pdfBlob = await captureElementToPaginatedPdfBlob(el, { orientation: "landscape" });
+        const pdfBlob = await captureElementToPaginatedPdfBlob(el, {
+          orientation: "portrait",
+          marginMm: 12,
+        });
         const result = await saveProjectsOverviewPdfFile(pdfBlob, name);
         if (result === "cancelled") return;
         setExportKind(null);
@@ -314,7 +317,7 @@ export default function SalesProjectsOverview() {
             position: "fixed",
             left: "-12000px",
             top: 0,
-            width: "1100px",
+            width: "794px",
             zIndex: -1,
             pointerEvents: "none",
           }}
@@ -323,8 +326,8 @@ export default function SalesProjectsOverview() {
             ref={pdfCaptureRef}
             style={{
               background: SECTION_GREY,
-              padding: "24px 32px",
-              width: "1100px",
+              padding: "28px 32px",
+              width: "794px",
               boxSizing: "border-box",
             }}
           >
