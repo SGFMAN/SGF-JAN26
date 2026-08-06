@@ -1,9 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import useAppLogo from "../hooks/useAppLogo.js";
-import ProjectsOverviewColumns from "../components/ProjectsOverviewColumns";
+import ProjectsOverviewColumns, {
+  ProjectsOverviewListStatePage,
+} from "../components/ProjectsOverviewColumns";
 import { computeProjectsOverview } from "../utils/projectsOverviewCompute";
-import { captureElementToPaginatedPdfBlob } from "../utils/captureElementPdf";
+import { captureElementsToPdfBlob } from "../utils/captureElementPdf";
+import {
+  buildProjectsOverviewListPdfPages,
+  CAPTURE_WIDTH_PX,
+  MARGIN_MM,
+} from "../utils/projectsOverviewPdfPages";
 import {
   buildProjectsOverviewWorkbookArrayBuffer,
   ensurePdfExtension,
@@ -12,7 +19,7 @@ import {
   saveProjectsOverviewPdfFile,
   sanitizeExcelFileName,
 } from "../utils/projectsOverviewExcelExport";
-import { UI, MENU } from "../utils/uiThemeTokens.js";
+import { UI, MENU, STREAM } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
@@ -29,9 +36,13 @@ function defaultExportFileName() {
   return `Projects-Overview-${yyyy}-${mm}-${dd}`;
 }
 
+function stateAccent(stateKey) {
+  return stateKey === "QLD" ? STREAM.qldRed : STREAM.vicBlue;
+}
+
 export default function SalesProjectsOverview() {
   const logo = useAppLogo();
-  const pdfCaptureRef = useRef(null);
+  const pdfPageRefs = useRef([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -39,7 +50,7 @@ export default function SalesProjectsOverview() {
   const [exportKind, setExportKind] = useState(null); // "excel" | "pdf" | null
   const [exportFileName, setExportFileName] = useState(() => defaultExportFileName());
   const [exporting, setExporting] = useState(false);
-  const [pdfCaptureReady, setPdfCaptureReady] = useState(false);
+  const [pdfPages, setPdfPages] = useState(null);
 
   const exportModalOpen = exportKind != null;
 
@@ -98,19 +109,23 @@ export default function SalesProjectsOverview() {
     setExporting(true);
     try {
       if (exportKind === "pdf") {
-        setPdfCaptureReady(true);
-        let el = null;
-        for (let i = 0; i < 40; i++) {
+        const pages = buildProjectsOverviewListPdfPages(overview);
+        pdfPageRefs.current = [];
+        setPdfPages(pages);
+
+        let elements = [];
+        for (let i = 0; i < 60; i++) {
           await new Promise((resolve) => requestAnimationFrame(resolve));
-          el = pdfCaptureRef.current;
-          if (el) break;
+          elements = pages.map((_, idx) => pdfPageRefs.current[idx]).filter(Boolean);
+          if (elements.length === pages.length) break;
         }
-        if (!el) {
-          throw new Error("Could not render PDF content.");
+        if (elements.length !== pages.length) {
+          throw new Error("Could not render all PDF pages.");
         }
-        const pdfBlob = await captureElementToPaginatedPdfBlob(el, {
+
+        const pdfBlob = await captureElementsToPdfBlob(elements, {
           orientation: "portrait",
-          marginMm: 12,
+          marginMm: MARGIN_MM,
         });
         const result = await saveProjectsOverviewPdfFile(pdfBlob, name);
         if (result === "cancelled") return;
@@ -131,7 +146,7 @@ export default function SalesProjectsOverview() {
       );
       alert(err.message || (exportKind === "pdf" ? "Failed to save PDF." : "Failed to export Excel file."));
     } finally {
-      setPdfCaptureReady(false);
+      setPdfPages(null);
       setExporting(false);
     }
   }
@@ -310,40 +325,52 @@ export default function SalesProjectsOverview() {
         </div>
       </div>
 
-      {pdfCaptureReady ? (
+      {pdfPages ? (
         <div
           aria-hidden
           style={{
             position: "fixed",
             left: "-12000px",
             top: 0,
-            width: "794px",
+            width: `${CAPTURE_WIDTH_PX}px`,
             zIndex: -1,
             pointerEvents: "none",
           }}
         >
-          <div
-            ref={pdfCaptureRef}
-            style={{
-              background: SECTION_GREY,
-              padding: "28px 32px",
-              width: "794px",
-              boxSizing: "border-box",
-            }}
-          >
-            <h2
+          {pdfPages.map((page, index) => (
+            <div
+              key={page.key}
+              ref={(el) => {
+                if (el) pdfPageRefs.current[index] = el;
+              }}
               style={{
-                margin: "0 0 16px 0",
-                fontSize: "1.6rem",
-                fontWeight: 700,
-                color: MONUMENT,
-                letterSpacing: "0.5px",
+                background: SECTION_GREY,
+                padding: "28px 32px",
+                width: `${CAPTURE_WIDTH_PX}px`,
+                boxSizing: "border-box",
+                marginBottom: "24px",
               }}
             >
-              PROJECTS OVERVIEW
-            </h2>
-            <ProjectsOverviewColumns overview={overview} viewMode="list" />
-          </div>
+              <h2
+                style={{
+                  margin: "0 0 16px 0",
+                  fontSize: "1.6rem",
+                  fontWeight: 700,
+                  color: MONUMENT,
+                  letterSpacing: "0.5px",
+                }}
+              >
+                PROJECTS OVERVIEW
+              </h2>
+              <ProjectsOverviewListStatePage
+                title={page.title}
+                accent={stateAccent(page.stateKey)}
+                summary={page.summary}
+                showTotal={page.showTotal}
+                continuation={page.continuation}
+              />
+            </div>
+          ))}
         </div>
       ) : null}
 

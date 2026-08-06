@@ -119,21 +119,38 @@ export async function captureElementToPdfBase64(element) {
 }
 
 /**
- * Each element becomes exactly one landscape A4 page in the PDF.
+ * Each element becomes exactly one PDF page (scaled down only if slightly taller than the page).
  */
-export async function captureElementsToPdfBlob(elements) {
+export async function captureElementsToPdfBlob(elements, options = {}) {
   const list = (elements || []).filter(Boolean);
   if (list.length === 0) {
     throw new Error("Nothing to capture for PDF.");
   }
 
-  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true });
+  const orientation = options.orientation === "portrait" ? "portrait" : "landscape";
+  const marginMm = Number.isFinite(options.marginMm) ? options.marginMm : 0;
+  const pdf = new jsPDF({ orientation, unit: "mm", format: "a4", compress: true });
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
+  const usableWidth = Math.max(pageWidth - marginMm * 2, 1);
+  const usableHeight = Math.max(pageHeight - marginMm * 2, 1);
 
   for (let i = 0; i < list.length; i++) {
     const canvas = await captureElementToCanvas(list[i]);
-    addCanvasToPdfPage(pdf, canvas, pageWidth, pageHeight, i === 0);
+    const imgData = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+    let drawWidth = usableWidth;
+    let drawHeight = (canvas.height * drawWidth) / canvas.width;
+
+    if (drawHeight > usableHeight) {
+      const scale = usableHeight / drawHeight;
+      drawWidth *= scale;
+      drawHeight = usableHeight;
+    }
+
+    if (i > 0) {
+      pdf.addPage();
+    }
+    pdf.addImage(imgData, "JPEG", marginMm, marginMm, drawWidth, drawHeight);
   }
 
   return pdf.output("blob");

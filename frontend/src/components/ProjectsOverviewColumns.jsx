@@ -131,7 +131,7 @@ function SummaryStateColumn({ title, accent, summary }) {
   );
 }
 
-function ListStateColumn({ title, accent, summary }) {
+function ListStateColumn({ title, accent, summary, showTotal = true, continuation = false }) {
   return (
     <div
       style={{
@@ -162,11 +162,16 @@ function ListStateColumn({ title, accent, summary }) {
           }}
         >
           {title}
+          {continuation ? (
+            <span style={{ fontWeight: 500, fontSize: "0.95rem", marginLeft: "8px", color: UI.textMuted }}>
+              (continued)
+            </span>
+          ) : null}
         </h2>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-        {summary.stages.map((stage) => (
+        {(summary?.stages || []).map((stage) => (
           <div key={stage.key}>
             <div
               style={{
@@ -250,33 +255,54 @@ function ListStateColumn({ title, accent, summary }) {
           </div>
         ))}
 
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "baseline",
-            gap: "12px",
-            marginTop: "2px",
-            paddingTop: "10px",
-            borderTop: `2px solid ${accent}`,
-          }}
-        >
-          <span style={{ fontSize: "0.95rem", fontWeight: 700, color: MONUMENT }}>TOTAL</span>
-          <span
+        {showTotal ? (
+          <div
             style={{
-              fontSize: "0.95rem",
-              fontWeight: 700,
-              color: MONUMENT,
-              whiteSpace: "nowrap",
-              fontVariantNumeric: "tabular-nums",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              gap: "12px",
+              marginTop: "2px",
+              paddingTop: "10px",
+              borderTop: `2px solid ${accent}`,
             }}
           >
-            {formatStageCount(summary.total, summary.onHoldTotal)} ·{" "}
-            {formatOverviewCurrency(summary.valueTotal)}
-          </span>
-        </div>
+            <span style={{ fontSize: "0.95rem", fontWeight: 700, color: MONUMENT }}>TOTAL</span>
+            <span
+              style={{
+                fontSize: "0.95rem",
+                fontWeight: 700,
+                color: MONUMENT,
+                whiteSpace: "nowrap",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {formatStageCount(summary.total, summary.onHoldTotal)} ·{" "}
+              {formatOverviewCurrency(summary.valueTotal)}
+            </span>
+          </div>
+        ) : null}
       </div>
     </div>
+  );
+}
+
+/** Single state list card for PDF page assembly. */
+export function ProjectsOverviewListStatePage({
+  title,
+  accent,
+  summary,
+  showTotal = true,
+  continuation = false,
+}) {
+  return (
+    <ListStateColumn
+      title={title}
+      accent={accent}
+      summary={summary}
+      showTotal={showTotal}
+      continuation={continuation}
+    />
   );
 }
 
