@@ -29,7 +29,7 @@ export default function SalesSidebarLink({ style = DEFAULT_STYLE }) {
   }
 
   return (
-    <Link to="/sales" style={style}>
+    <Link to="/sales-totals" style={style}>
       Sales
     </Link>
   );

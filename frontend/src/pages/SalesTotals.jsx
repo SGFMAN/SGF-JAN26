@@ -485,6 +485,32 @@ export default function SalesTotals() {
             color: MONUMENT,
           }}
         >
+          {/* Months - above Analytics */}
+          <div style={{ background: "#e8e8ea", borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
+            <Link
+              to="/sales"
+              style={{
+                background: "transparent",
+                color: UI.textSecondary,
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              Months
+            </Link>
+          </div>
+
           {/* Analytics - Light Blue */}
           <div style={{ background: MENU.blue, borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
             <Link
@@ -590,10 +616,10 @@ export default function SalesTotals() {
           
           <div style={{ flex: 1 }} />
           
-          {/* Back to Sales - Light Red */}
+          {/* Back to Main - Light Red */}
           <div style={{ background: MENU.red, borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
             <Link
-              to="/sales"
+              to="/projects"
               style={{
                 background: "transparent",
                 color: UI.textSecondary,
@@ -612,7 +638,7 @@ export default function SalesTotals() {
                 display: "block",
               }}
             >
-              ← Back to Sales
+              ← Back to Main
             </Link>
           </div>
         </div>

@@ -202,7 +202,7 @@ export default function Sales() {
             color: MONUMENT,
           }}
         >
-          {/* TOTALS - Light Blue */}
+          {/* Back to Totals - Light Blue */}
           <div style={{ background: MENU.blue, borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
             <Link
               to="/sales-totals"
@@ -224,7 +224,7 @@ export default function Sales() {
                 display: "block",
               }}
             >
-              TOTALS
+              Back to Totals
             </Link>
           </div>
           
