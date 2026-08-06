@@ -1,7 +1,8 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { resolveActiveClientContactToEmails } from "../utils/emailGeneralSettings";
 import { resolveLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 import { UI, outlineBorder } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
@@ -62,19 +63,6 @@ function findFinalCertificatesTemplate(templates) {
   );
 }
 
-function plainTextToEmailHtml(text) {
-  const escaped = String(text || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-  const paragraphs = escaped
-    .split(/\n{2,}/)
-    .map((block) => `<p>${block.replace(/\n/g, "<br/>")}</p>`)
-    .join("");
-  return paragraphs || "<p></p>";
-}
-
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20MB — reject before send (mail-server friendly)
 
 function formatFileSize(bytes) {
@@ -131,6 +119,7 @@ export default function FinalCertificates({ project }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const pdfInputRef = useRef(null);
   const zipInputRef = useRef(null);
+  const emailBodyRef = useRef(null);
 
   const [pdfAttachment, setPdfAttachment] = useState(null);
   const [zipAttachment, setZipAttachment] = useState(null);
@@ -147,6 +136,14 @@ export default function FinalCertificates({ project }) {
 
   const attachmentList = [pdfAttachment, zipAttachment].filter(Boolean);
   const hasAnyAttachment = attachmentList.length > 0;
+
+  // Keep contentEditable in sync when the prepared HTML body is set.
+  useEffect(() => {
+    if (!showEmailModal || preparingModal || !emailBodyRef.current) return;
+    if (emailBodyRef.current.innerHTML !== emailBody) {
+      emailBodyRef.current.innerHTML = emailBody || "";
+    }
+  }, [showEmailModal, preparingModal, emailBody]);
 
   function setPdfFile(file) {
     if (!file) return;
@@ -238,7 +235,13 @@ export default function FinalCertificates({ project }) {
       setEmailTo(toEmails.join(", "));
       setEmailFrom(fromEmail);
       setEmailSubject(replaceFinalCertificatesTokens(template.subject || "", project));
-      setEmailBody(replaceFinalCertificatesTokens(template.body || "", project));
+      // TipTap templates are already HTML; convertEmailBodyNewlinesToBr still
+      // handles any legacy plain-text newlines without escaping tags.
+      setEmailBody(
+        convertEmailBodyNewlinesToBr(
+          replaceFinalCertificatesTokens(template.body || "", project)
+        )
+      );
     } catch (err) {
       console.error("Final Certificates: failed to prepare email preview", err);
       alert(err.message || "Failed to prepare email preview.");
@@ -282,7 +285,8 @@ export default function FinalCertificates({ project }) {
         form.append("to", toAddresses.join(","));
         form.append("from", emailFrom.trim());
         form.append("subject", emailSubject || "");
-        form.append("htmlBody", plainTextToEmailHtml(emailBody));
+        // Body is HTML from the template editor — do not escape tags.
+        form.append("htmlBody", emailBody || "<p></p>");
         // Memory-only — omit projectId so proposal PDF is not auto-attached.
         for (const item of attachmentList) {
           form.append("attachments", item.file, item.name);
@@ -704,18 +708,35 @@ export default function FinalCertificates({ project }) {
                 </div>
                 <div>
                   <label style={labelStyle}>Body</label>
-                  <textarea
-                    value={emailBody}
-                    onChange={(e) => setEmailBody(e.target.value)}
-                    disabled={sending}
-                    rows={10}
+                  <div
+                    ref={emailBodyRef}
+                    className="final-certificates-email-body"
+                    contentEditable={!sending}
+                    suppressContentEditableWarning
+                    onInput={(e) => {
+                      setEmailBody(e.currentTarget.innerHTML);
+                    }}
+                    onBlur={(e) => {
+                      setEmailBody(e.currentTarget.innerHTML);
+                    }}
                     style={{
                       ...inputStyle,
-                      resize: "vertical",
-                      fontFamily: "inherit",
-                      lineHeight: 1.45,
+                      minHeight: "220px",
+                      lineHeight: 1.6,
+                      outline: "none",
+                      overflowY: "auto",
+                      cursor: sending ? "not-allowed" : "text",
+                      opacity: sending ? 0.7 : 1,
                     }}
                   />
+                  <style>{`
+                    .final-certificates-email-body p {
+                      margin: 0 0 0.75em 0;
+                    }
+                    .final-certificates-email-body p:last-child {
+                      margin-bottom: 0;
+                    }
+                  `}</style>
                 </div>
               </div>
             )}
