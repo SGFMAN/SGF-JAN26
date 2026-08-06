@@ -7,6 +7,7 @@ import {
 } from "../utils/streamNewProjectEmail";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -215,10 +216,7 @@ export default function Planning({ project, onUpdate }) {
 
     // Preserve carriage returns/line breaks from plain-text templates in preview/send.
     if (html) {
-      replaced = replaced
-        .replace(/\r\n/g, "\n")
-        .replace(/\r/g, "\n")
-        .replace(/\n/g, "<br>");
+      replaced = convertEmailBodyNewlinesToBr(replaced);
     }
 
     return replaceLoggedInUserEmailTokens(replaced);

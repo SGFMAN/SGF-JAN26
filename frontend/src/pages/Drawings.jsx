@@ -48,6 +48,7 @@ import {
 } from "../utils/drawingNotifyFrom";
 import { buildJobFolderNameSegment, folderYearFromProjectYear } from "../utils/projectFolderPath";
 import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
+import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 import {
   applyConceptApprovalRules,
   applyDrawingUploadKindRules,
@@ -1078,7 +1079,9 @@ export default function Drawings({
     setEmailPreviewTo(previewToList.join(", "));
     setEmailPreviewFrom(previewFrom);
     setEmailPreviewSubject(await replaceLoggedInUserEmailTokens(previewSubject));
-    setEmailPreviewBody(await replaceLoggedInUserEmailTokens(previewBody));
+    setEmailPreviewBody(
+      convertEmailBodyNewlinesToBr(await replaceLoggedInUserEmailTokens(previewBody))
+    );
     setEmailPreviewType(isConcept ? "concept_approval" : "working_approval");
     setShowEmailPreviewModal(true);
   }
@@ -2203,7 +2206,7 @@ export default function Drawings({
         ok: true,
         template,
         subject: await replaceLoggedInUserEmailTokens(subject),
-        body: await replaceLoggedInUserEmailTokens(body),
+        body: convertEmailBodyNewlinesToBr(await replaceLoggedInUserEmailTokens(body)),
         activeClientEmails,
       };
     } catch (error) {
@@ -2606,7 +2609,7 @@ export default function Drawings({
       // Insert notes after {ProjectName} if notes exist
       if (notesText && notesText.trim()) {
         // Convert newlines to <br> tags for HTML rendering
-        const notesHtml = notesText.trim().replace(/\n/g, "<br>");
+        const notesHtml = convertEmailBodyNewlinesToBr(notesText);
         // Use different heading based on whether it's a new drawing or current revision update
         const heading = notesForRevision?.isNewDrawing 
           ? "<b>Drafting Notes</b><br>" 
@@ -2931,7 +2934,7 @@ export default function Drawings({
       // Insert sales notes after {ProjectName} if notes exist
       if (salesNotesText && salesNotesText.trim()) {
         // Convert newlines to <br> tags for HTML rendering
-        const notesHtml = salesNotesText.trim().replace(/\n/g, "<br>");
+        const notesHtml = convertEmailBodyNewlinesToBr(salesNotesText);
         // Use heading for sales notes
         const heading = "<b>Sales Notes</b><br>";
         

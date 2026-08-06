@@ -6757,6 +6757,19 @@ function contentTypeForImageFile(filePath) {
   return "image/jpeg";
 }
 
+/**
+ * Convert textarea newlines in an email body to HTML <br> tags.
+ * Existing HTML tags (<b>, <br>, <a>, etc.) are left unchanged.
+ * Normalises Windows (\r\n) and old Mac (\r) line endings first.
+ */
+function convertEmailBodyNewlinesToBr(htmlBody) {
+  return String(htmlBody || "")
+    .trim()
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\n/g, "<br>");
+}
+
 // Helper: embed logo at end of HTML via CID inline part (visible in body, not a separate attachment)
 async function addLogoToEmail(htmlBody, attachments = []) {
   if (!pool) {
@@ -6880,7 +6893,7 @@ app.post("/api/emails/send", parseEmailSendRequest, async (req, res) => {
       auth: { user: smtpUser, pass: smtpPass },
     });
 
-    const rawBody = (htmlBody || "").trim().replace(/\n/g, "<br>");
+    const rawBody = convertEmailBodyNewlinesToBr(htmlBody);
     let htmlEmailBody = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">${rawBody}</body></html>`;
 
     // Add logo to email
@@ -7259,68 +7272,12 @@ app.post("/api/emails/send-drawings", async (req, res) => {
     let htmlBody;
     if (customBody !== undefined && customBody !== null) {
       htmlBody = customBody.toString();
-      
-      // Only add "View Drawings" button for Drafting Notes emails (Preview & Send Email modal)
-      // Do NOT add it for "Email Drawings to Client" emails (when attachDrawings is true)
-      if (attachPdf === false) {
-        // Add button link to drawings page directly after the notes
-        const emailBase = await resolveEmailAppPublicBase(pool, req, req.body);
-        const projectAccessToken = await getProjectAccessTokenById(pool, projectId);
-        if (!projectAccessToken) {
-          throw new Error("Project access token not found");
-        }
-        const drawingsUrl = `${emailBase}/project/${projectAccessToken}?view=drawings`;
-        const buttonHtml = `
-          <br><br>
-          <div style="text-align: left; margin: 20px 0;">
-            <a href="${drawingsUrl}" style="
-              display: inline-block;
-              padding: 16px 32px;
-              background-color: #4D93D9;
-              color: #ffffff;
-              text-decoration: none;
-              border-radius: 8px;
-              font-weight: 500;
-              font-size: 1.1rem;
-            ">View Drawings</a>
-          </div>
-        `;
-        
-        // Find where the notes section ends and insert button right after it
-        // Look for patterns that come after the notes: {Draftsperson}, {Position}, or "Powered by"
-        let buttonInserted = false;
-        
-        // Find the position right before {Draftsperson} or {Position} tokens
-        // These tokens come after the notes section
-        const afterNotesPatterns = [
-          /{Draftsperson}/i,
-          /{Position}/i,
-          /<b>.*?<\/b>\s*Powered by/i,
-          /Powered by SGF Central/i
-        ];
-        
-        for (const pattern of afterNotesPatterns) {
-          const match = htmlBody.match(pattern);
-          if (match) {
-            // Insert button right before this pattern
-            const insertIndex = match.index;
-            htmlBody = htmlBody.slice(0, insertIndex) + buttonHtml + htmlBody.slice(insertIndex);
-            buttonInserted = true;
-            break;
-          }
-        }
-        
-        // Fallback: if we can't find the pattern, append at the end
-        if (!buttonInserted) {
-          htmlBody += buttonHtml;
-        }
-      }
     } else {
       // Build default email body with optional notes
       const { notes } = req.body || {};
       htmlBody = `New Drawings for ${suburb} - ${street}`;
       if (notes && notes.trim()) {
-        htmlBody += `<br><br>${notes.trim().replace(/\n/g, "<br>")}`;
+        htmlBody += `<br><br>${convertEmailBodyNewlinesToBr(notes)}`;
       }
       htmlBody += `<br><br>SGF CENTRAL`;
     }
@@ -7331,6 +7288,42 @@ app.post("/api/emails/send-drawings", async (req, res) => {
     const userTok = await applyStaffUserEmailTokenSubstitution(pool, req, htmlBody, subject);
     htmlBody = userTok.html;
     subject = userTok.subject;
+    // Convert template newlines before inserting generated button HTML (button markup has its own newlines).
+    htmlBody = convertEmailBodyNewlinesToBr(htmlBody);
+
+    // Only add "View Drawings" button for Drafting Notes emails (Preview & Send Email modal)
+    // Do NOT add it for "Email Drawings to Client" emails (when attachDrawings is true)
+    if (customBody !== undefined && customBody !== null && attachPdf === false) {
+      const emailBase = await resolveEmailAppPublicBase(pool, req, req.body);
+      const projectAccessToken = await getProjectAccessTokenById(pool, projectId);
+      if (!projectAccessToken) {
+        throw new Error("Project access token not found");
+      }
+      const drawingsUrl = `${emailBase}/project/${projectAccessToken}?view=drawings`;
+      const buttonHtml =
+        `<br><br><div style="text-align: left; margin: 20px 0;">` +
+        `<a href="${drawingsUrl}" style="display: inline-block; padding: 16px 32px; background-color: #4D93D9; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 500; font-size: 1.1rem;">View Drawings</a>` +
+        `</div>`;
+
+      let buttonInserted = false;
+      const afterNotesPatterns = [
+        /{Draftsperson}/i,
+        /{Position}/i,
+        /<b>.*?<\/b>\s*Powered by/i,
+        /Powered by SGF Central/i,
+      ];
+      for (const pattern of afterNotesPatterns) {
+        const match = htmlBody.match(pattern);
+        if (match) {
+          htmlBody = htmlBody.slice(0, match.index) + buttonHtml + htmlBody.slice(match.index);
+          buttonInserted = true;
+          break;
+        }
+      }
+      if (!buttonInserted) {
+        htmlBody += buttonHtml;
+      }
+    }
 
     const recipientEmail = recipientEmails.join(", ");
     
@@ -7659,8 +7652,8 @@ app.post("/api/emails/send-colours", async (req, res) => {
       subject = userTok.subject;
     }
     
-    // Convert newlines to HTML breaks
-    htmlBody = htmlBody.replace(/\n/g, "<br>");
+    // Convert newlines to HTML breaks (same as /api/emails/send and other template sends)
+    htmlBody = convertEmailBodyNewlinesToBr(htmlBody);
     
     // Wrap in HTML structure if not already HTML
     if (!htmlBody.includes("<html") && !htmlBody.includes("<!DOCTYPE")) {
@@ -8068,8 +8061,8 @@ app.post("/api/emails/send-colours-reminder", async (req, res) => {
       subject = userTok.subject;
     }
     
-    // Convert newlines to HTML breaks
-    htmlBody = htmlBody.replace(/\n/g, "<br>");
+    // Convert newlines to HTML breaks (same as /api/emails/send and other template sends)
+    htmlBody = convertEmailBodyNewlinesToBr(htmlBody);
     
     // Wrap in HTML structure if not already HTML
     if (!htmlBody.includes("<html") && !htmlBody.includes("<!DOCTYPE")) {
@@ -9093,8 +9086,8 @@ app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
       subject = userTok.subject;
     }
     
-    // Convert newlines to HTML breaks
-    htmlBody = htmlBody.replace(/\n/g, "<br>");
+    // Convert newlines to HTML breaks (same as /api/emails/send and other template sends)
+    htmlBody = convertEmailBodyNewlinesToBr(htmlBody);
     
     // Wrap in HTML structure if not already HTML
     if (!htmlBody.includes("<html") && !htmlBody.includes("<!DOCTYPE")) {
@@ -9298,8 +9291,8 @@ app.post("/api/emails/send-colours-portal", async (req, res) => {
       </div>
     `;
     
-    // Insert button before "Powered by" or at the end
-    let finalHtmlBody = htmlBody || "";
+    // Convert template newlines first, then insert generated button HTML (avoid turning button markup newlines into <br>).
+    let finalHtmlBody = convertEmailBodyNewlinesToBr(htmlBody || "");
     const poweredByPattern = /Powered by SGF Central/i;
     const poweredByMatch = finalHtmlBody.match(poweredByPattern);
     if (poweredByMatch) {
@@ -9605,8 +9598,8 @@ Date Required: ${windowDateRequired || "N/A"}`;
     subject = userTok.subject;
   }
   
-  // Convert newlines to HTML breaks
-  htmlBody = htmlBody.replace(/\n/g, "<br>");
+  // Convert newlines to HTML breaks (same as /api/emails/send and other template sends)
+  htmlBody = convertEmailBodyNewlinesToBr(htmlBody);
   
   // Wrap in HTML structure if not already HTML
   if (!htmlBody.includes("<html") && !htmlBody.includes("<!DOCTYPE")) {

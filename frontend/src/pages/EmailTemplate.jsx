@@ -1055,7 +1055,7 @@ export default function EmailTemplate() {
         <textarea
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          placeholder="Email body text. Use tokens like {ProjectName}, {ClientName}, etc."
+          placeholder="Type the email body. Press Enter for a new line (twice for a blank line). HTML like <b> still works — no need to type <br>."
           style={{
             width: "100%",
             flex: 1,

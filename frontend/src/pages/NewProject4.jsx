@@ -10,6 +10,7 @@ import { CLASSIFICATION_OPTIONS, CLASSIFICATION_ABBREV_MAP as CLASSIFICATION_MAP
 import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 import {
   formatDepositPaidToken,
   formatDepositStatusToken,
@@ -393,10 +394,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
 
     // Match POST /api/emails/send: plain newlines become <br> so preview matches the sent HTML.
     if (html) {
-      replaced = replaced
-        .replace(/\r\n/g, "\n")
-        .replace(/\r/g, "\n")
-        .replace(/\n/g, "<br>");
+      replaced = convertEmailBodyNewlinesToBr(replaced);
     }
 
     return replaceLoggedInUserEmailTokens(replaced);

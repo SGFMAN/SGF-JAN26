@@ -13,6 +13,7 @@ import {
   replaceDepositBalanceToken,
 } from "../utils/projectDeposit";
 import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -123,10 +124,7 @@ export default function NewProject_6_EmailInternal({
 
     // Match POST /api/emails/send: plain newlines become <br> so preview matches the sent HTML.
     if (html) {
-      replaced = replaced
-        .replace(/\r\n/g, "\n")
-        .replace(/\r/g, "\n")
-        .replace(/\n/g, "<br>");
+      replaced = convertEmailBodyNewlinesToBr(replaced);
     }
 
     return replaceLoggedInUserEmailTokens(replaced);

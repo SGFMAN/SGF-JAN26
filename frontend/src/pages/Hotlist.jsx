@@ -16,6 +16,7 @@ import { isUserAdmin, getApiHeaders } from "../utils/auth";
 import { projectPath } from "../utils/projectUrl";
 import { newJobPreEngagementPaymentFields } from "../utils/projectDeposit";
 import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 import {
   generalEmailStateCode,
   resolveHotlistSoldFromEmail,
@@ -721,7 +722,9 @@ export default function Hotlist() {
         await replaceLoggedInUserEmailTokens(replaceSoldTokens(template.subject || "", item))
       );
       setSoldEmailBody(
-        await replaceLoggedInUserEmailTokens(replaceSoldTokens(template.body || "", item))
+        convertEmailBodyNewlinesToBr(
+          await replaceLoggedInUserEmailTokens(replaceSoldTokens(template.body || "", item))
+        )
       );
     } catch (err) {
       console.error("Error preparing sold email:", err);

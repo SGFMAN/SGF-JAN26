@@ -384,6 +384,7 @@ export default function Windows({ project, onUpdate, showResetWindowData = false
           .replace(/\{STREET\}/g, street)
           .replace(/\{ProjectName\}/g, projectName);
 
+        // Keep as textarea text (newlines). send-windows-order converts \n → <br> on send.
         setEmailBody(await replaceLoggedInUserEmailTokens(body));
       } else {
         setEmailBody("");

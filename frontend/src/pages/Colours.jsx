@@ -14,6 +14,7 @@ import { streamColorHover } from "../utils/streamColors.js";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 import { isUserAdmin, getApiHeaders } from "../utils/auth";
 import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
 import {
   COLORBOND_RANGE_KEY,
@@ -701,7 +702,9 @@ export default function Colours({ project, onUpdate }) {
                        .replace(/\{ClientName\}/g, clientName)
                        .replace(/\{ProjectName\}/g, projectName)
                        .replace(/\{ColourConsultant\}/g, colourConsultantName);
-            setEmailBody(await replaceLoggedInUserEmailTokens(body));
+            setEmailBody(
+              convertEmailBodyNewlinesToBr(await replaceLoggedInUserEmailTokens(body))
+            );
           } else {
             setEmailBody("");
           }
