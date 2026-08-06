@@ -1,11 +1,55 @@
 import React from "react";
-import { formatStageCount } from "../utils/projectsOverviewCompute";
+import {
+  formatOverviewCurrency,
+  formatStageCount,
+} from "../utils/projectsOverviewCompute";
 import { UI, STREAM } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
+
+function StageRow({ label, total, onHold, value, accentRow = false }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(0, 1.4fr) minmax(7.5rem, auto) minmax(6.5rem, auto)",
+        gap: "12px",
+        alignItems: "baseline",
+        padding: accentRow ? "12px 12px" : "10px 12px",
+        borderRadius: "8px",
+        background: accentRow ? undefined : SECTION_GREY,
+        color: accentRow ? PAGE_TEXT : MONUMENT,
+      }}
+    >
+      <span style={{ fontSize: accentRow ? "1.05rem" : "1rem", fontWeight: accentRow ? 700 : 500 }}>
+        {label}
+      </span>
+      <span
+        style={{
+          fontSize: accentRow ? "1.05rem" : "1.05rem",
+          fontWeight: 700,
+          whiteSpace: "nowrap",
+          textAlign: "right",
+        }}
+      >
+        {formatStageCount(total, onHold)}
+      </span>
+      <span
+        style={{
+          fontSize: accentRow ? "1.15rem" : "1.05rem",
+          fontWeight: 700,
+          whiteSpace: "nowrap",
+          textAlign: "right",
+        }}
+      >
+        {formatOverviewCurrency(value)}
+      </span>
+    </div>
+  );
+}
 
 function StateColumn({ title, accent, summary }) {
   return (
@@ -45,60 +89,49 @@ function StateColumn({ title, accent, summary }) {
         </h2>
       </div>
 
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1.4fr) minmax(7.5rem, auto) minmax(6.5rem, auto)",
+          gap: "12px",
+          padding: "0 12px 8px",
+          fontSize: "0.8rem",
+          fontWeight: 600,
+          color: UI.textMuted,
+          letterSpacing: "0.3px",
+        }}
+      >
+        <span>Stage</span>
+        <span style={{ textAlign: "right" }}>Jobs</span>
+        <span style={{ textAlign: "right" }}>Value</span>
+      </div>
+
       <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
         {summary.stages.map((stage) => (
-          <div
+          <StageRow
             key={stage.key}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "baseline",
-              gap: "16px",
-              padding: "10px 12px",
-              borderRadius: "8px",
-              background: SECTION_GREY,
-            }}
-          >
-            <span style={{ fontSize: "1rem", fontWeight: 500, color: MONUMENT }}>
-              {stage.label}
-            </span>
-            <span
-              style={{
-                fontSize: "1.05rem",
-                fontWeight: 700,
-                color: MONUMENT,
-                whiteSpace: "nowrap",
-              }}
-            >
-              {formatStageCount(stage.total, stage.onHold)}
-            </span>
-          </div>
+            label={stage.label}
+            total={stage.total}
+            onHold={stage.onHold}
+            value={stage.value}
+          />
         ))}
 
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "baseline",
-            gap: "16px",
-            marginTop: "6px",
-            padding: "12px 12px",
-            borderRadius: "8px",
-            background: accent,
-            color: PAGE_TEXT,
-          }}
-        >
-          <span style={{ fontSize: "1.05rem", fontWeight: 700 }}>TOTAL</span>
-          <span style={{ fontSize: "1.15rem", fontWeight: 700, whiteSpace: "nowrap" }}>
-            {formatStageCount(summary.total, summary.onHoldTotal)}
-          </span>
+        <div style={{ background: accent, borderRadius: "8px" }}>
+          <StageRow
+            label="TOTAL"
+            total={summary.total}
+            onHold={summary.onHoldTotal}
+            value={summary.valueTotal}
+            accentRow
+          />
         </div>
       </div>
     </div>
   );
 }
 
-/** VIC + QLD stage count columns (page + PDF). */
+/** VIC + QLD stage count + value columns (page + PDF). */
 export default function ProjectsOverviewColumns({ overview }) {
   return (
     <div
