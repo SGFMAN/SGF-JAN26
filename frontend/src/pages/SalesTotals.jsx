@@ -336,7 +336,10 @@ export default function SalesTotals() {
         throw new Error("Could not render all PDF pages.");
       }
 
-      const pdfBlob = await captureElementsToPdfBlob(elements);
+      const pdfBlob = await captureElementsToPdfBlob(elements, {
+        orientation: "landscape",
+        marginMm: 6,
+      });
       const filename =
         yearView === SALES_YEAR_VIEW.FINANCIAL
           ? `Sales-Totals-FY-${periodLabel.replace("/", "-")}.pdf`
@@ -746,7 +749,8 @@ export default function SalesTotals() {
             position: "fixed",
             left: "-12000px",
             top: 0,
-            width: "1100px",
+            // Wide enough that landscape A4 keeps full width without horizontal squash
+            width: "1400px",
             zIndex: -1,
             pointerEvents: "none",
           }}
@@ -759,9 +763,9 @@ export default function SalesTotals() {
               }}
               style={{
                 background: SECTION_GREY,
-                padding: "24px 32px",
+                padding: "20px 28px",
                 marginBottom: "24px",
-                width: "1100px",
+                width: "1400px",
                 boxSizing: "border-box",
               }}
             >

@@ -53,19 +53,23 @@ const TOTALS_CARD = {
   },
   grandGrid: {
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)",
+    gridTemplateColumns: "1fr 1fr 1fr",
     columnGap: "16px",
-    alignItems: "start",
+    alignItems: "stretch",
+    width: "100%",
   },
   grandCol: {
-    display: "flex",
-    flexDirection: "column",
+    display: "grid",
+    gridTemplateRows: "1fr 1fr",
     gap: "12px",
     minWidth: 0,
   },
   grandColBorder: {
     borderLeft: "1px solid #4a4d55",
     paddingLeft: "14px",
+  },
+  grandValue: {
+    fontVariantNumeric: "tabular-nums",
   },
 };
 
@@ -400,16 +404,16 @@ export default function SalesTotalsDashboard({
             <div style={TOTALS_CARD.grandCol}>
               <div>
                 <div style={TOTALS_CARD.label}>Year</div>
-                <div style={TOTALS_CARD.valueMd}>{yearDisplay}</div>
+                <div style={{ ...TOTALS_CARD.valueMd, ...TOTALS_CARD.grandValue }}>{yearDisplay}</div>
               </div>
               <div>
                 <div style={TOTALS_CARD.label}>Progress</div>
                 {!calendarYearMeta ? (
-                  <div style={{ ...TOTALS_CARD.valueMd, opacity: 0.85 }}>—</div>
+                  <div style={{ ...TOTALS_CARD.valueMd, ...TOTALS_CARD.grandValue, opacity: 0.85 }}>—</div>
                 ) : calendarYearMeta.mode === "future" ? (
-                  <div style={{ ...TOTALS_CARD.valueMd, opacity: 0.85 }}>Not started</div>
+                  <div style={{ ...TOTALS_CARD.valueMd, ...TOTALS_CARD.grandValue, opacity: 0.85 }}>Not started</div>
                 ) : (
-                  <div style={TOTALS_CARD.valueMd}>
+                  <div style={{ ...TOTALS_CARD.valueMd, ...TOTALS_CARD.grandValue }}>
                     {calendarYearMeta.percentThrough}%
                     <span style={TOTALS_CARD.progressHint}>
                       Day {calendarYearMeta.daysElapsed} of {progressPeriodTotal}
@@ -421,20 +425,22 @@ export default function SalesTotalsDashboard({
             <div style={{ ...TOTALS_CARD.grandCol, ...TOTALS_CARD.grandColBorder }}>
               <div>
                 <div style={TOTALS_CARD.label}>Total Sales</div>
-                <div style={TOTALS_CARD.valueLg}>{grandTotal.totalSales}</div>
+                <div style={{ ...TOTALS_CARD.valueLg, ...TOTALS_CARD.grandValue }}>{grandTotal.totalSales}</div>
               </div>
               <div>
                 <div style={TOTALS_CARD.label}>Total Value</div>
-                <div style={TOTALS_CARD.valueLg}>{formatCurrency(grandTotal.totalCost)}</div>
+                <div style={{ ...TOTALS_CARD.valueLg, ...TOTALS_CARD.grandValue }}>
+                  {formatCurrency(grandTotal.totalCost)}
+                </div>
               </div>
             </div>
             <div style={{ ...TOTALS_CARD.grandCol, ...TOTALS_CARD.grandColBorder }}>
               <div>
                 <div style={TOTALS_CARD.label}>Projected Sales</div>
                 {!calendarYearMeta || calendarYearMeta.mode === "future" ? (
-                  <div style={{ ...TOTALS_CARD.valueProj, opacity: 0.85 }}>—</div>
+                  <div style={{ ...TOTALS_CARD.valueProj, ...TOTALS_CARD.grandValue, opacity: 0.85 }}>—</div>
                 ) : (
-                  <div style={TOTALS_CARD.valueProj}>
+                  <div style={{ ...TOTALS_CARD.valueProj, ...TOTALS_CARD.grandValue }}>
                     {projectedYearEndSales != null ? projectedYearEndSales : "—"}
                   </div>
                 )}
@@ -442,9 +448,9 @@ export default function SalesTotalsDashboard({
               <div>
                 <div style={TOTALS_CARD.label}>Projected Value</div>
                 {!calendarYearMeta || calendarYearMeta.mode === "future" ? (
-                  <div style={{ ...TOTALS_CARD.valueProj, opacity: 0.85 }}>—</div>
+                  <div style={{ ...TOTALS_CARD.valueProj, ...TOTALS_CARD.grandValue, opacity: 0.85 }}>—</div>
                 ) : (
-                  <div style={TOTALS_CARD.valueProj}>
+                  <div style={{ ...TOTALS_CARD.valueProj, ...TOTALS_CARD.grandValue }}>
                     {projectedYearEndValue != null ? formatCurrency(projectedYearEndValue) : "—"}
                   </div>
                 )}
