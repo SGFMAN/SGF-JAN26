@@ -4,9 +4,11 @@ import useAppLogo from "../hooks/useAppLogo.js";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import SalesTotalsDashboard from "../components/SalesTotalsDashboard";
 import SalesMonthLists from "../components/SalesMonthLists";
+import ProjectsOverviewColumns from "../components/ProjectsOverviewColumns";
 import { captureElementsToPdfBlob } from "../utils/captureElementPdf";
 import { filterProjectsForSalesMonth } from "../utils/salesMonths";
 import { buildSalesStreamColors } from "../utils/streamColors";
+import { computeProjectsOverview } from "../utils/projectsOverviewCompute";
 import {
   computeSalesTotalsData,
   filterProjectsByPeriod,
@@ -52,6 +54,10 @@ export default function SalesTotals() {
   const pdfPageRefs = useRef([]);
   const [pdfExportPages, setPdfExportPages] = useState(null);
   const { runWithEmailOverlay } = useEmailSendOverlay();
+  const [pdfOptionsModalOpen, setPdfOptionsModalOpen] = useState(false);
+  const [pdfIncludeTotals, setPdfIncludeTotals] = useState(true);
+  const [pdfIncludeMonths, setPdfIncludeMonths] = useState(true);
+  const [pdfIncludeOverview, setPdfIncludeOverview] = useState(true);
   const [pdfEmailModalOpen, setPdfEmailModalOpen] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [pdfSending, setPdfSending] = useState(false);
@@ -72,13 +78,13 @@ export default function SalesTotals() {
   }, [stateJobsModalState]);
 
   useEffect(() => {
-    if (!pdfEmailModalOpen) return;
+    if (!pdfEmailModalOpen && !pdfOptionsModalOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [pdfEmailModalOpen]);
+  }, [pdfEmailModalOpen, pdfOptionsModalOpen]);
 
   useEffect(() => {
     if (!pdfEmailModalOpen || !pdfEmailBodyRef.current) return;
@@ -86,6 +92,15 @@ export default function SalesTotals() {
       pdfEmailBodyRef.current.innerHTML = pdfEmailBody || "";
     }
   }, [pdfEmailModalOpen, pdfEmailBody]);
+
+  useEffect(() => {
+    if (!pdfOptionsModalOpen) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape" && !pdfGenerating) setPdfOptionsModalOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [pdfOptionsModalOpen, pdfGenerating]);
 
   useEffect(() => {
     if (!stateJobsModalState) return;
@@ -230,7 +245,7 @@ export default function SalesTotals() {
     setPdfAttachmentFilename("");
   }
 
-  async function handleOpenPdfEmail() {
+  function handleOpenPdfEmail() {
     if (loading) {
       alert("Please wait for sales totals to finish loading.");
       return;
@@ -239,29 +254,74 @@ export default function SalesTotals() {
       alert("Cannot export PDF while data failed to load.");
       return;
     }
+    setPdfIncludeTotals(true);
+    setPdfIncludeMonths(true);
+    setPdfIncludeOverview(true);
+    setPdfOptionsModalOpen(true);
+  }
 
-    const annualMeta = getPeriodProgressMeta(selectedYear, yearView);
-    const monthDefs = getMonthsForPdfExportByView(selectedYear, yearView);
-    const pages = [
-      {
+  function closePdfOptionsModal() {
+    if (pdfGenerating) return;
+    setPdfOptionsModalOpen(false);
+  }
+
+  async function handleConfirmPdfAndSend() {
+    if (!pdfIncludeTotals && !pdfIncludeMonths && !pdfIncludeOverview) {
+      alert("Select at least one section to include in the PDF.");
+      return;
+    }
+
+    const pages = [];
+
+    if (pdfIncludeTotals) {
+      const annualMeta = getPeriodProgressMeta(selectedYear, yearView);
+      pages.push({
         key: "annual",
         pageType: "totals",
         title: "SALES TOTALS",
         data: computeSalesTotalsData(yearFilteredProjects, annualMeta),
-      },
-      ...monthDefs.map((m) => ({
-        key: `month-${m.calendarYear}-${m.monthIndex}`,
-        pageType: "sales-list",
-        title: m.title,
-        monthProjects: filterProjectsForSalesMonth(
-          projects,
-          m.calendarYear,
-          m.monthIndex,
-          todayISO
-        ).filter((p) => (p.classification || "").trim() !== "Home Office / Studio"),
-      })),
-    ];
+      });
+    }
 
+    if (pdfIncludeMonths) {
+      // Completed months only — exclude the current partial month.
+      const monthDefs = getMonthsForPdfExportByView(selectedYear, yearView).filter(
+        (m) => !m.isPartial
+      );
+      for (const m of monthDefs) {
+        pages.push({
+          key: `month-${m.calendarYear}-${m.monthIndex}`,
+          pageType: "sales-list",
+          title: m.title,
+          monthProjects: filterProjectsForSalesMonth(
+            projects,
+            m.calendarYear,
+            m.monthIndex,
+            todayISO
+          ).filter((p) => (p.classification || "").trim() !== "Home Office / Studio"),
+        });
+      }
+    }
+
+    if (pdfIncludeOverview) {
+      pages.push({
+        key: "projects-overview",
+        pageType: "overview",
+        title: "PROJECTS OVERVIEW",
+        overview: computeProjectsOverview(projects),
+      });
+    }
+
+    if (pages.length === 0) {
+      alert(
+        pdfIncludeMonths
+          ? "No completed months to include yet for this period. Select another section or wait until a month finishes."
+          : "Nothing to include in the PDF."
+      );
+      return;
+    }
+
+    setPdfOptionsModalOpen(false);
     setPdfGenerating(true);
     pdfPageRefs.current = [];
     setPdfExportPages(pages);
@@ -726,6 +786,21 @@ export default function SalesTotals() {
                     streamColors={STREAM_COLORS}
                   />
                 </>
+              ) : page.pageType === "overview" ? (
+                <>
+                  <h2
+                    style={{
+                      margin: "0 0 16px 0",
+                      fontSize: "1.6rem",
+                      fontWeight: 700,
+                      color: MONUMENT,
+                      letterSpacing: "0.5px",
+                    }}
+                  >
+                    {page.title}
+                  </h2>
+                  <ProjectsOverviewColumns overview={page.overview} />
+                </>
               ) : (
                 <SalesMonthLists
                   pageTitle={`${page.title} — ${periodLabel}`}
@@ -843,6 +918,136 @@ export default function SalesTotals() {
                   </tbody>
                 </table>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PDF include-options modal (before generate) */}
+      {pdfOptionsModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "16px",
+          }}
+          onClick={closePdfOptionsModal}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pdf-options-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: WHITE,
+              padding: "24px",
+              borderRadius: "10px",
+              width: "min(420px, 95%)",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+              boxSizing: "border-box",
+            }}
+          >
+            <h2
+              id="pdf-options-title"
+              style={{ margin: "0 0 8px 0", fontSize: "1.35rem", color: MONUMENT }}
+            >
+              PDF contents
+            </h2>
+            <p style={{ margin: "0 0 18px 0", fontSize: "0.9rem", color: UI.textMuted, lineHeight: 1.45 }}>
+              Choose what to include. Months uses completed months only (current month is
+              excluded).
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "22px" }}>
+              {[
+                {
+                  id: "pdf-include-totals",
+                  label: "Sales Totals",
+                  checked: pdfIncludeTotals,
+                  onChange: setPdfIncludeTotals,
+                },
+                {
+                  id: "pdf-include-months",
+                  label: "Months",
+                  checked: pdfIncludeMonths,
+                  onChange: setPdfIncludeMonths,
+                },
+                {
+                  id: "pdf-include-overview",
+                  label: "Projects Overview",
+                  checked: pdfIncludeOverview,
+                  onChange: setPdfIncludeOverview,
+                },
+              ].map((opt) => (
+                <label
+                  key={opt.id}
+                  htmlFor={opt.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    color: MONUMENT,
+                    cursor: pdfGenerating ? "wait" : "pointer",
+                    userSelect: "none",
+                  }}
+                >
+                  <input
+                    id={opt.id}
+                    type="checkbox"
+                    checked={opt.checked}
+                    disabled={pdfGenerating}
+                    onChange={(e) => opt.onChange(e.target.checked)}
+                    style={{ width: "18px", height: "18px", accentColor: MONUMENT, cursor: "pointer" }}
+                  />
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+              <button
+                type="button"
+                onClick={closePdfOptionsModal}
+                disabled={pdfGenerating}
+                style={{
+                  padding: "10px 18px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  color: MONUMENT,
+                  background: "transparent",
+                  border: `1px solid ${UI.outline}`,
+                  borderRadius: "8px",
+                  cursor: pdfGenerating ? "not-allowed" : "pointer",
+                  opacity: pdfGenerating ? 0.7 : 1,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPdfAndSend}
+                disabled={pdfGenerating}
+                style={{
+                  padding: "10px 18px",
+                  fontSize: "0.95rem",
+                  fontWeight: 600,
+                  color: PAGE_TEXT,
+                  background: MONUMENT,
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: pdfGenerating ? "wait" : "pointer",
+                  opacity: pdfGenerating ? 0.85 : 1,
+                }}
+              >
+                {pdfGenerating ? "Generating…" : "PDF and Send"}
+              </button>
             </div>
           </div>
         </div>
