@@ -10,7 +10,7 @@ const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 
-function StageRow({ label, total, onHold, value, accentRow = false }) {
+function StageSummaryRow({ label, total, onHold, value, accentRow = false }) {
   return (
     <div
       style={{
@@ -29,7 +29,7 @@ function StageRow({ label, total, onHold, value, accentRow = false }) {
       </span>
       <span
         style={{
-          fontSize: accentRow ? "1.05rem" : "1.05rem",
+          fontSize: "1.05rem",
           fontWeight: 700,
           whiteSpace: "nowrap",
           textAlign: "right",
@@ -51,7 +51,7 @@ function StageRow({ label, total, onHold, value, accentRow = false }) {
   );
 }
 
-function StateColumn({ title, accent, summary }) {
+function SummaryStateColumn({ title, accent, summary }) {
   return (
     <div
       style={{
@@ -108,7 +108,7 @@ function StateColumn({ title, accent, summary }) {
 
       <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
         {summary.stages.map((stage) => (
-          <StageRow
+          <StageSummaryRow
             key={stage.key}
             label={stage.label}
             total={stage.total}
@@ -118,7 +118,7 @@ function StateColumn({ title, accent, summary }) {
         ))}
 
         <div style={{ background: accent, borderRadius: "8px" }}>
-          <StageRow
+          <StageSummaryRow
             label="TOTAL"
             total={summary.total}
             onHold={summary.onHoldTotal}
@@ -131,8 +131,161 @@ function StateColumn({ title, accent, summary }) {
   );
 }
 
-/** VIC + QLD stage count + value columns (page + PDF). */
-export default function ProjectsOverviewColumns({ overview }) {
+function ListStateColumn({ title, accent, summary }) {
+  return (
+    <div
+      style={{
+        flex: 1,
+        minWidth: 0,
+        background: WHITE,
+        borderRadius: "14px",
+        border: `1px solid ${UI.outline}`,
+        boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
+        padding: "22px 24px",
+        boxSizing: "border-box",
+      }}
+    >
+      <div
+        style={{
+          marginBottom: "16px",
+          paddingBottom: "10px",
+          borderBottom: `2px solid ${accent}`,
+        }}
+      >
+        <h2
+          style={{
+            margin: 0,
+            fontSize: "1.35rem",
+            fontWeight: 700,
+            color: MONUMENT,
+            letterSpacing: "0.5px",
+          }}
+        >
+          {title}
+        </h2>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        {summary.stages.map((stage) => (
+          <div key={stage.key}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
+                gap: "12px",
+                marginBottom: "4px",
+                paddingBottom: "4px",
+                borderBottom: `1px solid ${UI.outline}`,
+              }}
+            >
+              <span style={{ fontSize: "0.9rem", fontWeight: 700, color: MONUMENT }}>
+                {stage.label}
+              </span>
+              <span style={{ fontSize: "0.8rem", fontWeight: 600, color: UI.textMuted, whiteSpace: "nowrap" }}>
+                {formatStageCount(stage.total, stage.onHold)} · {formatOverviewCurrency(stage.value)}
+              </span>
+            </div>
+
+            {stage.projects.length === 0 ? (
+              <div style={{ padding: "2px 0 0", fontSize: "0.82rem", color: UI.textMuted }}>
+                No projects
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {stage.projects.map((p) => (
+                  <div
+                    key={p.id ?? `${p.label}-${p.value}`}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "baseline",
+                      gap: "10px",
+                      padding: "2px 0",
+                      lineHeight: 1.35,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: "0.82rem",
+                        fontWeight: 400,
+                        color: MONUMENT,
+                        minWidth: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      title={p.onHold ? `${p.label} (on hold)` : p.label}
+                    >
+                      {p.label}
+                      {p.onHold ? (
+                        <span
+                          style={{
+                            marginLeft: "6px",
+                            fontSize: "0.72rem",
+                            color: STREAM.vicBlue,
+                            fontWeight: 600,
+                          }}
+                        >
+                          on hold
+                        </span>
+                      ) : null}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: "0.82rem",
+                        fontWeight: 600,
+                        color: MONUMENT,
+                        whiteSpace: "nowrap",
+                        flexShrink: 0,
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      {formatOverviewCurrency(p.value)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "baseline",
+            gap: "12px",
+            marginTop: "2px",
+            paddingTop: "10px",
+            borderTop: `2px solid ${accent}`,
+          }}
+        >
+          <span style={{ fontSize: "0.95rem", fontWeight: 700, color: MONUMENT }}>TOTAL</span>
+          <span
+            style={{
+              fontSize: "0.95rem",
+              fontWeight: 700,
+              color: MONUMENT,
+              whiteSpace: "nowrap",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {formatStageCount(summary.total, summary.onHoldTotal)} ·{" "}
+            {formatOverviewCurrency(summary.valueTotal)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * VIC + QLD overview columns.
+ * @param {"summary"|"list"} viewMode
+ */
+export default function ProjectsOverviewColumns({ overview, viewMode = "summary" }) {
+  const isList = viewMode === "list";
   return (
     <div
       style={{
@@ -142,8 +295,17 @@ export default function ProjectsOverviewColumns({ overview }) {
         flexWrap: "wrap",
       }}
     >
-      <StateColumn title="VIC" accent={STREAM.vicBlue} summary={overview.VIC} />
-      <StateColumn title="QLD" accent={STREAM.qldRed} summary={overview.QLD} />
+      {isList ? (
+        <>
+          <ListStateColumn title="VIC" accent={STREAM.vicBlue} summary={overview.VIC} />
+          <ListStateColumn title="QLD" accent={STREAM.qldRed} summary={overview.QLD} />
+        </>
+      ) : (
+        <>
+          <SummaryStateColumn title="VIC" accent={STREAM.vicBlue} summary={overview.VIC} />
+          <SummaryStateColumn title="QLD" accent={STREAM.qldRed} summary={overview.QLD} />
+        </>
+      )}
     </div>
   );
 }
