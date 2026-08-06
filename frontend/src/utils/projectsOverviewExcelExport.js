@@ -5,13 +5,18 @@ function sanitizeExcelFileName(name) {
     .trim()
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "")
     .replace(/\s+/g, " ");
-  const withoutExt = raw.replace(/\.xlsx$/i, "").trim();
+  const withoutExt = raw.replace(/\.(xlsx|pdf)$/i, "").trim();
   return withoutExt || "Projects-Overview";
 }
 
 function ensureXlsxExtension(name) {
   const base = sanitizeExcelFileName(name);
   return `${base}.xlsx`;
+}
+
+function ensurePdfExtension(name) {
+  const base = sanitizeExcelFileName(name);
+  return `${base}.pdf`;
 }
 
 function stateSheetRows(summary) {
@@ -100,4 +105,44 @@ export async function saveProjectsOverviewExcelFile(arrayBuffer, suggestedFileNa
   return "downloaded";
 }
 
-export { sanitizeExcelFileName, ensureXlsxExtension };
+/**
+ * Save a PDF blob. Prefer File System Access API, otherwise download.
+ * @returns {"saved"|"cancelled"|"downloaded"}
+ */
+export async function saveProjectsOverviewPdfFile(pdfBlob, suggestedFileName) {
+  const filename = ensurePdfExtension(suggestedFileName);
+  const blob =
+    pdfBlob instanceof Blob
+      ? pdfBlob
+      : new Blob([pdfBlob], { type: "application/pdf" });
+
+  if (typeof window.showSaveFilePicker === "function") {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [
+          {
+            description: "PDF document",
+            accept: {
+              "application/pdf": [".pdf"],
+            },
+          },
+        ],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return "saved";
+    } catch (err) {
+      if (err && (err.name === "AbortError" || err.name === "NotAllowedError")) {
+        return "cancelled";
+      }
+      console.warn("showSaveFilePicker failed, falling back to download:", err);
+    }
+  }
+
+  downloadBlobFallback(blob, filename);
+  return "downloaded";
+}
+
+export { sanitizeExcelFileName, ensureXlsxExtension, ensurePdfExtension };

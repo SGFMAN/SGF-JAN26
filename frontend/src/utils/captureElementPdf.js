@@ -44,35 +44,49 @@ function addCanvasToPdfPage(pdf, canvas, pageWidth, pageHeight, isFirstPage) {
 }
 
 /**
- * Renders a DOM element to a multi-page landscape A4 PDF and returns base64 (no data: prefix).
+ * Renders a DOM element to a multi-page A4 PDF (paginated vertically) and returns a Blob.
  */
-export async function captureElementToPdfBase64(element) {
+export async function captureElementToPaginatedPdfBlob(element, options = {}) {
   if (!element) {
     throw new Error("Nothing to capture for PDF.");
   }
 
+  const orientation = options.orientation === "portrait" ? "portrait" : "landscape";
   const canvas = await captureElementToCanvas(element);
-  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const pdf = new jsPDF({ orientation, unit: "mm", format: "a4", compress: true });
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
-  const imgData = canvas.toDataURL("image/png");
+  const imgData = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
   const imgWidth = pageWidth;
   const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
   let heightLeft = imgHeight;
   let position = 0;
 
-  pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+  pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
   heightLeft -= pageHeight;
 
   while (heightLeft > 0) {
     position = heightLeft - imgHeight;
     pdf.addPage();
-    pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+    pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
     heightLeft -= pageHeight;
   }
 
-  const dataUri = pdf.output("datauristring");
+  return pdf.output("blob");
+}
+
+/**
+ * Renders a DOM element to a multi-page landscape A4 PDF and returns base64 (no data: prefix).
+ */
+export async function captureElementToPdfBase64(element) {
+  const blob = await captureElementToPaginatedPdfBlob(element, { orientation: "landscape" });
+  const dataUri = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Failed to read PDF blob."));
+    reader.readAsDataURL(blob);
+  });
   return dataUri.includes(",") ? dataUri.split(",")[1] : dataUri;
 }
 

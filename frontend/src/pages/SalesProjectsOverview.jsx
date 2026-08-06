@@ -1,12 +1,15 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import useAppLogo from "../hooks/useAppLogo.js";
 import ProjectsOverviewColumns from "../components/ProjectsOverviewColumns";
 import { computeProjectsOverview } from "../utils/projectsOverviewCompute";
+import { captureElementToPaginatedPdfBlob } from "../utils/captureElementPdf";
 import {
   buildProjectsOverviewWorkbookArrayBuffer,
+  ensurePdfExtension,
   ensureXlsxExtension,
   saveProjectsOverviewExcelFile,
+  saveProjectsOverviewPdfFile,
   sanitizeExcelFileName,
 } from "../utils/projectsOverviewExcelExport";
 import { UI, MENU } from "../utils/uiThemeTokens.js";
@@ -28,13 +31,17 @@ function defaultExportFileName() {
 
 export default function SalesProjectsOverview() {
   const logo = useAppLogo();
+  const pdfCaptureRef = useRef(null);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [viewMode, setViewMode] = useState("summary"); // "summary" | "list"
-  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportKind, setExportKind] = useState(null); // "excel" | "pdf" | null
   const [exportFileName, setExportFileName] = useState(() => defaultExportFileName());
   const [exporting, setExporting] = useState(false);
+  const [pdfCaptureReady, setPdfCaptureReady] = useState(false);
+
+  const exportModalOpen = exportKind != null;
 
   useEffect(() => {
     void loadProjects();
@@ -69,15 +76,16 @@ export default function SalesProjectsOverview() {
 
   const overview = useMemo(() => computeProjectsOverview(projects), [projects]);
   const isListView = viewMode === "list";
+  const isPdfExport = exportKind === "pdf";
 
-  function openExportModal() {
+  function openExportModal(kind) {
     setExportFileName(defaultExportFileName());
-    setExportModalOpen(true);
+    setExportKind(kind);
   }
 
   function closeExportModal() {
     if (exporting) return;
-    setExportModalOpen(false);
+    setExportKind(null);
   }
 
   async function handleConfirmExport() {
@@ -89,14 +97,38 @@ export default function SalesProjectsOverview() {
 
     setExporting(true);
     try {
+      if (exportKind === "pdf") {
+        setPdfCaptureReady(true);
+        let el = null;
+        for (let i = 0; i < 40; i++) {
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          el = pdfCaptureRef.current;
+          if (el) break;
+        }
+        if (!el) {
+          throw new Error("Could not render PDF content.");
+        }
+        const pdfBlob = await captureElementToPaginatedPdfBlob(el, { orientation: "landscape" });
+        const result = await saveProjectsOverviewPdfFile(pdfBlob, name);
+        if (result === "cancelled") return;
+        setExportKind(null);
+        return;
+      }
+
       const buffer = buildProjectsOverviewWorkbookArrayBuffer(overview);
       const result = await saveProjectsOverviewExcelFile(buffer, name);
       if (result === "cancelled") return;
-      setExportModalOpen(false);
+      setExportKind(null);
     } catch (err) {
-      console.error("Projects overview Excel export failed:", err);
-      alert(err.message || "Failed to export Excel file.");
+      console.error(
+        exportKind === "pdf"
+          ? "Projects overview PDF save failed:"
+          : "Projects overview Excel export failed:",
+        err
+      );
+      alert(err.message || (exportKind === "pdf" ? "Failed to save PDF." : "Failed to export Excel file."));
     } finally {
+      setPdfCaptureReady(false);
       setExporting(false);
     }
   }
@@ -204,7 +236,7 @@ export default function SalesProjectsOverview() {
             <div style={{ background: "#e8e8ea", borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
               <button
                 type="button"
-                onClick={openExportModal}
+                onClick={() => openExportModal("excel")}
                 disabled={loading || Boolean(error)}
                 style={{
                   ...menuButtonStyle,
@@ -213,6 +245,18 @@ export default function SalesProjectsOverview() {
                 }}
               >
                 Export as Excel
+              </button>
+              <button
+                type="button"
+                onClick={() => openExportModal("pdf")}
+                disabled={loading || Boolean(error)}
+                style={{
+                  ...menuButtonStyle,
+                  cursor: loading || error ? "not-allowed" : "pointer",
+                  opacity: loading || error ? 0.65 : 1,
+                }}
+              >
+                Save as PDF
               </button>
             </div>
           ) : null}
@@ -263,6 +307,43 @@ export default function SalesProjectsOverview() {
         </div>
       </div>
 
+      {pdfCaptureReady ? (
+        <div
+          aria-hidden
+          style={{
+            position: "fixed",
+            left: "-12000px",
+            top: 0,
+            width: "1100px",
+            zIndex: -1,
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            ref={pdfCaptureRef}
+            style={{
+              background: SECTION_GREY,
+              padding: "24px 32px",
+              width: "1100px",
+              boxSizing: "border-box",
+            }}
+          >
+            <h2
+              style={{
+                margin: "0 0 16px 0",
+                fontSize: "1.6rem",
+                fontWeight: 700,
+                color: MONUMENT,
+                letterSpacing: "0.5px",
+              }}
+            >
+              PROJECTS OVERVIEW
+            </h2>
+            <ProjectsOverviewColumns overview={overview} viewMode="list" />
+          </div>
+        </div>
+      ) : null}
+
       {exportModalOpen ? (
         <div
           style={{
@@ -280,7 +361,7 @@ export default function SalesProjectsOverview() {
           <div
             role="dialog"
             aria-modal="true"
-            aria-labelledby="export-excel-title"
+            aria-labelledby="export-file-title"
             onClick={(e) => e.stopPropagation()}
             style={{
               backgroundColor: WHITE,
@@ -292,17 +373,19 @@ export default function SalesProjectsOverview() {
             }}
           >
             <h2
-              id="export-excel-title"
+              id="export-file-title"
               style={{ margin: "0 0 8px 0", fontSize: "1.35rem", color: MONUMENT }}
             >
-              Export as Excel
+              {isPdfExport ? "Save as PDF" : "Export as Excel"}
             </h2>
             <p style={{ margin: "0 0 16px 0", fontSize: "0.9rem", color: UI.textMuted, lineHeight: 1.45 }}>
-              Enter a file name, then choose where to save the VIC and QLD project lists.
+              {isPdfExport
+                ? "Enter a file name, then choose where to save the project list PDF."
+                : "Enter a file name, then choose where to save the VIC and QLD project lists."}
             </p>
 
             <label
-              htmlFor="export-excel-filename"
+              htmlFor="export-file-filename"
               style={{
                 display: "block",
                 fontSize: "0.9rem",
@@ -315,7 +398,7 @@ export default function SalesProjectsOverview() {
             </label>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "20px" }}>
               <input
-                id="export-excel-filename"
+                id="export-file-filename"
                 type="text"
                 value={exportFileName}
                 onChange={(e) => setExportFileName(e.target.value)}
@@ -335,11 +418,18 @@ export default function SalesProjectsOverview() {
                   boxSizing: "border-box",
                 }}
               />
-              <span style={{ fontSize: "0.95rem", color: UI.textMuted, flexShrink: 0 }}>.xlsx</span>
+              <span style={{ fontSize: "0.95rem", color: UI.textMuted, flexShrink: 0 }}>
+                {isPdfExport ? ".pdf" : ".xlsx"}
+              </span>
             </div>
 
             <p style={{ margin: "0 0 18px 0", fontSize: "0.82rem", color: UI.textMuted }}>
-              Will save as: <strong>{ensureXlsxExtension(exportFileName)}</strong>
+              Will save as:{" "}
+              <strong>
+                {isPdfExport
+                  ? ensurePdfExtension(exportFileName)
+                  : ensureXlsxExtension(exportFileName)}
+              </strong>
             </p>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
