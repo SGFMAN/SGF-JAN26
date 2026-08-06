@@ -17,15 +17,48 @@ function projectAddressLabel(project) {
   return project?.name || (project?.id != null ? `Project #${project.id}` : "Project");
 }
 
-function defaultSubject(project) {
-  return `Final Handover Documents — ${projectAddressLabel(project)}`;
+const FINAL_CERTIFICATES_TEMPLATE_NAME = "Final Certificates";
+const FINAL_CERTIFICATES_TEMPLATE_GROUP = "Hand Over";
+
+/** Active client first names joined like Drawings client emails (A & B / A, B & C). */
+function resolveClientNameToken(project) {
+  if (!project) return "";
+  const firstNames = [];
+  const pushActive = (active, name) => {
+    if (String(active || "").toLowerCase() !== "true") return;
+    const first = String(name || "").trim().split(/\s+/)[0];
+    if (first) firstNames.push(first);
+  };
+  pushActive(project.client1_active, project.client1_name);
+  pushActive(project.client2_active, project.client2_name);
+  pushActive(project.client3_active, project.client3_name);
+  if (firstNames.length === 0) {
+    const fallback = String(project.client_name || "").trim().split(/\s+/)[0];
+    return fallback || "";
+  }
+  if (firstNames.length === 1) return firstNames[0];
+  if (firstNames.length === 2) return `${firstNames[0]} & ${firstNames[1]}`;
+  return `${firstNames.slice(0, -1).join(", ")} & ${firstNames[firstNames.length - 1]}`;
 }
 
-function defaultBody(project) {
+function replaceFinalCertificatesTokens(text, project) {
+  const projectName = projectAddressLabel(project);
+  const clientName = resolveClientNameToken(project);
+  return String(text || "")
+    .replace(/\{ProjectName\}/g, projectName)
+    .replace(/\{ClientName\}/g, clientName);
+}
+
+function findFinalCertificatesTemplate(templates) {
+  const nameWanted = FINAL_CERTIFICATES_TEMPLATE_NAME.toLowerCase();
+  const groupWanted = FINAL_CERTIFICATES_TEMPLATE_GROUP.toLowerCase();
+  if (!Array.isArray(templates)) return null;
   return (
-    `Hi,\n\n` +
-    `Please find attached the final handover documents for ${projectAddressLabel(project)}.\n\n` +
-    `Kind regards`
+    templates.find((t) => {
+      const name = String(t?.name || "").trim().toLowerCase();
+      const group = String(t?.template_group || "").trim().toLowerCase();
+      return name === nameWanted && group === groupWanted;
+    }) || null
   );
 }
 
@@ -187,13 +220,25 @@ export default function FinalCertificates({ project }) {
     setPreparingModal(true);
     setShowEmailModal(true);
     try {
+      const templatesResponse = await fetch(`${API_URL}/api/email-templates`);
+      if (!templatesResponse.ok) {
+        throw new Error("Failed to fetch email templates");
+      }
+      const templates = await templatesResponse.json();
+      const template = findFinalCertificatesTemplate(templates);
+      if (!template) {
+        throw new Error(
+          `Template "${FINAL_CERTIFICATES_TEMPLATE_NAME}" not found in the ${FINAL_CERTIFICATES_TEMPLATE_GROUP} group. Create it in Settings → Email Templates.`
+        );
+      }
+
       const toEmails = resolveActiveClientContactToEmails(project);
       const userTokens = await resolveLoggedInUserEmailTokens();
       const fromEmail = String(userTokens.UserEmail || "").trim();
       setEmailTo(toEmails.join(", "));
       setEmailFrom(fromEmail);
-      setEmailSubject(defaultSubject(project));
-      setEmailBody(defaultBody(project));
+      setEmailSubject(replaceFinalCertificatesTokens(template.subject || "", project));
+      setEmailBody(replaceFinalCertificatesTokens(template.body || "", project));
     } catch (err) {
       console.error("Final Certificates: failed to prepare email preview", err);
       alert(err.message || "Failed to prepare email preview.");

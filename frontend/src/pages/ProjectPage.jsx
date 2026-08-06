@@ -33,7 +33,13 @@ import { mergeDestructiveButtonStyle, destructiveButtonUsesSavedStyle } from "..
 // COLORBOND® Classic Monument (very dark, almost black-grey)
 import { UI, MENU, STREAM, outlineBorder } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
-import { PROJECT_STATUS_OPTIONS } from "../utils/projectStatus";
+import {
+  PROJECT_STATUS_OPTIONS,
+  isConstructionPhaseStatus,
+  isCompleteStatus,
+  isCancelledStatus,
+  isHotlistStatus,
+} from "../utils/projectStatus";
 const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
 const SECTION_GREY = UI.panelBg;
@@ -299,7 +305,14 @@ export default function ProjectPage() {
     }
   }, [project]);
 
-  async function fetchAllProjects() {
+  // Rebuild Previous/Next list once project status is known (construction vs design pipeline)
+  useEffect(() => {
+    if (!token || isPortalProjectPath || !project?.status) return;
+    void fetchAllProjects(project.status);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, isPortalProjectPath, project?.status]);
+
+  async function fetchAllProjects(forStatus) {
     if (isPortalProjectPath) {
       setAllProjects([]);
       return;
@@ -310,10 +323,19 @@ export default function ProjectPage() {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
       const data = await response.json();
-      // Filter to only current projects (not Complete or Cancelled) and sort alphabetically
-      // Exclude Hotlist status
+      // Design/permit/pre-engagement: navigate among active non-construction projects.
+      // Construction Phase: navigate among construction projects only.
+      const navInConstruction = isConstructionPhaseStatus(forStatus ?? project?.status);
       const currentProjects = data
-        .filter((p) => p.status !== "Complete" && p.status !== "Cancelled" && p.status !== "Construction Phase" && p.status !== "Hotlist")
+        .filter((p) => {
+          if (isCompleteStatus(p.status) || isCancelledStatus(p.status) || isHotlistStatus(p.status)) {
+            return false;
+          }
+          if (navInConstruction) {
+            return isConstructionPhaseStatus(p.status);
+          }
+          return !isConstructionPhaseStatus(p.status);
+        })
         .sort((a, b) => {
           const suburbA = (a.suburb || "").toLowerCase();
           const suburbB = (b.suburb || "").toLowerCase();
