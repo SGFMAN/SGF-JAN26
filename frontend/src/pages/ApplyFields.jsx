@@ -3,9 +3,16 @@ import { Link } from "react-router-dom";
 import { getStateFilter, setStateFilter as saveStateFilter } from "../utils/stateFilter";
 import { CLASSIFICATION_OPTIONS } from "../utils/classifications";
 import { projectPath } from "../utils/projectUrl";
+import {
+  isConstructionPhaseStatus,
+  isCompleteStatus,
+  isDesignPhaseStatus,
+  isPermitPhaseStatus,
+  isPreEngagementPhaseStatus,
+} from "../utils/projectStatus";
 import useAppLogo from "../hooks/useAppLogo.js";
 
-import { UI } from "../utils/uiThemeTokens.js";
+import { UI, STREAM } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
@@ -15,6 +22,15 @@ const API_URL = "";
 
 const YEAR_FILTER_OPTIONS = ["2024", "2025", "2026"];
 const YEAR_FILTER_STORAGE_KEY = "sgf_applyfields_year_filter";
+
+/** Left-menu status-only filters (mutually exclusive; click again to clear). */
+const STATUS_ONLY_FILTERS = [
+  { key: "pre-engagement", label: "Pre-engagement Only", match: isPreEngagementPhaseStatus },
+  { key: "design", label: "Design Phase Only", match: isDesignPhaseStatus },
+  { key: "permit", label: "Permit Only", match: isPermitPhaseStatus },
+  { key: "construction", label: "Construction Only", match: isConstructionPhaseStatus },
+  { key: "complete", label: "Completed Only", match: isCompleteStatus },
+];
 
 function getYearFilter() {
   try {
@@ -154,6 +170,7 @@ export default function ApplyFields() {
   const [selectedProjectIds, setSelectedProjectIds] = useState(new Set());
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [yearFilter, setYearFilter] = useState(() => getYearFilter());
+  const [statusOnlyFilter, setStatusOnlyFilter] = useState(null);
 
   useEffect(() => {
     fetchProjects();
@@ -234,8 +251,20 @@ export default function ApplyFields() {
 
   // Filter projects based on selected field, value, and search query
   function getFilteredProjects() {
-    // Exclude Cancelled and Hotlist projects
-    let filtered = projects.filter((project) => project.status !== "Cancelled" && project.status !== "Hotlist");
+    // Exclude Cancelled and Hotlist by default; Completed Only needs Complete projects.
+    let filtered = projects.filter((project) => {
+      if (project.status === "Hotlist") return false;
+      if (project.status === "Cancelled") return false;
+      if (statusOnlyFilter === "complete") return true;
+      return project.status !== "Complete";
+    });
+
+    if (statusOnlyFilter) {
+      const active = STATUS_ONLY_FILTERS.find((f) => f.key === statusOnlyFilter);
+      if (active) {
+        filtered = filtered.filter((project) => active.match(project.status));
+      }
+    }
 
     if (stateFilter !== "All") {
       filtered = filtered.filter((project) => {
@@ -731,6 +760,46 @@ export default function ApplyFields() {
           >
             ← Main
           </Link>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+            }}
+          >
+            {STATUS_ONLY_FILTERS.map(({ key, label }) => {
+              const active = statusOnlyFilter === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() =>
+                    setStatusOnlyFilter((prev) => (prev === key ? null : key))
+                  }
+                  aria-pressed={active}
+                  style={{
+                    background: active ? STREAM.vicBlue : WHITE,
+                    color: active ? PAGE_TEXT : MONUMENT,
+                    border: "none",
+                    borderRadius: "10px",
+                    padding: "8px 8px",
+                    fontSize: "0.95rem",
+                    fontWeight: 500,
+                    textAlign: "center",
+                    letterSpacing: "0.5px",
+                    cursor: "pointer",
+                    transition: "background 0.18s, color 0.15s",
+                    outline: `1px solid ${active ? STREAM.vicBlue : UI.outline}`,
+                    boxShadow: "0 2px 4px rgba(50,50,51,.04)",
+                    display: "block",
+                    width: "100%",
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Section 3: Main Content */}
@@ -955,7 +1024,7 @@ export default function ApplyFields() {
                     return `(${filtered.length} found)`;
                   } else if (searchQuery.trim()) {
                     return `(${filtered.length} found)`;
-                  } else if (stateFilter !== "All" || yearFilter !== "All") {
+                  } else if (stateFilter !== "All" || yearFilter !== "All" || statusOnlyFilter) {
                     return `(${filtered.length} found)`;
                   }
                   return `(${projects.length} total)`;

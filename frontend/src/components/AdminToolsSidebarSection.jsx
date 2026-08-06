@@ -22,9 +22,10 @@ const ADMIN_TOOL_LINKS = [
   { to: "/email-generator", label: "Email Generator" },
   { to: "/maps", label: "Maps" },
   { to: "/settings", label: "Settings" },
+  { to: "/apply-fields", label: "Apply Fields" },
 ];
 
-/** Purple admin menu: Email Generator → Maps → Settings. */
+/** Purple admin menu: Email Generator → Maps → Settings → Apply Fields. */
 export default function AdminToolsSidebarSection({ activePath = "", visible = true }) {
   if (!visible) return null;
 

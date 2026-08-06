@@ -562,6 +562,31 @@ export default function SalesTotals() {
               Sales Person Figures
             </Link>
           </div>
+
+          {/* Projects Overview */}
+          <div style={{ background: "#e8e8ea", borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
+            <Link
+              to="/sales-projects-overview"
+              style={{
+                background: "transparent",
+                color: UI.textSecondary,
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                lineHeight: "1.4",
+                display: "block",
+              }}
+            >
+              Projects Overview
+            </Link>
+          </div>
           
           <div style={{ flex: 1 }} />
           

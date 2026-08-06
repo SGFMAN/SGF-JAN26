@@ -1,11 +1,52 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { Extension } from "@tiptap/core";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { UI, outlineBorder } from "../utils/uiThemeTokens.js";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Decoration } from "@tiptap/pm/view";
+import { UI, STREAM, outlineBorder } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
 const SECTION_GREY = UI.panelBg;
+const VIC_BLUE_LIGHT = STREAM.vicBlueLight;
+
+/** Matches `{ProjectName}`, `{ClientName}`, etc. Visual-only — not stored in HTML. */
+const TOKEN_PATTERN = /\{[A-Za-z][A-Za-z0-9]*\}/g;
+
+function buildTokenDecorations(doc) {
+  const decorations = [];
+  doc.descendants((node, pos) => {
+    if (!node.isText || !node.text) return;
+    const text = node.text;
+    for (const match of text.matchAll(TOKEN_PATTERN)) {
+      const from = pos + match.index;
+      const to = from + match[0].length;
+      decorations.push(
+        Decoration.inline(from, to, {
+          class: "email-body-editor__token",
+        })
+      );
+    }
+  });
+  return Decoration.create(doc, decorations);
+}
+
+const TokenHighlight = Extension.create({
+  name: "tokenHighlight",
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey("emailBodyTokenHighlight"),
+        props: {
+          decorations(state) {
+            return buildTokenDecorations(state.doc);
+          },
+        },
+      }),
+    ];
+  },
+});
 
 /**
  * Normalise stored template body for Tiptap.
@@ -92,6 +133,7 @@ const EmailBodyEditor = forwardRef(function EmailBodyEditor(
         strike: false,
         // Keep: document, paragraph, text, bold, italic, underline, hardBreak, history
       }),
+      TokenHighlight,
     ],
     content: normalizeBodyHtmlForEditor(value),
     editorProps: {
@@ -271,6 +313,13 @@ const EmailBodyEditor = forwardRef(function EmailBodyEditor(
         .email-body-editor__content em,
         .email-body-editor__content i {
           font-style: italic;
+        }
+        .email-body-editor__content .email-body-editor__token {
+          background: ${VIC_BLUE_LIGHT};
+          border-radius: 3px;
+          padding: 0 2px;
+          box-decoration-break: clone;
+          -webkit-box-decoration-break: clone;
         }
         .ProseMirror-focused {
           outline: none;
