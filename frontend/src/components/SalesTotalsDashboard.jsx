@@ -42,6 +42,9 @@ const TOTALS_CARD = {
   valueLg: { fontSize: "1.5rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 },
   valueMd: { fontSize: "1.15rem", fontWeight: 600, color: WHITE, lineHeight: 1.35 },
   valueProj: { fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2 },
+  /** Same sizes as VIC/QLD Total Value + Projected year-end value */
+  totalValue: { fontSize: "1.5rem", fontWeight: 700, color: WHITE, lineHeight: 1.2, fontVariantNumeric: "tabular-nums" },
+  projectedValue: { fontSize: "1.35rem", fontWeight: 700, color: WHITE, lineHeight: 1.2, fontVariantNumeric: "tabular-nums" },
   colRight: { borderLeft: "1px solid #4a4d55", paddingLeft: "14px", minWidth: 0 },
   progressHint: {
     display: "block",
@@ -67,9 +70,6 @@ const TOTALS_CARD = {
   grandColBorder: {
     borderLeft: "1px solid #4a4d55",
     paddingLeft: "14px",
-  },
-  grandValue: {
-    fontVariantNumeric: "tabular-nums",
   },
 };
 
@@ -252,14 +252,32 @@ export default function SalesTotalsDashboard({
                     fontSize: "0.9rem",
                     color: MONUMENT,
                     padding: "3px 0",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: "8px",
+                    display: "grid",
+                    gridTemplateColumns: "minmax(0, 1fr) 2.75rem minmax(5.5rem, auto)",
+                    columnGap: "8px",
+                    alignItems: "baseline",
                   }}
                 >
-                  <span style={{ minWidth: 0 }}>{stream}</span>
-                  <span>{totals.salesCount}</span>
-                  <span>{formatCurrency(totals.totalCost)}</span>
+                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {stream}
+                  </span>
+                  <span
+                    style={{
+                      textAlign: "center",
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {totals.salesCount}
+                  </span>
+                  <span
+                    style={{
+                      textAlign: "right",
+                      fontVariantNumeric: "tabular-nums",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {formatCurrency(totals.totalCost)}
+                  </span>
                 </div>
               );
             })}
@@ -346,14 +364,14 @@ export default function SalesTotalsDashboard({
             </div>
             <div>
               <div style={TOTALS_CARD.label}>Total Value</div>
-              <div style={TOTALS_CARD.valueLg}>{formatCurrency(stateTotals.VIC.totalCost)}</div>
+              <div style={TOTALS_CARD.totalValue}>{formatCurrency(stateTotals.VIC.totalCost)}</div>
             </div>
             <div style={TOTALS_CARD.colRight}>
               <div style={TOTALS_CARD.label}>Projected year-end value</div>
               {!calendarYearMeta || calendarYearMeta.mode === "future" ? (
-                <div style={TOTALS_CARD.valueProj}>—</div>
+                <div style={TOTALS_CARD.projectedValue}>—</div>
               ) : (
-                <div style={TOTALS_CARD.valueProj}>
+                <div style={TOTALS_CARD.projectedValue}>
                   {projectedVicStateValue != null ? formatCurrency(projectedVicStateValue) : "—"}
                 </div>
               )}
@@ -374,14 +392,14 @@ export default function SalesTotalsDashboard({
             </div>
             <div>
               <div style={TOTALS_CARD.label}>Total Value</div>
-              <div style={TOTALS_CARD.valueLg}>{formatCurrency(stateTotals.QLD.totalCost)}</div>
+              <div style={TOTALS_CARD.totalValue}>{formatCurrency(stateTotals.QLD.totalCost)}</div>
             </div>
             <div style={TOTALS_CARD.colRight}>
               <div style={TOTALS_CARD.label}>Projected year-end value</div>
               {!calendarYearMeta || calendarYearMeta.mode === "future" ? (
-                <div style={TOTALS_CARD.valueProj}>—</div>
+                <div style={TOTALS_CARD.projectedValue}>—</div>
               ) : (
-                <div style={TOTALS_CARD.valueProj}>
+                <div style={TOTALS_CARD.projectedValue}>
                   {projectedQldStateValue != null ? formatCurrency(projectedQldStateValue) : "—"}
                 </div>
               )}
@@ -404,16 +422,16 @@ export default function SalesTotalsDashboard({
             <div style={TOTALS_CARD.grandCol}>
               <div>
                 <div style={TOTALS_CARD.label}>Year</div>
-                <div style={{ ...TOTALS_CARD.valueMd, ...TOTALS_CARD.grandValue }}>{yearDisplay}</div>
+                <div style={{ ...TOTALS_CARD.valueMd, fontVariantNumeric: "tabular-nums" }}>{yearDisplay}</div>
               </div>
               <div>
                 <div style={TOTALS_CARD.label}>Progress</div>
                 {!calendarYearMeta ? (
-                  <div style={{ ...TOTALS_CARD.valueMd, ...TOTALS_CARD.grandValue, opacity: 0.85 }}>—</div>
+                  <div style={{ ...TOTALS_CARD.valueMd, fontVariantNumeric: "tabular-nums", opacity: 0.85 }}>—</div>
                 ) : calendarYearMeta.mode === "future" ? (
-                  <div style={{ ...TOTALS_CARD.valueMd, ...TOTALS_CARD.grandValue, opacity: 0.85 }}>Not started</div>
+                  <div style={{ ...TOTALS_CARD.valueMd, fontVariantNumeric: "tabular-nums", opacity: 0.85 }}>Not started</div>
                 ) : (
-                  <div style={{ ...TOTALS_CARD.valueMd, ...TOTALS_CARD.grandValue }}>
+                  <div style={{ ...TOTALS_CARD.valueMd, fontVariantNumeric: "tabular-nums" }}>
                     {calendarYearMeta.percentThrough}%
                     <span style={TOTALS_CARD.progressHint}>
                       Day {calendarYearMeta.daysElapsed} of {progressPeriodTotal}
@@ -425,22 +443,24 @@ export default function SalesTotalsDashboard({
             <div style={{ ...TOTALS_CARD.grandCol, ...TOTALS_CARD.grandColBorder }}>
               <div>
                 <div style={TOTALS_CARD.label}>Total Sales</div>
-                <div style={{ ...TOTALS_CARD.valueLg, ...TOTALS_CARD.grandValue }}>{grandTotal.totalSales}</div>
+                <div style={{ ...TOTALS_CARD.valueLg, fontVariantNumeric: "tabular-nums" }}>
+                  {grandTotal.totalSales}
+                </div>
               </div>
               <div>
                 <div style={TOTALS_CARD.label}>Total Value</div>
-                <div style={{ ...TOTALS_CARD.valueLg, ...TOTALS_CARD.grandValue }}>
-                  {formatCurrency(grandTotal.totalCost)}
-                </div>
+                <div style={TOTALS_CARD.totalValue}>{formatCurrency(grandTotal.totalCost)}</div>
               </div>
             </div>
             <div style={{ ...TOTALS_CARD.grandCol, ...TOTALS_CARD.grandColBorder }}>
               <div>
                 <div style={TOTALS_CARD.label}>Projected Sales</div>
                 {!calendarYearMeta || calendarYearMeta.mode === "future" ? (
-                  <div style={{ ...TOTALS_CARD.valueProj, ...TOTALS_CARD.grandValue, opacity: 0.85 }}>—</div>
+                  <div style={{ ...TOTALS_CARD.valueProj, fontVariantNumeric: "tabular-nums", opacity: 0.85 }}>
+                    —
+                  </div>
                 ) : (
-                  <div style={{ ...TOTALS_CARD.valueProj, ...TOTALS_CARD.grandValue }}>
+                  <div style={{ ...TOTALS_CARD.valueProj, fontVariantNumeric: "tabular-nums" }}>
                     {projectedYearEndSales != null ? projectedYearEndSales : "—"}
                   </div>
                 )}
@@ -448,9 +468,9 @@ export default function SalesTotalsDashboard({
               <div>
                 <div style={TOTALS_CARD.label}>Projected Value</div>
                 {!calendarYearMeta || calendarYearMeta.mode === "future" ? (
-                  <div style={{ ...TOTALS_CARD.valueProj, ...TOTALS_CARD.grandValue, opacity: 0.85 }}>—</div>
+                  <div style={{ ...TOTALS_CARD.projectedValue, opacity: 0.85 }}>—</div>
                 ) : (
-                  <div style={{ ...TOTALS_CARD.valueProj, ...TOTALS_CARD.grandValue }}>
+                  <div style={TOTALS_CARD.projectedValue}>
                     {projectedYearEndValue != null ? formatCurrency(projectedYearEndValue) : "—"}
                   </div>
                 )}
