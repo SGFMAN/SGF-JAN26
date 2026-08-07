@@ -8,6 +8,8 @@ import {
   normalizeDrawingsUploadBranch,
   normalizeDrawingsFromToBranch,
   normalizeDrawingsWdsApprovedBranch,
+  normalizeFinalCertificatesBranch,
+  normalizeFinalCertificatesRoot,
   drawingsUploadBranchFromStreamDrawings,
   migrateRemainingGeneralDrawingsFromStream,
   coerceNewProjectTeamEmailToArray,
@@ -959,21 +961,28 @@ export default function StreamSettings() {
   }
 
   function updateFinalCertificatesField(region, fieldKey, value) {
-    setEmailGeneral((prev) => {
-      const root = prev.finalCertificates || { vic: {}, qld: {} };
-      const next = {
-        ...prev,
-        finalCertificates: {
-          ...root,
-          [region]: {
-            ...(root[region] || {}),
-            [fieldKey]: value,
-          },
-        },
-      };
-      emailGeneralRef.current = next;
-      return next;
-    });
+    const branchKey = region === "qld" ? "qld" : "vic";
+    // Build next synchronously so onChange → onCommit can persist the new value immediately
+    const prev = emailGeneralRef.current || parseEmailGeneralJson(null);
+    const root = normalizeFinalCertificatesRoot(prev.finalCertificates);
+    const mergedBranch = {
+      ...normalizeFinalCertificatesBranch(root[branchKey]),
+      [fieldKey]:
+        fieldKey === "includeClient"
+          ? value === true || value === "true" || value === 1
+          : value == null
+            ? ""
+            : String(value).trim(),
+    };
+    const next = {
+      ...prev,
+      finalCertificates: {
+        ...root,
+        [branchKey]: normalizeFinalCertificatesBranch(mergedBranch),
+      },
+    };
+    emailGeneralRef.current = next;
+    setEmailGeneral(next);
   }
 
   function flushPersistFinalCertificatesEmail() {
@@ -2314,8 +2323,8 @@ export default function StreamSettings() {
                             <h5 style={{ margin: "0 0 10px 0", fontSize: "0.9rem", fontWeight: 700, color: MONUMENT }}>
                               {title}
                             </h5>
-                            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                              <div style={DRAWINGS_UPLOAD_DESIGN_GROUP}>
                                 <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>To</span>
                                 <label
                                   style={{
@@ -2356,15 +2365,17 @@ export default function StreamSettings() {
                                   />
                                 </div>
                               </div>
-                              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                                <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>From</span>
-                                <DrawingNotifySmtpSelect
-                                  smtpOptions={smtpSlotEmails}
-                                  value={branch.fromEmail || ""}
-                                  disabled={saving}
-                                  onValueChange={(next) => updateFinalCertificatesField(region, "fromEmail", next)}
-                                  onCommit={flushPersistFinalCertificatesEmail}
-                                />
+                              <div style={DRAWINGS_UPLOAD_FROM_GROUP}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                  <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>From</span>
+                                  <DrawingNotifySmtpSelect
+                                    smtpOptions={smtpSlotEmails}
+                                    value={branch.fromEmail || ""}
+                                    disabled={saving}
+                                    onValueChange={(next) => updateFinalCertificatesField(region, "fromEmail", next)}
+                                    onCommit={flushPersistFinalCertificatesEmail}
+                                  />
+                                </div>
                               </div>
                             </div>
                           </div>

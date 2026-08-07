@@ -30,7 +30,7 @@ function emptyFinalCertificatesBranch() {
   return { ...EMPTY_FINAL_CERTIFICATES_BRANCH };
 }
 
-function normalizeFinalCertificatesBranch(raw) {
+export function normalizeFinalCertificatesBranch(raw) {
   const b = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
   const includeClientRaw = b.includeClient;
   const includeClient =
@@ -47,7 +47,7 @@ function normalizeFinalCertificatesBranch(raw) {
   };
 }
 
-function normalizeFinalCertificatesRoot(raw) {
+export function normalizeFinalCertificatesRoot(raw) {
   const fc = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
   // Legacy single-column shape → seed both VIC and QLD
   const looksFlat =
