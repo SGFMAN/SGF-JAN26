@@ -1,7 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
-import { resolveActiveClientContactToEmails } from "../utils/emailGeneralSettings";
-import { resolveLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { getApiHeaders } from "../utils/auth";
+import {
+  resolveFinalCertificatesFromEmail,
+  resolveFinalCertificatesToEmails,
+} from "../utils/emailGeneralSettings";
 import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 import { UI, outlineBorder } from "../utils/uiThemeTokens.js";
 
@@ -115,7 +118,7 @@ function rejectIfTooLarge(file, kindLabel) {
  * Construction → Final Certificates.
  * Separate PDF + ZIP drop zones (memory only) → Email preview attaches both.
  */
-export default function FinalCertificates({ project }) {
+export default function FinalCertificates({ project, onUpdate }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const pdfInputRef = useRef(null);
   const zipInputRef = useRef(null);
@@ -217,11 +220,18 @@ export default function FinalCertificates({ project }) {
     setPreparingModal(true);
     setShowEmailModal(true);
     try {
-      const templatesResponse = await fetch(`${API_URL}/api/email-templates`);
+      const [templatesResponse, settingsResponse] = await Promise.all([
+        fetch(`${API_URL}/api/email-templates`),
+        fetch(`${API_URL}/api/settings`),
+      ]);
       if (!templatesResponse.ok) {
         throw new Error("Failed to fetch email templates");
       }
+      if (!settingsResponse.ok) {
+        throw new Error("Failed to fetch email settings");
+      }
       const templates = await templatesResponse.json();
+      const settings = await settingsResponse.json();
       const template = findFinalCertificatesTemplate(templates);
       if (!template) {
         throw new Error(
@@ -229,9 +239,19 @@ export default function FinalCertificates({ project }) {
         );
       }
 
-      const toEmails = resolveActiveClientContactToEmails(project);
-      const userTokens = await resolveLoggedInUserEmailTokens();
-      const fromEmail = String(userTokens.UserEmail || "").trim();
+      const toEmails = resolveFinalCertificatesToEmails(settings, project);
+      const fromEmail = resolveFinalCertificatesFromEmail(settings, project);
+      if (!fromEmail) {
+        throw new Error(
+          "No From address for Final Certificates. Set it under Settings → Email Settings → General → Final Certificates (VIC/QLD for this project's state)."
+        );
+      }
+      if (toEmails.length === 0) {
+        throw new Error(
+          "No To addresses for Final Certificates. Enable Client and/or choose SMTP To under Settings → Email Settings → General → Final Certificates (VIC/QLD for this project's state)."
+        );
+      }
+
       setEmailTo(toEmails.join(", "));
       setEmailFrom(fromEmail);
       setEmailSubject(replaceFinalCertificatesTokens(template.subject || "", project));
@@ -256,6 +276,34 @@ export default function FinalCertificates({ project }) {
     setShowEmailModal(false);
   }
 
+  async function markProjectComplete() {
+    if (!project?.id) {
+      throw new Error("Project id is missing; cannot set status to Complete.");
+    }
+    const projectName =
+      project?.street && project?.suburb
+        ? `${project.street}, ${project.suburb}`.trim()
+        : project?.name || "";
+    const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        ...getApiHeaders(),
+      },
+      body: JSON.stringify({
+        name: projectName,
+        status: "Complete",
+        street: project.street || null,
+        suburb: project.suburb || null,
+        state: project.state || null,
+      }),
+    });
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => response.statusText);
+      throw new Error(errorText || `Failed to update status (${response.status})`);
+    }
+  }
+
   async function handleSend() {
     const toAddresses = emailTo
       .split(",")
@@ -263,13 +311,13 @@ export default function FinalCertificates({ project }) {
       .filter((a) => a.length > 0);
     if (toAddresses.length === 0) {
       alert(
-        "No client email addresses. Check at least one contact under Client Info, or enter an address in To."
+        "No recipient addresses. Enable Client and/or choose SMTP To under Settings → Email Settings → General → Final Certificates, or enter addresses in To."
       );
       return;
     }
     if (!emailFrom.trim()) {
       alert(
-        "From address is required. Add your email under Settings → Users so emails can send From your address."
+        "From address is required. Set it under Settings → Email Settings → General → Final Certificates, or enter a From address."
       );
       return;
     }
@@ -302,7 +350,19 @@ export default function FinalCertificates({ project }) {
 
       clearAllAttachments();
       setShowEmailModal(false);
-      alert("Final handover email sent.");
+
+      try {
+        await markProjectComplete();
+        if (typeof onUpdate === "function") {
+          onUpdate(true);
+        }
+        alert("Final handover email sent. Project status set to Complete.");
+      } catch (statusErr) {
+        console.error("Final Certificates: email sent but status update failed:", statusErr);
+        alert(
+          "Final handover email sent, but the project status could not be set to Complete. Please update it manually."
+        );
+      }
     } catch (err) {
       console.error("Final Certificates send error:", err);
       alert(err.message || "Failed to send email.");

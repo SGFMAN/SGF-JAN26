@@ -3,7 +3,7 @@ import { Extension } from "@tiptap/core";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
-import { Decoration } from "@tiptap/pm/view";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { UI, STREAM, outlineBorder } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
@@ -29,7 +29,7 @@ function buildTokenDecorations(doc) {
       );
     }
   });
-  return Decoration.create(doc, decorations);
+  return DecorationSet.create(doc, decorations);
 }
 
 const TokenHighlight = Extension.create({

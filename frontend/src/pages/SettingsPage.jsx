@@ -54,7 +54,21 @@ export default function SettingsPage() {
       case "file":
         return <FileSettings />;
       case "emailTemplates":
-        return <EmailTemplate />;
+        return (
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              minWidth: 0,
+              minHeight: 0,
+              alignSelf: "stretch",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <EmailTemplate />
+          </div>
+        );
       case "emailSettings":
         return <EmailSettings />;
       case "users":
@@ -98,6 +112,20 @@ export default function SettingsPage() {
         );
     }
   }
+
+  const stretchMainContent =
+    selected === "streamSettings" ||
+    selected === "maps" ||
+    selected === "permissions" ||
+    selected === "streams" ||
+    selected === "emailTemplates" ||
+    selected === "emailSettings" ||
+    selected === "file" ||
+    selected === "users" ||
+    selected === "colourSettings" ||
+    selected === "payments" ||
+    selected === "planning" ||
+    selected === "ui";
 
   return (
     <div
@@ -245,27 +273,9 @@ export default function SettingsPage() {
             height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             display: "flex",
-            alignItems:
-              selected === "streamSettings" ||
-              selected === "maps" ||
-              selected === "permissions" ||
-              selected === "streams"
-                ? "stretch"
-                : "center",
-            justifyContent:
-              selected === "streamSettings" ||
-              selected === "maps" ||
-              selected === "permissions" ||
-              selected === "streams"
-                ? "flex-start"
-                : "center",
-            overflow:
-              selected === "streamSettings" ||
-              selected === "maps" ||
-              selected === "permissions" ||
-              selected === "streams"
-                ? "hidden"
-                : "visible",
+            alignItems: stretchMainContent ? "stretch" : "center",
+            justifyContent: stretchMainContent ? "flex-start" : "center",
+            overflow: stretchMainContent ? "hidden" : "visible",
             minWidth: 0,
             color: MONUMENT,
             fontSize: "1.22rem",

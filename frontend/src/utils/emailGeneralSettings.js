@@ -20,6 +20,53 @@ const EMPTY_WINDOWS = {
   qldToEmail3: "",
 };
 
+const EMPTY_FINAL_CERTIFICATES_BRANCH = {
+  includeClient: true,
+  toEmail: "",
+  fromEmail: "",
+};
+
+function emptyFinalCertificatesBranch() {
+  return { ...EMPTY_FINAL_CERTIFICATES_BRANCH };
+}
+
+function normalizeFinalCertificatesBranch(raw) {
+  const b = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const includeClientRaw = b.includeClient;
+  const includeClient =
+    includeClientRaw === false || includeClientRaw === "false" || includeClientRaw === 0
+      ? false
+      : true;
+  // Legacy flat keys (toEmail1 / fromEmail) if a branch was never nested
+  const toEmail = T(b.toEmail) || T(b.toEmail1);
+  const fromEmail = T(b.fromEmail);
+  return {
+    includeClient,
+    toEmail,
+    fromEmail,
+  };
+}
+
+function normalizeFinalCertificatesRoot(raw) {
+  const fc = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  // Legacy single-column shape → seed both VIC and QLD
+  const looksFlat =
+    !fc.vic &&
+    !fc.qld &&
+    (Object.prototype.hasOwnProperty.call(fc, "includeClient") ||
+      Object.prototype.hasOwnProperty.call(fc, "fromEmail") ||
+      Object.prototype.hasOwnProperty.call(fc, "toEmail") ||
+      Object.prototype.hasOwnProperty.call(fc, "toEmail1"));
+  if (looksFlat) {
+    const migrated = normalizeFinalCertificatesBranch(fc);
+    return { vic: { ...migrated }, qld: { ...migrated } };
+  }
+  return {
+    vic: normalizeFinalCertificatesBranch(fc.vic),
+    qld: normalizeFinalCertificatesBranch(fc.qld),
+  };
+}
+
 const EMPTY_DEPOSIT_BALANCE_BRANCH = {
   clientFromEmail: "",
   teamFromEmail: "",
@@ -500,6 +547,7 @@ export function parseEmailGeneralJson(raw) {
   const base = {
     hotList: { ...EMPTY_HOTLIST },
     windows: { ...EMPTY_WINDOWS },
+    finalCertificates: { vic: emptyFinalCertificatesBranch(), qld: emptyFinalCertificatesBranch() },
     newProject: { vic: emptyNewProjectBranch(), qld: emptyNewProjectBranch() },
     depositBalance: { vic: emptyDepositBalanceBranch(), qld: emptyDepositBalanceBranch() },
     drawingsUpload: { vic: emptyDrawingsUploadBranch(), qld: emptyDrawingsUploadBranch() },
@@ -520,6 +568,10 @@ export function parseEmailGeneralJson(raw) {
   if (!o || typeof o !== "object" || Array.isArray(o)) return base;
   const hl = o.hotList && typeof o.hotList === "object" && !Array.isArray(o.hotList) ? o.hotList : {};
   const wd = o.windows && typeof o.windows === "object" && !Array.isArray(o.windows) ? o.windows : {};
+  const fc =
+    o.finalCertificates && typeof o.finalCertificates === "object" && !Array.isArray(o.finalCertificates)
+      ? o.finalCertificates
+      : {};
   const npRoot = o.newProject && typeof o.newProject === "object" && !Array.isArray(o.newProject) ? o.newProject : {};
   const dbRoot =
     o.depositBalance && typeof o.depositBalance === "object" && !Array.isArray(o.depositBalance)
@@ -569,6 +621,7 @@ export function parseEmailGeneralJson(raw) {
       qldToEmail2: qldWindowsTo2,
       qldToEmail3: qldWindowsTo3,
     },
+    finalCertificates: normalizeFinalCertificatesRoot(fc),
     newProject: {
       vic: normalizeNewProjectBranchFromRaw(npRoot.vic),
       qld: normalizeNewProjectBranchFromRaw(npRoot.qld),
@@ -634,6 +687,33 @@ export function resolveActiveClientContactToEmails(project) {
   add(project.client2_active, project.client2_email);
   add(project.client3_active, project.client3_email);
   return out;
+}
+
+export function getFinalCertificatesEmailSettings(settings, project) {
+  const fc = parseEmailGeneralJson(settings?.email_general_json).finalCertificates;
+  const code = generalEmailStateCode(project);
+  const key = code === "QLD" ? "qld" : "vic";
+  return normalizeFinalCertificatesBranch(fc?.[key]);
+}
+
+/** From address for Final Certificates handover email (by project state). */
+export function resolveFinalCertificatesFromEmail(settings, project) {
+  return getFinalCertificatesEmailSettings(settings, project).fromEmail || "";
+}
+
+/**
+ * To addresses for Final Certificates (by project state):
+ * optional active client contacts + one SMTP To from General settings.
+ */
+export function resolveFinalCertificatesToEmails(settings, project) {
+  const fc = getFinalCertificatesEmailSettings(settings, project);
+  const out = [];
+  if (fc.includeClient) {
+    out.push(...resolveActiveClientContactToEmails(project));
+  }
+  const smtpTo = String(fc.toEmail || "").trim();
+  if (smtpTo) out.push(smtpTo);
+  return uniqueTrimmedEmails(out);
 }
 
 export function resolveDepositBalanceClientFrom(settings, project) {

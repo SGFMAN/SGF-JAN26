@@ -1254,7 +1254,7 @@ export default function ProjectPage() {
                 />
               )}
               {activeView === "final-certificates" && isAdmin && (
-                <FinalCertificates project={project} />
+                <FinalCertificates project={project} onUpdate={updateProject} />
               )}
             </>
           )}

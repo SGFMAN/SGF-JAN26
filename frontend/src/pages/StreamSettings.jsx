@@ -693,6 +693,7 @@ const GLOBAL_EMAIL_SECTIONS = [
   { key: "depositBalance", label: "Deposit Balance" },
   { key: "windows", label: "Windows" },
   { key: "newProject", label: "New Project" },
+  { key: "finalCertificates", label: "Final Certificates" },
 ];
 
 export default function StreamSettings() {
@@ -717,6 +718,7 @@ export default function StreamSettings() {
   const [drawingSectionOpen, setDrawingSectionOpen] = useState(defaultDrawingSectionOpen);
   const [hotListSoldSectionOpen, setHotListSoldSectionOpen] = useState(false);
   const [windowsOrderingSectionOpen, setWindowsOrderingSectionOpen] = useState(false);
+  const [finalCertificatesSectionOpen, setFinalCertificatesSectionOpen] = useState(false);
   const [emailGeneral, setEmailGeneral] = useState(() => parseEmailGeneralJson(null));
   const emailGeneralRef = useRef(emailGeneral);
   const streamDisplayList = emailSettingsDisplayItems(streamsCatalog);
@@ -953,6 +955,28 @@ export default function StreamSettings() {
   }
 
   function flushPersistWindowsEmail() {
+    void persistEmailGeneral(emailGeneralRef.current);
+  }
+
+  function updateFinalCertificatesField(region, fieldKey, value) {
+    setEmailGeneral((prev) => {
+      const root = prev.finalCertificates || { vic: {}, qld: {} };
+      const next = {
+        ...prev,
+        finalCertificates: {
+          ...root,
+          [region]: {
+            ...(root[region] || {}),
+            [fieldKey]: value,
+          },
+        },
+      };
+      emailGeneralRef.current = next;
+      return next;
+    });
+  }
+
+  function flushPersistFinalCertificatesEmail() {
     void persistEmailGeneral(emailGeneralRef.current);
   }
 
@@ -2207,6 +2231,147 @@ export default function StreamSettings() {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            </div>
+          ) : globalEmailSection === "finalCertificates" ? (
+            <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}>
+              <div style={{ ...columnPanelStyle, minHeight: "100%" }}>
+                <h4 style={{ ...columnTitleStyle, marginBottom: "10px" }}>Final Certificates</h4>
+                <p style={{ margin: "0 0 12px", fontSize: "0.86rem", color: UI.textMuted, lineHeight: 1.45 }}>
+                  Used when sending the Final Certificates handover email (PDF and ZIP). VIC vs QLD follows the
+                  project&apos;s state. To can include active client contacts and one SMTP address. From is chosen from
+                  the SMTP list.
+                </p>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: finalCertificatesSectionOpen ? "10px" : "0",
+                    ...NEW_PROJECT_SECTION_BLUE,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "8px",
+                      padding: "2px 0 8px 0",
+                      borderBottom: finalCertificatesSectionOpen ? "1px solid #4d93d955" : "none",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => setFinalCertificatesSectionOpen((o) => !o)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "8px",
+                        flex: 1,
+                        minWidth: 0,
+                        margin: 0,
+                        padding: 0,
+                        border: "none",
+                        background: "transparent",
+                        cursor: saving ? "wait" : "pointer",
+                        textAlign: "left",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "0.82rem",
+                          fontWeight: 700,
+                          color: "var(--sgf-text-primary)",
+                          letterSpacing: "0.02em",
+                        }}
+                      >
+                        Handover email
+                      </span>
+                      <span aria-hidden style={{ fontSize: "0.75rem", color: "var(--sgf-text-primary)", flexShrink: 0 }}>
+                        {finalCertificatesSectionOpen ? "▾" : "▸"}
+                      </span>
+                    </button>
+                  </div>
+                  {finalCertificatesSectionOpen ? (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                        gap: "12px",
+                      }}
+                    >
+                      {[
+                        { title: "VIC", region: "vic" },
+                        { title: "QLD", region: "qld" },
+                      ].map(({ title, region }) => {
+                        const branch = emailGeneral.finalCertificates?.[region] || {};
+                        return (
+                          <div key={region} style={{ ...columnPanelStyle, minHeight: 0, margin: 0 }}>
+                            <h5 style={{ margin: "0 0 10px 0", fontSize: "0.9rem", fontWeight: 700, color: MONUMENT }}>
+                              {title}
+                            </h5>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                                <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>To</span>
+                                <label
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "10px",
+                                    fontSize: "0.9rem",
+                                    fontWeight: 600,
+                                    color: MONUMENT,
+                                    cursor: saving ? "wait" : "pointer",
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    disabled={saving}
+                                    checked={!!branch.includeClient}
+                                    onChange={(e) => {
+                                      updateFinalCertificatesField(region, "includeClient", e.target.checked);
+                                      flushPersistFinalCertificatesEmail();
+                                    }}
+                                    style={{ width: "18px", height: "18px", cursor: saving ? "wait" : "pointer" }}
+                                  />
+                                  Client
+                                </label>
+                                <span style={{ fontSize: "0.78rem", color: UI.textMuted, lineHeight: 1.35 }}>
+                                  When on, active Client Info emails are included as recipients.
+                                </span>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                  <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
+                                    SMTP To
+                                  </span>
+                                  <DrawingNotifySmtpSelect
+                                    smtpOptions={smtpSlotEmails}
+                                    value={branch.toEmail || ""}
+                                    disabled={saving}
+                                    onValueChange={(next) => updateFinalCertificatesField(region, "toEmail", next)}
+                                    onCommit={flushPersistFinalCertificatesEmail}
+                                  />
+                                </div>
+                              </div>
+                              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>From</span>
+                                <DrawingNotifySmtpSelect
+                                  smtpOptions={smtpSlotEmails}
+                                  value={branch.fromEmail || ""}
+                                  disabled={saving}
+                                  onValueChange={(next) => updateFinalCertificatesField(region, "fromEmail", next)}
+                                  onCommit={flushPersistFinalCertificatesEmail}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>

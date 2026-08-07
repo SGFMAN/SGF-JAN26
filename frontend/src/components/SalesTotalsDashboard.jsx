@@ -56,8 +56,8 @@ const TOTALS_CARD = {
   },
   grandGrid: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr 1fr",
-    columnGap: "16px",
+    gridTemplateColumns: "0.72fr 1.14fr 1.14fr",
+    columnGap: "8px",
     alignItems: "stretch",
     width: "100%",
   },
@@ -69,7 +69,11 @@ const TOTALS_CARD = {
   },
   grandColBorder: {
     borderLeft: "1px solid #4a4d55",
-    paddingLeft: "14px",
+    paddingLeft: "8px",
+  },
+  grandColBorderProjected: {
+    borderLeft: "1px solid #4a4d55",
+    paddingLeft: "10px",
   },
 };
 
@@ -452,7 +456,7 @@ export default function SalesTotalsDashboard({
                 <div style={TOTALS_CARD.totalValue}>{formatCurrency(grandTotal.totalCost)}</div>
               </div>
             </div>
-            <div style={{ ...TOTALS_CARD.grandCol, ...TOTALS_CARD.grandColBorder }}>
+            <div style={{ ...TOTALS_CARD.grandCol, ...TOTALS_CARD.grandColBorderProjected }}>
               <div>
                 <div style={TOTALS_CARD.label}>Projected Sales</div>
                 {!calendarYearMeta || calendarYearMeta.mode === "future" ? (
