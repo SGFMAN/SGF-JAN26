@@ -136,6 +136,7 @@ export default function ColourSettings() {
     imagePreview: "",
     imageFilename: "",
   });
+  const [pendingImageFile, setPendingImageFile] = useState(null);
   const listScrollRef = useRef(null);
   const restoreSampleIdRef = useRef(null);
   const restoreScrollTopRef = useRef(null);
@@ -385,6 +386,7 @@ export default function ColourSettings() {
     requestListRestore(sample?.id ?? null);
     setIsAddColourModal(false);
     setEditingSample(sample);
+    setPendingImageFile(null);
     setEditForm({
       name: sample.name || "",
       subgroupId: String(subgroup.id),
@@ -403,6 +405,7 @@ export default function ColourSettings() {
     requestListRestore();
     setIsAddColourModal(true);
     setEditingSample(null);
+    setPendingImageFile(null);
     setEditForm({
       name: "",
       subgroupId: String(availableSubgroups[0].id),
@@ -418,6 +421,7 @@ export default function ColourSettings() {
     setShowModal(false);
     setIsAddColourModal(false);
     setEditingSample(null);
+    setPendingImageFile(null);
     setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFilename: "" });
   };
 
@@ -426,21 +430,33 @@ export default function ColourSettings() {
     if (!isAddColourModal && !editingSample?.id) return;
     try {
       setSaving(true);
-      const body = {
-        name: editForm.name.trim(),
-        subgroup_id: editForm.subgroupId,
-        image_filename: editForm.imageFilename || null,
-      };
-      const res = await fetch(
-        isAddColourModal
-          ? `${API_URL}/api/colour-samples`
-          : `${API_URL}/api/colour-samples/${editingSample.id}`,
-        {
+      const url = isAddColourModal
+        ? `${API_URL}/api/colour-samples`
+        : `${API_URL}/api/colour-samples/${editingSample.id}`;
+      let res;
+      if (pendingImageFile) {
+        const form = new FormData();
+        form.append("name", editForm.name.trim());
+        form.append("subgroup_id", editForm.subgroupId);
+        form.append("image", pendingImageFile);
+        const headers = { ...getApiHeaders() };
+        delete headers["Content-Type"];
+        res = await fetch(url, {
+          method: isAddColourModal ? "POST" : "PUT",
+          headers,
+          body: form,
+        });
+      } else {
+        res = await fetch(url, {
           method: isAddColourModal ? "POST" : "PUT",
           headers: getApiHeaders(),
-          body: JSON.stringify(body),
-        }
-      );
+          body: JSON.stringify({
+            name: editForm.name.trim(),
+            subgroup_id: editForm.subgroupId,
+            image_filename: editForm.imageFilename || null,
+          }),
+        });
+      }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       requestListRestore(isAddColourModal ? data?.id ?? null : editingSample.id);
@@ -448,6 +464,7 @@ export default function ColourSettings() {
       setShowModal(false);
       setIsAddColourModal(false);
       setEditingSample(null);
+      setPendingImageFile(null);
       setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFilename: "" });
     } catch (e) {
       alert(e.message || (isAddColourModal ? "Failed to add colour" : "Failed to save sample"));
@@ -472,6 +489,7 @@ export default function ColourSettings() {
       setShowModal(false);
       setIsAddColourModal(false);
       setEditingSample(null);
+      setPendingImageFile(null);
       setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFilename: "" });
     } catch (e) {
       alert(e.message || "Failed to delete sample");
@@ -712,6 +730,7 @@ export default function ColourSettings() {
     const filename = file.name || "";
     const fullPath = buildColourImageFullPath(filename);
     const localPreview = URL.createObjectURL(file);
+    setPendingImageFile(file);
     setEditForm((prev) => {
       if (prev.imagePreview && prev.imagePreview.startsWith("blob:")) {
         URL.revokeObjectURL(prev.imagePreview);
@@ -1015,6 +1034,20 @@ export default function ColourSettings() {
                           <AuthedImg
                             src={sample.image_url}
                             alt={sample.name}
+                            fallback={
+                              <div
+                                style={{
+                                  fontSize: "6px",
+                                  color: "var(--sgf-text-primary)",
+                                  fontWeight: 600,
+                                  textAlign: "center",
+                                  lineHeight: "1",
+                                  letterSpacing: "0.3px",
+                                }}
+                              >
+                                Soon
+                              </div>
+                            }
                             style={{ width: "100%", height: "100%", objectFit: "cover" }}
                           />
                         ) : (
@@ -1151,7 +1184,7 @@ export default function ColourSettings() {
       </div>
 
       {showModal && (editingSample || isAddColourModal) && (
-        <ModalBackdrop zIndex={2100} onClick={handleModalClose}>
+        <ModalBackdrop zIndex={20000} onClick={handleModalClose}>
           <div
             role="dialog"
             aria-modal="true"
@@ -1228,40 +1261,95 @@ export default function ColourSettings() {
                 >
                   Image
                 </label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                  disabled={saving}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    border: "1px solid #ddd",
-                    borderRadius: "8px",
-                    fontSize: "0.9rem",
-                    boxSizing: "border-box",
-                    cursor: "pointer",
-                  }}
-                />
-                {editForm.imageFilename ? (
-                  <div style={{ marginTop: "8px", fontSize: "0.85rem", color: UI.textMuted, wordBreak: "break-all" }}>
-                    Image path: {editForm.imageFilename}
+                <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
+                  <div
+                    style={{
+                      width: 96,
+                      height: 96,
+                      flexShrink: 0,
+                      borderRadius: "8px",
+                      border: "1px solid #ddd",
+                      background: UI.inputBg,
+                      overflow: "hidden",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    {editForm.imagePreview ? (
+                      String(editForm.imagePreview).startsWith("blob:") ||
+                      String(editForm.imagePreview).startsWith("data:") ? (
+                        <img
+                          src={editForm.imagePreview}
+                          alt="Selected colour"
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                            display: "block",
+                          }}
+                        />
+                      ) : (
+                        <AuthedImg
+                          src={editForm.imagePreview}
+                          alt="Selected colour"
+                          fallback={
+                            <span
+                              style={{
+                                color: UI.textMuted,
+                                fontSize: "0.75rem",
+                                textAlign: "center",
+                                padding: "6px",
+                              }}
+                            >
+                              No image
+                            </span>
+                          }
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                            display: "block",
+                          }}
+                        />
+                      )
+                    ) : (
+                      <span style={{ color: UI.textMuted, fontSize: "0.75rem", textAlign: "center", padding: "6px" }}>
+                        No image
+                      </span>
+                    )}
                   </div>
-                ) : null}
-                {editForm.imagePreview ? (
-                  <div style={{ marginTop: "10px" }}>
-                    <AuthedImg
-                      src={editForm.imagePreview}
-                      alt="Preview"
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      disabled={saving}
                       style={{
-                        maxWidth: "100%",
-                        maxHeight: "200px",
-                        borderRadius: "8px",
+                        width: "100%",
+                        padding: "10px 12px",
                         border: "1px solid #ddd",
+                        borderRadius: "8px",
+                        fontSize: "0.9rem",
+                        boxSizing: "border-box",
+                        cursor: saving ? "not-allowed" : "pointer",
                       }}
                     />
+                    {editForm.imageFilename ? (
+                      <div
+                        style={{
+                          marginTop: "8px",
+                          fontSize: "0.85rem",
+                          color: UI.textMuted,
+                          wordBreak: "break-all",
+                        }}
+                      >
+                        Image path: {editForm.imageFilename}
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
+                </div>
               </div>
             </div>
 
@@ -1333,7 +1421,7 @@ export default function ColourSettings() {
 
       {showSubgroupsModal ? (
         <ModalBackdrop
-          zIndex={2100}
+          zIndex={20000}
           onClick={closeSubgroupsModal}
           style={{ padding: "24px", boxSizing: "border-box" }}
         >
@@ -1544,7 +1632,7 @@ export default function ColourSettings() {
 
       {showGroupsModal ? (
         <ModalBackdrop
-          zIndex={2100}
+          zIndex={20000}
           onClick={closeGroupsModal}
           style={{ padding: "24px", boxSizing: "border-box" }}
         >

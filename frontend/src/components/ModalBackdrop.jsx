@@ -10,10 +10,11 @@ const OVERLAY_STYLE = {
   justifyContent: "center",
   pointerEvents: "auto",
   touchAction: "none",
+  overscrollBehavior: "none",
 };
 
 /** Full-screen modal backdrop — portals to body, blocks scroll and background interaction. */
-export default function ModalBackdrop({ zIndex = 2000, children, style = {}, onClick, ...rest }) {
+export default function ModalBackdrop({ zIndex = 20000, children, style = {}, onClick, ...rest }) {
   useModalBodyLock(true);
 
   return createPortal(

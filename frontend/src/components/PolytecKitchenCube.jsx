@@ -212,30 +212,36 @@ function KitchenColourColumn({
           boxSizing: "border-box",
         }}
       >
-        {selected?.image_url ? (
-          <AuthedImg
-            src={selected.image_url}
-            alt={selected.name || field.label}
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              display: "block",
-            }}
-          />
-        ) : (
-          <span
-            style={{
-              color: UI.textMuted,
-              fontSize: "0.78rem",
-              textAlign: "center",
-              padding: "8px",
-              lineHeight: 1.3,
-            }}
-          >
-            {selected ? "No image" : "—"}
-          </span>
-        )}
+        {(() => {
+          const placeholder = (
+            <span
+              style={{
+                color: MONUMENT,
+                fontSize: "0.85rem",
+                fontWeight: 500,
+                textAlign: "center",
+                padding: "8px",
+                lineHeight: 1.3,
+              }}
+            >
+              {selected ? "No image" : "—"}
+            </span>
+          );
+          if (!selected?.image_url) return placeholder;
+          return (
+            <AuthedImg
+              src={selected.image_url}
+              alt={selected.name || field.label}
+              fallback={placeholder}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+              }}
+            />
+          );
+        })()}
       </div>
     </div>
   );
