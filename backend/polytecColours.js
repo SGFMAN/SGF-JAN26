@@ -84,28 +84,6 @@ function buildColourImageFullPath(basePath, groupName, filenameOrPath) {
   return { path: path.join(base, folder, safeFile) };
 }
 
-/**
- * Write an uploaded image into {Colours and Finishes}\{group}\{filename}.
- * @param {{ buffer: Buffer, originalname?: string, filename?: string }} file
- */
-async function writeColourSampleImageFile(pool, groupName, file) {
-  if (!file || !file.buffer) return { error: "Image file is required", status: 400 };
-  const basePath = await getColoursAndFinishesBasePath(pool);
-  const built = buildColourImageFullPath(
-    basePath,
-    groupName,
-    file.originalname || file.filename || "sample.jpg"
-  );
-  if (built.error) return { error: built.error, status: built.status || 400 };
-  try {
-    fsSync.mkdirSync(path.dirname(built.path), { recursive: true });
-    fsSync.writeFileSync(built.path, file.buffer);
-  } catch (e) {
-    return { error: e.message || "Failed to save image file", status: 500 };
-  }
-  return { path: built.path, filename: path.basename(built.path) };
-}
-
 function imageUrlForSample(sampleId, imageFilename, updatedAt = null) {
   if (!imageFilename || sampleId == null) return null;
   // Cache-bust so saving a new path reloads from disk without a server restart.
@@ -269,7 +247,7 @@ async function getSampleById(pool, id) {
   return r.rows[0] || null;
 }
 
-async function updateSample(pool, id, { name, subgroupId, imageFilename, clearImage, imageFile }) {
+async function updateSample(pool, id, { name, subgroupId, imageFilename, clearImage }) {
   const existing = await getSampleById(pool, id);
   if (!existing) return { notFound: true };
 
@@ -288,12 +266,6 @@ async function updateSample(pool, id, { name, subgroupId, imageFilename, clearIm
   let nextFilename = existing.image_filename;
   if (clearImage) {
     nextFilename = null;
-  } else if (imageFile && imageFile.buffer) {
-    const groupName =
-      (await getGroupNameForSubgroup(pool, nextSubgroupId)) || existing.group_name || "";
-    const written = await writeColourSampleImageFile(pool, groupName, imageFile);
-    if (written.error) return { error: written.error, status: written.status || 400 };
-    nextFilename = written.path;
   } else if (imageFilename !== undefined) {
     if (imageFilename == null || String(imageFilename).trim() === "") {
       nextFilename = null;
@@ -445,7 +417,7 @@ async function deleteSubgroup(pool, id) {
   };
 }
 
-async function createSample(pool, { name, subgroupId, imageFilename, imageFile } = {}) {
+async function createSample(pool, { name, subgroupId, imageFilename } = {}) {
   const trimmed = String(name || "").trim();
   if (!trimmed) return { error: "Name is required", status: 400 };
   const sgId = Number(subgroupId);
@@ -460,11 +432,7 @@ async function createSample(pool, { name, subgroupId, imageFilename, imageFile }
   if (!sg.rows.length) return { error: "Subgroup not found", status: 400 };
 
   let nextFilename = null;
-  if (imageFile && imageFile.buffer) {
-    const written = await writeColourSampleImageFile(pool, sg.rows[0].group_name, imageFile);
-    if (written.error) return { error: written.error, status: written.status || 400 };
-    nextFilename = written.path;
-  } else if (imageFilename != null && String(imageFilename).trim() !== "") {
+  if (imageFilename != null && String(imageFilename).trim() !== "") {
     const basePath = await getColoursAndFinishesBasePath(pool);
     const built = buildColourImageFullPath(basePath, sg.rows[0].group_name, imageFilename);
     if (built.error) return { error: built.error, status: built.status || 400 };

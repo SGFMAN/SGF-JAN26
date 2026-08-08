@@ -136,7 +136,6 @@ export default function ColourSettings() {
     imagePreview: "",
     imageFilename: "",
   });
-  const [pendingImageFile, setPendingImageFile] = useState(null);
   const listScrollRef = useRef(null);
   const restoreSampleIdRef = useRef(null);
   const restoreScrollTopRef = useRef(null);
@@ -386,7 +385,6 @@ export default function ColourSettings() {
     requestListRestore(sample?.id ?? null);
     setIsAddColourModal(false);
     setEditingSample(sample);
-    setPendingImageFile(null);
     setEditForm({
       name: sample.name || "",
       subgroupId: String(subgroup.id),
@@ -405,7 +403,6 @@ export default function ColourSettings() {
     requestListRestore();
     setIsAddColourModal(true);
     setEditingSample(null);
-    setPendingImageFile(null);
     setEditForm({
       name: "",
       subgroupId: String(availableSubgroups[0].id),
@@ -421,7 +418,6 @@ export default function ColourSettings() {
     setShowModal(false);
     setIsAddColourModal(false);
     setEditingSample(null);
-    setPendingImageFile(null);
     setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFilename: "" });
   };
 
@@ -430,33 +426,21 @@ export default function ColourSettings() {
     if (!isAddColourModal && !editingSample?.id) return;
     try {
       setSaving(true);
-      const url = isAddColourModal
-        ? `${API_URL}/api/colour-samples`
-        : `${API_URL}/api/colour-samples/${editingSample.id}`;
-      let res;
-      if (pendingImageFile) {
-        const form = new FormData();
-        form.append("name", editForm.name.trim());
-        form.append("subgroup_id", editForm.subgroupId);
-        form.append("image", pendingImageFile);
-        const headers = { ...getApiHeaders() };
-        delete headers["Content-Type"];
-        res = await fetch(url, {
-          method: isAddColourModal ? "POST" : "PUT",
-          headers,
-          body: form,
-        });
-      } else {
-        res = await fetch(url, {
+      const body = {
+        name: editForm.name.trim(),
+        subgroup_id: editForm.subgroupId,
+        image_filename: editForm.imageFilename || null,
+      };
+      const res = await fetch(
+        isAddColourModal
+          ? `${API_URL}/api/colour-samples`
+          : `${API_URL}/api/colour-samples/${editingSample.id}`,
+        {
           method: isAddColourModal ? "POST" : "PUT",
           headers: getApiHeaders(),
-          body: JSON.stringify({
-            name: editForm.name.trim(),
-            subgroup_id: editForm.subgroupId,
-            image_filename: editForm.imageFilename || null,
-          }),
-        });
-      }
+          body: JSON.stringify(body),
+        }
+      );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       requestListRestore(isAddColourModal ? data?.id ?? null : editingSample.id);
@@ -464,7 +448,6 @@ export default function ColourSettings() {
       setShowModal(false);
       setIsAddColourModal(false);
       setEditingSample(null);
-      setPendingImageFile(null);
       setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFilename: "" });
     } catch (e) {
       alert(e.message || (isAddColourModal ? "Failed to add colour" : "Failed to save sample"));
@@ -489,7 +472,6 @@ export default function ColourSettings() {
       setShowModal(false);
       setIsAddColourModal(false);
       setEditingSample(null);
-      setPendingImageFile(null);
       setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFilename: "" });
     } catch (e) {
       alert(e.message || "Failed to delete sample");
@@ -730,7 +712,6 @@ export default function ColourSettings() {
     const filename = file.name || "";
     const fullPath = buildColourImageFullPath(filename);
     const localPreview = URL.createObjectURL(file);
-    setPendingImageFile(file);
     setEditForm((prev) => {
       if (prev.imagePreview && prev.imagePreview.startsWith("blob:")) {
         URL.revokeObjectURL(prev.imagePreview);
