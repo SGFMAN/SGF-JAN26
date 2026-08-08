@@ -5127,7 +5127,18 @@ app.delete("/api/colour-groups/:id", async (req, res) => {
   }
 });
 
-app.put("/api/colour-samples/:id", async (req, res) => {
+app.put("/api/colour-samples/:id", async (req, res, next) => {
+  const ct = String(req.headers["content-type"] || "");
+  if (ct.includes("multipart/form-data")) {
+    return upload.single("image")(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({ error: err.message || "Upload failed" });
+      }
+      next();
+    });
+  }
+  return next();
+}, async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   if (!requireStaffUserId(req, res)) return;
   if (!(await isAdminRequest(req))) {
@@ -5141,7 +5152,8 @@ app.put("/api/colour-samples/:id", async (req, res) => {
       name: body.name,
       subgroupId: body.subgroup_id ?? body.subgroupId,
       imageFilename: body.image_filename ?? body.imageFilename,
-      clearImage: body.clear_image === true || body.clearImage === true,
+      clearImage: body.clear_image === true || body.clearImage === true || body.clear_image === "true",
+      imageFile: req.file || null,
     });
     if (result.notFound) return res.status(404).json({ error: "sample not found" });
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
@@ -5152,7 +5164,18 @@ app.put("/api/colour-samples/:id", async (req, res) => {
   }
 });
 
-app.post("/api/colour-samples", async (req, res) => {
+app.post("/api/colour-samples", async (req, res, next) => {
+  const ct = String(req.headers["content-type"] || "");
+  if (ct.includes("multipart/form-data")) {
+    return upload.single("image")(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({ error: err.message || "Upload failed" });
+      }
+      next();
+    });
+  }
+  return next();
+}, async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   if (!requireStaffUserId(req, res)) return;
   if (!(await isAdminRequest(req))) {
@@ -5164,6 +5187,7 @@ app.post("/api/colour-samples", async (req, res) => {
       name: body.name,
       subgroupId: body.subgroup_id ?? body.subgroupId,
       imageFilename: body.image_filename ?? body.imageFilename,
+      imageFile: req.file || null,
     });
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
     res.status(201).json(result.sample);

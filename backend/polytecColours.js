@@ -8,9 +8,12 @@
 
 const path = require("path");
 const fsSync = require("fs");
+const { GROUP_KEY: YDL_STONE_GROUP_KEY } = require("./ydlStoneColours");
 
 const GROUP_KEY = "polytec";
 const GROUP_DISPLAY_NAME = "Polytec - Doors & Panels";
+/** Groups that copy uploaded images into Colours and Finishes (test: YDL Stone only). */
+const COLOUR_IMAGE_COPY_GROUP_KEYS = new Set([YDL_STONE_GROUP_KEY]);
 /** @deprecated Legacy on-disk fallback for basename-only rows. */
 const IMAGE_DIR = path.join(
   __dirname,
@@ -64,8 +67,29 @@ async function getGroupNameForSubgroup(pool, subgroupId) {
   return String(r.rows[0]?.name || "").trim();
 }
 
+async function getColourGroupContextForSubgroup(pool, subgroupId) {
+  const r = await pool.query(
+    `SELECT g.key AS group_key, g.name AS group_name, sg.name AS subgroup_name
+     FROM colour_groups g
+     JOIN colour_subgroups sg ON sg.group_id = g.id
+     WHERE sg.id = $1`,
+    [subgroupId]
+  );
+  return r.rows[0] || null;
+}
+
+function sanitizePathSegment(raw) {
+  const trimmed = String(raw || "").trim();
+  if (!trimmed) return null;
+  if (trimmed.includes("..") || /[\\/]/.test(trimmed)) return null;
+  // Keep spaces / common punctuation; strip Windows-illegal filename chars.
+  const cleaned = trimmed.replace(/[<>:"|?*\u0000-\u001f]/g, "").trim();
+  return cleaned || null;
+}
+
 /**
  * Build full image path: {Colours and Finishes}\{group name}\{filename}
+ * (legacy / path-only groups)
  */
 function buildColourImageFullPath(basePath, groupName, filenameOrPath) {
   const safeFile = sanitizeImageFilename(filenameOrPath);
@@ -82,6 +106,58 @@ function buildColourImageFullPath(basePath, groupName, filenameOrPath) {
     return { error: "Colour group name is missing or invalid", status: 400 };
   }
   return { path: path.join(base, folder, safeFile) };
+}
+
+/**
+ * YDL Stone (copy) layout:
+ *   {Colours and Finishes}\{group}\{subgroup}\{colour name}{ext}
+ */
+function buildGroupedColourImagePath(basePath, groupName, subgroupName, sampleName, originalFilename) {
+  const base = String(basePath || "").trim();
+  if (!base) {
+    return {
+      error: "Colours and Finishes path is not set in File Settings",
+      status: 400,
+    };
+  }
+  const groupSeg = sanitizePathSegment(groupName);
+  const subgroupSeg = sanitizePathSegment(subgroupName);
+  const nameSeg = sanitizePathSegment(sampleName);
+  if (!groupSeg || !subgroupSeg || !nameSeg) {
+    return { error: "Group, subgroup, and colour name are required for the image path", status: 400 };
+  }
+  const safeUpload = sanitizeImageFilename(originalFilename);
+  const ext = path.extname(safeUpload || "") || ".jpg";
+  const filename = `${nameSeg}${ext}`;
+  if (!SAFE_IMAGE_FILENAME.test(filename)) {
+    return { error: "Invalid image filename", status: 400 };
+  }
+  return {
+    path: path.join(base, groupSeg, subgroupSeg, filename),
+    filename,
+  };
+}
+
+/**
+ * Copy uploaded image for groups that use the copy workflow (YDL Stone test).
+ */
+function writeCopiedColourImage(basePath, groupName, subgroupName, sampleName, file) {
+  if (!file || !file.buffer) return { error: "Image file is required", status: 400 };
+  const built = buildGroupedColourImagePath(
+    basePath,
+    groupName,
+    subgroupName,
+    sampleName,
+    file.originalname || file.filename || "sample.jpg"
+  );
+  if (built.error) return { error: built.error, status: built.status || 400 };
+  try {
+    fsSync.mkdirSync(path.dirname(built.path), { recursive: true });
+    fsSync.writeFileSync(built.path, file.buffer);
+  } catch (e) {
+    return { error: e.message || "Failed to save image file", status: 500 };
+  }
+  return { path: built.path, filename: built.filename };
 }
 
 function imageUrlForSample(sampleId, imageFilename, updatedAt = null) {
@@ -247,7 +323,7 @@ async function getSampleById(pool, id) {
   return r.rows[0] || null;
 }
 
-async function updateSample(pool, id, { name, subgroupId, imageFilename, clearImage }) {
+async function updateSample(pool, id, { name, subgroupId, imageFilename, clearImage, imageFile }) {
   const existing = await getSampleById(pool, id);
   if (!existing) return { notFound: true };
 
@@ -263,16 +339,41 @@ async function updateSample(pool, id, { name, subgroupId, imageFilename, clearIm
     nextSubgroupId = Number(subgroupId);
   }
 
+  const groupCtx = await getColourGroupContextForSubgroup(pool, nextSubgroupId);
+  const groupKey = String(groupCtx?.group_key || "").trim();
+  const usesImageCopy = COLOUR_IMAGE_COPY_GROUP_KEYS.has(groupKey);
+
   let nextFilename = existing.image_filename;
   if (clearImage) {
     nextFilename = null;
+  } else if (imageFile && imageFile.buffer) {
+    if (!usesImageCopy) {
+      return {
+        error: "Image file copy is only enabled for YDL Stone (test)",
+        status: 400,
+      };
+    }
+    const basePath = await getColoursAndFinishesBasePath(pool);
+    const written = writeCopiedColourImage(
+      basePath,
+      groupCtx.group_name,
+      groupCtx.subgroup_name,
+      nextName,
+      imageFile
+    );
+    if (written.error) return { error: written.error, status: written.status || 400 };
+    nextFilename = written.path;
   } else if (imageFilename !== undefined) {
-    if (imageFilename == null || String(imageFilename).trim() === "") {
+    if (usesImageCopy) {
+      // Copy-mode groups ignore path-only updates unless clearing.
+      if (imageFilename == null || String(imageFilename).trim() === "") {
+        nextFilename = null;
+      }
+    } else if (imageFilename == null || String(imageFilename).trim() === "") {
       nextFilename = null;
     } else {
       const basePath = await getColoursAndFinishesBasePath(pool);
-      const groupName =
-        (await getGroupNameForSubgroup(pool, nextSubgroupId)) || existing.group_name || "";
+      const groupName = groupCtx?.group_name || existing.group_name || "";
       const built = buildColourImageFullPath(basePath, groupName, imageFilename);
       if (built.error) return { error: built.error, status: built.status || 400 };
       nextFilename = built.path;
@@ -417,24 +518,38 @@ async function deleteSubgroup(pool, id) {
   };
 }
 
-async function createSample(pool, { name, subgroupId, imageFilename } = {}) {
+async function createSample(pool, { name, subgroupId, imageFilename, imageFile } = {}) {
   const trimmed = String(name || "").trim();
   if (!trimmed) return { error: "Name is required", status: 400 };
   const sgId = Number(subgroupId);
   if (!Number.isFinite(sgId)) return { error: "Subgroup is required", status: 400 };
-  const sg = await pool.query(
-    `SELECT sg.id, g.name AS group_name
-     FROM colour_subgroups sg
-     JOIN colour_groups g ON g.id = sg.group_id
-     WHERE sg.id = $1 AND g.active = TRUE`,
-    [sgId]
-  );
-  if (!sg.rows.length) return { error: "Subgroup not found", status: 400 };
+  const groupCtx = await getColourGroupContextForSubgroup(pool, sgId);
+  if (!groupCtx) return { error: "Subgroup not found", status: 400 };
+
+  const groupKey = String(groupCtx.group_key || "").trim();
+  const usesImageCopy = COLOUR_IMAGE_COPY_GROUP_KEYS.has(groupKey);
 
   let nextFilename = null;
-  if (imageFilename != null && String(imageFilename).trim() !== "") {
+  if (imageFile && imageFile.buffer) {
+    if (!usesImageCopy) {
+      return {
+        error: "Image file copy is only enabled for YDL Stone (test)",
+        status: 400,
+      };
+    }
     const basePath = await getColoursAndFinishesBasePath(pool);
-    const built = buildColourImageFullPath(basePath, sg.rows[0].group_name, imageFilename);
+    const written = writeCopiedColourImage(
+      basePath,
+      groupCtx.group_name,
+      groupCtx.subgroup_name,
+      trimmed,
+      imageFile
+    );
+    if (written.error) return { error: written.error, status: written.status || 400 };
+    nextFilename = written.path;
+  } else if (!usesImageCopy && imageFilename != null && String(imageFilename).trim() !== "") {
+    const basePath = await getColoursAndFinishesBasePath(pool);
+    const built = buildColourImageFullPath(basePath, groupCtx.group_name, imageFilename);
     if (built.error) return { error: built.error, status: built.status || 400 };
     nextFilename = built.path;
   }

@@ -18,6 +18,8 @@ const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
 const API_URL = "";
 const DELETE_COLOUR_BUTTON_ID = 2;
+/** Colour groups that copy uploaded images into Colours and Finishes (test). */
+const COLOUR_IMAGE_COPY_GROUP_KEYS = new Set(["ydl-stone"]);
 
 const SECTION_TITLE_SIZE = "0.9rem";
 const LIST_ROW_GAP = "6px";
@@ -136,6 +138,7 @@ export default function ColourSettings() {
     imagePreview: "",
     imageFilename: "",
   });
+  const [pendingImageFile, setPendingImageFile] = useState(null);
   const listScrollRef = useRef(null);
   const restoreSampleIdRef = useRef(null);
   const restoreScrollTopRef = useRef(null);
@@ -272,6 +275,7 @@ export default function ColourSettings() {
   }, [selectedGroup, groupCatalogue, colourGroups]);
 
   const isDbColourGroup = Boolean(selectedGroup && selectedGroup !== "colorbond");
+  const usesColourImageCopy = COLOUR_IMAGE_COPY_GROUP_KEYS.has(String(selectedGroup || ""));
   const canManageSubgroups = isDbColourGroup;
 
   function buildColourImageFullPath(filename) {
@@ -385,6 +389,7 @@ export default function ColourSettings() {
     requestListRestore(sample?.id ?? null);
     setIsAddColourModal(false);
     setEditingSample(sample);
+    setPendingImageFile(null);
     setEditForm({
       name: sample.name || "",
       subgroupId: String(subgroup.id),
@@ -403,6 +408,7 @@ export default function ColourSettings() {
     requestListRestore();
     setIsAddColourModal(true);
     setEditingSample(null);
+    setPendingImageFile(null);
     setEditForm({
       name: "",
       subgroupId: String(availableSubgroups[0].id),
@@ -418,6 +424,7 @@ export default function ColourSettings() {
     setShowModal(false);
     setIsAddColourModal(false);
     setEditingSample(null);
+    setPendingImageFile(null);
     setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFilename: "" });
   };
 
@@ -426,21 +433,34 @@ export default function ColourSettings() {
     if (!isAddColourModal && !editingSample?.id) return;
     try {
       setSaving(true);
-      const body = {
-        name: editForm.name.trim(),
-        subgroup_id: editForm.subgroupId,
-        image_filename: editForm.imageFilename || null,
-      };
-      const res = await fetch(
-        isAddColourModal
-          ? `${API_URL}/api/colour-samples`
-          : `${API_URL}/api/colour-samples/${editingSample.id}`,
-        {
+      const url = isAddColourModal
+        ? `${API_URL}/api/colour-samples`
+        : `${API_URL}/api/colour-samples/${editingSample.id}`;
+      let res;
+      if (usesColourImageCopy && pendingImageFile) {
+        const form = new FormData();
+        form.append("name", editForm.name.trim());
+        form.append("subgroup_id", editForm.subgroupId);
+        form.append("image", pendingImageFile);
+        const headers = { ...getApiHeaders() };
+        delete headers["Content-Type"];
+        res = await fetch(url, {
+          method: isAddColourModal ? "POST" : "PUT",
+          headers,
+          body: form,
+        });
+      } else {
+        res = await fetch(url, {
           method: isAddColourModal ? "POST" : "PUT",
           headers: getApiHeaders(),
-          body: JSON.stringify(body),
-        }
-      );
+          body: JSON.stringify({
+            name: editForm.name.trim(),
+            subgroup_id: editForm.subgroupId,
+            // Path-only for non-copy groups; copy groups keep existing image unless a new file is chosen
+            image_filename: usesColourImageCopy ? undefined : editForm.imageFilename || null,
+          }),
+        });
+      }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       requestListRestore(isAddColourModal ? data?.id ?? null : editingSample.id);
@@ -448,6 +468,7 @@ export default function ColourSettings() {
       setShowModal(false);
       setIsAddColourModal(false);
       setEditingSample(null);
+      setPendingImageFile(null);
       setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFilename: "" });
     } catch (e) {
       alert(e.message || (isAddColourModal ? "Failed to add colour" : "Failed to save sample"));
@@ -472,6 +493,7 @@ export default function ColourSettings() {
       setShowModal(false);
       setIsAddColourModal(false);
       setEditingSample(null);
+      setPendingImageFile(null);
       setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFilename: "" });
     } catch (e) {
       alert(e.message || "Failed to delete sample");
@@ -712,13 +734,14 @@ export default function ColourSettings() {
     const filename = file.name || "";
     const fullPath = buildColourImageFullPath(filename);
     const localPreview = URL.createObjectURL(file);
+    setPendingImageFile(file);
     setEditForm((prev) => {
       if (prev.imagePreview && prev.imagePreview.startsWith("blob:")) {
         URL.revokeObjectURL(prev.imagePreview);
       }
       return {
         ...prev,
-        imageFilename: fullPath || filename,
+        imageFilename: usesColourImageCopy ? filename : fullPath || filename,
         imagePreview: localPreview,
       };
     });
@@ -1317,7 +1340,7 @@ export default function ColourSettings() {
                         cursor: saving ? "not-allowed" : "pointer",
                       }}
                     />
-                    {editForm.imageFilename ? (
+                    {editForm.imageFilename || (usesColourImageCopy && pendingImageFile) ? (
                       <div
                         style={{
                           marginTop: "8px",
@@ -1326,7 +1349,17 @@ export default function ColourSettings() {
                           wordBreak: "break-all",
                         }}
                       >
-                        Image path: {editForm.imageFilename}
+                        {usesColourImageCopy && pendingImageFile
+                          ? (() => {
+                              const sg =
+                                subgroups.find((s) => String(s.id) === String(editForm.subgroupId))
+                                  ?.name || "subgroup";
+                              const colourName = editForm.name.trim() || "name";
+                              const extMatch = /\.[A-Za-z0-9]+$/.exec(pendingImageFile.name || "");
+                              const ext = extMatch ? extMatch[0] : ".jpg";
+                              return `Will copy to: {Colours and Finishes}\\${activeColourGroupName || "YDL Stone"}\\${sg}\\${colourName}${ext}`;
+                            })()
+                          : `Image path: ${editForm.imageFilename}`}
                       </div>
                     ) : null}
                   </div>
