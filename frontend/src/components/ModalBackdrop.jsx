@@ -13,14 +13,16 @@ const OVERLAY_STYLE = {
 };
 
 /** Full-screen modal backdrop — portals to body, blocks scroll and background interaction. */
-export default function ModalBackdrop({ zIndex = 2000, children, style = {} }) {
+export default function ModalBackdrop({ zIndex = 2000, children, style = {}, onClick, ...rest }) {
   useModalBodyLock(true);
 
   return createPortal(
     <div
       role="presentation"
       aria-hidden={false}
+      onClick={onClick}
       style={{ ...OVERLAY_STYLE, zIndex, ...style }}
+      {...rest}
     >
       {children}
     </div>,

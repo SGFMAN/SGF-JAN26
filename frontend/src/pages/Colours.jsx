@@ -71,7 +71,7 @@ const COMPLETE_LIST_COLUMNS = [
   },
   {
     title: "KITCHEN",
-    fields: ["benchtop_colour", "cabinet1_colour", "cabinet2_colour"],
+    fields: ["cabinet1_colour", "cabinet2_colour", "benchtop_colour"],
   },
   {
     title: "BATHROOM",
@@ -1534,7 +1534,7 @@ export default function Colours({ project, onUpdate }) {
                   ))}
                 </div>
               ) : activeColourCategory === "Kitchen" ? (
-                <PolytecKitchenCube />
+                <PolytecKitchenCube project={project} />
               ) : (
                 <div
                   style={{

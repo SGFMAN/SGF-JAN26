@@ -1,5 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import * as THREE from "three";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import AuthedImg from "./AuthedImg";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
 import {
@@ -13,6 +12,29 @@ const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
 const FIELD_OUTLINE = `1px solid ${UI.outline}`;
 const API_URL = "";
+const NOTHING_SELECTED = "";
+const COLUMN_GAP = 8;
+
+const KITCHEN_FIELDS = [
+  {
+    key: "cabinets",
+    label: "Cabinets",
+    rangeKey: "kitchen_cabinets",
+    projectField: "cabinet1_colour",
+  },
+  {
+    key: "benchtopLaminate",
+    label: "Benchtops - Laminate",
+    rangeKey: "kitchen_benchtops_laminate",
+    projectField: "cabinet2_colour",
+  },
+  {
+    key: "benchtopStone",
+    label: "Benchtops - Stone",
+    rangeKey: "kitchen_benchtops_stone",
+    projectField: "benchtop_colour",
+  },
+];
 
 function colorbondCatalogue() {
   const samples = COLORBOND_COLOURS.map((c, index) => ({
@@ -22,6 +44,9 @@ function colorbondCatalogue() {
     subgroup: "Colorbond",
     image_url: null,
     image_filename: null,
+    r: c.r,
+    g: c.g,
+    b: c.b,
   }));
   return {
     key: COLORBOND_RANGE_KEY,
@@ -31,301 +56,111 @@ function colorbondCatalogue() {
   };
 }
 
-async function loadTextureFromUrl(url) {
-  const headers = getApiHeaders();
-  delete headers["Content-Type"];
-  const res = await fetch(url, { headers, credentials: "include" });
-  if (!res.ok) throw new Error(`Failed to load texture (${res.status})`);
-  const blob = await res.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  try {
-    const texture = await new Promise((resolve, reject) => {
-      const loader = new THREE.TextureLoader();
-      loader.load(
-        objectUrl,
-        (tex) => resolve(tex),
-        undefined,
-        (err) => reject(err || new Error("Texture load failed"))
-      );
-    });
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.wrapS = THREE.ClampToEdgeWrapping;
-    texture.wrapT = THREE.ClampToEdgeWrapping;
-    // Fit the full image onto each face (BoxGeometry UVs are 0–1 per face).
-    texture.repeat.set(1, 1);
-    texture.offset.set(0, 0);
-    texture.center.set(0.5, 0.5);
-    texture.generateMipmaps = true;
-    texture.minFilter = THREE.LinearMipmapLinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.needsUpdate = true;
-    return { texture, objectUrl };
-  } catch (e) {
-    URL.revokeObjectURL(objectUrl);
-    throw e;
-  }
+function colourOrBlank(value) {
+  const s = value == null ? "" : String(value).trim();
+  return s;
 }
 
-/**
- * Kitchen preview: cabinets finish dropdown + continuously rotating textured cube.
- * Options come from Colour Settings → Kitchen Cabinets range.
- */
-export default function PolytecKitchenCube() {
-  const mountRef = useRef(null);
-  const sceneApiRef = useRef(null);
-  const [catalogue, setCatalogue] = useState(null);
-  const [loadingList, setLoadingList] = useState(true);
-  const [listError, setListError] = useState("");
-  const [selectedSampleId, setSelectedSampleId] = useState("");
-  const [textureError, setTextureError] = useState("");
-
-  const flatSamples = useMemo(() => {
-    const subgroups = catalogue?.subgroups || [];
-    const out = [];
-    for (const sg of subgroups) {
-      for (const sample of sg.samples || []) {
-        out.push({
-          id: sample.id,
-          name: sample.name,
-          subgroup: sg.name,
-          image_url: sample.image_url,
-        });
-      }
+function findSampleByName(catalogue, name) {
+  const target = String(name || "").trim().toLowerCase();
+  if (!target || !catalogue) return null;
+  for (const sg of catalogue.subgroups || []) {
+    for (const sample of sg.samples || []) {
+      if (String(sample.name || "").trim().toLowerCase() === target) return sample;
     }
-    return out.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-  }, [catalogue]);
+  }
+  return null;
+}
 
-  const selectedSample = useMemo(
-    () => flatSamples.find((s) => String(s.id) === String(selectedSampleId)) || null,
-    [flatSamples, selectedSampleId]
-  );
-  const selectedImageUrlRef = useRef(null);
-  selectedImageUrlRef.current = selectedSample?.image_url || null;
+function swatchBackground(sample) {
+  if (!sample) return UI.inputBg;
+  if (sample.r != null && sample.g != null && sample.b != null) {
+    return `rgb(${sample.r}, ${sample.g}, ${sample.b})`;
+  }
+  return UI.inputBg;
+}
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        setLoadingList(true);
-        setListError("");
-        setSelectedSampleId("");
-
-        const rangesRes = await fetch(`${API_URL}/api/colour-section-ranges`, {
-          headers: getApiHeaders(),
-        });
-        const rangesData = await rangesRes.json().catch(() => ({}));
-        if (!rangesRes.ok) throw new Error(rangesData.error || `Failed (${rangesRes.status})`);
-        const ranges = normalizeColourSectionRanges(rangesData.ranges);
-        const rangeKey = String(ranges.kitchen_cabinets || "").trim();
-        if (!rangeKey) {
-          if (!cancelled) {
-            setCatalogue(null);
-            setListError("");
-          }
-          return;
-        }
-
-        if (rangeKey === COLORBOND_RANGE_KEY) {
-          if (!cancelled) setCatalogue(colorbondCatalogue());
-          return;
-        }
-
-        const res = await fetch(
-          `${API_URL}/api/colour-groups/${encodeURIComponent(rangeKey)}/catalogue`,
-          { headers: getApiHeaders() }
-        );
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
-        if (!cancelled) setCatalogue(data);
-      } catch (e) {
-        if (!cancelled) {
-          setListError(e.message || "Failed to load cabinet options");
-          setCatalogue(null);
-        }
-      } finally {
-        if (!cancelled) setLoadingList(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Mount rotating cube once.
-  useEffect(() => {
-    const mount = mountRef.current;
-    if (!mount) return undefined;
-
-    let disposed = false;
-    let rafId = 0;
-    let objectUrlToRevoke = null;
-    let currentTexture = null;
-
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf3f1ee);
-
-    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
-    camera.position.set(2.4, 1.8, 2.8);
-    camera.lookAt(0, 0, 0);
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    mount.appendChild(renderer.domElement);
-
-    scene.add(new THREE.AmbientLight(0xffffff, 0.85));
-    const key = new THREE.DirectionalLight(0xffffff, 1.15);
-    key.position.set(3, 5, 4);
-    scene.add(key);
-    const fill = new THREE.DirectionalLight(0xffffff, 0.35);
-    fill.position.set(-3, 1, -2);
-    scene.add(fill);
-
-    const geometry = new THREE.BoxGeometry(1.35, 1.35, 1.35);
-    const makeMat = () =>
-      new THREE.MeshStandardMaterial({
-        color: 0xc8c4be,
-        roughness: 0.72,
-        metalness: 0.04,
-      });
-    // Six materials → image is independently mapped/scaled onto each face.
-    const materials = [makeMat(), makeMat(), makeMat(), makeMat(), makeMat(), makeMat()];
-    const cube = new THREE.Mesh(geometry, materials);
-
-    // Diamond pose: 45° either side of upright (symmetric), centre at origin.
-    const tipDown = new THREE.Group();
-    tipDown.rotation.order = "ZXY";
-    tipDown.rotation.z = Math.PI / 4;
-    tipDown.rotation.x = Math.PI / 4;
-    tipDown.position.set(0, 0, 0);
-    tipDown.add(cube);
-
-    const spinner = new THREE.Group();
-    spinner.add(tipDown);
-    scene.add(spinner);
-
-    const edges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(geometry),
-      new THREE.LineBasicMaterial({ color: 0x323233, transparent: true, opacity: 0.35 })
-    );
-    cube.add(edges);
-
-    camera.position.set(2.6, 1.4, 2.6);
-    camera.lookAt(0, 0, 0);
-
-    function resize() {
-      const w = Math.max(1, mount.clientWidth);
-      const h = Math.max(1, mount.clientHeight);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h, false);
-    }
-
-    const ro = new ResizeObserver(() => resize());
-    ro.observe(mount);
-    resize();
-
-    function animate() {
-      if (disposed) return;
-      rafId = requestAnimationFrame(animate);
-      spinner.rotation.y += 0.005;
-      renderer.render(scene, camera);
-    }
-    animate();
-
-    function clearTextures() {
-      for (const mat of materials) {
-        mat.map = null;
-        mat.color.set(0xc8c4be);
-        mat.needsUpdate = true;
-      }
-      if (currentTexture) {
-        currentTexture.dispose();
-        currentTexture = null;
-      }
-      if (objectUrlToRevoke) {
-        URL.revokeObjectURL(objectUrlToRevoke);
-        objectUrlToRevoke = null;
-      }
-    }
-
-    async function setImageUrl(imageUrl) {
-      setTextureError("");
-      if (!imageUrl) {
-        clearTextures();
-        return;
-      }
-      try {
-        const { texture, objectUrl } = await loadTextureFromUrl(imageUrl);
-        if (disposed) {
-          texture.dispose();
-          URL.revokeObjectURL(objectUrl);
-          return;
-        }
-        clearTextures();
-        objectUrlToRevoke = objectUrl;
-        currentTexture = texture;
-        for (const mat of materials) {
-          mat.map = texture;
-          mat.color.set(0xffffff);
-          mat.needsUpdate = true;
-        }
-      } catch (e) {
-        if (!disposed) {
-          console.error(e);
-          setTextureError(e.message || "Failed to load sample image");
-          clearTextures();
-        }
-      }
-    }
-
-    sceneApiRef.current = { setImageUrl };
-    void setImageUrl(selectedImageUrlRef.current);
-
-    return () => {
-      disposed = true;
-      sceneApiRef.current = null;
-      cancelAnimationFrame(rafId);
-      ro.disconnect();
-      clearTextures();
-      geometry.dispose();
-      edges.geometry.dispose();
-      edges.material.dispose();
-      for (const mat of materials) mat.dispose();
-      renderer.dispose();
-      if (renderer.domElement.parentNode === mount) {
-        mount.removeChild(renderer.domElement);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const api = sceneApiRef.current;
-    if (!api) return;
-    void api.setImageUrl(selectedSample?.image_url || null);
-  }, [selectedSample?.image_url]);
-
+function KitchenColourColumn({
+  field,
+  catalogue,
+  value,
+  selected,
+  loading,
+  loadError,
+  saveError,
+  saving,
+  onChange,
+}) {
+  const columnRef = useRef(null);
+  const chromeRef = useRef(null);
+  const [squareSize, setSquareSize] = useState(0);
   const subgroups = catalogue?.subgroups || [];
+  const disabled = loading || !!loadError || saving;
+
+  useLayoutEffect(() => {
+    const column = columnRef.current;
+    if (!column) return undefined;
+
+    const measure = () => {
+      const colW = column.clientWidth;
+      const colH = column.clientHeight;
+      const chromeH = chromeRef.current?.offsetHeight || 0;
+      const next = Math.max(0, Math.floor(Math.min(colW, colH - chromeH - COLUMN_GAP)));
+      setSquareSize((prev) => (prev === next ? prev : next));
+    };
+
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(column);
+    if (chromeRef.current) ro.observe(chromeRef.current);
+    return () => ro.disconnect();
+  }, [loadError, saveError, loading]);
+
+  const stackWidth = squareSize > 0 ? squareSize : "100%";
 
   return (
     <div
+      ref={columnRef}
       style={{
-        flex: 1,
+        flex: "1 1 0",
+        minWidth: 0,
         minHeight: 0,
+        height: "100%",
         display: "flex",
         flexDirection: "column",
-        gap: "14px",
+        alignItems: "flex-start",
+        gap: `${COLUMN_GAP}px`,
       }}
     >
-      <div style={{ flexShrink: 0, maxWidth: "420px" }}>
-        <label style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-          <span style={{ fontSize: "0.9rem", color: UI.textMuted, fontWeight: 500 }}>
-            Cabinets
+      <div
+        ref={chromeRef}
+        style={{
+          width: stackWidth,
+          maxWidth: "100%",
+          display: "flex",
+          flexDirection: "column",
+          gap: "8px",
+          flexShrink: 0,
+          boxSizing: "border-box",
+        }}
+      >
+        <label style={{ display: "flex", flexDirection: "column", gap: "6px", minWidth: 0 }}>
+          <span
+            style={{
+              fontSize: "0.9rem",
+              color: UI.textMuted,
+              fontWeight: 500,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {field.label}
           </span>
           <select
-            value={selectedSampleId}
-            onChange={(e) => setSelectedSampleId(e.target.value)}
-            disabled={loadingList || !!listError}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            disabled={disabled}
             style={{
               width: "100%",
               padding: "10px 12px",
@@ -338,87 +173,250 @@ export default function PolytecKitchenCube() {
               minHeight: "42px",
             }}
           >
-            <option value="">{loadingList ? "Loading..." : "Nothing selected"}</option>
+            <option value={NOTHING_SELECTED}>{loading ? "Loading..." : "Nothing selected"}</option>
+            {value && !findSampleByName(catalogue, value) ? (
+              <option value={value}>{value}</option>
+            ) : null}
             {subgroups.map((sg) => (
               <optgroup key={sg.id} label={sg.name}>
                 {(sg.samples || []).map((sample) => (
-                  <option key={sample.id} value={String(sample.id)}>
+                  <option key={sample.id} value={sample.name}>
                     {sample.name}
-                    {sample.image_url ? "" : " (no image)"}
                   </option>
                 ))}
               </optgroup>
             ))}
           </select>
         </label>
-        {listError ? (
-          <div style={{ marginTop: "8px", color: "#842029", fontSize: "0.85rem" }}>{listError}</div>
+
+        {loadError ? (
+          <div style={{ color: "#842029", fontSize: "0.85rem" }}>{loadError}</div>
         ) : null}
-        {textureError ? (
-          <div style={{ marginTop: "8px", color: "#842029", fontSize: "0.85rem" }}>{textureError}</div>
-        ) : null}
-        {selectedSample && !selectedSample.image_url ? (
-          <div style={{ marginTop: "8px", color: UI.textMuted, fontSize: "0.85rem" }}>
-            This sample has no image yet — upload one in Colour Settings.
-          </div>
+        {saveError ? (
+          <div style={{ color: "#842029", fontSize: "0.85rem" }}>{saveError}</div>
         ) : null}
       </div>
 
+      <div
+        style={{
+          width: squareSize,
+          height: squareSize,
+          flexShrink: 0,
+          borderRadius: "8px",
+          border: FIELD_OUTLINE,
+          background: swatchBackground(selected),
+          overflow: "hidden",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          boxSizing: "border-box",
+        }}
+      >
+        {selected?.image_url ? (
+          <AuthedImg
+            src={selected.image_url}
+            alt={selected.name || field.label}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              display: "block",
+            }}
+          />
+        ) : (
+          <span
+            style={{
+              color: UI.textMuted,
+              fontSize: "0.78rem",
+              textAlign: "center",
+              padding: "8px",
+              lineHeight: 1.3,
+            }}
+          >
+            {selected ? "No image" : "—"}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Kitchen finishes: Cabinets + Benchtops Laminate/Stone.
+ * Options come from Colour Settings section → range mappings.
+ */
+export default function PolytecKitchenCube({ project }) {
+  const [catalogues, setCatalogues] = useState({
+    cabinets: null,
+    benchtopLaminate: null,
+    benchtopStone: null,
+  });
+  const [loading, setLoading] = useState(true);
+  const [errors, setErrors] = useState({});
+  const [values, setValues] = useState({
+    cabinets: "",
+    benchtopLaminate: "",
+    benchtopStone: "",
+  });
+  const [savingKey, setSavingKey] = useState("");
+
+  useEffect(() => {
+    setValues({
+      cabinets: colourOrBlank(project?.cabinet1_colour),
+      benchtopLaminate: colourOrBlank(project?.cabinet2_colour),
+      benchtopStone: colourOrBlank(project?.benchtop_colour),
+    });
+  }, [project?.id, project?.cabinet1_colour, project?.cabinet2_colour, project?.benchtop_colour]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        setErrors({});
+        const rangesRes = await fetch(`${API_URL}/api/colour-section-ranges`, {
+          headers: getApiHeaders(),
+        });
+        const rangesData = await rangesRes.json().catch(() => ({}));
+        if (!rangesRes.ok) throw new Error(rangesData.error || `Failed (${rangesRes.status})`);
+        const ranges = normalizeColourSectionRanges(rangesData.ranges);
+
+        const next = {
+          cabinets: null,
+          benchtopLaminate: null,
+          benchtopStone: null,
+        };
+        const nextErrors = {};
+
+        await Promise.all(
+          KITCHEN_FIELDS.map(async (field) => {
+            const rangeKey = String(ranges[field.rangeKey] || "").trim();
+            if (!rangeKey) {
+              next[field.key] = null;
+              return;
+            }
+            try {
+              if (rangeKey === COLORBOND_RANGE_KEY) {
+                next[field.key] = colorbondCatalogue();
+                return;
+              }
+              const res = await fetch(
+                `${API_URL}/api/colour-groups/${encodeURIComponent(rangeKey)}/catalogue`,
+                { headers: getApiHeaders() }
+              );
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+              next[field.key] = data;
+            } catch (e) {
+              next[field.key] = null;
+              nextErrors[field.key] = e.message || "Failed to load options";
+            }
+          })
+        );
+
+        if (!cancelled) {
+          setCatalogues(next);
+          setErrors(nextErrors);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setErrors({
+            cabinets: e.message || "Failed to load kitchen colour options",
+          });
+          setCatalogues({ cabinets: null, benchtopLaminate: null, benchtopStone: null });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selectedSamples = useMemo(() => {
+    const out = {};
+    for (const field of KITCHEN_FIELDS) {
+      out[field.key] = findSampleByName(catalogues[field.key], values[field.key]);
+    }
+    return out;
+  }, [catalogues, values]);
+
+  async function saveField(projectField, value) {
+    const projectKey = project?.access_token || project?.id;
+    if (!projectKey) return;
+    const res = await fetch(`${API_URL}/api/projects/${projectKey}/update-colours`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getApiHeaders() },
+      body: JSON.stringify({ [projectField]: value || null }),
+      keepalive: true,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed (${res.status})`);
+    }
+  }
+
+  async function handleChange(field, nextName) {
+    setValues((prev) => ({ ...prev, [field.key]: nextName }));
+    try {
+      setSavingKey(field.key);
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next[`${field.key}Save`];
+        return next;
+      });
+      await saveField(field.projectField, nextName);
+    } catch (e) {
+      setErrors((prev) => ({
+        ...prev,
+        [`${field.key}Save`]: e.message || "Failed to save",
+      }));
+    } finally {
+      setSavingKey("");
+    }
+  }
+
+  return (
+    <div
+      style={{
+        flex: 1,
+        minHeight: 0,
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        height: "100%",
+        overflow: "hidden",
+        boxSizing: "border-box",
+      }}
+    >
       <div
         style={{
           flex: 1,
           minHeight: 0,
           display: "flex",
           flexDirection: "row",
-          gap: "16px",
           alignItems: "stretch",
+          justifyContent: "space-between",
+          gap: "16px",
+          width: "100%",
+          boxSizing: "border-box",
         }}
       >
-        <div
-          style={{
-            flex: "0 0 38%",
-            minWidth: "160px",
-            maxWidth: "360px",
-            minHeight: "280px",
-            borderRadius: "10px",
-            overflow: "hidden",
-            border: FIELD_OUTLINE,
-            background: "#f3f1ee",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          {selectedSample?.image_url ? (
-            <AuthedImg
-              src={selectedSample.image_url}
-              alt={selectedSample.name || "Selected finish"}
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                display: "block",
-              }}
-            />
-          ) : (
-            <div style={{ color: UI.textMuted, fontSize: "0.9rem", textAlign: "center", padding: "16px" }}>
-              {selectedSample ? "No image for this finish" : "Select a finish to preview"}
-            </div>
-          )}
-        </div>
-
-        <div
-          ref={mountRef}
-          style={{
-            flex: 1,
-            minWidth: 0,
-            minHeight: "280px",
-            borderRadius: "10px",
-            overflow: "hidden",
-            border: FIELD_OUTLINE,
-            background: "#f3f1ee",
-          }}
-        />
+        {KITCHEN_FIELDS.map((field) => (
+          <KitchenColourColumn
+            key={field.key}
+            field={field}
+            catalogue={catalogues[field.key]}
+            value={values[field.key]}
+            selected={selectedSamples[field.key]}
+            loading={loading}
+            loadError={errors[field.key]}
+            saveError={errors[`${field.key}Save`]}
+            saving={savingKey === field.key}
+            onChange={(next) => void handleChange(field, next)}
+          />
+        ))}
       </div>
     </div>
   );
