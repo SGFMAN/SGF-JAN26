@@ -63,8 +63,22 @@ function sortButtonStyle(active) {
     fontSize: SECTION_TITLE_SIZE,
     fontWeight: 600,
     cursor: "pointer",
+    width: "100%",
+    boxSizing: "border-box",
+    whiteSpace: "nowrap",
+    textAlign: "center",
   };
 }
+
+/** Stack Sort / Sub Groups / Add so all share the longest label width. */
+const colourActionButtonColumnStyle = {
+  display: "inline-flex",
+  flexDirection: "column",
+  gap: "8px",
+  width: "max-content",
+  maxWidth: "100%",
+  alignItems: "stretch",
+};
 
 function sectionHeadingStyle() {
   return {
@@ -114,6 +128,7 @@ export default function ColourSettings() {
   const [editingSubgroupName, setEditingSubgroupName] = useState("");
   const [subgroupSaving, setSubgroupSaving] = useState(false);
   const [editingSample, setEditingSample] = useState(null);
+  const [isAddColourModal, setIsAddColourModal] = useState(false);
   const [editForm, setEditForm] = useState({
     name: "",
     subgroupId: "",
@@ -256,7 +271,7 @@ export default function ColourSettings() {
   }, [selectedGroup, groupCatalogue, colourGroups]);
 
   const isDbColourGroup = Boolean(selectedGroup && selectedGroup !== "colorbond");
-  const canManageSubgroups = selectedGroup === "polytec";
+  const canManageSubgroups = isDbColourGroup;
 
   function buildColourImageFullPath(filename) {
     const file = String(filename || "")
@@ -367,6 +382,7 @@ export default function ColourSettings() {
 
   const handleColorClick = (sample, subgroup) => {
     requestListRestore(sample?.id ?? null);
+    setIsAddColourModal(false);
     setEditingSample(sample);
     setEditForm({
       name: sample.name || "",
@@ -377,44 +393,70 @@ export default function ColourSettings() {
     setShowModal(true);
   };
 
+  function openAddColourModal() {
+    const availableSubgroups = groupCatalogue?.subgroups || [];
+    if (!availableSubgroups.length) {
+      alert("Add a subgroup first before adding a colour.");
+      return;
+    }
+    requestListRestore();
+    setIsAddColourModal(true);
+    setEditingSample(null);
+    setEditForm({
+      name: "",
+      subgroupId: String(availableSubgroups[0].id),
+      imagePreview: "",
+      imageFilename: "",
+    });
+    setShowModal(true);
+  }
+
   const handleModalClose = () => {
     if (saving) return;
     requestListRestore(editingSample?.id ?? restoreSampleIdRef.current);
     setShowModal(false);
+    setIsAddColourModal(false);
     setEditingSample(null);
     setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFilename: "" });
   };
 
   const handleModalOk = async () => {
-    if (!editingSample?.id || !editForm.name.trim() || !editForm.subgroupId) return;
-    const restoreId = editingSample.id;
+    if (!editForm.name.trim() || !editForm.subgroupId) return;
+    if (!isAddColourModal && !editingSample?.id) return;
     try {
       setSaving(true);
-      const res = await fetch(`${API_URL}/api/colour-samples/${editingSample.id}`, {
-        method: "PUT",
-        headers: getApiHeaders(),
-        body: JSON.stringify({
-          name: editForm.name.trim(),
-          subgroup_id: editForm.subgroupId,
-          image_filename: editForm.imageFilename || null,
-        }),
-      });
+      const body = {
+        name: editForm.name.trim(),
+        subgroup_id: editForm.subgroupId,
+        image_filename: editForm.imageFilename || null,
+      };
+      const res = await fetch(
+        isAddColourModal
+          ? `${API_URL}/api/colour-samples`
+          : `${API_URL}/api/colour-samples/${editingSample.id}`,
+        {
+          method: isAddColourModal ? "POST" : "PUT",
+          headers: getApiHeaders(),
+          body: JSON.stringify(body),
+        }
+      );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
-      requestListRestore(restoreId);
+      requestListRestore(isAddColourModal ? data?.id ?? null : editingSample.id);
       await reloadActiveCatalogue({ silent: true });
       setShowModal(false);
+      setIsAddColourModal(false);
       setEditingSample(null);
       setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFilename: "" });
     } catch (e) {
-      alert(e.message || "Failed to save sample");
+      alert(e.message || (isAddColourModal ? "Failed to add colour" : "Failed to save sample"));
     } finally {
       setSaving(false);
     }
   };
 
   const handleModalDelete = async () => {
-    if (!editingSample?.id) return;
+    if (isAddColourModal || !editingSample?.id) return;
     if (!window.confirm(`Delete colour "${editingSample.name}"?`)) return;
     try {
       setSaving(true);
@@ -427,6 +469,7 @@ export default function ColourSettings() {
       requestListRestore(null);
       await reloadActiveCatalogue({ silent: true });
       setShowModal(false);
+      setIsAddColourModal(false);
       setEditingSample(null);
       setEditForm({ name: "", subgroupId: "", imagePreview: "", imageFilename: "" });
     } catch (e) {
@@ -577,7 +620,7 @@ export default function ColourSettings() {
       const res = await fetch(`${API_URL}/api/colour-subgroups`, {
         method: "POST",
         headers: getApiHeaders(),
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, group_key: selectedGroup }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
@@ -837,9 +880,11 @@ export default function ColourSettings() {
           {selectedGroup === "colorbond" && (
             <div style={sectionHeaderBlockStyle()}>
               <h3 style={sectionHeadingStyle()}>Colorbond Colours</h3>
-              <button type="button" onClick={handleSortModeToggle} style={sortButtonStyle(true)}>
-                {sortMode === "group" ? "Sort Alphabetically" : "Sort by Group"}
-              </button>
+              <div style={colourActionButtonColumnStyle}>
+                <button type="button" onClick={handleSortModeToggle} style={sortButtonStyle(true)}>
+                  {sortMode === "group" ? "Sort Alphabetically" : "Sort by Group"}
+                </button>
+              </div>
             </div>
           )}
 
@@ -848,7 +893,7 @@ export default function ColourSettings() {
               <h3 style={sectionHeadingStyle()}>
                 {groupCatalogue?.name || activeColourGroupName || "Colours"}
               </h3>
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              <div style={colourActionButtonColumnStyle}>
                 <button type="button" onClick={handleSortModeToggle} style={sortButtonStyle(true)}>
                   {sortMode === "group" ? "Sort Alphabetically" : "Sort by Group"}
                 </button>
@@ -857,6 +902,9 @@ export default function ColourSettings() {
                     Sub Groups
                   </button>
                 ) : null}
+                <button type="button" onClick={openAddColourModal} style={sortButtonStyle(false)}>
+                  Add
+                </button>
               </div>
             </div>
           )}
@@ -1101,7 +1149,7 @@ export default function ColourSettings() {
         )}
       </div>
 
-      {showModal && editingSample && (
+      {showModal && (editingSample || isAddColourModal) && (
         <div
           style={{
             position: "fixed",
@@ -1129,7 +1177,7 @@ export default function ColourSettings() {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 style={{ fontSize: "1.3rem", margin: "0 0 20px 0", color: MONUMENT, fontWeight: 600 }}>
-              Edit Color
+              {isAddColourModal ? "Add Color" : "Edit Color"}
             </h3>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -1229,28 +1277,30 @@ export default function ColourSettings() {
             </div>
 
             <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "24px", alignItems: "center" }}>
-              <button
-                type="button"
-                onClick={handleModalDelete}
-                disabled={saving}
-                style={deleteButtonStyle}
-                onMouseEnter={
-                  deleteUsesSavedStyle || saving
-                    ? undefined
-                    : (e) => {
-                        e.currentTarget.style.background = streamColorHover(MENU.purple);
-                      }
-                }
-                onMouseLeave={
-                  deleteUsesSavedStyle || saving
-                    ? undefined
-                    : (e) => {
-                        e.currentTarget.style.background = MENU.purple;
-                      }
-                }
-              >
-                Delete
-              </button>
+              {!isAddColourModal ? (
+                <button
+                  type="button"
+                  onClick={handleModalDelete}
+                  disabled={saving}
+                  style={deleteButtonStyle}
+                  onMouseEnter={
+                    deleteUsesSavedStyle || saving
+                      ? undefined
+                      : (e) => {
+                          e.currentTarget.style.background = streamColorHover(MENU.purple);
+                        }
+                  }
+                  onMouseLeave={
+                    deleteUsesSavedStyle || saving
+                      ? undefined
+                      : (e) => {
+                          e.currentTarget.style.background = MENU.purple;
+                        }
+                  }
+                >
+                  Delete
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={handleModalClose}

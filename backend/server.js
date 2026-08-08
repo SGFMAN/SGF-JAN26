@@ -61,6 +61,7 @@ const {
   ensurePolytecColourTables,
   listPolytecCatalogue,
   listGroupCatalogue,
+  createSample: createColourSample,
   updateSample: updateColourSample,
   deleteSample: deleteColourSample,
   listSubgroups: listColourSubgroups,
@@ -73,6 +74,7 @@ const {
   updateColourGroup,
   deleteColourGroup,
 } = require("./polytecColours");
+const { ensureYdlStoneCatalogue } = require("./ydlStoneColours");
 const { ensureMapQuoteItemsTable, listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
 const {
   ACCESS_AREAS,
@@ -1484,6 +1486,7 @@ async function ensureSchema() {
     await pool.query(`UPDATE users SET password = 'admin' WHERE password IS NULL OR password = ''`);
     await ensureStreamsTable(pool);
     await ensurePolytecColourTables(pool);
+    await ensureYdlStoneCatalogue(pool);
     return;
   }
   console.log(`Applying schema migrations (target ${SCHEMA_VERSION})…`);
@@ -2211,6 +2214,7 @@ async function ensureSchema() {
   await ensureClientPortalTables(pool);
   await ensureStreamsTable(pool);
   await ensurePolytecColourTables(pool);
+  await ensureYdlStoneCatalogue(pool);
   await markSchemaUpToDate(pool);
   console.log(`Schema ${SCHEMA_VERSION} applied`);
 }
@@ -5148,6 +5152,27 @@ app.put("/api/colour-samples/:id", async (req, res) => {
   }
 });
 
+app.post("/api/colour-samples", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  try {
+    const body = req.body || {};
+    const result = await createColourSample(pool, {
+      name: body.name,
+      subgroupId: body.subgroup_id ?? body.subgroupId,
+      imageFilename: body.image_filename ?? body.imageFilename,
+    });
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.status(201).json(result.sample);
+  } catch (e) {
+    console.error("[colour-samples] create error:", e);
+    res.status(500).json({ error: e.message || "Failed to create sample" });
+  }
+});
+
 app.delete("/api/colour-samples/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   if (!requireStaffUserId(req, res)) return;
@@ -5170,7 +5195,8 @@ app.get("/api/colour-subgroups", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   if (!requireStaffUserId(req, res)) return;
   try {
-    const subgroups = await listColourSubgroups(pool);
+    const groupKey = String(req.query.group_key || req.query.groupKey || "polytec").trim();
+    const subgroups = await listColourSubgroups(pool, groupKey);
     res.json(subgroups);
   } catch (e) {
     res.status(500).json({ error: e.message || "Failed to load subgroups" });
@@ -5184,7 +5210,8 @@ app.post("/api/colour-subgroups", async (req, res) => {
     return res.status(403).json({ error: "Admin access required" });
   }
   try {
-    const result = await createColourSubgroup(pool, req.body?.name);
+    const groupKey = String(req.body?.group_key || req.body?.groupKey || "polytec").trim();
+    const result = await createColourSubgroup(pool, req.body?.name, groupKey);
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
     res.status(201).json(result.subgroup);
   } catch (e) {

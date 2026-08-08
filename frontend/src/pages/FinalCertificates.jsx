@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { getApiHeaders } from "../utils/auth";
 import {
+  generalEmailStateCode,
   resolveFinalCertificatesFromEmail,
   resolveFinalCertificatesToEmails,
 } from "../utils/emailGeneralSettings";
@@ -217,6 +218,10 @@ export default function FinalCertificates({ project, onUpdate }) {
       alert("Add the PDF and/or ZIP attachment first.");
       return;
     }
+    if (generalEmailStateCode(project) !== "VIC") {
+      alert("This feature is not yet set up for states other than VIC.");
+      return;
+    }
     setPreparingModal(true);
     setShowEmailModal(true);
     try {
@@ -243,12 +248,12 @@ export default function FinalCertificates({ project, onUpdate }) {
       const fromEmail = resolveFinalCertificatesFromEmail(settings, project);
       if (!fromEmail) {
         throw new Error(
-          "No From address for Final Certificates. Set it under Settings → Email Settings → General → Final Certificates (VIC/QLD for this project's state)."
+          "No From address for Final Certificates. Set it under Settings → Email Settings → General → Final Certificates (VIC for this project's state)."
         );
       }
       if (toEmails.length === 0) {
         throw new Error(
-          "No To addresses for Final Certificates. Enable Client and/or choose SMTP To under Settings → Email Settings → General → Final Certificates (VIC/QLD for this project's state)."
+          "No To addresses for Final Certificates. Enable Client and/or choose SMTP To under Settings → Email Settings → General → Final Certificates (VIC for this project's state)."
         );
       }
 
@@ -305,6 +310,10 @@ export default function FinalCertificates({ project, onUpdate }) {
   }
 
   async function handleSend() {
+    if (generalEmailStateCode(project) !== "VIC") {
+      alert("This feature is not yet set up for states other than VIC.");
+      return;
+    }
     const toAddresses = emailTo
       .split(",")
       .map((a) => a.trim())

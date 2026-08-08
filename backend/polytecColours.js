@@ -193,7 +193,7 @@ async function listGroupCatalogue(pool, groupKey) {
      JOIN colour_subgroups sg ON sg.id = s.subgroup_id
      JOIN colour_groups g ON g.id = sg.group_id
      WHERE sg.group_id = $1
-     ORDER BY LOWER(s.name) ASC, s.name ASC, s.id ASC`,
+     ORDER BY s.sort_order ASC, LOWER(s.name) ASC, s.name ASC, s.id ASC`,
     [group.id]
   );
 
@@ -211,7 +211,12 @@ async function listGroupCatalogue(pool, groupKey) {
       sort_order: sg.sort_order,
       samples: samplesBySubgroup.get(sg.id) || [],
     }))
-    .sort((a, b) => subgroupSortKey(a.name) - subgroupSortKey(b.name) || a.name.localeCompare(b.name));
+    .sort(
+      (a, b) =>
+        (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0) ||
+        subgroupSortKey(a.name) - subgroupSortKey(b.name) ||
+        a.name.localeCompare(b.name)
+    );
 
   return {
     id: group.id,
@@ -313,8 +318,17 @@ function mapSubgroupRow(row, sampleCount = 0) {
   };
 }
 
-async function listSubgroups(pool) {
-  const groupId = await getPolytecGroupId(pool);
+async function resolveGroupIdByKey(pool, groupKey) {
+  const key = String(groupKey || "").trim() || GROUP_KEY;
+  const r = await pool.query(
+    `SELECT id FROM colour_groups WHERE key = $1 AND active = TRUE LIMIT 1`,
+    [key]
+  );
+  return r.rows[0]?.id ?? null;
+}
+
+async function listSubgroups(pool, groupKey = GROUP_KEY) {
+  const groupId = await resolveGroupIdByKey(pool, groupKey);
   if (!groupId) return [];
   const r = await pool.query(
     `SELECT sg.*,
@@ -327,9 +341,9 @@ async function listSubgroups(pool) {
   return r.rows.map((row) => mapSubgroupRow(row, row.sample_count));
 }
 
-async function createSubgroup(pool, name) {
-  const groupId = await getPolytecGroupId(pool);
-  if (!groupId) return { error: "Polytec colour group not found", status: 404 };
+async function createSubgroup(pool, name, groupKey = GROUP_KEY) {
+  const groupId = await resolveGroupIdByKey(pool, groupKey);
+  if (!groupId) return { error: "Colour group not found", status: 404 };
   const trimmed = String(name || "").trim();
   if (!trimmed) return { error: "Name is required", status: 400 };
   const maxOrder = await pool.query(
@@ -357,8 +371,8 @@ async function updateSubgroup(pool, id, name) {
     `SELECT sg.*
      FROM colour_subgroups sg
      JOIN colour_groups g ON g.id = sg.group_id
-     WHERE sg.id = $1 AND g.key = $2`,
-    [id, GROUP_KEY]
+     WHERE sg.id = $1 AND g.active = TRUE`,
+    [id]
   );
   if (!existing.rows.length) return { notFound: true };
   const trimmed = String(name || "").trim();
@@ -389,8 +403,8 @@ async function deleteSubgroup(pool, id) {
     `SELECT sg.*
      FROM colour_subgroups sg
      JOIN colour_groups g ON g.id = sg.group_id
-     WHERE sg.id = $1 AND g.key = $2`,
-    [id, GROUP_KEY]
+     WHERE sg.id = $1 AND g.active = TRUE`,
+    [id]
   );
   if (!existing.rows.length) return { notFound: true };
   const countR = await pool.query(
@@ -401,6 +415,42 @@ async function deleteSubgroup(pool, id) {
   return {
     deleted: mapSubgroupRow(existing.rows[0], countR.rows[0]?.c),
   };
+}
+
+async function createSample(pool, { name, subgroupId, imageFilename } = {}) {
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return { error: "Name is required", status: 400 };
+  const sgId = Number(subgroupId);
+  if (!Number.isFinite(sgId)) return { error: "Subgroup is required", status: 400 };
+  const sg = await pool.query(
+    `SELECT sg.id, g.name AS group_name
+     FROM colour_subgroups sg
+     JOIN colour_groups g ON g.id = sg.group_id
+     WHERE sg.id = $1 AND g.active = TRUE`,
+    [sgId]
+  );
+  if (!sg.rows.length) return { error: "Subgroup not found", status: 400 };
+
+  let nextFilename = null;
+  if (imageFilename != null && String(imageFilename).trim() !== "") {
+    const basePath = await getColoursAndFinishesBasePath(pool);
+    const built = buildColourImageFullPath(basePath, sg.rows[0].group_name, imageFilename);
+    if (built.error) return { error: built.error, status: built.status || 400 };
+    nextFilename = built.path;
+  }
+
+  const maxOrder = await pool.query(
+    `SELECT COALESCE(MAX(sort_order), 0) AS m FROM colour_samples WHERE subgroup_id = $1`,
+    [sgId]
+  );
+  const r = await pool.query(
+    `INSERT INTO colour_samples (subgroup_id, name, image_filename, sort_order)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id`,
+    [sgId, trimmed, nextFilename, (Number(maxOrder.rows[0]?.m) || 0) + 10]
+  );
+  const mapped = await getSampleById(pool, r.rows[0].id);
+  return { sample: mapSampleRow(mapped) };
 }
 
 async function getSampleImagePath(pool, id) {
@@ -564,6 +614,7 @@ module.exports = {
   listPolytecCatalogue,
   listGroupCatalogue,
   getSampleById,
+  createSample,
   updateSample,
   deleteSample,
   listSubgroups,
