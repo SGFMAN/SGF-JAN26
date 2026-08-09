@@ -1056,6 +1056,38 @@ export default function EmailTemplate() {
           >
             {"{ColourConsultant}"}
           </button>
+          <button
+            type="button"
+            onClick={() => insertToken("body", "Contract Status")}
+            style={{
+              padding: "6px 12px",
+              fontSize: "0.85rem",
+              fontWeight: 500,
+              color: MONUMENT,
+              background: WHITE,
+              border: `1px solid ${SECTION_GREY}`,
+              borderRadius: "6px",
+              cursor: "pointer",
+            }}
+          >
+            {"{Contract Status}"}
+          </button>
+          <button
+            type="button"
+            onClick={() => insertToken("body", "Color Status")}
+            style={{
+              padding: "6px 12px",
+              fontSize: "0.85rem",
+              fontWeight: 500,
+              color: MONUMENT,
+              background: WHITE,
+              border: `1px solid ${SECTION_GREY}`,
+              borderRadius: "6px",
+              cursor: "pointer",
+            }}
+          >
+            {"{Color Status}"}
+          </button>
         </div>
         <EmailBodyEditor
           ref={bodyEditorRef}

@@ -81,7 +81,8 @@ function getSiteVisitStatusIndicator(project) {
   return indicatorRed();
 }
 
-function getContractStatusText(project) {
+/** Overview Contract tile value ("All Documents Complete" | "Documents Missing"). */
+export function getContractStatusText(project) {
   const preset = field(project, "contract_status_text", "contractStatusText");
   if (preset != null && String(preset).trim() !== "") return String(preset);
 
@@ -100,6 +101,20 @@ function getContractStatusText(project) {
     return "All Documents Complete";
   }
   return "Documents Missing";
+}
+
+/** Overview Colours tile value (e.g. Not Sent / Sent / Complete). */
+export function getColoursStatusText(project) {
+  return field(project, "colours_status", "coloursStatus") || "Not Sent";
+}
+
+/** Replace {Contract Status} and {Color Status} with Overview status text. */
+export function replaceContractAndColorStatusTokens(text, project) {
+  if (text == null) return text;
+  let replaced = String(text);
+  replaced = replaced.replace(/\{Contract Status\}/g, getContractStatusText(project));
+  replaced = replaced.replace(/\{Color Status\}/g, getColoursStatusText(project));
+  return replaced;
 }
 
 function getContractStatusIndicator(project) {

@@ -32,6 +32,7 @@ function statusAfterWorkingDrawingsApproval(currentStatus) {
 }
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { replaceContractAndColorStatusTokens } from "../utils/designPhaseStatusTiles";
 import {
   resolveConceptApprovedFrom,
   resolveConceptApprovedToEmails,
@@ -1046,6 +1047,8 @@ export default function Drawings({
       project?.street && project?.suburb ? `${project.street}, ${project.suburb}`.trim() : project?.name || "";
     let previewSubject = String(template.subject || "").replace(/\{ProjectName\}/g, projectName);
     let previewBody = String(template.body || "").replace(/\{ProjectName\}/g, projectName);
+    previewSubject = replaceContractAndColorStatusTokens(previewSubject, project);
+    previewBody = replaceContractAndColorStatusTokens(previewBody, project);
     const salespersonName = resolveRegionalSalespersonName(project);
     previewSubject = previewSubject.replace(/\{Salesperson\}/g, salespersonName);
     previewBody = previewBody.replace(/\{Salesperson\}/g, salespersonName);

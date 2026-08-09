@@ -34,7 +34,6 @@ import { mergeDestructiveButtonStyle, destructiveButtonUsesSavedStyle } from "..
 import { UI, MENU, STREAM, outlineBorder } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
 import {
-  PROJECT_STATUS_OPTIONS,
   isConstructionPhaseStatus,
   isCompleteStatus,
   isCancelledStatus,
@@ -447,46 +446,6 @@ export default function ProjectPage() {
     }
   }
 
-  /** Temporary: status control on Drawings header (Project Info status remains). */
-  async function handleDrawingsHeaderStatusChange(e) {
-    const newStatus = e.target.value;
-    if (!project?.id || isPortalProjectPath) return;
-    const previousStatus = project.status || "";
-    setProject((prev) => (prev ? { ...prev, status: newStatus } : prev));
-    const projectName =
-      project?.street && project?.suburb
-        ? `${project.street}, ${project.suburb}`.trim()
-        : project?.name || "";
-    try {
-      const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          ...getApiHeaders(),
-        },
-        body: JSON.stringify({
-          name: projectName,
-          status: newStatus,
-          street: project.street || null,
-          suburb: project.suburb || null,
-          state: project.state || null,
-        }),
-      });
-      if (!response.ok) {
-        setProject((prev) => (prev ? { ...prev, status: previousStatus } : prev));
-        const errorText = await response.text().catch(() => response.statusText);
-        console.error("Failed to update status from Drawings header:", errorText);
-        alert("Failed to update project status.");
-        return;
-      }
-      updateProject(true);
-    } catch (err) {
-      setProject((prev) => (prev ? { ...prev, status: previousStatus } : prev));
-      console.error("Failed to update status from Drawings header:", err);
-      alert("Failed to update project status.");
-    }
-  }
-
   useEffect(() => {
     if (!isPortalProjectPath) return undefined;
     const origFetch = window.fetch.bind(window);
@@ -875,54 +834,6 @@ export default function ProjectPage() {
                     Next →
                   </button>
                 )}
-
-                {activeView === "drawings" && project && !isPortalProjectPath ? (
-                  <label
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      margin: 0,
-                      flexShrink: 0,
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: "0.95rem",
-                        fontWeight: 600,
-                        color: PAGE_TEXT,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      Status
-                    </span>
-                    <select
-                      aria-label="Project status"
-                      value={project.status || ""}
-                      onChange={handleDrawingsHeaderStatusChange}
-                      style={{
-                        padding: "8px 12px",
-                        borderRadius: "8px",
-                        border: outlineBorder,
-                        fontSize: "0.95rem",
-                        fontWeight: 500,
-                        color: MONUMENT,
-                        background: WHITE,
-                        cursor: "pointer",
-                        minWidth: "180px",
-                      }}
-                    >
-                      {!PROJECT_STATUS_OPTIONS.includes(project.status || "") && project.status ? (
-                        <option value={project.status}>{project.status}</option>
-                      ) : null}
-                      {PROJECT_STATUS_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
 
                 {isAdmin && (
                   <button

@@ -6,6 +6,7 @@ import { PROCESS_RULES, getRequirementStatus, getUnmetRequirements, getMetRequir
 import { DRAFTSPERSON_UNASSIGNED } from "../utils/draftspersonSentinel";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { replaceContractAndColorStatusTokens } from "../utils/designPhaseStatusTiles";
 import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 import {
   formatDepositPaidToken,
@@ -297,6 +298,8 @@ export default function Overview({ project }) {
       const draftspersonName = getDraftspersonName(project.draftsperson);
       replaced = replaced.replace(/{Draftsperson}/g, draftspersonName);
     }
+
+    replaced = replaceContractAndColorStatusTokens(replaced, project);
 
     return replaceLoggedInUserEmailTokens(replaced);
   }
