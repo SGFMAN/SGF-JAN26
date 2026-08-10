@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { UI } from "../utils/uiThemeTokens.js";
 import {
   buildFootprintElevations,
+  isFrontmostElevationDepth,
   resolveAlignedTraceRing,
   resolveBuildingFootprintRing,
   resolveModelDoors,
@@ -753,31 +754,35 @@ export default function BuildingElevations({
     return buildFootprintElevations(ring).map((elev) => {
       const screenAxis = { x: elev.viewDir.z, z: -elev.viewDir.x };
       const projectS = (x, z) => x * screenAxis.x + z * screenAxis.z;
-      const elevWindows = modelWindows
-        .filter((w) => w.normalX * elev.viewDir.x + w.normalZ * elev.viewDir.z > 0.05)
-        .map((w) => {
-          const half = w.lengthM / 2;
-          const sA = projectS(w.midX - w.dirX * half, w.midZ - w.dirZ * half);
-          const sB = projectS(w.midX + w.dirX * half, w.midZ + w.dirZ * half);
-          const heightMm = w.heightM > 0 ? w.heightM * 1000 : WINDOW_HEIGHT_MM;
-          return { sMin: Math.min(sA, sB), sMax: Math.max(sA, sB), widthM: w.lengthM, heightMm };
-        });
-      const elevDoors = modelDoors
-        .filter((d) => d.normalX * elev.viewDir.x + d.normalZ * elev.viewDir.z > 0.05)
-        .map((d) => {
-          const half = d.lengthM / 2;
-          const sA = projectS(d.midX - d.dirX * half, d.midZ - d.dirZ * half);
-          const sB = projectS(d.midX + d.dirX * half, d.midZ + d.dirZ * half);
-          return { sMin: Math.min(sA, sB), sMax: Math.max(sA, sB), widthM: d.lengthM };
-        });
-      const elevSlidingDoors = modelSlidingDoors
-        .filter((d) => d.normalX * elev.viewDir.x + d.normalZ * elev.viewDir.z > 0.05)
-        .map((d) => {
-          const half = d.lengthM / 2;
-          const sA = projectS(d.midX - d.dirX * half, d.midZ - d.dirZ * half);
-          const sB = projectS(d.midX + d.dirX * half, d.midZ + d.dirZ * half);
-          return { sMin: Math.min(sA, sB), sMax: Math.max(sA, sB), widthM: d.lengthM };
-        });
+      const facingEdges = elev.facingEdges || [];
+      const isVisibleOpening = (opening) => {
+        if (opening.normalX * elev.viewDir.x + opening.normalZ * elev.viewDir.z <= 0.05) {
+          return false;
+        }
+        const depth =
+          opening.midX * elev.viewDir.x + opening.midZ * elev.viewDir.z;
+        const s = projectS(opening.midX, opening.midZ);
+        return isFrontmostElevationDepth(facingEdges, s, depth);
+      };
+      const elevWindows = modelWindows.filter(isVisibleOpening).map((w) => {
+        const half = w.lengthM / 2;
+        const sA = projectS(w.midX - w.dirX * half, w.midZ - w.dirZ * half);
+        const sB = projectS(w.midX + w.dirX * half, w.midZ + w.dirZ * half);
+        const heightMm = w.heightM > 0 ? w.heightM * 1000 : WINDOW_HEIGHT_MM;
+        return { sMin: Math.min(sA, sB), sMax: Math.max(sA, sB), widthM: w.lengthM, heightMm };
+      });
+      const elevDoors = modelDoors.filter(isVisibleOpening).map((d) => {
+        const half = d.lengthM / 2;
+        const sA = projectS(d.midX - d.dirX * half, d.midZ - d.dirZ * half);
+        const sB = projectS(d.midX + d.dirX * half, d.midZ + d.dirZ * half);
+        return { sMin: Math.min(sA, sB), sMax: Math.max(sA, sB), widthM: d.lengthM };
+      });
+      const elevSlidingDoors = modelSlidingDoors.filter(isVisibleOpening).map((d) => {
+        const half = d.lengthM / 2;
+        const sA = projectS(d.midX - d.dirX * half, d.midZ - d.dirZ * half);
+        const sB = projectS(d.midX + d.dirX * half, d.midZ + d.dirZ * half);
+        return { sMin: Math.min(sA, sB), sMax: Math.max(sA, sB), widthM: d.lengthM };
+      });
       const skillionElev =
         showSkillionSlab && hasRoof
           ? projectSkillionRoofElevation(
