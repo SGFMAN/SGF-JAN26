@@ -2,7 +2,6 @@ import React, { useMemo } from "react";
 import { UI } from "../utils/uiThemeTokens.js";
 import {
   buildFootprintElevations,
-  isFrontmostElevationDepth,
   resolveAlignedTraceRing,
   resolveBuildingFootprintRing,
   resolveModelDoors,
@@ -190,6 +189,9 @@ function FootprintElevation({
         {drawSegments.map((segment, segmentIndex) => {
           const x = toX(segment.s0);
           const width = Math.max(1, (segment.s1 - segment.s0) * 1000);
+          // Only draw posts where buildFootprintElevations marked a convex frontmost corner.
+          const showCornerAtS0 = segment.cornerAtS0 === true;
+          const showCornerAtS1 = segment.cornerAtS1 === true;
           return (
             <g key={`seg-${segmentIndex}`}>
               {subfloorLayers.map((layer) => {
@@ -269,46 +271,54 @@ function FootprintElevation({
                 );
               })}
 
-              <rect
-                x={x - COLUMN_PROJECTION_MM}
-                y={groundY - SUBFLOOR_HEIGHT_MM}
-                width={COLUMN_WIDTH_MM}
-                height={SUBFLOOR_HEIGHT_MM}
-                fill={baseboardsColor}
-                stroke="#202124"
-                strokeWidth={OUTLINE_STROKE_WIDTH}
-                vectorEffect="non-scaling-stroke"
-              />
-              <rect
-                x={x + width - COLUMN_WIDTH_MM + COLUMN_PROJECTION_MM}
-                y={groundY - SUBFLOOR_HEIGHT_MM}
-                width={COLUMN_WIDTH_MM}
-                height={SUBFLOOR_HEIGHT_MM}
-                fill={baseboardsColor}
-                stroke="#202124"
-                strokeWidth={OUTLINE_STROKE_WIDTH}
-                vectorEffect="non-scaling-stroke"
-              />
-              <rect
-                x={x - COLUMN_PROJECTION_MM}
-                y={groundY - TOTAL_HEIGHT_MM}
-                width={COLUMN_WIDTH_MM}
-                height={CLADDING_HEIGHT_MM}
-                fill={claddingColor}
-                stroke="#202124"
-                strokeWidth={OUTLINE_STROKE_WIDTH}
-                vectorEffect="non-scaling-stroke"
-              />
-              <rect
-                x={x + width - COLUMN_WIDTH_MM + COLUMN_PROJECTION_MM}
-                y={groundY - TOTAL_HEIGHT_MM}
-                width={COLUMN_WIDTH_MM}
-                height={CLADDING_HEIGHT_MM}
-                fill={claddingColor}
-                stroke="#202124"
-                strokeWidth={OUTLINE_STROKE_WIDTH}
-                vectorEffect="non-scaling-stroke"
-              />
+              {showCornerAtS0 ? (
+                <>
+                  <rect
+                    x={x - COLUMN_PROJECTION_MM}
+                    y={groundY - SUBFLOOR_HEIGHT_MM}
+                    width={COLUMN_WIDTH_MM}
+                    height={SUBFLOOR_HEIGHT_MM}
+                    fill={baseboardsColor}
+                    stroke="#202124"
+                    strokeWidth={OUTLINE_STROKE_WIDTH}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <rect
+                    x={x - COLUMN_PROJECTION_MM}
+                    y={groundY - TOTAL_HEIGHT_MM}
+                    width={COLUMN_WIDTH_MM}
+                    height={CLADDING_HEIGHT_MM}
+                    fill={claddingColor}
+                    stroke="#202124"
+                    strokeWidth={OUTLINE_STROKE_WIDTH}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </>
+              ) : null}
+              {showCornerAtS1 ? (
+                <>
+                  <rect
+                    x={x + width - COLUMN_WIDTH_MM + COLUMN_PROJECTION_MM}
+                    y={groundY - SUBFLOOR_HEIGHT_MM}
+                    width={COLUMN_WIDTH_MM}
+                    height={SUBFLOOR_HEIGHT_MM}
+                    fill={baseboardsColor}
+                    stroke="#202124"
+                    strokeWidth={OUTLINE_STROKE_WIDTH}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <rect
+                    x={x + width - COLUMN_WIDTH_MM + COLUMN_PROJECTION_MM}
+                    y={groundY - TOTAL_HEIGHT_MM}
+                    width={COLUMN_WIDTH_MM}
+                    height={CLADDING_HEIGHT_MM}
+                    fill={claddingColor}
+                    stroke="#202124"
+                    strokeWidth={OUTLINE_STROKE_WIDTH}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </>
+              ) : null}
             </g>
           );
         })}
@@ -754,35 +764,31 @@ export default function BuildingElevations({
     return buildFootprintElevations(ring).map((elev) => {
       const screenAxis = { x: elev.viewDir.z, z: -elev.viewDir.x };
       const projectS = (x, z) => x * screenAxis.x + z * screenAxis.z;
-      const facingEdges = elev.facingEdges || [];
-      const isVisibleOpening = (opening) => {
-        if (opening.normalX * elev.viewDir.x + opening.normalZ * elev.viewDir.z <= 0.05) {
-          return false;
-        }
-        const depth =
-          opening.midX * elev.viewDir.x + opening.midZ * elev.viewDir.z;
-        const s = projectS(opening.midX, opening.midZ);
-        return isFrontmostElevationDepth(facingEdges, s, depth);
-      };
-      const elevWindows = modelWindows.filter(isVisibleOpening).map((w) => {
-        const half = w.lengthM / 2;
-        const sA = projectS(w.midX - w.dirX * half, w.midZ - w.dirZ * half);
-        const sB = projectS(w.midX + w.dirX * half, w.midZ + w.dirZ * half);
-        const heightMm = w.heightM > 0 ? w.heightM * 1000 : WINDOW_HEIGHT_MM;
-        return { sMin: Math.min(sA, sB), sMax: Math.max(sA, sB), widthM: w.lengthM, heightMm };
-      });
-      const elevDoors = modelDoors.filter(isVisibleOpening).map((d) => {
-        const half = d.lengthM / 2;
-        const sA = projectS(d.midX - d.dirX * half, d.midZ - d.dirZ * half);
-        const sB = projectS(d.midX + d.dirX * half, d.midZ + d.dirZ * half);
-        return { sMin: Math.min(sA, sB), sMax: Math.max(sA, sB), widthM: d.lengthM };
-      });
-      const elevSlidingDoors = modelSlidingDoors.filter(isVisibleOpening).map((d) => {
-        const half = d.lengthM / 2;
-        const sA = projectS(d.midX - d.dirX * half, d.midZ - d.dirZ * half);
-        const sB = projectS(d.midX + d.dirX * half, d.midZ + d.dirZ * half);
-        return { sMin: Math.min(sA, sB), sMax: Math.max(sA, sB), widthM: d.lengthM };
-      });
+      const elevWindows = modelWindows
+        .filter((w) => w.normalX * elev.viewDir.x + w.normalZ * elev.viewDir.z > 0.05)
+        .map((w) => {
+          const half = w.lengthM / 2;
+          const sA = projectS(w.midX - w.dirX * half, w.midZ - w.dirZ * half);
+          const sB = projectS(w.midX + w.dirX * half, w.midZ + w.dirZ * half);
+          const heightMm = w.heightM > 0 ? w.heightM * 1000 : WINDOW_HEIGHT_MM;
+          return { sMin: Math.min(sA, sB), sMax: Math.max(sA, sB), widthM: w.lengthM, heightMm };
+        });
+      const elevDoors = modelDoors
+        .filter((d) => d.normalX * elev.viewDir.x + d.normalZ * elev.viewDir.z > 0.05)
+        .map((d) => {
+          const half = d.lengthM / 2;
+          const sA = projectS(d.midX - d.dirX * half, d.midZ - d.dirZ * half);
+          const sB = projectS(d.midX + d.dirX * half, d.midZ + d.dirZ * half);
+          return { sMin: Math.min(sA, sB), sMax: Math.max(sA, sB), widthM: d.lengthM };
+        });
+      const elevSlidingDoors = modelSlidingDoors
+        .filter((d) => d.normalX * elev.viewDir.x + d.normalZ * elev.viewDir.z > 0.05)
+        .map((d) => {
+          const half = d.lengthM / 2;
+          const sA = projectS(d.midX - d.dirX * half, d.midZ - d.dirZ * half);
+          const sB = projectS(d.midX + d.dirX * half, d.midZ + d.dirZ * half);
+          return { sMin: Math.min(sA, sB), sMax: Math.max(sA, sB), widthM: d.lengthM };
+        });
       const skillionElev =
         showSkillionSlab && hasRoof
           ? projectSkillionRoofElevation(

@@ -288,10 +288,12 @@ function effectiveEndpointCenter(segmentIndex, vertex, segments, halfT) {
     uB.y
   );
   if (!hit) {
-    return { x: junction.x - uA.x * 2 * halfT, y: junction.y - uA.y * 2 * halfT };
+    // Near face is halfT back from the crossing centerline along the approach.
+    return { x: junction.x - uA.x * halfT, y: junction.y - uA.y * halfT };
   }
 
-  return { x: hit.x - uA.x * halfT, y: hit.y - uA.y * halfT };
+  // hit is already on the near face of the crossing wall — do not pull back again.
+  return hit;
 }
 
 /**

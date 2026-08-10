@@ -1250,7 +1250,14 @@ export default function TracePlanModal({
 
     if (showTraceUi) {
     TRACE_PLAN_LAYERS.forEach((layer) => {
-      if (showOnlyInternalLayer && layer.id !== INTERNAL_WALLS_LAYER_ID) return;
+      // When editing internal walls, still show external walls for context.
+      if (
+        showOnlyInternalLayer &&
+        layer.id !== INTERNAL_WALLS_LAYER_ID &&
+        layer.id !== EXTERNAL_WALLS_LAYER_ID
+      ) {
+        return;
+      }
 
       const trace = layerTraces[layer.id];
       if (!trace) return;
@@ -1957,9 +1964,11 @@ export default function TracePlanModal({
     const fixedAnchor = seg[vertex === "a" ? "b" : "a"];
     const draggedAnchor = seg[vertex];
     const raw = clampSourcePoint(screenToSource(screenX, screenY));
+    // Keep internal walls horizontal/vertical only (same lock as draw/preview).
+    const ortho = orthogonalSnap(fixedAnchor, raw);
     const snapped = resolveSnapForInternalWall(
       fixedAnchor,
-      raw,
+      ortho,
       segments,
       outerPoints,
       segmentIndex

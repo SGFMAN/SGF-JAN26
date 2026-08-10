@@ -440,19 +440,44 @@ export function notchFootprintRingForDoors(ring, doors, cutDepthM) {
   return current;
 }
 
-const ELEVATION_SEGMENT_EPS_M = 1e-4;
-/** Depth tolerance (m) for treating an opening as on the front facade. */
-export const ELEVATION_FRONT_DEPTH_EPS_M = 0.05;
+/**
+ * True when the footprint turns convex at vertex `i` (exterior corner post).
+ * Concave / re-entrant vertices (e.g. notch corners t / y) return false.
+ */
+function isConvexFootprintVertex(ring, i, counterClockwise) {
+  const n = ring.length;
+  if (n < 3) return false;
+  const prev = ring[(i - 1 + n) % n];
+  const curr = ring[i];
+  const next = ring[(i + 1) % n];
+  const ax = curr.x - prev.x;
+  const az = curr.z - prev.z;
+  const bx = next.x - curr.x;
+  const bz = next.z - curr.z;
+  const cross = ax * bz - az * bx;
+  return counterClockwise ? cross > 1e-9 : cross < -1e-9;
+}
+
+function frontmostDepthAtS(facing, s) {
+  let best = -Infinity;
+  let covered = false;
+  for (const edge of facing) {
+    if (s < edge.s0 - 1e-9 || s > edge.s1 + 1e-9) continue;
+    covered = true;
+    if (edge.depth > best) best = edge.depth;
+  }
+  return covered ? best : null;
+}
 
 /**
- * Merge facing edges into frontmost-only wall spans along the elevation screen axis.
- * Larger `depth` (point · viewDir) is closer to the camera with existing viewDir convention.
+ * Frontmost wall spans only (hides occluded inset faces that otherwise leave
+ * ghost end-strokes). Adjacent spans at different depths stay separate so real
+ * plan steps still show an edge.
  *
- * @param {{ s0: number, s1: number, depth: number }[]} facing
- * @param {number} [lengthEpsM]
- * @returns {{ s0: number, s1: number }[]}
+ * @param {{ s0: number, s1: number, depth: number, convexAtS0: boolean, convexAtS1: boolean }[]} facing
+ * @returns {{ s0: number, s1: number, cornerAtS0: boolean, cornerAtS1: boolean }[]}
  */
-export function frontmostElevationSegments(facing, lengthEpsM = ELEVATION_SEGMENT_EPS_M) {
+function buildFrontmostElevationSegments(facing, lengthEpsM = 1e-4, depthEpsM = 0.05) {
   if (!Array.isArray(facing) || !facing.length) return [];
 
   const breaks = new Set();
@@ -470,57 +495,55 @@ export function frontmostElevationSegments(facing, lengthEpsM = ELEVATION_SEGMEN
     const b = sorted[i + 1];
     if (b - a < lengthEpsM) continue;
     const mid = (a + b) / 2;
-    let bestDepth = -Infinity;
-    let covered = false;
+    const bestDepth = frontmostDepthAtS(facing, mid);
+    if (bestDepth == null) continue;
+
+    // Corner posts only where a frontmost facing edge has a convex ring vertex.
+    let cornerAtS0 = false;
+    let cornerAtS1 = false;
     for (const edge of facing) {
-      if (mid < edge.s0 - 1e-9 || mid > edge.s1 + 1e-9) continue;
-      covered = true;
-      if (edge.depth > bestDepth) bestDepth = edge.depth;
+      if (Math.abs(edge.depth - bestDepth) > depthEpsM) continue;
+      if (Math.abs(edge.s0 - a) <= lengthEpsM && edge.convexAtS0) cornerAtS0 = true;
+      if (Math.abs(edge.s1 - b) <= lengthEpsM && edge.convexAtS1) cornerAtS1 = true;
     }
-    if (!covered) continue;
-    intervals.push({ s0: a, s1: b, depth: bestDepth });
+
+    intervals.push({
+      s0: a,
+      s1: b,
+      depth: bestDepth,
+      cornerAtS0,
+      cornerAtS1,
+    });
   }
 
+  // Merge only same-depth neighbours (keep depth steps as separate segments).
   const merged = [];
   for (const seg of intervals) {
     const last = merged[merged.length - 1];
-    // Merge contiguous frontmost coverage regardless of depth steps (L-plans keep
-    // separate spans only when there is a real gap with no facing wall).
-    if (last && Math.abs(last.s1 - seg.s0) < lengthEpsM) {
+    if (
+      last &&
+      Math.abs(last.s1 - seg.s0) < lengthEpsM &&
+      Math.abs(last.depth - seg.depth) <= depthEpsM
+    ) {
       last.s1 = seg.s1;
+      last.cornerAtS1 = seg.cornerAtS1;
     } else {
-      merged.push({ s0: seg.s0, s1: seg.s1 });
+      merged.push({
+        s0: seg.s0,
+        s1: seg.s1,
+        depth: seg.depth,
+        cornerAtS0: seg.cornerAtS0,
+        cornerAtS1: seg.cornerAtS1,
+      });
     }
   }
-  return merged;
-}
 
-/**
- * True if `depth` matches the frontmost facing envelope at screen coordinate `s`.
- *
- * @param {{ s0: number, s1: number, depth: number }[]} facing
- * @param {number} s
- * @param {number} depth
- * @param {number} [depthEpsM]
- */
-export function isFrontmostElevationDepth(
-  facing,
-  s,
-  depth,
-  depthEpsM = ELEVATION_FRONT_DEPTH_EPS_M
-) {
-  if (!Array.isArray(facing) || !facing.length || !Number.isFinite(s) || !Number.isFinite(depth)) {
-    return false;
-  }
-  let bestDepth = -Infinity;
-  let covered = false;
-  for (const edge of facing) {
-    if (s < edge.s0 - 1e-9 || s > edge.s1 + 1e-9) continue;
-    covered = true;
-    if (edge.depth > bestDepth) bestDepth = edge.depth;
-  }
-  if (!covered) return false;
-  return depth >= bestDepth - depthEpsM;
+  return merged.map(({ s0, s1, cornerAtS0, cornerAtS1 }) => ({
+    s0,
+    s1,
+    cornerAtS0,
+    cornerAtS1,
+  }));
 }
 
 export function buildFootprintElevations(ring) {
@@ -540,7 +563,7 @@ export function buildFootprintElevations(ring) {
     const screenAxis = { x: viewDir.z, z: -viewDir.x };
     const projectS = (p) => p.x * screenAxis.x + p.z * screenAxis.z;
 
-    const facingEdges = [];
+    const facing = [];
     for (let i = 0; i < n; i += 1) {
       const a = ring[i];
       const b = ring[(i + 1) % n];
@@ -551,18 +574,23 @@ export function buildFootprintElevations(ring) {
       const nz = counterClockwise ? -dx / len : dx / len;
       if (nx * viewDir.x + nz * viewDir.z <= 0.05) continue;
 
-      const s0 = projectS(a);
-      const s1 = projectS(b);
+      const sA = projectS(a);
+      const sB = projectS(b);
       const midX = (a.x + b.x) / 2;
       const midZ = (a.z + b.z) / 2;
-      facingEdges.push({
-        s0: Math.min(s0, s1),
-        s1: Math.max(s0, s1),
-        depth: midX * viewDir.x + midZ * viewDir.z,
+      const depth = midX * viewDir.x + midZ * viewDir.z;
+      const convexA = isConvexFootprintVertex(ring, i, counterClockwise);
+      const convexB = isConvexFootprintVertex(ring, (i + 1) % n, counterClockwise);
+      facing.push({
+        s0: Math.min(sA, sB),
+        s1: Math.max(sA, sB),
+        depth,
+        convexAtS0: sA <= sB ? convexA : convexB,
+        convexAtS1: sA <= sB ? convexB : convexA,
       });
     }
 
-    const segments = frontmostElevationSegments(facingEdges);
+    const segments = buildFrontmostElevationSegments(facing);
 
     const allS = ring.map(projectS);
     const minS = Math.min(...allS);
@@ -572,7 +600,6 @@ export function buildFootprintElevations(ring) {
       title,
       viewDir,
       segments,
-      facingEdges,
       minS,
       maxS,
       lengthM: Math.max(0.01, maxS - minS),
