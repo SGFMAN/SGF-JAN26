@@ -2,18 +2,15 @@
  * Colour catalogue (DB-backed). Colorbond remains hardcoded in the frontend.
  *
  * No seed/reseed — colours, subgroups, and groups are managed only via the DB /
- * Colour Settings UI. Image paths are stored as full filesystem paths:
- *   {colours_and_finishes_path}\{group name}\{filename}
+ * Colour Settings UI. Choosing an image copies it into:
+ *   {colours_and_finishes_path}\{group name}\{subgroup}\{colour name}{ext}
  */
 
 const path = require("path");
 const fsSync = require("fs");
-const { GROUP_KEY: YDL_STONE_GROUP_KEY } = require("./ydlStoneColours");
 
 const GROUP_KEY = "polytec";
 const GROUP_DISPLAY_NAME = "Polytec - Doors & Panels";
-/** Groups that copy uploaded images into Colours and Finishes (test: YDL Stone only). */
-const COLOUR_IMAGE_COPY_GROUP_KEYS = new Set([YDL_STONE_GROUP_KEY]);
 /** @deprecated Legacy on-disk fallback for basename-only rows. */
 const IMAGE_DIR = path.join(
   __dirname,
@@ -109,7 +106,7 @@ function buildColourImageFullPath(basePath, groupName, filenameOrPath) {
 }
 
 /**
- * YDL Stone (copy) layout:
+ * Layout for copied colour images:
  *   {Colours and Finishes}\{group}\{subgroup}\{colour name}{ext}
  */
 function buildGroupedColourImagePath(basePath, groupName, subgroupName, sampleName, originalFilename) {
@@ -139,7 +136,7 @@ function buildGroupedColourImagePath(basePath, groupName, subgroupName, sampleNa
 }
 
 /**
- * Copy uploaded image for groups that use the copy workflow (YDL Stone test).
+ * Copy uploaded image into Colours and Finishes\{group}\{subgroup}\{colour}{ext}.
  */
 function writeCopiedColourImage(basePath, groupName, subgroupName, sampleName, file) {
   if (!file || !file.buffer) return { error: "Image file is required", status: 400 };
@@ -340,19 +337,12 @@ async function updateSample(pool, id, { name, subgroupId, imageFilename, clearIm
   }
 
   const groupCtx = await getColourGroupContextForSubgroup(pool, nextSubgroupId);
-  const groupKey = String(groupCtx?.group_key || "").trim();
-  const usesImageCopy = COLOUR_IMAGE_COPY_GROUP_KEYS.has(groupKey);
+  if (!groupCtx) return { error: "Subgroup not found", status: 400 };
 
   let nextFilename = existing.image_filename;
   if (clearImage) {
     nextFilename = null;
   } else if (imageFile && imageFile.buffer) {
-    if (!usesImageCopy) {
-      return {
-        error: "Image file copy is only enabled for YDL Stone (test)",
-        status: 400,
-      };
-    }
     const basePath = await getColoursAndFinishesBasePath(pool);
     const written = writeCopiedColourImage(
       basePath,
@@ -364,20 +354,10 @@ async function updateSample(pool, id, { name, subgroupId, imageFilename, clearIm
     if (written.error) return { error: written.error, status: written.status || 400 };
     nextFilename = written.path;
   } else if (imageFilename !== undefined) {
-    if (usesImageCopy) {
-      // Copy-mode groups ignore path-only updates unless clearing.
-      if (imageFilename == null || String(imageFilename).trim() === "") {
-        nextFilename = null;
-      }
-    } else if (imageFilename == null || String(imageFilename).trim() === "") {
+    if (imageFilename == null || String(imageFilename).trim() === "") {
       nextFilename = null;
-    } else {
-      const basePath = await getColoursAndFinishesBasePath(pool);
-      const groupName = groupCtx?.group_name || existing.group_name || "";
-      const built = buildColourImageFullPath(basePath, groupName, imageFilename);
-      if (built.error) return { error: built.error, status: built.status || 400 };
-      nextFilename = built.path;
     }
+    // Path-only updates are ignored when a file was not uploaded — use Choose file to copy.
   }
 
   const r = await pool.query(
@@ -526,17 +506,8 @@ async function createSample(pool, { name, subgroupId, imageFilename, imageFile }
   const groupCtx = await getColourGroupContextForSubgroup(pool, sgId);
   if (!groupCtx) return { error: "Subgroup not found", status: 400 };
 
-  const groupKey = String(groupCtx.group_key || "").trim();
-  const usesImageCopy = COLOUR_IMAGE_COPY_GROUP_KEYS.has(groupKey);
-
   let nextFilename = null;
   if (imageFile && imageFile.buffer) {
-    if (!usesImageCopy) {
-      return {
-        error: "Image file copy is only enabled for YDL Stone (test)",
-        status: 400,
-      };
-    }
     const basePath = await getColoursAndFinishesBasePath(pool);
     const written = writeCopiedColourImage(
       basePath,
@@ -547,11 +518,6 @@ async function createSample(pool, { name, subgroupId, imageFilename, imageFile }
     );
     if (written.error) return { error: written.error, status: written.status || 400 };
     nextFilename = written.path;
-  } else if (!usesImageCopy && imageFilename != null && String(imageFilename).trim() !== "") {
-    const basePath = await getColoursAndFinishesBasePath(pool);
-    const built = buildColourImageFullPath(basePath, groupCtx.group_name, imageFilename);
-    if (built.error) return { error: built.error, status: built.status || 400 };
-    nextFilename = built.path;
   }
 
   const maxOrder = await pool.query(

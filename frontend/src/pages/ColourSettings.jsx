@@ -18,8 +18,7 @@ const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
 const API_URL = "";
 const DELETE_COLOUR_BUTTON_ID = 2;
-/** Colour groups that copy uploaded images into Colours and Finishes (test). */
-const COLOUR_IMAGE_COPY_GROUP_KEYS = new Set(["ydl-stone"]);
+/** DB colour groups copy chosen images into Colours and Finishes\{group}\{subgroup}\{name}{ext}. */
 
 const SECTION_TITLE_SIZE = "0.9rem";
 const LIST_ROW_GAP = "6px";
@@ -275,7 +274,7 @@ export default function ColourSettings() {
   }, [selectedGroup, groupCatalogue, colourGroups]);
 
   const isDbColourGroup = Boolean(selectedGroup && selectedGroup !== "colorbond");
-  const usesColourImageCopy = COLOUR_IMAGE_COPY_GROUP_KEYS.has(String(selectedGroup || ""));
+  const usesColourImageCopy = isDbColourGroup;
   const canManageSubgroups = isDbColourGroup;
 
   function buildColourImageFullPath(filename) {
@@ -1357,7 +1356,7 @@ export default function ColourSettings() {
                               const colourName = editForm.name.trim() || "name";
                               const extMatch = /\.[A-Za-z0-9]+$/.exec(pendingImageFile.name || "");
                               const ext = extMatch ? extMatch[0] : ".jpg";
-                              return `Will copy to: {Colours and Finishes}\\${activeColourGroupName || "YDL Stone"}\\${sg}\\${colourName}${ext}`;
+                              return `Will copy to: {Colours and Finishes}\\${activeColourGroupName || "group"}\\${sg}\\${colourName}${ext}`;
                             })()
                           : `Image path: ${editForm.imageFilename}`}
                       </div>

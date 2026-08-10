@@ -75,6 +75,7 @@ const {
   deleteColourGroup,
 } = require("./polytecColours");
 const { ensureYdlStoneCatalogue } = require("./ydlStoneColours");
+const { ensureJohnstonTilesCatalogue } = require("./johnstonTilesColours");
 const { ensureMapQuoteItemsTable, listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
 const {
   ACCESS_AREAS,
@@ -1487,6 +1488,7 @@ async function ensureSchema() {
     await ensureStreamsTable(pool);
     await ensurePolytecColourTables(pool);
     await ensureYdlStoneCatalogue(pool);
+    await ensureJohnstonTilesCatalogue(pool);
     return;
   }
   console.log(`Applying schema migrations (target ${SCHEMA_VERSION})…`);
@@ -2215,6 +2217,7 @@ async function ensureSchema() {
   await ensureStreamsTable(pool);
   await ensurePolytecColourTables(pool);
   await ensureYdlStoneCatalogue(pool);
+  await ensureJohnstonTilesCatalogue(pool);
   await markSchemaUpToDate(pool);
   console.log(`Schema ${SCHEMA_VERSION} applied`);
 }
