@@ -20,9 +20,11 @@ import {
   flooringRegionsKey,
   hasLayerDraft,
   INTERNAL_WALLS_LAYER_ID,
+  INTERNAL_DOORS_LAYER_ID,
   isLineTraceLayer,
   isWindowsTraceLayer,
   isDoorsTraceLayer,
+  isInternalDoorsTraceLayer,
   isSlidingDoorsTraceLayer,
   isDeckTraceLayer,
   isFlooringTraceLayer,
@@ -47,6 +49,8 @@ import {
 import {
   resolveWindowPlacement,
   buildWindowRenderFromEndpoints,
+  resolveDoorPlacementOnSegments,
+  buildDoorRenderFromSegmentEndpoints,
   resizeWindowFromEndpoint,
   resizeSlidingDoorFromEndpoint,
   WINDOW_HEIGHT_INCREMENTS_M,
@@ -163,10 +167,13 @@ export default function TracePlanModal({
   const [windowPreview, setWindowPreview] = useState(null);
   const [windowTool, setWindowTool] = useState("add");
   const [deckTool, setDeckTool] = useState("add");
+  const [internalWallTool, setInternalWallTool] = useState("add");
+  const [hoveredInternalWallSegmentIndex, setHoveredInternalWallSegmentIndex] = useState(-1);
   const [flooringTool, setFlooringTool] = useState("hybrid");
   const [roofTool, setRoofTool] = useState("outline");
   const [roofPivotDraftStart, setRoofPivotDraftStart] = useState(null);
-  const [roofPivotPreviewEnd, setRoofPivotPreviewEnd] = useState(null);  const [hoveredDeckIndex, setHoveredDeckIndex] = useState(-1);
+  const [roofPivotPreviewEnd, setRoofPivotPreviewEnd] = useState(null);
+  const [hoveredDeckIndex, setHoveredDeckIndex] = useState(-1);
   const [editingDeckIndex, setEditingDeckIndex] = useState(-1);
   const [hoveredWindowIndex, setHoveredWindowIndex] = useState(-1);
   const [hoveredResizeIndex, setHoveredResizeIndex] = useState(-1);
@@ -178,6 +185,10 @@ export default function TracePlanModal({
   const [doorPreview, setDoorPreview] = useState(null);
   const [hoveredDoorIndex, setHoveredDoorIndex] = useState(-1);
   const [movingDoorIndex, setMovingDoorIndex] = useState(-1);
+  const [internalDoorTool, setInternalDoorTool] = useState("add");
+  const [internalDoorPreview, setInternalDoorPreview] = useState(null);
+  const [hoveredInternalDoorIndex, setHoveredInternalDoorIndex] = useState(-1);
+  const [movingInternalDoorIndex, setMovingInternalDoorIndex] = useState(-1);
   const [slidingDoorTool, setSlidingDoorTool] = useState("add");
   const [slidingDoorPreview, setSlidingDoorPreview] = useState(null);
   const [hoveredSlidingDoorIndex, setHoveredSlidingDoorIndex] = useState(-1);
@@ -193,6 +204,7 @@ export default function TracePlanModal({
   const isLineLayerActive = isLineTraceLayer(activeLayerId);
   const isWindowsLayerActive = isWindowsTraceLayer(activeLayerId);
   const isDoorsLayerActive = isDoorsTraceLayer(activeLayerId);
+  const isInternalDoorsLayerActive = isInternalDoorsTraceLayer(activeLayerId);
   const isSlidingDoorsLayerActive = isSlidingDoorsTraceLayer(activeLayerId);
   const isDeckLayerActive = isDeckTraceLayer(activeLayerId);
   const isFlooringLayerActive = isFlooringTraceLayer(activeLayerId);
@@ -216,7 +228,8 @@ export default function TracePlanModal({
   const lineDraftStart = isLineLayerActive ? activeTrace.draftStart : null;
   internalWallDraftRef.current = lineDraftStart;
   const externalTrace = layerTraces[EXTERNAL_WALLS_LAYER_ID] || { points: [], polygonClosed: false };
-  const showOnlyInternalLayer = activeLayerId === INTERNAL_WALLS_LAYER_ID;
+  const showOnlyInternalLayer =
+    activeLayerId === INTERNAL_WALLS_LAYER_ID || activeLayerId === INTERNAL_DOORS_LAYER_ID;
 
   const bumpView = useCallback(() => setViewTick((n) => n + 1), []);
 
@@ -242,6 +255,7 @@ export default function TracePlanModal({
   function layerSelectable(layerId) {
     if (
       layerId === INTERNAL_WALLS_LAYER_ID ||
+      layerId === INTERNAL_DOORS_LAYER_ID ||
       layerId === WINDOWS_LAYER_ID ||
       layerId === DOORS_LAYER_ID ||
       layerId === SLIDING_DOORS_LAYER_ID ||
@@ -251,6 +265,10 @@ export default function TracePlanModal({
     ) {
       const ext = layerTraces[EXTERNAL_WALLS_LAYER_ID];
       if (!ext?.polygonClosed || (ext.points?.length ?? 0) < 3) return false;
+    }
+    if (layerId === INTERNAL_DOORS_LAYER_ID) {
+      const walls = layerTraces[INTERNAL_WALLS_LAYER_ID]?.segments ?? [];
+      if (walls.length < 1) return false;
     }
     return true;
   }
@@ -309,6 +327,7 @@ export default function TracePlanModal({
     clearPolygonPreview();
     setHoveredWallNode(null);
     setDraggingWallNode(null);
+    setHoveredInternalWallSegmentIndex(-1);
     setWindowPreview(null);
     setHoveredWindowIndex(-1);
     setHoveredResizeIndex(-1);
@@ -319,6 +338,9 @@ export default function TracePlanModal({
     setDoorPreview(null);
     setHoveredDoorIndex(-1);
     setMovingDoorIndex(-1);
+    setInternalDoorPreview(null);
+    setHoveredInternalDoorIndex(-1);
+    setMovingInternalDoorIndex(-1);
     setSlidingDoorPreview(null);
     setHoveredSlidingDoorIndex(-1);
     setHoveredSlidingResizeIndex(-1);
@@ -326,11 +348,16 @@ export default function TracePlanModal({
     setSlidingResizeWidthM(null);
     if (layerId === WINDOWS_LAYER_ID) setWindowTool("add");
     if (layerId === DOORS_LAYER_ID) setDoorTool("add");
+    if (layerId === INTERNAL_DOORS_LAYER_ID) setInternalDoorTool("add");
     if (layerId === SLIDING_DOORS_LAYER_ID) setSlidingDoorTool("add");
     if (layerId === DECK_LAYER_ID) {
       setDeckTool("add");
       setHoveredDeckIndex(-1);
       setEditingDeckIndex(-1);
+    }
+    if (layerId === INTERNAL_WALLS_LAYER_ID) {
+      setInternalWallTool("add");
+      setLinePreviewPoint(null);
     }
     if (layerId === FLOORING_LAYER_ID) {
       setFlooringTool("hybrid");
@@ -351,6 +378,10 @@ export default function TracePlanModal({
           ? "Trace and close External Walls before placing windows."
           : layer.id === DOORS_LAYER_ID
             ? "Trace and close External Walls before placing swing doors."
+            : layer.id === INTERNAL_DOORS_LAYER_ID
+              ? (layerTraces[INTERNAL_WALLS_LAYER_ID]?.segments?.length ?? 0) < 1
+                ? "Trace at least one Internal Wall before placing internal swing doors."
+                : "Trace and close External Walls before placing internal swing doors."
             : layer.id === SLIDING_DOORS_LAYER_ID
               ? "Trace and close External Walls before placing sliding doors."
               : layer.id === ROOF_LAYER_ID
@@ -388,6 +419,12 @@ export default function TracePlanModal({
       setHoveredDoorIndex(-1);
       setMovingDoorIndex(-1);
     }
+    if (layer.id === INTERNAL_DOORS_LAYER_ID) {
+      setInternalDoorTool(item.id);
+      setInternalDoorPreview(null);
+      setHoveredInternalDoorIndex(-1);
+      setMovingInternalDoorIndex(-1);
+    }
     if (layer.id === SLIDING_DOORS_LAYER_ID) {
       setSlidingDoorTool(item.id);
       setSlidingDoorPreview(null);
@@ -406,6 +443,16 @@ export default function TracePlanModal({
         patchLayerTrace(DECK_LAYER_ID, { points: [], polygonClosed: false });
         setEditingDeckIndex(-1);
       }
+    }
+    if (layer.id === INTERNAL_WALLS_LAYER_ID) {
+      setInternalWallTool(item.id);
+      setHoveredInternalWallSegmentIndex(-1);
+      setHoveredWallNode(null);
+      setDraggingWallNode(null);
+      setLinePreviewPoint(null);
+      internalWallDraftRef.current = null;
+      internalWallSnapHintRef.current = null;
+      patchLayerTrace(INTERNAL_WALLS_LAYER_ID, { draftStart: null });
     }
     if (layer.id === FLOORING_LAYER_ID) {
       setFlooringTool(item.id);
@@ -547,6 +594,26 @@ export default function TracePlanModal({
       const current = prev[DOORS_LAYER_ID] || { doors: [] };
       const doors = (current.doors ?? []).filter((_, i) => i !== index);
       return { ...prev, [DOORS_LAYER_ID]: { ...current, doors } };
+    });
+  }
+
+  function internalDoorIndexAtScreen(screenX, screenY) {
+    const placed = layerTraces[INTERNAL_DOORS_LAYER_ID]?.doors ?? [];
+    if (!placed.length) return -1;
+    const src = clampSourcePoint(screenToSource(screenX, screenY));
+    for (let i = placed.length - 1; i >= 0; i -= 1) {
+      const corners = placed[i]?.corners;
+      if (corners?.length >= 3 && pointInPolygon(src, corners, 0)) return i;
+    }
+    return -1;
+  }
+
+  function removeInternalDoorAt(index) {
+    if (index < 0) return;
+    setLayerTraces((prev) => {
+      const current = prev[INTERNAL_DOORS_LAYER_ID] || { doors: [] };
+      const doors = (current.doors ?? []).filter((_, i) => i !== index);
+      return { ...prev, [INTERNAL_DOORS_LAYER_ID]: { ...current, doors } };
     });
   }
 
@@ -871,6 +938,26 @@ export default function TracePlanModal({
     }
     if (
       saved.page === pageNumber &&
+      saved.internalDoors?.length &&
+      next[EXTERNAL_WALLS_LAYER_ID]?.points?.length >= 3
+    ) {
+      const outerPx = next[EXTERNAL_WALLS_LAYER_ID].points;
+      const savedMpp = computeMetresPerPixel(
+        saved.calibration,
+        sourceCanvas.width,
+        sourceCanvas.height
+      );
+      const restoredInternalDoors = saved.internalDoors
+        .map((door) => {
+          const faceA = { x: door.a.x * sourceCanvas.width, y: door.a.y * sourceCanvas.height };
+          const faceB = { x: door.b.x * sourceCanvas.width, y: door.b.y * sourceCanvas.height };
+          return buildDoorRenderFromSegmentEndpoints(faceA, faceB, outerPx, savedMpp);
+        })
+        .filter(Boolean);
+      next[INTERNAL_DOORS_LAYER_ID] = { doors: restoredInternalDoors };
+    }
+    if (
+      saved.page === pageNumber &&
       saved.slidingDoors?.length &&
       next[EXTERNAL_WALLS_LAYER_ID]?.points?.length >= 3
     ) {
@@ -1185,6 +1272,11 @@ export default function TracePlanModal({
             metresPerPixel
           );
           if (!footprint) return;
+          const hoveredDelete =
+            isActive &&
+            internalWallTool === "delete" &&
+            hoveredInternalWallSegmentIndex === segmentIndex;
+          ctx.fillStyle = hoveredDelete ? "rgba(220, 38, 38, 0.35)" : layer.fillClosed;
           ctx.beginPath();
           footprint.forEach((p, i) => {
             if (i === 0) ctx.moveTo(p.x, p.y);
@@ -1206,21 +1298,31 @@ export default function TracePlanModal({
         });
         ctx.globalAlpha = 1;
 
-        ctx.strokeStyle = layer.stroke;
-        ctx.lineWidth = (isActive ? 1.25 : 1) / scale;
-        ctx.setLineDash([4 / scale, 3 / scale]);
-        segments.forEach((seg) => {
+        segments.forEach((seg, segmentIndex) => {
+          const hoveredDelete =
+            isActive &&
+            internalWallTool === "delete" &&
+            hoveredInternalWallSegmentIndex === segmentIndex;
+          ctx.strokeStyle = hoveredDelete ? "#dc2626" : layer.stroke;
+          ctx.lineWidth = ((hoveredDelete ? 2.25 : isActive ? 1.25 : 1)) / scale;
+          ctx.setLineDash([4 / scale, 3 / scale]);
           ctx.beginPath();
           ctx.moveTo(seg.a.x, seg.a.y);
           ctx.lineTo(seg.b.x, seg.b.y);
           ctx.stroke();
+          ctx.setLineDash([]);
         });
-        ctx.setLineDash([]);
       } else {
         ctx.strokeStyle = layer.stroke;
         ctx.lineWidth = (isActive ? 2.5 : 1.75) / scale;
         ctx.lineCap = "round";
-        segments.forEach((seg) => {
+        segments.forEach((seg, segmentIndex) => {
+          const hoveredDelete =
+            isActive &&
+            internalWallTool === "delete" &&
+            hoveredInternalWallSegmentIndex === segmentIndex;
+          ctx.strokeStyle = hoveredDelete ? "#dc2626" : layer.stroke;
+          ctx.lineWidth = ((hoveredDelete ? 3.5 : isActive ? 2.5 : 1.75)) / scale;
           ctx.beginPath();
           ctx.moveTo(seg.a.x, seg.a.y);
           ctx.lineTo(seg.b.x, seg.b.y);
@@ -1230,6 +1332,7 @@ export default function TracePlanModal({
 
       ctx.globalAlpha = 1;
       if (!isActive) return;
+      if (internalWallTool === "delete") return;
       segments.forEach((seg, segmentIndex) => {
         ["a", "b"].forEach((vertex) => {
           const p = seg[vertex];
@@ -1254,6 +1357,7 @@ export default function TracePlanModal({
       if (
         showOnlyInternalLayer &&
         layer.id !== INTERNAL_WALLS_LAYER_ID &&
+        layer.id !== INTERNAL_DOORS_LAYER_ID &&
         layer.id !== EXTERNAL_WALLS_LAYER_ID
       ) {
         return;
@@ -1696,6 +1800,48 @@ export default function TracePlanModal({
         drawDoorRect(doorPreview, { preview: true });
       }
 
+      // Internal swing doors: solid leaf only (no glass), snap to internal walls.
+      const internalDoorsLayer = TRACE_PLAN_LAYERS.find((l) => l.id === INTERNAL_DOORS_LAYER_ID);
+      const placedInternalDoors = layerTraces[INTERNAL_DOORS_LAYER_ID]?.doors ?? [];
+
+      const drawInternalDoorRect = (door, { preview = false } = {}) => {
+        if (!door?.corners?.length) return;
+        ctx.beginPath();
+        door.corners.forEach((p, i) => {
+          if (i === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
+        ctx.closePath();
+        ctx.fillStyle = preview ? "rgba(154, 52, 18, 0.35)" : "rgba(154, 52, 18, 0.55)";
+        ctx.fill();
+        ctx.strokeStyle = preview
+          ? "rgba(154, 52, 18, 0.75)"
+          : (internalDoorsLayer?.stroke || "#9a3412");
+        ctx.lineWidth = (preview ? 1.25 : 1.5) / scale;
+        if (preview) ctx.setLineDash([5 / scale, 4 / scale]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      };
+
+      placedInternalDoors.forEach((door, index) => {
+        drawInternalDoorRect(door, { preview: false });
+        if (
+          isInternalDoorsLayerActive &&
+          index === hoveredInternalDoorIndex &&
+          (internalDoorTool === "delete" || internalDoorTool === "edit")
+        ) {
+          highlightWindow(
+            door,
+            internalDoorTool === "delete"
+              ? { fill: "rgba(220, 38, 38, 0.35)", stroke: "#dc2626" }
+              : { fill: "rgba(154, 52, 18, 0.35)", stroke: "#7c2d12" }
+          );
+        }
+      });
+      if (isInternalDoorsLayerActive && internalDoorPreview) {
+        drawInternalDoorRect(internalDoorPreview, { preview: true });
+      }
+
       // Sliding doors: same plan rect as windows, teal colour, resize node in edit mode.
       const slidingLayer = TRACE_PLAN_LAYERS.find((l) => l.id === SLIDING_DOORS_LAYER_ID);
       const placedSliding = layerTraces[SLIDING_DOORS_LAYER_ID]?.slidingDoors ?? [];
@@ -1859,6 +2005,8 @@ export default function TracePlanModal({
     externalTrace.points,
     hoveredWallNode,
     draggingWallNode,
+    internalWallTool,
+    hoveredInternalWallSegmentIndex,
     windowPreview,
     isWindowsLayerActive,
     windowTool,
@@ -1872,6 +2020,11 @@ export default function TracePlanModal({
     doorPreview,
     hoveredDoorIndex,
     movingDoorIndex,
+    isInternalDoorsLayerActive,
+    internalDoorTool,
+    internalDoorPreview,
+    hoveredInternalDoorIndex,
+    movingInternalDoorIndex,
     isSlidingDoorsLayerActive,
     slidingDoorTool,
     slidingDoorPreview,
@@ -1898,7 +2051,7 @@ export default function TracePlanModal({
 
   useEffect(() => {
     if (!loading && !loadError) redraw();
-  }, [loading, loadError, pageLoading, layerTraces, activeLayerId, nearOrigin, redraw, viewTick, linePreviewPoint, polygonPreviewPoint, windowPreview, windowTool, hoveredWindowIndex, hoveredResizeIndex, hoveredHeightIndex, resizeWidthM, movingWindowIndex, doorTool, doorPreview, hoveredDoorIndex, movingDoorIndex, slidingDoorTool, slidingDoorPreview, hoveredSlidingDoorIndex, hoveredSlidingResizeIndex, movingSlidingDoorIndex, slidingResizeWidthM, deckTool, hoveredDeckIndex, editingDeckIndex, flooringTool, roofTool, roofPivotDraftStart, roofPivotPreviewEnd, wizardStep, cropRectPx, cropDraftEnd, calibration, calibDraftStart, calibPreviewEnd, pendingCalibLine, showPdfPlan]);
+  }, [loading, loadError, pageLoading, layerTraces, activeLayerId, nearOrigin, redraw, viewTick, linePreviewPoint, polygonPreviewPoint, windowPreview, windowTool, hoveredWindowIndex, hoveredResizeIndex, hoveredHeightIndex, resizeWidthM, movingWindowIndex, doorTool, doorPreview, hoveredDoorIndex, movingDoorIndex, internalDoorTool, internalDoorPreview, hoveredInternalDoorIndex, movingInternalDoorIndex, slidingDoorTool, slidingDoorPreview, hoveredSlidingDoorIndex, hoveredSlidingResizeIndex, movingSlidingDoorIndex, slidingResizeWidthM, deckTool, hoveredDeckIndex, editingDeckIndex, flooringTool, roofTool, roofPivotDraftStart, roofPivotPreviewEnd, wizardStep, cropRectPx, cropDraftEnd, calibration, calibDraftStart, calibPreviewEnd, pendingCalibLine, showPdfPlan, internalWallTool, hoveredInternalWallSegmentIndex, hoveredWallNode, draggingWallNode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -2060,6 +2213,46 @@ export default function TracePlanModal({
       if (!best || candidate.dist < best.dist) best = candidate;
     }
     return best;
+  }
+
+  function findInternalWallSegmentAtScreen(screenX, screenY) {
+    const segments = layerTraces[INTERNAL_WALLS_LAYER_ID]?.segments ?? [];
+    if (!segments.length) return -1;
+    let bestIndex = -1;
+    let bestDist = LINE_HIT_PX;
+    segments.forEach((seg, index) => {
+      if (!seg?.a || !seg?.b) return;
+      const a = sourceToScreen(seg.a.x, seg.a.y);
+      const b = sourceToScreen(seg.b.x, seg.b.y);
+      const hit = distanceToSegment(screenX, screenY, a.x, a.y, b.x, b.y);
+      if (hit.dist <= bestDist) {
+        bestDist = hit.dist;
+        bestIndex = index;
+      }
+    });
+    return bestIndex;
+  }
+
+  function removeInternalWallSegmentAt(index) {
+    if (!(index >= 0)) return;
+    setLayerTraces((prev) => {
+      const current = prev[INTERNAL_WALLS_LAYER_ID] || { segments: [], draftStart: null };
+      const segments = current.segments ?? [];
+      if (index >= segments.length) return prev;
+      return {
+        ...prev,
+        [INTERNAL_WALLS_LAYER_ID]: {
+          ...current,
+          segments: segments.filter((_, i) => i !== index),
+          draftStart: null,
+        },
+      };
+    });
+    setHoveredInternalWallSegmentIndex(-1);
+    setHoveredWallNode(null);
+    setLinePreviewPoint(null);
+    internalWallDraftRef.current = null;
+    internalWallSnapHintRef.current = null;
   }
 
   function clampSourcePoint(pt) {
@@ -2466,6 +2659,46 @@ export default function TracePlanModal({
     });
   }
 
+  function internalDoorPlacementAtScreen(screenX, screenY) {
+    if (!isInternalDoorsLayerActive) return null;
+    const outerPoints = externalTrace.points;
+    const segments = layerTraces[INTERNAL_WALLS_LAYER_ID]?.segments ?? [];
+    if (!externalTrace.polygonClosed || outerPoints.length < 3 || segments.length < 1) return null;
+    const cursor = clampSourcePoint(screenToSource(screenX, screenY));
+    return resolveDoorPlacementOnSegments(
+      cursor,
+      segments,
+      outerPoints,
+      currentMetresPerPixel(),
+      DOOR_WIDTH_M
+    );
+  }
+
+  function moveInternalDoorAtScreen(index, screenX, screenY) {
+    const placement = internalDoorPlacementAtScreen(screenX, screenY);
+    if (!placement) return;
+    setLayerTraces((prev) => {
+      const current = prev[INTERNAL_DOORS_LAYER_ID] || { doors: [] };
+      const doors = (current.doors ?? []).map((d, i) => (i === index ? placement : d));
+      return { ...prev, [INTERNAL_DOORS_LAYER_ID]: { ...current, doors } };
+    });
+  }
+
+  function placeInternalDoorAtScreen(screenX, screenY) {
+    const placement = internalDoorPlacementAtScreen(screenX, screenY);
+    if (!placement) return;
+    setLayerTraces((prev) => {
+      const current = prev[INTERNAL_DOORS_LAYER_ID] || { doors: [] };
+      return {
+        ...prev,
+        [INTERNAL_DOORS_LAYER_ID]: {
+          ...current,
+          doors: [...(current.doors ?? []), placement],
+        },
+      };
+    });
+  }
+
   function slidingDoorPlacementAtScreen(screenX, screenY, widthM) {
     if (!isSlidingDoorsLayerActive) return null;
     const outerPoints = externalTrace.points;
@@ -2666,6 +2899,31 @@ export default function TracePlanModal({
         return;
       }
 
+      if (isInternalDoorsLayerActive) {
+        if (internalDoorTool === "edit") {
+          const moveIndex = internalDoorIndexAtScreen(pt.x, pt.y);
+          if (moveIndex >= 0) {
+            interactionRef.current = {
+              type: "internalDoorMove",
+              index: moveIndex,
+              startX: pt.x,
+              startY: pt.y,
+              moved: false,
+            };
+            setMovingInternalDoorIndex(moveIndex);
+            return;
+          }
+          return;
+        }
+        interactionRef.current = {
+          type: "internalDoorTool",
+          startX: pt.x,
+          startY: pt.y,
+          moved: false,
+        };
+        return;
+      }
+
       if (isSlidingDoorsLayerActive) {
         if (slidingDoorTool === "edit") {
           const resizeIndex = slidingDoorResizeNodeAtScreen(pt.x, pt.y);
@@ -2723,6 +2981,43 @@ export default function TracePlanModal({
       }
 
       if (isLineLayerActive) {
+        if (internalWallTool === "delete") {
+          interactionRef.current = {
+            type: "internalWallTool",
+            startX: pt.x,
+            startY: pt.y,
+            moved: false,
+          };
+          return;
+        }
+        if (internalWallTool === "edit") {
+          const wallNode = findInternalWallNodeAtScreen(pt.x, pt.y);
+          if (wallNode) {
+            const segments = layerTraces[INTERNAL_WALLS_LAYER_ID]?.segments ?? [];
+            const anchor = segments[wallNode.segmentIndex]?.[wallNode.vertex];
+            if (anchor) {
+              const affectedIndices = segments
+                .map((seg, index) => ({ seg, index }))
+                .filter(
+                  ({ seg }) => pointsCoincide(seg.a, anchor) || pointsCoincide(seg.b, anchor)
+                )
+                .map(({ index }) => index);
+              interactionRef.current = {
+                type: "dragInternalWallNode",
+                segmentIndex: wallNode.segmentIndex,
+                vertex: wallNode.vertex,
+                affectedIndices,
+                startX: pt.x,
+                startY: pt.y,
+                moved: false,
+              };
+              setDraggingWallNode(wallNode);
+              setHoveredWallNode(wallNode);
+            }
+          }
+          return;
+        }
+        // Add tool: drag existing nodes, or click–click to draw.
         const wallNode = findInternalWallNodeAtScreen(pt.x, pt.y);
         if (wallNode) {
           const segments = layerTraces[INTERNAL_WALLS_LAYER_ID]?.segments ?? [];
@@ -2858,6 +3153,23 @@ export default function TracePlanModal({
         }
         return;
       }
+      if (isInternalDoorsLayerActive) {
+        if (internalDoorTool === "add") {
+          const placement = internalDoorPlacementAtScreen(pt.x, pt.y);
+          setInternalDoorPreview((prev) =>
+            prev === placement ||
+            (prev && placement &&
+              prev.center.x === placement.center.x &&
+              prev.center.y === placement.center.y)
+              ? prev
+              : placement
+          );
+        } else {
+          const idx = internalDoorIndexAtScreen(pt.x, pt.y);
+          setHoveredInternalDoorIndex((prev) => (prev === idx ? prev : idx));
+        }
+        return;
+      }
       if (isSlidingDoorsLayerActive) {
         if (slidingDoorTool === "add") {
           const placement = slidingDoorPlacementAtScreen(pt.x, pt.y);
@@ -2888,6 +3200,18 @@ export default function TracePlanModal({
         }
       }
       if (isLineLayerActive) {
+        if (internalWallTool === "delete") {
+          const idx = findInternalWallSegmentAtScreen(pt.x, pt.y);
+          setHoveredInternalWallSegmentIndex((prev) => (prev === idx ? prev : idx));
+          setHoveredWallNode(null);
+          return;
+        }
+        if (internalWallTool === "edit") {
+          const hit = findInternalWallNodeAtScreen(pt.x, pt.y);
+          setHoveredWallNode((prev) => (wallNodesMatch(prev, hit) ? prev : hit));
+          setHoveredInternalWallSegmentIndex(-1);
+          return;
+        }
         if (internalWallDraftRef.current) {
           const segments = layerTraces[INTERNAL_WALLS_LAYER_ID]?.segments ?? [];
           const outerPoints = externalTrace.points;
@@ -2906,6 +3230,7 @@ export default function TracePlanModal({
           const hit = findInternalWallNodeAtScreen(pt.x, pt.y);
           setHoveredWallNode((prev) => (wallNodesMatch(prev, hit) ? prev : hit));
         }
+        setHoveredInternalWallSegmentIndex(-1);
         return;
       }
       if (polygonClosed) {
@@ -2984,6 +3309,26 @@ export default function TracePlanModal({
       } else {
         const idx = doorIndexAtScreen(pt.x, pt.y);
         setHoveredDoorIndex((prev) => (prev === idx ? prev : idx));
+      }
+      return;
+    }
+
+    if (interaction.type === "internalDoorMove") {
+      interaction.moved = true;
+      moveInternalDoorAtScreen(interaction.index, pt.x, pt.y);
+      return;
+    }
+
+    if (interaction.type === "internalDoorTool") {
+      const dx = pt.x - interaction.startX;
+      const dy = pt.y - interaction.startY;
+      if (Math.hypot(dx, dy) > 4) interaction.moved = true;
+      if (internalDoorTool === "add") {
+        const placement = internalDoorPlacementAtScreen(pt.x, pt.y);
+        setInternalDoorPreview((prev) => (prev === placement ? prev : placement));
+      } else {
+        const idx = internalDoorIndexAtScreen(pt.x, pt.y);
+        setHoveredInternalDoorIndex((prev) => (prev === idx ? prev : idx));
       }
       return;
     }
@@ -3180,6 +3525,28 @@ export default function TracePlanModal({
       return;
     }
 
+    if (interaction.type === "internalDoorMove") {
+      if (event.button === 0 && interaction.moved) {
+        const pt = canvasCoords(event);
+        if (pt) moveInternalDoorAtScreen(interaction.index, pt.x, pt.y);
+      }
+      setMovingInternalDoorIndex(-1);
+      return;
+    }
+
+    if (interaction.type === "internalDoorTool") {
+      if (event.button === 0 && !interaction.moved) {
+        const pt = canvasCoords(event) || { x: interaction.startX, y: interaction.startY };
+        if (internalDoorTool === "add") {
+          placeInternalDoorAtScreen(pt.x, pt.y);
+        } else if (internalDoorTool === "delete") {
+          removeInternalDoorAt(internalDoorIndexAtScreen(pt.x, pt.y));
+          setHoveredInternalDoorIndex(-1);
+        }
+      }
+      return;
+    }
+
     if (interaction.type === "slidingDoorResize") {
       if (event.button === 0) {
         const pt = canvasCoords(event);
@@ -3221,6 +3588,17 @@ export default function TracePlanModal({
           beginEditDeckAt(idx);
         }
         setHoveredDeckIndex(-1);
+      }
+      return;
+    }
+
+    if (interaction.type === "internalWallTool") {
+      if (event.button === 0 && !interaction.moved) {
+        const pt = canvasCoords(event) || { x: interaction.startX, y: interaction.startY };
+        if (internalWallTool === "delete") {
+          removeInternalWallSegmentAt(findInternalWallSegmentAtScreen(pt.x, pt.y));
+        }
+        setHoveredInternalWallSegmentIndex(-1);
       }
       return;
     }
@@ -3325,11 +3703,18 @@ export default function TracePlanModal({
     setCropDraftEnd(null);
     setHoveredWallNode(null);
     setDraggingWallNode(null);
+    setHoveredInternalWallSegmentIndex(-1);
     setWindowPreview(null);
     setHoveredWindowIndex(-1);
     setHoveredResizeIndex(-1);
     setResizeWidthM(null);
     setMovingWindowIndex(-1);
+    setDoorPreview(null);
+    setHoveredDoorIndex(-1);
+    setMovingDoorIndex(-1);
+    setInternalDoorPreview(null);
+    setHoveredInternalDoorIndex(-1);
+    setMovingInternalDoorIndex(-1);
     internalWallSnapHintRef.current = null;
   }
 
@@ -3350,6 +3735,16 @@ export default function TracePlanModal({
         return {
           ...prev,
           [DOORS_LAYER_ID]: { ...current, doors: (current.doors ?? []).slice(0, -1) },
+        };
+      });
+      return;
+    }
+    if (isInternalDoorsLayerActive) {
+      setLayerTraces((prev) => {
+        const current = prev[INTERNAL_DOORS_LAYER_ID] || { doors: [] };
+        return {
+          ...prev,
+          [INTERNAL_DOORS_LAYER_ID]: { ...current, doors: (current.doors ?? []).slice(0, -1) },
         };
       });
       return;
@@ -3437,6 +3832,11 @@ export default function TracePlanModal({
     if (isDoorsLayerActive) {
       patchLayerTrace(DOORS_LAYER_ID, { doors: [] });
       setDoorPreview(null);
+      return;
+    }
+    if (isInternalDoorsLayerActive) {
+      patchLayerTrace(INTERNAL_DOORS_LAYER_ID, { doors: [] });
+      setInternalDoorPreview(null);
       return;
     }
     if (isSlidingDoorsLayerActive) {
@@ -3640,6 +4040,22 @@ export default function TracePlanModal({
           .filter(Boolean);
         return JSON.stringify(normalized) !== JSON.stringify(saved.doors ?? []);
       }
+      if (layer.id === INTERNAL_DOORS_LAYER_ID && source) {
+        if (saved.page !== currentPage) return true;
+        const round = (v) => Math.round(v * 1e6) / 1e6;
+        const normalized = (trace.doors ?? [])
+          .map((door) => {
+            const outerA = door.outerA ?? door.a;
+            const outerB = door.outerB ?? door.b;
+            if (!outerA || !outerB) return null;
+            return {
+              a: { x: round(outerA.x / source.width), y: round(outerA.y / source.height) },
+              b: { x: round(outerB.x / source.width), y: round(outerB.y / source.height) },
+            };
+          })
+          .filter(Boolean);
+        return JSON.stringify(normalized) !== JSON.stringify(saved.internalDoors ?? []);
+      }
       if (layer.id === SLIDING_DOORS_LAYER_ID && source) {
         if (saved.page !== currentPage) return true;
         const round = (v) => Math.round(v * 1e6) / 1e6;
@@ -3820,6 +4236,17 @@ export default function TracePlanModal({
           };
         })
         .filter(Boolean);
+      const normalizedInternalDoors = (layerTraces[INTERNAL_DOORS_LAYER_ID]?.doors ?? [])
+        .map((door) => {
+          const outerA = door.outerA ?? door.a;
+          const outerB = door.outerB ?? door.b;
+          if (!outerA || !outerB) return null;
+          return {
+            a: { x: outerA.x / source.width, y: outerA.y / source.height },
+            b: { x: outerB.x / source.width, y: outerB.y / source.height },
+          };
+        })
+        .filter(Boolean);
       const normalizedSlidingDoors = (layerTraces[SLIDING_DOORS_LAYER_ID]?.slidingDoors ?? [])
         .map((door) => {
           const outerA = door.outerA ?? door.a;
@@ -3923,7 +4350,8 @@ export default function TracePlanModal({
         normalizedDecks,
         normalizedRoofPivot,
         normalizedFlooring,
-        normalizedFinishes
+        normalizedFinishes,
+        normalizedInternalDoors
       );
       savedTraceRef.current = {
         page: currentPage,
@@ -3975,6 +4403,12 @@ export default function TracePlanModal({
             : hoveredDoorIndex >= 0
               ? "grab"
               : "crosshair"
+        : isInternalDoorsLayerActive && internalDoorTool === "edit"
+          ? movingInternalDoorIndex >= 0
+            ? "grabbing"
+            : hoveredInternalDoorIndex >= 0
+              ? "grab"
+              : "crosshair"
         : isSlidingDoorsLayerActive && slidingDoorTool === "edit"
           ? movingSlidingDoorIndex >= 0
             ? "grabbing"
@@ -3982,11 +4416,15 @@ export default function TracePlanModal({
               ? "grab"
               : "crosshair"
         : isLineLayerActive
-          ? draggingWallNode
-            ? "grabbing"
-            : hoveredWallNode
-              ? "grab"
+          ? internalWallTool === "delete"
+            ? hoveredInternalWallSegmentIndex >= 0
+              ? "pointer"
               : "crosshair"
+            : draggingWallNode
+              ? "grabbing"
+              : hoveredWallNode
+                ? "grab"
+                : "crosshair"
           : polygonClosed
             ? draggingNodeIndex >= 0
               ? "grabbing"
@@ -4021,6 +4459,12 @@ export default function TracePlanModal({
             : doorTool === "edit"
               ? "Edit swing doors: drag a door to slide it along the walls. Use the Swing Door ▸ menu to switch tools."
               : "Add swing doors: hover near an external wall — an 870 mm × 100 mm door follows the cursor and snaps to the wall. Click to place it."
+          : isInternalDoorsLayerActive
+          ? internalDoorTool === "delete"
+            ? "Delete internal swing doors: hover a placed door (highlights red) and click to remove it. Use the Swing Door ▸ menu to switch tools."
+            : internalDoorTool === "edit"
+              ? "Edit internal swing doors: drag a door to slide it along internal walls. Use the Swing Door ▸ menu to switch tools."
+              : "Add internal swing doors: hover near an internal wall — an 870 mm × 100 mm solid door follows the cursor and snaps to the wall. Click to place it."
           : isSlidingDoorsLayerActive
           ? slidingDoorTool === "delete"
             ? "Delete sliding doors: hover a placed door (highlights red) and click to remove it. Use the Sliding Door ▸ menu to switch tools."
@@ -4028,7 +4472,11 @@ export default function TracePlanModal({
               ? "Edit sliding doors: drag a door to slide it along the walls, or drag the square handle on its end to change its width (snaps to 2100–3600 mm)."
               : "Add sliding doors: hover near an external wall — a 2.1 m × 100 mm door follows the cursor and snaps to the wall. Click to place it."
           : isLineLayerActive
-          ? "Click once for each end of a wall line — horizontal or vertical only. Segments trim to the inside edge of external walls. Drag nodes to adjust. Scroll to zoom, shift+drag to pan."
+          ? internalWallTool === "delete"
+            ? "Delete internal walls: hover a wall segment (highlights red) and click to remove it. Use the Walls ▸ menu to switch tools."
+            : internalWallTool === "edit"
+              ? "Edit internal walls: drag endpoints to move them (horizontal/vertical only; shared junctions move together). Use the Walls ▸ menu to switch tools."
+              : "Add internal walls: click once for each end of a wall line — horizontal or vertical only. Segments trim to the inside edge of external walls. Drag nodes to adjust. Use the Walls ▸ menu to switch tools."
           : activeLayerId === ROOF_LAYER_ID
             ? roofTool === "pivot"
               ? "Draw pivot point: click once for each end of a horizontal or vertical hinge line (the skillion roof pitches about this line). A second line replaces the first. Undo clears the draft or the placed pivot."
@@ -4284,7 +4732,7 @@ export default function TracePlanModal({
                               }}
                             />
                             <span style={{ lineHeight: 1.25, flex: 1 }}>{layer.label}</span>
-                            {isActive && hasSubmenu && (layer.id === WINDOWS_LAYER_ID || layer.id === DOORS_LAYER_ID || layer.id === SLIDING_DOORS_LAYER_ID || layer.id === DECK_LAYER_ID || layer.id === ROOF_LAYER_ID || layer.id === FLOORING_LAYER_ID) && (
+                            {isActive && hasSubmenu && (layer.id === WINDOWS_LAYER_ID || layer.id === DOORS_LAYER_ID || layer.id === INTERNAL_DOORS_LAYER_ID || layer.id === SLIDING_DOORS_LAYER_ID || layer.id === DECK_LAYER_ID || layer.id === ROOF_LAYER_ID || layer.id === FLOORING_LAYER_ID || layer.id === INTERNAL_WALLS_LAYER_ID) && (
                               <span
                                 style={{
                                   fontSize: "0.68rem",
@@ -4299,13 +4747,17 @@ export default function TracePlanModal({
                                   ? windowTool
                                   : layer.id === DOORS_LAYER_ID
                                     ? doorTool
+                                    : layer.id === INTERNAL_DOORS_LAYER_ID
+                                      ? internalDoorTool
                                     : layer.id === SLIDING_DOORS_LAYER_ID
                                       ? slidingDoorTool
                                       : layer.id === ROOF_LAYER_ID
                                         ? roofTool
                                         : layer.id === FLOORING_LAYER_ID
                                           ? flooringTool
-                                          : deckTool}
+                                          : layer.id === INTERNAL_WALLS_LAYER_ID
+                                            ? internalWallTool
+                                            : deckTool}
                               </span>
                             )}
                             {hasSubmenu && (
@@ -4345,10 +4797,12 @@ export default function TracePlanModal({
                                 const itemActive =
                                   (layer.id === WINDOWS_LAYER_ID && windowTool === item.id) ||
                                   (layer.id === DOORS_LAYER_ID && doorTool === item.id) ||
+                                  (layer.id === INTERNAL_DOORS_LAYER_ID && internalDoorTool === item.id) ||
                                   (layer.id === SLIDING_DOORS_LAYER_ID && slidingDoorTool === item.id) ||
                                   (layer.id === DECK_LAYER_ID && deckTool === item.id) ||
                                   (layer.id === ROOF_LAYER_ID && roofTool === item.id) ||
-                                  (layer.id === FLOORING_LAYER_ID && flooringTool === item.id);
+                                  (layer.id === FLOORING_LAYER_ID && flooringTool === item.id) ||
+                                  (layer.id === INTERNAL_WALLS_LAYER_ID && internalWallTool === item.id);
                                 const itemColor =
                                   layer.id === FLOORING_LAYER_ID
                                     ? (FLOORING_FINISH_STYLES[item.id] || FLOORING_FINISH_STYLES.hybrid)

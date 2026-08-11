@@ -5,6 +5,7 @@ export const INTERNAL_WALLS_LAYER_ID = "internalWalls";
 export const WINDOWS_LAYER_ID = "windows";
 export const DOORS_LAYER_ID = "doors";
 export const SLIDING_DOORS_LAYER_ID = "slidingDoors";
+export const INTERNAL_DOORS_LAYER_ID = "internalDoors";
 export const ROOF_LAYER_ID = "roof";
 export const DECK_LAYER_ID = "deck";
 export const FLOORING_LAYER_ID = "flooring";
@@ -139,6 +140,28 @@ export const TRACE_PLAN_LAYERS = [
     marker: "#14b8a6",
     origin: "#0f766e",
     saves: true,
+    submenu: [
+      { id: "add", label: "Add" },
+      { id: "edit", label: "Edit" },
+      { id: "delete", label: "Delete" },
+    ],
+  },
+  {
+    id: INTERNAL_DOORS_LAYER_ID,
+    label: "Swing Door",
+    group: "internal",
+    mode: "internalDoors",
+    stroke: "#9a3412",
+    fillClosed: "rgba(154, 52, 18, 0.28)",
+    fillOpen: "rgba(154, 52, 18, 0.14)",
+    marker: "#9a3412",
+    origin: "#7c2d12",
+    saves: true,
+    submenu: [
+      { id: "add", label: "Add" },
+      { id: "edit", label: "Edit" },
+      { id: "delete", label: "Delete" },
+    ],
   },
 ];
 
@@ -155,6 +178,11 @@ export function isWindowsTraceLayer(layerId) {
 export function isDoorsTraceLayer(layerId) {
   const layer = getTracePlanLayer(layerId);
   return layer.mode === "doors";
+}
+
+export function isInternalDoorsTraceLayer(layerId) {
+  const layer = getTracePlanLayer(layerId);
+  return layer.mode === "internalDoors";
 }
 
 export function isSlidingDoorsTraceLayer(layerId) {
@@ -215,6 +243,9 @@ export function createEmptyLayerTrace(layerId) {
   if (isDoorsTraceLayer(layerId)) {
     return { doors: [] };
   }
+  if (isInternalDoorsTraceLayer(layerId)) {
+    return { doors: [] };
+  }
   if (isSlidingDoorsTraceLayer(layerId)) {
     return { slidingDoors: [] };
   }
@@ -254,6 +285,9 @@ export function hasLayerDraft(layerId, trace) {
     return (trace.windows?.length ?? 0) > 0;
   }
   if (isDoorsTraceLayer(layerId)) {
+    return (trace.doors?.length ?? 0) > 0;
+  }
+  if (isInternalDoorsTraceLayer(layerId)) {
     return (trace.doors?.length ?? 0) > 0;
   }
   if (isSlidingDoorsTraceLayer(layerId)) {
@@ -356,6 +390,11 @@ export function parsePlanTraceDoors(raw) {
       return { a: { x: ax, y: ay }, b: { x: bx, y: by } };
     })
     .filter(Boolean);
+}
+
+/** Internal swing doors use the same endpoint storage as external swing doors. */
+export function parsePlanTraceInternalDoors(raw) {
+  return parsePlanTraceDoors(raw);
 }
 
 /** Sliding doors use the same endpoint storage as swing doors. */
@@ -463,6 +502,7 @@ export function parsePlanTracePolygon(raw) {
     crop: null,
     windows: [],
     doors: [],
+    internalDoors: [],
     slidingDoors: [],
     calibration: null,
   };
@@ -475,6 +515,7 @@ export function parsePlanTracePolygon(raw) {
     const crop = parsePlanTraceCrop(data?.crop);
     const windows = parsePlanTraceWindows(data?.windows);
     const doors = parsePlanTraceDoors(data?.doors);
+    const internalDoors = parsePlanTraceInternalDoors(data?.internalDoors);
     const slidingDoors = parsePlanTraceSlidingDoors(data?.slidingDoors);
     const calibration = parsePlanTraceCalibration(data?.calibration);
     const roofPivotLine = parsePlanTraceRoofPivotLine(data?.roofPivotLine);
@@ -504,6 +545,7 @@ export function parsePlanTracePolygon(raw) {
       crop,
       windows,
       doors,
+      internalDoors,
       slidingDoors,
       calibration,
     };
@@ -534,7 +576,8 @@ export function serializePlanTracePolygon(
   decks = [],
   roofPivotLine = null,
   flooringPoints = [],
-  flooringFinishes = null
+  flooringFinishes = null,
+  internalDoors = []
 ) {
   const round = (v) => Math.round(v * 1e6) / 1e6;
   const payload = {
@@ -606,6 +649,11 @@ export function serializePlanTracePolygon(
     b: { x: round(door.b.x), y: round(door.b.y) },
   }));
   if (normalizedDoors.length) payload.doors = normalizedDoors;
+  const normalizedInternalDoors = parsePlanTraceInternalDoors(internalDoors).map((door) => ({
+    a: { x: round(door.a.x), y: round(door.a.y) },
+    b: { x: round(door.b.x), y: round(door.b.y) },
+  }));
+  if (normalizedInternalDoors.length) payload.internalDoors = normalizedInternalDoors;
   const normalizedSlidingDoors = parsePlanTraceSlidingDoors(slidingDoors).map((door) => ({
     a: { x: round(door.a.x), y: round(door.a.y) },
     b: { x: round(door.b.x), y: round(door.b.y) },

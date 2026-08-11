@@ -1373,7 +1373,8 @@ export default function Colours({ project, onUpdate }) {
     decks = [],
     roofPivotLine = null,
     flooringPoints = [],
-    flooringFinishes = null
+    flooringFinishes = null,
+    internalDoors = []
   ) {
     const projectKey = project?.access_token || project?.id;
     if (!projectKey) {
@@ -1401,7 +1402,8 @@ export default function Colours({ project, onUpdate }) {
           decks,
           roofPivotLine,
           flooringPoints,
-          flooringFinishes
+          flooringFinishes,
+          internalDoors
         ),
       }),
     });

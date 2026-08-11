@@ -217,6 +217,117 @@ export function buildWindowRenderFromEndpoints(outerA, outerB, outerPoints, metr
 }
 
 /**
+ * Snap an 870 mm × 100 mm swing door onto the nearest internal wall segment
+ * (segment = wall centreline). Never uses the external wall polygon as a target.
+ */
+export function resolveDoorPlacementOnSegments(
+  cursor,
+  segments,
+  outerPoints,
+  metresPerPixel = null,
+  widthM = DOOR_WIDTH_M
+) {
+  if (!cursor || !Array.isArray(segments) || segments.length === 0) return null;
+  if (!Array.isArray(outerPoints) || outerPoints.length < 3) return null;
+
+  const halfT = internalWallHalfThicknessSource(outerPoints, metresPerPixel);
+  if (halfT == null || !(halfT > 0)) return null;
+
+  const pxPerMetre = halfT / (WINDOW_THICKNESS_M / 2);
+  const effWidthM = widthM > 0 ? widthM : DOOR_WIDTH_M;
+  const halfLenPx = (effWidthM / 2) * pxPerMetre;
+  const halfThicknessPx = halfT;
+
+  let best = null;
+  for (let i = 0; i < segments.length; i += 1) {
+    const a = segments[i]?.a;
+    const b = segments[i]?.b;
+    if (!a || !b) continue;
+    const proj = projectPointToSegment(cursor.x, cursor.y, a.x, a.y, b.x, b.y);
+    if (!best || proj.dist < best.dist) {
+      best = { ...proj, segmentIndex: i, a, b };
+    }
+  }
+  if (!best || best.len < 1e-6) return null;
+
+  const dir = { x: (best.b.x - best.a.x) / best.len, y: (best.b.y - best.a.y) / best.len };
+  // Stable perpendicular for thickness (left of direction).
+  const normal = { x: -dir.y, y: dir.x };
+
+  let alongPx = best.t * best.len;
+  if (best.len <= halfLenPx * 2) {
+    alongPx = best.len / 2;
+  } else {
+    alongPx = Math.max(halfLenPx, Math.min(best.len - halfLenPx, alongPx));
+  }
+
+  const center = {
+    x: best.a.x + dir.x * alongPx,
+    y: best.a.y + dir.y * alongPx,
+  };
+  const endA = { x: center.x - dir.x * halfLenPx, y: center.y - dir.y * halfLenPx };
+  const endB = { x: center.x + dir.x * halfLenPx, y: center.y + dir.y * halfLenPx };
+
+  const nx = normal.x * halfThicknessPx;
+  const ny = normal.y * halfThicknessPx;
+  const faceA = { x: endA.x - nx, y: endA.y - ny };
+  const faceB = { x: endB.x - nx, y: endB.y - ny };
+  const otherA = { x: endA.x + nx, y: endA.y + ny };
+  const otherB = { x: endB.x + nx, y: endB.y + ny };
+
+  return {
+    segmentIndex: best.segmentIndex,
+    center,
+    a: endA,
+    b: endB,
+    outerA: faceA,
+    outerB: faceB,
+    corners: [otherA, otherB, faceB, faceA],
+    widthM: effWidthM,
+  };
+}
+
+/**
+ * Rebuild an internal swing door rectangle from stored face endpoints.
+ * Expands by full wall thickness along a stable perpendicular (no external centroid).
+ */
+export function buildDoorRenderFromSegmentEndpoints(
+  faceA,
+  faceB,
+  outerPoints,
+  metresPerPixel = null
+) {
+  if (!faceA || !faceB || !Array.isArray(outerPoints) || outerPoints.length < 3) return null;
+  const halfT = internalWallHalfThicknessSource(outerPoints, metresPerPixel);
+  if (halfT == null || !(halfT > 0)) return null;
+
+  const dx = faceB.x - faceA.x;
+  const dy = faceB.y - faceA.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return null;
+
+  const normal = { x: -dy / len, y: dx / len };
+  const thickness = halfT * 2;
+  const otherA = { x: faceA.x + normal.x * thickness, y: faceA.y + normal.y * thickness };
+  const otherB = { x: faceB.x + normal.x * thickness, y: faceB.y + normal.y * thickness };
+  const center = {
+    x: (faceA.x + faceB.x + otherA.x + otherB.x) / 4,
+    y: (faceA.y + faceB.y + otherA.y + otherB.y) / 4,
+  };
+  const pxPerMetre = halfT / (WINDOW_THICKNESS_M / 2);
+
+  return {
+    center,
+    a: { x: faceA.x, y: faceA.y },
+    b: { x: faceB.x, y: faceB.y },
+    outerA: { x: faceA.x, y: faceA.y },
+    outerB: { x: faceB.x, y: faceB.y },
+    corners: [otherA, otherB, { ...faceB }, { ...faceA }],
+    widthM: len / pxPerMetre,
+  };
+}
+
+/**
  * Resize a window by dragging one end. `outerA` stays fixed and the end at
  * `outerB` slides along the wall toward the cursor. The new width snaps to the
  * allowed increments and is capped to the remaining wall length.

@@ -79,6 +79,9 @@ const { ensureJohnstonTilesCatalogue } = require("./johnstonTilesColours");
 const {
   ensureGodfreyHirstClassicCityCatalogue,
 } = require("./godfreyHirstClassicCityColours");
+const {
+  ensureGodfreyHirstApolloHybridCatalogue,
+} = require("./godfreyHirstApolloHybridColours");
 const { ensureSunstarSuper95Catalogue } = require("./sunstarSuper95Colours");
 const { ensureMapQuoteItemsTable, listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
 const {
@@ -1494,6 +1497,7 @@ async function ensureSchema() {
     await ensureYdlStoneCatalogue(pool);
     await ensureJohnstonTilesCatalogue(pool);
     await ensureGodfreyHirstClassicCityCatalogue(pool);
+    await ensureGodfreyHirstApolloHybridCatalogue(pool);
     await ensureSunstarSuper95Catalogue(pool);
     return;
   }
@@ -2225,6 +2229,7 @@ async function ensureSchema() {
   await ensureYdlStoneCatalogue(pool);
   await ensureJohnstonTilesCatalogue(pool);
   await ensureGodfreyHirstClassicCityCatalogue(pool);
+  await ensureGodfreyHirstApolloHybridCatalogue(pool);
   await ensureSunstarSuper95Catalogue(pool);
   await markSchemaUpToDate(pool);
   console.log(`Schema ${SCHEMA_VERSION} applied`);
