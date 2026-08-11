@@ -18,7 +18,7 @@ import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
 import {
   COLORBOND_RANGE_KEY,
-  colourOptionLabelsFromCatalogue,
+  colourOptionEntriesFromCatalogue,
   normalizeColourSectionRanges,
 } from "../constants/colourSectionRanges";
 import {
@@ -135,6 +135,13 @@ export default function Colours({ project, onUpdate }) {
   );
   const [externalColourOptions, setExternalColourOptions] = useState(UNWIRED_COLOUR_OPTIONS);
   const [windowsColourOptions, setWindowsColourOptions] = useState(UNWIRED_COLOUR_OPTIONS);
+  const [hybridColourOptions, setHybridColourOptions] = useState(UNWIRED_COLOUR_OPTIONS);
+  const [tilesColourOptions, setTilesColourOptions] = useState(UNWIRED_COLOUR_OPTIONS);
+  const [tilesImageByLabel, setTilesImageByLabel] = useState(() => ({}));
+  const [carpetColourOptions, setCarpetColourOptions] = useState(UNWIRED_COLOUR_OPTIONS);
+  const [hybridColour, setHybridColour] = useState(colourOrSelect(project?.hybrid_colour));
+  const [tile1Colour, setTile1Colour] = useState(colourOrSelect(project?.tile1_colour));
+  const [carpetColour, setCarpetColour] = useState(colourOrSelect(project?.carpet_colour));
   const [colourSaveStatus, setColourSaveStatus] = useState(""); // "", "saving", "saved", "error"
   const colourSaveStatusTimerRef = useRef(null);
   const colourEditGenRef = useRef(0);
@@ -182,6 +189,9 @@ export default function Colours({ project, onUpdate }) {
     windowFramesColour,
     windowSurroundsColour,
     doorColour,
+    hybridColour,
+    tile1Colour,
+    carpetColour,
   });
   
   useEffect(() => {
@@ -189,14 +199,44 @@ export default function Colours({ project, onUpdate }) {
 
     async function optionsForRangeKey(rangeKey) {
       const key = String(rangeKey || "").trim();
-      if (!key) return UNWIRED_COLOUR_OPTIONS;
-      if (key === COLORBOND_RANGE_KEY) return COLORBOND_COLOUR_OPTIONS;
-      const catRes = await fetch(`${API_URL}/api/colour-groups/${encodeURIComponent(key)}/catalogue`, {
-        headers: getApiHeaders(),
-      });
-      const catalogue = await catRes.json().catch(() => ({}));
-      if (!catRes.ok) throw new Error(catalogue.error || `Failed (${catRes.status})`);
-      return [NOTHING_SELECTED, ...colourOptionLabelsFromCatalogue(catalogue)];
+      if (!key) return { options: UNWIRED_COLOUR_OPTIONS, imageByLabel: {} };
+      if (key === COLORBOND_RANGE_KEY) {
+        return { options: COLORBOND_COLOUR_OPTIONS, imageByLabel: {} };
+      }
+      try {
+        const catRes = await fetch(`${API_URL}/api/colour-groups/${encodeURIComponent(key)}/catalogue`, {
+          headers: getApiHeaders(),
+        });
+        const catalogue = await catRes.json().catch(() => ({}));
+        if (!catRes.ok) throw new Error(catalogue.error || `Failed (${catRes.status})`);
+        const entries = colourOptionEntriesFromCatalogue(catalogue);
+        const imageByLabel = {};
+        for (const entry of entries) {
+          if (entry.label && entry.image_url) imageByLabel[entry.label] = entry.image_url;
+        }
+        return {
+          options: [NOTHING_SELECTED, ...entries.map((e) => e.label)],
+          imageByLabel,
+        };
+      } catch (e) {
+        console.error(`Failed to load colour options for range "${key}":`, e);
+        return { options: UNWIRED_COLOUR_OPTIONS, imageByLabel: {} };
+      }
+    }
+
+    function mergeOptionLists(...lists) {
+      const seen = new Set();
+      const out = [];
+      for (const list of lists) {
+        for (const opt of list || []) {
+          const v = String(opt || "").trim();
+          if (!v || seen.has(v)) continue;
+          seen.add(v);
+          out.push(v);
+        }
+      }
+      if (!out.includes(NOTHING_SELECTED)) out.unshift(NOTHING_SELECTED);
+      return out.length ? out : UNWIRED_COLOUR_OPTIONS;
     }
 
     (async () => {
@@ -207,19 +247,43 @@ export default function Colours({ project, onUpdate }) {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
         const ranges = normalizeColourSectionRanges(data.ranges);
-        const [externalOpts, windowsOpts] = await Promise.all([
+        // Load each section independently so a missing Hybrid range does not blank Tiles.
+        const [
+          externalResult,
+          windowsResult,
+          hybridAffordableResult,
+          hybridSuperiorResult,
+          tilesResult,
+          carpetsResult,
+        ] = await Promise.all([
           optionsForRangeKey(ranges.external),
           optionsForRangeKey(ranges.windows),
+          optionsForRangeKey(ranges.hybrid_flooring_affordable),
+          optionsForRangeKey(ranges.hybrid_flooring_superior),
+          // Colour Settings → "Tiles" range drives the Flooring page Tiles dropdown.
+          optionsForRangeKey(ranges.tiles),
+          // Colour Settings → "Carpets" range drives the Flooring page Carpets dropdown.
+          optionsForRangeKey(ranges.carpets),
         ]);
         if (!cancelled) {
-          setExternalColourOptions(externalOpts);
-          setWindowsColourOptions(windowsOpts);
+          setExternalColourOptions(externalResult.options);
+          setWindowsColourOptions(windowsResult.options);
+          setHybridColourOptions(
+            mergeOptionLists(hybridAffordableResult.options, hybridSuperiorResult.options)
+          );
+          setTilesColourOptions(tilesResult.options);
+          setTilesImageByLabel(tilesResult.imageByLabel || {});
+          setCarpetColourOptions(carpetsResult.options);
         }
       } catch (e) {
         console.error(e);
         if (!cancelled) {
           setExternalColourOptions(UNWIRED_COLOUR_OPTIONS);
           setWindowsColourOptions(UNWIRED_COLOUR_OPTIONS);
+          setHybridColourOptions(UNWIRED_COLOUR_OPTIONS);
+          setTilesColourOptions(UNWIRED_COLOUR_OPTIONS);
+          setTilesImageByLabel({});
+          setCarpetColourOptions(UNWIRED_COLOUR_OPTIONS);
         }
       }
     })();
@@ -252,6 +316,39 @@ export default function Colours({ project, onUpdate }) {
     return base;
   }, [windowsColourOptions, windowFramesColour]);
 
+  const hybridFieldOptions = useMemo(() => {
+    const base = hybridColourOptions.length ? hybridColourOptions : UNWIRED_COLOUR_OPTIONS;
+    const current = colourOrSelect(hybridColour);
+    if (current && current !== NOTHING_SELECTED && !base.includes(current)) {
+      return [...base, current];
+    }
+    return base;
+  }, [hybridColourOptions, hybridColour]);
+
+  const tilesFieldOptions = useMemo(() => {
+    const base = tilesColourOptions.length ? tilesColourOptions : UNWIRED_COLOUR_OPTIONS;
+    const current = colourOrSelect(tile1Colour);
+    if (current && current !== NOTHING_SELECTED && !base.includes(current)) {
+      return [...base, current];
+    }
+    return base;
+  }, [tilesColourOptions, tile1Colour]);
+
+  const selectedTilesImageUrl = useMemo(() => {
+    const label = colourOrSelect(tile1Colour);
+    if (!label || label === NOTHING_SELECTED) return null;
+    return tilesImageByLabel[label] || null;
+  }, [tile1Colour, tilesImageByLabel]);
+
+  const carpetFieldOptions = useMemo(() => {
+    const base = carpetColourOptions.length ? carpetColourOptions : UNWIRED_COLOUR_OPTIONS;
+    const current = colourOrSelect(carpetColour);
+    if (current && current !== NOTHING_SELECTED && !base.includes(current)) {
+      return [...base, current];
+    }
+    return base;
+  }, [carpetColourOptions, carpetColour]);
+
   useEffect(() => {
     valuesRef.current = {
       coloursStatus,
@@ -263,6 +360,9 @@ export default function Colours({ project, onUpdate }) {
       windowFramesColour,
       windowSurroundsColour,
       doorColour,
+      hybridColour,
+      tile1Colour,
+      carpetColour,
     };
   }, [
     coloursStatus,
@@ -274,6 +374,9 @@ export default function Colours({ project, onUpdate }) {
     windowFramesColour,
     windowSurroundsColour,
     doorColour,
+    hybridColour,
+    tile1Colour,
+    carpetColour,
   ]);
 
   useEffect(() => {
@@ -291,6 +394,9 @@ export default function Colours({ project, onUpdate }) {
       colourOrSelect(project.windowsurrounds_colour ?? project.window_surrounds_colour)
     );
     setDoorColour(colourOrSelect(project.door_colour ?? project.front_door_colour));
+    setHybridColour(colourOrSelect(project.hybrid_colour));
+    setTile1Colour(colourOrSelect(project.tile1_colour));
+    setCarpetColour(colourOrSelect(project.carpet_colour));
     const specs = project.specs || "";
     if (specs.toLowerCase().includes("affordable")) {
       setAttachAffordable(true);
@@ -329,6 +435,9 @@ export default function Colours({ project, onUpdate }) {
           colourOrSelect(data.windowsurrounds_colour ?? data.window_surrounds_colour)
         );
         setDoorColour(colourOrSelect(data.door_colour ?? data.front_door_colour));
+        setHybridColour(colourOrSelect(data.hybrid_colour));
+        setTile1Colour(colourOrSelect(data.tile1_colour));
+        setCarpetColour(colourOrSelect(data.carpet_colour));
       } catch (error) {
         console.error("Failed to load saved colours:", error);
       }
@@ -586,6 +695,30 @@ export default function Colours({ project, onUpdate }) {
     setDoorColour(newValue);
     valuesRef.current.doorColour = newValue;
     await saveExternalColourField("door_colour", newValue);
+  }
+
+  async function handleHybridColourChange(e) {
+    const newValue = e.target.value;
+    colourEditGenRef.current += 1;
+    setHybridColour(newValue);
+    valuesRef.current.hybridColour = newValue;
+    await saveExternalColourField("hybrid_colour", newValue);
+  }
+
+  async function handleTile1ColourChange(e) {
+    const newValue = e.target.value;
+    colourEditGenRef.current += 1;
+    setTile1Colour(newValue);
+    valuesRef.current.tile1Colour = newValue;
+    await saveExternalColourField("tile1_colour", newValue);
+  }
+
+  async function handleCarpetColourChange(e) {
+    const newValue = e.target.value;
+    colourEditGenRef.current += 1;
+    setCarpetColour(newValue);
+    valuesRef.current.carpetColour = newValue;
+    await saveExternalColourField("carpet_colour", newValue);
   }
 
   async function loadEmailTemplate(templateType) {
@@ -1262,6 +1395,27 @@ export default function Colours({ project, onUpdate }) {
     },
   ];
 
+  const flooringColourFields = [
+    {
+      label: "Hybrid",
+      value: hybridColour,
+      onChange: handleHybridColourChange,
+      options: hybridFieldOptions,
+    },
+    {
+      label: "Tiles",
+      value: tile1Colour,
+      onChange: handleTile1ColourChange,
+      options: tilesFieldOptions,
+    },
+    {
+      label: "Carpets",
+      value: carpetColour,
+      onChange: handleCarpetColourChange,
+      options: carpetFieldOptions,
+    },
+  ];
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
       <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: 0, color: MONUMENT }}>
@@ -1429,7 +1583,7 @@ export default function Colours({ project, onUpdate }) {
                   </label>
                 ))}
               </div>
-            ) : (
+            ) : activeColourCategory === "Flooring" ? null : (
               <div style={{ width: COLOURS_LEFT_COLUMN_WIDTH, flexShrink: 0 }} aria-hidden />
             )}
 
@@ -1472,15 +1626,67 @@ export default function Colours({ project, onUpdate }) {
                   />
                 </div>
               ) : activeColourCategory === "Flooring" ? (
-                <FlooringPlanPreview
-                  externalPoints={planTraceFootprintPoints}
-                  flooringPoints={planTraceFlooringPoints}
-                  hybridRegions={planTraceHybridRegions}
-                  tilesRegions={planTraceTilesRegions}
-                  carpetRegions={planTraceCarpetRegions}
-                  internalWallSegments={planTraceInternalWalls}
-                  calibration={planTraceCalibration}
-                />
+                <div
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    minHeight: 0,
+                    display: "flex",
+                    flexDirection: "row",
+                    gap: "16px",
+                    alignItems: "stretch",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: COLOURS_LEFT_COLUMN_WIDTH,
+                      flexShrink: 0,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "12px",
+                    }}
+                  >
+                    {flooringColourFields.map((field) => (
+                      <label
+                        key={field.label}
+                        style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+                      >
+                        <span style={{ fontSize: "0.9rem", color: UI.textMuted }}>{field.label}</span>
+                        <select
+                          value={field.value}
+                          onChange={field.onChange}
+                          style={COLOURS_FIELD_SELECT_STYLE}
+                        >
+                          {field.options.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                  <div
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      minHeight: 0,
+                      display: "flex",
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    <FlooringPlanPreview
+                      externalPoints={planTraceFootprintPoints}
+                      flooringPoints={planTraceFlooringPoints}
+                      hybridRegions={planTraceHybridRegions}
+                      tilesRegions={planTraceTilesRegions}
+                      carpetRegions={planTraceCarpetRegions}
+                      internalWallSegments={planTraceInternalWalls}
+                      calibration={planTraceCalibration}
+                      tilesImageUrl={selectedTilesImageUrl}
+                    />
+                  </div>
+                </div>
               ) : activeColourCategory === COMPLETE_LIST_CATEGORY ? (
                 <div
                   style={{

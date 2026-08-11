@@ -76,6 +76,9 @@ const {
 } = require("./polytecColours");
 const { ensureYdlStoneCatalogue } = require("./ydlStoneColours");
 const { ensureJohnstonTilesCatalogue } = require("./johnstonTilesColours");
+const {
+  ensureGodfreyHirstClassicCityCatalogue,
+} = require("./godfreyHirstClassicCityColours");
 const { ensureMapQuoteItemsTable, listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
 const {
   ACCESS_AREAS,
@@ -1489,6 +1492,7 @@ async function ensureSchema() {
     await ensurePolytecColourTables(pool);
     await ensureYdlStoneCatalogue(pool);
     await ensureJohnstonTilesCatalogue(pool);
+    await ensureGodfreyHirstClassicCityCatalogue(pool);
     return;
   }
   console.log(`Applying schema migrations (target ${SCHEMA_VERSION})…`);
@@ -2218,6 +2222,7 @@ async function ensureSchema() {
   await ensurePolytecColourTables(pool);
   await ensureYdlStoneCatalogue(pool);
   await ensureJohnstonTilesCatalogue(pool);
+  await ensureGodfreyHirstClassicCityCatalogue(pool);
   await markSchemaUpToDate(pool);
   console.log(`Schema ${SCHEMA_VERSION} applied`);
 }
@@ -5472,6 +5477,7 @@ function parseColourSectionRangesColumn(raw) {
     "hybrid_flooring_affordable",
     "hybrid_flooring_superior",
     "tiles",
+    "carpets",
     "kitchen_cabinets",
     "kitchen_benchtops_laminate",
     "kitchen_benchtops_stone",

@@ -1119,7 +1119,7 @@ export default function ColourSettings() {
           </div>
         </div>
 
-        {[COLOUR_SECTION_RANGE_KEYS.slice(0, 4), COLOUR_SECTION_RANGE_KEYS.slice(4)].map(
+        {[COLOUR_SECTION_RANGE_KEYS.slice(0, 6), COLOUR_SECTION_RANGE_KEYS.slice(6)].map(
           (sectionKeys, columnIndex) => (
             <div
               key={columnIndex === 0 ? "colour-ranges-col-3" : "colour-ranges-col-4"}

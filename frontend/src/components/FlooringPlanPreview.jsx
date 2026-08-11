@@ -1,6 +1,7 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { UI } from "../utils/uiThemeTokens.js";
-import { computeMetresPerPixel } from "../utils/planTraceScale";
+import { getApiHeaders } from "../utils/auth";
+import { computeMetresPerPixel, calibrationNormScales } from "../utils/planTraceScale";
 import {
   FLOORING_FINISH_STYLES,
   parseFlooringRegions,
@@ -12,6 +13,12 @@ import {
 
 const WALL_FILL = "#000000";
 const FLOOR_FILL = "rgba(217, 119, 6, 0.35)";
+const TILES_PATTERN_ID = "flooring-tiles-image-pattern";
+/** Real-world tile module size for plan fill (metres). */
+const TILE_MODULE_WIDTH_M = 0.6;
+const TILE_MODULE_HEIGHT_M = 0.3;
+/** Grout / grid line width in metres (drawn inside each pattern cell). */
+const TILE_GRID_LINE_M = 0.018;
 
 function pointsToPath(points) {
   if (!points?.length) return "";
@@ -133,8 +140,44 @@ export default function FlooringPlanPreview({
   carpetRegions = [],
   internalWallSegments = [],
   calibration = null,
+  tilesImageUrl = null,
 }) {
   const aspect = calibration?.aspect > 0 ? calibration.aspect : 1;
+  const [tilesImageBlobUrl, setTilesImageBlobUrl] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = null;
+
+    if (!tilesImageUrl) {
+      setTilesImageBlobUrl(null);
+      return undefined;
+    }
+    if (String(tilesImageUrl).startsWith("blob:") || String(tilesImageUrl).startsWith("data:")) {
+      setTilesImageBlobUrl(tilesImageUrl);
+      return undefined;
+    }
+
+    setTilesImageBlobUrl(null);
+    (async () => {
+      try {
+        const headers = getApiHeaders();
+        delete headers["Content-Type"];
+        const res = await fetch(tilesImageUrl, { headers, credentials: "include" });
+        if (!res.ok) throw new Error(`Failed (${res.status})`);
+        const blob = await res.blob();
+        objectUrl = URL.createObjectURL(blob);
+        if (!cancelled) setTilesImageBlobUrl(objectUrl);
+      } catch {
+        if (!cancelled) setTilesImageBlobUrl(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [tilesImageUrl]);
 
   const wallsNorm = useMemo(
     () =>
@@ -176,6 +219,26 @@ export default function FlooringPlanPreview({
     [walls, floor, finishRings, internalFootprints]
   );
 
+  // Display space is isotropic in metres: displayX = normX * aspect, displayY = normY.
+  // metres-per-display-unit = Ky (= Kx / aspect) from the trace calibration.
+  const tileModuleDisplay = useMemo(() => {
+    const scales = calibrationNormScales(calibration);
+    const metresPerDisplay = scales?.Ky;
+    if (!(metresPerDisplay > 1e-9)) {
+      const fallback = Math.max(view?.width || 1, view?.height || 1) * 0.08;
+      return {
+        width: fallback * 2,
+        height: fallback,
+        gridStroke: fallback * 0.04,
+      };
+    }
+    return {
+      width: TILE_MODULE_WIDTH_M / metresPerDisplay,
+      height: TILE_MODULE_HEIGHT_M / metresPerDisplay,
+      gridStroke: TILE_GRID_LINE_M / metresPerDisplay,
+    };
+  }, [calibration, view]);
+
   if (walls.length < 3 || !view) {
     return (
       <div
@@ -184,10 +247,10 @@ export default function FlooringPlanPreview({
           minHeight: 0,
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
+          justifyContent: "flex-end",
           color: UI.textMuted,
           fontSize: "1rem",
-          textAlign: "center",
+          textAlign: "right",
           padding: "24px",
         }}
       >
@@ -203,6 +266,10 @@ export default function FlooringPlanPreview({
           .join(" ")
       : "";
 
+  const tilesUseImage = Boolean(tilesImageBlobUrl);
+  // Suppress green fill/stroke whenever a tile image is selected (including while loading).
+  const tilesShowPlainGreen = !tilesImageUrl;
+
   return (
     <div
       style={{
@@ -211,7 +278,6 @@ export default function FlooringPlanPreview({
         minWidth: 0,
         display: "flex",
         flexDirection: "column",
-        gap: "10px",
       }}
     >
       <div
@@ -221,7 +287,7 @@ export default function FlooringPlanPreview({
           minWidth: 0,
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
+          justifyContent: "flex-end",
           background: UI.inputBg || "#f5f5f5",
           borderRadius: "8px",
           overflow: "hidden",
@@ -229,13 +295,64 @@ export default function FlooringPlanPreview({
       >
         <svg
           viewBox={`${view.minX} ${view.minY} ${view.width} ${view.height}`}
-          preserveAspectRatio="xMidYMid meet"
+          preserveAspectRatio="xMaxYMid meet"
           style={{
-            width: "100%",
             height: "100%",
+            width: "auto",
+            maxWidth: "100%",
+            aspectRatio: `${view.width} / ${view.height}`,
             display: "block",
           }}
         >
+          {tilesUseImage ? (
+            <defs>
+              <pattern
+                id={TILES_PATTERN_ID}
+                patternUnits="userSpaceOnUse"
+                width={tileModuleDisplay.width}
+                height={tileModuleDisplay.height}
+              >
+                <image
+                  href={tilesImageBlobUrl}
+                  x={0}
+                  y={0}
+                  width={tileModuleDisplay.width}
+                  height={tileModuleDisplay.height}
+                  preserveAspectRatio="none"
+                />
+                {/* Opaque black/white bands — contrast on light and dark tiles.
+                    Right + bottom edges only so shared joints aren't double-drawn. */}
+                <rect
+                  x={tileModuleDisplay.width - tileModuleDisplay.gridStroke}
+                  y={0}
+                  width={tileModuleDisplay.gridStroke}
+                  height={tileModuleDisplay.height}
+                  fill="#ffffff"
+                />
+                <rect
+                  x={0}
+                  y={tileModuleDisplay.height - tileModuleDisplay.gridStroke}
+                  width={tileModuleDisplay.width}
+                  height={tileModuleDisplay.gridStroke}
+                  fill="#ffffff"
+                />
+                <rect
+                  x={tileModuleDisplay.width - tileModuleDisplay.gridStroke * 0.55}
+                  y={0}
+                  width={tileModuleDisplay.gridStroke * 0.55}
+                  height={tileModuleDisplay.height}
+                  fill="#111111"
+                />
+                <rect
+                  x={0}
+                  y={tileModuleDisplay.height - tileModuleDisplay.gridStroke * 0.55}
+                  width={tileModuleDisplay.width}
+                  height={tileModuleDisplay.gridStroke * 0.55}
+                  fill="#111111"
+                />
+              </pattern>
+            </defs>
+          ) : null}
           {floorWithHoles ? (
             <path d={floorWithHoles} fill={FLOOR_FILL} fillRule="evenodd" stroke="none" />
           ) : null}
@@ -252,9 +369,17 @@ export default function FlooringPlanPreview({
             <path
               key={`tiles-${i}`}
               d={pointsToPath(ring)}
-              fill={FLOORING_FINISH_STYLES.tiles.fillClosed}
-              stroke={FLOORING_FINISH_STYLES.tiles.stroke}
-              strokeWidth={Math.max(view.width, view.height) * 0.002}
+              fill={
+                tilesUseImage
+                  ? `url(#${TILES_PATTERN_ID})`
+                  : tilesShowPlainGreen
+                    ? FLOORING_FINISH_STYLES.tiles.fillClosed
+                    : "transparent"
+              }
+              stroke={tilesShowPlainGreen ? FLOORING_FINISH_STYLES.tiles.stroke : "none"}
+              strokeWidth={
+                tilesShowPlainGreen ? Math.max(view.width, view.height) * 0.002 : 0
+              }
             />
           ))}
           {carpetDisplay.map((ring, i) => (
@@ -287,80 +412,6 @@ export default function FlooringPlanPreview({
             <path key={`iw-${i}`} d={pointsToPath(fp)} fill={WALL_FILL} stroke="none" />
           ))}
         </svg>
-      </div>
-      <div
-        style={{
-          display: "flex",
-          gap: "16px",
-          flexShrink: 0,
-          flexWrap: "wrap",
-          fontSize: "0.85rem",
-          color: UI.textMuted,
-        }}
-      >
-        <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-          <span
-            style={{
-              width: 14,
-              height: 14,
-              background: WALL_FILL,
-              borderRadius: 2,
-              boxSizing: "border-box",
-            }}
-          />
-          Walls
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-          <span
-            style={{
-              width: 14,
-              height: 14,
-              background: FLOOR_FILL,
-              borderRadius: 2,
-              boxSizing: "border-box",
-            }}
-          />
-          Floor
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-          <span
-            style={{
-              width: 14,
-              height: 14,
-              background: FLOORING_FINISH_STYLES.hybrid.fillClosed,
-              border: `1px solid ${FLOORING_FINISH_STYLES.hybrid.stroke}`,
-              borderRadius: 2,
-              boxSizing: "border-box",
-            }}
-          />
-          Hybrid
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-          <span
-            style={{
-              width: 14,
-              height: 14,
-              background: FLOORING_FINISH_STYLES.tiles.fillClosed,
-              border: `1px solid ${FLOORING_FINISH_STYLES.tiles.stroke}`,
-              borderRadius: 2,
-              boxSizing: "border-box",
-            }}
-          />
-          Tiles
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-          <span
-            style={{
-              width: 14,
-              height: 14,
-              background: FLOORING_FINISH_STYLES.carpet.fillClosed,
-              border: `1px solid ${FLOORING_FINISH_STYLES.carpet.stroke}`,
-              borderRadius: 2,
-              boxSizing: "border-box",
-            }}
-          />
-          Carpet
-        </span>
       </div>
     </div>
   );

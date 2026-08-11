@@ -6,6 +6,7 @@ export const COLOUR_SECTION_RANGE_KEYS = [
   "hybrid_flooring_affordable",
   "hybrid_flooring_superior",
   "tiles",
+  "carpets",
   "kitchen_cabinets",
   "kitchen_benchtops_laminate",
   "kitchen_benchtops_stone",
@@ -17,6 +18,7 @@ export const COLOUR_SECTION_RANGE_LABELS = {
   hybrid_flooring_affordable: "Hybrid Flooring - Affordable",
   hybrid_flooring_superior: "Hybrid Flooring - Superior",
   tiles: "Tiles",
+  carpets: "Carpets",
   kitchen_cabinets: "Kitchen Cabinets",
   kitchen_benchtops_laminate: "Kitchen Benchtops - Laminate",
   kitchen_benchtops_stone: "Kitchen Benchtops - Stone",
@@ -46,6 +48,14 @@ export function normalizeColourSectionRanges(raw) {
  * Duplicate names across subgroups become "Name (Subgroup)".
  */
 export function colourOptionLabelsFromCatalogue(catalogue) {
+  return colourOptionEntriesFromCatalogue(catalogue).map((e) => e.label);
+}
+
+/**
+ * Label + sample metadata for dropdowns (includes image_url when present).
+ * Duplicate names across subgroups become "Name (Subgroup)".
+ */
+export function colourOptionEntriesFromCatalogue(catalogue) {
   const samples = Array.isArray(catalogue?.samples) ? catalogue.samples : [];
   const byName = new Map();
   for (const sample of samples) {
@@ -54,17 +64,25 @@ export function colourOptionLabelsFromCatalogue(catalogue) {
     if (!byName.has(name)) byName.set(name, []);
     byName.get(name).push(sample);
   }
-  const labels = [];
+  const entries = [];
   for (const [name, list] of byName) {
     if (list.length === 1) {
-      labels.push(name);
+      entries.push({
+        label: name,
+        image_url: list[0]?.image_url || null,
+        sample: list[0],
+      });
       continue;
     }
     for (const sample of list) {
       const subgroup = String(sample.subgroup || sample.subgroup_name || "").trim();
-      labels.push(subgroup ? `${name} (${subgroup})` : name);
+      entries.push({
+        label: subgroup ? `${name} (${subgroup})` : name,
+        image_url: sample?.image_url || null,
+        sample,
+      });
     }
   }
-  labels.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  return labels;
+  entries.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+  return entries;
 }
