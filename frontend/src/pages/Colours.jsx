@@ -5,6 +5,7 @@ import Building3DModal from "../components/Building3DModal.jsx";
 import BuildingElevations from "../components/BuildingElevations.jsx";
 import FlooringPlanPreview from "../components/FlooringPlanPreview.jsx";
 import PolytecKitchenCube from "../components/PolytecKitchenCube.jsx";
+import AuthedImg from "../components/AuthedImg";
 import { resolveNewProjectClientFrom, findSalespersonUserInList } from "../utils/streamNewProjectEmail";
 import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
 import { parsePlanTracePolygon, serializePlanTracePolygon } from "../utils/planTracePolygon";
@@ -139,6 +140,7 @@ export default function Colours({ project, onUpdate }) {
   const [tilesColourOptions, setTilesColourOptions] = useState(UNWIRED_COLOUR_OPTIONS);
   const [tilesImageByLabel, setTilesImageByLabel] = useState(() => ({}));
   const [carpetColourOptions, setCarpetColourOptions] = useState(UNWIRED_COLOUR_OPTIONS);
+  const [carpetImageByLabel, setCarpetImageByLabel] = useState(() => ({}));
   const [hybridColour, setHybridColour] = useState(colourOrSelect(project?.hybrid_colour));
   const [tile1Colour, setTile1Colour] = useState(colourOrSelect(project?.tile1_colour));
   const [carpetColour, setCarpetColour] = useState(colourOrSelect(project?.carpet_colour));
@@ -274,6 +276,7 @@ export default function Colours({ project, onUpdate }) {
           setTilesColourOptions(tilesResult.options);
           setTilesImageByLabel(tilesResult.imageByLabel || {});
           setCarpetColourOptions(carpetsResult.options);
+          setCarpetImageByLabel(carpetsResult.imageByLabel || {});
         }
       } catch (e) {
         console.error(e);
@@ -284,6 +287,7 @@ export default function Colours({ project, onUpdate }) {
           setTilesColourOptions(UNWIRED_COLOUR_OPTIONS);
           setTilesImageByLabel({});
           setCarpetColourOptions(UNWIRED_COLOUR_OPTIONS);
+          setCarpetImageByLabel({});
         }
       }
     })();
@@ -348,6 +352,12 @@ export default function Colours({ project, onUpdate }) {
     }
     return base;
   }, [carpetColourOptions, carpetColour]);
+
+  const selectedCarpetImageUrl = useMemo(() => {
+    const label = colourOrSelect(carpetColour);
+    if (!label || label === NOTHING_SELECTED) return null;
+    return carpetImageByLabel[label] || null;
+  }, [carpetColour, carpetImageByLabel]);
 
   useEffect(() => {
     valuesRef.current = {
@@ -1401,18 +1411,24 @@ export default function Colours({ project, onUpdate }) {
       value: hybridColour,
       onChange: handleHybridColourChange,
       options: hybridFieldOptions,
+      thumbnailUrl: null,
+      showThumbnail: false,
     },
     {
       label: "Tiles",
       value: tile1Colour,
       onChange: handleTile1ColourChange,
       options: tilesFieldOptions,
+      thumbnailUrl: selectedTilesImageUrl,
+      showThumbnail: true,
     },
     {
       label: "Carpets",
       value: carpetColour,
       onChange: handleCarpetColourChange,
       options: carpetFieldOptions,
+      thumbnailUrl: selectedCarpetImageUrl,
+      showThumbnail: true,
     },
   ];
 
@@ -1639,31 +1655,77 @@ export default function Colours({ project, onUpdate }) {
                 >
                   <div
                     style={{
-                      width: COLOURS_LEFT_COLUMN_WIDTH,
                       flexShrink: 0,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "12px",
+                      height: "100%",
+                      minHeight: 0,
+                      display: "grid",
+                      gridTemplateRows: "repeat(3, minmax(0, 1fr))",
+                      gap: "10px",
                     }}
                   >
                     {flooringColourFields.map((field) => (
-                      <label
+                      <div
                         key={field.label}
-                        style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+                        style={{
+                          minHeight: 0,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "6px",
+                        }}
                       >
-                        <span style={{ fontSize: "0.9rem", color: UI.textMuted }}>{field.label}</span>
-                        <select
-                          value={field.value}
-                          onChange={field.onChange}
-                          style={COLOURS_FIELD_SELECT_STYLE}
+                        <span style={{ fontSize: "0.9rem", color: UI.textMuted, flexShrink: 0 }}>
+                          {field.label}
+                        </span>
+                        <div
+                          style={{
+                            flex: 1,
+                            minHeight: 0,
+                            display: "flex",
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: "8px",
+                          }}
                         >
-                          {field.options.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                          <select
+                            value={field.value}
+                            onChange={field.onChange}
+                            style={{
+                              ...COLOURS_FIELD_SELECT_STYLE,
+                              width: COLOURS_LEFT_COLUMN_WIDTH,
+                              flex: "0 0 auto",
+                            }}
+                          >
+                            {field.options.map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                          <div
+                            style={{
+                              alignSelf: "stretch",
+                              height: "auto",
+                              aspectRatio: "1 / 1",
+                              flexShrink: 0,
+                              borderRadius: "8px",
+                              border: FIELD_OUTLINE,
+                              background: WHITE,
+                              overflow: "hidden",
+                              boxSizing: "border-box",
+                              visibility: field.showThumbnail ? "visible" : "hidden",
+                            }}
+                            aria-hidden={!field.showThumbnail}
+                          >
+                            {field.showThumbnail && field.thumbnailUrl ? (
+                              <AuthedImg
+                                src={field.thumbnailUrl}
+                                alt={field.value || field.label}
+                                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                              />
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
                     ))}
                   </div>
                   <div
@@ -1672,7 +1734,8 @@ export default function Colours({ project, onUpdate }) {
                       minWidth: 0,
                       minHeight: 0,
                       display: "flex",
-                      justifyContent: "flex-end",
+                      justifyContent: "center",
+                      alignItems: "stretch",
                     }}
                   >
                     <FlooringPlanPreview
@@ -1684,6 +1747,7 @@ export default function Colours({ project, onUpdate }) {
                       internalWallSegments={planTraceInternalWalls}
                       calibration={planTraceCalibration}
                       tilesImageUrl={selectedTilesImageUrl}
+                      carpetImageUrl={selectedCarpetImageUrl}
                     />
                   </div>
                 </div>

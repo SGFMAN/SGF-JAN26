@@ -14,11 +14,14 @@ import {
 const WALL_FILL = "#000000";
 const FLOOR_FILL = "rgba(217, 119, 6, 0.35)";
 const TILES_PATTERN_ID = "flooring-tiles-image-pattern";
+const CARPET_PATTERN_ID = "flooring-carpet-image-pattern";
 /** Real-world tile module size for plan fill (metres). */
 const TILE_MODULE_WIDTH_M = 0.6;
 const TILE_MODULE_HEIGHT_M = 0.3;
 /** Grout / grid line width in metres (drawn inside each pattern cell). */
 const TILE_GRID_LINE_M = 0.018;
+/** Carpet swatch repeat size for plan fill (metres). */
+const CARPET_MODULE_M = 0.5;
 
 function pointsToPath(points) {
   if (!points?.length) return "";
@@ -141,9 +144,11 @@ export default function FlooringPlanPreview({
   internalWallSegments = [],
   calibration = null,
   tilesImageUrl = null,
+  carpetImageUrl = null,
 }) {
   const aspect = calibration?.aspect > 0 ? calibration.aspect : 1;
   const [tilesImageBlobUrl, setTilesImageBlobUrl] = useState(null);
+  const [carpetImageBlobUrl, setCarpetImageBlobUrl] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -178,6 +183,40 @@ export default function FlooringPlanPreview({
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [tilesImageUrl]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = null;
+
+    if (!carpetImageUrl) {
+      setCarpetImageBlobUrl(null);
+      return undefined;
+    }
+    if (String(carpetImageUrl).startsWith("blob:") || String(carpetImageUrl).startsWith("data:")) {
+      setCarpetImageBlobUrl(carpetImageUrl);
+      return undefined;
+    }
+
+    setCarpetImageBlobUrl(null);
+    (async () => {
+      try {
+        const headers = getApiHeaders();
+        delete headers["Content-Type"];
+        const res = await fetch(carpetImageUrl, { headers, credentials: "include" });
+        if (!res.ok) throw new Error(`Failed (${res.status})`);
+        const blob = await res.blob();
+        objectUrl = URL.createObjectURL(blob);
+        if (!cancelled) setCarpetImageBlobUrl(objectUrl);
+      } catch {
+        if (!cancelled) setCarpetImageBlobUrl(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [carpetImageUrl]);
 
   const wallsNorm = useMemo(
     () =>
@@ -239,6 +278,19 @@ export default function FlooringPlanPreview({
     };
   }, [calibration, view]);
 
+  const carpetModuleDisplay = useMemo(() => {
+    const scales = calibrationNormScales(calibration);
+    const metresPerDisplay = scales?.Ky;
+    if (!(metresPerDisplay > 1e-9)) {
+      const fallback = Math.max(view?.width || 1, view?.height || 1) * 0.12;
+      return { width: fallback, height: fallback };
+    }
+    return {
+      width: CARPET_MODULE_M / metresPerDisplay,
+      height: CARPET_MODULE_M / metresPerDisplay,
+    };
+  }, [calibration, view]);
+
   if (walls.length < 3 || !view) {
     return (
       <div
@@ -247,10 +299,10 @@ export default function FlooringPlanPreview({
           minHeight: 0,
           display: "flex",
           alignItems: "center",
-          justifyContent: "flex-end",
+          justifyContent: "center",
           color: UI.textMuted,
           fontSize: "1rem",
-          textAlign: "right",
+          textAlign: "center",
           padding: "24px",
         }}
       >
@@ -269,6 +321,8 @@ export default function FlooringPlanPreview({
   const tilesUseImage = Boolean(tilesImageBlobUrl);
   // Suppress green fill/stroke whenever a tile image is selected (including while loading).
   const tilesShowPlainGreen = !tilesImageUrl;
+  const carpetUseImage = Boolean(carpetImageBlobUrl);
+  const carpetShowPlainPurple = !carpetImageUrl;
 
   return (
     <div
@@ -287,7 +341,7 @@ export default function FlooringPlanPreview({
           minWidth: 0,
           display: "flex",
           alignItems: "center",
-          justifyContent: "flex-end",
+          justifyContent: "center",
           background: UI.inputBg || "#f5f5f5",
           borderRadius: "8px",
           overflow: "hidden",
@@ -295,62 +349,82 @@ export default function FlooringPlanPreview({
       >
         <svg
           viewBox={`${view.minX} ${view.minY} ${view.width} ${view.height}`}
-          preserveAspectRatio="xMaxYMid meet"
+          preserveAspectRatio="xMidYMid meet"
           style={{
             height: "100%",
             width: "auto",
             maxWidth: "100%",
+            maxHeight: "100%",
             aspectRatio: `${view.width} / ${view.height}`,
             display: "block",
           }}
         >
-          {tilesUseImage ? (
+          {(tilesUseImage || carpetUseImage) ? (
             <defs>
-              <pattern
-                id={TILES_PATTERN_ID}
-                patternUnits="userSpaceOnUse"
-                width={tileModuleDisplay.width}
-                height={tileModuleDisplay.height}
-              >
-                <image
-                  href={tilesImageBlobUrl}
-                  x={0}
-                  y={0}
+              {tilesUseImage ? (
+                <pattern
+                  id={TILES_PATTERN_ID}
+                  patternUnits="userSpaceOnUse"
                   width={tileModuleDisplay.width}
                   height={tileModuleDisplay.height}
-                  preserveAspectRatio="none"
-                />
-                {/* Opaque black/white bands — contrast on light and dark tiles.
-                    Right + bottom edges only so shared joints aren't double-drawn. */}
-                <rect
-                  x={tileModuleDisplay.width - tileModuleDisplay.gridStroke}
-                  y={0}
-                  width={tileModuleDisplay.gridStroke}
-                  height={tileModuleDisplay.height}
-                  fill="#ffffff"
-                />
-                <rect
-                  x={0}
-                  y={tileModuleDisplay.height - tileModuleDisplay.gridStroke}
-                  width={tileModuleDisplay.width}
-                  height={tileModuleDisplay.gridStroke}
-                  fill="#ffffff"
-                />
-                <rect
-                  x={tileModuleDisplay.width - tileModuleDisplay.gridStroke * 0.55}
-                  y={0}
-                  width={tileModuleDisplay.gridStroke * 0.55}
-                  height={tileModuleDisplay.height}
-                  fill="#111111"
-                />
-                <rect
-                  x={0}
-                  y={tileModuleDisplay.height - tileModuleDisplay.gridStroke * 0.55}
-                  width={tileModuleDisplay.width}
-                  height={tileModuleDisplay.gridStroke * 0.55}
-                  fill="#111111"
-                />
-              </pattern>
+                >
+                  <image
+                    href={tilesImageBlobUrl}
+                    x={0}
+                    y={0}
+                    width={tileModuleDisplay.width}
+                    height={tileModuleDisplay.height}
+                    preserveAspectRatio="none"
+                  />
+                  {/* Opaque black/white bands — contrast on light and dark tiles.
+                      Right + bottom edges only so shared joints aren't double-drawn. */}
+                  <rect
+                    x={tileModuleDisplay.width - tileModuleDisplay.gridStroke}
+                    y={0}
+                    width={tileModuleDisplay.gridStroke}
+                    height={tileModuleDisplay.height}
+                    fill="#ffffff"
+                  />
+                  <rect
+                    x={0}
+                    y={tileModuleDisplay.height - tileModuleDisplay.gridStroke}
+                    width={tileModuleDisplay.width}
+                    height={tileModuleDisplay.gridStroke}
+                    fill="#ffffff"
+                  />
+                  <rect
+                    x={tileModuleDisplay.width - tileModuleDisplay.gridStroke * 0.55}
+                    y={0}
+                    width={tileModuleDisplay.gridStroke * 0.55}
+                    height={tileModuleDisplay.height}
+                    fill="#111111"
+                  />
+                  <rect
+                    x={0}
+                    y={tileModuleDisplay.height - tileModuleDisplay.gridStroke * 0.55}
+                    width={tileModuleDisplay.width}
+                    height={tileModuleDisplay.gridStroke * 0.55}
+                    fill="#111111"
+                  />
+                </pattern>
+              ) : null}
+              {carpetUseImage ? (
+                <pattern
+                  id={CARPET_PATTERN_ID}
+                  patternUnits="userSpaceOnUse"
+                  width={carpetModuleDisplay.width}
+                  height={carpetModuleDisplay.height}
+                >
+                  <image
+                    href={carpetImageBlobUrl}
+                    x={0}
+                    y={0}
+                    width={carpetModuleDisplay.width}
+                    height={carpetModuleDisplay.height}
+                    preserveAspectRatio="none"
+                  />
+                </pattern>
+              ) : null}
             </defs>
           ) : null}
           {floorWithHoles ? (
@@ -386,9 +460,17 @@ export default function FlooringPlanPreview({
             <path
               key={`carpet-${i}`}
               d={pointsToPath(ring)}
-              fill={FLOORING_FINISH_STYLES.carpet.fillClosed}
-              stroke={FLOORING_FINISH_STYLES.carpet.stroke}
-              strokeWidth={Math.max(view.width, view.height) * 0.002}
+              fill={
+                carpetUseImage
+                  ? `url(#${CARPET_PATTERN_ID})`
+                  : carpetShowPlainPurple
+                    ? FLOORING_FINISH_STYLES.carpet.fillClosed
+                    : "transparent"
+              }
+              stroke={carpetShowPlainPurple ? FLOORING_FINISH_STYLES.carpet.stroke : "none"}
+              strokeWidth={
+                carpetShowPlainPurple ? Math.max(view.width, view.height) * 0.002 : 0
+              }
             />
           ))}
           {/* Solid black external wall band */}

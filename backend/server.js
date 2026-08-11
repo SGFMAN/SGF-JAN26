@@ -79,6 +79,7 @@ const { ensureJohnstonTilesCatalogue } = require("./johnstonTilesColours");
 const {
   ensureGodfreyHirstClassicCityCatalogue,
 } = require("./godfreyHirstClassicCityColours");
+const { ensureSunstarSuper95Catalogue } = require("./sunstarSuper95Colours");
 const { ensureMapQuoteItemsTable, listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
 const {
   ACCESS_AREAS,
@@ -1493,6 +1494,7 @@ async function ensureSchema() {
     await ensureYdlStoneCatalogue(pool);
     await ensureJohnstonTilesCatalogue(pool);
     await ensureGodfreyHirstClassicCityCatalogue(pool);
+    await ensureSunstarSuper95Catalogue(pool);
     return;
   }
   console.log(`Applying schema migrations (target ${SCHEMA_VERSION})…`);
@@ -2223,6 +2225,7 @@ async function ensureSchema() {
   await ensureYdlStoneCatalogue(pool);
   await ensureJohnstonTilesCatalogue(pool);
   await ensureGodfreyHirstClassicCityCatalogue(pool);
+  await ensureSunstarSuper95Catalogue(pool);
   await markSchemaUpToDate(pool);
   console.log(`Schema ${SCHEMA_VERSION} applied`);
 }
