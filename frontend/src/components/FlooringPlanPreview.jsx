@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { UI } from "../utils/uiThemeTokens.js";
-import { getApiHeaders } from "../utils/auth";
+import {
+  fetchAuthedImageBlobUrl,
+  getCachedAuthedImageBlobUrl,
+} from "../utils/authedImageCache";
 import { computeMetresPerPixel, calibrationNormScales } from "../utils/planTraceScale";
 import {
   FLOORING_FINISH_STYLES,
@@ -15,6 +18,7 @@ const WALL_FILL = "#000000";
 const FLOOR_FILL = "rgba(217, 119, 6, 0.35)";
 const TILES_PATTERN_ID = "flooring-tiles-image-pattern";
 const CARPET_PATTERN_ID = "flooring-carpet-image-pattern";
+const HYBRID_PATTERN_ID = "flooring-hybrid-image-pattern";
 /** Real-world tile module size for plan fill (metres). */
 const TILE_MODULE_WIDTH_M = 0.6;
 const TILE_MODULE_HEIGHT_M = 0.3;
@@ -22,6 +26,40 @@ const TILE_MODULE_HEIGHT_M = 0.3;
 const TILE_GRID_LINE_M = 0.018;
 /** Carpet swatch repeat size for plan fill (metres). */
 const CARPET_MODULE_M = 0.5;
+/** Hybrid plank repeat size for plan fill (metres). */
+const HYBRID_MODULE_WIDTH_M = 2.44;
+const HYBRID_MODULE_HEIGHT_M = 0.36;
+
+/** Shared-cache blob URL for plan pattern fills. */
+function useAuthedBlobUrl(src) {
+  const [blobUrl, setBlobUrl] = useState(() => getCachedAuthedImageBlobUrl(src));
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!src) {
+      setBlobUrl(null);
+      return undefined;
+    }
+
+    const cached = getCachedAuthedImageBlobUrl(src);
+    if (cached) {
+      setBlobUrl(cached);
+      return undefined;
+    }
+
+    (async () => {
+      const url = await fetchAuthedImageBlobUrl(src);
+      if (!cancelled) setBlobUrl(url);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+
+  return blobUrl;
+}
 
 function pointsToPath(points) {
   if (!points?.length) return "";
@@ -145,78 +183,12 @@ export default function FlooringPlanPreview({
   calibration = null,
   tilesImageUrl = null,
   carpetImageUrl = null,
+  hybridImageUrl = null,
 }) {
   const aspect = calibration?.aspect > 0 ? calibration.aspect : 1;
-  const [tilesImageBlobUrl, setTilesImageBlobUrl] = useState(null);
-  const [carpetImageBlobUrl, setCarpetImageBlobUrl] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl = null;
-
-    if (!tilesImageUrl) {
-      setTilesImageBlobUrl(null);
-      return undefined;
-    }
-    if (String(tilesImageUrl).startsWith("blob:") || String(tilesImageUrl).startsWith("data:")) {
-      setTilesImageBlobUrl(tilesImageUrl);
-      return undefined;
-    }
-
-    setTilesImageBlobUrl(null);
-    (async () => {
-      try {
-        const headers = getApiHeaders();
-        delete headers["Content-Type"];
-        const res = await fetch(tilesImageUrl, { headers, credentials: "include" });
-        if (!res.ok) throw new Error(`Failed (${res.status})`);
-        const blob = await res.blob();
-        objectUrl = URL.createObjectURL(blob);
-        if (!cancelled) setTilesImageBlobUrl(objectUrl);
-      } catch {
-        if (!cancelled) setTilesImageBlobUrl(null);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [tilesImageUrl]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl = null;
-
-    if (!carpetImageUrl) {
-      setCarpetImageBlobUrl(null);
-      return undefined;
-    }
-    if (String(carpetImageUrl).startsWith("blob:") || String(carpetImageUrl).startsWith("data:")) {
-      setCarpetImageBlobUrl(carpetImageUrl);
-      return undefined;
-    }
-
-    setCarpetImageBlobUrl(null);
-    (async () => {
-      try {
-        const headers = getApiHeaders();
-        delete headers["Content-Type"];
-        const res = await fetch(carpetImageUrl, { headers, credentials: "include" });
-        if (!res.ok) throw new Error(`Failed (${res.status})`);
-        const blob = await res.blob();
-        objectUrl = URL.createObjectURL(blob);
-        if (!cancelled) setCarpetImageBlobUrl(objectUrl);
-      } catch {
-        if (!cancelled) setCarpetImageBlobUrl(null);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [carpetImageUrl]);
+  const tilesImageBlobUrl = useAuthedBlobUrl(tilesImageUrl);
+  const carpetImageBlobUrl = useAuthedBlobUrl(carpetImageUrl);
+  const hybridImageBlobUrl = useAuthedBlobUrl(hybridImageUrl);
 
   const wallsNorm = useMemo(
     () =>
@@ -291,6 +263,19 @@ export default function FlooringPlanPreview({
     };
   }, [calibration, view]);
 
+  const hybridModuleDisplay = useMemo(() => {
+    const scales = calibrationNormScales(calibration);
+    const metresPerDisplay = scales?.Ky;
+    if (!(metresPerDisplay > 1e-9)) {
+      const fallback = Math.max(view?.width || 1, view?.height || 1) * 0.2;
+      return { width: fallback * 6, height: fallback };
+    }
+    return {
+      width: HYBRID_MODULE_WIDTH_M / metresPerDisplay,
+      height: HYBRID_MODULE_HEIGHT_M / metresPerDisplay,
+    };
+  }, [calibration, view]);
+
   if (walls.length < 3 || !view) {
     return (
       <div
@@ -323,6 +308,8 @@ export default function FlooringPlanPreview({
   const tilesShowPlainGreen = !tilesImageUrl;
   const carpetUseImage = Boolean(carpetImageBlobUrl);
   const carpetShowPlainPurple = !carpetImageUrl;
+  const hybridUseImage = Boolean(hybridImageBlobUrl);
+  const hybridShowPlain = !hybridImageUrl;
 
   return (
     <div
@@ -351,15 +338,12 @@ export default function FlooringPlanPreview({
           viewBox={`${view.minX} ${view.minY} ${view.width} ${view.height}`}
           preserveAspectRatio="xMidYMid meet"
           style={{
+            width: "100%",
             height: "100%",
-            width: "auto",
-            maxWidth: "100%",
-            maxHeight: "100%",
-            aspectRatio: `${view.width} / ${view.height}`,
             display: "block",
           }}
         >
-          {(tilesUseImage || carpetUseImage) ? (
+          {(tilesUseImage || carpetUseImage || hybridUseImage) ? (
             <defs>
               {tilesUseImage ? (
                 <pattern
@@ -425,18 +409,48 @@ export default function FlooringPlanPreview({
                   />
                 </pattern>
               ) : null}
+              {hybridUseImage ? (
+                <pattern
+                  id={HYBRID_PATTERN_ID}
+                  patternUnits="userSpaceOnUse"
+                  width={hybridModuleDisplay.width}
+                  height={hybridModuleDisplay.height}
+                >
+                  <image
+                    href={hybridImageBlobUrl}
+                    x={0}
+                    y={0}
+                    width={hybridModuleDisplay.width}
+                    height={hybridModuleDisplay.height}
+                    preserveAspectRatio="none"
+                  />
+                </pattern>
+              ) : null}
             </defs>
           ) : null}
           {floorWithHoles ? (
-            <path d={floorWithHoles} fill={FLOOR_FILL} fillRule="evenodd" stroke="none" />
+            <path
+              d={floorWithHoles}
+              fill={hybridUseImage ? `url(#${HYBRID_PATTERN_ID})` : FLOOR_FILL}
+              fillRule="evenodd"
+              stroke="none"
+            />
           ) : null}
           {hybridDisplay.map((ring, i) => (
             <path
               key={`hybrid-${i}`}
               d={pointsToPath(ring)}
-              fill={FLOORING_FINISH_STYLES.hybrid.fillClosed}
-              stroke={FLOORING_FINISH_STYLES.hybrid.stroke}
-              strokeWidth={Math.max(view.width, view.height) * 0.002}
+              fill={
+                hybridUseImage
+                  ? `url(#${HYBRID_PATTERN_ID})`
+                  : hybridShowPlain
+                    ? FLOORING_FINISH_STYLES.hybrid.fillClosed
+                    : "transparent"
+              }
+              stroke={hybridShowPlain ? FLOORING_FINISH_STYLES.hybrid.stroke : "none"}
+              strokeWidth={
+                hybridShowPlain ? Math.max(view.width, view.height) * 0.002 : 0
+              }
             />
           ))}
           {tilesDisplay.map((ring, i) => (
