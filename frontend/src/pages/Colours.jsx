@@ -104,6 +104,13 @@ function colourOrSelect(value) {
   return v;
 }
 
+/** Project Specs → Hybrid Flooring - Affordable; otherwise Superior. */
+function isAffordableSpecs(specs) {
+  return String(specs || "")
+    .toLowerCase()
+    .includes("affordable");
+}
+
 function roofStyleOrSelect(value) {
   const v = value && String(value).trim() ? String(value).trim() : "Select";
   if (!v || v === NOTHING_SELECTED) return "Select";
@@ -136,7 +143,10 @@ export default function Colours({ project, onUpdate }) {
   );
   const [externalColourOptions, setExternalColourOptions] = useState(UNWIRED_COLOUR_OPTIONS);
   const [windowsColourOptions, setWindowsColourOptions] = useState(UNWIRED_COLOUR_OPTIONS);
-  const [hybridColourOptions, setHybridColourOptions] = useState(UNWIRED_COLOUR_OPTIONS);
+  const [hybridAffordableColourOptions, setHybridAffordableColourOptions] =
+    useState(UNWIRED_COLOUR_OPTIONS);
+  const [hybridSuperiorColourOptions, setHybridSuperiorColourOptions] =
+    useState(UNWIRED_COLOUR_OPTIONS);
   const [tilesColourOptions, setTilesColourOptions] = useState(UNWIRED_COLOUR_OPTIONS);
   const [tilesImageByLabel, setTilesImageByLabel] = useState(() => ({}));
   const [carpetColourOptions, setCarpetColourOptions] = useState(UNWIRED_COLOUR_OPTIONS);
@@ -226,21 +236,6 @@ export default function Colours({ project, onUpdate }) {
       }
     }
 
-    function mergeOptionLists(...lists) {
-      const seen = new Set();
-      const out = [];
-      for (const list of lists) {
-        for (const opt of list || []) {
-          const v = String(opt || "").trim();
-          if (!v || seen.has(v)) continue;
-          seen.add(v);
-          out.push(v);
-        }
-      }
-      if (!out.includes(NOTHING_SELECTED)) out.unshift(NOTHING_SELECTED);
-      return out.length ? out : UNWIRED_COLOUR_OPTIONS;
-    }
-
     (async () => {
       try {
         const res = await fetch(`${API_URL}/api/colour-section-ranges`, {
@@ -270,9 +265,8 @@ export default function Colours({ project, onUpdate }) {
         if (!cancelled) {
           setExternalColourOptions(externalResult.options);
           setWindowsColourOptions(windowsResult.options);
-          setHybridColourOptions(
-            mergeOptionLists(hybridAffordableResult.options, hybridSuperiorResult.options)
-          );
+          setHybridAffordableColourOptions(hybridAffordableResult.options);
+          setHybridSuperiorColourOptions(hybridSuperiorResult.options);
           setTilesColourOptions(tilesResult.options);
           setTilesImageByLabel(tilesResult.imageByLabel || {});
           setCarpetColourOptions(carpetsResult.options);
@@ -283,7 +277,8 @@ export default function Colours({ project, onUpdate }) {
         if (!cancelled) {
           setExternalColourOptions(UNWIRED_COLOUR_OPTIONS);
           setWindowsColourOptions(UNWIRED_COLOUR_OPTIONS);
-          setHybridColourOptions(UNWIRED_COLOUR_OPTIONS);
+          setHybridAffordableColourOptions(UNWIRED_COLOUR_OPTIONS);
+          setHybridSuperiorColourOptions(UNWIRED_COLOUR_OPTIONS);
           setTilesColourOptions(UNWIRED_COLOUR_OPTIONS);
           setTilesImageByLabel({});
           setCarpetColourOptions(UNWIRED_COLOUR_OPTIONS);
@@ -295,6 +290,14 @@ export default function Colours({ project, onUpdate }) {
       cancelled = true;
     };
   }, []);
+
+  const hybridColourOptions = useMemo(
+    () =>
+      isAffordableSpecs(project?.specs)
+        ? hybridAffordableColourOptions
+        : hybridSuperiorColourOptions,
+    [project?.specs, hybridAffordableColourOptions, hybridSuperiorColourOptions]
+  );
 
   const externalFieldOptions = useMemo(() => {
     const base = externalColourOptions.length ? externalColourOptions : UNWIRED_COLOUR_OPTIONS;
