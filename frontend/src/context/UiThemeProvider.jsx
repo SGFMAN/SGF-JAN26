@@ -16,25 +16,43 @@ const UiThemeContext = createContext(null);
 export function UiThemeProvider({ children }) {
   const [themeId, setThemeIdState] = useState(DEFAULT_UI_THEME_ID);
   const [colorOverrides, setColorOverrides] = useState({});
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function loadAllSettings() {
+      setReady(false);
+
       if (!getLoggedInUserId()) {
         resetUiButtonStylesCache();
         resetUiThemeSettingsCache();
-        setThemeIdState(DEFAULT_UI_THEME_ID);
-        setColorOverrides({});
+        if (!cancelled) {
+          setThemeIdState(DEFAULT_UI_THEME_ID);
+          setColorOverrides({});
+          applyUiThemeToDocument(DEFAULT_UI_THEME_ID, {});
+          setReady(true);
+        }
         return;
       }
 
-      const [{ themeId: loadedThemeId, colorOverrides: loadedOverrides }] = await Promise.all([
-        ensureUiThemeSettingsLoaded({ force: true }),
-        ensureUiButtonStylesLoaded({ force: true }),
-      ]);
-
-      setThemeIdState(loadedThemeId);
-      setColorOverrides(loadedOverrides);
-      applyUiThemeToDocument(loadedThemeId, loadedOverrides);
+      try {
+        const [{ themeId: loadedThemeId, colorOverrides: loadedOverrides }] = await Promise.all([
+          ensureUiThemeSettingsLoaded({ force: true }),
+          ensureUiButtonStylesLoaded({ force: true }),
+        ]);
+        if (cancelled) return;
+        setThemeIdState(loadedThemeId);
+        setColorOverrides(loadedOverrides);
+        applyUiThemeToDocument(loadedThemeId, loadedOverrides);
+      } catch (err) {
+        console.error("Failed to load UI theme settings:", err);
+        if (!cancelled) {
+          applyUiThemeToDocument(DEFAULT_UI_THEME_ID, {});
+        }
+      } finally {
+        if (!cancelled) setReady(true);
+      }
     }
 
     void loadAllSettings();
@@ -56,6 +74,7 @@ export function UiThemeProvider({ children }) {
     window.addEventListener("sgf-ui-theme-change", onThemeChange);
     window.addEventListener("sgf-auth-session-change", onAuthSessionChange);
     return () => {
+      cancelled = true;
       window.removeEventListener("sgf-ui-theme-change", onThemeChange);
       window.removeEventListener("sgf-auth-session-change", onAuthSessionChange);
     };
@@ -127,6 +146,7 @@ export function UiThemeProvider({ children }) {
 
   const value = useMemo(
     () => ({
+      ready,
       themeId,
       theme: getUiTheme(themeId, colorOverrides[themeId] || {}),
       colorOverrides,
@@ -135,7 +155,7 @@ export function UiThemeProvider({ children }) {
       setThemeColor,
       clearThemeColor,
     }),
-    [themeId, colorOverrides, setThemeId, getThemeColors, setThemeColor, clearThemeColor]
+    [ready, themeId, colorOverrides, setThemeId, getThemeColors, setThemeColor, clearThemeColor]
   );
 
   return <UiThemeContext.Provider value={value}>{children}</UiThemeContext.Provider>;

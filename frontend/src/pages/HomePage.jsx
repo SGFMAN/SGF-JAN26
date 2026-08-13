@@ -1,10 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import HotlistSidebarSection from "../components/HotlistSidebarSection";
-import ProjectStatusSidebarSection from "../components/ProjectStatusSidebarSection";
-import AdminToolsSidebarSection from "../components/AdminToolsSidebarSection";
-import ManagersSalesMenuGroup from "../components/ManagersSalesMenuGroup";
-import { isUserAdmin } from "../utils/auth";
+import MainSidebarMenu from "../components/MainSidebarMenu";
 import { getStateFilter } from "../utils/stateFilter";
 import { useProjectListSearch } from "../utils/projectListSearch";
 import {
@@ -226,10 +222,8 @@ export default function HomePage() {
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [sortMode, setSortMode] = useState("suburb"); // default view
   const [, setUiButtonStyleRevision] = useState(0);
-  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    checkAdminStatus();
     fetchProjects();
 
     let isMounted = true;
@@ -265,11 +259,6 @@ export default function HomePage() {
       window.removeEventListener("sgf-ui-theme-change", refresh);
     };
   }, []);
-
-  async function checkAdminStatus() {
-    const admin = await isUserAdmin();
-    setIsAdmin(admin);
-  }
 
   useEffect(() => {
     // Reset value dropdown when field changes
@@ -616,14 +605,7 @@ export default function HomePage() {
           }}
         >
           {/* Menu Buttons */}
-          <HotlistSidebarSection />
-                    <ProjectStatusSidebarSection activePath={location.pathname} stateFilter={stateFilter} />
-          
-          <ManagersSalesMenuGroup />
-
-          {isAdmin && (
-            <AdminToolsSidebarSection activePath={location.pathname} visible={isAdmin} />
-          )}
+          <MainSidebarMenu activePath={location.pathname} stateFilter={stateFilter} />
           <div style={{ flex: 1 }} />
         </div>
         {/* Section 3: Projects */}

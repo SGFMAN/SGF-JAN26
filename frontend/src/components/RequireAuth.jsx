@@ -5,6 +5,7 @@ import {
   verifyServerSession,
   probeLiveStaffPeerSession,
 } from "../utils/auth";
+import AppLoadingScreen from "./AppLoadingScreen";
 
 /**
  * Gate staff routes.
@@ -54,7 +55,7 @@ export default function RequireAuth({ children }) {
   }, [location.pathname, location.search]);
 
   if (!ready) {
-    return null;
+    return <AppLoadingScreen message="Checking login…" />;
   }
 
   if (!allowed) {

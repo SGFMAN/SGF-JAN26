@@ -48,6 +48,7 @@ import PortalProjects from "./pages/PortalProjects";
 import RequireAuth from "./components/RequireAuth";
 import LoggedInUserButton from "./components/LoggedInUserButton";
 import PresenceHeartbeat from "./components/PresenceHeartbeat";
+import AppBootstrap from "./components/AppBootstrap";
 import { UiThemeProvider } from "./context/UiThemeProvider";
 import { isClientPortalEntry } from "./utils/entryPortal";
 
@@ -67,9 +68,11 @@ export default function App() {
     return (
       <BrowserRouter>
         <UiThemeProvider>
-          <Routes>
-            <Route path="*" element={<ClientPortalApp />} />
-          </Routes>
+          <AppBootstrap>
+            <Routes>
+              <Route path="*" element={<ClientPortalApp />} />
+            </Routes>
+          </AppBootstrap>
         </UiThemeProvider>
       </BrowserRouter>
     );
@@ -78,6 +81,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <UiThemeProvider>
+      <AppBootstrap>
       <EmailSendOverlayProvider>
       <PresenceHeartbeat />
       <LoggedInUserButton />
@@ -147,6 +151,7 @@ export default function App() {
         )}
       </Routes>
       </EmailSendOverlayProvider>
+      </AppBootstrap>
       </UiThemeProvider>
     </BrowserRouter>
   );

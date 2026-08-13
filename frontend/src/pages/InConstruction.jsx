@@ -5,12 +5,8 @@ import {
   isCancelledStatus,
 } from "../utils/projectStatus";
 import { Link, useLocation } from "react-router-dom";
-import HotlistSidebarSection from "../components/HotlistSidebarSection";
-import ProjectStatusSidebarSection from "../components/ProjectStatusSidebarSection";
-import AdminToolsSidebarSection from "../components/AdminToolsSidebarSection";
-import ManagersSalesMenuGroup from "../components/ManagersSalesMenuGroup";
+import MainSidebarMenu from "../components/MainSidebarMenu";
 import ProjectListToolbar from "../components/ProjectListToolbar";
-import { isUserAdmin } from "../utils/auth";
 import { getStateFilter } from "../utils/stateFilter";
 import { useProjectListSearch } from "../utils/projectListSearch";
 import {
@@ -42,12 +38,9 @@ export default function InConstruction() {
   const [searchQuery, setSearchQuery] = useProjectListSearch();
   const [selectedField, setSelectedField] = useState("");
   const [selectedValue, setSelectedValue] = useState("");
-  const [isAdmin, setIsAdmin] = useState(false);
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [sortMode, setSortMode] = useState("suburb");
   useEffect(() => {
-    // Check admin status first so buttons show up quickly
-    checkAdminStatus();
     fetchProjects();
   }, []);
 
@@ -80,11 +73,6 @@ export default function InConstruction() {
   useEffect(() => {
     setSelectedValue("");
   }, [selectedField]);
-
-  async function checkAdminStatus() {
-    const admin = await isUserAdmin();
-    setIsAdmin(admin);
-  }
 
   async function fetchProjects(options = {}) {
     try {
@@ -221,15 +209,7 @@ export default function InConstruction() {
           }}
         >
           {/* Menu Buttons */}
-          <HotlistSidebarSection />
-          
-          <ProjectStatusSidebarSection activePath={location.pathname} stateFilter={stateFilter} />
-          
-          <ManagersSalesMenuGroup />
-
-          {isAdmin && (
-            <AdminToolsSidebarSection activePath={location.pathname} visible={isAdmin} />
-          )}
+          <MainSidebarMenu activePath={location.pathname} stateFilter={stateFilter} />
           <div style={{ flex: 1 }} />
         </div>
         {/* Section 3: Projects */}

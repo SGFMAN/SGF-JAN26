@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { hasUserAccess } from "../utils/userAccess";
+import { hasUserAccess, peekUserAccess } from "../utils/userAccess";
+import AppLoadingScreen from "./AppLoadingScreen";
 
 export default function SalesAccessRoute({ children }) {
-  const [ready, setReady] = useState(false);
-  const [hasSales, setHasSales] = useState(false);
+  const peeked = peekUserAccess("sales");
+  const [ready, setReady] = useState(() => peeked !== null);
+  const [hasSales, setHasSales] = useState(() => peeked === true);
 
   useEffect(() => {
     (async () => {
@@ -14,22 +16,7 @@ export default function SalesAccessRoute({ children }) {
   }, []);
 
   if (!ready) {
-    return (
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "#42464d",
-          color: "var(--sgf-page-text)",
-          fontSize: "1rem",
-        }}
-      >
-        Loading…
-      </div>
-    );
+    return <AppLoadingScreen message="Loading…" />;
   }
 
   if (!hasSales) {

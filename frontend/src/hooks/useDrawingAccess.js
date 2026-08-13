@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { hasUserAccess } from "../utils/userAccess";
+import { hasUserAccess, peekUserAccess } from "../utils/userAccess";
 
 export function useDrawingAccess() {
-  const [hasDrawing, setHasDrawing] = useState(false);
-  const [ready, setReady] = useState(false);
+  const peeked = peekUserAccess("drawing");
+  const [hasDrawing, setHasDrawing] = useState(() => peeked === true);
+  const [ready, setReady] = useState(() => peeked !== null);
 
   useEffect(() => {
     let cancelled = false;

@@ -8,11 +8,8 @@ import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
 import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
 import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
-import HotlistSidebarSection from "../components/HotlistSidebarSection";
-import ProjectStatusSidebarSection from "../components/ProjectStatusSidebarSection";
-import AdminToolsSidebarSection from "../components/AdminToolsSidebarSection";
-import ManagersSalesMenuGroup from "../components/ManagersSalesMenuGroup";
-import { isUserAdmin, getApiHeaders } from "../utils/auth";
+import MainSidebarMenu from "../components/MainSidebarMenu";
+import { getApiHeaders } from "../utils/auth";
 import { projectPath } from "../utils/projectUrl";
 import { newJobPreEngagementPaymentFields } from "../utils/projectDeposit";
 import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
@@ -106,7 +103,6 @@ export default function Hotlist() {
   const [hotlistItems, setHotlistItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [isNewItemOpen, setIsNewItemOpen] = useState(false);
   const [isEditItemOpen, setIsEditItemOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
@@ -192,32 +188,25 @@ export default function Hotlist() {
   }, [notesModalItem]);
 
   useEffect(() => {
-    checkAdminStatus();
     fetchHotlist();
   }, []);
 
-  // Re-check admin status when navigating back to this page
+  // Soft-refresh when navigating back / focusing this page
   useEffect(() => {
     let isMounted = true;
     
     const handleFocus = () => {
       if (isMounted && location.pathname === "/hotlist") {
-        checkAdminStatus();
+        fetchHotlist({ soft: true });
       }
     };
     
     const handleVisibilityChange = () => {
       if (isMounted && !document.hidden && location.pathname === "/hotlist") {
-        checkAdminStatus();
+        fetchHotlist({ soft: true });
       }
     };
     
-    // Check when navigating to this page
-    if (location.pathname === "/hotlist") {
-      checkAdminStatus();
-    }
-    
-    // Also check when window gains focus
     window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     
@@ -228,14 +217,9 @@ export default function Hotlist() {
     };
   }, [location.pathname]);
 
-  async function checkAdminStatus() {
-    const admin = await isUserAdmin();
-    setIsAdmin(admin);
-  }
-
-  async function fetchHotlist() {
+  async function fetchHotlist(options = {}) {
     try {
-      setLoading(true);
+      if (!options.soft) setLoading(true);
       setError(null);
       const response = await fetch(`${API_URL}/api/hotlist`, { headers: getApiHeaders() });
       if (!response.ok) {
@@ -247,7 +231,7 @@ export default function Hotlist() {
       setError(err.message);
       console.error("Error fetching hotlist:", err);
     } finally {
-      setLoading(false);
+      if (!options.soft) setLoading(false);
     }
   }
 
@@ -1565,13 +1549,7 @@ export default function Hotlist() {
           }}
         >
           {/* Menu Buttons */}
-          <HotlistSidebarSection />
-          
-          <ProjectStatusSidebarSection activePath={location.pathname} />
-          
-          <ManagersSalesMenuGroup />
-
-          <AdminToolsSidebarSection activePath={location.pathname} visible={isAdmin} />
+          <MainSidebarMenu activePath={location.pathname} />
           <div style={{ flex: 1 }} />
         </div>
 

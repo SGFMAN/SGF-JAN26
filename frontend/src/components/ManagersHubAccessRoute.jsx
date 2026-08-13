@@ -1,14 +1,20 @@
 import React, { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { hasUserAccess } from "../utils/userAccess";
+import { hasUserAccess, peekUserAccess } from "../utils/userAccess";
+import AppLoadingScreen from "./AppLoadingScreen";
 
 /**
  * Managers hub (/managers) — Managers or Drawing.
  * Drawing-only users use the hub to open Drawing Manager; other manager pages stay Managers-gated.
  */
 export default function ManagersHubAccessRoute({ children }) {
-  const [ready, setReady] = useState(false);
-  const [allowed, setAllowed] = useState(false);
+  const peekedManagers = peekUserAccess("managers");
+  const peekedDrawing = peekUserAccess("drawing");
+  const cacheWarm = peekedManagers !== null && peekedDrawing !== null;
+  const [ready, setReady] = useState(() => cacheWarm);
+  const [allowed, setAllowed] = useState(
+    () => (peekedManagers === true || peekedDrawing === true)
+  );
 
   useEffect(() => {
     (async () => {
@@ -22,22 +28,7 @@ export default function ManagersHubAccessRoute({ children }) {
   }, []);
 
   if (!ready) {
-    return (
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "#42464d",
-          color: "var(--sgf-page-text)",
-          fontSize: "1rem",
-        }}
-      >
-        Loading…
-      </div>
-    );
+    return <AppLoadingScreen message="Loading…" />;
   }
 
   if (!allowed) {

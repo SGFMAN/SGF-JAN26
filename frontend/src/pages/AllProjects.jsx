@@ -1,11 +1,7 @@
 import React, { useState, useEffect, Fragment, useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
-import HotlistSidebarSection from "../components/HotlistSidebarSection";
-import ProjectStatusSidebarSection from "../components/ProjectStatusSidebarSection";
-import AdminToolsSidebarSection from "../components/AdminToolsSidebarSection";
-import ManagersSalesMenuGroup from "../components/ManagersSalesMenuGroup";
+import MainSidebarMenu from "../components/MainSidebarMenu";
 import ProjectListToolbar from "../components/ProjectListToolbar";
-import { isUserAdmin } from "../utils/auth";
 import { getStateFilter } from "../utils/stateFilter";
 import { useProjectListSearch } from "../utils/projectListSearch";
 import {
@@ -40,21 +36,14 @@ export default function AllProjects() {
   const [selectedValue, setSelectedValue] = useState("");
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [sortMode, setSortMode] = useState("suburb");
-  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    checkAdminStatus();
     fetchProjects();
   }, []);
 
   useEffect(() => {
     setSelectedValue("");
   }, [selectedField]);
-
-  async function checkAdminStatus() {
-    const admin = await isUserAdmin();
-    setIsAdmin(admin);
-  }
 
   async function fetchProjects() {
     try {
@@ -189,15 +178,7 @@ export default function AllProjects() {
           }}
         >
           {/* Menu Buttons */}
-          <HotlistSidebarSection />
-          
-          <ProjectStatusSidebarSection activePath={location.pathname} stateFilter={stateFilter} />
-          
-          <ManagersSalesMenuGroup />
-
-          {isAdmin && (
-            <AdminToolsSidebarSection activePath={location.pathname} visible={isAdmin} />
-          )}
+          <MainSidebarMenu activePath={location.pathname} stateFilter={stateFilter} />
           <div style={{ flex: 1 }} />
         </div>
 

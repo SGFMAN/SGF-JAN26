@@ -10,6 +10,15 @@ export function clearUserAccessCache() {
   cachedUserId = null;
 }
 
+/** Sync peek of cached grants; null when cache is cold or for another user. */
+export function peekUserAccess(accessArea) {
+  const userId = getLoggedInUserId();
+  if (!userId || !cachedGrants || cachedUserId !== userId) {
+    return null;
+  }
+  return cachedGrants[accessArea] === true;
+}
+
 export async function getUserAccessGrants() {
   const userId = getLoggedInUserId();
   if (!userId) {

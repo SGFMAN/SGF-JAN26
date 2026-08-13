@@ -1,12 +1,8 @@
 import React, { useState, useEffect, Fragment, useMemo } from "react";
 import { isExcludedFromProjectLists, isCancelledStatus } from "../utils/projectStatus";
 import { Link, useLocation } from "react-router-dom";
-import HotlistSidebarSection from "../components/HotlistSidebarSection";
-import ProjectStatusSidebarSection from "../components/ProjectStatusSidebarSection";
-import AdminToolsSidebarSection from "../components/AdminToolsSidebarSection";
-import ManagersSalesMenuGroup from "../components/ManagersSalesMenuGroup";
+import MainSidebarMenu from "../components/MainSidebarMenu";
 import ProjectListToolbar from "../components/ProjectListToolbar";
-import { isUserAdmin } from "../utils/auth";
 import { getStateFilter } from "../utils/stateFilter";
 import { useProjectListSearch } from "../utils/projectListSearch";
 import {
@@ -44,12 +40,10 @@ export default function ProjectStatusListPage({
   const [searchQuery, setSearchQuery] = useProjectListSearch();
   const [selectedField, setSelectedField] = useState("");
   const [selectedValue, setSelectedValue] = useState("");
-  const [isAdmin, setIsAdmin] = useState(false);
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [sortMode, setSortMode] = useState("suburb");
 
   useEffect(() => {
-    checkAdminStatus();
     fetchProjects();
   }, []);
 
@@ -81,11 +75,6 @@ export default function ProjectStatusListPage({
   useEffect(() => {
     setSelectedValue("");
   }, [selectedField]);
-
-  async function checkAdminStatus() {
-    const admin = await isUserAdmin();
-    setIsAdmin(admin);
-  }
 
   async function fetchProjects(options = {}) {
     try {
@@ -209,13 +198,7 @@ export default function ProjectStatusListPage({
             color: MONUMENT,
           }}
         >
-          <HotlistSidebarSection />
-          <ProjectStatusSidebarSection activePath={location.pathname} stateFilter={stateFilter} />
-          <ManagersSalesMenuGroup />
-
-          {isAdmin && (
-            <AdminToolsSidebarSection activePath={location.pathname} visible={isAdmin} />
-          )}
+          <MainSidebarMenu activePath={location.pathname} stateFilter={stateFilter} />
           <div style={{ flex: 1 }} />
         </div>
 

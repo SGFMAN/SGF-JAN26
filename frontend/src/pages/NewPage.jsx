@@ -1,11 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import HotlistSidebarSection from "../components/HotlistSidebarSection";
-import ProjectStatusSidebarSection from "../components/ProjectStatusSidebarSection";
-import AdminToolsSidebarSection from "../components/AdminToolsSidebarSection";
-import ManagersSalesMenuGroup from "../components/ManagersSalesMenuGroup";
+import MainSidebarMenu from "../components/MainSidebarMenu";
 import ModalBackdrop from "../components/ModalBackdrop";
-import { getApiHeaders, isUserAdmin } from "../utils/auth";
+import { getApiHeaders } from "../utils/auth";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { parseAustralianAddress, STATE_OPTIONS } from "../utils/parseAustralianAddress.js";
 import { UI } from "../utils/uiThemeTokens.js";
@@ -266,7 +263,6 @@ export default function NewPage() {
   const logo = useAppLogo();
   const pasteRef = useRef(null);
   const saveTimersRef = useRef({});
-  const [isAdmin, setIsAdmin] = useState(false);
   const [quotes, setQuotes] = useState([]);
   const [edits, setEdits] = useState({});
   const [pasteBox, setPasteBox] = useState("");
@@ -276,17 +272,6 @@ export default function NewPage() {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
   const [error, setError] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const admin = await isUserAdmin();
-      if (!cancelled) setIsAdmin(admin);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -540,10 +525,7 @@ export default function NewPage() {
             alignSelf: "flex-start",
           }}
         >
-          <HotlistSidebarSection />
-          <ProjectStatusSidebarSection activePath={location.pathname} />
-          <ManagersSalesMenuGroup />
-          <AdminToolsSidebarSection activePath={location.pathname} visible={isAdmin} />
+          <MainSidebarMenu activePath={location.pathname} />
           <div style={{ flex: 1 }} />
         </div>
 

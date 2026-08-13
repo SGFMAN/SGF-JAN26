@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { hasUserAccess } from "../utils/userAccess";
+import { hasUserAccess, peekUserAccess } from "../utils/userAccess";
+import AppLoadingScreen from "./AppLoadingScreen";
 
 /**
  * Drawing Manager and drawing-gated UI — requires Drawing in Settings → Permissions.
  * Does not require Managers.
  */
 export default function DrawingAccessRoute({ children }) {
-  const [ready, setReady] = useState(false);
-  const [hasDrawing, setHasDrawing] = useState(false);
+  const peeked = peekUserAccess("drawing");
+  const [ready, setReady] = useState(() => peeked !== null);
+  const [hasDrawing, setHasDrawing] = useState(() => peeked === true);
 
   useEffect(() => {
     (async () => {
@@ -18,22 +20,7 @@ export default function DrawingAccessRoute({ children }) {
   }, []);
 
   if (!ready) {
-    return (
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "#42464d",
-          color: "var(--sgf-page-text)",
-          fontSize: "1rem",
-        }}
-      >
-        Loading…
-      </div>
-    );
+    return <AppLoadingScreen message="Loading…" />;
   }
 
   if (!hasDrawing) {
