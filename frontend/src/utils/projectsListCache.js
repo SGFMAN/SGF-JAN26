@@ -78,3 +78,9 @@ export function invalidateProjectsListCache() {
   cacheByKey.clear();
   inflightByKey.clear();
 }
+
+/** Sync read of cached list data (null when cold / expired not checked — raw hit only). */
+export function getCachedProjectsList(view = "card") {
+  const hit = cacheByKey.get(cacheKey(view));
+  return hit ? hit.data : null;
+}

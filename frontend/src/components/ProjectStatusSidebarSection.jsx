@@ -12,7 +12,7 @@ import {
   isPermitPhaseStatus,
   isPreEngagementPhaseStatus,
 } from "../utils/projectStatus";
-import { fetchProjectsList } from "../utils/projectsListCache";
+import { fetchProjectsList, getCachedProjectsList } from "../utils/projectsListCache";
 
 /** Shared height so wrapping labels match single-line items. */
 const LINK_BASE_STYLE = {
@@ -82,6 +82,17 @@ function countForPath(projects, path) {
   }
 }
 
+function buildSidebarCounts(projects, stateFilter) {
+  const list = (Array.isArray(projects) ? projects : []).filter((p) =>
+    projectMatchesState(p, stateFilter)
+  );
+  const next = {};
+  for (const { to } of PROJECT_STATUS_MENU_LINKS) {
+    next[to] = countForPath(list, to);
+  }
+  return next;
+}
+
 /**
  * @param {object} props
  * @param {string} [props.activePath]
@@ -93,7 +104,11 @@ export default function ProjectStatusSidebarSection({
   plain = false,
   stateFilter: stateFilterProp,
 }) {
-  const [countsByPath, setCountsByPath] = useState({});
+  const [countsByPath, setCountsByPath] = useState(() => {
+    const cached = getCachedProjectsList("card");
+    if (!cached) return {};
+    return buildSidebarCounts(cached, stateFilterProp || getStateFilter());
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -102,15 +117,8 @@ export default function ProjectStatusSidebarSection({
       try {
         const stateFilter = stateFilterProp || getStateFilter();
         const data = await fetchProjectsList({ view: "card" });
-        const list = (Array.isArray(data) ? data : []).filter((p) =>
-          projectMatchesState(p, stateFilter)
-        );
         if (cancelled) return;
-        const next = {};
-        for (const { to } of PROJECT_STATUS_MENU_LINKS) {
-          next[to] = countForPath(list, to);
-        }
-        setCountsByPath(next);
+        setCountsByPath(buildSidebarCounts(data, stateFilter));
       } catch {
         // leave previous counts
       }

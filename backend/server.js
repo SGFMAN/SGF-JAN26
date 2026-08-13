@@ -12766,6 +12766,35 @@ app.post("/api/hotlist/:id/agreement-sent", async (req, res) => {
   }
 });
 
+// Clear agreement sent — return item to the normal (non-agreement) hotlist group
+app.post("/api/hotlist/:id/agreement-unsent", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await requireHotlistSalesAccess(req, res))) return;
+
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: "invalid id" });
+  }
+
+  try {
+    const r = await pool.query(
+      `UPDATE projects
+       SET agreement_sent = NULL, updated_at = NOW()
+       WHERE id = $1 AND status = $2
+       RETURNING id, name, status, suburb, street, state, stream, client_name, email, phone, agreement_sent, updated_at`,
+      [id, "Hotlist"]
+    );
+
+    if (r.rowCount === 0) {
+      return res.status(404).json({ error: "not found" });
+    }
+
+    res.json(r.rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.delete("/api/hotlist/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   if (!(await requireHotlistSalesAccess(req, res))) return;

@@ -20,7 +20,7 @@ import StateFilterButtons from "../components/StateFilterButtons";
 import { UI, MENU, INDICATOR, outlineBorder } from "../utils/uiThemeTokens.js";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 import { buildDuplicateChainGroups } from "../utils/duplicateProjectLinks";
-import { fetchProjectsList } from "../utils/projectsListCache";
+import { fetchProjectsList, getCachedProjectsList } from "../utils/projectsListCache";
 import {
   getDepositPaidFilterCategory,
   projectMatchesDepositPaidFilter,
@@ -213,8 +213,9 @@ export default function HomePage() {
   const logo = useAppLogo();
   const location = useLocation();
   const isMobile = useIsMobile();
-  const [projects, setProjects] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cachedProjects = getCachedProjectsList("card");
+  const [projects, setProjects] = useState(() => cachedProjects || []);
+  const [loading, setLoading] = useState(() => !cachedProjects);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useProjectListSearch();
   const [selectedField, setSelectedField] = useState("");
@@ -267,7 +268,7 @@ export default function HomePage() {
 
   async function fetchProjects(options = {}) {
     try {
-      if (!options.soft) setLoading(true);
+      if (!options.soft && !getCachedProjectsList("card")) setLoading(true);
       setError(null);
       const data = await fetchProjectsList({
         view: "card",

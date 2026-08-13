@@ -2,9 +2,14 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import MainSidebarMenu from "../components/MainSidebarMenu";
 import ModalBackdrop from "../components/ModalBackdrop";
+import { useEmailSendOverlay } from "../components/EmailSendOverlay";
+import NewProject2 from "./NewProject_2_ClientDetails";
 import { getApiHeaders } from "../utils/auth";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { parseAustralianAddress, STATE_OPTIONS } from "../utils/parseAustralianAddress.js";
+import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
+import { buildSavedButtonStyle, ensureUiButtonStylesLoaded } from "../utils/uiButtonStyles.js";
 import { UI } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
@@ -15,6 +20,9 @@ const PAGE_TEXT = UI.pageText;
 const GRID_LINE = "#c5c9ce";
 const HEADER_BG = "#e8eaed";
 const API_URL = "";
+const QUOTE_EMAIL_BUTTON_ID = 1;
+const QUOTE_FOLLOWUP_TEMPLATE = "Quote Followup";
+const QUOTE_FOLLOWUP_FROM = "info@superiorgrannyflats.com.au";
 
 const emptyQuote = () => ({
   created_at: null,
@@ -31,6 +39,7 @@ const emptyQuote = () => ({
 });
 
 const COLS = [
+  { key: "email_action", label: "", type: "emailBtn", width: "72px" },
   { key: "created_at", label: "Date added", type: "date", width: "96px" },
   { key: "state", label: "State", type: "state", width: "72px" },
   { key: "suburb", label: "Suburb", type: "text", width: "12%" },
@@ -154,13 +163,75 @@ function quoteFromApi(q) {
   };
 }
 
-function QuoteSheetRow({ value, onChange, disabled, trailing }) {
+function replaceQuoteFollowupTokens(text, quote) {
+  if (!text) return "";
+  const address = [quote?.street, quote?.suburb].filter(Boolean).join(", ");
+  const map = {
+    "{ProjectName}": address,
+    "{Address}": address,
+    "{Street}": quote?.street || "",
+    "{Suburb}": quote?.suburb || "",
+    "{State}": quote?.state || "",
+    "{ClientName}": quote?.name || "",
+    "{Contact1}": quote?.email || "",
+    "{Email}": quote?.email || "",
+    "{Phone}": quote?.phone || "",
+  };
+  let out = String(text);
+  Object.entries(map).forEach(([k, v]) => {
+    out = out.split(k).join(v || "");
+  });
+  return out;
+}
+
+function quoteEmailButtonStyle() {
+  const saved = buildSavedButtonStyle(QUOTE_EMAIL_BUTTON_ID, true);
+  const fallback = {
+    background: MONUMENT,
+    color: PAGE_TEXT,
+    border: `1px solid ${MONUMENT}`,
+    borderRadius: "6px",
+    fontWeight: 600,
+  };
+  return {
+    ...(saved || fallback),
+    width: "auto",
+    minWidth: "58px",
+    height: "auto",
+    padding: "4px 8px",
+    fontSize: (saved && saved.fontSize) || "0.75rem",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    boxSizing: "border-box",
+    lineHeight: 1.2,
+  };
+}
+
+function QuoteSheetRow({ value, onChange, disabled, onEmailClick, trailing }) {
   const stateValue = STATE_OPTIONS.includes(String(value.state || "").trim().toUpperCase())
     ? String(value.state).trim().toUpperCase()
     : "";
   return (
     <tr>
       {COLS.map((col) => {
+        if (col.type === "emailBtn") {
+          return (
+            <td key={col.key} style={{ ...tdStyle, padding: "4px 6px", textAlign: "center" }}>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onEmailClick?.()}
+                style={{
+                  ...quoteEmailButtonStyle(),
+                  opacity: disabled ? 0.6 : 1,
+                  cursor: disabled ? "default" : "pointer",
+                }}
+              >
+                Email
+              </button>
+            </td>
+          );
+        }
         if (col.type === "date") {
           const stale = isQuoteDateOlderThanThreeDays(value.created_at);
           return (
@@ -261,17 +332,41 @@ function QuoteSheetRow({ value, onChange, disabled, trailing }) {
 export default function NewPage() {
   const location = useLocation();
   const logo = useAppLogo();
+  const { runWithEmailOverlay } = useEmailSendOverlay();
   const pasteRef = useRef(null);
   const saveTimersRef = useRef({});
+  const emailBodyRef = useRef(null);
   const [quotes, setQuotes] = useState([]);
   const [edits, setEdits] = useState({});
   const [pasteBox, setPasteBox] = useState("");
   const [addressModalOpen, setAddressModalOpen] = useState(false);
   const [addressForm, setAddressForm] = useState({ state: "", street: "", suburb: "" });
   const [rawPaste, setRawPaste] = useState("");
+  const [clientModalOpen, setClientModalOpen] = useState(false);
+  const [clientForm, setClientForm] = useState({ clientName: "", email: "", phone: "" });
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
   const [error, setError] = useState(null);
+  const [, setUiButtonStyleRevision] = useState(0);
+
+  const [emailPreviewOpen, setEmailPreviewOpen] = useState(false);
+  const [emailPreviewPreparing, setEmailPreviewPreparing] = useState(false);
+  const [emailPreviewQuote, setEmailPreviewQuote] = useState(null);
+  const [emailTo, setEmailTo] = useState("");
+  const [emailFrom, setEmailFrom] = useState(QUOTE_FOLLOWUP_FROM);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+
+  useEffect(() => {
+    void ensureUiButtonStylesLoaded();
+    const refresh = () => setUiButtonStyleRevision((n) => n + 1);
+    window.addEventListener("sgf-ui-button-styles-change", refresh);
+    window.addEventListener("sgf-ui-theme-change", refresh);
+    return () => {
+      window.removeEventListener("sgf-ui-button-styles-change", refresh);
+      window.removeEventListener("sgf-ui-theme-change", refresh);
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -280,6 +375,11 @@ export default function NewPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (emailPreviewOpen && emailBodyRef.current && emailBody != null && !emailPreviewPreparing) {
+      emailBodyRef.current.innerHTML = emailBody || "";
+    }
+  }, [emailPreviewOpen, emailBody, emailPreviewPreparing]);
   const loadQuotes = useCallback(async () => {
     try {
       setLoading(true);
@@ -370,7 +470,17 @@ export default function NewPage() {
     requestAnimationFrame(() => pasteRef.current?.focus());
   }
 
-  async function handleConfirmAddress() {
+  function closeClientModal() {
+    setClientModalOpen(false);
+    setClientForm({ clientName: "", email: "", phone: "" });
+  }
+
+  function cancelNewQuoteFlow() {
+    closeClientModal();
+    closeAddressModal();
+  }
+
+  function handleConfirmAddress() {
     const state = String(addressForm.state || "").trim().toUpperCase();
     const street = String(addressForm.street || "").trim();
     const suburb = String(addressForm.suburb || "").trim();
@@ -386,6 +496,28 @@ export default function NewPage() {
       alert("Please select state (VIC or QLD)");
       return;
     }
+    setAddressForm({ state, street, suburb });
+    setAddressModalOpen(false);
+    setClientForm({ clientName: "", email: "", phone: "" });
+    setClientModalOpen(true);
+  }
+
+  function handleClientModalBack() {
+    setClientModalOpen(false);
+    setAddressModalOpen(true);
+  }
+
+  async function handleClientModalNext() {
+    const state = String(addressForm.state || "").trim().toUpperCase();
+    const street = String(addressForm.street || "").trim();
+    const suburb = String(addressForm.suburb || "").trim();
+    const name = String(clientForm.clientName || "").trim();
+    const email = String(clientForm.email || "").trim();
+    const phone = String(clientForm.phone || "").replace(/\D/g, "");
+    if (!street || !suburb || !STATE_OPTIONS.includes(state)) {
+      alert("Address is incomplete. Please go back and check State, Street and Suburb.");
+      return;
+    }
     try {
       setSavingId("new");
       setError(null);
@@ -397,23 +529,32 @@ export default function NewPage() {
           state,
           street,
           suburb,
+          name,
+          email,
+          phone,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
-      // Prefer create response; keep modal state if API omitted it.
       const row = {
         ...data,
         state: data.state || state,
         street: data.street || street,
         suburb: data.suburb || suburb,
+        name: data.name || name,
+        email: data.email || email,
+        phone: data.phone || phone,
       };
       const normalised = quoteFromApi(row);
       if (row.id != null) {
         setQuotes((prev) => [row, ...prev.filter((q) => q.id !== row.id)]);
         setEdits((prev) => ({ ...prev, [row.id]: normalised }));
       }
-      closeAddressModal();
+      setClientModalOpen(false);
+      setClientForm({ clientName: "", email: "", phone: "" });
+      setRawPaste("");
+      setAddressForm({ state: "", street: "", suburb: "" });
+      requestAnimationFrame(() => pasteRef.current?.focus());
     } catch (err) {
       alert(err.message || "Failed to add quote");
     } finally {
@@ -448,6 +589,100 @@ export default function NewPage() {
       alert(err.message || "Failed to delete quote");
     } finally {
       setSavingId(null);
+    }
+  }
+
+  function closeEmailPreview() {
+    setEmailPreviewOpen(false);
+    setEmailPreviewPreparing(false);
+    setEmailPreviewQuote(null);
+    setEmailTo("");
+    setEmailFrom(QUOTE_FOLLOWUP_FROM);
+    setEmailSubject("");
+    setEmailBody("");
+  }
+
+  async function openEmailPreview(quoteId) {
+    const quote = edits[quoteId] || emptyQuote();
+    const toAddress = String(quote.email || "").trim();
+    if (!toAddress) {
+      alert("Add a client email on this quote before sending.");
+      return;
+    }
+
+    setEmailPreviewQuote({ id: quoteId, ...quote });
+    setEmailPreviewOpen(true);
+    setEmailPreviewPreparing(true);
+    setEmailTo(toAddress);
+    setEmailFrom(QUOTE_FOLLOWUP_FROM);
+    setEmailSubject("");
+    setEmailBody("");
+
+    try {
+      const templatesResponse = await fetch(`${API_URL}/api/email-templates`);
+      if (!templatesResponse.ok) throw new Error("Failed to fetch email templates");
+      const templates = await templatesResponse.json();
+      const template = (Array.isArray(templates) ? templates : []).find(
+        (t) => t.name && t.name.toLowerCase().trim() === QUOTE_FOLLOWUP_TEMPLATE.toLowerCase()
+      );
+      if (!template) {
+        alert(
+          `Template "${QUOTE_FOLLOWUP_TEMPLATE}" not found. Please create it in Settings → Email Templates.`
+        );
+        closeEmailPreview();
+        return;
+      }
+
+      setEmailSubject(
+        await replaceLoggedInUserEmailTokens(replaceQuoteFollowupTokens(template.subject || "", quote))
+      );
+      setEmailBody(
+        convertEmailBodyNewlinesToBr(
+          await replaceLoggedInUserEmailTokens(replaceQuoteFollowupTokens(template.body || "", quote))
+        )
+      );
+    } catch (err) {
+      console.error("Error preparing quote followup email:", err);
+      alert(`Failed to prepare email: ${err.message || "Unknown error"}`);
+      closeEmailPreview();
+    } finally {
+      setEmailPreviewPreparing(false);
+    }
+  }
+
+  async function handleSendQuoteFollowupEmail() {
+    const toAddresses = String(emailTo || "")
+      .split(",")
+      .map((a) => a.trim())
+      .filter((a) => a.length > 0);
+    if (toAddresses.length === 0) {
+      alert("Please enter at least one email address.");
+      return;
+    }
+    if (!String(emailFrom || "").trim()) {
+      alert("From address is required.");
+      return;
+    }
+    try {
+      await runWithEmailOverlay(async () => {
+        const res = await fetch(`${API_URL}/api/emails/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...getApiHeaders() },
+          body: JSON.stringify({
+            to: toAddresses,
+            from: String(emailFrom).trim(),
+            subject: emailSubject || "",
+            htmlBody: emailBody || "",
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Send failed (${res.status})`);
+      });
+      closeEmailPreview();
+      alert("Quote followup email sent.");
+    } catch (err) {
+      console.error("Error sending quote followup email:", err);
+      alert(err.message || "Failed to send email.");
     }
   }
 
@@ -653,6 +888,7 @@ export default function NewPage() {
                           value={value}
                           disabled={busy}
                           onChange={(next, opts) => handleRowChange(quote.id, next, opts)}
+                          onEmailClick={() => openEmailPreview(quote.id)}
                           trailing={
                             <button
                               type="button"
@@ -799,9 +1035,226 @@ export default function NewPage() {
                   cursor: "pointer",
                 }}
               >
-                {savingId === "new" ? "Adding…" : "Add quote"}
+                {savingId === "new" ? "Next…" : "Next"}
               </button>
             </div>
+          </div>
+        </ModalBackdrop>
+      ) : null}
+
+      <NewProject2
+        isOpen={clientModalOpen}
+        onClose={cancelNewQuoteFlow}
+        formData={clientForm}
+        onFormDataChange={setClientForm}
+        onBack={handleClientModalBack}
+        onNext={handleClientModalNext}
+        nextLabel={savingId === "new" ? "Saving…" : "Save quote"}
+      />
+
+      {emailPreviewOpen ? (
+        <ModalBackdrop zIndex={1000} onClick={closeEmailPreview}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              width: "90%",
+              maxWidth: "800px",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "16px",
+              }}
+            >
+              <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Preview & Send Email</h2>
+              <button
+                type="button"
+                onClick={closeEmailPreview}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "1.5rem",
+                  cursor: "pointer",
+                  color: MONUMENT,
+                  padding: 0,
+                  width: 30,
+                  height: 30,
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            {emailPreviewPreparing ? (
+              <div style={{ textAlign: "center", padding: "40px", color: MONUMENT }}>Preparing email…</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                <div style={{ fontSize: "0.9rem", color: "#666" }}>
+                  Template: <strong>{QUOTE_FOLLOWUP_TEMPLATE}</strong>
+                  {emailPreviewQuote
+                    ? ` | ${[emailPreviewQuote.street, emailPreviewQuote.suburb].filter(Boolean).join(", ")}`
+                    : ""}
+                </div>
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: "0.9rem",
+                      color: UI.textMuted,
+                      marginBottom: "6px",
+                      fontWeight: 500,
+                    }}
+                  >
+                    To
+                  </label>
+                  <input
+                    value={emailTo}
+                    onChange={(e) => setEmailTo(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: `1px solid ${SECTION_GREY}`,
+                      fontSize: "1rem",
+                      boxSizing: "border-box",
+                      color: MONUMENT,
+                      background: WHITE,
+                    }}
+                  />
+                </div>
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: "0.9rem",
+                      color: UI.textMuted,
+                      marginBottom: "6px",
+                      fontWeight: 500,
+                    }}
+                  >
+                    From
+                  </label>
+                  <input
+                    value={emailFrom}
+                    onChange={(e) => setEmailFrom(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: `1px solid ${SECTION_GREY}`,
+                      fontSize: "1rem",
+                      boxSizing: "border-box",
+                      color: MONUMENT,
+                      background: WHITE,
+                    }}
+                  />
+                </div>
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: "0.9rem",
+                      color: UI.textMuted,
+                      marginBottom: "6px",
+                      fontWeight: 500,
+                    }}
+                  >
+                    Subject
+                  </label>
+                  <input
+                    value={emailSubject}
+                    onChange={(e) => setEmailSubject(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: `1px solid ${SECTION_GREY}`,
+                      fontSize: "1rem",
+                      boxSizing: "border-box",
+                      color: MONUMENT,
+                      background: WHITE,
+                    }}
+                  />
+                </div>
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: "0.9rem",
+                      color: UI.textMuted,
+                      marginBottom: "6px",
+                      fontWeight: 500,
+                    }}
+                  >
+                    Email Preview
+                  </label>
+                  <div
+                    ref={emailBodyRef}
+                    contentEditable
+                    suppressContentEditableWarning
+                    onInput={(e) => setEmailBody(e.currentTarget.innerHTML)}
+                    style={{
+                      width: "100%",
+                      minHeight: "220px",
+                      maxHeight: "42vh",
+                      overflowY: "auto",
+                      padding: "12px",
+                      borderRadius: "8px",
+                      border: `1px solid ${SECTION_GREY}`,
+                      background: WHITE,
+                      fontSize: "1rem",
+                      color: MONUMENT,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "4px" }}>
+                  <button
+                    type="button"
+                    onClick={closeEmailPreview}
+                    style={{
+                      background: SECTION_GREY,
+                      color: MONUMENT,
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "10px 20px",
+                      fontSize: "0.95rem",
+                      fontWeight: 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSendQuoteFollowupEmail}
+                    style={{
+                      background: MONUMENT,
+                      color: WHITE,
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "10px 20px",
+                      fontSize: "0.95rem",
+                      fontWeight: 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </ModalBackdrop>
       ) : null}

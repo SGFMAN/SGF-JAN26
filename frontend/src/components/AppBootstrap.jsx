@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from "
 import { useLocation } from "react-router-dom";
 import { isAuthenticated, isUserAdmin } from "../utils/auth";
 import { getUserAccessGrants } from "../utils/userAccess";
+import { fetchProjectsList } from "../utils/projectsListCache";
 import { useUiTheme } from "../context/UiThemeProvider";
 import AppLoadingScreen from "./AppLoadingScreen";
 
@@ -17,8 +18,9 @@ function removeStaticBootLoader() {
 }
 
 /**
- * After login only: hold the main staff UI until theme + permissions are ready
- * so menu groups do not pop in one-by-one. Login/splash is never covered.
+ * After login only: hold the main staff UI until theme, permissions, and the
+ * projects list are ready so menu + heading + projects appear together.
+ * Login/splash is never covered.
  */
 export default function AppBootstrap({ children }) {
   const location = useLocation();
@@ -59,7 +61,11 @@ export default function AppBootstrap({ children }) {
       if (!themeReady) return;
 
       try {
-        await Promise.all([getUserAccessGrants(), isUserAdmin()]);
+        await Promise.all([
+          getUserAccessGrants(),
+          isUserAdmin(),
+          fetchProjectsList({ view: "card", retry503Max: 60 }),
+        ]);
       } catch (err) {
         console.error("App bootstrap failed:", err);
       }

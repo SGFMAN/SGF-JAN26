@@ -588,6 +588,25 @@ export default function Hotlist() {
     }
   }
 
+  async function handleUnsendAgreementClick(item) {
+    try {
+      const response = await fetch(`${API_URL}/api/hotlist/${item.id}/agreement-unsent`, {
+        method: "POST",
+        headers: getApiHeaders(),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => response.statusText);
+        throw new Error(errorText);
+      }
+
+      await fetchHotlist();
+    } catch (err) {
+      console.error("Error unsending agreement:", err);
+      alert("Error unsending agreement: " + err.message);
+    }
+  }
+
   function handleEmailClick(item) {
     if (!item.email) {
       alert("No email address available for this client.");
@@ -1215,7 +1234,28 @@ export default function Hotlist() {
             >
               Agreement Sent
             </button>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              onClick={() => handleUnsendAgreementClick(item)}
+              style={{
+                background: accent.agreementBg,
+                color: PAGE_TEXT,
+                border: outlineBorder,
+                borderRadius: "8px",
+                padding: "8px 16px",
+                fontSize: "0.9rem",
+                fontWeight: 500,
+                cursor: "pointer",
+                transition: "background 0.2s",
+                whiteSpace: "nowrap",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = accent.agreementHover)}
+              onMouseLeave={(e) => (e.currentTarget.style.background = accent.agreementBg)}
+            >
+              Unsend Agreement
+            </button>
+          )}
           <button
             type="button"
             onClick={() => handleSoldClick(item)}

@@ -17,7 +17,7 @@ import useAppLogo from "../hooks/useAppLogo.js";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
 import { UI, MENU } from "../utils/uiThemeTokens.js";
-import { fetchProjectsList } from "../utils/projectsListCache";
+import { fetchProjectsList, getCachedProjectsList } from "../utils/projectsListCache";
 const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
 const SECTION_GREY = UI.panelBg;
@@ -28,8 +28,9 @@ const PAGE_TEXT = UI.pageText;
 export default function OnHold() {
   const location = useLocation();
   const logo = useAppLogo();
-  const [projects, setProjects] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cachedProjects = getCachedProjectsList("card");
+  const [projects, setProjects] = useState(() => cachedProjects || []);
+  const [loading, setLoading] = useState(() => !cachedProjects);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useProjectListSearch();
   const [selectedField, setSelectedField] = useState("");
@@ -47,7 +48,7 @@ export default function OnHold() {
 
   async function fetchProjects() {
     try {
-      setLoading(true);
+      if (!getCachedProjectsList("card")) setLoading(true);
       setError(null);
       const data = await fetchProjectsList({ view: "card" });
       setProjects(data);

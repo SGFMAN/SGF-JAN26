@@ -14,7 +14,7 @@ import {
   isPermitPhaseStatus,
   isPreEngagementPhaseStatus,
 } from "../utils/projectStatus";
-import { fetchProjectsList } from "../utils/projectsListCache";
+import { fetchProjectsList, getCachedProjectsList } from "../utils/projectsListCache";
 import MobileStyledFilterButton, {
   MOBILE_STATE_BUTTON_IDS,
   MOBILE_STATUS_BUTTON_IDS,
@@ -72,8 +72,9 @@ function matchesStatusFilter(project, statusFilter) {
 export default function MobileProjectsHome({ preview = false, onSelectProject }) {
   const logo = useAppLogo();
   useUiButtonStyleRevision();
-  const [projects, setProjects] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cachedProjects = getCachedProjectsList("card");
+  const [projects, setProjects] = useState(() => cachedProjects || []);
+  const [loading, setLoading] = useState(() => !cachedProjects);
   const [error, setError] = useState(null);
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [statusFilter, setStatusFilter] = useState("all");
@@ -85,7 +86,7 @@ export default function MobileProjectsHome({ preview = false, onSelectProject })
 
   async function fetchProjects() {
     try {
-      setLoading(true);
+      if (!getCachedProjectsList("card")) setLoading(true);
       setError(null);
       const data = await fetchProjectsList({ view: "card" });
       setProjects(data);
