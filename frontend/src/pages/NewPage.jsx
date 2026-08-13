@@ -21,6 +21,8 @@ const GRID_LINE = "#c5c9ce";
 const HEADER_BG = "#e8eaed";
 const API_URL = "";
 const QUOTE_EMAIL_BUTTON_ID = 1;
+const QUOTE_HOTLIST_BUTTON_ID = 3;
+const QUOTE_EDIT_BUTTON_ID = 5;
 const QUOTE_FOLLOWUP_TEMPLATE = "Quote Followup";
 const QUOTE_FOLLOWUP_FROM = "info@superiorgrannyflats.com.au";
 
@@ -76,35 +78,20 @@ const tdStyle = {
   verticalAlign: "middle",
 };
 
-const cellInputStyle = {
-  width: "100%",
-  minWidth: 0,
-  border: "none",
-  outline: "none",
-  background: "transparent",
+const cellTextStyle = {
   padding: "6px 8px",
   fontSize: "0.85rem",
   color: MONUMENT,
   boxSizing: "border-box",
-  fontFamily: "inherit",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
 };
 
 const checkCellStyle = {
   ...tdStyle,
   textAlign: "center",
   padding: "4px 2px",
-};
-
-const actionBtnStyle = {
-  padding: "3px 8px",
-  borderRadius: "4px",
-  border: `1px solid ${GRID_LINE}`,
-  background: WHITE,
-  color: MONUMENT,
-  fontSize: "0.75rem",
-  fontWeight: 600,
-  cursor: "pointer",
-  whiteSpace: "nowrap",
 };
 
 const modalInputStyle = {
@@ -117,16 +104,6 @@ const modalInputStyle = {
   background: WHITE,
   boxSizing: "border-box",
 };
-
-function applyContactedToggle(value, contacted) {
-  return {
-    ...value,
-    contacted,
-    contacted_email: contacted ? value.contacted_email : false,
-    contacted_phone: contacted ? value.contacted_phone : false,
-    contacted_visit: contacted ? value.contacted_visit : false,
-  };
-}
 
 function formatQuoteDateAdded(value) {
   if (!value) return "";
@@ -207,7 +184,53 @@ function quoteEmailButtonStyle() {
   };
 }
 
-function QuoteSheetRow({ value, onChange, disabled, onEmailClick, trailing }) {
+function quoteHotlistButtonStyle() {
+  const saved = buildSavedButtonStyle(QUOTE_HOTLIST_BUTTON_ID, true);
+  const fallback = {
+    background: MONUMENT,
+    color: PAGE_TEXT,
+    border: `1px solid ${MONUMENT}`,
+    borderRadius: "6px",
+    fontWeight: 600,
+  };
+  return {
+    ...(saved || fallback),
+    width: "auto",
+    minWidth: "110px",
+    height: "auto",
+    padding: "4px 8px",
+    fontSize: (saved && saved.fontSize) || "0.75rem",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    boxSizing: "border-box",
+    lineHeight: 1.2,
+  };
+}
+
+function quoteEditButtonStyle() {
+  const saved = buildSavedButtonStyle(QUOTE_EDIT_BUTTON_ID, true);
+  const fallback = {
+    background: SECTION_GREY,
+    color: MONUMENT,
+    border: `1px solid ${GRID_LINE}`,
+    borderRadius: "6px",
+    fontWeight: 600,
+  };
+  return {
+    ...(saved || fallback),
+    width: "auto",
+    minWidth: "52px",
+    height: "auto",
+    padding: "4px 8px",
+    fontSize: (saved && saved.fontSize) || "0.75rem",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    boxSizing: "border-box",
+    lineHeight: 1.2,
+  };
+}
+
+function QuoteSheetRow({ value, disabled, onEmailClick, trailing }) {
   const stateValue = STATE_OPTIONS.includes(String(value.state || "").trim().toUpperCase())
     ? String(value.state).trim().toUpperCase()
     : "";
@@ -239,11 +262,9 @@ function QuoteSheetRow({ value, onChange, disabled, onEmailClick, trailing }) {
               key={col.key}
               style={{
                 ...tdStyle,
-                padding: "6px 8px",
-                fontSize: "0.85rem",
+                ...cellTextStyle,
                 color: stale ? "#cc3333" : MONUMENT,
                 fontWeight: stale ? 700 : 400,
-                whiteSpace: "nowrap",
                 minWidth: 96,
               }}
             >
@@ -253,71 +274,38 @@ function QuoteSheetRow({ value, onChange, disabled, onEmailClick, trailing }) {
         }
         if (col.type === "state") {
           return (
-            <td key={col.key} style={{ ...tdStyle, minWidth: 72 }}>
-              <select
-                value={stateValue}
-                disabled={disabled}
-                onChange={(e) => onChange({ ...value, state: e.target.value }, { immediate: true })}
-                style={{
-                  ...cellInputStyle,
-                  minWidth: 64,
-                  cursor: disabled ? "default" : "pointer",
-                  color: stateValue ? MONUMENT : UI.textMuted,
-                  fontWeight: stateValue ? 700 : 400,
-                }}
-                aria-label="State"
-              >
-                <option value="">—</option>
-                {STATE_OPTIONS.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
+            <td
+              key={col.key}
+              style={{
+                ...tdStyle,
+                ...cellTextStyle,
+                minWidth: 72,
+                fontWeight: stateValue ? 700 : 400,
+                color: stateValue ? MONUMENT : UI.textMuted,
+              }}
+            >
+              {stateValue || "—"}
             </td>
           );
         }
-        if (col.type === "check") {
+        if (col.type === "check" || col.type === "subcheck") {
+          const checked =
+            col.type === "check" ? Boolean(value.contacted) : Boolean(value[col.key]);
           return (
             <td key={col.key} style={checkCellStyle}>
               <input
                 type="checkbox"
-                checked={Boolean(value.contacted)}
-                disabled={disabled}
-                onChange={(e) => onChange(applyContactedToggle(value, e.target.checked), { immediate: true })}
-                aria-label="Contacted"
-              />
-            </td>
-          );
-        }
-        if (col.type === "subcheck") {
-          return (
-            <td key={col.key} style={checkCellStyle}>
-              <input
-                type="checkbox"
-                checked={Boolean(value[col.key])}
-                disabled={disabled || !value.contacted}
-                onChange={(e) => onChange({ ...value, [col.key]: e.target.checked }, { immediate: true })}
+                checked={checked}
+                disabled
+                readOnly
                 aria-label={col.label}
               />
             </td>
           );
         }
         return (
-          <td key={col.key} style={tdStyle}>
-            <input
-              type={col.type}
-              inputMode={col.key === "phone" ? "numeric" : undefined}
-              value={value[col.key] || ""}
-              disabled={disabled}
-              onChange={(e) => {
-                let next = e.target.value;
-                if (col.key === "phone") next = next.replace(/[^\d+\s()-]/g, "");
-                if (col.key === "street" || col.key === "suburb") next = next.replace(/[/\\]/g, "_");
-                onChange({ ...value, [col.key]: next });
-              }}
-              style={cellInputStyle}
-            />
+          <td key={col.key} style={{ ...tdStyle, ...cellTextStyle }} title={value[col.key] || ""}>
+            {value[col.key] || ""}
           </td>
         );
       })}
@@ -334,7 +322,6 @@ export default function NewPage() {
   const logo = useAppLogo();
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const pasteRef = useRef(null);
-  const saveTimersRef = useRef({});
   const emailBodyRef = useRef(null);
   const [quotes, setQuotes] = useState([]);
   const [edits, setEdits] = useState({});
@@ -344,6 +331,7 @@ export default function NewPage() {
   const [rawPaste, setRawPaste] = useState("");
   const [clientModalOpen, setClientModalOpen] = useState(false);
   const [clientForm, setClientForm] = useState({ clientName: "", email: "", phone: "" });
+  const [editingQuoteId, setEditingQuoteId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
   const [error, setError] = useState(null);
@@ -365,13 +353,6 @@ export default function NewPage() {
     return () => {
       window.removeEventListener("sgf-ui-button-styles-change", refresh);
       window.removeEventListener("sgf-ui-theme-change", refresh);
-    };
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      Object.values(saveTimersRef.current).forEach((t) => clearTimeout(t));
-      saveTimersRef.current = {};
     };
   }, []);
 
@@ -404,38 +385,6 @@ export default function NewPage() {
     void loadQuotes();
   }, [loadQuotes]);
 
-  const persistQuote = useCallback(async (id, body) => {
-    try {
-      setSavingId(id);
-      const res = await fetch(`${API_URL}/api/quotes/${id}`, {
-        method: "PUT",
-        headers: getApiHeaders(),
-        body: JSON.stringify(body),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
-      const normalised = quoteFromApi(data);
-      setQuotes((prev) => prev.map((q) => (q.id === id ? data : q)));
-      setEdits((prev) => ({ ...prev, [id]: normalised }));
-    } catch (err) {
-      console.error("Quote autosave failed:", err);
-    } finally {
-      setSavingId((current) => (current === id ? null : current));
-    }
-  }, []);
-
-  function handleRowChange(id, next, { immediate = false } = {}) {
-    setEdits((prev) => ({ ...prev, [id]: next }));
-    if (saveTimersRef.current[id]) clearTimeout(saveTimersRef.current[id]);
-    if (immediate) {
-      void persistQuote(id, next);
-      return;
-    }
-    saveTimersRef.current[id] = setTimeout(() => {
-      void persistQuote(id, next);
-    }, 400);
-  }
-
   function openAddressModalFromPaste(text) {
     const trimmed = String(text || "").trim();
     if (!trimmed) return;
@@ -463,21 +412,31 @@ export default function NewPage() {
     openAddressModalFromPaste(pasteBox);
   }
 
-  function closeAddressModal() {
+  function cancelQuoteModalFlow() {
+    setClientModalOpen(false);
+    setClientForm({ clientName: "", email: "", phone: "" });
     setAddressModalOpen(false);
+    setEditingQuoteId(null);
     setRawPaste("");
     setAddressForm({ state: "", street: "", suburb: "" });
     requestAnimationFrame(() => pasteRef.current?.focus());
   }
 
-  function closeClientModal() {
-    setClientModalOpen(false);
-    setClientForm({ clientName: "", email: "", phone: "" });
-  }
-
-  function cancelNewQuoteFlow() {
-    closeClientModal();
-    closeAddressModal();
+  function openEditQuote(quoteId) {
+    const q = edits[quoteId] || emptyQuote();
+    setEditingQuoteId(quoteId);
+    setRawPaste("");
+    setAddressForm({
+      state: String(q.state || "").trim().toUpperCase(),
+      street: q.street || "",
+      suburb: q.suburb || "",
+    });
+    setClientForm({
+      clientName: q.name || "",
+      email: q.email || "",
+      phone: q.phone || "",
+    });
+    setAddressModalOpen(true);
   }
 
   function handleConfirmAddress() {
@@ -498,7 +457,9 @@ export default function NewPage() {
     }
     setAddressForm({ state, street, suburb });
     setAddressModalOpen(false);
-    setClientForm({ clientName: "", email: "", phone: "" });
+    if (editingQuoteId == null) {
+      setClientForm({ clientName: "", email: "", phone: "" });
+    }
     setClientModalOpen(true);
   }
 
@@ -518,22 +479,30 @@ export default function NewPage() {
       alert("Address is incomplete. Please go back and check State, Street and Suburb.");
       return;
     }
+
+    const isEdit = editingQuoteId != null;
+    const existing = isEdit ? edits[editingQuoteId] || emptyQuote() : emptyQuote();
+
     try {
-      setSavingId("new");
+      setSavingId(isEdit ? editingQuoteId : "new");
       setError(null);
-      const res = await fetch(`${API_URL}/api/quotes`, {
-        method: "POST",
-        headers: getApiHeaders(),
-        body: JSON.stringify({
-          ...emptyQuote(),
-          state,
-          street,
-          suburb,
-          name,
-          email,
-          phone,
-        }),
-      });
+      const payload = {
+        ...existing,
+        state,
+        street,
+        suburb,
+        name,
+        email,
+        phone,
+      };
+      const res = await fetch(
+        isEdit ? `${API_URL}/api/quotes/${editingQuoteId}` : `${API_URL}/api/quotes`,
+        {
+          method: isEdit ? "PUT" : "POST",
+          headers: getApiHeaders(),
+          body: JSON.stringify(payload),
+        }
+      );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       const row = {
@@ -547,34 +516,30 @@ export default function NewPage() {
       };
       const normalised = quoteFromApi(row);
       if (row.id != null) {
-        setQuotes((prev) => [row, ...prev.filter((q) => q.id !== row.id)]);
+        if (isEdit) {
+          setQuotes((prev) => prev.map((q) => (q.id === row.id ? row : q)));
+        } else {
+          setQuotes((prev) => [row, ...prev.filter((q) => q.id !== row.id)]);
+        }
         setEdits((prev) => ({ ...prev, [row.id]: normalised }));
       }
-      setClientModalOpen(false);
-      setClientForm({ clientName: "", email: "", phone: "" });
-      setRawPaste("");
-      setAddressForm({ state: "", street: "", suburb: "" });
-      requestAnimationFrame(() => pasteRef.current?.focus());
+      cancelQuoteModalFlow();
     } catch (err) {
-      alert(err.message || "Failed to add quote");
+      alert(err.message || (isEdit ? "Failed to update quote" : "Failed to add quote"));
     } finally {
       setSavingId(null);
     }
   }
 
-  async function handleDelete(id) {
+  async function handleAddToHotlist(id) {
     const row = edits[id];
     const label = [row?.suburb, row?.street, row?.name].filter(Boolean).join(" · ") || "this quote";
-    if (!window.confirm(`Delete quote “${label}”?`)) return;
-    if (saveTimersRef.current[id]) {
-      clearTimeout(saveTimersRef.current[id]);
-      delete saveTimersRef.current[id];
-    }
+    if (!window.confirm(`Add “${label}” to Hotlist?`)) return;
     try {
       setSavingId(id);
       setError(null);
-      const res = await fetch(`${API_URL}/api/quotes/${id}`, {
-        method: "DELETE",
+      const res = await fetch(`${API_URL}/api/quotes/${id}/add-to-hotlist`, {
+        method: "POST",
         headers: getApiHeaders(),
       });
       const data = await res.json().catch(() => ({}));
@@ -586,7 +551,7 @@ export default function NewPage() {
         return next;
       });
     } catch (err) {
-      alert(err.message || "Failed to delete quote");
+      alert(err.message || "Failed to add quote to hotlist");
     } finally {
       setSavingId(null);
     }
@@ -686,7 +651,7 @@ export default function NewPage() {
     }
   }
 
-  const busy = savingId === "new";
+  const busy = savingId === "new" || (editingQuoteId != null && savingId === editingQuoteId);
 
   return (
     <div
@@ -852,7 +817,7 @@ export default function NewPage() {
                   {COLS.map((col) => (
                     <col key={col.key} style={{ width: col.width }} />
                   ))}
-                  <col style={{ width: "56px" }} />
+                  <col style={{ width: "210px" }} />
                 </colgroup>
                 <thead>
                   <tr>
@@ -861,7 +826,7 @@ export default function NewPage() {
                         {col.label}
                       </th>
                     ))}
-                    <th style={{ ...thStyle, textAlign: "center", width: 56 }}> </th>
+                    <th style={{ ...thStyle, textAlign: "center", width: 210 }}> </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -882,22 +847,40 @@ export default function NewPage() {
                   ) : (
                     quotes.map((quote) => {
                       const value = edits[quote.id] || emptyQuote();
+                      const rowBusy = savingId === quote.id;
                       return (
                         <QuoteSheetRow
                           key={quote.id}
                           value={value}
-                          disabled={busy}
-                          onChange={(next, opts) => handleRowChange(quote.id, next, opts)}
+                          disabled={busy || rowBusy}
                           onEmailClick={() => openEmailPreview(quote.id)}
                           trailing={
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => handleDelete(quote.id)}
-                              style={actionBtnStyle}
-                            >
-                              Del
-                            </button>
+                            <div style={{ display: "flex", gap: "6px", alignItems: "center", justifyContent: "flex-end" }}>
+                              <button
+                                type="button"
+                                disabled={busy || rowBusy}
+                                onClick={() => openEditQuote(quote.id)}
+                                style={{
+                                  ...quoteEditButtonStyle(),
+                                  opacity: busy || rowBusy ? 0.6 : 1,
+                                  cursor: busy || rowBusy ? "default" : "pointer",
+                                }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy || rowBusy}
+                                onClick={() => handleAddToHotlist(quote.id)}
+                                style={{
+                                  ...quoteHotlistButtonStyle(),
+                                  opacity: busy || rowBusy ? 0.6 : 1,
+                                  cursor: busy || rowBusy ? "default" : "pointer",
+                                }}
+                              >
+                                {rowBusy ? "Adding…" : "Add to Hotlist"}
+                              </button>
+                            </div>
                           }
                         />
                       );
@@ -911,7 +894,7 @@ export default function NewPage() {
       </div>
 
       {addressModalOpen ? (
-        <ModalBackdrop zIndex={1000} onClick={closeAddressModal}>
+        <ModalBackdrop zIndex={1000} onClick={cancelQuoteModalFlow}>
           <div
             role="dialog"
             aria-modal="true"
@@ -934,7 +917,7 @@ export default function NewPage() {
                 color: MONUMENT,
               }}
             >
-              Quote address
+              {editingQuoteId != null ? "Edit quote address" : "Quote address"}
             </h2>
             {rawPaste ? (
               <p style={{ margin: "0 0 20px 0", fontSize: "0.85rem", color: UI.textMuted }}>
@@ -1005,7 +988,7 @@ export default function NewPage() {
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px" }}>
               <button
                 type="button"
-                onClick={closeAddressModal}
+                onClick={cancelQuoteModalFlow}
                 disabled={busy}
                 style={{
                   background: UI.inputBg,
@@ -1044,12 +1027,18 @@ export default function NewPage() {
 
       <NewProject2
         isOpen={clientModalOpen}
-        onClose={cancelNewQuoteFlow}
+        onClose={cancelQuoteModalFlow}
         formData={clientForm}
         onFormDataChange={setClientForm}
         onBack={handleClientModalBack}
         onNext={handleClientModalNext}
-        nextLabel={savingId === "new" ? "Saving…" : "Save quote"}
+        nextLabel={
+          savingId === "new" || (editingQuoteId != null && savingId === editingQuoteId)
+            ? "Saving…"
+            : editingQuoteId != null
+              ? "Save"
+              : "Save quote"
+        }
       />
 
       {emailPreviewOpen ? (

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-
+import ModalBackdrop from "../components/ModalBackdrop";
 import { UI } from "../utils/uiThemeTokens.js";
+
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
@@ -109,18 +110,7 @@ export default function NewProject2({
   });
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0, 0, 0, 0.5)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000,
-        pointerEvents: "auto",
-      }}
-    >
+    <ModalBackdrop zIndex={1000} onClick={onClose}>
       <div
         style={{
           background: SECTION_GREY,
@@ -231,6 +221,6 @@ export default function NewProject2({
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

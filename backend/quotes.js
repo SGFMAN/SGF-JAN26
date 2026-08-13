@@ -270,6 +270,32 @@ async function deleteQuote(pool, id) {
   return { deleted: r.rows[0].id };
 }
 
+/** Upgrade Quote → Hotlist (same project row; fields already shared). */
+async function promoteQuoteToHotlist(pool, id) {
+  const existing = await pool.query(
+    `SELECT id, project_log FROM projects WHERE id = $1 AND status = $2`,
+    [id, QUOTE_STATUS]
+  );
+  if (!existing.rows.length) return { notFound: true };
+
+  const now = new Date();
+  const dateTimeStr = now.toISOString().replace("T", " ").substring(0, 19);
+  const project = existing.rows[0];
+  const logEntry = project.project_log
+    ? `${project.project_log}\n${dateTimeStr} - Status changed from Quote to Hotlist`
+    : `${dateTimeStr} - Status changed from Quote to Hotlist`;
+
+  const r = await pool.query(
+    `UPDATE projects
+     SET status = $2, project_log = $3, updated_at = NOW()
+     WHERE id = $1 AND status = $4
+     RETURNING id, access_token, name, status, suburb, street, state, client_name, email, phone, updated_at`,
+    [id, "Hotlist", logEntry, QUOTE_STATUS]
+  );
+  if (!r.rows.length) return { notFound: true };
+  return { project: r.rows[0] };
+}
+
 module.exports = {
   QUOTE_STATUS,
   ensureQuotesTable,
@@ -278,4 +304,5 @@ module.exports = {
   createQuote,
   updateQuote,
   deleteQuote,
+  promoteQuoteToHotlist,
 };

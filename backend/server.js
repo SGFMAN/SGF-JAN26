@@ -87,6 +87,7 @@ const {
   createQuote,
   updateQuote,
   deleteQuote,
+  promoteQuoteToHotlist,
 } = require("./quotes");
 const { ensureMapQuoteItemsTable, listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
 const {
@@ -12527,6 +12528,22 @@ app.delete("/api/quotes/:id", async (req, res) => {
   } catch (e) {
     console.error("[quotes] delete error:", e);
     res.status(500).json({ error: e.message || "Failed to delete quote" });
+  }
+});
+
+// Upgrade Quote → Hotlist (same project row)
+app.post("/api/quotes/:id/add-to-hotlist", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await requireHotlistSalesAccess(req, res))) return;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const result = await promoteQuoteToHotlist(pool, id);
+    if (result.notFound) return res.status(404).json({ error: "quote not found" });
+    res.json(result.project);
+  } catch (e) {
+    console.error("[quotes] add-to-hotlist error:", e);
+    res.status(500).json({ error: e.message || "Failed to add quote to hotlist" });
   }
 });
 
