@@ -273,7 +273,7 @@ async function deleteQuote(pool, id) {
 /** Upgrade Quote → Hotlist (same project row; fields already shared). */
 async function promoteQuoteToHotlist(pool, id) {
   const existing = await pool.query(
-    `SELECT id, project_log FROM projects WHERE id = $1 AND status = $2`,
+    `SELECT id, state, project_log FROM projects WHERE id = $1 AND status = $2`,
     [id, QUOTE_STATUS]
   );
   if (!existing.rows.length) return { notFound: true };
@@ -281,16 +281,19 @@ async function promoteQuoteToHotlist(pool, id) {
   const now = new Date();
   const dateTimeStr = now.toISOString().replace("T", " ").substring(0, 19);
   const project = existing.rows[0];
+  const state = String(project.state || "").trim().toUpperCase();
+  const stream =
+    state === "VIC" ? "SGF - VIC" : state === "QLD" ? "SGF - QLD" : null;
   const logEntry = project.project_log
     ? `${project.project_log}\n${dateTimeStr} - Status changed from Quote to Hotlist`
     : `${dateTimeStr} - Status changed from Quote to Hotlist`;
 
   const r = await pool.query(
     `UPDATE projects
-     SET status = $2, project_log = $3, updated_at = NOW()
-     WHERE id = $1 AND status = $4
-     RETURNING id, access_token, name, status, suburb, street, state, client_name, email, phone, updated_at`,
-    [id, "Hotlist", logEntry, QUOTE_STATUS]
+     SET status = $2, stream = $3, project_log = $4, updated_at = NOW()
+     WHERE id = $1 AND status = $5
+     RETURNING id, access_token, name, status, suburb, street, state, stream, client_name, email, phone, updated_at`,
+    [id, "Hotlist", stream, logEntry, QUOTE_STATUS]
   );
   if (!r.rows.length) return { notFound: true };
   return { project: r.rows[0] };
