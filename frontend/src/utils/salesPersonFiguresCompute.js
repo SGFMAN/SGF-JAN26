@@ -1,4 +1,5 @@
 import { findSalespersonUserInList } from "./streamNewProjectEmail";
+import { isExcludedFromProjectLists } from "./projectStatus";
 
 export function isSalesTeamUser(user) {
   if (!user?.positions || !Array.isArray(user.positions)) return false;
@@ -12,11 +13,11 @@ export function filterSalesTeamUsers(users) {
   return users.filter(isSalesTeamUser);
 }
 
-/** Same sale scope as Sales Totals: exclude Hotlist and Home Office / Studio. */
+/** Same sale scope as Sales Totals: exclude Hotlist/Quote and Home Office / Studio. */
 export function filterSalesFigureProjects(projects) {
   if (!Array.isArray(projects)) return [];
   return projects.filter((project) => {
-    if (project.status === "Hotlist") return false;
+    if (isExcludedFromProjectLists(project.status)) return false;
     if ((project.classification || "").trim() === "Home Office / Studio") return false;
     return true;
   });

@@ -11,7 +11,7 @@ import {
   normalizeDraftspersonField,
   isDraftspersonAssigned,
 } from "../utils/draftspersonSentinel";
-import { isHotlistStatus, isCancelledStatus, isOnHoldFlag } from "../utils/projectStatus";
+import { isExcludedFromProjectLists, isCancelledStatus, isOnHoldFlag } from "../utils/projectStatus";
 import { projectPath } from "../utils/projectUrl";
 import {
   getPlanningManagerColMapping,
@@ -703,7 +703,7 @@ export default function PlanningManager() {
         const data = await projectsRes.json();
         if (cancelled) return;
         const list = (Array.isArray(data) ? [...data] : []).filter((p) => {
-          if (isHotlistStatus(p?.status)) return false;
+          if (isExcludedFromProjectLists(p?.status)) return false;
           if ((p?.classification || "").trim() === "Home Office / Studio") return false;
           return projectTabKey(p) != null;
         });

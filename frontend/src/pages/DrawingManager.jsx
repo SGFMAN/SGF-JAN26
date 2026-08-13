@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   DESIGN_PHASE,
   isDesignPipelineStatus,
-  isHotlistStatus,
+  isExcludedFromProjectLists,
   isCancelledStatus,
   isCompleteStatus,
   isConstructionPhaseStatus,
@@ -421,7 +421,7 @@ export default function DrawingManager() {
 
   /** Drawing Manager: Pre-Engagement / Design / Permit — never construction / complete / cancelled / hotlist. */
   function isDrawingManagerEligibleProject(project) {
-    if (isHotlistStatus(project?.status)) return false;
+    if (isExcludedFromProjectLists(project?.status)) return false;
     if (isCancelledStatus(project?.status)) return false;
     if (isCompleteStatus(project?.status)) return false;
     if (isConstructionPhaseStatus(project?.status)) return false;

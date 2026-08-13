@@ -12477,7 +12477,7 @@ app.delete("/api/projects/:id", async (req, res) => {
   }
 });
 
-// ========== QUOTES ENDPOINTS (New page — not projects / not hotlist) ==========
+// ========== QUOTES ENDPOINTS (New page — projects with status "Quote") ==========
 app.get("/api/quotes", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   if (!(await requireHotlistSalesAccess(req, res))) return;

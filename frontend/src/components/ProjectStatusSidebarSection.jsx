@@ -7,7 +7,7 @@ import {
   isCompleteStatus,
   isConstructionPhaseStatus,
   isDesignPhaseStatus,
-  isHotlistStatus,
+  isExcludedFromProjectLists,
   isOnHoldFlag,
   isPermitPhaseStatus,
   isPreEngagementPhaseStatus,
@@ -59,7 +59,7 @@ function countForPath(projects, path) {
     case "/all-projects":
       return projects.filter(
         (p) =>
-          !isHotlistStatus(p.status) &&
+          !isExcludedFromProjectLists(p.status) &&
           !isCancelledStatus(p.status) &&
           !isCompleteStatus(p.status)
       ).length;
@@ -72,7 +72,7 @@ function countForPath(projects, path) {
     case "/construction-phase":
       return projects.filter((p) => isConstructionPhaseStatus(p.status)).length;
     case "/on-hold":
-      return projects.filter((p) => isOnHoldFlag(p) && !isHotlistStatus(p.status)).length;
+      return projects.filter((p) => isOnHoldFlag(p) && !isExcludedFromProjectLists(p.status)).length;
     case "/archive":
       return projects.filter(
         (p) => isCompleteStatus(p.status) || isCancelledStatus(p.status)

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import {
   isDesignPipelineStatus,
-  isHotlistStatus,
+  isExcludedFromProjectLists,
   isCancelledStatus,
 } from "../utils/projectStatus";
 import { Link } from "react-router-dom";
@@ -77,7 +77,7 @@ export default function ColourManager() {
       }
 const data = await response.json();
       const designPhaseProjects = data.filter((project) => {
-        if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
+        if (isExcludedFromProjectLists(project.status) || isCancelledStatus(project.status)) return false;
         return isDesignPipelineStatus(project.status);
       });
       // Sort by date

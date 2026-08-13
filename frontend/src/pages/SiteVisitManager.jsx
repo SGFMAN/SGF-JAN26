@@ -10,6 +10,7 @@ import StateFilterButtons from "../components/StateFilterButtons";
 import { UI, BANNER, PROJECT_CARD, outlineBorder } from "../utils/uiThemeTokens.js";
 import { getProjectStreamBadge } from "../utils/streamBadges";
 import { OnHoldSash, CancelledSash } from "../components/ProjectStatusSash";
+import { isExcludedFromProjectLists } from "../utils/projectStatus";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
@@ -92,7 +93,7 @@ export default function SiteVisitManager() {
   const incompleteSiteVisits = React.useMemo(() => {
     let filtered = projects.filter((project) => 
       (project.site_visit_status || "Not Complete") === "Not Complete" &&
-      project.status !== "Hotlist" &&
+      !isExcludedFromProjectLists(project.status) &&
       project.status !== "Cancelled"
     );
     

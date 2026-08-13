@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { isDesignPipelineStatus, isHotlistStatus, isCancelledStatus } from "../utils/projectStatus";
+import { isDesignPipelineStatus, isExcludedFromProjectLists, isCancelledStatus } from "../utils/projectStatus";
 import { Link } from "react-router-dom";
 import { getStateFilter } from "../utils/stateFilter";
 import { isUserAdmin } from "../utils/auth";
@@ -110,7 +110,7 @@ export default function StatusManager() {
       const data = await response.json();
       // Pre-Engagement / Design / Permit pipeline (same eligibility as Design Phase managers).
       const designPhaseProjects = data.filter((project) => {
-        if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
+        if (isExcludedFromProjectLists(project.status) || isCancelledStatus(project.status)) return false;
         return isDesignPipelineStatus(project.status);
       });
       // Sort alphabetically by suburb

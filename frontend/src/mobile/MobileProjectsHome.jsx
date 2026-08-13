@@ -9,7 +9,7 @@ import {
   isCompleteStatus,
   isConstructionPhaseStatus,
   isDesignPhaseStatus,
-  isHotlistStatus,
+  isExcludedFromProjectLists,
   isOnHoldFlag,
   isPermitPhaseStatus,
   isPreEngagementPhaseStatus,
@@ -47,7 +47,7 @@ const STATUS_FILTERS_ROW_3 = [
 ];
 
 function matchesStatusFilter(project, statusFilter) {
-  if (isHotlistStatus(project.status)) return false;
+  if (isExcludedFromProjectLists(project.status)) return false;
 
   switch (statusFilter) {
     case "all":

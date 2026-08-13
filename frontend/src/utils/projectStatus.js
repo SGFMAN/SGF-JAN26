@@ -1,5 +1,5 @@
 /**
- * Project Info → Status options (Hotlist is special and is not in this list).
+ * Project Info → Status options (Hotlist / Quote are special and are not in this list).
  * The `on_hold` column is separate (blue sash + On Hold list); it is NOT a status.
  */
 
@@ -23,6 +23,16 @@ export function normalizeStatus(status) {
 
 export function isHotlistStatus(status) {
   return normalizeStatus(status).toLowerCase() === "hotlist";
+}
+
+/** Sales quotes (New page) — projects with status Quote; not in status dropdowns. */
+export function isQuoteStatus(status) {
+  return normalizeStatus(status).toLowerCase() === "quote";
+}
+
+/** Hotlist + Quote — hidden from normal project lists / managers / sales totals. */
+export function isExcludedFromProjectLists(status) {
+  return isHotlistStatus(status) || isQuoteStatus(status);
 }
 
 export function isCancelledStatus(status) {

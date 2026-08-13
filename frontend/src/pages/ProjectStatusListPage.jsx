@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Fragment, useMemo } from "react";
-import { isHotlistStatus, isCancelledStatus } from "../utils/projectStatus";
+import { isExcludedFromProjectLists, isCancelledStatus } from "../utils/projectStatus";
 import { Link, useLocation } from "react-router-dom";
 import HotlistSidebarSection from "../components/HotlistSidebarSection";
 import ProjectStatusSidebarSection from "../components/ProjectStatusSidebarSection";
@@ -102,7 +102,7 @@ export default function ProjectStatusListPage({
   }
 
   const scopeFilter = (project) => {
-    if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
+    if (isExcludedFromProjectLists(project.status) || isCancelledStatus(project.status)) return false;
     return matchStatus(project.status);
   };
 

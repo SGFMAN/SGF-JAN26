@@ -3,7 +3,7 @@ import {
   isCompleteStatus,
   isConstructionPhaseStatus,
   isDesignPhaseStatus,
-  isHotlistStatus,
+  isExcludedFromProjectLists,
   isOnHoldFlag,
   isPermitPhaseStatus,
   isPreEngagementPhaseStatus,
@@ -32,7 +32,7 @@ function emptyStageCounts() {
 
 function isOverviewProject(project) {
   if (!project) return false;
-  if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
+  if (isExcludedFromProjectLists(project.status) || isCancelledStatus(project.status)) return false;
   if (isCompleteStatus(project.status)) return false;
   return (
     isPreEngagementPhaseStatus(project.status) ||

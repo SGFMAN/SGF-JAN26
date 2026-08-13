@@ -19,6 +19,7 @@ import {
   isCurrentPeriod,
   SALES_YEAR_VIEW,
 } from "../utils/salesTotalsCompute";
+import { isExcludedFromProjectLists } from "../utils/projectStatus";
 
 import { STREAM_GROUP_COLORS } from "../utils/streamColors";
 import { UI, MENU, STREAM } from "../utils/uiThemeTokens.js";
@@ -459,8 +460,8 @@ export default function SalesAnalytics() {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
       const data = await response.json();
-      // Exclude Hotlist status projects
-      const filteredData = data.filter((project) => project.status !== "Hotlist");
+      // Exclude Hotlist / Quote status projects
+      const filteredData = data.filter((project) => !isExcludedFromProjectLists(project.status));
       setProjects(filteredData);
     } catch (err) {
       setError(err.message);

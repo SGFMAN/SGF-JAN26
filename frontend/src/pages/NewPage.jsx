@@ -132,6 +132,14 @@ function formatQuoteDateAdded(value) {
   return `${dd}/${mm}/${yyyy}`;
 }
 
+function isQuoteDateOlderThanThreeDays(value) {
+  if (!value) return false;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return false;
+  const ageMs = Date.now() - d.getTime();
+  return ageMs > 3 * 24 * 60 * 60 * 1000;
+}
+
 function quoteFromApi(q) {
   const stateRaw = String(q?.state ?? "").trim().toUpperCase();
   return {
@@ -157,6 +165,7 @@ function QuoteSheetRow({ value, onChange, disabled, trailing }) {
     <tr>
       {COLS.map((col) => {
         if (col.type === "date") {
+          const stale = isQuoteDateOlderThanThreeDays(value.created_at);
           return (
             <td
               key={col.key}
@@ -164,7 +173,8 @@ function QuoteSheetRow({ value, onChange, disabled, trailing }) {
                 ...tdStyle,
                 padding: "6px 8px",
                 fontSize: "0.85rem",
-                color: MONUMENT,
+                color: stale ? "#cc3333" : MONUMENT,
+                fontWeight: stale ? 700 : 400,
                 whiteSpace: "nowrap",
                 minWidth: 96,
               }}
@@ -250,7 +260,7 @@ function QuoteSheetRow({ value, onChange, disabled, trailing }) {
   );
 }
 
-/** Sales-only quotes list — Excel-style rows; new rows from pasted address. */
+/** Sales-only quotes (projects with status Quote) — Excel-style rows; paste address to add. */
 export default function NewPage() {
   const location = useLocation();
   const logo = useAppLogo();

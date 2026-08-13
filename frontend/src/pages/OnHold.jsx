@@ -16,7 +16,7 @@ import {
 import ProjectRectangleCard from "../components/ProjectRectangleCard";
 import ProjectListGroupHeader from "../components/ProjectListGroupHeader";
 import { getProjectListGroupKey } from "../utils/projectListGrouping";
-import { isOnHoldFlag, isHotlistStatus } from "../utils/projectStatus";
+import { isOnHoldFlag, isExcludedFromProjectLists } from "../utils/projectStatus";
 import useAppLogo from "../hooks/useAppLogo.js";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -71,7 +71,7 @@ export default function OnHold() {
   }
 
   const scopeFilter = (project) =>
-    isOnHoldFlag(project) && !isHotlistStatus(project.status);
+    isOnHoldFlag(project) && !isExcludedFromProjectLists(project.status);
 
   const scopeProjects = useMemo(
     () => projects.filter(scopeFilter),

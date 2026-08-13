@@ -17,6 +17,7 @@ import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI, BANNER } from "../utils/uiThemeTokens.js";
 import { OnHoldSash, CancelledSash } from "../components/ProjectStatusSash";
+import { isExcludedFromProjectLists } from "../utils/projectStatus";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
@@ -306,7 +307,7 @@ export default function SiteVisitPlanner() {
     const idToProject = new Map();
 
     projects.forEach((project) => {
-      if (idSet.has(project.id) && project.status !== "Hotlist" && project.status !== "Cancelled") {
+      if (idSet.has(project.id) && !isExcludedFromProjectLists(project.status) && project.status !== "Cancelled") {
         idToProject.set(project.id, project);
       }
     });

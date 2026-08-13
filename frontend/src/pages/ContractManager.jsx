@@ -4,7 +4,7 @@ import { getStateFilter } from "../utils/stateFilter";
 import { isUserAdmin } from "../utils/auth";
 import {
   isDesignPipelineStatus,
-  isHotlistStatus,
+  isExcludedFromProjectLists,
   isCancelledStatus,
 } from "../utils/projectStatus";
 import { useDrawingAccess } from "../hooks/useDrawingAccess";
@@ -81,7 +81,7 @@ export default function ContractManager() {
       }
       const data = await response.json();
       const designPhaseProjects = data.filter((project) => {
-        if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
+        if (isExcludedFromProjectLists(project.status) || isCancelledStatus(project.status)) return false;
         return isDesignPipelineStatus(project.status);
       });
       // Sort by date

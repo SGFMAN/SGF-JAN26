@@ -10,7 +10,7 @@ import { useProjectListSearch } from "../utils/projectListSearch";
 import {
   PROJECT_STATUS_OPTIONS,
   isDesignPhaseStatus,
-  isHotlistStatus,
+  isExcludedFromProjectLists,
   isCancelledStatus,
 } from "../utils/projectStatus";
 import { CLASSIFICATION_OPTIONS } from "../utils/classifications";
@@ -372,7 +372,7 @@ export default function HomePage() {
   function getFilteredProjects() {
     // Design Phase list by status only; on_hold is the sash + On Hold page only.
     let filtered = projects.filter((project) => {
-      if (isHotlistStatus(project.status)) return false;
+      if (isExcludedFromProjectLists(project.status)) return false;
       if (isCancelledStatus(project.status)) return false;
       return isDesignPhaseStatus(project.status);
     });
@@ -445,7 +445,7 @@ export default function HomePage() {
 
   const designPhaseHeadingCount = (() => {
     const currentProjects = projects.filter((project) => {
-      if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
+      if (isExcludedFromProjectLists(project.status) || isCancelledStatus(project.status)) return false;
       return isDesignPhaseStatus(project.status);
     });
     const totalCount = currentProjects.length;

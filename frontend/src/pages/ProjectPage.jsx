@@ -37,7 +37,7 @@ import {
   isConstructionPhaseStatus,
   isCompleteStatus,
   isCancelledStatus,
-  isHotlistStatus,
+  isExcludedFromProjectLists,
 } from "../utils/projectStatus";
 const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
@@ -327,7 +327,7 @@ export default function ProjectPage() {
       const navInConstruction = isConstructionPhaseStatus(forStatus ?? project?.status);
       const currentProjects = data
         .filter((p) => {
-          if (isCompleteStatus(p.status) || isCancelledStatus(p.status) || isHotlistStatus(p.status)) {
+          if (isCompleteStatus(p.status) || isCancelledStatus(p.status) || isExcludedFromProjectLists(p.status)) {
             return false;
           }
           if (navInConstruction) {

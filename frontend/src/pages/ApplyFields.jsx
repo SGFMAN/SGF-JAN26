@@ -7,6 +7,7 @@ import {
   isConstructionPhaseStatus,
   isCompleteStatus,
   isDesignPhaseStatus,
+  isExcludedFromProjectLists,
   isPermitPhaseStatus,
   isPreEngagementPhaseStatus,
 } from "../utils/projectStatus";
@@ -251,9 +252,9 @@ export default function ApplyFields() {
 
   // Filter projects based on selected field, value, and search query
   function getFilteredProjects() {
-    // Exclude Cancelled and Hotlist by default; Completed Only needs Complete projects.
+    // Exclude Cancelled and Hotlist/Quote by default; Completed Only needs Complete projects.
     let filtered = projects.filter((project) => {
-      if (project.status === "Hotlist") return false;
+      if (isExcludedFromProjectLists(project.status)) return false;
       if (project.status === "Cancelled") return false;
       if (statusOnlyFilter === "complete") return true;
       return project.status !== "Complete";

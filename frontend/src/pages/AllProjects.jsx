@@ -13,6 +13,7 @@ import {
   buildProjectListHeadingCount,
   getAvailableFieldValues,
 } from "../utils/projectListFilters";
+import { isExcludedFromProjectLists } from "../utils/projectStatus";
 import ProjectRectangleCard from "../components/ProjectRectangleCard";
 import ProjectListGroupHeader from "../components/ProjectListGroupHeader";
 import { getProjectListGroupKey } from "../utils/projectListGrouping";
@@ -70,7 +71,7 @@ export default function AllProjects() {
   }
 
   const scopeFilter = (project) =>
-    project.status !== "Hotlist" &&
+    !isExcludedFromProjectLists(project.status) &&
     project.status !== "Cancelled" &&
     project.status !== "Complete";
 

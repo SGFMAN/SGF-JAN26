@@ -1,7 +1,7 @@
 import React, { useState, useEffect, Fragment, useMemo } from "react";
 import {
   isConstructionPhaseStatus,
-  isHotlistStatus,
+  isExcludedFromProjectLists,
   isCancelledStatus,
 } from "../utils/projectStatus";
 import { Link, useLocation } from "react-router-dom";
@@ -101,7 +101,7 @@ export default function InConstruction() {
   }
 
   const scopeFilter = (project) => {
-    if (isHotlistStatus(project.status) || isCancelledStatus(project.status)) return false;
+    if (isExcludedFromProjectLists(project.status) || isCancelledStatus(project.status)) return false;
     return isConstructionPhaseStatus(project.status);
   };
 

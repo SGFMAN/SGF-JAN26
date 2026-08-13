@@ -22,6 +22,7 @@ import {
   normalizeProjectYearToISO,
   SALES_YEAR_VIEW,
 } from "../utils/salesTotalsCompute";
+import { isExcludedFromProjectLists } from "../utils/projectStatus";
 
 const SALES_TOTALS_EMAIL_FROM = "info@superiorgrannyflats.com.au";
 
@@ -132,8 +133,8 @@ export default function SalesTotals() {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
       const data = await response.json();
-      // Exclude Hotlist status projects
-      const filteredData = data.filter((project) => project.status !== "Hotlist");
+      // Exclude Hotlist / Quote status projects
+      const filteredData = data.filter((project) => !isExcludedFromProjectLists(project.status));
       setProjects(filteredData);
     } catch (err) {
       setError(err.message);

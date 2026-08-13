@@ -4,6 +4,7 @@ import useAppLogo from "../hooks/useAppLogo.js";
 import { projectPath } from "../utils/projectUrl";
 import SalesMonthLists from "../components/SalesMonthLists";
 import { SALES_MONTHS, filterProjectsForSalesMonth } from "../utils/salesMonths";
+import { isExcludedFromProjectLists } from "../utils/projectStatus";
 
 import { UI, MENU } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -93,7 +94,7 @@ export default function Sales() {
   const monthFilteredProjects = React.useMemo(() => {
     if (selectedMonthIndex < 0) return [];
     return filterProjectsForSalesMonth(projects, selectedYear, selectedMonthIndex).filter((project) => {
-      if (project.status === "Hotlist") return false;
+      if (isExcludedFromProjectLists(project.status)) return false;
       if ((project.classification || "").trim() === "Home Office / Studio") return false;
       return true;
     });

@@ -9,6 +9,7 @@ import {
   buildProjectListHeadingCount,
   getAvailableFieldValues,
 } from "../utils/projectListFilters";
+import { isExcludedFromProjectLists } from "../utils/projectStatus";
 import ProjectRectangleCard from "../components/ProjectRectangleCard";
 import ProjectListGroupHeader from "../components/ProjectListGroupHeader";
 import { getProjectListGroupKey } from "../utils/projectListGrouping";
@@ -57,7 +58,7 @@ export default function Cancelled() {
   }
 
   const scopeFilter = (project) =>
-    project.status === "Cancelled" && project.status !== "Hotlist";
+    project.status === "Cancelled" && !isExcludedFromProjectLists(project.status);
 
   const scopeProjects = useMemo(
     () => projects.filter(scopeFilter),
