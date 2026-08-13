@@ -27,12 +27,17 @@ import {
   isInternalDoorsTraceLayer,
   isSlidingDoorsTraceLayer,
   isDeckTraceLayer,
+  isMultiPolygonTraceLayer,
   isFlooringTraceLayer,
   DOORS_LAYER_ID,
   SLIDING_DOORS_LAYER_ID,
   ROOF_LAYER_ID,
   DECK_LAYER_ID,
   FLOORING_LAYER_ID,
+  KITCHEN_BENCH_LAYER_ID,
+  ROBES_LAYER_ID,
+  KITCHEN_ZONE_LAYER_ID,
+  rectCornersFromSourcePoints,
   MAX_TRACE_POINTS,
   normalizeCropRect,
   normalizePixelCropRect,
@@ -167,6 +172,8 @@ export default function TracePlanModal({
   const [windowPreview, setWindowPreview] = useState(null);
   const [windowTool, setWindowTool] = useState("add");
   const [deckTool, setDeckTool] = useState("add");
+  const [furnitureTool, setFurnitureTool] = useState("add");
+  const [kitchenZoneDraftEnd, setKitchenZoneDraftEnd] = useState(null);
   const [internalWallTool, setInternalWallTool] = useState("add");
   const [hoveredInternalWallSegmentIndex, setHoveredInternalWallSegmentIndex] = useState(-1);
   const [flooringTool, setFlooringTool] = useState("hybrid");
@@ -175,6 +182,8 @@ export default function TracePlanModal({
   const [roofPivotPreviewEnd, setRoofPivotPreviewEnd] = useState(null);
   const [hoveredDeckIndex, setHoveredDeckIndex] = useState(-1);
   const [editingDeckIndex, setEditingDeckIndex] = useState(-1);
+  const [hoveredFurnitureIndex, setHoveredFurnitureIndex] = useState(-1);
+  const [editingFurnitureIndex, setEditingFurnitureIndex] = useState(-1);
   const [hoveredWindowIndex, setHoveredWindowIndex] = useState(-1);
   const [hoveredResizeIndex, setHoveredResizeIndex] = useState(-1);
   const [hoveredHeightIndex, setHoveredHeightIndex] = useState(-1);
@@ -207,6 +216,7 @@ export default function TracePlanModal({
   const isInternalDoorsLayerActive = isInternalDoorsTraceLayer(activeLayerId);
   const isSlidingDoorsLayerActive = isSlidingDoorsTraceLayer(activeLayerId);
   const isDeckLayerActive = isDeckTraceLayer(activeLayerId);
+  const isMultiPolygonLayerActive = isMultiPolygonTraceLayer(activeLayerId);
   const isFlooringLayerActive = isFlooringTraceLayer(activeLayerId);
   const isRoofLayerActive = activeLayerId === ROOF_LAYER_ID;
   const isRoofPivotTool = isRoofLayerActive && roofTool === "pivot";
@@ -216,11 +226,13 @@ export default function TracePlanModal({
       ? { segments: [], draftStart: null }
       : isDeckTraceLayer(activeLayerId)
         ? { decks: [], points: [], polygonClosed: false }
-        : isFlooringTraceLayer(activeLayerId)
-          ? createEmptyLayerTrace(FLOORING_LAYER_ID)
-          : activeLayerId === ROOF_LAYER_ID
-            ? { points: [], polygonClosed: false, pivotLine: null }
-            : { points: [], polygonClosed: false });
+        : isMultiPolygonTraceLayer(activeLayerId)
+          ? { polygons: [], points: [], polygonClosed: false }
+          : isFlooringTraceLayer(activeLayerId)
+            ? createEmptyLayerTrace(FLOORING_LAYER_ID)
+            : activeLayerId === ROOF_LAYER_ID
+              ? { points: [], polygonClosed: false, pivotLine: null }
+              : { points: [], polygonClosed: false });
   const flooringFinishStyle =
     FLOORING_FINISH_STYLES[flooringTool] || FLOORING_FINISH_STYLES.hybrid;
   const points = isLineLayerActive ? [] : (activeTrace.points ?? []);
@@ -261,7 +273,10 @@ export default function TracePlanModal({
       layerId === SLIDING_DOORS_LAYER_ID ||
       layerId === ROOF_LAYER_ID ||
       layerId === DECK_LAYER_ID ||
-      layerId === FLOORING_LAYER_ID
+      layerId === FLOORING_LAYER_ID ||
+      layerId === KITCHEN_BENCH_LAYER_ID ||
+      layerId === ROBES_LAYER_ID ||
+      layerId === KITCHEN_ZONE_LAYER_ID
     ) {
       const ext = layerTraces[EXTERNAL_WALLS_LAYER_ID];
       if (!ext?.polygonClosed || (ext.points?.length ?? 0) < 3) return false;
@@ -355,6 +370,11 @@ export default function TracePlanModal({
       setHoveredDeckIndex(-1);
       setEditingDeckIndex(-1);
     }
+    if (isMultiPolygonTraceLayer(layerId)) {
+      setFurnitureTool("add");
+      setHoveredFurnitureIndex(-1);
+      setEditingFurnitureIndex(-1);
+    }
     if (layerId === INTERNAL_WALLS_LAYER_ID) {
       setInternalWallTool("add");
       setLinePreviewPoint(null);
@@ -380,8 +400,8 @@ export default function TracePlanModal({
             ? "Trace and close External Walls before placing swing doors."
             : layer.id === INTERNAL_DOORS_LAYER_ID
               ? (layerTraces[INTERNAL_WALLS_LAYER_ID]?.segments?.length ?? 0) < 1
-                ? "Trace at least one Internal Wall before placing internal swing doors."
-                : "Trace and close External Walls before placing internal swing doors."
+                ? "Trace at least one Internal Wall before placing internal doors."
+                : "Trace and close External Walls before placing internal doors."
             : layer.id === SLIDING_DOORS_LAYER_ID
               ? "Trace and close External Walls before placing sliding doors."
               : layer.id === ROOF_LAYER_ID
@@ -390,7 +410,13 @@ export default function TracePlanModal({
                   ? "Trace and close External Walls before drawing a deck."
                   : layer.id === FLOORING_LAYER_ID
                     ? "Trace and close External Walls before drawing flooring finishes."
-                    : "Trace and close External Walls before drawing internal walls."
+                    : layer.id === KITCHEN_BENCH_LAYER_ID
+                      ? "Trace and close External Walls before drawing a kitchen bench."
+                      : layer.id === ROBES_LAYER_ID
+                        ? "Trace and close External Walls before drawing robes."
+                        : layer.id === KITCHEN_ZONE_LAYER_ID
+                          ? "Trace and close External Walls before defining the kitchen."
+                        : "Trace and close External Walls before drawing internal walls."
       );
       return;
     }
@@ -442,6 +468,24 @@ export default function TracePlanModal({
       if (item.id === "add") {
         patchLayerTrace(DECK_LAYER_ID, { points: [], polygonClosed: false });
         setEditingDeckIndex(-1);
+      }
+    }
+    if (isMultiPolygonTraceLayer(layer.id)) {
+      commitFurnitureDraftIfNeeded(layer.id);
+      setFurnitureTool(item.id);
+      setHoveredFurnitureIndex(-1);
+      if (item.id !== "edit") setEditingFurnitureIndex(-1);
+      if (item.id === "add") {
+        // Kitchen zone is a single rectangle — clear previous before defining again.
+        if (layer.id === KITCHEN_ZONE_LAYER_ID) {
+          patchLayerTrace(layer.id, { polygons: [], points: [], polygonClosed: false });
+        } else {
+          patchLayerTrace(layer.id, { points: [], polygonClosed: false });
+        }
+        setEditingFurnitureIndex(-1);
+      }
+      if (layer.id === KITCHEN_ZONE_LAYER_ID && item.id === "delete") {
+        patchLayerTrace(layer.id, { polygons: [], points: [], polygonClosed: false });
       }
     }
     if (layer.id === INTERNAL_WALLS_LAYER_ID) {
@@ -551,6 +595,94 @@ export default function TracePlanModal({
     setEditingDeckIndex(index);
     patchLayerTrace(DECK_LAYER_ID, {
       points: deck.points.map((p) => ({ x: p.x, y: p.y })),
+      polygonClosed: true,
+    });
+    setNearOrigin(false);
+    clearPolygonPreview();
+  }
+
+  function commitFurnitureDraftIfNeeded(layerId = activeLayerId) {
+    if (!isMultiPolygonTraceLayer(layerId)) return;
+    const trace = layerTraces[layerId];
+    if (!trace) return;
+    const draftPts = trace.points ?? [];
+    if (draftPts.length < 3) return;
+    if (editingFurnitureIndex >= 0) {
+      setLayerTraces((prev) => {
+        const current = prev[layerId] || { polygons: [], points: [], polygonClosed: false };
+        const polygons = [...(current.polygons ?? [])];
+        if (editingFurnitureIndex >= polygons.length) return prev;
+        polygons[editingFurnitureIndex] = {
+          points: draftPts.map((p) => ({ x: p.x, y: p.y })),
+        };
+        return {
+          ...prev,
+          [layerId]: { polygons, points: [], polygonClosed: false },
+        };
+      });
+      setEditingFurnitureIndex(-1);
+      return;
+    }
+    if (trace.polygonClosed || draftPts.length >= 3) {
+      setLayerTraces((prev) => {
+        const current = prev[layerId] || { polygons: [], points: [], polygonClosed: false };
+        return {
+          ...prev,
+          [layerId]: {
+            polygons: [
+              ...(current.polygons ?? []),
+              { points: draftPts.map((p) => ({ x: p.x, y: p.y })) },
+            ],
+            points: [],
+            polygonClosed: false,
+          },
+        };
+      });
+    }
+  }
+
+  function furnitureIndexAtScreen(screenX, screenY, layerId = activeLayerId) {
+    const placed = layerTraces[layerId]?.polygons ?? [];
+    if (!placed.length) return -1;
+    const src = clampSourcePoint(screenToSource(screenX, screenY));
+    for (let i = placed.length - 1; i >= 0; i -= 1) {
+      const pts = placed[i]?.points;
+      if (pts?.length >= 3 && pointInPolygon(src, pts, 0)) return i;
+    }
+    return -1;
+  }
+
+  function removeFurnitureAt(index, layerId = activeLayerId) {
+    if (index < 0 || !isMultiPolygonTraceLayer(layerId)) return;
+    setLayerTraces((prev) => {
+      const current = prev[layerId] || { polygons: [], points: [], polygonClosed: false };
+      const polygons = (current.polygons ?? []).filter((_, i) => i !== index);
+      return {
+        ...prev,
+        [layerId]: {
+          ...current,
+          polygons,
+          points: editingFurnitureIndex === index ? [] : current.points,
+          polygonClosed: editingFurnitureIndex === index ? false : current.polygonClosed,
+        },
+      };
+    });
+    if (editingFurnitureIndex === index) setEditingFurnitureIndex(-1);
+    else if (editingFurnitureIndex > index) setEditingFurnitureIndex((n) => n - 1);
+    setHoveredFurnitureIndex(-1);
+  }
+
+  function beginEditFurnitureAt(index, layerId = activeLayerId) {
+    if (index < 0 || !isMultiPolygonTraceLayer(layerId)) return;
+    const placed = layerTraces[layerId]?.polygons ?? [];
+    const item = placed[index];
+    if (!item?.points?.length) return;
+    if (editingFurnitureIndex >= 0 && editingFurnitureIndex !== index) {
+      commitFurnitureDraftIfNeeded(layerId);
+    }
+    setEditingFurnitureIndex(index);
+    patchLayerTrace(layerId, {
+      points: item.points.map((p) => ({ x: p.x, y: p.y })),
       polygonClosed: true,
     });
     setNearOrigin(false);
@@ -717,6 +849,22 @@ export default function TracePlanModal({
       return start || { point: null, kind: "ortho", guides: [] };
     }
 
+    // Kitchen bench / robes first point: soft-snap to inner external / internal walls when near.
+    if (
+      (activeLayerId === KITCHEN_BENCH_LAYER_ID ||
+        activeLayerId === ROBES_LAYER_ID ||
+        activeLayerId === KITCHEN_ZONE_LAYER_ID) &&
+      points.length === 0
+    ) {
+      if (!hasWalls) return { point: rawCursor, kind: "ortho", guides: [] };
+      const start = resolveFlooringStartSnap(
+        rawCursor,
+        flooringSnapEdges(),
+        orthoSnapThresholdSource()
+      );
+      return start || { point: rawCursor, kind: "ortho", guides: [] };
+    }
+
     if (!points.length) {
       return { point: rawCursor, kind: "ortho", guides: [] };
     }
@@ -729,7 +877,13 @@ export default function TracePlanModal({
       });
     }
 
-    if (activeLayerId === FLOORING_LAYER_ID && hasWalls) {
+    if (
+      (activeLayerId === FLOORING_LAYER_ID ||
+        activeLayerId === KITCHEN_BENCH_LAYER_ID ||
+        activeLayerId === ROBES_LAYER_ID ||
+        activeLayerId === KITCHEN_ZONE_LAYER_ID) &&
+      hasWalls
+    ) {
       return resolveFlooringPolygonSnap(prev, rawCursor, origin, flooringSnapEdges(), {
         snapThreshold: orthoSnapThresholdSource(),
       });
@@ -827,6 +981,57 @@ export default function TracePlanModal({
         points: denormalizeTracePoints(saved.roofPoints, sourceCanvas.width, sourceCanvas.height),
         polygonClosed: true,
         pivotLine: null,
+      };
+    }
+    if (saved.page === pageNumber && (saved.kitchenBenches?.length || saved.kitchenBenchPoints?.length >= 3)) {
+      const list = saved.kitchenBenches?.length
+        ? saved.kitchenBenches
+        : [{ points: saved.kitchenBenchPoints }];
+      next[KITCHEN_BENCH_LAYER_ID] = {
+        polygons: list
+          .map((item) => {
+            const pts = item?.points ?? item;
+            if (!Array.isArray(pts) || pts.length < 3) return null;
+            return {
+              points: denormalizeTracePoints(pts, sourceCanvas.width, sourceCanvas.height),
+            };
+          })
+          .filter(Boolean),
+        points: [],
+        polygonClosed: false,
+      };
+    }
+    if (saved.page === pageNumber && (saved.robes?.length || saved.robesPoints?.length >= 3)) {
+      const list = saved.robes?.length ? saved.robes : [{ points: saved.robesPoints }];
+      next[ROBES_LAYER_ID] = {
+        polygons: list
+          .map((item) => {
+            const pts = item?.points ?? item;
+            if (!Array.isArray(pts) || pts.length < 3) return null;
+            return {
+              points: denormalizeTracePoints(pts, sourceCanvas.width, sourceCanvas.height),
+            };
+          })
+          .filter(Boolean),
+        points: [],
+        polygonClosed: false,
+      };
+    }
+    if (
+      saved.page === pageNumber &&
+      (saved.kitchenZonePoints?.length >= 4 || saved.kitchenZone?.points?.length >= 4)
+    ) {
+      const pts = saved.kitchenZonePoints?.length >= 4
+        ? saved.kitchenZonePoints
+        : saved.kitchenZone.points;
+      next[KITCHEN_ZONE_LAYER_ID] = {
+        polygons: [
+          {
+            points: denormalizeTracePoints(pts, sourceCanvas.width, sourceCanvas.height),
+          },
+        ],
+        points: [],
+        polygonClosed: false,
       };
     }
     if (saved.page === pageNumber && saved.roofPivotLine?.a && saved.roofPivotLine?.b) {
@@ -1358,7 +1563,10 @@ export default function TracePlanModal({
         showOnlyInternalLayer &&
         layer.id !== INTERNAL_WALLS_LAYER_ID &&
         layer.id !== INTERNAL_DOORS_LAYER_ID &&
-        layer.id !== EXTERNAL_WALLS_LAYER_ID
+        layer.id !== EXTERNAL_WALLS_LAYER_ID &&
+        layer.id !== KITCHEN_BENCH_LAYER_ID &&
+        layer.id !== ROBES_LAYER_ID &&
+        layer.id !== KITCHEN_ZONE_LAYER_ID
       ) {
         return;
       }
@@ -1402,6 +1610,64 @@ export default function TracePlanModal({
           ctx.stroke();
           ctx.globalAlpha = 1;
         });
+      }
+
+      // Placed kitchen benches / robes.
+      if (layer.mode === "multiPolygons" && Array.isArray(trace.polygons) && trace.polygons.length) {
+        trace.polygons.forEach((item, itemIndex) => {
+          const itemPts = item?.points;
+          if (!Array.isArray(itemPts) || itemPts.length < 3) return;
+          if (
+            isActive &&
+            editingFurnitureIndex === itemIndex &&
+            (trace.points?.length ?? 0) >= 3
+          ) {
+            return;
+          }
+          const hovered =
+            isActive &&
+            (furnitureTool === "delete" || furnitureTool === "edit") &&
+            hoveredFurnitureIndex === itemIndex;
+          ctx.beginPath();
+          ctx.moveTo(itemPts[0].x, itemPts[0].y);
+          for (let i = 1; i < itemPts.length; i += 1) ctx.lineTo(itemPts[i].x, itemPts[i].y);
+          ctx.closePath();
+          ctx.fillStyle = hovered
+            ? furnitureTool === "delete"
+              ? "rgba(220, 38, 38, 0.28)"
+              : layer.fillClosed
+            : layer.fillClosed;
+          ctx.strokeStyle = hovered && furnitureTool === "delete" ? "#dc2626" : layer.stroke;
+          ctx.lineWidth = (hovered ? 2.5 : isActive ? 2 : 1.5) / scale;
+          ctx.globalAlpha = isActive ? 1 : 0.72;
+          ctx.fill();
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        });
+      }
+
+      // Kitchen zone drag preview rectangle.
+      if (
+        layer.id === KITCHEN_ZONE_LAYER_ID &&
+        isActive &&
+        kitchenZoneDraftEnd &&
+        interactionRef.current?.type === "kitchenZoneDrag"
+      ) {
+        const start = interactionRef.current.startSource;
+        const corners = rectCornersFromSourcePoints(start, kitchenZoneDraftEnd);
+        if (corners.length >= 4) {
+          ctx.beginPath();
+          ctx.moveTo(corners[0].x, corners[0].y);
+          for (let i = 1; i < corners.length; i += 1) ctx.lineTo(corners[i].x, corners[i].y);
+          ctx.closePath();
+          ctx.fillStyle = layer.fillOpen;
+          ctx.strokeStyle = layer.stroke;
+          ctx.lineWidth = 2 / scale;
+          ctx.setLineDash([6 / scale, 4 / scale]);
+          ctx.fill();
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
       }
 
       // Auto orange base floor with finish-region holes, then Hybrid / Tiles / Carpet fills.
@@ -1459,7 +1725,9 @@ export default function TracePlanModal({
           isActive &&
           !polygonClosed &&
           polygonPreviewPoint &&
-          ((layer.mode === "decks" && deckTool === "add") || layer.mode === "flooring");
+          ((layer.mode === "decks" && deckTool === "add") ||
+            (layer.mode === "multiPolygons" && furnitureTool === "add") ||
+            layer.mode === "flooring");
         if (!allowEmptySnapPreview) return;
         const guides = polygonSnapGuidesRef.current || [];
         const source = sourceCanvasRef.current;
@@ -1800,48 +2068,6 @@ export default function TracePlanModal({
         drawDoorRect(doorPreview, { preview: true });
       }
 
-      // Internal swing doors: solid leaf only (no glass), snap to internal walls.
-      const internalDoorsLayer = TRACE_PLAN_LAYERS.find((l) => l.id === INTERNAL_DOORS_LAYER_ID);
-      const placedInternalDoors = layerTraces[INTERNAL_DOORS_LAYER_ID]?.doors ?? [];
-
-      const drawInternalDoorRect = (door, { preview = false } = {}) => {
-        if (!door?.corners?.length) return;
-        ctx.beginPath();
-        door.corners.forEach((p, i) => {
-          if (i === 0) ctx.moveTo(p.x, p.y);
-          else ctx.lineTo(p.x, p.y);
-        });
-        ctx.closePath();
-        ctx.fillStyle = preview ? "rgba(154, 52, 18, 0.35)" : "rgba(154, 52, 18, 0.55)";
-        ctx.fill();
-        ctx.strokeStyle = preview
-          ? "rgba(154, 52, 18, 0.75)"
-          : (internalDoorsLayer?.stroke || "#9a3412");
-        ctx.lineWidth = (preview ? 1.25 : 1.5) / scale;
-        if (preview) ctx.setLineDash([5 / scale, 4 / scale]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      };
-
-      placedInternalDoors.forEach((door, index) => {
-        drawInternalDoorRect(door, { preview: false });
-        if (
-          isInternalDoorsLayerActive &&
-          index === hoveredInternalDoorIndex &&
-          (internalDoorTool === "delete" || internalDoorTool === "edit")
-        ) {
-          highlightWindow(
-            door,
-            internalDoorTool === "delete"
-              ? { fill: "rgba(220, 38, 38, 0.35)", stroke: "#dc2626" }
-              : { fill: "rgba(154, 52, 18, 0.35)", stroke: "#7c2d12" }
-          );
-        }
-      });
-      if (isInternalDoorsLayerActive && internalDoorPreview) {
-        drawInternalDoorRect(internalDoorPreview, { preview: true });
-      }
-
       // Sliding doors: same plan rect as windows, teal colour, resize node in edit mode.
       const slidingLayer = TRACE_PLAN_LAYERS.find((l) => l.id === SLIDING_DOORS_LAYER_ID);
       const placedSliding = layerTraces[SLIDING_DOORS_LAYER_ID]?.slidingDoors ?? [];
@@ -1908,6 +2134,66 @@ export default function TracePlanModal({
           ctx.fillStyle = "#ffffff";
           ctx.fillText(label, anchorPt.x, boxY);
         }
+      }
+    }
+
+    // Internal doors must draw even when showOnlyInternalLayer is on (Internal Door /
+    // Walls active) — they used to live inside the external-only block above and never appeared.
+    {
+      const internalDoorsLayer = TRACE_PLAN_LAYERS.find((l) => l.id === INTERNAL_DOORS_LAYER_ID);
+      const placedInternalDoors = layerTraces[INTERNAL_DOORS_LAYER_ID]?.doors ?? [];
+
+      const drawInternalDoorRect = (door, { preview = false } = {}) => {
+        if (!door?.corners?.length) return;
+        ctx.beginPath();
+        door.corners.forEach((p, i) => {
+          if (i === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
+        ctx.closePath();
+        ctx.fillStyle = preview ? "rgba(154, 52, 18, 0.35)" : "rgba(154, 52, 18, 0.55)";
+        ctx.fill();
+        ctx.strokeStyle = preview
+          ? "rgba(154, 52, 18, 0.75)"
+          : (internalDoorsLayer?.stroke || "#9a3412");
+        ctx.lineWidth = (preview ? 1.25 : 1.5) / scale;
+        if (preview) ctx.setLineDash([5 / scale, 4 / scale]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      };
+
+      const highlightInternalDoor = (door, color) => {
+        if (!door?.corners?.length) return;
+        ctx.beginPath();
+        door.corners.forEach((p, i) => {
+          if (i === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
+        ctx.closePath();
+        ctx.fillStyle = color.fill;
+        ctx.fill();
+        ctx.strokeStyle = color.stroke;
+        ctx.lineWidth = 2.5 / scale;
+        ctx.stroke();
+      };
+
+      placedInternalDoors.forEach((door, index) => {
+        drawInternalDoorRect(door, { preview: false });
+        if (
+          isInternalDoorsLayerActive &&
+          index === hoveredInternalDoorIndex &&
+          (internalDoorTool === "delete" || internalDoorTool === "edit")
+        ) {
+          highlightInternalDoor(
+            door,
+            internalDoorTool === "delete"
+              ? { fill: "rgba(220, 38, 38, 0.35)", stroke: "#dc2626" }
+              : { fill: "rgba(154, 52, 18, 0.35)", stroke: "#7c2d12" }
+          );
+        }
+      });
+      if (isInternalDoorsLayerActive && internalDoorPreview) {
+        drawInternalDoorRect(internalDoorPreview, { preview: true });
       }
     }
 
@@ -2051,7 +2337,7 @@ export default function TracePlanModal({
 
   useEffect(() => {
     if (!loading && !loadError) redraw();
-  }, [loading, loadError, pageLoading, layerTraces, activeLayerId, nearOrigin, redraw, viewTick, linePreviewPoint, polygonPreviewPoint, windowPreview, windowTool, hoveredWindowIndex, hoveredResizeIndex, hoveredHeightIndex, resizeWidthM, movingWindowIndex, doorTool, doorPreview, hoveredDoorIndex, movingDoorIndex, internalDoorTool, internalDoorPreview, hoveredInternalDoorIndex, movingInternalDoorIndex, slidingDoorTool, slidingDoorPreview, hoveredSlidingDoorIndex, hoveredSlidingResizeIndex, movingSlidingDoorIndex, slidingResizeWidthM, deckTool, hoveredDeckIndex, editingDeckIndex, flooringTool, roofTool, roofPivotDraftStart, roofPivotPreviewEnd, wizardStep, cropRectPx, cropDraftEnd, calibration, calibDraftStart, calibPreviewEnd, pendingCalibLine, showPdfPlan, internalWallTool, hoveredInternalWallSegmentIndex, hoveredWallNode, draggingWallNode]);
+  }, [loading, loadError, pageLoading, layerTraces, activeLayerId, nearOrigin, redraw, viewTick, linePreviewPoint, polygonPreviewPoint, windowPreview, windowTool, hoveredWindowIndex, hoveredResizeIndex, hoveredHeightIndex, resizeWidthM, movingWindowIndex, doorTool, doorPreview, hoveredDoorIndex, movingDoorIndex, internalDoorTool, internalDoorPreview, hoveredInternalDoorIndex, movingInternalDoorIndex, slidingDoorTool, slidingDoorPreview, hoveredSlidingDoorIndex, hoveredSlidingResizeIndex, movingSlidingDoorIndex, slidingResizeWidthM, deckTool, hoveredDeckIndex, editingDeckIndex, furnitureTool, hoveredFurnitureIndex, editingFurnitureIndex, flooringTool, roofTool, roofPivotDraftStart, roofPivotPreviewEnd, wizardStep, cropRectPx, cropDraftEnd, kitchenZoneDraftEnd, calibration, calibDraftStart, calibPreviewEnd, pendingCalibLine, showPdfPlan, internalWallTool, hoveredInternalWallSegmentIndex, hoveredWallNode, draggingWallNode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -2434,6 +2720,7 @@ export default function TracePlanModal({
     if (isLineLayerActive) return;
     if (isRoofPivotTool) return;
     if (isDeckLayerActive && deckTool !== "add" && editingDeckIndex < 0) return;
+    if (isMultiPolygonLayerActive && furnitureTool !== "add" && editingFurnitureIndex < 0) return;
     if (polygonClosed || pageLoading) return;
     const source = sourceCanvasRef.current;
     if (!source) return;
@@ -2466,6 +2753,35 @@ export default function TracePlanModal({
           };
         });
         setEditingDeckIndex(-1);
+      } else if (isMultiPolygonLayerActive && furnitureTool === "add") {
+        const closedPts = points.map((p) => ({ x: p.x, y: p.y }));
+        setLayerTraces((prev) => {
+          const current =
+            prev[activeLayerId] || { polygons: [], points: [], polygonClosed: false };
+          return {
+            ...prev,
+            [activeLayerId]: {
+              polygons: [...(current.polygons ?? []), { points: closedPts }],
+              points: [],
+              polygonClosed: false,
+            },
+          };
+        });
+      } else if (isMultiPolygonLayerActive && editingFurnitureIndex >= 0) {
+        const closedPts = points.map((p) => ({ x: p.x, y: p.y }));
+        setLayerTraces((prev) => {
+          const current =
+            prev[activeLayerId] || { polygons: [], points: [], polygonClosed: false };
+          const polygons = [...(current.polygons ?? [])];
+          if (editingFurnitureIndex < polygons.length) {
+            polygons[editingFurnitureIndex] = { points: closedPts };
+          }
+          return {
+            ...prev,
+            [activeLayerId]: { polygons, points: [], polygonClosed: false },
+          };
+        });
+        setEditingFurnitureIndex(-1);
       } else if (isFlooringLayerActive) {
         const closedPts = points.map((p) => ({ x: p.x, y: p.y }));
         const key = flooringRegionsKey(flooringTool);
@@ -2970,6 +3286,20 @@ export default function TracePlanModal({
         return;
       }
 
+      if (
+        isMultiPolygonLayerActive &&
+        (furnitureTool === "delete" ||
+          (furnitureTool === "edit" && editingFurnitureIndex < 0))
+      ) {
+        interactionRef.current = {
+          type: "furnitureTool",
+          startX: pt.x,
+          startY: pt.y,
+          moved: false,
+        };
+        return;
+      }
+
       if (isRoofPivotTool) {
         interactionRef.current = {
           type: "roofPivotPoint",
@@ -3073,6 +3403,22 @@ export default function TracePlanModal({
           startY: pt.y,
           moved: false,
         };
+        return;
+      }
+
+      if (
+        activeLayerId === KITCHEN_ZONE_LAYER_ID &&
+        furnitureTool === "add"
+      ) {
+        const startSource = clampSourcePoint(screenToSource(pt.x, pt.y));
+        interactionRef.current = {
+          type: "kitchenZoneDrag",
+          startX: pt.x,
+          startY: pt.y,
+          startSource,
+          moved: false,
+        };
+        setKitchenZoneDraftEnd(startSource);
         return;
       }
 
@@ -3199,6 +3545,13 @@ export default function TracePlanModal({
           return;
         }
       }
+      if (isMultiPolygonLayerActive && (furnitureTool === "delete" || furnitureTool === "edit")) {
+        if (!(furnitureTool === "edit" && editingFurnitureIndex >= 0 && polygonClosed)) {
+          const idx = furnitureIndexAtScreen(pt.x, pt.y);
+          setHoveredFurnitureIndex((prev) => (prev === idx ? prev : idx));
+          return;
+        }
+      }
       if (isLineLayerActive) {
         if (internalWallTool === "delete") {
           const idx = findInternalWallSegmentAtScreen(pt.x, pt.y);
@@ -3236,7 +3589,12 @@ export default function TracePlanModal({
       if (polygonClosed) {
         updateHoveredNode(pt.x, pt.y);
         clearPolygonPreview();
-      } else if (points.length >= 1 || activeLayerId === DECK_LAYER_ID || activeLayerId === FLOORING_LAYER_ID) {
+      } else if (
+        points.length >= 1 ||
+        activeLayerId === DECK_LAYER_ID ||
+        isMultiPolygonTraceLayer(activeLayerId) ||
+        activeLayerId === FLOORING_LAYER_ID
+      ) {
         const raw = clampSourcePoint(screenToSource(pt.x, pt.y));
         const snap = resolveActivePolygonSnap(raw);
         if (!snap?.point) {
@@ -3264,6 +3622,15 @@ export default function TracePlanModal({
       if (Math.hypot(dx, dy) > 3) interaction.moved = true;
       const endSource = clampSourcePoint(screenToSource(pt.x, pt.y));
       setCropDraftEnd(endSource);
+      return;
+    }
+
+    if (interaction.type === "kitchenZoneDrag") {
+      const dx = pt.x - interaction.startX;
+      const dy = pt.y - interaction.startY;
+      if (Math.hypot(dx, dy) > 3) interaction.moved = true;
+      const endSource = clampSourcePoint(screenToSource(pt.x, pt.y));
+      setKitchenZoneDraftEnd(endSource);
       return;
     }
 
@@ -3368,6 +3735,15 @@ export default function TracePlanModal({
       return;
     }
 
+    if (interaction.type === "furnitureTool") {
+      const dx = pt.x - interaction.startX;
+      const dy = pt.y - interaction.startY;
+      if (Math.hypot(dx, dy) > 4) interaction.moved = true;
+      const idx = furnitureIndexAtScreen(pt.x, pt.y);
+      setHoveredFurnitureIndex((prev) => (prev === idx ? prev : idx));
+      return;
+    }
+
     if (interaction.type === "calibratePoint") {
       const dx = pt.x - interaction.startX;
       const dy = pt.y - interaction.startY;
@@ -3435,7 +3811,7 @@ export default function TracePlanModal({
       const dx = pt.x - interaction.startX;
       const dy = pt.y - interaction.startY;
       if (Math.hypot(dx, dy) > 4) interaction.moved = true;
-      if (!polygonClosed && (points.length >= 1 || activeLayerId === DECK_LAYER_ID)) {
+      if (!polygonClosed && (points.length >= 1 || activeLayerId === DECK_LAYER_ID || isMultiPolygonLayerActive)) {
         const raw = clampSourcePoint(screenToSource(pt.x, pt.y));
         const snap = resolveActivePolygonSnap(raw);
         if (!snap?.point) {
@@ -3472,6 +3848,25 @@ export default function TracePlanModal({
       return;
     }
 
+    if (interaction.type === "kitchenZoneDrag") {
+      const endSource =
+        kitchenZoneDraftEnd ||
+        clampSourcePoint(screenToSource(interaction.startX, interaction.startY));
+      setKitchenZoneDraftEnd(null);
+      const corners = rectCornersFromSourcePoints(interaction.startSource, endSource);
+      if (corners.length >= 4) {
+        setLayerTraces((prev) => ({
+          ...prev,
+          [KITCHEN_ZONE_LAYER_ID]: {
+            polygons: [{ points: corners }],
+            points: [],
+            polygonClosed: false,
+          },
+        }));
+      }
+      return;
+    }
+
     if (interaction.type === "windowResize") {
       if (event.button === 0) {
         const pt = canvasCoords(event);
@@ -3491,11 +3886,12 @@ export default function TracePlanModal({
     }
 
     if (interaction.type === "windowTool") {
-      if (event.button === 0 && !interaction.moved) {
+      if (event.button === 0) {
         const pt = canvasCoords(event) || { x: interaction.startX, y: interaction.startY };
+        // Place on mouseup even if the pointer moved slightly while aligning.
         if (windowTool === "add") {
           placeWindowAtScreen(pt.x, pt.y);
-        } else if (windowTool === "delete") {
+        } else if (windowTool === "delete" && !interaction.moved) {
           removeWindowAt(windowIndexAtScreen(pt.x, pt.y));
           setHoveredWindowIndex(-1);
         }
@@ -3513,11 +3909,12 @@ export default function TracePlanModal({
     }
 
     if (interaction.type === "doorTool") {
-      if (event.button === 0 && !interaction.moved) {
+      if (event.button === 0) {
         const pt = canvasCoords(event) || { x: interaction.startX, y: interaction.startY };
+        // Place on mouseup even if the pointer moved slightly while aligning.
         if (doorTool === "add") {
           placeDoorAtScreen(pt.x, pt.y);
-        } else if (doorTool === "delete") {
+        } else if (doorTool === "delete" && !interaction.moved) {
           removeDoorAt(doorIndexAtScreen(pt.x, pt.y));
           setHoveredDoorIndex(-1);
         }
@@ -3535,11 +3932,12 @@ export default function TracePlanModal({
     }
 
     if (interaction.type === "internalDoorTool") {
-      if (event.button === 0 && !interaction.moved) {
+      if (event.button === 0) {
         const pt = canvasCoords(event) || { x: interaction.startX, y: interaction.startY };
+        // Place on mouseup even if the pointer moved slightly while aligning.
         if (internalDoorTool === "add") {
           placeInternalDoorAtScreen(pt.x, pt.y);
-        } else if (internalDoorTool === "delete") {
+        } else if (internalDoorTool === "delete" && !interaction.moved) {
           removeInternalDoorAt(internalDoorIndexAtScreen(pt.x, pt.y));
           setHoveredInternalDoorIndex(-1);
         }
@@ -3566,11 +3964,12 @@ export default function TracePlanModal({
     }
 
     if (interaction.type === "slidingDoorTool") {
-      if (event.button === 0 && !interaction.moved) {
+      if (event.button === 0) {
         const pt = canvasCoords(event) || { x: interaction.startX, y: interaction.startY };
+        // Place on mouseup even if the pointer moved slightly while aligning.
         if (slidingDoorTool === "add") {
           placeSlidingDoorAtScreen(pt.x, pt.y);
-        } else if (slidingDoorTool === "delete") {
+        } else if (slidingDoorTool === "delete" && !interaction.moved) {
           removeSlidingDoorAt(slidingDoorIndexAtScreen(pt.x, pt.y));
           setHoveredSlidingDoorIndex(-1);
         }
@@ -3588,6 +3987,20 @@ export default function TracePlanModal({
           beginEditDeckAt(idx);
         }
         setHoveredDeckIndex(-1);
+      }
+      return;
+    }
+
+    if (interaction.type === "furnitureTool") {
+      if (event.button === 0 && !interaction.moved) {
+        const pt = canvasCoords(event) || { x: interaction.startX, y: interaction.startY };
+        const idx = furnitureIndexAtScreen(pt.x, pt.y);
+        if (furnitureTool === "delete") {
+          removeFurnitureAt(idx);
+        } else if (furnitureTool === "edit") {
+          beginEditFurnitureAt(idx);
+        }
+        setHoveredFurnitureIndex(-1);
       }
       return;
     }
@@ -3671,6 +4084,18 @@ export default function TracePlanModal({
               points: current.points.map((p) => ({ x: p.x, y: p.y })),
             };
             return { ...prev, [DECK_LAYER_ID]: { ...current, decks } };
+          });
+        }
+        if (isMultiPolygonLayerActive && editingFurnitureIndex >= 0) {
+          setLayerTraces((prev) => {
+            const current = prev[activeLayerId];
+            if (!current || (current.points?.length ?? 0) < 3) return prev;
+            const polygons = [...(current.polygons ?? [])];
+            if (editingFurnitureIndex >= polygons.length) return prev;
+            polygons[editingFurnitureIndex] = {
+              points: current.points.map((p) => ({ x: p.x, y: p.y })),
+            };
+            return { ...prev, [activeLayerId]: { ...current, polygons } };
           });
         }
         return;
@@ -3787,6 +4212,32 @@ export default function TracePlanModal({
       }
       return;
     }
+    if (isMultiPolygonLayerActive) {
+      const trace = layerTraces[activeLayerId];
+      if ((trace?.points?.length ?? 0) > 0) {
+        if (polygonClosed) {
+          patchLayerTrace(activeLayerId, { polygonClosed: false });
+        } else {
+          setActivePoints((prev) => prev.slice(0, -1));
+        }
+        return;
+      }
+      if ((trace?.polygons?.length ?? 0) > 0) {
+        setLayerTraces((prev) => {
+          const current =
+            prev[activeLayerId] || { polygons: [], points: [], polygonClosed: false };
+          return {
+            ...prev,
+            [activeLayerId]: {
+              ...current,
+              polygons: (current.polygons ?? []).slice(0, -1),
+            },
+          };
+        });
+        setEditingFurnitureIndex(-1);
+      }
+      return;
+    }
     if (isRoofPivotTool) {
       if (roofPivotDraftStart) {
         setRoofPivotDraftStart(null);
@@ -3848,6 +4299,14 @@ export default function TracePlanModal({
       patchLayerTrace(DECK_LAYER_ID, { decks: [], points: [], polygonClosed: false });
       setEditingDeckIndex(-1);
       setHoveredDeckIndex(-1);
+      setNearOrigin(false);
+      clearPolygonPreview();
+      return;
+    }
+    if (isMultiPolygonLayerActive) {
+      patchLayerTrace(activeLayerId, { polygons: [], points: [], polygonClosed: false });
+      setEditingFurnitureIndex(-1);
+      setHoveredFurnitureIndex(-1);
       setNearOrigin(false);
       clearPolygonPreview();
       return;
@@ -3979,6 +4438,47 @@ export default function TracePlanModal({
           !hasOutline &&
           ((trace.points?.length ?? 0) > 0 || Boolean(trace.polygonClosed));
         return outlineDirty || pivotDirty || draftOnly;
+      }
+      if (
+        layer.id === KITCHEN_BENCH_LAYER_ID ||
+        layer.id === ROBES_LAYER_ID ||
+        layer.id === KITCHEN_ZONE_LAYER_ID
+      ) {
+        if (saved.page !== currentPage) return true;
+        const sourceW = source?.width;
+        const sourceH = source?.height;
+        if (!sourceW || !sourceH) return true;
+        const polygons = [...(trace.polygons ?? [])];
+        if ((trace.points?.length ?? 0) >= 3) {
+          if (editingFurnitureIndex >= 0 && editingFurnitureIndex < polygons.length) {
+            polygons[editingFurnitureIndex] = { points: trace.points };
+          } else {
+            polygons.push({ points: trace.points });
+          }
+        }
+        const normalized = polygons
+          .map((item) => normalizeTracePoints(item.points ?? [], sourceW, sourceH))
+          .filter((pts) => pts.length >= 3)
+          .map((pts) => ({ points: pts }));
+        const savedList =
+          layer.id === KITCHEN_BENCH_LAYER_ID
+            ? saved.kitchenBenches?.length
+              ? saved.kitchenBenches
+              : saved.kitchenBenchPoints?.length >= 3
+                ? [{ points: saved.kitchenBenchPoints }]
+                : []
+            : layer.id === ROBES_LAYER_ID
+              ? saved.robes?.length
+                ? saved.robes
+                : saved.robesPoints?.length >= 3
+                  ? [{ points: saved.robesPoints }]
+                  : []
+              : saved.kitchenZonePoints?.length >= 4
+                ? [{ points: saved.kitchenZonePoints }]
+                : saved.kitchenZone?.points?.length >= 4
+                  ? [{ points: saved.kitchenZone.points }]
+                  : [];
+        return JSON.stringify(normalized) !== JSON.stringify(savedList);
       }
       if (layer.id === DECK_LAYER_ID) {
         if (saved.page !== currentPage) return true;
@@ -4263,6 +4763,40 @@ export default function TracePlanModal({
         roof?.polygonClosed && (roof.points?.length ?? 0) >= 3
           ? normalizeTracePoints(roof.points, source.width, source.height)
           : [];
+      const flushMultiPolygons = (layerId, editingIndex) => {
+        const layer = layerTraces[layerId] || {
+          polygons: [],
+          points: [],
+          polygonClosed: false,
+        };
+        const list = [...(layer.polygons ?? [])];
+        if ((layer.points?.length ?? 0) >= 3) {
+          const draft = {
+            points: layer.points.map((p) => ({ x: p.x, y: p.y })),
+          };
+          if (editingIndex >= 0 && editingIndex < list.length) {
+            list[editingIndex] = draft;
+          } else {
+            list.push(draft);
+          }
+        }
+        return list
+          .map((item) => {
+            const pts = normalizeTracePoints(item.points ?? [], source.width, source.height);
+            return pts.length >= 3 ? { points: pts } : null;
+          })
+          .filter(Boolean);
+      };
+      const normalizedKitchenBenches = flushMultiPolygons(
+        KITCHEN_BENCH_LAYER_ID,
+        activeLayerId === KITCHEN_BENCH_LAYER_ID ? editingFurnitureIndex : -1
+      );
+      const normalizedRobes = flushMultiPolygons(
+        ROBES_LAYER_ID,
+        activeLayerId === ROBES_LAYER_ID ? editingFurnitureIndex : -1
+      );
+      const kitchenZonePolys = flushMultiPolygons(KITCHEN_ZONE_LAYER_ID, -1);
+      const normalizedKitchenZonePoints = kitchenZonePolys[0]?.points ?? [];
       const normalizedRoofPivot = roof?.pivotLine
         ? parsePlanTraceRoofPivotLine({
             a: {
@@ -4351,7 +4885,10 @@ export default function TracePlanModal({
         normalizedRoofPivot,
         normalizedFlooring,
         normalizedFinishes,
-        normalizedInternalDoors
+        normalizedInternalDoors,
+        normalizedKitchenBenches,
+        normalizedRobes,
+        normalizedKitchenZonePoints
       );
       savedTraceRef.current = {
         page: currentPage,
@@ -4361,6 +4898,11 @@ export default function TracePlanModal({
         decks: normalizedDecks,
         deckPoints: normalizedDecks[0]?.points ?? [],
         flooringPoints: normalizedFlooring,
+        kitchenBenches: normalizedKitchenBenches,
+        kitchenBenchPoints: normalizedKitchenBenches[0]?.points ?? [],
+        kitchenZonePoints: normalizedKitchenZonePoints,
+        robes: normalizedRobes,
+        robesPoints: normalizedRobes[0]?.points ?? [],
         hybridRegions: normalizedFinishes.hybridRegions,
         tilesRegions: normalizedFinishes.tilesRegions,
         carpetRegions: normalizedFinishes.carpetRegions,
@@ -4369,6 +4911,7 @@ export default function TracePlanModal({
         windows: normalizedWindows,
         doors: normalizedDoors,
         slidingDoors: normalizedSlidingDoors,
+        internalDoors: normalizedInternalDoors,
         calibration,
       };
       onClose();
@@ -4461,10 +5004,10 @@ export default function TracePlanModal({
               : "Add swing doors: hover near an external wall — an 870 mm × 100 mm door follows the cursor and snaps to the wall. Click to place it."
           : isInternalDoorsLayerActive
           ? internalDoorTool === "delete"
-            ? "Delete internal swing doors: hover a placed door (highlights red) and click to remove it. Use the Swing Door ▸ menu to switch tools."
+            ? "Delete internal doors: hover a placed door (highlights red) and click to remove it. Use the Internal Door ▸ menu to switch tools."
             : internalDoorTool === "edit"
-              ? "Edit internal swing doors: drag a door to slide it along internal walls. Use the Swing Door ▸ menu to switch tools."
-              : "Add internal swing doors: hover near an internal wall — an 870 mm × 100 mm solid door follows the cursor and snaps to the wall. Click to place it."
+              ? "Edit internal doors: drag a door to slide it along internal walls. Use the Internal Door ▸ menu to switch tools."
+              : "Add internal doors: hover near an internal wall — an 870 mm × 100 mm solid door follows the cursor and snaps to the wall. Click (or press and release) to place it."
           : isSlidingDoorsLayerActive
           ? slidingDoorTool === "delete"
             ? "Delete sliding doors: hover a placed door (highlights red) and click to remove it. Use the Sliding Door ▸ menu to switch tools."
@@ -4485,6 +5028,18 @@ export default function TracePlanModal({
                   ? " Drag nodes to move them (edges stay H/V), drop onto another node to merge, or click a line to add a node."
                   : ""
               }`
+          : activeLayerId === KITCHEN_BENCH_LAYER_ID ||
+              activeLayerId === ROBES_LAYER_ID ||
+              activeLayerId === KITCHEN_ZONE_LAYER_ID
+            ? furnitureTool === "delete"
+              ? activeLayerId === KITCHEN_ZONE_LAYER_ID
+                ? "Clear kitchen zone: click Clear, or click the pink rectangle to remove it."
+                : `Delete ${activeLayer.label.toLowerCase()}: hover a placed shape (highlights red) and click to remove it. Use the ${activeLayer.label} ▸ menu to switch tools.`
+              : furnitureTool === "edit"
+                ? `Edit ${activeLayer.label.toLowerCase()}: click a shape to select it, then drag nodes (edges stay H/V). Use the ${activeLayer.label} ▸ menu to switch tools.`
+                : activeLayerId === KITCHEN_ZONE_LAYER_ID
+                  ? "Define kitchen — drag a rectangle around the kitchen area, then release to place it."
+                  : `Add ${activeLayer.label.toLowerCase()} — click corners (horizontal/vertical only, max ${MAX_TRACE_POINTS}). Soft-snaps to inner external walls and internal walls when near. Click the green origin to close and place it. You can add more the same way.`
           : activeLayerId === DECK_LAYER_ID
             ? deckTool === "delete"
               ? "Delete decks: hover a placed deck (highlights red) and click to remove it. Use the Deck ▸ menu to switch tools."
@@ -4732,7 +5287,7 @@ export default function TracePlanModal({
                               }}
                             />
                             <span style={{ lineHeight: 1.25, flex: 1 }}>{layer.label}</span>
-                            {isActive && hasSubmenu && (layer.id === WINDOWS_LAYER_ID || layer.id === DOORS_LAYER_ID || layer.id === INTERNAL_DOORS_LAYER_ID || layer.id === SLIDING_DOORS_LAYER_ID || layer.id === DECK_LAYER_ID || layer.id === ROOF_LAYER_ID || layer.id === FLOORING_LAYER_ID || layer.id === INTERNAL_WALLS_LAYER_ID) && (
+                            {isActive && hasSubmenu && (layer.id === WINDOWS_LAYER_ID || layer.id === DOORS_LAYER_ID || layer.id === INTERNAL_DOORS_LAYER_ID || layer.id === SLIDING_DOORS_LAYER_ID || layer.id === DECK_LAYER_ID || layer.id === KITCHEN_BENCH_LAYER_ID || layer.id === ROBES_LAYER_ID || layer.id === KITCHEN_ZONE_LAYER_ID || layer.id === ROOF_LAYER_ID || layer.id === FLOORING_LAYER_ID || layer.id === INTERNAL_WALLS_LAYER_ID) && (
                               <span
                                 style={{
                                   fontSize: "0.68rem",
@@ -4757,7 +5312,11 @@ export default function TracePlanModal({
                                           ? flooringTool
                                           : layer.id === INTERNAL_WALLS_LAYER_ID
                                             ? internalWallTool
-                                            : deckTool}
+                                            : layer.id === KITCHEN_BENCH_LAYER_ID ||
+                                                layer.id === ROBES_LAYER_ID ||
+                                                layer.id === KITCHEN_ZONE_LAYER_ID
+                                              ? furnitureTool
+                                              : deckTool}
                               </span>
                             )}
                             {hasSubmenu && (
@@ -4800,6 +5359,10 @@ export default function TracePlanModal({
                                   (layer.id === INTERNAL_DOORS_LAYER_ID && internalDoorTool === item.id) ||
                                   (layer.id === SLIDING_DOORS_LAYER_ID && slidingDoorTool === item.id) ||
                                   (layer.id === DECK_LAYER_ID && deckTool === item.id) ||
+                                  ((layer.id === KITCHEN_BENCH_LAYER_ID ||
+                                    layer.id === ROBES_LAYER_ID ||
+                                    layer.id === KITCHEN_ZONE_LAYER_ID) &&
+                                    furnitureTool === item.id) ||
                                   (layer.id === ROOF_LAYER_ID && roofTool === item.id) ||
                                   (layer.id === FLOORING_LAYER_ID && flooringTool === item.id) ||
                                   (layer.id === INTERNAL_WALLS_LAYER_ID && internalWallTool === item.id);

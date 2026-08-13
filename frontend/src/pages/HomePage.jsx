@@ -24,6 +24,7 @@ import StateFilterButtons from "../components/StateFilterButtons";
 import { UI, MENU, INDICATOR, outlineBorder } from "../utils/uiThemeTokens.js";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 import { buildDuplicateChainGroups } from "../utils/duplicateProjectLinks";
+import { fetchProjectsList } from "../utils/projectsListCache";
 import {
   getDepositPaidFilterCategory,
   projectMatchesDepositPaidFilter,
@@ -36,8 +37,6 @@ const LIGHT_MONUMENT = UI.pageBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 const SORT_BUTTON_STYLE_ID = 4;
-
-const API_URL = "";
 
 const menuOptions = [
   { key: "projects", label: "Projects", route: "/projects" },
@@ -237,13 +236,13 @@ export default function HomePage() {
 
     const handleFocus = () => {
       if (isMounted && location.pathname === "/projects") {
-        fetchProjects();
+        fetchProjects({ soft: true });
       }
     };
 
     const handleVisibilityChange = () => {
       if (isMounted && !document.hidden && location.pathname === "/projects") {
-        fetchProjects();
+        fetchProjects({ soft: true });
       }
     };
 
@@ -277,24 +276,15 @@ export default function HomePage() {
     setSelectedValue("");
   }, [selectedField]);
 
-  async function fetchProjects() {
+  async function fetchProjects(options = {}) {
     try {
-      setLoading(true);
+      if (!options.soft) setLoading(true);
       setError(null);
-      const url = `${API_URL}/api/projects`;
-      let response = await fetch(url);
-      // Retry while backend finishes migrations (listen-first startup)
-      let attempts = 0;
-      while (response.status === 503 && attempts < 60) {
-        await new Promise((r) => setTimeout(r, 1000));
-        attempts += 1;
-        response = await fetch(url);
-      }
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => response.statusText);
-        throw new Error(`Failed to fetch projects: ${response.status} ${response.statusText} ${errorText}`);
-      }
-      const data = await response.json();
+      const data = await fetchProjectsList({
+        view: "card",
+        force: Boolean(options.force),
+        retry503Max: 60,
+      });
       setProjects(data || []);
     } catch (err) {
       setError(err.message);

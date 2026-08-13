@@ -14,14 +14,13 @@ import {
   isPermitPhaseStatus,
   isPreEngagementPhaseStatus,
 } from "../utils/projectStatus";
+import { fetchProjectsList } from "../utils/projectsListCache";
 import MobileStyledFilterButton, {
   MOBILE_STATE_BUTTON_IDS,
   MOBILE_STATUS_BUTTON_IDS,
   useUiButtonStyleRevision,
 } from "./MobileStyledFilterButton";
 import "./mobile.css";
-
-const API_URL = "";
 
 const STATE_OPTIONS = ["VIC", "QLD", "All"];
 
@@ -88,11 +87,7 @@ export default function MobileProjectsHome({ preview = false, onSelectProject })
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`${API_URL}/api/projects`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch projects: ${response.statusText}`);
-      }
-      const data = await response.json();
+      const data = await fetchProjectsList({ view: "card" });
       setProjects(data);
     } catch (err) {
       console.error("Error fetching projects:", err);

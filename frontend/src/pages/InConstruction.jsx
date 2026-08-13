@@ -25,14 +25,13 @@ import useAppLogo from "../hooks/useAppLogo.js";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
 import { UI, MENU } from "../utils/uiThemeTokens.js";
+import { fetchProjectsList } from "../utils/projectsListCache";
 const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
-
-const API_URL = "";
 
 export default function InConstruction() {
   const logo = useAppLogo();
@@ -52,33 +51,25 @@ export default function InConstruction() {
     fetchProjects();
   }, []);
 
-  // Refetch projects when navigating back to this page or when window gains focus
+  // Soft-refetch when window gains focus (uses shared 30s cache)
   useEffect(() => {
     let isMounted = true;
-    
+
     const handleFocus = () => {
       if (isMounted && location.pathname === "/construction-phase") {
-        console.log("Window focused, refetching projects...");
-        fetchProjects();
+        fetchProjects({ soft: true });
       }
     };
-    
+
     const handleVisibilityChange = () => {
       if (isMounted && !document.hidden && location.pathname === "/construction-phase") {
-        console.log("Page visible, refetching projects...");
-        fetchProjects();
+        fetchProjects({ soft: true });
       }
     };
-    
-    // Refetch when navigating to this page
-    if (location.pathname === "/construction-phase") {
-      fetchProjects();
-    }
-    
-    // Also refetch when window gains focus (user returns to tab/window)
+
     window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    
+
     return () => {
       isMounted = false;
       window.removeEventListener("focus", handleFocus);
@@ -95,16 +86,11 @@ export default function InConstruction() {
     setIsAdmin(admin);
   }
 
-  async function fetchProjects() {
+  async function fetchProjects(options = {}) {
     try {
-      setLoading(true);
+      if (!options.soft) setLoading(true);
       setError(null);
-      const response = await fetch(`${API_URL}/api/projects`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch projects: ${response.statusText}`);
-      }
-      const data = await response.json();
-      console.log("Projects from API:", data);
+      const data = await fetchProjectsList({ view: "card", force: Boolean(options.force) });
       setProjects(data);
     } catch (err) {
       setError(err.message);

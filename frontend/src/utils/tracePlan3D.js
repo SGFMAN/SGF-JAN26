@@ -270,7 +270,7 @@ function internalWallSegmentXZCorners(startXZ, endXZ, thicknessM) {
   const dx = endXZ.x - startXZ.x;
   const dz = endXZ.z - startXZ.z;
   const len = Math.hypot(dx, dz);
-  if (len < 0.05) return null;
+  if (len < 0.02) return null;
 
   const halfT = thicknessM / 2;
   const nx = (-dz / len) * halfT;
@@ -448,21 +448,34 @@ function buildInternalWallVisibleOutlinesXZ(segmentsXZ, halfT) {
   return lines;
 }
 
-function buildClippedInternalWallFootprints(normalizedExternalPoints, normalizedSegments) {
-  const mapping = getTracePlanXZMapping(normalizedExternalPoints);
-  const innerRing = getTraceInnerXZRing(normalizedExternalPoints);
-  if (!mapping || !innerRing) return [];
+function buildClippedInternalWallFootprints(
+  normalizedExternalPoints,
+  normalizedSegments,
+  calibration = null
+) {
+  const mapping = getTracePlanXZMapping(normalizedExternalPoints, calibration);
+  const innerRing = getTraceInnerXZRing(normalizedExternalPoints, calibration);
+  if (!mapping) return [];
 
   const footprints = [];
-  for (const segment of normalizedSegments) {
+  for (const segment of normalizedSegments || []) {
+    if (!segment?.a || !segment?.b) continue;
     const startXZ = normalizedPointToXZ(segment.a, mapping);
     const endXZ = normalizedPointToXZ(segment.b, mapping);
+    if (!startXZ || !endXZ) continue;
     const corners = internalWallSegmentXZCorners(startXZ, endXZ, TRACE_WALL_THICKNESS_M);
     if (!corners) continue;
 
-    const clipped = clipPolygonToRingInteriorXZ(corners, innerRing);
-    if (clipped.length < 3 || polygonXZArea(clipped) < 0.002) continue;
-    footprints.push(clipped);
+    // Prefer clip to inside of external walls, but keep the unclipped band if
+    // clipping removes the segment (common when walls meet the inner face).
+    let footprint = corners;
+    if (innerRing && innerRing.length >= 3) {
+      const clipped = clipPolygonToRingInteriorXZ(corners, innerRing);
+      if (clipped.length >= 3 && polygonXZArea(clipped) >= 0.001) {
+        footprint = clipped;
+      }
+    }
+    footprints.push(footprint);
   }
   return footprints;
 }
@@ -534,10 +547,11 @@ function clipPolygonToRingInteriorXZ(polygon, ring) {
 
 /**
  * @param {{ x: number, y: number }[]} normalizedPoints
+ * @param {object | null} [calibration]
  * @returns {{ x: number, z: number }[] | null}
  */
-export function getTraceInnerXZRing(normalizedPoints) {
-  const outer = tracePolygonToOuterXZRing(normalizedPoints);
+export function getTraceInnerXZRing(normalizedPoints, calibration = null) {
+  const outer = tracePolygonToOuterXZRing(normalizedPoints, calibration);
   if (!outer) return null;
   return offsetPolygonInward(outer, TRACE_WALL_THICKNESS_M);
 }
@@ -674,12 +688,28 @@ function appendVerticalLines(chunks, points, bottomYM, topYM) {
 /**
  * @param {{ x: number, y: number }[]} normalizedExternalPoints
  * @param {{ a: { x: number, y: number }, b: { x: number, y: number } }[]} normalizedSegments
+ * @param {{
+ *   calibration?: object | null,
+ *   baseYM?: number,
+ *   topYM?: number,
+ * }} [options]
  * @returns {THREE.BufferGeometry | null}
  */
-export function buildTraceInternalWallsGeometry(normalizedExternalPoints, normalizedSegments) {
+export function buildTraceInternalWallsGeometry(
+  normalizedExternalPoints,
+  normalizedSegments,
+  options = {}
+) {
+  const calibration = options.calibration ?? null;
+  const baseYM =
+    Number.isFinite(options.baseYM) ? options.baseYM : TRACE_WALL_BASE_M;
+  const topYM = Number.isFinite(options.topYM) ? options.topYM : TRACE_WALL_TOP_M;
+  if (!(topYM > baseYM)) return null;
+
   const footprints = buildClippedInternalWallFootprints(
     normalizedExternalPoints,
-    normalizedSegments
+    normalizedSegments,
+    calibration
   );
   if (!footprints.length) return null;
 
@@ -688,7 +718,7 @@ export function buildTraceInternalWallsGeometry(normalizedExternalPoints, normal
   let vertexOffset = 0;
 
   for (const footprint of footprints) {
-    const part = extrudeXZFootprintPolygon(footprint, TRACE_WALL_BASE_M, TRACE_WALL_TOP_M);
+    const part = extrudeXZFootprintPolygon(footprint, baseYM, topYM);
     if (!part) continue;
 
     const partPos = part.getAttribute("position").array;

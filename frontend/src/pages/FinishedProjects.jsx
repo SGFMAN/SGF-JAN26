@@ -17,13 +17,12 @@ import useAppLogo from "../hooks/useAppLogo.js";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
 import { UI } from "../utils/uiThemeTokens.js";
+import { fetchProjectsList } from "../utils/projectsListCache";
 const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
 const PAGE_TEXT = UI.pageText;
-
-const API_URL = "";
 
 export default function FinishedProjects() {
   const logo = useAppLogo();
@@ -48,12 +47,7 @@ export default function FinishedProjects() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`${API_URL}/api/projects`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch projects: ${response.statusText}`);
-      }
-      const data = await response.json();
-      console.log("Projects from API:", data);
+      const data = await fetchProjectsList({ view: "card" });
       setProjects(data);
     } catch (err) {
       setError(err.message);

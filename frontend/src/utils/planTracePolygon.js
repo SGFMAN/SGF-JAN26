@@ -9,10 +9,14 @@ export const INTERNAL_DOORS_LAYER_ID = "internalDoors";
 export const ROOF_LAYER_ID = "roof";
 export const DECK_LAYER_ID = "deck";
 export const FLOORING_LAYER_ID = "flooring";
+export const KITCHEN_BENCH_LAYER_ID = "kitchenBench";
+export const ROBES_LAYER_ID = "robes";
+export const KITCHEN_ZONE_LAYER_ID = "kitchenZone";
 
 export const TRACE_PLAN_GROUPS = [
   { id: "external", label: "External" },
   { id: "internal", label: "Internal" },
+  { id: "rooms", label: "Rooms" },
 ];
 
 export const TRACE_PLAN_LAYERS = [
@@ -130,6 +134,40 @@ export const TRACE_PLAN_LAYERS = [
     ],
   },
   {
+    id: KITCHEN_BENCH_LAYER_ID,
+    label: "Kitchen Bench",
+    group: "internal",
+    mode: "multiPolygons",
+    stroke: "#a16207",
+    fillClosed: "rgba(161, 98, 7, 0.32)",
+    fillOpen: "rgba(161, 98, 7, 0.16)",
+    marker: "#a16207",
+    origin: "#854d0e",
+    saves: true,
+    submenu: [
+      { id: "add", label: "Add" },
+      { id: "edit", label: "Edit" },
+      { id: "delete", label: "Delete" },
+    ],
+  },
+  {
+    id: ROBES_LAYER_ID,
+    label: "Robes",
+    group: "internal",
+    mode: "multiPolygons",
+    stroke: "#6366f1",
+    fillClosed: "rgba(99, 102, 241, 0.28)",
+    fillOpen: "rgba(99, 102, 241, 0.14)",
+    marker: "#6366f1",
+    origin: "#4f46e5",
+    saves: true,
+    submenu: [
+      { id: "add", label: "Add" },
+      { id: "edit", label: "Edit" },
+      { id: "delete", label: "Delete" },
+    ],
+  },
+  {
     id: INTERNAL_WALLS_LAYER_ID,
     label: "Walls",
     group: "internal",
@@ -148,7 +186,7 @@ export const TRACE_PLAN_LAYERS = [
   },
   {
     id: INTERNAL_DOORS_LAYER_ID,
-    label: "Swing Door",
+    label: "Internal Door",
     group: "internal",
     mode: "internalDoors",
     stroke: "#9a3412",
@@ -161,6 +199,22 @@ export const TRACE_PLAN_LAYERS = [
       { id: "add", label: "Add" },
       { id: "edit", label: "Edit" },
       { id: "delete", label: "Delete" },
+    ],
+  },
+  {
+    id: KITCHEN_ZONE_LAYER_ID,
+    label: "Define kitchen",
+    group: "rooms",
+    mode: "multiPolygons",
+    stroke: "#db2777",
+    fillClosed: "rgba(219, 39, 119, 0.18)",
+    fillOpen: "rgba(219, 39, 119, 0.1)",
+    marker: "#db2777",
+    origin: "#be185d",
+    saves: true,
+    submenu: [
+      { id: "add", label: "Define" },
+      { id: "delete", label: "Clear" },
     ],
   },
 ];
@@ -195,9 +249,30 @@ export function isDeckTraceLayer(layerId) {
   return layer.mode === "decks";
 }
 
+export function isMultiPolygonTraceLayer(layerId) {
+  const layer = getTracePlanLayer(layerId);
+  return layer.mode === "multiPolygons";
+}
+
 export function isFlooringTraceLayer(layerId) {
   const layer = getTracePlanLayer(layerId);
   return layer.mode === "flooring";
+}
+
+/** Axis-aligned rectangle corners from two opposite source points. */
+export function rectCornersFromSourcePoints(a, b) {
+  if (!a || !b) return [];
+  const minX = Math.min(a.x, b.x);
+  const maxX = Math.max(a.x, b.x);
+  const minY = Math.min(a.y, b.y);
+  const maxY = Math.max(a.y, b.y);
+  if (!(maxX > minX) || !(maxY > minY)) return [];
+  return [
+    { x: minX, y: minY },
+    { x: maxX, y: minY },
+    { x: maxX, y: maxY },
+    { x: minX, y: maxY },
+  ];
 }
 
 /** Finish overlay colours (distinct from the auto orange base floor). */
@@ -252,6 +327,9 @@ export function createEmptyLayerTrace(layerId) {
   if (isDeckTraceLayer(layerId)) {
     return { decks: [], points: [], polygonClosed: false };
   }
+  if (isMultiPolygonTraceLayer(layerId)) {
+    return { polygons: [], points: [], polygonClosed: false };
+  }
   if (isFlooringTraceLayer(layerId)) {
     return {
       basePoints: [],
@@ -296,6 +374,13 @@ export function hasLayerDraft(layerId, trace) {
   if (isDeckTraceLayer(layerId)) {
     return (
       (trace.decks?.length ?? 0) > 0 ||
+      (trace.points?.length ?? 0) > 0 ||
+      Boolean(trace.polygonClosed)
+    );
+  }
+  if (isMultiPolygonTraceLayer(layerId)) {
+    return (
+      (trace.polygons?.length ?? 0) > 0 ||
       (trace.points?.length ?? 0) > 0 ||
       Boolean(trace.polygonClosed)
     );
@@ -495,6 +580,11 @@ export function parsePlanTracePolygon(raw) {
     decks: [],
     deckPoints: [],
     flooringPoints: [],
+    kitchenBenches: [],
+    kitchenBenchPoints: [],
+    kitchenZonePoints: [],
+    robes: [],
+    robesPoints: [],
     hybridRegions: [],
     tilesRegions: [],
     carpetRegions: [],
@@ -525,6 +615,16 @@ export function parsePlanTracePolygon(raw) {
           .slice(0, MAX_TRACE_POINTS)
       : [];
     const flooringPoints = parseFlooringPoints(data?.flooringPoints);
+    const kitchenBenches = parsePlanTraceDecks(
+      data?.kitchenBenches,
+      data?.kitchenBenchPoints
+    );
+    const kitchenZonePoints = parsePlanTraceDeckPoints(
+      data?.kitchenZone?.points ?? data?.kitchenZonePoints ?? data?.kitchenZone
+    );
+    const robes = parsePlanTraceDecks(data?.robes, data?.robesPoints);
+    const kitchenBenchPoints = kitchenBenches[0]?.points ?? [];
+    const robesPoints = robes[0]?.points ?? [];
     const hybridRegions = parseFlooringRegions(data?.hybridRegions);
     const tilesRegions = parseFlooringRegions(data?.tilesRegions);
     const carpetRegions = parseFlooringRegions(data?.carpetRegions);
@@ -538,6 +638,11 @@ export function parsePlanTracePolygon(raw) {
       decks,
       deckPoints,
       flooringPoints,
+      kitchenBenches,
+      kitchenBenchPoints,
+      kitchenZonePoints,
+      robes,
+      robesPoints,
       hybridRegions,
       tilesRegions,
       carpetRegions,
@@ -577,7 +682,10 @@ export function serializePlanTracePolygon(
   roofPivotLine = null,
   flooringPoints = [],
   flooringFinishes = null,
-  internalDoors = []
+  internalDoors = [],
+  kitchenBenches = [],
+  robes = [],
+  kitchenZonePoints = []
 ) {
   const round = (v) => Math.round(v * 1e6) / 1e6;
   const payload = {
@@ -598,6 +706,51 @@ export function serializePlanTracePolygon(
     y: round(p.y),
   }));
   if (normalizedFlooring.length >= 3) payload.flooringPoints = normalizedFlooring;
+  const kitchenBenchList =
+    Array.isArray(kitchenBenches) && kitchenBenches.length && !Number.isFinite(kitchenBenches[0]?.x)
+      ? kitchenBenches
+      : Array.isArray(kitchenBenches) &&
+          kitchenBenches.length >= 3 &&
+          Number.isFinite(kitchenBenches[0]?.x)
+        ? [{ points: kitchenBenches }]
+        : [];
+  const normalizedKitchenBenches = kitchenBenchList
+    .map((item) => {
+      const pts = parsePlanTraceDeckPoints(item?.points ?? item)
+        .slice(0, MAX_TRACE_POINTS)
+        .map((p) => ({ x: round(p.x), y: round(p.y) }));
+      return pts.length >= 3 ? { points: pts } : null;
+    })
+    .filter(Boolean);
+  if (normalizedKitchenBenches.length) {
+    payload.kitchenBenches = normalizedKitchenBenches;
+    payload.kitchenBenchPoints = normalizedKitchenBenches[0].points;
+  }
+  const normalizedKitchenZone = parsePlanTraceDeckPoints(kitchenZonePoints)
+    .slice(0, MAX_TRACE_POINTS)
+    .map((p) => ({ x: round(p.x), y: round(p.y) }));
+  if (normalizedKitchenZone.length >= 4) {
+    payload.kitchenZone = { points: normalizedKitchenZone };
+    payload.kitchenZonePoints = normalizedKitchenZone;
+  }
+  const robesList =
+    Array.isArray(robes) && robes.length && !Number.isFinite(robes[0]?.x)
+      ? robes
+      : Array.isArray(robes) && robes.length >= 3 && Number.isFinite(robes[0]?.x)
+        ? [{ points: robes }]
+        : [];
+  const normalizedRobes = robesList
+    .map((item) => {
+      const pts = parsePlanTraceDeckPoints(item?.points ?? item)
+        .slice(0, MAX_TRACE_POINTS)
+        .map((p) => ({ x: round(p.x), y: round(p.y) }));
+      return pts.length >= 3 ? { points: pts } : null;
+    })
+    .filter(Boolean);
+  if (normalizedRobes.length) {
+    payload.robes = normalizedRobes;
+    payload.robesPoints = normalizedRobes[0].points;
+  }
   const finishes =
     flooringFinishes && typeof flooringFinishes === "object" ? flooringFinishes : {};
   for (const finishId of FLOORING_FINISH_IDS) {

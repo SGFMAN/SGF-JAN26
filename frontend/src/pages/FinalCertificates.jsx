@@ -12,7 +12,6 @@ import { UI, outlineBorder } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
-const SECTION_GREY = UI.panelBg;
 const API_URL = "";
 
 function projectAddressLabel(project) {
@@ -399,7 +398,84 @@ export default function FinalCertificates({ project, onUpdate }) {
     fontWeight: 500,
   };
 
+  /** Windows / Fluent-style PDF document icon. */
+  function PdfGlyph({ size = 40 }) {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 48 48"
+        aria-hidden="true"
+        style={{ display: "block", flexShrink: 0 }}
+      >
+        <path
+          d="M10 4h18l10 10v28a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"
+          fill="#F3F3F3"
+          stroke="#1A1A1A"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M28 4v10h10"
+          fill="#DEDEDE"
+          stroke="#1A1A1A"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        />
+        <rect x="8" y="28" width="32" height="12" rx="1.5" fill="#E31C23" stroke="#1A1A1A" strokeWidth="1.2" />
+        {/* P */}
+        <path
+          d="M14.2 31.1v7.8h1.55v-2.85h.95c1.35 0 2.2-.7 2.2-1.85s-.85-1.85-2.2-1.85h-2.5zm1.55 1.35h.9c.55 0 .95.28.95.75s-.4.75-.95.75h-.9v-1.5z"
+          fill="#FFFFFF"
+        />
+        {/* D */}
+        <path
+          d="M22.4 31.1v7.8h2.15c2.05 0 3.35-1.25 3.35-3.9s-1.3-3.9-3.35-3.9H22.4zm1.55 1.35h.55c1.15 0 1.85.75 1.85 2.55s-.7 2.55-1.85 2.55h-.55v-5.1z"
+          fill="#FFFFFF"
+        />
+        {/* F */}
+        <path
+          d="M30.9 31.1v7.8h1.55v-3.05h2.35v-1.3h-2.35v-1.95h2.7v-1.5H30.9z"
+          fill="#FFFFFF"
+        />
+      </svg>
+    );
+  }
+
+  /** Windows / Fluent-style folder icon. */
+  function FolderGlyph({ size = 40 }) {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 48 48"
+        aria-hidden="true"
+        style={{ display: "block", flexShrink: 0 }}
+      >
+        <path
+          d="M5 16.2V12.5A2.5 2.5 0 0 1 7.5 10h9.4l2.8 3.2H40.5A2.5 2.5 0 0 1 43 15.7V18H5v-1.8Z"
+          fill="#FFE082"
+          stroke="#1A1A1A"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M5 18h38v18.2A3.8 3.8 0 0 1 39.2 40H8.8A3.8 3.8 0 0 1 5 36.2V18Z"
+          fill="#FFB300"
+          stroke="#1A1A1A"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M7.8 21.2h32.4v14.2c0 .9-.7 1.6-1.6 1.6H9.4c-.9 0-1.6-.7-1.6-1.6V21.2Z"
+          fill="#FFCA28"
+        />
+      </svg>
+    );
+  }
+
   function renderDropZone({
+    kind,
     title,
     hint,
     dragging,
@@ -410,34 +486,51 @@ export default function FinalCertificates({ project, onUpdate }) {
     current,
     onClear,
   }) {
+    const isPdf = kind === "pdf";
     return (
-      <div>
-        <div style={{ fontSize: "0.9rem", fontWeight: 600, color: MONUMENT, marginBottom: "8px" }}>
-          {title}
-        </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "12px", minWidth: 0 }}>
+        <div style={{ fontSize: "0.95rem", fontWeight: 600, color: MONUMENT }}>{title}</div>
         <div
           {...handlers}
           onClick={() => inputRef.current?.click()}
           style={{
+            width: "100%",
+            aspectRatio: "1 / 1",
+            maxWidth: "320px",
+            minWidth: "260px",
             border: `2px dashed ${dragging ? MONUMENT : UI.outline}`,
-            borderRadius: "12px",
-            padding: "28px 18px",
+            borderRadius: "14px",
+            padding: "22px",
             background: dragging ? "rgba(50,50,51,0.05)" : WHITE,
             textAlign: "center",
             cursor: "pointer",
             transition: "background 0.15s, border-color 0.15s",
-            minHeight: "110px",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
+            gap: "14px",
             boxSizing: "border-box",
           }}
         >
-          <div style={{ fontSize: "0.92rem", fontWeight: 600, color: MONUMENT, marginBottom: "6px" }}>
+          {isPdf ? <PdfGlyph size={80} /> : <FolderGlyph size={80} />}
+          <div
+            style={{
+              fontSize: "0.95rem",
+              fontWeight: 600,
+              color: MONUMENT,
+              lineHeight: 1.3,
+              maxWidth: "100%",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              padding: "0 4px",
+            }}
+            title={current ? current.name : undefined}
+          >
             {current ? current.name : `Drop ${title} here`}
           </div>
-          <div style={{ fontSize: "0.82rem", color: UI.textMuted }}>
+          <div style={{ fontSize: "0.82rem", color: UI.textMuted, lineHeight: 1.35 }}>
             {current ? "Click to replace" : hint}
           </div>
           <input
@@ -448,29 +541,88 @@ export default function FinalCertificates({ project, onUpdate }) {
             onChange={(e) => onSelect(e.target.files?.[0])}
           />
         </div>
-        {current ? (
-          <div style={{ marginTop: "8px", display: "flex", justifyContent: "flex-end" }}>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onClear();
-              }}
+
+        <div
+          style={{
+            background: WHITE,
+            borderRadius: "10px",
+            padding: "12px 14px",
+            border: outlineBorder,
+            boxSizing: "border-box",
+            maxWidth: "320px",
+            minWidth: "260px",
+            width: "100%",
+            minHeight: "88px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "0.82rem",
+              fontWeight: 600,
+              color: MONUMENT,
+              marginBottom: "8px",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+            }}
+          >
+            {isPdf ? <PdfGlyph size={20} /> : <FolderGlyph size={20} />}
+            Attachments
+          </div>
+          {current ? (
+            <div
               style={{
-                padding: "6px 10px",
-                borderRadius: "6px",
-                border: outlineBorder,
-                background: WHITE,
-                color: MONUMENT,
-                fontSize: "0.8rem",
-                fontWeight: 500,
-                cursor: "pointer",
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: "10px",
               }}
             >
-              Clear
-            </button>
-          </div>
-        ) : null}
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    color: MONUMENT,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={current.name}
+                >
+                  {current.name}
+                </div>
+                <div style={{ fontSize: "0.78rem", color: UI.textMuted, marginTop: "2px" }}>
+                  {formatFileSize(current.size)}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClear();
+                }}
+                style={{
+                  padding: "5px 9px",
+                  borderRadius: "6px",
+                  border: outlineBorder,
+                  background: WHITE,
+                  color: MONUMENT,
+                  fontSize: "0.78rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          ) : (
+            <p style={{ margin: 0, fontSize: "0.82rem", color: UI.textMuted }}>
+              None yet
+            </p>
+          )}
+        </div>
       </div>
     );
   }
@@ -526,185 +678,42 @@ export default function FinalCertificates({ project, onUpdate }) {
 
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-          gap: "24px",
-          alignItems: "start",
-          maxWidth: "900px",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "28px",
+          alignItems: "flex-start",
         }}
       >
-        <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-          {renderDropZone({
-            title: "PDF",
-            hint: "or click to browse — PDF only, max 20 MB",
-            dragging: pdfDragging,
-            handlers: makeDropHandlers("pdf"),
-            inputRef: pdfInputRef,
-            accept: ".pdf,application/pdf",
-            onSelect: setPdfFile,
-            current: pdfAttachment,
-            onClear: () => {
-              setPdfAttachment(null);
-              if (pdfInputRef.current) pdfInputRef.current.value = "";
-            },
-          })}
-          {renderDropZone({
-            title: "ZIP",
-            hint: "or click to browse — ZIP only, max 20 MB",
-            dragging: zipDragging,
-            handlers: makeDropHandlers("zip"),
-            inputRef: zipInputRef,
-            accept: ".zip,application/zip,application/x-zip-compressed",
-            onSelect: setZipFile,
-            current: zipAttachment,
-            onClear: () => {
-              setZipAttachment(null);
-              if (zipInputRef.current) zipInputRef.current.value = "";
-            },
-          })}
-        </div>
-
-        <div
-          style={{
-            background: WHITE,
-            borderRadius: "10px",
-            padding: "14px 16px",
-            border: outlineBorder,
-            minHeight: "160px",
-            boxSizing: "border-box",
-          }}
-        >
-          <div style={{ fontSize: "0.9rem", fontWeight: 600, color: MONUMENT, marginBottom: "12px" }}>
-            Attachments
-          </div>
-          {attachmentList.length === 0 ? (
-            <p style={{ margin: 0, fontSize: "0.88rem", color: UI.textMuted }}>
-              No files attached yet.
-            </p>
-          ) : (
-            <ul
-              style={{
-                listStyle: "none",
-                margin: 0,
-                padding: 0,
-                display: "flex",
-                flexDirection: "column",
-                gap: "8px",
-              }}
-            >
-              {pdfAttachment ? (
-                <li
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "12px",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    background: SECTION_GREY,
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: "0.75rem", fontWeight: 600, color: UI.textMuted }}>
-                      PDF
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "0.9rem",
-                        fontWeight: 600,
-                        color: MONUMENT,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                      title={pdfAttachment.name}
-                    >
-                      {pdfAttachment.name}
-                    </div>
-                    <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginTop: "2px" }}>
-                      {formatFileSize(pdfAttachment.size)}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPdfAttachment(null);
-                      if (pdfInputRef.current) pdfInputRef.current.value = "";
-                    }}
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: "6px",
-                      border: outlineBorder,
-                      background: WHITE,
-                      color: MONUMENT,
-                      fontSize: "0.8rem",
-                      fontWeight: 500,
-                      cursor: "pointer",
-                      flexShrink: 0,
-                    }}
-                  >
-                    Remove
-                  </button>
-                </li>
-              ) : null}
-              {zipAttachment ? (
-                <li
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "12px",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    background: SECTION_GREY,
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: "0.75rem", fontWeight: 600, color: UI.textMuted }}>
-                      ZIP
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "0.9rem",
-                        fontWeight: 600,
-                        color: MONUMENT,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                      title={zipAttachment.name}
-                    >
-                      {zipAttachment.name}
-                    </div>
-                    <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginTop: "2px" }}>
-                      {formatFileSize(zipAttachment.size)}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setZipAttachment(null);
-                      if (zipInputRef.current) zipInputRef.current.value = "";
-                    }}
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: "6px",
-                      border: outlineBorder,
-                      background: WHITE,
-                      color: MONUMENT,
-                      fontSize: "0.8rem",
-                      fontWeight: 500,
-                      cursor: "pointer",
-                      flexShrink: 0,
-                    }}
-                  >
-                    Remove
-                  </button>
-                </li>
-              ) : null}
-            </ul>
-          )}
-        </div>
+        {renderDropZone({
+          kind: "pdf",
+          title: "PDF",
+          hint: "PDF only · max 20 MB",
+          dragging: pdfDragging,
+          handlers: makeDropHandlers("pdf"),
+          inputRef: pdfInputRef,
+          accept: ".pdf,application/pdf",
+          onSelect: setPdfFile,
+          current: pdfAttachment,
+          onClear: () => {
+            setPdfAttachment(null);
+            if (pdfInputRef.current) pdfInputRef.current.value = "";
+          },
+        })}
+        {renderDropZone({
+          kind: "zip",
+          title: "ZIP",
+          hint: "ZIP only · max 20 MB",
+          dragging: zipDragging,
+          handlers: makeDropHandlers("zip"),
+          inputRef: zipInputRef,
+          accept: ".zip,application/zip,application/x-zip-compressed",
+          onSelect: setZipFile,
+          current: zipAttachment,
+          onClear: () => {
+            setZipAttachment(null);
+            if (zipInputRef.current) zipInputRef.current.value = "";
+          },
+        })}
       </div>
 
       {showEmailModal ? (

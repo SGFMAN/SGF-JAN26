@@ -74,15 +74,13 @@ const {
   updateColourGroup,
   deleteColourGroup,
 } = require("./polytecColours");
-const { ensureYdlStoneCatalogue } = require("./ydlStoneColours");
-const { ensureJohnstonTilesCatalogue } = require("./johnstonTilesColours");
 const {
-  ensureGodfreyHirstClassicCityCatalogue,
-} = require("./godfreyHirstClassicCityColours");
-const {
-  ensureGodfreyHirstApolloHybridCatalogue,
-} = require("./godfreyHirstApolloHybridColours");
-const { ensureSunstarSuper95Catalogue } = require("./sunstarSuper95Colours");
+  ensureMaterialsTable,
+  listMaterials,
+  createMaterial,
+  updateMaterial,
+  deleteMaterial,
+} = require("./materials");
 const { ensureMapQuoteItemsTable, listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
 const {
   ACCESS_AREAS,
@@ -1445,6 +1443,7 @@ async function ensureSchema() {
       "cabinet2_colour",
       "tile2_colour",
       "robe_door_colours",
+      "cladding_material",
       "planning_septic",
       "planning_septic_requested_at",
       "planning_septic_received_at",
@@ -1494,11 +1493,7 @@ async function ensureSchema() {
     await pool.query(`UPDATE users SET password = 'admin' WHERE password IS NULL OR password = ''`);
     await ensureStreamsTable(pool);
     await ensurePolytecColourTables(pool);
-    await ensureYdlStoneCatalogue(pool);
-    await ensureJohnstonTilesCatalogue(pool);
-    await ensureGodfreyHirstClassicCityCatalogue(pool);
-    await ensureGodfreyHirstApolloHybridCatalogue(pool);
-    await ensureSunstarSuper95Catalogue(pool);
+    await ensureMaterialsTable(pool);
     return;
   }
   console.log(`Applying schema migrations (target ${SCHEMA_VERSION})…`);
@@ -2226,22 +2221,24 @@ async function ensureSchema() {
   await ensureClientPortalTables(pool);
   await ensureStreamsTable(pool);
   await ensurePolytecColourTables(pool);
-  await ensureYdlStoneCatalogue(pool);
-  await ensureJohnstonTilesCatalogue(pool);
-  await ensureGodfreyHirstClassicCityCatalogue(pool);
-  await ensureGodfreyHirstApolloHybridCatalogue(pool);
-  await ensureSunstarSuper95Catalogue(pool);
+  await ensureMaterialsTable(pool);
   await markSchemaUpToDate(pool);
   console.log(`Schema ${SCHEMA_VERSION} applied`);
 }
 
-// List projects (?full=1 for all columns; default lite omits logs, notes, file paths)
+// List projects:
+//   ?view=card  — lean columns for stage grids / sidebar (fast)
+//   ?view=lite  — wide list without notes/logs/paths (managers; default)
+//   ?full=1     — all columns
 app.get("/api/projects", async (req, res) => {
   if (!requireStaffUserId(req, res)) return;
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
-    const useLite = req.query.full !== "1";
-    const r = await pool.query(buildProjectsListQuery(useLite));
+    let mode = "lite";
+    if (req.query.full === "1") mode = "full";
+    else if (String(req.query.view || "").toLowerCase() === "card") mode = "card";
+    else if (String(req.query.view || "").toLowerCase() === "lite") mode = "lite";
+    const r = await pool.query(buildProjectsListQuery(mode));
     res.json(r.rows);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -5140,6 +5137,70 @@ app.delete("/api/colour-groups/:id", async (req, res) => {
   } catch (e) {
     console.error("[colour-groups] delete error:", e);
     res.status(500).json({ error: e.message || "Failed to delete colour group" });
+  }
+});
+
+app.get("/api/materials", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  try {
+    const materials = await listMaterials(pool);
+    res.json(materials);
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Failed to load materials" });
+  }
+});
+
+app.post("/api/materials", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  try {
+    const result = await createMaterial(pool, req.body?.name);
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.status(201).json(result.material);
+  } catch (e) {
+    console.error("[materials] create error:", e);
+    res.status(500).json({ error: e.message || "Failed to create material" });
+  }
+});
+
+app.put("/api/materials/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const result = await updateMaterial(pool, id, req.body?.name);
+    if (result.notFound) return res.status(404).json({ error: "material not found" });
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.json(result.material);
+  } catch (e) {
+    console.error("[materials] update error:", e);
+    res.status(500).json({ error: e.message || "Failed to update material" });
+  }
+});
+
+app.delete("/api/materials/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const result = await deleteMaterial(pool, id);
+    if (result.notFound) return res.status(404).json({ error: "material not found" });
+    res.json({ success: true, deleted: result.deleted });
+  } catch (e) {
+    console.error("[materials] delete error:", e);
+    res.status(500).json({ error: e.message || "Failed to delete material" });
   }
 });
 
@@ -9444,6 +9505,7 @@ app.post("/api/projects/:id/update-colours", async (req, res) => {
   const colourFields = [
     "roof_colour",
     "cladding_colour",
+    "cladding_material",
     "baseboards_colour",
     "roof_style",
     "windowframes_colour",

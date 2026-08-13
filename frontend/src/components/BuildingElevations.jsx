@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { UI } from "../utils/uiThemeTokens.js";
 import {
   buildFootprintElevations,
@@ -33,8 +33,8 @@ const LAYER_HEIGHT_MM = 200;
 const LAYER_GAP_MM = 25;
 const COLUMN_WIDTH_MM = 50;
 const COLUMN_PROJECTION_MM = 5;
-const CLADDING_LAYER_COUNT = 13;
-const CLADDING_LAYER_HEIGHT_MM = 200;
+const CLADDING_LAYER_COUNT = 1;
+const CLADDING_LAYER_HEIGHT_MM = 2600;
 const CLADDING_HEIGHT_MM = CLADDING_LAYER_COUNT * CLADDING_LAYER_HEIGHT_MM;
 const ROOF_SLAB_THICKNESS_MM = Math.round(ROOF_SLAB_THICKNESS_M * 1000);
 const TOTAL_HEIGHT_MM = SUBFLOOR_HEIGHT_MM + CLADDING_HEIGHT_MM;
@@ -65,13 +65,43 @@ const DOOR_GLASS_COLOR = "#2b322c";
 const DOOR_OUTLINE = "#202124";
 /** Sliding doors wider than this get two vertical frame dividers instead of one. */
 const SLIDING_DOOR_DOUBLE_MULLION_MIN_WIDTH_M = 2.7;
+/** Fallback gaps before measure; real gaps equalise with side margins. */
+const ELEVATIONS_GRID_GAP_X = 16;
+const ELEVATIONS_GRID_GAP_Y = 10;
+/** Fraction of panel width reserved for left + centre + right gutters (split equally). */
+const ELEVATIONS_HORIZ_GUTTER_SHARE = 0.3;
+
+function elevationViewBoxSize({
+  lengthM,
+  roofRiseMm = 0,
+  hasRoof = false,
+  drawFlatRoofSegments = true,
+  useSkillionRoofPolygons = false,
+  roofSlabThicknessMm = ROOF_SLAB_THICKNESS_MM,
+}) {
+  const lengthMm = Math.max(0.01, Number(lengthM) || 0) * 1000;
+  const marginX = Math.max(150, lengthMm * 0.025);
+  const roofAboveWallMm = hasRoof
+    ? useSkillionRoofPolygons
+      ? Math.max(roofRiseMm, 0)
+      : drawFlatRoofSegments
+        ? roofSlabThicknessMm + Math.max(roofRiseMm, 0)
+        : Math.max(roofRiseMm, 0)
+    : 0;
+  const marginTop = 100 + roofAboveWallMm;
+  const marginBottom = 720;
+  const buildingHeightMm = TOTAL_HEIGHT_MM + roofAboveWallMm;
+  return {
+    viewWidth: lengthMm + marginX * 2,
+    viewHeight: marginTop + buildingHeightMm + marginBottom,
+  };
+}
 
 function FootprintElevation({
   title,
   segments,
   minS,
   maxS,
-  scaleLengthM,
   windows = [],
   doors = [],
   slidingDoors = [],
@@ -97,8 +127,7 @@ function FootprintElevation({
     frontDoor: doorColor,
   } = colours;
   const lengthMm = (maxS - minS) * 1000;
-  const scaleLengthMm = scaleLengthM * 1000;
-  const marginX = Math.max(150, scaleLengthMm * 0.025);
+  const marginX = Math.max(150, lengthMm * 0.025);
   const roofAboveWallMm = hasRoof
     ? useSkillionRoofPolygons
       ? Math.max(roofRiseMm, 0)
@@ -110,12 +139,12 @@ function FootprintElevation({
   const marginBottom = 720;
   const buildingHeightMm = TOTAL_HEIGHT_MM + roofAboveWallMm;
   const groundY = marginTop + buildingHeightMm;
-  const viewWidth = scaleLengthMm + marginX * 2;
+  const viewWidth = lengthMm + marginX * 2;
   const viewHeight = marginTop + buildingHeightMm + marginBottom;
   const wallTopY = groundY - TOTAL_HEIGHT_MM;
   const slabTopY = wallTopY - roofSlabThicknessMm;
   const roofPolygonBaseY = useSkillionRoofPolygons || !drawFlatRoofSegments ? wallTopY : slabTopY;
-  const elevationOriginX = marginX + (scaleLengthMm - lengthMm) / 2;
+  const elevationOriginX = marginX;
 
   const toX = (s) => elevationOriginX + (s - minS) * 1000;
 
@@ -125,7 +154,6 @@ function FootprintElevation({
     { id: "layer-3", bottomMm: (LAYER_HEIGHT_MM + LAYER_GAP_MM) * 2 },
   ];
 
-  // Same baseboards colour on all three 200 mm slabs — timber boards are 3D-only.
   const deckLayers = [
     { id: "deck-1", bottomMm: 0 },
     { id: "deck-2", bottomMm: LAYER_HEIGHT_MM + LAYER_GAP_MM },
@@ -137,29 +165,28 @@ function FootprintElevation({
     bottomMm: SUBFLOOR_HEIGHT_MM + index * CLADDING_LAYER_HEIGHT_MM,
   }));
 
-  const drawSegments = segments.length
-    ? segments
-    : [{ s0: minS, s1: maxS }];
+  const drawSegments = segments.length ? segments : [{ s0: minS, s1: maxS }];
 
   const labelFontSize = 300;
   const labelY = groundY + GROUND_STROKE_WIDTH + labelFontSize + 240;
 
   return (
-    <div style={{ minWidth: 0, minHeight: 0, height: "100%", display: "flex", flexDirection: "column" }}>
-      <svg
-        viewBox={`0 0 ${viewWidth} ${viewHeight}`}
-        role="img"
-        aria-label={`${title}, ${(maxS - minS).toFixed(1)} metres wide by ${(buildingHeightMm / 1000).toFixed(2)} metres high`}
-        style={{
-          display: "block",
-          width: "100%",
-          height: "100%",
-          flex: 1,
-          minHeight: 0,
-          background: "transparent",
-        }}
-        preserveAspectRatio="xMidYMid meet"
-      >
+    <svg
+      viewBox={`0 0 ${viewWidth} ${viewHeight}`}
+      role="img"
+      aria-label={`${title}, ${(maxS - minS).toFixed(1)} metres wide by ${(buildingHeightMm / 1000).toFixed(2)} metres high`}
+      preserveAspectRatio="xMidYMid meet"
+      width="100%"
+      height="100%"
+      style={{
+        display: "block",
+        width: "100%",
+        height: "100%",
+        minWidth: 0,
+        minHeight: 0,
+        background: "transparent",
+      }}
+    >
         {hasDeck &&
           deckSegments.map((segment, segmentIndex) => {
             const x = toX(segment.s0);
@@ -218,7 +245,7 @@ function FootprintElevation({
                 const yTop = groundY - layerTopMm;
                 const yBottom = groundY - layer.bottomMm;
 
-                // Door leaf hole within this board (may be only part of the board height).
+                // Door leaf hole within this wall (may be only part of the wall height).
                 const holeBottomMm = Math.max(layer.bottomMm, doorBottomMm);
                 const holeTopMm = Math.min(layerTopMm, doorTopMm);
                 const doorHoles = [];
@@ -237,6 +264,8 @@ function FootprintElevation({
                   }
                 }
 
+                // Fill only — no per-segment stroke (avoids vertical splits). Top/bottom
+                // edges + corner posts provide the outline.
                 if (!doorHoles.length) {
                   return (
                     <rect
@@ -246,14 +275,11 @@ function FootprintElevation({
                       width={width}
                       height={CLADDING_LAYER_HEIGHT_MM}
                       fill={claddingColor}
-                      stroke="#202124"
-                      strokeWidth={OUTLINE_STROKE_WIDTH}
-                      vectorEffect="non-scaling-stroke"
+                      stroke="none"
                     />
                   );
                 }
 
-                // One board path with door holes punched out — no mid-board split line.
                 let d = `M ${x} ${yTop} H ${x + width} V ${yBottom} H ${x} Z`;
                 for (const hole of doorHoles) {
                   d += ` M ${hole.x0} ${hole.yTop} H ${hole.x1} V ${hole.yBottom} H ${hole.x0} Z`;
@@ -264,12 +290,30 @@ function FootprintElevation({
                     d={d}
                     fill={claddingColor}
                     fillRule="evenodd"
-                    stroke="#202124"
-                    strokeWidth={OUTLINE_STROKE_WIDTH}
-                    vectorEffect="non-scaling-stroke"
+                    stroke="none"
                   />
                 );
               })}
+
+              {/* Continuous top/bottom cladding edges (no mid-wall vertical splits). */}
+              <line
+                x1={x}
+                y1={groundY - TOTAL_HEIGHT_MM}
+                x2={x + width}
+                y2={groundY - TOTAL_HEIGHT_MM}
+                stroke="#202124"
+                strokeWidth={OUTLINE_STROKE_WIDTH}
+                vectorEffect="non-scaling-stroke"
+              />
+              <line
+                x1={x}
+                y1={groundY - SUBFLOOR_HEIGHT_MM}
+                x2={x + width}
+                y2={groundY - SUBFLOOR_HEIGHT_MM}
+                stroke="#202124"
+                strokeWidth={OUTLINE_STROKE_WIDTH}
+                vectorEffect="non-scaling-stroke"
+              />
 
               {showCornerAtS0 ? (
                 <>
@@ -331,7 +375,7 @@ function FootprintElevation({
               const { bottomRiseM, topRiseM } = band;
               if (Math.max(rise0, rise1) <= bottomRiseM + 1e-6) return null;
 
-              // Flat 200 mm board — may run into the roof; no pitched/stepped top.
+              // Flat cladding band — may run into the roof; no pitched/stepped top.
               let sLeft = edge.s0;
               let sRight = edge.s1;
               if (rise0 < bottomRiseM && rise1 > bottomRiseM) {
@@ -660,18 +704,17 @@ function FootprintElevation({
           vectorEffect="non-scaling-stroke"
         />
 
-        <text
-          x={elevationOriginX + lengthMm / 2}
-          y={labelY}
-          textAnchor="middle"
-          fontSize={labelFontSize}
-          fontWeight="600"
-          fill={UI.textPrimary}
-        >
-          {title}
-        </text>
-      </svg>
-    </div>
+      <text
+        x={elevationOriginX + lengthMm / 2}
+        y={labelY}
+        textAnchor="middle"
+        fontSize={labelFontSize}
+        fontWeight="600"
+        fill={UI.textPrimary}
+      >
+        {title}
+      </text>
+    </svg>
   );
 }
 
@@ -890,45 +933,163 @@ export default function BuildingElevations({
     });
   }, [depthM, footprintPoints, roofPoints, roofPivotLine, decks, deckPoints, windows, doors, slidingDoors, widthM, calibration, finishes?.roofStyle]);
 
-  const scaleLengthM = Math.max(...elevations.map((e) => e.lengthM), 0.01);
+  const elevationBoxes = useMemo(
+    () =>
+      elevations.map((elev) =>
+        elevationViewBoxSize({
+          lengthM: elev.lengthM,
+          roofRiseMm: elev.roofRiseMm,
+          hasRoof: elev.hasRoof,
+          drawFlatRoofSegments: elev.drawFlatRoofSegments,
+          useSkillionRoofPolygons: elev.useSkillionRoofPolygons,
+          roofSlabThicknessMm: elev.roofSlabThicknessMm,
+        })
+      ),
+    [elevations]
+  );
+
+  const hostRef = useRef(null);
+  const [layout, setLayout] = useState({
+    blockW: 0,
+    blockH: 0,
+    col0: 1,
+    col1: 1,
+    row0: 1,
+    row1: 1,
+    gapX: ELEVATIONS_GRID_GAP_X,
+    gapY: ELEVATIONS_GRID_GAP_Y,
+  });
+
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    if (!host) return undefined;
+
+    const measure = () => {
+      const availW = host.clientWidth;
+      const availH = host.clientHeight;
+      if (availW < 2 || availH < 2 || elevationBoxes.length < 4) {
+        setLayout({
+          blockW: 0,
+          blockH: 0,
+          col0: 1,
+          col1: 1,
+          row0: 1,
+          row1: 1,
+          gapX: ELEVATIONS_GRID_GAP_X,
+          gapY: ELEVATIONS_GRID_GAP_Y,
+        });
+        return;
+      }
+
+      // Pack as one image: column/row sizes from each elevation's own viewBox.
+      const col0Mm = Math.max(elevationBoxes[0].viewWidth, elevationBoxes[2].viewWidth);
+      const col1Mm = Math.max(elevationBoxes[1].viewWidth, elevationBoxes[3].viewWidth);
+      const row0Mm = Math.max(elevationBoxes[0].viewHeight, elevationBoxes[1].viewHeight);
+      const row1Mm = Math.max(elevationBoxes[2].viewHeight, elevationBoxes[3].viewHeight);
+      const contentWmm = col0Mm + col1Mm;
+      const contentHmm = row0Mm + row1Mm;
+
+      // Reserve a share of width for three equal gutters (left = centre = right),
+      // then scale drawings to fit the remaining width and full height.
+      const contentMaxW = availW * (1 - ELEVATIONS_HORIZ_GUTTER_SHARE);
+      const scale = Math.min(contentMaxW / contentWmm, availH / contentHmm);
+      if (!(scale > 0) || !Number.isFinite(scale)) return;
+
+      const col0 = col0Mm * scale;
+      const col1 = col1Mm * scale;
+      const row0 = row0Mm * scale;
+      const row1 = row1Mm * scale;
+      const contentW = col0 + col1;
+      const contentH = row0 + row1;
+      const gapX = Math.max(0, (availW - contentW) / 3);
+      const gapY = Math.max(0, (availH - contentH) / 3);
+
+      setLayout({
+        blockW: Math.floor(col0 + gapX + col1),
+        blockH: Math.floor(row0 + gapY + row1),
+        col0: Math.floor(col0),
+        col1: Math.floor(col1),
+        row0: Math.floor(row0),
+        row1: Math.floor(row1),
+        gapX: Math.floor(gapX),
+        gapY: Math.floor(gapY),
+      });
+    };
+
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, [elevationBoxes]);
 
   return (
     <div
+      ref={hostRef}
       style={{
         width: "100%",
         height: "100%",
+        minWidth: 0,
         minHeight: 0,
-        display: "grid",
-        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-        gridTemplateRows: "repeat(2, minmax(0, 1fr))",
-        gap: "12px 20px",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        overflow: "hidden",
+        boxSizing: "border-box",
       }}
     >
-      {elevations.map((elevation) => (
-        <FootprintElevation
-          key={elevation.title}
-          title={elevation.title}
-          segments={elevation.segments}
-          minS={elevation.minS}
-          maxS={elevation.maxS}
-          scaleLengthM={scaleLengthM}
-          windows={elevation.windows}
-          doors={elevation.doors}
-          slidingDoors={elevation.slidingDoors}
-          roofPolygons={elevation.roofPolygons}
-          roofRiseMm={elevation.roofRiseMm}
-          roofSegments={elevation.roofSegments}
-          deckSegments={elevation.deckSegments}
-          hasRoof={elevation.hasRoof}
-          hasDeck={elevation.hasDeck}
-          roofSlabThicknessMm={elevation.roofSlabThicknessMm}
-          drawFlatRoofSegments={elevation.drawFlatRoofSegments}
-          useSkillionRoofPolygons={elevation.useSkillionRoofPolygons}
-          skillionCladdingBands={elevation.skillionCladdingBands}
-          skillionCladdingEdges={elevation.skillionCladdingEdges}
-          colours={colours}
-        />
-      ))}
+      <div
+        style={{
+          width: layout.blockW > 0 ? layout.blockW : "100%",
+          height: layout.blockH > 0 ? layout.blockH : "100%",
+          flexShrink: 0,
+          display: "grid",
+          gridTemplateColumns:
+            layout.blockW > 0 ? `${layout.col0}px ${layout.col1}px` : "1fr 1fr",
+          gridTemplateRows:
+            layout.blockH > 0 ? `${layout.row0}px ${layout.row1}px` : "1fr 1fr",
+          gap: `${layout.gapY}px ${layout.gapX}px`,
+          boxSizing: "border-box",
+          overflow: "hidden",
+        }}
+      >
+        {elevations.map((elevation) => (
+          <div
+            key={elevation.title}
+            style={{
+              minWidth: 0,
+              minHeight: 0,
+              width: "100%",
+              height: "100%",
+              overflow: "hidden",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <FootprintElevation
+              title={elevation.title}
+              segments={elevation.segments}
+              minS={elevation.minS}
+              maxS={elevation.maxS}
+              windows={elevation.windows}
+              doors={elevation.doors}
+              slidingDoors={elevation.slidingDoors}
+              roofPolygons={elevation.roofPolygons}
+              roofRiseMm={elevation.roofRiseMm}
+              roofSegments={elevation.roofSegments}
+              deckSegments={elevation.deckSegments}
+              hasRoof={elevation.hasRoof}
+              hasDeck={elevation.hasDeck}
+              roofSlabThicknessMm={elevation.roofSlabThicknessMm}
+              drawFlatRoofSegments={elevation.drawFlatRoofSegments}
+              useSkillionRoofPolygons={elevation.useSkillionRoofPolygons}
+              skillionCladdingBands={elevation.skillionCladdingBands}
+              skillionCladdingEdges={elevation.skillionCladdingEdges}
+              colours={colours}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

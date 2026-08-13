@@ -3,10 +3,13 @@ import {
   tracePolygonToOuterXZRing,
   getTracePlanXZMapping,
   normalizedPointToXZ,
+  offsetPolygonInward,
 } from "./tracePlan3D";
 
 export const DEFAULT_UNIT_WIDTH_M = 11.3;
 export const DEFAULT_UNIT_DEPTH_M = 5.0;
+/** External cladding / weatherboard wall thickness (metres). */
+export const CLADDING_WALL_THICKNESS_M = 0.1;
 
 /**
  * Axis-aligned rectangle footprint centred on the origin (XZ).
@@ -208,6 +211,55 @@ export function buildFootprintSlabGeometry(ring, bottomYM, topYM) {
 }
 
 /**
+ * Hollow extruded wall band: outer face = footprint, thickness inward (default 100 mm).
+ * Falls back to a solid slab if the ring is too small to inset.
+ * @returns {THREE.BufferGeometry | null}
+ */
+export function buildFootprintWallBandGeometry(
+  ring,
+  bottomYM,
+  topYM,
+  thicknessM = CLADDING_WALL_THICKNESS_M
+) {
+  const clean = sanitizeFootprintRing(ring);
+  if (clean.length < 3 || !(topYM > bottomYM) || !(thicknessM > 0)) return null;
+
+  const inner = offsetPolygonInward(clean, thicknessM);
+  if (!inner || inner.length < 3) {
+    return buildFootprintSlabGeometry(clean, bottomYM, topYM);
+  }
+
+  const height = topYM - bottomYM;
+  const shape = new THREE.Shape();
+  shape.moveTo(clean[0].x, -clean[0].z);
+  for (let i = 1; i < clean.length; i += 1) {
+    shape.lineTo(clean[i].x, -clean[i].z);
+  }
+  shape.closePath();
+
+  // Hole winding opposite the outer path so ExtrudeGeometry keeps the band.
+  const holePts = [...inner].reverse();
+  const hole = new THREE.Path();
+  hole.moveTo(holePts[0].x, -holePts[0].z);
+  for (let i = 1; i < holePts.length; i += 1) {
+    hole.lineTo(holePts[i].x, -holePts[i].z);
+  }
+  hole.closePath();
+  shape.holes.push(hole);
+
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: height,
+    bevelEnabled: false,
+    curveSegments: 1,
+    steps: 1,
+  });
+  geometry.rotateX(-Math.PI / 2);
+  geometry.translate(0, bottomYM, 0);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/**
  * Outline-only edges for a footprint slab (perimeter top/bottom + vertical corners).
  * Avoids the internal triangulation lines that EdgesGeometry produces.
  * @returns {THREE.BufferGeometry | null}
@@ -241,6 +293,183 @@ export function buildFootprintSlabOutlineGeometry(ring, bottomYM, topYM) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   return geometry;
+}
+
+/**
+ * Outline for a hollow wall band using only true footprint corners:
+ * outer + inner top/bottom perimeters, and verticals at each ring vertex.
+ * Pass the un-notched footprint so door/window cutouts do not invent extra edges.
+ */
+export function buildFootprintWallBandOutlineGeometry(
+  ring,
+  bottomYM,
+  topYM,
+  thicknessM = CLADDING_WALL_THICKNESS_M
+) {
+  const clean = sanitizeFootprintRing(ring);
+  if (clean.length < 3 || !(topYM > bottomYM) || !(thicknessM > 0)) return null;
+  const inner = offsetPolygonInward(clean, thicknessM);
+  if (!inner || inner.length < 3) {
+    return buildFootprintSlabOutlineGeometry(clean, bottomYM, topYM);
+  }
+
+  const rings = [clean, inner];
+  const segmentCount =
+    clean.length * 4 + // outer top/bottom/vertical
+    inner.length * 4; // inner top/bottom/vertical
+  const positions = new Float32Array(segmentCount * 6);
+  let offset = 0;
+
+  const pushSegment = (ax, ay, az, bx, by, bz) => {
+    positions[offset] = ax;
+    positions[offset + 1] = ay;
+    positions[offset + 2] = az;
+    positions[offset + 3] = bx;
+    positions[offset + 4] = by;
+    positions[offset + 5] = bz;
+    offset += 6;
+  };
+
+  for (const loop of rings) {
+    const n = loop.length;
+    for (let i = 0; i < n; i += 1) {
+      const a = loop[i];
+      const b = loop[(i + 1) % n];
+      pushSegment(a.x, topYM, a.z, b.x, topYM, b.z);
+      pushSegment(a.x, bottomYM, a.z, b.x, bottomYM, b.z);
+      pushSegment(a.x, bottomYM, a.z, a.x, topYM, a.z);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new THREE.BufferAttribute(positions.subarray(0, offset), 3)
+  );
+  return geometry;
+}
+
+/**
+ * One continuous cladding face per footprint edge, with rectangular openings
+ * cut for doors/windows. Outer face sits on the footprint; thickness goes inward.
+ *
+ * @param {{ x: number, z: number }[]} ring
+ * @param {number} bottomYM
+ * @param {number} topYM
+ * @param {{
+ *   midX: number, midZ: number,
+ *   dirX: number, dirZ: number,
+ *   lengthM: number,
+ *   openingBottomYM: number,
+ *   openingTopYM: number,
+ * }[]} openings
+ * @param {number} [thicknessM]
+ * @returns {{ geometry: THREE.BufferGeometry, position: {x,y,z}, rotationY: number }[]}
+ */
+export function buildFootprintCladdingFaceParts(
+  ring,
+  bottomYM,
+  topYM,
+  openings = [],
+  thicknessM = CLADDING_WALL_THICKNESS_M
+) {
+  const clean = sanitizeFootprintRing(ring);
+  if (clean.length < 3 || !(topYM > bottomYM) || !(thicknessM > 0)) return [];
+
+  const wallH = topYM - bottomYM;
+  const centroid = clean.reduce(
+    (acc, p) => ({ x: acc.x + p.x / clean.length, z: acc.z + p.z / clean.length }),
+    { x: 0, z: 0 }
+  );
+  const parts = [];
+
+  for (let i = 0; i < clean.length; i += 1) {
+    const a = clean[i];
+    const b = clean[(i + 1) % clean.length];
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.02) continue;
+    const dirX = dx / len;
+    const dirZ = dz / len;
+    // Left of direction (inward for a typical CCW footprint).
+    let inX = -dirZ;
+    let inZ = dirX;
+    const midX = (a.x + b.x) / 2;
+    const midZ = (a.z + b.z) / 2;
+    if (inX * (centroid.x - midX) + inZ * (centroid.z - midZ) < 0) {
+      inX = -inX;
+      inZ = -inZ;
+    }
+
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    shape.lineTo(len, 0);
+    shape.lineTo(len, wallH);
+    shape.lineTo(0, wallH);
+    shape.closePath();
+
+    for (const op of openings) {
+      if (!(op?.lengthM > 0)) continue;
+      const half = op.lengthM / 2;
+      const align = Math.abs(op.dirX * dirX + op.dirZ * dirZ);
+      if (align < 0.7) continue;
+      const t = Math.max(
+        0,
+        Math.min(1, ((op.midX - a.x) * dx + (op.midZ - a.z) * dz) / (len * len))
+      );
+      const px = a.x + t * dx;
+      const pz = a.z + t * dz;
+      if (Math.hypot(op.midX - px, op.midZ - pz) > 0.2) continue;
+
+      const projectAlong = (qx, qz) =>
+        Math.max(0, Math.min(len, (qx - a.x) * dirX + (qz - a.z) * dirZ));
+      let x0 = projectAlong(op.midX - op.dirX * half, op.midZ - op.dirZ * half);
+      let x1 = projectAlong(op.midX + op.dirX * half, op.midZ + op.dirZ * half);
+      if (x1 < x0) {
+        const tmp = x0;
+        x0 = x1;
+        x1 = tmp;
+      }
+      if (x1 - x0 < 0.05) continue;
+
+      const y0 = Math.max(0, (op.openingBottomYM ?? bottomYM) - bottomYM);
+      const y1 = Math.min(wallH, (op.openingTopYM ?? topYM) - bottomYM);
+      if (y1 - y0 < 0.05) continue;
+
+      const hole = new THREE.Path();
+      hole.moveTo(x0, y0);
+      hole.lineTo(x1, y0);
+      hole.lineTo(x1, y1);
+      hole.lineTo(x0, y1);
+      hole.closePath();
+      shape.holes.push(hole);
+    }
+
+    const geometry = new THREE.ExtrudeGeometry(shape, {
+      depth: thicknessM,
+      bevelEnabled: false,
+      curveSegments: 1,
+    });
+    // local +X → edge dir, local +Z → left of dir.
+    const rotY = Math.atan2(-dirZ, dirX);
+    const leftX = -dirZ;
+    const leftZ = dirX;
+    const leftIsInward = leftX * inX + leftZ * inZ >= 0;
+    if (!leftIsInward) {
+      // +Z points outward — shift so the outer face stays on the footprint.
+      geometry.translate(0, 0, -thicknessM);
+    }
+    geometry.computeVertexNormals();
+
+    parts.push({
+      geometry,
+      position: { x: a.x, y: bottomYM, z: a.z },
+      rotationY: rotY,
+    });
+  }
+
+  return parts;
 }
 
 /**
@@ -286,6 +515,132 @@ export function resolveModelDoors(normalizedPoints, normalizedDoors, calibration
 
 export function resolveModelSlidingDoors(normalizedPoints, normalizedSlidingDoors, calibration = null) {
   return resolveModelWindows(normalizedPoints, normalizedSlidingDoors, calibration);
+}
+
+/**
+ * Snap traced internal doors onto internal-wall centreline segments in model XZ.
+ * Door `a`/`b` are face endpoints (one side of the 100 mm wall); they are projected
+ * onto the nearest segment so openings cut the solid wall band cleanly.
+ *
+ * @returns {{
+ *   segmentIndex: number,
+ *   midX: number, midZ: number,
+ *   dirX: number, dirZ: number,
+ *   normalX: number, normalZ: number,
+ *   lengthM: number,
+ *   along0: number, along1: number,
+ * }[]}
+ */
+export function resolveModelInternalDoors(
+  normalizedExternalPoints,
+  normalizedInternalDoors,
+  normalizedInternalWallSegments,
+  calibration = null
+) {
+  const mapping = getTracePlanXZMapping(normalizedExternalPoints, calibration);
+  if (
+    !mapping ||
+    !Array.isArray(normalizedInternalDoors) ||
+    !normalizedInternalDoors.length ||
+    !Array.isArray(normalizedInternalWallSegments) ||
+    !normalizedInternalWallSegments.length
+  ) {
+    return [];
+  }
+
+  const segmentsXZ = [];
+  normalizedInternalWallSegments.forEach((seg, index) => {
+    if (!seg?.a || !seg?.b) return;
+    const a = normalizedPointToXZ(seg.a, mapping);
+    const b = normalizedPointToXZ(seg.b, mapping);
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.02) return;
+    segmentsXZ.push({
+      index,
+      a,
+      b,
+      len,
+      dirX: dx / len,
+      dirZ: dz / len,
+    });
+  });
+  if (!segmentsXZ.length) return [];
+
+  // Face endpoints sit ~half wall thickness off the centreline.
+  const maxSnapDistM = 0.22;
+  const result = [];
+
+  for (const door of normalizedInternalDoors) {
+    if (!door?.a || !door?.b) continue;
+    const da = normalizedPointToXZ(door.a, mapping);
+    const db = normalizedPointToXZ(door.b, mapping);
+    const midX = (da.x + db.x) / 2;
+    const midZ = (da.z + db.z) / 2;
+    const doorLen = Math.hypot(db.x - da.x, db.z - da.z);
+    if (doorLen < 0.05) continue;
+    const doorDirX = (db.x - da.x) / doorLen;
+    const doorDirZ = (db.z - da.z) / doorLen;
+
+    let best = null;
+    for (const seg of segmentsXZ) {
+      const t = Math.max(
+        0,
+        Math.min(
+          1,
+          ((midX - seg.a.x) * (seg.b.x - seg.a.x) + (midZ - seg.a.z) * (seg.b.z - seg.a.z)) /
+            (seg.len * seg.len)
+        )
+      );
+      const px = seg.a.x + t * (seg.b.x - seg.a.x);
+      const pz = seg.a.z + t * (seg.b.z - seg.a.z);
+      const dist = Math.hypot(midX - px, midZ - pz);
+      const align = Math.abs(doorDirX * seg.dirX + doorDirZ * seg.dirZ);
+      if (
+        !best ||
+        dist < best.dist - 1e-6 ||
+        (Math.abs(dist - best.dist) < 1e-6 && align > best.align)
+      ) {
+        best = { seg, dist, align };
+      }
+    }
+    if (!best || best.dist > maxSnapDistM || best.align < 0.7) continue;
+
+    const seg = best.seg;
+    const projectAlong = (px, pz) =>
+      Math.max(0, Math.min(seg.len, (px - seg.a.x) * seg.dirX + (pz - seg.a.z) * seg.dirZ));
+
+    let along0 = projectAlong(da.x, da.z);
+    let along1 = projectAlong(db.x, db.z);
+    if (along1 < along0) {
+      const tmp = along0;
+      along0 = along1;
+      along1 = tmp;
+    }
+    if (along1 - along0 < 0.05) {
+      const midAlong = projectAlong(midX, midZ);
+      along0 = Math.max(0, midAlong - doorLen / 2);
+      along1 = Math.min(seg.len, midAlong + doorLen / 2);
+    }
+    if (along1 - along0 < 0.05) continue;
+
+    const centerAlong = (along0 + along1) / 2;
+    result.push({
+      segmentIndex: seg.index,
+      midX: seg.a.x + seg.dirX * centerAlong,
+      midZ: seg.a.z + seg.dirZ * centerAlong,
+      dirX: seg.dirX,
+      dirZ: seg.dirZ,
+      normalX: -seg.dirZ,
+      normalZ: seg.dirX,
+      lengthM: along1 - along0,
+      along0,
+      along1,
+    });
+  }
+
+  return result;
 }
 
 export function resolveModelWindows(normalizedPoints, normalizedWindows, calibration = null) {

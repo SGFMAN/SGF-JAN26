@@ -12,8 +12,7 @@ import {
   isPermitPhaseStatus,
   isPreEngagementPhaseStatus,
 } from "../utils/projectStatus";
-
-const API_URL = "";
+import { fetchProjectsList } from "../utils/projectsListCache";
 
 /** Shared height so wrapping labels match single-line items. */
 const LINK_BASE_STYLE = {
@@ -102,9 +101,7 @@ export default function ProjectStatusSidebarSection({
     async function loadCounts() {
       try {
         const stateFilter = stateFilterProp || getStateFilter();
-        const res = await fetch(`${API_URL}/api/projects`);
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await fetchProjectsList({ view: "card" });
         const list = (Array.isArray(data) ? data : []).filter((p) =>
           projectMatchesState(p, stateFilter)
         );

@@ -20,6 +20,14 @@ const API_URL = "";
 const DELETE_COLOUR_BUTTON_ID = 2;
 /** DB colour groups copy chosen images into Colours and Finishes\{group}\{subgroup}\{name}{ext}. */
 
+const SETTINGS_TABS = [
+  { id: "colours", label: "Colours and Groups" },
+  { id: "ranges", label: "Colour Ranges" },
+  { id: "materials", label: "Materials" },
+];
+const SETTINGS_TAB_WIDTH = `calc(${Math.max(...SETTINGS_TABS.map((t) => t.label.length))}ch + 28px)`;
+const FIELD_OUTLINE = `1px solid ${UI.outline}`;
+
 const SECTION_TITLE_SIZE = "0.9rem";
 const LIST_ROW_GAP = "6px";
 const LIST_SWATCH_SIZE = 28;
@@ -125,6 +133,12 @@ export default function ColourSettings() {
   const [coloursAndFinishesPath, setColoursAndFinishesPath] = useState("");
   const [sectionRanges, setSectionRanges] = useState(() => emptyColourSectionRanges());
   const [sectionRangesSaving, setSectionRangesSaving] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("colours");
+  const [materials, setMaterials] = useState([]);
+  const [materialDraftName, setMaterialDraftName] = useState("");
+  const [editingMaterialId, setEditingMaterialId] = useState(null);
+  const [editingMaterialName, setEditingMaterialName] = useState("");
+  const [materialSaving, setMaterialSaving] = useState(false);
   const [subgroupDraftName, setSubgroupDraftName] = useState("");
   const [editingSubgroupId, setEditingSubgroupId] = useState(null);
   const [editingSubgroupName, setEditingSubgroupName] = useState("");
@@ -216,11 +230,26 @@ export default function ColourSettings() {
     }
   }, []);
 
+  const loadMaterials = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/materials`, {
+        headers: getApiHeaders(),
+      });
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error((data && data.error) || `Failed (${res.status})`);
+      setMaterials(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error(e);
+      setMaterials([]);
+    }
+  }, []);
+
   useEffect(() => {
     void loadColourGroups();
     void loadColoursAndFinishesPath();
     void loadSectionRanges();
-  }, [loadColourGroups, loadColoursAndFinishesPath, loadSectionRanges]);
+    void loadMaterials();
+  }, [loadColourGroups, loadColoursAndFinishesPath, loadSectionRanges, loadMaterials]);
 
   useEffect(() => {
     if (!selectedGroup || selectedGroup === "colorbond") {
@@ -263,6 +292,88 @@ export default function ColourSettings() {
       await loadSectionRanges();
     } finally {
       setSectionRangesSaving(false);
+    }
+  }
+
+  async function handleAddMaterial(e) {
+    e?.preventDefault?.();
+    const name = materialDraftName.trim();
+    if (!name) {
+      alert("Enter a material name.");
+      return;
+    }
+    try {
+      setMaterialSaving(true);
+      const res = await fetch(`${API_URL}/api/materials`, {
+        method: "POST",
+        headers: getApiHeaders(),
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      setMaterialDraftName("");
+      await loadMaterials();
+    } catch (err) {
+      alert(err.message || "Failed to add material");
+    } finally {
+      setMaterialSaving(false);
+    }
+  }
+
+  function startEditMaterial(material) {
+    setEditingMaterialId(material.id);
+    setEditingMaterialName(material.name || "");
+  }
+
+  function cancelEditMaterial() {
+    setEditingMaterialId(null);
+    setEditingMaterialName("");
+  }
+
+  async function handleSaveMaterial(e) {
+    e?.preventDefault?.();
+    if (!editingMaterialId) return;
+    const name = editingMaterialName.trim();
+    if (!name) {
+      alert("Enter a material name.");
+      return;
+    }
+    try {
+      setMaterialSaving(true);
+      const res = await fetch(`${API_URL}/api/materials/${editingMaterialId}`, {
+        method: "PUT",
+        headers: getApiHeaders(),
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      setEditingMaterialId(null);
+      setEditingMaterialName("");
+      await loadMaterials();
+    } catch (err) {
+      alert(err.message || "Failed to update material");
+    } finally {
+      setMaterialSaving(false);
+    }
+  }
+
+  async function handleDeleteMaterial(material) {
+    if (!material?.id) return;
+    if (!window.confirm(`Delete material "${material.name}"?`)) return;
+    try {
+      setMaterialSaving(true);
+      const res = await fetch(`${API_URL}/api/materials/${material.id}`, {
+        method: "DELETE",
+        headers: getApiHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      if (editingMaterialId === material.id) cancelEditMaterial();
+      await loadMaterials();
+    } catch (err) {
+      alert(err.message || "Failed to delete material");
+    } finally {
+      setMaterialSaving(false);
     }
   }
 
@@ -780,8 +891,47 @@ export default function ColourSettings() {
 
       <div
         style={{
+          display: "flex",
+          flexDirection: "row",
+          flexWrap: "wrap",
+          gap: "10px",
+          alignItems: "center",
+        }}
+      >
+        {SETTINGS_TABS.map((tab) => {
+          const selected = settingsTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setSettingsTab(tab.id)}
+              style={{
+                width: SETTINGS_TAB_WIDTH,
+                padding: "10px 14px",
+                border: FIELD_OUTLINE,
+                borderRadius: "8px",
+                background: selected ? MENU.purple : WHITE,
+                color: selected ? MENU.activeText : MONUMENT,
+                fontSize: "1rem",
+                fontWeight: 500,
+                textAlign: "center",
+                cursor: "pointer",
+                transition: "background 0.17s, color 0.17s",
+                boxSizing: "border-box",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {settingsTab === "colours" ? (
+      <div
+        style={{
           display: "grid",
-          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
           gap: "24px",
           flex: 1,
           minHeight: 0,
@@ -1118,7 +1268,19 @@ export default function ColourSettings() {
           )}
           </div>
         </div>
+      </div>
+      ) : null}
 
+      {settingsTab === "ranges" ? (
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gap: "24px",
+          flex: 1,
+          minHeight: 0,
+        }}
+      >
         {[COLOUR_SECTION_RANGE_KEYS.slice(0, 6), COLOUR_SECTION_RANGE_KEYS.slice(6)].map(
           (sectionKeys, columnIndex) => (
             <div
@@ -1185,6 +1347,156 @@ export default function ColourSettings() {
           )
         )}
       </div>
+      ) : null}
+
+      {settingsTab === "materials" ? (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "16px",
+            flex: 1,
+            minHeight: 0,
+            maxWidth: "560px",
+          }}
+        >
+          <div style={sectionHeaderBlockStyle()}>
+            <h3 style={sectionHeadingStyle()}>Materials</h3>
+          </div>
+          <p style={{ margin: 0, fontSize: "0.9rem", color: UI.textMuted }}>
+            Used by Colours → External → Cladding - Material.
+          </p>
+          <form
+            onSubmit={handleAddMaterial}
+            style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}
+          >
+            <input
+              type="text"
+              value={materialDraftName}
+              onChange={(e) => setMaterialDraftName(e.target.value)}
+              placeholder="New material name"
+              disabled={materialSaving}
+              style={{
+                flex: 1,
+                minWidth: "180px",
+                padding: "8px 10px",
+                borderRadius: "8px",
+                border: "1px solid #ddd",
+                fontSize: "0.9rem",
+                color: MONUMENT,
+                background: WHITE,
+                boxSizing: "border-box",
+                minHeight: LIST_ROW_HEIGHT,
+              }}
+            />
+            <button
+              type="submit"
+              disabled={materialSaving || !materialDraftName.trim()}
+              style={sortButtonStyle(false)}
+            >
+              Add
+            </button>
+          </form>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: LIST_ROW_GAP,
+              overflowY: "auto",
+              flex: 1,
+              minHeight: 0,
+              paddingRight: "8px",
+            }}
+          >
+            {materials.length === 0 ? (
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, padding: "8px 0" }}>
+                No materials yet. Add one above.
+              </div>
+            ) : (
+              materials.map((material) => {
+                const isEditing = editingMaterialId === material.id;
+                return (
+                  <div key={material.id} style={{ ...listRowBaseStyle, gap: "10px" }}>
+                    {isEditing ? (
+                      <form
+                        onSubmit={handleSaveMaterial}
+                        style={{
+                          display: "flex",
+                          flex: 1,
+                          gap: "8px",
+                          alignItems: "center",
+                          minWidth: 0,
+                        }}
+                      >
+                        <input
+                          type="text"
+                          value={editingMaterialName}
+                          onChange={(e) => setEditingMaterialName(e.target.value)}
+                          disabled={materialSaving}
+                          autoFocus
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            padding: "6px 8px",
+                            borderRadius: "6px",
+                            border: "1px solid #ddd",
+                            fontSize: "0.85rem",
+                            color: MONUMENT,
+                          }}
+                        />
+                        <button type="submit" disabled={materialSaving} style={sortButtonStyle(false)}>
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEditMaterial}
+                          disabled={materialSaving}
+                          style={sortButtonStyle(false)}
+                        >
+                          Cancel
+                        </button>
+                      </form>
+                    ) : (
+                      <>
+                        <div
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            fontSize: "0.85rem",
+                            fontWeight: 500,
+                            color: MONUMENT,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {material.name}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => startEditMaterial(material)}
+                          disabled={materialSaving}
+                          style={sortButtonStyle(false)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMaterial(material)}
+                          disabled={materialSaving}
+                          style={sortButtonStyle(false)}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {showModal && (editingSample || isAddColourModal) && (
         <ModalBackdrop zIndex={20000} onClick={handleModalClose}>

@@ -19,12 +19,12 @@ import ProjectListGroupHeader from "../components/ProjectListGroupHeader";
 import { getProjectListGroupKey } from "../utils/projectListGrouping";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { UI, MENU } from "../utils/uiThemeTokens.js";
+import { fetchProjectsList } from "../utils/projectsListCache";
 
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
 const PAGE_TEXT = UI.pageText;
-const API_URL = "";
 
 /**
  * Shared project list page for a single status (Pre-Engagement, Permit, etc.).
@@ -58,19 +58,15 @@ export default function ProjectStatusListPage({
 
     const handleFocus = () => {
       if (isMounted && location.pathname === pathname) {
-        fetchProjects();
+        fetchProjects({ soft: true });
       }
     };
 
     const handleVisibilityChange = () => {
       if (isMounted && !document.hidden && location.pathname === pathname) {
-        fetchProjects();
+        fetchProjects({ soft: true });
       }
     };
-
-    if (location.pathname === pathname) {
-      fetchProjects();
-    }
 
     window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -91,15 +87,11 @@ export default function ProjectStatusListPage({
     setIsAdmin(admin);
   }
 
-  async function fetchProjects() {
+  async function fetchProjects(options = {}) {
     try {
-      setLoading(true);
+      if (!options.soft) setLoading(true);
       setError(null);
-      const response = await fetch(`${API_URL}/api/projects`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch projects: ${response.statusText}`);
-      }
-      const data = await response.json();
+      const data = await fetchProjectsList({ view: "card", force: Boolean(options.force) });
       setProjects(data);
     } catch (err) {
       setError(err.message);
