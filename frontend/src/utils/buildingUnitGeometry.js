@@ -27,7 +27,8 @@ export function rectangleFootprintRing(widthM, depthM) {
 }
 
 /**
- * Drop a duplicate closing vertex if the ring repeats the first point.
+ * Drop a duplicate closing vertex, near-duplicate points, and near-collinear
+ * mid-edge kinks so outlines / corner posts sit only on real wall corners.
  * @param {{ x: number, z: number }[]} ring
  * @returns {{ x: number, z: number }[]}
  */
@@ -43,7 +44,49 @@ export function sanitizeFootprintRing(ring) {
   if (Math.hypot(first.x - last.x, first.z - last.z) < 1e-9) {
     cleaned.pop();
   }
-  return cleaned.length >= 3 ? cleaned : [];
+  if (cleaned.length < 3) return [];
+
+  // Collapse consecutive points closer than 1 mm.
+  const deduped = [cleaned[0]];
+  for (let i = 1; i < cleaned.length; i += 1) {
+    const prev = deduped[deduped.length - 1];
+    const p = cleaned[i];
+    if (Math.hypot(p.x - prev.x, p.z - prev.z) >= 0.001) {
+      deduped.push(p);
+    }
+  }
+  if (
+    deduped.length > 1 &&
+    Math.hypot(
+      deduped[0].x - deduped[deduped.length - 1].x,
+      deduped[0].z - deduped[deduped.length - 1].z
+    ) < 0.001
+  ) {
+    deduped.pop();
+  }
+  if (deduped.length < 3) return [];
+
+  // Drop near-collinear vertices (|sin turn| < sin ~4°).
+  const COLLINEAR_SIN = 0.07;
+  const simplified = [];
+  const n0 = deduped.length;
+  for (let i = 0; i < n0; i += 1) {
+    const prev = deduped[(i - 1 + n0) % n0];
+    const curr = deduped[i];
+    const next = deduped[(i + 1) % n0];
+    const ax = curr.x - prev.x;
+    const az = curr.z - prev.z;
+    const bx = next.x - curr.x;
+    const bz = next.z - curr.z;
+    const lenA = Math.hypot(ax, az);
+    const lenB = Math.hypot(bx, bz);
+    if (lenA < 1e-9 || lenB < 1e-9) continue;
+    const sinTurn = Math.abs(ax * bz - az * bx) / (lenA * lenB);
+    if (sinTurn < COLLINEAR_SIN) continue;
+    simplified.push(curr);
+  }
+
+  return simplified.length >= 3 ? simplified : deduped;
 }
 
 /**
@@ -127,19 +170,24 @@ function ringSignedAreaXZ(ring) {
 
 /**
  * Corner column centres: 50×50 posts sitting 5 mm proud of both adjacent faces.
- * @returns {{ x: number, z: number, index: number }[]}
+ * Only true exterior (convex) corners. Includes rotationY so post faces align
+ * with the incoming wall edge (needed for rotated footprints).
+ * @returns {{ x: number, z: number, index: number, rotationY: number }[]}
  */
 export function footprintCornerColumnCenters(ring, sizeM, projectionM) {
-  const n = ring.length;
+  const clean = sanitizeFootprintRing(ring);
+  const n = clean.length;
   if (n < 3) return [];
-  const counterClockwise = ringSignedAreaXZ(ring) > 0;
+  const counterClockwise = ringSignedAreaXZ(clean) > 0;
   const half = sizeM / 2;
   const centers = [];
 
   for (let i = 0; i < n; i += 1) {
-    const prev = ring[(i - 1 + n) % n];
-    const curr = ring[i];
-    const next = ring[(i + 1) % n];
+    if (!isConvexFootprintVertex(clean, i, counterClockwise)) continue;
+
+    const prev = clean[(i - 1 + n) % n];
+    const curr = clean[i];
+    const next = clean[(i + 1) % n];
 
     const d1x = curr.x - prev.x;
     const d1z = curr.z - prev.z;
@@ -169,10 +217,14 @@ export function footprintCornerColumnCenters(ring, sizeM, projectionM) {
     const miterScale = Math.min(3, 1 / Math.max(0.3, halfAngleCos));
     const alongBisector = (projectionM - half) * miterScale;
 
+    // Align box local +X with the incoming edge direction.
+    const rotationY = Math.atan2(-d1z / len1, d1x / len1);
+
     centers.push({
       index: i,
       x: curr.x + bx * alongBisector,
       z: curr.z + bz * alongBisector,
+      rotationY,
     });
   }
 

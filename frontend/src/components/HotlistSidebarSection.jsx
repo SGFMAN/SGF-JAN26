@@ -1,5 +1,5 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useSalesAccess } from "../hooks/useSalesAccess";
 import { UI, MENU } from "../utils/uiThemeTokens";
 
@@ -19,8 +19,14 @@ const LINK_BASE_STYLE = {
   display: "block",
 };
 
-export default function HotlistSidebarSection({ active = false }) {
+const LINKS = [
+  { to: "/hotlist", label: "Hot List" },
+  { to: "/new", label: "New" },
+];
+
+export default function HotlistSidebarSection() {
   const { hasSales, ready } = useSalesAccess();
+  const location = useLocation();
 
   if (!ready || !hasSales) {
     return null;
@@ -33,18 +39,27 @@ export default function HotlistSidebarSection({ active = false }) {
         borderRadius: "10px",
         padding: "4px",
         border: `1px solid ${UI.outline}`,
+        display: "flex",
+        flexDirection: "column",
+        gap: "2px",
       }}
     >
-      <Link
-        to="/hotlist"
-        style={{
-          ...LINK_BASE_STYLE,
-          background: active ? MENU.blueActive : "transparent",
-          color: active ? MENU.activeText : UI.textSecondary,
-        }}
-      >
-        Hot List
-      </Link>
+      {LINKS.map(({ to, label }) => {
+        const active = location.pathname === to;
+        return (
+          <Link
+            key={to}
+            to={to}
+            style={{
+              ...LINK_BASE_STYLE,
+              background: active ? MENU.blueActive : "transparent",
+              color: active ? MENU.activeText : UI.textSecondary,
+            }}
+          >
+            {label}
+          </Link>
+        );
+      })}
     </div>
   );
 }

@@ -13,6 +13,7 @@ import InConstruction from "./pages/InConstruction";
 import SiteVisitManager from "./pages/SiteVisitManager";
 import SiteVisitPlanner from "./pages/SiteVisitPlanner";
 import Hotlist from "./pages/Hotlist";
+import NewPage from "./pages/NewPage";
 import AllProjects from "./pages/AllProjects";
 import Cancelled from "./pages/Cancelled";
 import OnHold from "./pages/OnHold";
@@ -111,6 +112,7 @@ export default function App() {
             <Route path="/site-visit-manager" element={<Auth><SiteVisitManager /></Auth>} />
             <Route path="/site-visit-planner" element={<Auth><SiteVisitPlanner /></Auth>} />
             <Route path="/hotlist" element={<Auth><SalesAccessRoute><Hotlist /></SalesAccessRoute></Auth>} />
+            <Route path="/new" element={<Auth><SalesAccessRoute><NewPage /></SalesAccessRoute></Auth>} />
             <Route path="/all-projects" element={<Auth><AllProjects /></Auth>} />
             <Route path="/cancelled" element={<Auth><Cancelled /></Auth>} />
             <Route path="/on-hold" element={<Auth><OnHold /></Auth>} />

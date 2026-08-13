@@ -1565,7 +1565,7 @@ export default function Hotlist() {
           }}
         >
           {/* Menu Buttons */}
-          <HotlistSidebarSection active />
+          <HotlistSidebarSection />
           
           <ProjectStatusSidebarSection activePath={location.pathname} />
           

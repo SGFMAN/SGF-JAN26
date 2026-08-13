@@ -104,15 +104,15 @@ export const BUILDING_3D_PARTS = Object.freeze({
   ROBES: "robes",
 });
 
-/** Standing eye height (1.8 m) above the 650 mm subfloor. */
-const EYE_HEIGHT_M = 2.45;
-const CAMERA_HEIGHT_STEP_M = 0.1;
-const CAMERA_HEIGHT_MIN_M = 0.5;
+/** Finished floor is top of 650 mm subfloor; standing eye height is 1.8 m above that. */
+const SUBFLOOR_TOP_M = 0.65;
+const STANDING_EYE_ABOVE_FLOOR_M = 1.8;
+const EYE_HEIGHT_M = SUBFLOOR_TOP_M + STANDING_EYE_ABOVE_FLOOR_M;
+const VIEW_MODE_EXTERNAL = "external";
+const VIEW_MODE_INTERNAL = "internal";
 /** Overhead interior orbit: fixed eye height, look-at on the floor. */
 const INTERNAL_VIEW_CAMERA_HEIGHT_M = 15;
 const INTERNAL_VIEW_FOCUS_Y_M = 0;
-const VIEW_MODE_EXTERNAL = "external";
-const VIEW_MODE_INTERNAL = "internal";
 /** External walk speed (metres per second) — no collision. */
 const EXTERNAL_WALK_SPEED_M_S = 4.5;
 /** Thin finish layer on top of the subfloor. */
@@ -424,6 +424,7 @@ function addCornerColumn(parent, {
   color,
   roughness,
   metalness,
+  rotationY = 0,
 }) {
   const geometry = new THREE.BoxGeometry(
     CORNER_COLUMN_SIZE_M,
@@ -444,17 +445,18 @@ function addCornerColumn(parent, {
     exteriorProjectionM: CORNER_COLUMN_PROJECTION_M,
   };
   column.position.set(x, y, z);
+  column.rotation.y = rotationY;
   column.castShadow = true;
   column.receiveShadow = true;
   parent.add(column);
 
+  // Child of the column so outline tracks position + wall-aligned rotation.
   const outline = new THREE.LineSegments(
     new THREE.EdgesGeometry(geometry),
     new THREE.LineBasicMaterial({ color: 0x202124 })
   );
   outline.name = `${partId}-outline`;
-  outline.position.copy(column.position);
-  parent.add(outline);
+  column.add(outline);
 }
 
 /**
@@ -505,7 +507,6 @@ export default function Building3DModal({
   const walkModeRef = useRef(false);
   const applyWalkModeRef = useRef(null);
   const [error, setError] = useState("");
-  const [cameraHeightM, setCameraHeightM] = useState(EYE_HEIGHT_M);
   const [viewMode, setViewMode] = useState(VIEW_MODE_EXTERNAL);
   const [walkMode, setWalkMode] = useState(false);
   const [renderBusy, setRenderBusy] = useState(false);
@@ -785,7 +786,7 @@ export default function Building3DModal({
       modelGroup.add(cornerColumns);
 
       footprintCornerColumnCenters(ring, CORNER_COLUMN_SIZE_M, CORNER_COLUMN_PROJECTION_M).forEach(
-        ({ x, z, index }) => {
+        ({ x, z, index, rotationY }) => {
           addCornerColumn(cornerColumns, {
             partId: `corner-column-${index + 1}`,
             partType: "corner-column",
@@ -796,6 +797,7 @@ export default function Building3DModal({
             color: finishHex.baseboards,
             roughness: 0.72,
             metalness: 0.08,
+            rotationY,
           });
         }
       );
@@ -1186,7 +1188,7 @@ export default function Building3DModal({
       cladding.add(claddingCornerColumns);
 
       footprintCornerColumnCenters(ring, CORNER_COLUMN_SIZE_M, CORNER_COLUMN_PROJECTION_M).forEach(
-        ({ x, z, index }) => {
+        ({ x, z, index, rotationY }) => {
           addCornerColumn(claddingCornerColumns, {
             partId: `cladding-corner-column-${index + 1}`,
             partType: "cladding-corner-column",
@@ -1197,6 +1199,7 @@ export default function Building3DModal({
             color: finishHex.cladding,
             roughness: 0.62,
             metalness: 0.02,
+            rotationY,
           });
         }
       );
@@ -1485,7 +1488,7 @@ export default function Building3DModal({
                 ring,
                 CORNER_COLUMN_SIZE_M,
                 CORNER_COLUMN_PROJECTION_M
-              ).forEach(({ x, z, index }) => {
+              ).forEach(({ x, z, index, rotationY }) => {
                 const riseM = skillionUndersideRiseM(
                   { x, z },
                   skillionPitch,
@@ -1502,6 +1505,7 @@ export default function Building3DModal({
                   color: finishHex.cladding,
                   roughness: 0.62,
                   metalness: 0.02,
+                  rotationY,
                 });
               });
             }
@@ -2321,8 +2325,9 @@ export default function Building3DModal({
     let walkX = distance * Math.sin(theta);
     let walkZ = distance * Math.cos(theta);
     let yaw = theta + Math.PI;
-    let cameraHeight = externalCameraHeightRef.current;
-    const maxCameraHeight = buildingHeightM + spanM * 2 + 4;
+    // External view: fixed standing eye height (no mouse/keyboard height adjust).
+    externalCameraHeightRef.current = EYE_HEIGHT_M;
+    let cameraHeight = EYE_HEIGHT_M;
     const keysDown = new Set();
     let lastFrameTs = performance.now();
 
@@ -2398,20 +2403,22 @@ export default function Building3DModal({
       }
       cameraHeight = next === VIEW_MODE_INTERNAL
         ? INTERNAL_VIEW_CAMERA_HEIGHT_M
-        : externalCameraHeightRef.current;
+        : EYE_HEIGHT_M;
+      if (next === VIEW_MODE_EXTERNAL) {
+        externalCameraHeightRef.current = EYE_HEIGHT_M;
+      }
       cameraHeightRef.current = cameraHeight;
-      setCameraHeightM(cameraHeight);
       syncCursor();
       updateCamera();
     };
 
     walkModeRef.current = walkMode;
+    externalCameraHeightRef.current = EYE_HEIGHT_M;
     cameraHeight =
       viewModeRef.current === VIEW_MODE_INTERNAL
         ? INTERNAL_VIEW_CAMERA_HEIGHT_M
-        : externalCameraHeightRef.current;
+        : EYE_HEIGHT_M;
     cameraHeightRef.current = cameraHeight;
-    setCameraHeightM(cameraHeight);
     syncCursor();
     updateCamera();
 
@@ -2419,26 +2426,6 @@ export default function Building3DModal({
       el instanceof HTMLInputElement ||
       el instanceof HTMLTextAreaElement ||
       el instanceof HTMLSelectElement;
-
-    const onCameraHeightKeyDown = (event) => {
-      if (viewModeRef.current === VIEW_MODE_INTERNAL) return;
-      if (isTypingTarget(event.target)) return;
-      const key = event.key.toLowerCase();
-      if (key !== "q" && key !== "z") return;
-      event.preventDefault();
-      const step = CAMERA_HEIGHT_STEP_M;
-      let nextHeight = externalCameraHeightRef.current;
-      if (key === "q") {
-        nextHeight = Math.min(maxCameraHeight, nextHeight + step);
-      } else {
-        nextHeight = Math.max(CAMERA_HEIGHT_MIN_M, nextHeight - step);
-      }
-      externalCameraHeightRef.current = nextHeight;
-      cameraHeight = nextHeight;
-      cameraHeightRef.current = nextHeight;
-      setCameraHeightM(nextHeight);
-      updateCamera();
-    };
 
     const onWalkKeyDown = (event) => {
       if (viewModeRef.current !== VIEW_MODE_EXTERNAL || !walkModeRef.current) return;
@@ -2459,27 +2446,12 @@ export default function Building3DModal({
       keysDown.delete(event.code);
     };
 
-    window.addEventListener("keydown", onCameraHeightKeyDown);
     window.addEventListener("keydown", onWalkKeyDown);
     window.addEventListener("keyup", onWalkKeyUp);
 
     let dragging = false;
-    let dragButton = -1;
     let lastX = null;
     let lastY = null;
-
-    const applyHeightDelta = (dyPx) => {
-      if (viewModeRef.current === VIEW_MODE_INTERNAL) return;
-      // Drag up (negative screen dy) raises the camera.
-      const nextHeight = Math.max(
-        CAMERA_HEIGHT_MIN_M,
-        Math.min(maxCameraHeight, externalCameraHeightRef.current - dyPx * 0.012)
-      );
-      externalCameraHeightRef.current = nextHeight;
-      cameraHeight = nextHeight;
-      cameraHeightRef.current = nextHeight;
-      setCameraHeightM(nextHeight);
-    };
 
     const onPointerEnter = (event) => {
       lastX = event.clientX;
@@ -2493,11 +2465,10 @@ export default function Building3DModal({
     const onPointerDown = (event) => {
       if (event.button !== 0 && event.button !== 2) return;
       dragging = true;
-      dragButton = event.button;
       lastX = event.clientX;
       lastY = event.clientY;
       container.setPointerCapture(event.pointerId);
-      container.style.cursor = walkModeRef.current ? "ns-resize" : "grabbing";
+      container.style.cursor = walkModeRef.current ? "crosshair" : "grabbing";
     };
     const onPointerMove = (event) => {
       if (lastX == null || lastY == null) {
@@ -2519,21 +2490,20 @@ export default function Building3DModal({
       }
 
       if (walkModeRef.current) {
+        // External walk: mouse look only (yaw). Height stays at 1.8 m eye level.
         if (dx !== 0) yaw -= dx * 0.008;
-        if (dragging && dy !== 0) applyHeightDelta(dy);
         updateCamera();
         return;
       }
 
       if (!dragging) return;
+      // External orbit: rotate only — height fixed at standing eye level.
       theta -= dx * 0.008;
-      if (dy !== 0) applyHeightDelta(dy);
       updateCamera();
     };
     const endDrag = (event) => {
       if (!dragging) return;
       dragging = false;
-      dragButton = -1;
       try {
         container.releasePointerCapture(event.pointerId);
       } catch {
@@ -2661,7 +2631,6 @@ export default function Building3DModal({
       canvas.removeEventListener("wheel", onWheel);
       container.removeEventListener("wheel", onWheel);
       container.removeEventListener("contextmenu", onContextMenu);
-      window.removeEventListener("keydown", onCameraHeightKeyDown);
       window.removeEventListener("keydown", onWalkKeyDown);
       window.removeEventListener("keyup", onWalkKeyUp);
       disposeThreeObject(scene);
@@ -2839,10 +2808,10 @@ export default function Building3DModal({
               {" · "}50 mm corner posts, 5 mm proud
               {" — "}
               {walkMode
-                ? `${cameraHeightM.toFixed(2)} m · Walk mode · WASD move · mouse look · L/R drag height · Esc = orbit`
+                ? `${STANDING_EYE_ABOVE_FLOOR_M.toFixed(1)} m eye · Walk mode · WASD move · mouse look · Esc = orbit`
                 : viewMode === VIEW_MODE_INTERNAL
                   ? `${INTERNAL_VIEW_CAMERA_HEIGHT_M.toFixed(0)} m internal · drag to rotate · scroll to zoom`
-                  : `${cameraHeightM.toFixed(2)} m · Orbit · drag to rotate & height · scroll zoom`}
+                  : `${STANDING_EYE_ABOVE_FLOOR_M.toFixed(1)} m eye · Orbit · drag to rotate · scroll zoom`}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>

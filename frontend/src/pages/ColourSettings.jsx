@@ -135,8 +135,9 @@ export default function ColourSettings() {
   const [sectionRangesSaving, setSectionRangesSaving] = useState(false);
   const [settingsTab, setSettingsTab] = useState("colours");
   const [materials, setMaterials] = useState([]);
+  const [selectedMaterialId, setSelectedMaterialId] = useState(null);
   const [materialDraftName, setMaterialDraftName] = useState("");
-  const [editingMaterialId, setEditingMaterialId] = useState(null);
+  const [editingMaterial, setEditingMaterial] = useState(false);
   const [editingMaterialName, setEditingMaterialName] = useState("");
   const [materialSaving, setMaterialSaving] = useState(false);
   const [subgroupDraftName, setSubgroupDraftName] = useState("");
@@ -237,10 +238,16 @@ export default function ColourSettings() {
       });
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error((data && data.error) || `Failed (${res.status})`);
-      setMaterials(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setMaterials(list);
+      setSelectedMaterialId((prev) => {
+        if (prev != null && list.some((m) => m.id === prev)) return prev;
+        return list[0]?.id ?? null;
+      });
     } catch (e) {
       console.error(e);
       setMaterials([]);
+      setSelectedMaterialId(null);
     }
   }, []);
 
@@ -312,7 +319,10 @@ export default function ColourSettings() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       setMaterialDraftName("");
+      setEditingMaterial(false);
+      setEditingMaterialName("");
       await loadMaterials();
+      if (data?.id != null) setSelectedMaterialId(data.id);
     } catch (err) {
       alert(err.message || "Failed to add material");
     } finally {
@@ -320,19 +330,25 @@ export default function ColourSettings() {
     }
   }
 
-  function startEditMaterial(material) {
-    setEditingMaterialId(material.id);
-    setEditingMaterialName(material.name || "");
+  const selectedMaterial = useMemo(
+    () => materials.find((m) => m.id === selectedMaterialId) || null,
+    [materials, selectedMaterialId]
+  );
+
+  function startEditMaterial() {
+    if (!selectedMaterial) return;
+    setEditingMaterial(true);
+    setEditingMaterialName(selectedMaterial.name || "");
   }
 
   function cancelEditMaterial() {
-    setEditingMaterialId(null);
+    setEditingMaterial(false);
     setEditingMaterialName("");
   }
 
   async function handleSaveMaterial(e) {
     e?.preventDefault?.();
-    if (!editingMaterialId) return;
+    if (!selectedMaterialId) return;
     const name = editingMaterialName.trim();
     if (!name) {
       alert("Enter a material name.");
@@ -340,14 +356,14 @@ export default function ColourSettings() {
     }
     try {
       setMaterialSaving(true);
-      const res = await fetch(`${API_URL}/api/materials/${editingMaterialId}`, {
+      const res = await fetch(`${API_URL}/api/materials/${selectedMaterialId}`, {
         method: "PUT",
         headers: getApiHeaders(),
         body: JSON.stringify({ name }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
-      setEditingMaterialId(null);
+      setEditingMaterial(false);
       setEditingMaterialName("");
       await loadMaterials();
     } catch (err) {
@@ -357,18 +373,19 @@ export default function ColourSettings() {
     }
   }
 
-  async function handleDeleteMaterial(material) {
-    if (!material?.id) return;
-    if (!window.confirm(`Delete material "${material.name}"?`)) return;
+  async function handleDeleteMaterial() {
+    if (!selectedMaterial?.id) return;
+    if (!window.confirm(`Delete material "${selectedMaterial.name}"?`)) return;
     try {
       setMaterialSaving(true);
-      const res = await fetch(`${API_URL}/api/materials/${material.id}`, {
+      const res = await fetch(`${API_URL}/api/materials/${selectedMaterial.id}`, {
         method: "DELETE",
         headers: getApiHeaders(),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
-      if (editingMaterialId === material.id) cancelEditMaterial();
+      cancelEditMaterial();
+      setSelectedMaterialId(null);
       await loadMaterials();
     } catch (err) {
       alert(err.message || "Failed to delete material");
@@ -1392,109 +1409,104 @@ export default function ColourSettings() {
             <button
               type="submit"
               disabled={materialSaving || !materialDraftName.trim()}
-              style={sortButtonStyle(false)}
+              style={{ ...sortButtonStyle(false), width: "auto" }}
             >
               Add
             </button>
           </form>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: LIST_ROW_GAP,
-              overflowY: "auto",
-              flex: 1,
-              minHeight: 0,
-              paddingRight: "8px",
-            }}
-          >
-            {materials.length === 0 ? (
-              <div style={{ fontSize: "0.9rem", color: UI.textMuted, padding: "8px 0" }}>
-                No materials yet. Add one above.
-              </div>
-            ) : (
-              materials.map((material) => {
-                const isEditing = editingMaterialId === material.id;
-                return (
-                  <div key={material.id} style={{ ...listRowBaseStyle, gap: "10px" }}>
-                    {isEditing ? (
-                      <form
-                        onSubmit={handleSaveMaterial}
-                        style={{
-                          display: "flex",
-                          flex: 1,
-                          gap: "8px",
-                          alignItems: "center",
-                          minWidth: 0,
-                        }}
-                      >
-                        <input
-                          type="text"
-                          value={editingMaterialName}
-                          onChange={(e) => setEditingMaterialName(e.target.value)}
-                          disabled={materialSaving}
-                          autoFocus
-                          style={{
-                            flex: 1,
-                            minWidth: 0,
-                            padding: "6px 8px",
-                            borderRadius: "6px",
-                            border: "1px solid #ddd",
-                            fontSize: "0.85rem",
-                            color: MONUMENT,
-                          }}
-                        />
-                        <button type="submit" disabled={materialSaving} style={sortButtonStyle(false)}>
-                          Save
-                        </button>
-                        <button
-                          type="button"
-                          onClick={cancelEditMaterial}
-                          disabled={materialSaving}
-                          style={sortButtonStyle(false)}
-                        >
-                          Cancel
-                        </button>
-                      </form>
-                    ) : (
-                      <>
-                        <div
-                          style={{
-                            flex: 1,
-                            minWidth: 0,
-                            fontSize: "0.85rem",
-                            fontWeight: 500,
-                            color: MONUMENT,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {material.name}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => startEditMaterial(material)}
-                          disabled={materialSaving}
-                          style={sortButtonStyle(false)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteMaterial(material)}
-                          disabled={materialSaving}
-                          style={sortButtonStyle(false)}
-                        >
-                          Delete
-                        </button>
-                      </>
-                    )}
-                  </div>
-                );
-              })
-            )}
+
+          <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+            <select
+              value={selectedMaterialId ?? ""}
+              onChange={(e) => {
+                const next = e.target.value === "" ? null : Number(e.target.value);
+                setSelectedMaterialId(Number.isFinite(next) ? next : null);
+                setEditingMaterial(false);
+                setEditingMaterialName("");
+              }}
+              disabled={materialSaving || materials.length === 0}
+              style={{
+                flex: 1,
+                minWidth: "180px",
+                padding: "8px 10px",
+                borderRadius: "8px",
+                border: "1px solid #ddd",
+                fontSize: "0.9rem",
+                color: MONUMENT,
+                background: WHITE,
+                boxSizing: "border-box",
+                minHeight: LIST_ROW_HEIGHT,
+              }}
+            >
+              {materials.length === 0 ? (
+                <option value="">No materials yet</option>
+              ) : (
+                materials.map((material) => (
+                  <option key={material.id} value={material.id}>
+                    {material.name}
+                  </option>
+                ))
+              )}
+            </select>
+            <button
+              type="button"
+              onClick={startEditMaterial}
+              disabled={materialSaving || !selectedMaterial || editingMaterial}
+              style={{ ...sortButtonStyle(false), width: "auto" }}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteMaterial}
+              disabled={materialSaving || !selectedMaterial}
+              style={{ ...sortButtonStyle(false), width: "auto" }}
+            >
+              Delete
+            </button>
           </div>
+
+          {editingMaterial && selectedMaterial ? (
+            <form
+              onSubmit={handleSaveMaterial}
+              style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}
+            >
+              <input
+                type="text"
+                value={editingMaterialName}
+                onChange={(e) => setEditingMaterialName(e.target.value)}
+                disabled={materialSaving}
+                autoFocus
+                style={{
+                  flex: 1,
+                  minWidth: "180px",
+                  padding: "8px 10px",
+                  borderRadius: "8px",
+                  border: "1px solid #ddd",
+                  fontSize: "0.9rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                  minHeight: LIST_ROW_HEIGHT,
+                }}
+              />
+              <button
+                type="submit"
+                disabled={materialSaving || !editingMaterialName.trim()}
+                style={{ ...sortButtonStyle(false), width: "auto" }}
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={cancelEditMaterial}
+                disabled={materialSaving}
+                style={{ ...sortButtonStyle(false), width: "auto" }}
+              >
+                Cancel
+              </button>
+            </form>
+          ) : null}
         </div>
       ) : null}
 

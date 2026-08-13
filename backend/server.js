@@ -81,6 +81,13 @@ const {
   updateMaterial,
   deleteMaterial,
 } = require("./materials");
+const {
+  ensureQuotesTable,
+  listQuotes,
+  createQuote,
+  updateQuote,
+  deleteQuote,
+} = require("./quotes");
 const { ensureMapQuoteItemsTable, listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
 const {
   ACCESS_AREAS,
@@ -1494,6 +1501,7 @@ async function ensureSchema() {
     await ensureStreamsTable(pool);
     await ensurePolytecColourTables(pool);
     await ensureMaterialsTable(pool);
+    await ensureQuotesTable(pool);
     return;
   }
   console.log(`Applying schema migrations (target ${SCHEMA_VERSION})…`);
@@ -2222,6 +2230,7 @@ async function ensureSchema() {
   await ensureStreamsTable(pool);
   await ensurePolytecColourTables(pool);
   await ensureMaterialsTable(pool);
+  await ensureQuotesTable(pool);
   await markSchemaUpToDate(pool);
   console.log(`Schema ${SCHEMA_VERSION} applied`);
 }
@@ -12465,6 +12474,59 @@ app.delete("/api/projects/:id", async (req, res) => {
   } catch (e) {
     try { await pool.query('ROLLBACK'); } catch {}
     res.status(500).json({ error: e.message || "Failed to delete project" });
+  }
+});
+
+// ========== QUOTES ENDPOINTS (New page — not projects / not hotlist) ==========
+app.get("/api/quotes", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await requireHotlistSalesAccess(req, res))) return;
+  try {
+    res.json(await listQuotes(pool));
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Failed to load quotes" });
+  }
+});
+
+app.post("/api/quotes", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await requireHotlistSalesAccess(req, res))) return;
+  try {
+    const quote = await createQuote(pool, req.body || {});
+    res.status(201).json(quote);
+  } catch (e) {
+    console.error("[quotes] create error:", e);
+    res.status(500).json({ error: e.message || "Failed to create quote" });
+  }
+});
+
+app.put("/api/quotes/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await requireHotlistSalesAccess(req, res))) return;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const result = await updateQuote(pool, id, req.body || {});
+    if (result.notFound) return res.status(404).json({ error: "not found" });
+    res.json(result.quote);
+  } catch (e) {
+    console.error("[quotes] update error:", e);
+    res.status(500).json({ error: e.message || "Failed to update quote" });
+  }
+});
+
+app.delete("/api/quotes/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await requireHotlistSalesAccess(req, res))) return;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const result = await deleteQuote(pool, id);
+    if (result.notFound) return res.status(404).json({ error: "not found" });
+    res.json({ ok: true, id: result.deleted });
+  } catch (e) {
+    console.error("[quotes] delete error:", e);
+    res.status(500).json({ error: e.message || "Failed to delete quote" });
   }
 });
 
