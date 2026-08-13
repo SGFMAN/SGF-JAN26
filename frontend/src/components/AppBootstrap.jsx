@@ -17,21 +17,28 @@ function removeStaticBootLoader() {
 }
 
 /**
- * Holds the staff UI until theme + (when logged in) access grants are ready,
- * so menu groups do not pop in one-by-one.
+ * After login only: hold the main staff UI until theme + permissions are ready
+ * so menu groups do not pop in one-by-one. Login/splash is never covered.
  */
 export default function AppBootstrap({ children }) {
   const location = useLocation();
   const { ready: themeReady } = useUiTheme();
-  const [sessionReady, setSessionReady] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("Loading…");
+  const [sessionReady, setSessionReady] = useState(() => !isAuthenticated());
   const [bootNonce, setBootNonce] = useState(0);
   const loggedIn = isAuthenticated();
 
   useEffect(() => {
+    removeStaticBootLoader();
+  }, []);
+
+  useEffect(() => {
     function onAuthChange() {
-      setSessionReady(false);
-      setBootNonce((n) => n + 1);
+      if (isAuthenticated()) {
+        setSessionReady(false);
+        setBootNonce((n) => n + 1);
+      } else {
+        setSessionReady(true);
+      }
     }
     window.addEventListener("sgf-auth-session-change", onAuthChange);
     return () => window.removeEventListener("sgf-auth-session-change", onAuthChange);
@@ -41,34 +48,23 @@ export default function AppBootstrap({ children }) {
     let cancelled = false;
 
     async function boot() {
+      // Login / splash: show immediately — no loading cover.
+      if (!isAuthenticated()) {
+        if (!cancelled) setSessionReady(true);
+        return;
+      }
+
       setSessionReady(false);
 
-      if (!themeReady) {
-        setStatusMessage("Loading theme…");
-        return;
-      }
+      if (!themeReady) return;
 
-      if (!isAuthenticated()) {
-        if (!cancelled) {
-          setStatusMessage("Loading…");
-          setSessionReady(true);
-          removeStaticBootLoader();
-        }
-        return;
-      }
-
-      setStatusMessage("Loading permissions…");
       try {
         await Promise.all([getUserAccessGrants(), isUserAdmin()]);
       } catch (err) {
         console.error("App bootstrap failed:", err);
       }
 
-      if (!cancelled) {
-        setStatusMessage("Loading…");
-        setSessionReady(true);
-        removeStaticBootLoader();
-      }
+      if (!cancelled) setSessionReady(true);
     }
 
     void boot();
@@ -77,18 +73,14 @@ export default function AppBootstrap({ children }) {
     };
   }, [themeReady, bootNonce, location.pathname, loggedIn]);
 
-  const ready = themeReady && sessionReady;
-
-  useEffect(() => {
-    if (ready) removeStaticBootLoader();
-  }, [ready]);
-
+  const ready = !loggedIn || (themeReady && sessionReady);
   const value = useMemo(() => ({ ready }), [ready]);
+  const showLoadingCover = loggedIn && !ready;
 
   return (
     <AppBootstrapContext.Provider value={value}>
-      {!ready ? <AppLoadingScreen message={statusMessage} /> : null}
-      {ready ? children : null}
+      {showLoadingCover ? <AppLoadingScreen message="Loading…" /> : null}
+      {!loggedIn || ready ? children : null}
     </AppBootstrapContext.Provider>
   );
 }

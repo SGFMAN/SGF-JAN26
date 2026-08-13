@@ -55,7 +55,12 @@ export default function RequireAuth({ children }) {
   }, [location.pathname, location.search]);
 
   if (!ready) {
-    return <AppLoadingScreen message="Checking login…" />;
+    // Only show the branded loader when this tab is already logged in
+    // (main view boot). Unauthenticated probes should not cover the login page.
+    if (isAuthenticated()) {
+      return <AppLoadingScreen message="Loading…" />;
+    }
+    return null;
   }
 
   if (!allowed) {

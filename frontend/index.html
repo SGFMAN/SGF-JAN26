@@ -14,55 +14,9 @@
         margin: 0;
         background: #42464d;
       }
-      #sgf-boot-loader {
-        position: fixed;
-        inset: 0;
-        z-index: 2147483647;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        background: #42464d;
-        color: #ffffff;
-        font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-      }
-      #sgf-boot-loader img {
-        width: min(420px, 70vw);
-        height: auto;
-        object-fit: contain;
-        margin-bottom: 12px;
-        user-select: none;
-        pointer-events: none;
-      }
-      #sgf-boot-loader .sgf-boot-spinner {
-        width: 36px;
-        height: 36px;
-        border-radius: 50%;
-        border: 3px solid rgba(255, 255, 255, 0.22);
-        border-top-color: #ffffff;
-        animation: sgf-boot-spin 0.75s linear infinite;
-      }
-      #sgf-boot-loader .sgf-boot-text {
-        margin-top: 10px;
-        font-size: 1.05rem;
-        font-weight: 600;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-      }
-      @keyframes sgf-boot-spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
     </style>
   </head>
   <body>
-    <div id="sgf-boot-loader" role="status" aria-live="polite" aria-busy="true">
-      <img src="/logo.png" alt="SGF" />
-      <div class="sgf-boot-spinner" aria-hidden="true"></div>
-      <div class="sgf-boot-text">Loading…</div>
-    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
