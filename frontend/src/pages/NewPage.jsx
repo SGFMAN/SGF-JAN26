@@ -1,11 +1,13 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import HotlistSidebarSection from "../components/HotlistSidebarSection";
 import ProjectStatusSidebarSection from "../components/ProjectStatusSidebarSection";
 import AdminToolsSidebarSection from "../components/AdminToolsSidebarSection";
 import ManagersSalesMenuGroup from "../components/ManagersSalesMenuGroup";
+import ModalBackdrop from "../components/ModalBackdrop";
 import { getApiHeaders, isUserAdmin } from "../utils/auth";
 import useAppLogo from "../hooks/useAppLogo.js";
+import { parseAustralianAddress, STATE_OPTIONS } from "../utils/parseAustralianAddress.js";
 import { UI } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
@@ -17,7 +19,9 @@ const GRID_LINE = "#c5c9ce";
 const HEADER_BG = "#e8eaed";
 const API_URL = "";
 
-const emptyDraft = () => ({
+const emptyQuote = () => ({
+  created_at: null,
+  state: "",
   suburb: "",
   street: "",
   name: "",
@@ -30,6 +34,8 @@ const emptyDraft = () => ({
 });
 
 const COLS = [
+  { key: "created_at", label: "Date added", type: "date", width: "96px" },
+  { key: "state", label: "State", type: "state", width: "72px" },
   { key: "suburb", label: "Suburb", type: "text", width: "12%" },
   { key: "street", label: "Street", type: "text", width: "16%" },
   { key: "name", label: "Name", type: "text", width: "12%" },
@@ -95,6 +101,17 @@ const actionBtnStyle = {
   whiteSpace: "nowrap",
 };
 
+const modalInputStyle = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: "8px",
+  border: "none",
+  fontSize: "1rem",
+  color: MONUMENT,
+  background: WHITE,
+  boxSizing: "border-box",
+};
+
 function applyContactedToggle(value, contacted) {
   return {
     ...value,
@@ -105,10 +122,83 @@ function applyContactedToggle(value, contacted) {
   };
 }
 
+function formatQuoteDateAdded(value) {
+  if (!value) return "";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function quoteFromApi(q) {
+  const stateRaw = String(q?.state ?? "").trim().toUpperCase();
+  return {
+    created_at: q.created_at || null,
+    state: STATE_OPTIONS.includes(stateRaw) ? stateRaw : stateRaw,
+    suburb: q.suburb || "",
+    street: q.street || "",
+    name: q.name || "",
+    email: q.email || "",
+    phone: q.phone || "",
+    contacted: Boolean(q.contacted),
+    contacted_email: Boolean(q.contacted_email),
+    contacted_phone: Boolean(q.contacted_phone),
+    contacted_visit: Boolean(q.contacted_visit),
+  };
+}
+
 function QuoteSheetRow({ value, onChange, disabled, trailing }) {
+  const stateValue = STATE_OPTIONS.includes(String(value.state || "").trim().toUpperCase())
+    ? String(value.state).trim().toUpperCase()
+    : "";
   return (
     <tr>
       {COLS.map((col) => {
+        if (col.type === "date") {
+          return (
+            <td
+              key={col.key}
+              style={{
+                ...tdStyle,
+                padding: "6px 8px",
+                fontSize: "0.85rem",
+                color: MONUMENT,
+                whiteSpace: "nowrap",
+                minWidth: 96,
+              }}
+            >
+              {formatQuoteDateAdded(value.created_at)}
+            </td>
+          );
+        }
+        if (col.type === "state") {
+          return (
+            <td key={col.key} style={{ ...tdStyle, minWidth: 72 }}>
+              <select
+                value={stateValue}
+                disabled={disabled}
+                onChange={(e) => onChange({ ...value, state: e.target.value }, { immediate: true })}
+                style={{
+                  ...cellInputStyle,
+                  minWidth: 64,
+                  cursor: disabled ? "default" : "pointer",
+                  color: stateValue ? MONUMENT : UI.textMuted,
+                  fontWeight: stateValue ? 700 : 400,
+                }}
+                aria-label="State"
+              >
+                <option value="">—</option>
+                {STATE_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </td>
+          );
+        }
         if (col.type === "check") {
           return (
             <td key={col.key} style={checkCellStyle}>
@@ -116,7 +206,7 @@ function QuoteSheetRow({ value, onChange, disabled, trailing }) {
                 type="checkbox"
                 checked={Boolean(value.contacted)}
                 disabled={disabled}
-                onChange={(e) => onChange(applyContactedToggle(value, e.target.checked))}
+                onChange={(e) => onChange(applyContactedToggle(value, e.target.checked), { immediate: true })}
                 aria-label="Contacted"
               />
             </td>
@@ -129,7 +219,7 @@ function QuoteSheetRow({ value, onChange, disabled, trailing }) {
                 type="checkbox"
                 checked={Boolean(value[col.key])}
                 disabled={disabled || !value.contacted}
-                onChange={(e) => onChange({ ...value, [col.key]: e.target.checked })}
+                onChange={(e) => onChange({ ...value, [col.key]: e.target.checked }, { immediate: true })}
                 aria-label={col.label}
               />
             </td>
@@ -145,6 +235,7 @@ function QuoteSheetRow({ value, onChange, disabled, trailing }) {
               onChange={(e) => {
                 let next = e.target.value;
                 if (col.key === "phone") next = next.replace(/[^\d+\s()-]/g, "");
+                if (col.key === "street" || col.key === "suburb") next = next.replace(/[/\\]/g, "_");
                 onChange({ ...value, [col.key]: next });
               }}
               style={cellInputStyle}
@@ -152,28 +243,26 @@ function QuoteSheetRow({ value, onChange, disabled, trailing }) {
           </td>
         );
       })}
-      <td
-        style={{
-          ...tdStyle,
-          padding: "4px 6px",
-          whiteSpace: "nowrap",
-          width: "1%",
-        }}
-      >
-        {trailing}
-      </td>
+      {trailing ? (
+        <td style={{ ...tdStyle, padding: "4px 6px", whiteSpace: "nowrap", width: "1%" }}>{trailing}</td>
+      ) : null}
     </tr>
   );
 }
 
-/** Sales-only quotes list — Excel-style single-line rows. */
+/** Sales-only quotes list — Excel-style rows; new rows from pasted address. */
 export default function NewPage() {
   const location = useLocation();
   const logo = useAppLogo();
+  const pasteRef = useRef(null);
+  const saveTimersRef = useRef({});
   const [isAdmin, setIsAdmin] = useState(false);
   const [quotes, setQuotes] = useState([]);
-  const [draft, setDraft] = useState(emptyDraft);
   const [edits, setEdits] = useState({});
+  const [pasteBox, setPasteBox] = useState("");
+  const [addressModalOpen, setAddressModalOpen] = useState(false);
+  const [addressForm, setAddressForm] = useState({ state: "", street: "", suburb: "" });
+  const [rawPaste, setRawPaste] = useState("");
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
   const [error, setError] = useState(null);
@@ -189,6 +278,13 @@ export default function NewPage() {
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      Object.values(saveTimersRef.current).forEach((t) => clearTimeout(t));
+      saveTimersRef.current = {};
+    };
+  }, []);
+
   const loadQuotes = useCallback(async () => {
     try {
       setLoading(true);
@@ -199,19 +295,7 @@ export default function NewPage() {
       const list = Array.isArray(data) ? data : [];
       setQuotes(list);
       const nextEdits = {};
-      for (const q of list) {
-        nextEdits[q.id] = {
-          suburb: q.suburb || "",
-          street: q.street || "",
-          name: q.name || "",
-          email: q.email || "",
-          phone: q.phone || "",
-          contacted: Boolean(q.contacted),
-          contacted_email: Boolean(q.contacted_email),
-          contacted_phone: Boolean(q.contacted_phone),
-          contacted_visit: Boolean(q.contacted_visit),
-        };
-      }
+      for (const q of list) nextEdits[q.id] = quoteFromApi(q);
       setEdits(nextEdits);
     } catch (err) {
       setError(err.message || "Failed to load quotes");
@@ -225,33 +309,9 @@ export default function NewPage() {
     void loadQuotes();
   }, [loadQuotes]);
 
-  async function handleAdd(e) {
-    e?.preventDefault?.();
-    try {
-      setSavingId("new");
-      setError(null);
-      const res = await fetch(`${API_URL}/api/quotes`, {
-        method: "POST",
-        headers: getApiHeaders(),
-        body: JSON.stringify(draft),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
-      setDraft(emptyDraft());
-      await loadQuotes();
-    } catch (err) {
-      alert(err.message || "Failed to add quote");
-    } finally {
-      setSavingId(null);
-    }
-  }
-
-  async function handleSave(id) {
-    const body = edits[id];
-    if (!body) return;
+  const persistQuote = useCallback(async (id, body) => {
     try {
       setSavingId(id);
-      setError(null);
       const res = await fetch(`${API_URL}/api/quotes/${id}`, {
         method: "PUT",
         headers: getApiHeaders(),
@@ -259,23 +319,108 @@ export default function NewPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      const normalised = quoteFromApi(data);
       setQuotes((prev) => prev.map((q) => (q.id === id ? data : q)));
-      setEdits((prev) => ({
-        ...prev,
-        [id]: {
-          suburb: data.suburb || "",
-          street: data.street || "",
-          name: data.name || "",
-          email: data.email || "",
-          phone: data.phone || "",
-          contacted: Boolean(data.contacted),
-          contacted_email: Boolean(data.contacted_email),
-          contacted_phone: Boolean(data.contacted_phone),
-          contacted_visit: Boolean(data.contacted_visit),
-        },
-      }));
+      setEdits((prev) => ({ ...prev, [id]: normalised }));
     } catch (err) {
-      alert(err.message || "Failed to save quote");
+      console.error("Quote autosave failed:", err);
+    } finally {
+      setSavingId((current) => (current === id ? null : current));
+    }
+  }, []);
+
+  function handleRowChange(id, next, { immediate = false } = {}) {
+    setEdits((prev) => ({ ...prev, [id]: next }));
+    if (saveTimersRef.current[id]) clearTimeout(saveTimersRef.current[id]);
+    if (immediate) {
+      void persistQuote(id, next);
+      return;
+    }
+    saveTimersRef.current[id] = setTimeout(() => {
+      void persistQuote(id, next);
+    }, 400);
+  }
+
+  function openAddressModalFromPaste(text) {
+    const trimmed = String(text || "").trim();
+    if (!trimmed) return;
+    const parsed = parseAustralianAddress(trimmed);
+    setRawPaste(trimmed);
+    setAddressForm({
+      state: parsed.state || "",
+      street: parsed.street || "",
+      suburb: parsed.suburb || "",
+    });
+    setAddressModalOpen(true);
+    setPasteBox("");
+  }
+
+  function handlePasteBoxPaste(e) {
+    const text = e.clipboardData?.getData("text") ?? "";
+    if (!String(text).trim()) return;
+    e.preventDefault();
+    openAddressModalFromPaste(text);
+  }
+
+  function handlePasteBoxKeyDown(e) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    openAddressModalFromPaste(pasteBox);
+  }
+
+  function closeAddressModal() {
+    setAddressModalOpen(false);
+    setRawPaste("");
+    setAddressForm({ state: "", street: "", suburb: "" });
+    requestAnimationFrame(() => pasteRef.current?.focus());
+  }
+
+  async function handleConfirmAddress() {
+    const state = String(addressForm.state || "").trim().toUpperCase();
+    const street = String(addressForm.street || "").trim();
+    const suburb = String(addressForm.suburb || "").trim();
+    if (!street) {
+      alert("Please enter street");
+      return;
+    }
+    if (!suburb) {
+      alert("Please enter suburb");
+      return;
+    }
+    if (!STATE_OPTIONS.includes(state)) {
+      alert("Please select state (VIC or QLD)");
+      return;
+    }
+    try {
+      setSavingId("new");
+      setError(null);
+      const res = await fetch(`${API_URL}/api/quotes`, {
+        method: "POST",
+        headers: getApiHeaders(),
+        body: JSON.stringify({
+          ...emptyQuote(),
+          state,
+          street,
+          suburb,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      // Prefer create response; keep modal state if API omitted it.
+      const row = {
+        ...data,
+        state: data.state || state,
+        street: data.street || street,
+        suburb: data.suburb || suburb,
+      };
+      const normalised = quoteFromApi(row);
+      if (row.id != null) {
+        setQuotes((prev) => [row, ...prev.filter((q) => q.id !== row.id)]);
+        setEdits((prev) => ({ ...prev, [row.id]: normalised }));
+      }
+      closeAddressModal();
+    } catch (err) {
+      alert(err.message || "Failed to add quote");
     } finally {
       setSavingId(null);
     }
@@ -285,6 +430,10 @@ export default function NewPage() {
     const row = edits[id];
     const label = [row?.suburb, row?.street, row?.name].filter(Boolean).join(" · ") || "this quote";
     if (!window.confirm(`Delete quote “${label}”?`)) return;
+    if (saveTimersRef.current[id]) {
+      clearTimeout(saveTimersRef.current[id]);
+      delete saveTimersRef.current[id];
+    }
     try {
       setSavingId(id);
       setError(null);
@@ -307,7 +456,7 @@ export default function NewPage() {
     }
   }
 
-  const busy = savingId != null;
+  const busy = savingId === "new";
 
   return (
     <div
@@ -405,9 +554,50 @@ export default function NewPage() {
             gap: "12px",
           }}
         >
-          <p style={{ margin: 0, fontSize: "0.85rem", color: UI.textMuted }}>
-            Quotes only — not projects. Contact method columns unlock when Contacted is ticked.
-          </p>
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "10px",
+              border: `1px dashed #aaa`,
+              padding: "12px 14px",
+            }}
+          >
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.9rem",
+                fontWeight: 600,
+                color: MONUMENT,
+                marginBottom: "8px",
+              }}
+            >
+              Paste address
+            </label>
+            <input
+              ref={pasteRef}
+              type="text"
+              value={pasteBox}
+              disabled={busy}
+              placeholder="e.g. 12 Ocean Ave, Bondi, QLD 2026"
+              onChange={(e) => setPasteBox(e.target.value)}
+              onPaste={handlePasteBoxPaste}
+              onKeyDown={handlePasteBoxKeyDown}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: "8px",
+                border: `1px solid ${GRID_LINE}`,
+                fontSize: "1rem",
+                background: "#f6f6f7",
+                color: MONUMENT,
+                boxSizing: "border-box",
+              }}
+              autoComplete="off"
+            />
+            <div style={{ marginTop: "6px", fontSize: "0.8rem", color: UI.textMuted }}>
+              Paste an address to split into State, Street and Suburb.
+            </div>
+          </div>
 
           {loading ? (
             <div style={{ fontSize: "1rem" }}>Loading…</div>
@@ -435,40 +625,19 @@ export default function NewPage() {
                   {COLS.map((col) => (
                     <col key={col.key} style={{ width: col.width }} />
                   ))}
-                  <col style={{ width: "110px" }} />
+                  <col style={{ width: "56px" }} />
                 </colgroup>
                 <thead>
                   <tr>
                     {COLS.map((col) => (
                       <th key={col.key} style={thStyle}>
-                        {col.type === "subcheck" ? (
-                          <span style={{ fontWeight: 600 }} title="Requires Contacted">
-                            {col.label}
-                          </span>
-                        ) : (
-                          col.label
-                        )}
+                        {col.label}
                       </th>
                     ))}
-                    <th style={{ ...thStyle, textAlign: "center" }}> </th>
+                    <th style={{ ...thStyle, textAlign: "center", width: 56 }}> </th>
                   </tr>
                 </thead>
                 <tbody>
-                  <QuoteSheetRow
-                    value={draft}
-                    onChange={setDraft}
-                    disabled={busy}
-                    trailing={
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={handleAdd}
-                        style={actionBtnStyle}
-                      >
-                        {savingId === "new" ? "Adding…" : "Add"}
-                      </button>
-                    }
-                  />
                   {quotes.length === 0 ? (
                     <tr>
                       <td
@@ -480,37 +649,27 @@ export default function NewPage() {
                           fontSize: "0.9rem",
                         }}
                       >
-                        No quotes yet — fill the top row and click Add.
+                        No quotes yet — paste an address above.
                       </td>
                     </tr>
                   ) : (
                     quotes.map((quote) => {
-                      const value = edits[quote.id] || emptyDraft();
+                      const value = edits[quote.id] || emptyQuote();
                       return (
                         <QuoteSheetRow
                           key={quote.id}
                           value={value}
                           disabled={busy}
-                          onChange={(next) => setEdits((prev) => ({ ...prev, [quote.id]: next }))}
+                          onChange={(next, opts) => handleRowChange(quote.id, next, opts)}
                           trailing={
-                            <div style={{ display: "inline-flex", gap: "4px" }}>
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => handleSave(quote.id)}
-                                style={actionBtnStyle}
-                              >
-                                {savingId === quote.id ? "…" : "Save"}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => handleDelete(quote.id)}
-                                style={actionBtnStyle}
-                              >
-                                Del
-                              </button>
-                            </div>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => handleDelete(quote.id)}
+                              style={actionBtnStyle}
+                            >
+                              Del
+                            </button>
                           }
                         />
                       );
@@ -522,6 +681,138 @@ export default function NewPage() {
           )}
         </div>
       </div>
+
+      {addressModalOpen ? (
+        <ModalBackdrop zIndex={1000} onClick={closeAddressModal}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              background: SECTION_GREY,
+              borderRadius: "18px",
+              padding: "32px",
+              width: "90%",
+              maxWidth: "500px",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              style={{
+                fontSize: "1.5rem",
+                fontWeight: 600,
+                marginTop: 0,
+                marginBottom: "8px",
+                color: MONUMENT,
+              }}
+            >
+              Quote address
+            </h2>
+            {rawPaste ? (
+              <p style={{ margin: "0 0 20px 0", fontSize: "0.85rem", color: UI.textMuted }}>
+                Pasted: {rawPaste}
+              </p>
+            ) : null}
+
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
+                State
+              </label>
+              <select
+                value={STATE_OPTIONS.includes(String(addressForm.state || "").toUpperCase())
+                  ? String(addressForm.state).toUpperCase()
+                  : ""}
+                onChange={(e) => setAddressForm((prev) => ({ ...prev, state: e.target.value }))}
+                style={{
+                  ...modalInputStyle,
+                  color: addressForm.state ? MONUMENT : UI.textMuted,
+                  cursor: "pointer",
+                }}
+              >
+                <option value="">Select…</option>
+                {STATE_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
+                Street
+              </label>
+              <input
+                type="text"
+                value={addressForm.street}
+                onChange={(e) =>
+                  setAddressForm((prev) => ({
+                    ...prev,
+                    street: e.target.value.replace(/[/\\]/g, "_"),
+                  }))
+                }
+                style={modalInputStyle}
+                autoComplete="off"
+              />
+            </div>
+
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
+                Suburb
+              </label>
+              <input
+                type="text"
+                value={addressForm.suburb}
+                onChange={(e) =>
+                  setAddressForm((prev) => ({
+                    ...prev,
+                    suburb: e.target.value.replace(/[/\\]/g, "_"),
+                  }))
+                }
+                style={modalInputStyle}
+                autoComplete="off"
+              />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px" }}>
+              <button
+                type="button"
+                onClick={closeAddressModal}
+                disabled={busy}
+                style={{
+                  background: UI.inputBg,
+                  color: MONUMENT,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmAddress}
+                disabled={busy}
+                style={{
+                  background: MONUMENT,
+                  color: PAGE_TEXT,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                {savingId === "new" ? "Adding…" : "Add quote"}
+              </button>
+            </div>
+          </div>
+        </ModalBackdrop>
+      ) : null}
     </div>
   );
 }

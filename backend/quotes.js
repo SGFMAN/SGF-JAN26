@@ -7,6 +7,7 @@ async function ensureQuotesTable(pool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS quotes (
       id SERIAL PRIMARY KEY,
+      state TEXT NOT NULL DEFAULT '',
       suburb TEXT NOT NULL DEFAULT '',
       street TEXT NOT NULL DEFAULT '',
       name TEXT NOT NULL DEFAULT '',
@@ -20,6 +21,7 @@ async function ensureQuotesTable(pool) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await pool.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS state TEXT NOT NULL DEFAULT ''`);
 }
 
 function asBool(value) {
@@ -29,6 +31,7 @@ function asBool(value) {
 function normalizeQuoteInput(body = {}) {
   const contacted = asBool(body.contacted);
   return {
+    state: String(body.state ?? "").trim().toUpperCase(),
     suburb: String(body.suburb ?? "").trim(),
     street: String(body.street ?? "").trim(),
     name: String(body.name ?? "").trim(),
@@ -42,7 +45,7 @@ function normalizeQuoteInput(body = {}) {
 }
 
 const QUOTE_SELECT =
-  "id, suburb, street, name, email, phone, contacted, contacted_email, contacted_phone, contacted_visit, created_at, updated_at";
+  "id, state, suburb, street, name, email, phone, contacted, contacted_email, contacted_phone, contacted_visit, created_at, updated_at";
 
 async function listQuotes(pool) {
   const r = await pool.query(
@@ -57,11 +60,12 @@ async function createQuote(pool, body) {
   const q = normalizeQuoteInput(body);
   const r = await pool.query(
     `INSERT INTO quotes (
-       suburb, street, name, email, phone,
+       state, suburb, street, name, email, phone,
        contacted, contacted_email, contacted_phone, contacted_visit
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING ${QUOTE_SELECT}`,
     [
+      q.state,
       q.suburb,
       q.street,
       q.name,
@@ -80,20 +84,22 @@ async function updateQuote(pool, id, body) {
   const q = normalizeQuoteInput(body);
   const r = await pool.query(
     `UPDATE quotes SET
-       suburb = $2,
-       street = $3,
-       name = $4,
-       email = $5,
-       phone = $6,
-       contacted = $7,
-       contacted_email = $8,
-       contacted_phone = $9,
-       contacted_visit = $10,
+       state = $2,
+       suburb = $3,
+       street = $4,
+       name = $5,
+       email = $6,
+       phone = $7,
+       contacted = $8,
+       contacted_email = $9,
+       contacted_phone = $10,
+       contacted_visit = $11,
        updated_at = NOW()
      WHERE id = $1
      RETURNING ${QUOTE_SELECT}`,
     [
       id,
+      q.state,
       q.suburb,
       q.street,
       q.name,
