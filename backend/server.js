@@ -4145,6 +4145,123 @@ app.post("/api/projects/:id/verify-drawings-job-folder", async (req, res) => {
   }
 });
 
+/** Open the project's job folder in a new Windows Explorer window (server-side path only). */
+function openFolderInWindowsExplorer(folderAbsPath) {
+  const { execFile } = require("child_process");
+  const target = path.resolve(String(folderAbsPath || "").trim());
+  return new Promise((resolve, reject) => {
+    if (!target) {
+      reject(new Error("Folder path required"));
+      return;
+    }
+    // /e opens a new Explorer window rooted at the folder. Exit code is unreliable.
+    execFile(
+      "explorer.exe",
+      [`/e,${target}`],
+      { windowsHide: true, timeout: 15000 },
+      (err) => {
+        if (err && err.code && err.code !== 1) {
+          reject(err);
+          return;
+        }
+        resolve(target);
+      }
+    );
+  });
+}
+
+app.post("/api/projects/:id/open-project-folder", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: "invalid id", code: "INVALID_ID" });
+  }
+  try {
+    const pr = await pool.query(
+      "SELECT id, name, suburb, street, state, year FROM projects WHERE id = $1",
+      [id]
+    );
+    if (pr.rows.length === 0) {
+      return res.status(404).json({ error: "Project not found", code: "NOT_FOUND" });
+    }
+    const row = pr.rows[0];
+    const stateUpper = String(row.state || "").trim().toUpperCase();
+    if (!stateUpper) {
+      return res.status(400).json({
+        error: "Project state is required",
+        code: "MISSING_STATE",
+      });
+    }
+    const suburb = String(row.suburb || "").trim();
+    const street = String(row.street || "").trim();
+    if (!suburb || !street) {
+      return res.status(400).json({
+        error: "Project suburb and street are required to locate the job folder",
+        code: "MISSING_ADDRESS",
+      });
+    }
+
+    const sr = await pool.query(
+      "SELECT root_directory, root_directory_qld FROM settings WHERE id = 1"
+    );
+    const settingsRow = sr.rows[0] || {};
+    const rootDir = resolveRootDirForProjectDrawings(settingsRow, stateUpper);
+    if (!rootDir) {
+      return res.status(400).json({
+        error: "Root directory is not set in File Settings for this state",
+        code: "NO_ROOT",
+      });
+    }
+
+    const yearSeg = getProjectYearFolderSegment(row.year);
+    const folderLeaf = buildJobProjectFolderName(row.suburb, row.street);
+    const expectedFolderAbs = path.resolve(path.join(rootDir, yearSeg, stateUpper, folderLeaf));
+    let folderAbs = "";
+    if (await pathExistsAsDirectory(expectedFolderAbs)) {
+      folderAbs = expectedFolderAbs;
+    } else {
+      const lenient = await findBestProjectFolderPathLenient(
+        rootDir,
+        yearSeg,
+        stateUpper,
+        row.suburb,
+        row.street
+      );
+      if (lenient && (await pathExistsAsDirectory(lenient))) {
+        folderAbs = path.resolve(lenient);
+      }
+    }
+
+    if (!folderAbs) {
+      return res.status(404).json({
+        ok: false,
+        code: "PROJECT_FOLDER_NOT_FOUND",
+        error: `Project folder not found at ${expectedFolderAbs}`,
+        expectedPath: expectedFolderAbs,
+      });
+    }
+
+    // Safety: only open folders under the configured root.
+    const rootResolved = path.resolve(rootDir);
+    if (
+      folderAbs !== rootResolved &&
+      !folderAbs.toLowerCase().startsWith(rootResolved.toLowerCase() + path.sep)
+    ) {
+      return res.status(400).json({
+        error: "Resolved folder is outside the configured root directory",
+        code: "PATH_OUTSIDE_ROOT",
+      });
+    }
+
+    await openFolderInWindowsExplorer(folderAbs);
+    return res.json({ ok: true, path: folderAbs });
+  } catch (e) {
+    console.error("open-project-folder:", e);
+    return res.status(500).json({ error: e.message || "Failed to open project folder" });
+  }
+});
+
 // User names for login dropdown (no passwords)
 app.get("/api/users/names", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });

@@ -1,22 +1,19 @@
 import React from "react";
 import { useManagersAccess } from "../hooks/useManagersAccess";
-import { useSalesAccess } from "../hooks/useSalesAccess";
 import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import ManagersSidebarLink from "./ManagersSidebarLink";
-import SalesSidebarLink from "./SalesSidebarLink";
 import { UI, MENU } from "../utils/uiThemeTokens";
 
 export default function ManagersSalesMenuGroup() {
   const { hasManagers, ready: managersReady } = useManagersAccess();
-  const { hasSales, ready: salesReady } = useSalesAccess();
   const { hasDrawing, ready: drawingReady } = useDrawingAccess();
 
-  if (!managersReady || !salesReady || !drawingReady) {
+  if (!managersReady || !drawingReady) {
     return null;
   }
 
   // Drawing users need the Managers hub entry to reach Drawing Manager (no separate main-menu item).
-  if (!hasManagers && !hasSales && !hasDrawing) {
+  if (!hasManagers && !hasDrawing) {
     return null;
   }
 
@@ -33,7 +30,6 @@ export default function ManagersSalesMenuGroup() {
       }}
     >
       <ManagersSidebarLink />
-      <SalesSidebarLink />
     </div>
   );
 }

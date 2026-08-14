@@ -13,6 +13,7 @@ const SPECS_OPTIONS = ["Affordable", "Superior"];
 
 const RENOVATION_DUPLICATE_BUTTON_ID = 4;
 const PROPOSAL_BUTTON_ID = 3;
+const PROJECT_FOLDER_BUTTON_ID = 5;
 
 /** Align action buttons with sidebar Back to Main (same as Drawings page). */
 const PROJECT_PANEL_HEIGHT_PX = 758;
@@ -53,6 +54,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
   const [projectInfoNotes, setProjectInfoNotes] = useState(project?.project_info_notes || "");
   const [onHold, setOnHold] = useState(project?.on_hold === 'true' || project?.on_hold === true);
   const [qpNumber, setQpNumber] = useState(project?.qp_number || "");
+  const [openingProjectFolder, setOpeningProjectFolder] = useState(false);
   const [, setUiButtonStyleRevision] = useState(0);
 
   // Use ref to track latest values for saving
@@ -274,6 +276,27 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
     valuesRef.current.projectInfoNotes = newValue;
   }
 
+  async function handleOpenProjectFolder() {
+    if (!project?.id || openingProjectFolder) return;
+    setOpeningProjectFolder(true);
+    try {
+      const res = await fetch(`${API_URL}/api/projects/${project.id}/open-project-folder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error || "Could not open project folder.");
+        return;
+      }
+    } catch (err) {
+      console.error("Open project folder failed:", err);
+      alert(err.message || "Could not open project folder.");
+    } finally {
+      setOpeningProjectFolder(false);
+    }
+  }
+
   const renovationDuplicateButtonStyle = mergeProjectInfoButtonStyle(RENOVATION_DUPLICATE_BUTTON_ID, {
     padding: "10px 12px",
     borderRadius: "8px",
@@ -297,6 +320,18 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
     fontWeight: 500,
     cursor: "pointer",
     transition: "background 0.17s, border-color 0.17s",
+  });
+  const projectFolderButtonStyle = mergeProjectInfoButtonStyle(PROJECT_FOLDER_BUTTON_ID, {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: "8px",
+    border: FIELD_OUTLINE,
+    fontSize: "0.95rem",
+    fontWeight: 600,
+    color: MONUMENT,
+    background: WHITE,
+    cursor: "pointer",
+    boxSizing: "border-box",
   });
   const renovationUsesSavedStyle = Boolean(buildSavedButtonStyle(RENOVATION_DUPLICATE_BUTTON_ID, true));
   const proposalUsesSavedStyle = Boolean(buildSavedButtonStyle(PROPOSAL_BUTTON_ID, true));
@@ -548,6 +583,20 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                   ))}
                 </select>
               </div>
+            </div>
+            <div style={{ marginBottom: "16px" }}>
+              <button
+                type="button"
+                onClick={handleOpenProjectFolder}
+                disabled={openingProjectFolder || !project?.id}
+                style={{
+                  ...projectFolderButtonStyle,
+                  opacity: openingProjectFolder || !project?.id ? 0.65 : 1,
+                  cursor: openingProjectFolder || !project?.id ? "default" : "pointer",
+                }}
+              >
+                {openingProjectFolder ? "Opening…" : "Project Folder"}
+              </button>
             </div>
             {(project?.classification || "").trim() === "Renovation" &&
               typeof onRequestRenovationDuplicate === "function" &&

@@ -20,8 +20,9 @@ const LINK_BASE_STYLE = {
 };
 
 const LINKS = [
-  { to: "/hotlist", label: "Hot List" },
   { to: "/new", label: "Quotes" },
+  { to: "/hotlist", label: "Hot List" },
+  { to: "/sales-totals", label: "Sales" },
 ];
 
 export default function HotlistSidebarSection() {
