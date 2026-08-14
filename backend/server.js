@@ -4147,56 +4147,72 @@ app.post("/api/projects/:id/verify-drawings-job-folder", async (req, res) => {
 
 /** Open the project's job folder in a new Windows Explorer window (server-side path only). */
 function openFolderInWindowsExplorer(folderAbsPath) {
-  const { execFile, spawn } = require("child_process");
+  const { execFile } = require("child_process");
   const target = path.resolve(String(folderAbsPath || "").trim());
   if (!target) {
     return Promise.reject(new Error("Folder path required"));
   }
 
+  // One PowerShell call: open via Shell.Application, then force that window foreground.
+  // (Background Node/PM2 cannot steal focus without the Alt keybd_event trick.)
+  const psLiteral = String(target).replace(/'/g, "''");
+  const psCommand = `
+$ErrorActionPreference = 'Stop'
+$path = '${psLiteral}'
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class SgfExplorerFocus {
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+  [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+  public static void ForceForeground(IntPtr hWnd) {
+    keybd_event(0x12, 0, 0, UIntPtr.Zero);
+    SetForegroundWindow(hWnd);
+    keybd_event(0x12, 0, 2, UIntPtr.Zero);
+    ShowWindowAsync(hWnd, 9);
+  }
+}
+"@
+$shell = New-Object -ComObject Shell.Application
+function Find-FolderWindow([string]$folderPath) {
+  $norm = $folderPath.TrimEnd('\\')
+  foreach ($w in @($shell.Windows())) {
+    try {
+      $p = [string]$w.Document.Folder.Self.Path
+      if ($p -and ($p.TrimEnd('\\') -ieq $norm)) { return $w }
+    } catch {}
+  }
+  return $null
+}
+$existing = Find-FolderWindow $path
+if ($existing -ne $null) {
+  [SgfExplorerFocus]::ForceForeground([IntPtr]$existing.HWND)
+  exit 0
+}
+$shell.Explore($path)
+$deadline = [datetime]::UtcNow.AddSeconds(3)
+$win = $null
+while ([datetime]::UtcNow -lt $deadline) {
+  Start-Sleep -Milliseconds 100
+  $win = Find-FolderWindow $path
+  if ($win -ne $null) { break }
+}
+if ($win -eq $null) { throw "Explorer did not open folder: $path" }
+[SgfExplorerFocus]::ForceForeground([IntPtr]$win.HWND)
+`;
+
   return new Promise((resolve, reject) => {
-    // FileProtocolHandler = same as Win+R then pasting the path (brings window forward).
     execFile(
-      "rundll32.exe",
-      ["url.dll,FileProtocolHandler", target],
-      { windowsHide: true, timeout: 15000 },
-      (err) => {
-        if (!err) {
-          resolve(target);
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", psCommand],
+      { windowsHide: true, timeout: 10000 },
+      (err, _stdout, stderr) => {
+        if (err) {
+          reject(new Error((stderr && String(stderr).trim()) || err.message || "Failed to open Explorer"));
           return;
         }
-        console.warn("FileProtocolHandler failed, trying Invoke-Item:", err.message);
-        const psLiteral = String(target).replace(/'/g, "''");
-        execFile(
-          "powershell.exe",
-          [
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            `Invoke-Item -LiteralPath '${psLiteral}'`,
-          ],
-          { windowsHide: true, timeout: 20000 },
-          (err2) => {
-            if (!err2) {
-              resolve(target);
-              return;
-            }
-            console.warn("Invoke-Item failed, falling back to explorer.exe:", err2.message);
-            try {
-              const child = spawn("explorer.exe", [target], {
-                detached: true,
-                stdio: "ignore",
-                windowsHide: false,
-              });
-              child.on("error", reject);
-              child.unref();
-              resolve(target);
-            } catch (spawnErr) {
-              reject(spawnErr);
-            }
-          }
-        );
+        resolve(target);
       }
     );
   });
