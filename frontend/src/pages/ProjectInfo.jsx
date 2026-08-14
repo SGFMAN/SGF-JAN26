@@ -55,6 +55,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
   const [onHold, setOnHold] = useState(project?.on_hold === 'true' || project?.on_hold === true);
   const [qpNumber, setQpNumber] = useState(project?.qp_number || "");
   const [openingProjectFolder, setOpeningProjectFolder] = useState(false);
+  const [projectFolderStatus, setProjectFolderStatus] = useState("");
   const [, setUiButtonStyleRevision] = useState(0);
 
   // Use ref to track latest values for saving
@@ -279,6 +280,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
   async function handleOpenProjectFolder() {
     if (!project?.id || openingProjectFolder) return;
     setOpeningProjectFolder(true);
+    setProjectFolderStatus("");
     try {
       const res = await fetch(`${API_URL}/api/projects/${project.id}/open-project-folder`, {
         method: "POST",
@@ -287,12 +289,35 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(data.error || `Could not open project folder (${res.status}).`);
+        const msg = data.error || `Could not open project folder (${res.status}).`;
+        setProjectFolderStatus(msg);
+        alert(msg);
         return;
       }
+      const openedPath = String(data.path || "").trim();
+      if (openedPath) {
+        try {
+          await navigator.clipboard.writeText(openedPath);
+        } catch {
+          /* ignore clipboard failures */
+        }
+      }
+      setProjectFolderStatus(
+        openedPath
+          ? `Opened — path copied to clipboard. Check the taskbar if Explorer is behind the browser.\n${openedPath}`
+          : "Opened project folder."
+      );
+      console.log("Opened project folder:", openedPath);
+      alert(
+        openedPath
+          ? `Project folder opened.\n\nIf you don't see Explorer, check the Windows taskbar.\n\nPath (copied):\n${openedPath}`
+          : "Project folder opened."
+      );
     } catch (err) {
       console.error("Open project folder failed:", err);
-      alert(err.message || "Could not open project folder.");
+      const msg = err.message || "Could not open project folder.";
+      setProjectFolderStatus(msg);
+      alert(msg);
     } finally {
       setOpeningProjectFolder(false);
     }
@@ -598,6 +623,20 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
               >
                 {openingProjectFolder ? "Opening…" : "Project Folder"}
               </button>
+              {projectFolderStatus ? (
+                <div
+                  style={{
+                    fontSize: "0.75rem",
+                    color: UI.textMuted,
+                    marginTop: "6px",
+                    lineHeight: 1.35,
+                    wordBreak: "break-all",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {projectFolderStatus}
+                </div>
+              ) : null}
             </div>
             {(project?.classification || "").trim() === "Renovation" &&
               typeof onRequestRenovationDuplicate === "function" &&

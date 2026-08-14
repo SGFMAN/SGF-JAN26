@@ -4147,25 +4147,56 @@ app.post("/api/projects/:id/verify-drawings-job-folder", async (req, res) => {
 
 /** Open the project's job folder in a new Windows Explorer window (server-side path only). */
 function openFolderInWindowsExplorer(folderAbsPath) {
-  const { execFile } = require("child_process");
+  const { execFile, spawn } = require("child_process");
   const target = path.resolve(String(folderAbsPath || "").trim());
+  if (!target) {
+    return Promise.reject(new Error("Folder path required"));
+  }
+
   return new Promise((resolve, reject) => {
-    if (!target) {
-      reject(new Error("Folder path required"));
-      return;
-    }
-    // `start "" "path"` opens a new Explorer window for folders (handles spaces).
-    // windowsHide only hides the brief cmd window, not Explorer.
+    // FileProtocolHandler = same as Win+R then pasting the path (brings window forward).
     execFile(
-      "cmd.exe",
-      ["/c", "start", '""', target],
+      "rundll32.exe",
+      ["url.dll,FileProtocolHandler", target],
       { windowsHide: true, timeout: 15000 },
       (err) => {
-        if (err) {
-          reject(err);
+        if (!err) {
+          resolve(target);
           return;
         }
-        resolve(target);
+        console.warn("FileProtocolHandler failed, trying Invoke-Item:", err.message);
+        const psLiteral = String(target).replace(/'/g, "''");
+        execFile(
+          "powershell.exe",
+          [
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            `Invoke-Item -LiteralPath '${psLiteral}'`,
+          ],
+          { windowsHide: true, timeout: 20000 },
+          (err2) => {
+            if (!err2) {
+              resolve(target);
+              return;
+            }
+            console.warn("Invoke-Item failed, falling back to explorer.exe:", err2.message);
+            try {
+              const child = spawn("explorer.exe", [target], {
+                detached: true,
+                stdio: "ignore",
+                windowsHide: false,
+              });
+              child.on("error", reject);
+              child.unref();
+              resolve(target);
+            } catch (spawnErr) {
+              reject(spawnErr);
+            }
+          }
+        );
       }
     );
   });
@@ -4256,6 +4287,7 @@ app.post("/api/projects/:id/open-project-folder", async (req, res) => {
     }
 
     await openFolderInWindowsExplorer(folderAbs);
+    console.log(`open-project-folder: opened ${folderAbs} for project ${id}`);
     return res.json({ ok: true, path: folderAbs });
   } catch (e) {
     console.error("open-project-folder:", e);
