@@ -283,10 +283,11 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
       const res = await fetch(`${API_URL}/api/projects/${project.id}/open-project-folder`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(data.error || "Could not open project folder.");
+        alert(data.error || `Could not open project folder (${res.status}).`);
         return;
       }
     } catch (err) {

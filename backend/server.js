@@ -4154,13 +4154,14 @@ function openFolderInWindowsExplorer(folderAbsPath) {
       reject(new Error("Folder path required"));
       return;
     }
-    // /e opens a new Explorer window rooted at the folder. Exit code is unreliable.
+    // `start "" "path"` opens a new Explorer window for folders (handles spaces).
+    // windowsHide only hides the brief cmd window, not Explorer.
     execFile(
-      "explorer.exe",
-      [`/e,${target}`],
+      "cmd.exe",
+      ["/c", "start", '""', target],
       { windowsHide: true, timeout: 15000 },
       (err) => {
-        if (err && err.code && err.code !== 1) {
+        if (err) {
           reject(err);
           return;
         }
