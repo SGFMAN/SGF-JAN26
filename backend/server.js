@@ -89,6 +89,7 @@ const {
   deleteQuote,
   promoteQuoteToHotlist,
   resetQuoteAddedAt,
+  updateQuoteActive,
 } = require("./quotes");
 const { parseReminderSettingsColumn } = require("./reminderSettings");
 const { startQuoteReminderScheduler } = require("./quoteReminders");
@@ -12774,6 +12775,27 @@ app.post("/api/quotes/:id/reset-added-at", async (req, res) => {
   } catch (e) {
     console.error("[quotes] reset-added-at error:", e);
     res.status(500).json({ error: e.message || "Failed to reset quote date" });
+  }
+});
+
+app.put("/api/quotes/:id/active", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await requireHotlistSalesAccess(req, res))) return;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const active = req.body?.active;
+    if (active === undefined) return res.status(400).json({ error: "active is required" });
+    const result = await updateQuoteActive(
+      pool,
+      id,
+      active === true || active === "true" || active === 1 || active === "1"
+    );
+    if (result.notFound) return res.status(404).json({ error: "quote not found" });
+    res.json(result.quote);
+  } catch (e) {
+    console.error("[quotes] update active error:", e);
+    res.status(500).json({ error: e.message || "Failed to update quote active" });
   }
 });
 

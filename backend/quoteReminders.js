@@ -106,6 +106,7 @@ async function processOneReminder(pool, helpers, reminder, index, delayUnit) {
   const dueSql = `SELECT id, email, client_name, suburb, street, state, phone, quote_added_at
      FROM projects
      WHERE status = 'Quote'
+       AND quote_active IS TRUE
        AND quote_added_at IS NOT NULL
        AND ${sentCol} IS NULL
        AND NULLIF(BTRIM(COALESCE(email, '')), '') IS NOT NULL
@@ -125,6 +126,7 @@ async function processOneReminder(pool, helpers, reminder, index, delayUnit) {
        SET ${sentCol} = NOW(), updated_at = NOW()
        WHERE id = $1
          AND status = 'Quote'
+         AND quote_active IS TRUE
          AND ${sentCol} IS NULL
        RETURNING id`,
       [row.id]

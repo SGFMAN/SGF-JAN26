@@ -6,8 +6,7 @@
 const QUOTE_STATUS = "Quote";
 
 const QUOTE_SELECT = `id, access_token, name, status, suburb, street, state, client_name, email, phone,
-  quote_contacted, quote_contacted_email, quote_contacted_phone, quote_contacted_visit,
-  quote_added_at, updated_at`;
+  quote_active, quote_added_at, updated_at`;
 
 function normalizeAddressHyphensForFilesystem(s) {
   if (s == null) return "";
@@ -20,6 +19,7 @@ async function ensureQuoteProjectColumns(pool) {
   await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS quote_contacted_phone BOOLEAN NOT NULL DEFAULT FALSE`);
   await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS quote_contacted_visit BOOLEAN NOT NULL DEFAULT FALSE`);
   await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS quote_added_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS quote_active BOOLEAN NOT NULL DEFAULT TRUE`);
   await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS quote_reminder_1_sent_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS quote_reminder_2_sent_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS quote_reminder_3_sent_at TIMESTAMPTZ`);
@@ -106,8 +106,43 @@ async function ensureQuotesTable(pool) {
   }
 }
 
-function asBool(value) {
-  return value === true || value === "true" || value === 1 || value === "1";
+function asBool(value, defaultValue = false) {
+  if (value === undefined || value === null || value === "") return defaultValue;
+  return value === true || value === "true" || value === 1 || value === "1" || value === "yes" || value === "Y";
+}
+
+function parseQuoteAddedAt(raw) {
+  if (raw == null || raw === "") return null;
+  if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    const utc = Date.UTC(1899, 11, 30) + raw * 86400000;
+    return new Date(utc);
+  }
+  const s = String(raw).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const m = s.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?)?$/i
+  );
+  if (!m) {
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  let year = parseInt(m[3], 10);
+  if (m[3].length <= 2) year += year < 50 ? 2000 : 1900;
+  const month = parseInt(m[2], 10) - 1;
+  const day = parseInt(m[1], 10);
+  let hour = m[4] != null ? parseInt(m[4], 10) : 0;
+  const minute = m[5] != null ? parseInt(m[5], 10) : 0;
+  const second = m[6] != null ? parseInt(m[6], 10) : 0;
+  const ampm = m[7] ? String(m[7]).toUpperCase() : "";
+  if (ampm === "PM" && hour < 12) hour += 12;
+  if (ampm === "AM" && hour === 12) hour = 0;
+  const d = new Date(year, month, day, hour, minute, second);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 function normalizeAddressPart(raw) {
@@ -127,23 +162,20 @@ function rowToQuoteApi(row) {
     state: row.state || "",
     email: row.email || "",
     phone: row.phone || "",
-    contacted: Boolean(row.quote_contacted),
-    contacted_email: Boolean(row.quote_contacted_email),
-    contacted_phone: Boolean(row.quote_contacted_phone),
-    contacted_visit: Boolean(row.quote_contacted_visit),
+    active: row.quote_active !== false,
     created_at: row.quote_added_at || row.updated_at || null,
     updated_at: row.updated_at,
   };
 }
 
 function normalizeQuoteInput(body = {}) {
-  const contacted = asBool(body.contacted);
   const street = normalizeAddressPart(body.street);
   const suburb = normalizeAddressPart(body.suburb);
   const clientName = String(body.name ?? body.client_name ?? "").trim();
   const projectName =
     normalizeAddressHyphensForFilesystem([street, suburb].filter(Boolean).join(", ").trim()) ||
     "New Quote";
+  const addedAt = parseQuoteAddedAt(body.created_at ?? body.quote_added_at ?? body.date_added);
   return {
     projectName,
     street: street || null,
@@ -152,10 +184,8 @@ function normalizeQuoteInput(body = {}) {
     client_name: clientName || null,
     email: String(body.email ?? "").trim() || null,
     phone: String(body.phone ?? "").trim() || null,
-    contacted,
-    contacted_email: contacted ? asBool(body.contacted_email) : false,
-    contacted_phone: contacted ? asBool(body.contacted_phone) : false,
-    contacted_visit: contacted ? asBool(body.contacted_visit) : false,
+    active: asBool(body.active, true),
+    quote_added_at: addedAt,
   };
 }
 
@@ -183,8 +213,7 @@ async function createQuote(pool, body) {
     `INSERT INTO projects (
        name, status, suburb, street, state, client_name, email, phone, year,
        client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active,
-       quote_contacted, quote_contacted_email, quote_contacted_phone, quote_contacted_visit,
-       quote_added_at, project_log,
+       quote_active, quote_added_at, project_log,
        contract_status, supporting_documents_status, water_authority, water_declaration_status,
        planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit,
        planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant,
@@ -194,8 +223,7 @@ async function createQuote(pool, body) {
      ) VALUES (
        $1, $2, $3, $4, $5, $6, $7, $8, $9,
        $6, $7, $8, 'true', null, null,
-       $10, $11, $12, $13,
-       NOW(), $14,
+       $10, COALESCE($11, NOW()), $12,
        'Not Sent', 'Not Sent', 'Not Required', 'Not Sent',
        'Not Selected', 'Not Submitted', 'Not Submitted', 'Not Submitted', 'Not Required',
        'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done',
@@ -212,10 +240,8 @@ async function createQuote(pool, body) {
       q.email,
       q.phone,
       projectDate,
-      q.contacted,
-      q.contacted_email,
-      q.contacted_phone,
-      q.contacted_visit,
+      q.active,
+      q.quote_added_at,
       initialLogEntry,
     ]
   );
@@ -237,12 +263,9 @@ async function updateQuote(pool, id, body) {
        client1_name = $6,
        client1_email = $7,
        client1_phone = $8,
-       quote_contacted = $9,
-       quote_contacted_email = $10,
-       quote_contacted_phone = $11,
-       quote_contacted_visit = $12,
+       quote_active = $9,
        updated_at = NOW()
-     WHERE id = $1 AND status = $13
+     WHERE id = $1 AND status = $10
      RETURNING ${QUOTE_SELECT}`,
     [
       id,
@@ -253,10 +276,7 @@ async function updateQuote(pool, id, body) {
       q.client_name,
       q.email,
       q.phone,
-      q.contacted,
-      q.contacted_email,
-      q.contacted_phone,
-      q.contacted_visit,
+      q.active,
       QUOTE_STATUS,
     ]
   );
@@ -319,6 +339,32 @@ async function resetQuoteAddedAt(pool, id) {
   return { quote: rowToQuoteApi(r.rows[0]) };
 }
 
+async function updateQuoteActive(pool, id, active) {
+  await ensureQuoteProjectColumns(pool);
+  const r = await pool.query(
+    `UPDATE projects
+     SET quote_active = $2, updated_at = NOW()
+     WHERE id = $1 AND status = $3
+     RETURNING ${QUOTE_SELECT}`,
+    [id, Boolean(active), QUOTE_STATUS]
+  );
+  if (!r.rows.length) return { notFound: true };
+  return { quote: rowToQuoteApi(r.rows[0]) };
+}
+
+async function findExistingQuoteId(pool, street, suburb, state) {
+  const r = await pool.query(
+    `SELECT id FROM projects
+     WHERE status = $1
+       AND LOWER(BTRIM(COALESCE(street, ''))) = LOWER(BTRIM($2))
+       AND LOWER(BTRIM(COALESCE(suburb, ''))) = LOWER(BTRIM($3))
+       AND UPPER(BTRIM(COALESCE(state, ''))) = UPPER(BTRIM($4))
+     LIMIT 1`,
+    [QUOTE_STATUS, street || "", suburb || "", state || ""]
+  );
+  return r.rows[0]?.id || null;
+}
+
 module.exports = {
   QUOTE_STATUS,
   ensureQuotesTable,
@@ -326,7 +372,10 @@ module.exports = {
   listQuotes,
   createQuote,
   updateQuote,
+  updateQuoteActive,
   deleteQuote,
   promoteQuoteToHotlist,
   resetQuoteAddedAt,
+  findExistingQuoteId,
+  parseQuoteAddedAt,
 };

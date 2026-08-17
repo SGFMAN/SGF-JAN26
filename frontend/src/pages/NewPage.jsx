@@ -29,10 +29,7 @@ const emptyQuote = () => ({
   name: "",
   email: "",
   phone: "",
-  contacted: false,
-  contacted_email: false,
-  contacted_phone: false,
-  contacted_visit: false,
+  active: true,
 });
 
 const COLS = [
@@ -44,10 +41,7 @@ const COLS = [
   { key: "name", label: "Name", type: "text", width: "12%" },
   { key: "email", label: "Email", type: "email", width: "16%" },
   { key: "phone", label: "Phone", type: "tel", width: "10%" },
-  { key: "contacted", label: "Contacted", type: "check", width: "7%" },
-  { key: "contacted_email", label: "Email", type: "subcheck", width: "5%" },
-  { key: "contacted_phone", label: "Phone", type: "subcheck", width: "5%" },
-  { key: "contacted_visit", label: "Visit", type: "subcheck", width: "5%" },
+  { key: "active", label: "Active", type: "activeCheck", width: "7%" },
 ];
 
 const cellBorder = `1px solid ${GRID_LINE}`;
@@ -131,10 +125,7 @@ function quoteFromApi(q) {
     name: q.name || "",
     email: q.email || "",
     phone: q.phone || "",
-    contacted: Boolean(q.contacted),
-    contacted_email: Boolean(q.contacted_email),
-    contacted_phone: Boolean(q.contacted_phone),
-    contacted_visit: Boolean(q.contacted_visit),
+    active: q.active !== false,
   };
 }
 
@@ -207,7 +198,7 @@ function quoteEditButtonStyle() {
   };
 }
 
-function QuoteSheetRow({ value, disabled, onResetClick, trailing }) {
+function QuoteSheetRow({ value, disabled, onResetClick, onActiveChange, trailing }) {
   const stateValue = STATE_OPTIONS.includes(String(value.state || "").trim().toUpperCase())
     ? String(value.state).trim().toUpperCase()
     : "";
@@ -265,17 +256,15 @@ function QuoteSheetRow({ value, disabled, onResetClick, trailing }) {
             </td>
           );
         }
-        if (col.type === "check" || col.type === "subcheck") {
-          const checked =
-            col.type === "check" ? Boolean(value.contacted) : Boolean(value[col.key]);
+        if (col.type === "activeCheck") {
           return (
             <td key={col.key} style={checkCellStyle}>
               <input
                 type="checkbox"
-                checked={checked}
-                disabled
-                readOnly
-                aria-label={col.label}
+                checked={value.active !== false}
+                disabled={disabled}
+                aria-label="Active"
+                onChange={(e) => onActiveChange?.(e.target.checked)}
               />
             </td>
           );
@@ -539,6 +528,34 @@ export default function NewPage() {
     }
   }
 
+  async function handleToggleQuoteActive(id, nextActive) {
+    const previous = edits[id]?.active !== false;
+    setEdits((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] || emptyQuote()), active: nextActive },
+    }));
+    setQuotes((prev) => prev.map((q) => (q.id === id ? { ...q, active: nextActive } : q)));
+    try {
+      const res = await fetch(`${API_URL}/api/quotes/${id}/active`, {
+        method: "PUT",
+        headers: getApiHeaders(),
+        body: JSON.stringify({ active: nextActive }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      const normalised = quoteFromApi(data);
+      setEdits((prev) => ({ ...prev, [id]: { ...(prev[id] || emptyQuote()), ...normalised } }));
+      setQuotes((prev) => prev.map((q) => (q.id === id ? { ...q, ...data } : q)));
+    } catch (err) {
+      setEdits((prev) => ({
+        ...prev,
+        [id]: { ...(prev[id] || emptyQuote()), active: previous },
+      }));
+      setQuotes((prev) => prev.map((q) => (q.id === id ? { ...q, active: previous } : q)));
+      alert(err.message || "Failed to update Active");
+    }
+  }
+
   const busy = savingId === "new" || (editingQuoteId != null && savingId === editingQuoteId);
 
   return (
@@ -742,6 +759,7 @@ export default function NewPage() {
                           value={value}
                           disabled={busy || rowBusy}
                           onResetClick={() => handleResetQuoteAddedAt(quote.id)}
+                          onActiveChange={(checked) => handleToggleQuoteActive(quote.id, checked)}
                           trailing={
                             <div style={{ display: "flex", gap: "6px", alignItems: "center", justifyContent: "flex-end" }}>
                               <button
