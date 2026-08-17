@@ -88,7 +88,10 @@ const {
   updateQuote,
   deleteQuote,
   promoteQuoteToHotlist,
+  resetQuoteAddedAt,
 } = require("./quotes");
+const { parseReminderSettingsColumn } = require("./reminderSettings");
+const { startQuoteReminderScheduler } = require("./quoteReminders");
 const { ensureMapQuoteItemsTable, listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
 const {
   ACCESS_AREAS,
@@ -1485,6 +1488,7 @@ async function ensureSchema() {
       "planning_manager_layout_json",
       "planning_manager_cells_json",
       "planning_mgr_tp_options_json",
+      "reminders_json",
       "timesheet_export_path",
       "colours_and_finishes_path",
       "holding_amount",
@@ -2084,6 +2088,13 @@ async function ensureSchema() {
   } catch (e) {
     if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
       console.log(`Error adding column colour_section_ranges_json:`, e.message);
+    }
+  }
+  try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN reminders_json TEXT`);
+  } catch (e) {
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column reminders_json:`, e.message);
     }
   }
   try {
@@ -4153,7 +4164,7 @@ function openFolderInWindowsExplorer(folderAbsPath) {
     return Promise.reject(new Error("Folder path required"));
   }
 
-  // One PowerShell call: open via Shell.Application, then force that window foreground.
+  // One PowerShell call: open via Shell.Application, maximize, then force foreground.
   // (Background Node/PM2 cannot steal focus without the Alt keybd_event trick.)
   const psLiteral = String(target).replace(/'/g, "''");
   const psCommand = `
@@ -4166,11 +4177,13 @@ public class SgfExplorerFocus {
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
   [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+  public const int SW_SHOWMAXIMIZED = 3;
   public static void ForceForeground(IntPtr hWnd) {
+    ShowWindowAsync(hWnd, SW_SHOWMAXIMIZED);
     keybd_event(0x12, 0, 0, UIntPtr.Zero);
     SetForegroundWindow(hWnd);
     keybd_event(0x12, 0, 2, UIntPtr.Zero);
-    ShowWindowAsync(hWnd, 9);
+    ShowWindowAsync(hWnd, SW_SHOWMAXIMIZED);
   }
 }
 "@
@@ -5779,6 +5792,42 @@ app.put("/api/colour-section-ranges", async (req, res) => {
   } catch (e) {
     console.error("Error saving colour section ranges:", e);
     return res.status(500).json({ error: e.message || "Failed to save colour section ranges" });
+  }
+});
+
+app.get("/api/reminder-settings", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  try {
+    const r = await pool.query("SELECT reminders_json FROM settings WHERE id = 1");
+    const settings = parseReminderSettingsColumn(r.rows[0]?.reminders_json);
+    return res.json({ ok: true, settings });
+  } catch (e) {
+    console.error("Error fetching reminder settings:", e);
+    return res.status(500).json({ error: e.message || "Failed to fetch reminder settings" });
+  }
+});
+
+app.put("/api/reminder-settings", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const settings = parseReminderSettingsColumn(body.settings ?? body);
+    const json = JSON.stringify(settings);
+    await pool.query(
+      `INSERT INTO settings (id, reminders_json, updated_at)
+       VALUES (1, $1, NOW())
+       ON CONFLICT (id) DO UPDATE SET reminders_json = EXCLUDED.reminders_json, updated_at = NOW()`,
+      [json]
+    );
+    return res.json({ ok: true, settings });
+  } catch (e) {
+    console.error("Error saving reminder settings:", e);
+    return res.status(500).json({ error: e.message || "Failed to save reminder settings" });
   }
 });
 
@@ -12713,6 +12762,21 @@ app.post("/api/quotes/:id/add-to-hotlist", async (req, res) => {
   }
 });
 
+app.post("/api/quotes/:id/reset-added-at", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await requireHotlistSalesAccess(req, res))) return;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const result = await resetQuoteAddedAt(pool, id);
+    if (result.notFound) return res.status(404).json({ error: "quote not found" });
+    res.json(result.quote);
+  } catch (e) {
+    console.error("[quotes] reset-added-at error:", e);
+    res.status(500).json({ error: e.message || "Failed to reset quote date" });
+  }
+});
+
 // ========== HOTLIST ENDPOINTS ==========
 // v1.0: Hotlist API group — shared staff identity (session preferred) + Sales grant.
 // Hotlist items are stored as projects with status "Hotlist"
@@ -14679,6 +14743,89 @@ Please modify the HTML file according to the user's request. Return ONLY the com
   }
 });
 
+/** Settings → Sandpit: turn a prompt into a self-contained HTML game/tool for live preview. */
+app.post("/api/sandpit/generate", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
+  if (!openaiClient) {
+    return res.status(503).json({ error: "OpenAI API key not configured" });
+  }
+
+  const prompt = String(req.body?.prompt || "").trim();
+  if (!prompt) {
+    return res.status(400).json({ error: "Prompt is required" });
+  }
+  if (prompt.length > 8000) {
+    return res.status(400).json({ error: "Prompt is too long (max 8000 characters)" });
+  }
+
+  try {
+    const completion = await openaiClient.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `You build interactive browser sandpit demos for staff to try instantly.
+
+Return ONLY one complete HTML document (DOCTYPE through </html>). No markdown fences, no explanation.
+
+Requirements:
+- Create a playable game, interactive tool, mini-app, or creative demo based on the user's prompt
+- Self-contained: put all CSS and JavaScript inline in the HTML file
+- Do not load external scripts, stylesheets, fonts, images, or iframes (no CDNs, no network requests)
+- Use a polished, clear UI that fills the viewport (html/body height 100%, box-sizing border-box)
+- Prefer vanilla JS; keep it fun and immediately usable without setup
+- If the prompt is vague, still ship a complete working demo that matches the request as closely as possible
+- Keyboard controls MUST work inside an iframe: on load set document.body.tabIndex = 0 (or -1) and call focus(); also refocus on pointerdown
+- Listen for keydown on window or document (not only a canvas that may not be focused)
+- Call preventDefault() for ArrowUp/ArrowDown/ArrowLeft/ArrowRight and Space when used as controls so the page does not scroll
+- Show a short on-screen hint like "Click here, then use arrow keys"`,
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      temperature: 0.7,
+    });
+
+    let html = String(completion.choices[0]?.message?.content || "").trim();
+    if (!html) {
+      return res.status(500).json({ error: "AI returned an empty response" });
+    }
+    if (html.startsWith("```html")) {
+      html = html.replace(/^```html\s*/i, "").replace(/\s*```$/, "");
+    } else if (html.startsWith("```")) {
+      html = html.replace(/^```\s*/, "").replace(/\s*```$/, "");
+    }
+    html = html.trim();
+    if (!/<\s*html[\s>]/i.test(html) && !/<\s*!DOCTYPE/i.test(html)) {
+      html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Sandpit</title></head><body>${html}</body></html>`;
+    }
+
+    // Ensure keyboard focus works when the demo runs inside a sandboxed iframe.
+    const focusBoot =
+      "<script>(function(){function f(){try{var b=document.body;if(b){b.tabIndex=-1;b.focus();}window.focus();}catch(e){}}window.addEventListener('load',f);document.addEventListener('DOMContentLoaded',f);document.addEventListener('pointerdown',f);setTimeout(f,0);})();</script>";
+    if (/<\/body>/i.test(html)) {
+      html = html.replace(/<\/body>/i, `${focusBoot}</body>`);
+    } else {
+      html = `${html}${focusBoot}`;
+    }
+
+    return res.json({ ok: true, html, prompt });
+  } catch (error) {
+    console.error("sandpit/generate:", error);
+    let errorMessage = "Failed to generate sandpit demo";
+    if (error?.status === 401 || error?.response?.status === 401) {
+      errorMessage = "Invalid OpenAI API key";
+    } else if (error?.status === 429 || error?.response?.status === 429) {
+      errorMessage = "OpenAI API rate limit exceeded. Please try again later.";
+    } else if (error?.message) {
+      errorMessage = error.message;
+    }
+    return res.status(500).json({ error: errorMessage });
+  }
+});
+
 app.post("/api/email-generator/save-answer", async (req, res) => {
   if (!requireStaffUserId(req, res)) return;
   if (!pool) {
@@ -14849,6 +14996,12 @@ const { attachSecretAreaWebSocket } = require("./secretAreaRoom");
     }
     serverReady = true;
     console.log(`✅ Server ready (total ${Date.now() - t0}ms)`);
+    startQuoteReminderScheduler({
+      getPool: () => pool,
+      getSmtpCredentialsForFromAddress,
+      addLogoToEmail,
+      convertEmailBodyNewlinesToBr,
+    });
   } catch (e) {
     console.error("❌ Startup error:", e);
     process.exit(1);

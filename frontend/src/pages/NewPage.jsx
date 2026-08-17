@@ -2,13 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import MainSidebarMenu from "../components/MainSidebarMenu";
 import ModalBackdrop from "../components/ModalBackdrop";
-import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import NewProject2 from "./NewProject_2_ClientDetails";
 import { getApiHeaders } from "../utils/auth";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { parseAustralianAddress, STATE_OPTIONS } from "../utils/parseAustralianAddress.js";
-import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
-import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 import { buildSavedButtonStyle, ensureUiButtonStylesLoaded } from "../utils/uiButtonStyles.js";
 import { UI } from "../utils/uiThemeTokens.js";
 
@@ -20,11 +17,9 @@ const PAGE_TEXT = UI.pageText;
 const GRID_LINE = "#c5c9ce";
 const HEADER_BG = "#e8eaed";
 const API_URL = "";
-const QUOTE_EMAIL_BUTTON_ID = 1;
+const QUOTE_RESET_BUTTON_ID = 1;
 const QUOTE_HOTLIST_BUTTON_ID = 3;
 const QUOTE_EDIT_BUTTON_ID = 5;
-const QUOTE_FOLLOWUP_TEMPLATE = "Quote Followup";
-const QUOTE_FOLLOWUP_FROM = "info@superiorgrannyflats.com.au";
 
 const emptyQuote = () => ({
   created_at: null,
@@ -41,8 +36,8 @@ const emptyQuote = () => ({
 });
 
 const COLS = [
-  { key: "email_action", label: "", type: "emailBtn", width: "72px" },
-  { key: "created_at", label: "Date added", type: "date", width: "96px" },
+  { key: "reset_action", label: "", type: "resetBtn", width: "72px" },
+  { key: "created_at", label: "Date added", type: "date", width: "148px" },
   { key: "state", label: "State", type: "state", width: "72px" },
   { key: "suburb", label: "Suburb", type: "text", width: "12%" },
   { key: "street", label: "Street", type: "text", width: "16%" },
@@ -112,7 +107,10 @@ function formatQuoteDateAdded(value) {
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const yyyy = d.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}:${ss}`;
 }
 
 function isQuoteDateOlderThanThreeDays(value) {
@@ -140,29 +138,8 @@ function quoteFromApi(q) {
   };
 }
 
-function replaceQuoteFollowupTokens(text, quote) {
-  if (!text) return "";
-  const address = [quote?.street, quote?.suburb].filter(Boolean).join(", ");
-  const map = {
-    "{ProjectName}": address,
-    "{Address}": address,
-    "{Street}": quote?.street || "",
-    "{Suburb}": quote?.suburb || "",
-    "{State}": quote?.state || "",
-    "{ClientName}": quote?.name || "",
-    "{Contact1}": quote?.email || "",
-    "{Email}": quote?.email || "",
-    "{Phone}": quote?.phone || "",
-  };
-  let out = String(text);
-  Object.entries(map).forEach(([k, v]) => {
-    out = out.split(k).join(v || "");
-  });
-  return out;
-}
-
-function quoteEmailButtonStyle() {
-  const saved = buildSavedButtonStyle(QUOTE_EMAIL_BUTTON_ID, true);
+function quoteResetButtonStyle() {
+  const saved = buildSavedButtonStyle(QUOTE_RESET_BUTTON_ID, true);
   const fallback = {
     background: MONUMENT,
     color: PAGE_TEXT,
@@ -230,27 +207,27 @@ function quoteEditButtonStyle() {
   };
 }
 
-function QuoteSheetRow({ value, disabled, onEmailClick, trailing }) {
+function QuoteSheetRow({ value, disabled, onResetClick, trailing }) {
   const stateValue = STATE_OPTIONS.includes(String(value.state || "").trim().toUpperCase())
     ? String(value.state).trim().toUpperCase()
     : "";
   return (
     <tr>
       {COLS.map((col) => {
-        if (col.type === "emailBtn") {
+        if (col.type === "resetBtn") {
           return (
             <td key={col.key} style={{ ...tdStyle, padding: "4px 6px", textAlign: "center" }}>
               <button
                 type="button"
                 disabled={disabled}
-                onClick={() => onEmailClick?.()}
+                onClick={() => onResetClick?.()}
                 style={{
-                  ...quoteEmailButtonStyle(),
+                  ...quoteResetButtonStyle(),
                   opacity: disabled ? 0.6 : 1,
                   cursor: disabled ? "default" : "pointer",
                 }}
               >
-                Email
+                Reset
               </button>
             </td>
           );
@@ -265,7 +242,7 @@ function QuoteSheetRow({ value, disabled, onEmailClick, trailing }) {
                 ...cellTextStyle,
                 color: stale ? "#cc3333" : MONUMENT,
                 fontWeight: stale ? 700 : 400,
-                minWidth: 96,
+                minWidth: 148,
               }}
             >
               {formatQuoteDateAdded(value.created_at)}
@@ -320,9 +297,7 @@ function QuoteSheetRow({ value, disabled, onEmailClick, trailing }) {
 export default function NewPage() {
   const location = useLocation();
   const logo = useAppLogo();
-  const { runWithEmailOverlay } = useEmailSendOverlay();
   const pasteRef = useRef(null);
-  const emailBodyRef = useRef(null);
   const [quotes, setQuotes] = useState([]);
   const [edits, setEdits] = useState({});
   const [pasteBox, setPasteBox] = useState("");
@@ -337,14 +312,6 @@ export default function NewPage() {
   const [error, setError] = useState(null);
   const [, setUiButtonStyleRevision] = useState(0);
 
-  const [emailPreviewOpen, setEmailPreviewOpen] = useState(false);
-  const [emailPreviewPreparing, setEmailPreviewPreparing] = useState(false);
-  const [emailPreviewQuote, setEmailPreviewQuote] = useState(null);
-  const [emailTo, setEmailTo] = useState("");
-  const [emailFrom, setEmailFrom] = useState(QUOTE_FOLLOWUP_FROM);
-  const [emailSubject, setEmailSubject] = useState("");
-  const [emailBody, setEmailBody] = useState("");
-
   useEffect(() => {
     void ensureUiButtonStylesLoaded();
     const refresh = () => setUiButtonStyleRevision((n) => n + 1);
@@ -356,11 +323,6 @@ export default function NewPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (emailPreviewOpen && emailBodyRef.current && emailBody != null && !emailPreviewPreparing) {
-      emailBodyRef.current.innerHTML = emailBody || "";
-    }
-  }, [emailPreviewOpen, emailBody, emailPreviewPreparing]);
   const loadQuotes = useCallback(async () => {
     try {
       setLoading(true);
@@ -557,97 +519,23 @@ export default function NewPage() {
     }
   }
 
-  function closeEmailPreview() {
-    setEmailPreviewOpen(false);
-    setEmailPreviewPreparing(false);
-    setEmailPreviewQuote(null);
-    setEmailTo("");
-    setEmailFrom(QUOTE_FOLLOWUP_FROM);
-    setEmailSubject("");
-    setEmailBody("");
-  }
-
-  async function openEmailPreview(quoteId) {
-    const quote = edits[quoteId] || emptyQuote();
-    const toAddress = String(quote.email || "").trim();
-    if (!toAddress) {
-      alert("Add a client email on this quote before sending.");
-      return;
-    }
-
-    setEmailPreviewQuote({ id: quoteId, ...quote });
-    setEmailPreviewOpen(true);
-    setEmailPreviewPreparing(true);
-    setEmailTo(toAddress);
-    setEmailFrom(QUOTE_FOLLOWUP_FROM);
-    setEmailSubject("");
-    setEmailBody("");
-
+  async function handleResetQuoteAddedAt(id) {
     try {
-      const templatesResponse = await fetch(`${API_URL}/api/email-templates`);
-      if (!templatesResponse.ok) throw new Error("Failed to fetch email templates");
-      const templates = await templatesResponse.json();
-      const template = (Array.isArray(templates) ? templates : []).find(
-        (t) => t.name && t.name.toLowerCase().trim() === QUOTE_FOLLOWUP_TEMPLATE.toLowerCase()
-      );
-      if (!template) {
-        alert(
-          `Template "${QUOTE_FOLLOWUP_TEMPLATE}" not found. Please create it in Settings → Email Templates.`
-        );
-        closeEmailPreview();
-        return;
-      }
-
-      setEmailSubject(
-        await replaceLoggedInUserEmailTokens(replaceQuoteFollowupTokens(template.subject || "", quote))
-      );
-      setEmailBody(
-        convertEmailBodyNewlinesToBr(
-          await replaceLoggedInUserEmailTokens(replaceQuoteFollowupTokens(template.body || "", quote))
-        )
-      );
-    } catch (err) {
-      console.error("Error preparing quote followup email:", err);
-      alert(`Failed to prepare email: ${err.message || "Unknown error"}`);
-      closeEmailPreview();
-    } finally {
-      setEmailPreviewPreparing(false);
-    }
-  }
-
-  async function handleSendQuoteFollowupEmail() {
-    const toAddresses = String(emailTo || "")
-      .split(",")
-      .map((a) => a.trim())
-      .filter((a) => a.length > 0);
-    if (toAddresses.length === 0) {
-      alert("Please enter at least one email address.");
-      return;
-    }
-    if (!String(emailFrom || "").trim()) {
-      alert("From address is required.");
-      return;
-    }
-    try {
-      await runWithEmailOverlay(async () => {
-        const res = await fetch(`${API_URL}/api/emails/send`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...getApiHeaders() },
-          body: JSON.stringify({
-            to: toAddresses,
-            from: String(emailFrom).trim(),
-            subject: emailSubject || "",
-            htmlBody: emailBody || "",
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || `Send failed (${res.status})`);
+      setSavingId(id);
+      setError(null);
+      const res = await fetch(`${API_URL}/api/quotes/${id}/reset-added-at`, {
+        method: "POST",
+        headers: getApiHeaders(),
       });
-      closeEmailPreview();
-      alert("Quote followup email sent.");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      const normalised = quoteFromApi(data);
+      setQuotes((prev) => prev.map((q) => (q.id === id ? { ...q, ...data } : q)));
+      setEdits((prev) => ({ ...prev, [id]: { ...(prev[id] || emptyQuote()), ...normalised } }));
     } catch (err) {
-      console.error("Error sending quote followup email:", err);
-      alert(err.message || "Failed to send email.");
+      alert(err.message || "Failed to reset quote date");
+    } finally {
+      setSavingId(null);
     }
   }
 
@@ -853,7 +741,7 @@ export default function NewPage() {
                           key={quote.id}
                           value={value}
                           disabled={busy || rowBusy}
-                          onEmailClick={() => openEmailPreview(quote.id)}
+                          onResetClick={() => handleResetQuoteAddedAt(quote.id)}
                           trailing={
                             <div style={{ display: "flex", gap: "6px", alignItems: "center", justifyContent: "flex-end" }}>
                               <button
@@ -1040,213 +928,6 @@ export default function NewPage() {
               : "Save quote"
         }
       />
-
-      {emailPreviewOpen ? (
-        <ModalBackdrop zIndex={1000} onClick={closeEmailPreview}>
-          <div
-            role="dialog"
-            aria-modal="true"
-            style={{
-              background: WHITE,
-              borderRadius: "12px",
-              padding: "24px",
-              width: "90%",
-              maxWidth: "800px",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "16px",
-              }}
-            >
-              <h2 style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>Preview & Send Email</h2>
-              <button
-                type="button"
-                onClick={closeEmailPreview}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  fontSize: "1.5rem",
-                  cursor: "pointer",
-                  color: MONUMENT,
-                  padding: 0,
-                  width: 30,
-                  height: 30,
-                }}
-              >
-                ×
-              </button>
-            </div>
-
-            {emailPreviewPreparing ? (
-              <div style={{ textAlign: "center", padding: "40px", color: MONUMENT }}>Preparing email…</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                <div style={{ fontSize: "0.9rem", color: "#666" }}>
-                  Template: <strong>{QUOTE_FOLLOWUP_TEMPLATE}</strong>
-                  {emailPreviewQuote
-                    ? ` | ${[emailPreviewQuote.street, emailPreviewQuote.suburb].filter(Boolean).join(", ")}`
-                    : ""}
-                </div>
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontSize: "0.9rem",
-                      color: UI.textMuted,
-                      marginBottom: "6px",
-                      fontWeight: 500,
-                    }}
-                  >
-                    To
-                  </label>
-                  <input
-                    value={emailTo}
-                    onChange={(e) => setEmailTo(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "10px 12px",
-                      borderRadius: "8px",
-                      border: `1px solid ${SECTION_GREY}`,
-                      fontSize: "1rem",
-                      boxSizing: "border-box",
-                      color: MONUMENT,
-                      background: WHITE,
-                    }}
-                  />
-                </div>
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontSize: "0.9rem",
-                      color: UI.textMuted,
-                      marginBottom: "6px",
-                      fontWeight: 500,
-                    }}
-                  >
-                    From
-                  </label>
-                  <input
-                    value={emailFrom}
-                    onChange={(e) => setEmailFrom(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "10px 12px",
-                      borderRadius: "8px",
-                      border: `1px solid ${SECTION_GREY}`,
-                      fontSize: "1rem",
-                      boxSizing: "border-box",
-                      color: MONUMENT,
-                      background: WHITE,
-                    }}
-                  />
-                </div>
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontSize: "0.9rem",
-                      color: UI.textMuted,
-                      marginBottom: "6px",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Subject
-                  </label>
-                  <input
-                    value={emailSubject}
-                    onChange={(e) => setEmailSubject(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "10px 12px",
-                      borderRadius: "8px",
-                      border: `1px solid ${SECTION_GREY}`,
-                      fontSize: "1rem",
-                      boxSizing: "border-box",
-                      color: MONUMENT,
-                      background: WHITE,
-                    }}
-                  />
-                </div>
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontSize: "0.9rem",
-                      color: UI.textMuted,
-                      marginBottom: "6px",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Email Preview
-                  </label>
-                  <div
-                    ref={emailBodyRef}
-                    contentEditable
-                    suppressContentEditableWarning
-                    onInput={(e) => setEmailBody(e.currentTarget.innerHTML)}
-                    style={{
-                      width: "100%",
-                      minHeight: "220px",
-                      maxHeight: "42vh",
-                      overflowY: "auto",
-                      padding: "12px",
-                      borderRadius: "8px",
-                      border: `1px solid ${SECTION_GREY}`,
-                      background: WHITE,
-                      fontSize: "1rem",
-                      color: MONUMENT,
-                      boxSizing: "border-box",
-                    }}
-                  />
-                </div>
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "4px" }}>
-                  <button
-                    type="button"
-                    onClick={closeEmailPreview}
-                    style={{
-                      background: SECTION_GREY,
-                      color: MONUMENT,
-                      border: "none",
-                      borderRadius: "8px",
-                      padding: "10px 20px",
-                      fontSize: "0.95rem",
-                      fontWeight: 500,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSendQuoteFollowupEmail}
-                    style={{
-                      background: MONUMENT,
-                      color: WHITE,
-                      border: "none",
-                      borderRadius: "8px",
-                      padding: "10px 20px",
-                      fontSize: "0.95rem",
-                      fontWeight: 500,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Send
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </ModalBackdrop>
-      ) : null}
     </div>
   );
 }

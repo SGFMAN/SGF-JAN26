@@ -14,6 +14,7 @@ import {
 import { isExcludedFromProjectLists, isCancelledStatus, isOnHoldFlag } from "../utils/projectStatus";
 import { projectPath } from "../utils/projectUrl";
 import {
+  PLANNING_MANAGER_COL_FIELD,
   getPlanningManagerColMapping,
   formatPlanningManagerSheetDate,
   planningManagerTodayIsoDate,
@@ -171,6 +172,43 @@ function colLetter(index) {
 }
 
 const COL_LETTERS = Array.from({ length: COL_COUNT }, (_, i) => colLetter(i));
+
+function titleForCol(colIndex) {
+  const block = SHEET_TITLE_BLOCKS.find(
+    (b) => colIndex >= b.startCol && colIndex < b.startCol + b.colSpan
+  );
+  return block?.label || "";
+}
+
+/** Wired project fields for the Check modal (column is display-only). */
+const WIRED_CHECK_FIELDS = [
+  { key: "address", kind: "address", label: "A — Project Address" },
+  { key: "draftsperson", field: "draftsperson", label: "B — DRAFTSPERSON" },
+  ...Object.entries(PLANNING_MANAGER_COL_FIELD)
+    .sort((a, b) => Number(a[0]) - Number(b[0]))
+    .map(([colStr, mapping]) => {
+      const col = Number(colStr);
+      const title = titleForCol(col);
+      const sub = ROW2_SUBHEADINGS[col];
+      return {
+        key: mapping.field,
+        field: mapping.field,
+        label: `${colLetter(col)} — ${title}${sub ? ` / ${sub}` : ""}`,
+      };
+    }),
+];
+
+const checkSelectStyle = {
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "8px 10px",
+  fontSize: 14,
+  fontFamily: SHEET_FONT,
+  border: `1px solid ${HEADER_GRID_LINE}`,
+  borderRadius: 4,
+  background: WHITE,
+  color: ADDRESS_TEXT,
+};
 
 /** Classification acronym from project rectangles (e.g. SSD, REN). */
 function classificationAbbrev(project) {
@@ -509,6 +547,7 @@ export default function PlanningManager() {
   const [draftspersonMenu, setDraftspersonMenu] = useState(null); // { projectId, top, left, width }
   const [sheetCells, setSheetCells] = useState({}); // { [projectId]: { [colIndex]: value } }
   const [moveRowModal, setMoveRowModal] = useState(null); // { projectIndex, label, inputValue } | null
+  const [checkModal, setCheckModal] = useState(null); // { projectId, fieldKey } | null
   const [projectSearch, setProjectSearch] = useState("");
   const [tpMenu, setTpMenu] = useState(null); // { projectId, colIndex, field, kind, options, top, left, width }
   const [cellEdit, setCellEdit] = useState(null); // { projectId, colIndex, field, saveAs, draft }
@@ -1700,6 +1739,23 @@ export default function PlanningManager() {
     // Only when the modal opens for a project — not on each keystroke.
   }, [moveRowModal?.projectIndex]);
 
+  useEffect(() => {
+    if (!checkModal) return undefined;
+    function onKey(e) {
+      if (e.key === "Escape") setCheckModal(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [checkModal]);
+
+  useEffect(() => {
+    if (!checkModal?.projectId) return;
+    const stillOnTab = projects.some((p) => String(p.id) === String(checkModal.projectId));
+    if (!stillOnTab) {
+      setCheckModal((prev) => (prev ? { ...prev, projectId: "" } : prev));
+    }
+  }, [projects, checkModal?.projectId]);
+
   const { start: rowStart, end: rowEnd } = visibleRowRange;
   const { start: colStart, end: colEnd } = visibleColRange;
 
@@ -1756,6 +1812,32 @@ export default function PlanningManager() {
           >
             Managers
           </h1>
+          <button
+            type="button"
+            onClick={() => {
+              setMoveRowModal(null);
+              setDraftspersonMenu(null);
+              setTpMenu(null);
+              setCellEdit(null);
+              setManualDatePicker(null);
+              setCheckModal({ projectId: "", fieldKey: "" });
+            }}
+            style={{
+              height: 36,
+              padding: "0 14px",
+              fontSize: 14,
+              fontWeight: 600,
+              fontFamily: SHEET_FONT,
+              border: `1px solid ${HEADER_GRID_LINE}`,
+              borderRadius: 6,
+              background: WHITE,
+              color: ADDRESS_TEXT,
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            Check
+          </button>
           <div
             style={{
               position: "relative",
@@ -2951,6 +3033,210 @@ export default function PlanningManager() {
                 }}
               >
                 Move
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {checkModal ? (
+        <div
+          role="presentation"
+          onClick={() => setCheckModal(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 10050,
+            background: "rgba(0,0,0,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Check project field"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 460,
+              background: WHITE,
+              borderRadius: 8,
+              border: `1px solid ${HEADER_GRID_LINE}`,
+              boxShadow: "0 12px 40px rgba(0,0,0,0.22)",
+              padding: "20px 22px",
+              fontFamily: SHEET_FONT,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 700,
+                color: ADDRESS_TEXT,
+                marginBottom: 6,
+              }}
+            >
+              Check field
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                color: HEADER_TEXT,
+                marginBottom: 14,
+              }}
+            >
+              Reads the value stored on the project, not the sheet cell.
+              {activeTab ? ` Projects listed are ${activeTab} only.` : ""}
+            </div>
+            <label
+              style={{
+                display: "block",
+                fontSize: 13,
+                fontWeight: 600,
+                color: HEADER_TEXT,
+                marginBottom: 6,
+              }}
+            >
+              Project
+            </label>
+            <select
+              value={checkModal.projectId}
+              onChange={(e) =>
+                setCheckModal((prev) =>
+                  prev ? { ...prev, projectId: e.target.value } : prev
+                )
+              }
+              style={{ ...checkSelectStyle, marginBottom: 14 }}
+            >
+              <option value="">Select a project…</option>
+              {projects.map((p) => (
+                <option key={p.id} value={String(p.id)}>
+                  {projectLabel(p)}
+                </option>
+              ))}
+            </select>
+            <label
+              style={{
+                display: "block",
+                fontSize: 13,
+                fontWeight: 600,
+                color: HEADER_TEXT,
+                marginBottom: 6,
+              }}
+            >
+              Field
+            </label>
+            <select
+              value={checkModal.fieldKey}
+              onChange={(e) =>
+                setCheckModal((prev) =>
+                  prev ? { ...prev, fieldKey: e.target.value } : prev
+                )
+              }
+              style={{ ...checkSelectStyle, marginBottom: 16 }}
+            >
+              <option value="">Select a field…</option>
+              {WIRED_CHECK_FIELDS.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+            {(() => {
+              const project = projects.find(
+                (p) => String(p.id) === String(checkModal.projectId)
+              );
+              const fieldDef = WIRED_CHECK_FIELDS.find((f) => f.key === checkModal.fieldKey);
+              if (!project || !fieldDef) {
+                return (
+                  <div
+                    style={{
+                      fontSize: 13,
+                      color: UI.textMuted,
+                      marginBottom: 16,
+                      minHeight: 48,
+                    }}
+                  >
+                    Select a project and a field to see the stored value.
+                  </div>
+                );
+              }
+              if (fieldDef.kind === "address") {
+                const suburb = project.suburb != null ? String(project.suburb).trim() : "";
+                const street = project.street != null ? String(project.street).trim() : "";
+                return (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: HEADER_TEXT, marginBottom: 6 }}>
+                      Stored on project
+                    </div>
+                    <div
+                      style={{
+                        padding: "10px 12px",
+                        background: HEADER_BG,
+                        border: `1px solid ${HEADER_GRID_LINE}`,
+                        borderRadius: 4,
+                        fontSize: 14,
+                        color: ADDRESS_TEXT,
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {`suburb: ${suburb || "(empty)"}\nstreet: ${street || "(empty)"}\nsheet label: ${projectLabel(project)}`}
+                    </div>
+                  </div>
+                );
+              }
+              const raw = project[fieldDef.field];
+              const stored =
+                raw == null || String(raw).trim() === "" ? null : String(raw);
+              const sheet = stored
+                ? formatPlanningManagerSheetDate(stored) || stored
+                : null;
+              return (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: HEADER_TEXT, marginBottom: 4 }}>
+                    {fieldDef.field}
+                  </div>
+                  <div
+                    style={{
+                      padding: "10px 12px",
+                      background: HEADER_BG,
+                      border: `1px solid ${HEADER_GRID_LINE}`,
+                      borderRadius: 4,
+                      fontSize: 15,
+                      fontWeight: 600,
+                      color: ADDRESS_TEXT,
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {stored || "(empty)"}
+                  </div>
+                  {sheet && sheet !== stored ? (
+                    <div style={{ fontSize: 12, color: HEADER_TEXT, marginTop: 8 }}>
+                      Sheet display: {sheet}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })()}
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setCheckModal(null)}
+                style={{
+                  padding: "8px 14px",
+                  border: `1px solid ${HEADER_GRID_LINE}`,
+                  borderRadius: 4,
+                  background: WHITE,
+                  color: ADDRESS_TEXT,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Close
               </button>
             </div>
           </div>
