@@ -100,6 +100,7 @@ function drawingFieldKeyForStreamRow(streamKey, vicStyleKey) {
     wdsApprovedToEmail: "qldWdsApprovedToEmail",
     wdsApprovedToEmail2: "qldWdsApprovedToEmail2",
     salespersonToClientFromEmail: "qldSalespersonToClientFromEmail",
+    salespersonToClientPermitFromEmail: "qldSalespersonToClientPermitFromEmail",
   };
   return q[vicStyleKey] || vicStyleKey;
 }
@@ -205,12 +206,20 @@ export function resolveDesignNotesToEmails(settings, project, _templateToEmails)
 }
 
 /**
- * Stream Settings → Drawings → Send Drawings to Client — From (still per-stream).
- * @param {Record<string, unknown> | null | undefined} settings from GET /api/settings
- * @param {Record<string, unknown> | null | undefined} project
+ * Stream Settings → Drawings → Send Drawings to Client — From [DESIGN] or [PERMIT]
+ * based on project status. Empty Permit From falls back to Design From.
  */
 export function resolveSalespersonToClientFrom(settings, project, _templateFrom) {
-  return getDrawingFieldFromStreamRows(settings, project, "salespersonToClientFromEmail");
+  const designFrom = getDrawingFieldFromStreamRows(settings, project, "salespersonToClientFromEmail");
+  if (isPermitPhaseStatus(project?.status)) {
+    const permitFrom = getDrawingFieldFromStreamRows(
+      settings,
+      project,
+      "salespersonToClientPermitFromEmail"
+    );
+    return permitFrom || designFrom || "";
+  }
+  return designFrom || "";
 }
 
 /** General → Drawings → Sales Notes — To (seeds from Design Notes when empty). */

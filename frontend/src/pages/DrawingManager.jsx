@@ -24,6 +24,7 @@ import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { resolveLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 import { isLatestRevisionWorkingDrawingsApproved } from "../utils/drawingsStatusRules";
+import { normalizeBodyHtmlForEditor } from "../components/EmailBodyEditor.jsx";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { useManagersAccess } from "../hooks/useManagersAccess";
 
@@ -60,6 +61,175 @@ const DRAWING_MANAGER_TAB_COLORS = {
   "Working Drawing Stage": { fill: MENU.purpleLight, border: MENU.purple },
   "Permit Phase": { fill: STREAM.streamGreen, border: STREAM.streamGreen },
 };
+
+const DRAFTING_STATS_MONTHS = [
+  "JAN",
+  "FEB",
+  "MAR",
+  "APR",
+  "MAY",
+  "JUN",
+  "JUL",
+  "AUG",
+  "SEP",
+  "OCT",
+  "NOV",
+  "DEC",
+];
+
+/** Month from projects.year (YYYY-MM-DD / ISO / slash date). Year-only values have no month. */
+function parseProjectStartYearMonth(yearValue) {
+  if (yearValue == null || yearValue === "") return null;
+  const raw = String(yearValue).trim();
+  if (!raw) return null;
+  if (/^\d{4}$/.test(raw)) {
+    return { year: parseInt(raw, 10), monthIndex: null };
+  }
+  const iso = raw.match(/^(\d{4})-(\d{2})/);
+  if (iso) {
+    const year = parseInt(iso[1], 10);
+    const month = parseInt(iso[2], 10);
+    if (month >= 1 && month <= 12) return { year, monthIndex: month - 1 };
+    return { year, monthIndex: null };
+  }
+  if (raw.includes("/")) {
+    const parts = raw.split("/").map((p) => p.trim());
+    if (parts.length === 3 && /^\d{4}$/.test(parts[2])) {
+      const n0 = parseInt(parts[0], 10);
+      const n1 = parseInt(parts[1], 10);
+      const year = parseInt(parts[2], 10);
+      const month = n0 > 12 ? n1 : n0;
+      if (Number.isFinite(year) && month >= 1 && month <= 12) {
+        return { year, monthIndex: month - 1 };
+      }
+    }
+  }
+  return null;
+}
+
+function buildDraftingStatsGroups(projects, { year, getName, monthCount = 12 }) {
+  const visibleMonths = Math.min(12, Math.max(0, monthCount));
+  const counts = new Map();
+  for (const project of projects) {
+    if (isExcludedFromProjectLists(project?.status)) continue;
+    if (isCancelledStatus(project?.status)) continue;
+    if (project?.classification === "Home Office / Studio") continue;
+    if (!isDraftspersonAssigned(project?.draftsperson)) continue;
+    const parsed = parseProjectStartYearMonth(project.year);
+    if (!parsed || parsed.year !== year || parsed.monthIndex == null) continue;
+    if (parsed.monthIndex >= visibleMonths) continue;
+    const name = getName(project.draftsperson);
+    if (!name) continue;
+    if (!counts.has(name)) counts.set(name, Array(visibleMonths).fill(0));
+    counts.get(name)[parsed.monthIndex] += 1;
+  }
+
+  return [...counts.keys()]
+    .map((name) => {
+      const months = counts.get(name);
+      const total = months.reduce((sum, n) => sum + n, 0);
+      return { name, months, total };
+    })
+    .filter((group) => group.total > 0)
+    .sort((a, b) => {
+      const denom = visibleMonths || 1;
+      const avgA = a.total / denom;
+      const avgB = b.total / denom;
+      if (avgB !== avgA) return avgB - avgA;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+}
+
+function draftingStatsTotals(groups, monthCount = 12) {
+  const monthTotals = Array(monthCount).fill(0);
+  for (const group of groups) {
+    for (let i = 0; i < monthCount; i += 1) {
+      monthTotals[i] += group.months[i] || 0;
+    }
+  }
+  const grandTotal = monthTotals.reduce((sum, n) => sum + n, 0);
+  return { monthTotals, grandTotal };
+}
+
+function filterDraftingStatsBySelectedMonths(groups, selectedMonths) {
+  const includedIndexes = (selectedMonths || [])
+    .map((on, index) => (on ? index : -1))
+    .filter((index) => index >= 0);
+  const monthCount = includedIndexes.length;
+  const viewed = groups
+    .map((group) => {
+      const months = includedIndexes.map((index) => group.months[index] || 0);
+      const total = months.reduce((sum, n) => sum + n, 0);
+      return { name: group.name, months, total };
+    })
+    .filter((group) => group.total > 0)
+    .sort((a, b) => {
+      const denom = monthCount || 1;
+      const avgDiff = b.total / denom - a.total / denom;
+      if (avgDiff !== 0) return avgDiff;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+  const { monthTotals, grandTotal } = draftingStatsTotals(viewed, monthCount);
+  return { viewed, includedIndexes, monthCount, monthTotals, grandTotal };
+}
+
+function formatDraftingStatsAverage(total, monthCount) {
+  if (!monthCount) return "0.0";
+  return (Math.round((total / monthCount) * 10) / 10).toFixed(1);
+}
+
+function draftingStatsPrintExact() {
+  return {
+    WebkitPrintColorAdjust: "exact",
+    printColorAdjust: "exact",
+  };
+}
+
+function draftingStatsMaxMonthCount(groups) {
+  let max = 0;
+  for (const group of groups) {
+    for (const n of group.months || []) {
+      if (n > max) max = n;
+    }
+  }
+  return max;
+}
+
+/** Green heat for higher counts so fills read in screen and print. */
+function draftingStatsHeatFill(count, maxCount) {
+  const printExact = draftingStatsPrintExact();
+  const text = "#323233";
+  if (!count || maxCount <= 0) {
+    return { background: "#d98a8a", color: text, ...printExact };
+  }
+  const t = Math.min(1, count / maxCount);
+  let background;
+  if (t < 0.34) {
+    background = "#e0a15c";
+  } else if (t < 0.67) {
+    background = "#dcc65a";
+  } else {
+    background = "#7cb87f";
+  }
+  return { background, color: text, ...printExact };
+}
+
+function draftingStatsPrintThemeCss() {
+  const cs = getComputedStyle(document.documentElement);
+  const parts = [];
+  for (let i = 0; i < cs.length; i += 1) {
+    const name = cs.item(i);
+    if (name.startsWith("--")) {
+      parts.push(`${name}:${cs.getPropertyValue(name)};`);
+    }
+  }
+  return `:root{${parts.join("")}}
+html,body,table,th,td{
+  -webkit-print-color-adjust:exact!important;
+  print-color-adjust:exact!important;
+  color-adjust:exact!important;
+}`;
+}
 
 function shouldCountHolderDays(project) {
   if (!project?.drawings_holder_date) return false;
@@ -156,12 +326,30 @@ export default function DrawingManager() {
   const [notesSaving, setNotesSaving] = useState(false);
   /** Snapshot when the modal opened — Cancel restores this (nothing is saved until OK). */
   const notesSnapshotRef = useRef("");
+  const reminderBodyRef = useRef(null);
+  const [showDraftingStatsModal, setShowDraftingStatsModal] = useState(false);
+  const [draftingStatsLoading, setDraftingStatsLoading] = useState(false);
+  const [draftingStatsError, setDraftingStatsError] = useState(null);
+  const [draftingStatsGroups, setDraftingStatsGroups] = useState([]);
+  const [draftingStatsYear, setDraftingStatsYear] = useState(() => new Date().getFullYear());
+  const [draftingStatsMonthCount, setDraftingStatsMonthCount] = useState(() => new Date().getMonth() + 1);
+  const [draftingStatsSelectedMonths, setDraftingStatsSelectedMonths] = useState(() =>
+    Array(new Date().getMonth() + 1).fill(true)
+  );
 
   useEffect(() => {
     fetchProjects();
     fetchDraftspersons();
     isUserAdmin().then(setIsAdmin).catch(() => setIsAdmin(false));
   }, []);
+
+  useEffect(() => {
+    if (showReminderModal && reminderBodyRef.current && reminderEmailBody) {
+      if (reminderBodyRef.current.innerHTML !== reminderEmailBody) {
+        reminderBodyRef.current.innerHTML = reminderEmailBody;
+      }
+    }
+  }, [showReminderModal, reminderEmailBody]);
 
   const managerNavLinkStyle = {
     background: "transparent",
@@ -346,7 +534,7 @@ export default function DrawingManager() {
       setReminderEmailTo(streamTo.join(", ") || mainEmail || "");
       setReminderEmailFrom(fromEmail);
       setReminderEmailSubject(applyTemplateTokens(template.subject || "", tokenMap));
-      setReminderEmailBody(applyTemplateTokens(template.body || "", tokenMap));
+      setReminderEmailBody(normalizeBodyHtmlForEditor(applyTemplateTokens(template.body || "", tokenMap)));
       setShowReminderModal(true);
     } catch (error) {
       console.error("Error opening reminder email modal:", error);
@@ -391,6 +579,67 @@ export default function DrawingManager() {
   function getDraftspersonName(raw) {
     const { name } = getDraftspersonDetailsByProject({ draftsperson: raw });
     return name || null;
+  }
+
+  async function openDraftingStats() {
+    const year = new Date().getFullYear();
+    const monthCount = new Date().getMonth() + 1;
+    setDraftingStatsYear(year);
+    setDraftingStatsMonthCount(monthCount);
+    setDraftingStatsSelectedMonths(Array(monthCount).fill(true));
+    setShowDraftingStatsModal(true);
+    setDraftingStatsLoading(true);
+    setDraftingStatsError(null);
+    try {
+      const response = await fetch(`${API_URL}/api/projects`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch projects: ${response.statusText}`);
+      }
+      const data = await response.json();
+      const list = Array.isArray(data) ? data : [];
+      setDraftingStatsGroups(
+        buildDraftingStatsGroups(list, {
+          year,
+          monthCount,
+          getName: (raw) => getDraftspersonName(raw),
+        })
+      );
+    } catch (err) {
+      setDraftingStatsError(err.message || "Failed to load drafting stats");
+      setDraftingStatsGroups([]);
+    } finally {
+      setDraftingStatsLoading(false);
+    }
+  }
+
+  function printDraftingStats() {
+    const area = document.getElementById("drafting-stats-print-area");
+    if (!area) return;
+    const printWindow = window.open("", "drafting-stats-print");
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+    printWindow.document.write(`<!DOCTYPE html>
+<html>
+  <head>
+    <title>Drafting Stats ${draftingStatsYear}</title>
+    <style>
+      body { font-family: Arial, Helvetica, sans-serif; color: #323233; margin: 16px; }
+      h2 { font-size: 20px; margin: 0 0 6px 0; }
+      p { font-size: 12px; margin: 0 0 12px 0; color: #666; }
+      table { border-collapse: collapse; width: 100%; font-size: 11px; }
+      .drafting-stats-month-toggles { display: none !important; }
+      @page { size: landscape; margin: 10mm; }
+      ${draftingStatsPrintThemeCss()}
+    </style>
+  </head>
+  <body>${area.innerHTML}</body>
+</html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.onafterprint = () => printWindow.close();
+    printWindow.print();
   }
 
   // Check if deposit is partial (not fully paid)
@@ -1341,31 +1590,58 @@ export default function DrawingManager() {
                   <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: 0 }}>
                     {activeLabel} {`(${activeProjects.length})`}
                   </h2>
-                  <button
-                    onClick={() => {
-                      setEmailListHtml(buildEmailListHtml(getDrawingManagerListProjectsForEmail()));
-                      setShowEmailModal(true);
-                    }}
-                    style={{
-                      padding: "10px 20px",
-                      background: "#4D93D9",
-                      color: PAGE_TEXT,
-                      border: "none",
-                      borderRadius: "8px",
-                      fontSize: "0.9rem",
-                      fontWeight: 500,
-                      cursor: "pointer",
-                      transition: "background 0.2s",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "#3d7bc9";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "#4D93D9";
-                    }}
-                  >
-                    Email List
-                  </button>
+                  <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void openDraftingStats();
+                      }}
+                      style={{
+                        padding: "10px 20px",
+                        background: "#4D93D9",
+                        color: PAGE_TEXT,
+                        border: "none",
+                        borderRadius: "8px",
+                        fontSize: "0.9rem",
+                        fontWeight: 500,
+                        cursor: "pointer",
+                        transition: "background 0.2s",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "#3d7bc9";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "#4D93D9";
+                      }}
+                    >
+                      Drafting Stats
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEmailListHtml(buildEmailListHtml(getDrawingManagerListProjectsForEmail()));
+                        setShowEmailModal(true);
+                      }}
+                      style={{
+                        padding: "10px 20px",
+                        background: "#4D93D9",
+                        color: PAGE_TEXT,
+                        border: "none",
+                        borderRadius: "8px",
+                        fontSize: "0.9rem",
+                        fontWeight: 500,
+                        cursor: "pointer",
+                        transition: "background 0.2s",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "#3d7bc9";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "#4D93D9";
+                      }}
+                    >
+                      Email List
+                    </button>
+                  </div>
                 </div>
 
                 <div
@@ -1475,6 +1751,379 @@ export default function DrawingManager() {
           })()}
         </div>
       </div>
+
+      {showDraftingStatsModal ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={() => setShowDraftingStatsModal(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="drafting-stats-title"
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              maxWidth: "1100px",
+              width: "95%",
+              maxHeight: "90vh",
+              overflow: "auto",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div id="drafting-stats-print-area">
+            <h2
+              id="drafting-stats-title"
+              style={{ marginTop: 0, marginBottom: "8px", color: MONUMENT }}
+            >
+              Drafting Stats
+            </h2>
+            <p style={{ margin: "0 0 16px 0", fontSize: "0.9rem", color: UI.textMuted }}>
+              Assigned projects in {draftingStatsYear} (VIC and QLD)
+            </p>
+            <div
+              className="drafting-stats-month-toggles"
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "10px 14px",
+                alignItems: "center",
+                marginBottom: "14px",
+              }}
+            >
+              {DRAFTING_STATS_MONTHS.slice(0, draftingStatsMonthCount).map((month, index) => (
+                <label
+                  key={month}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    color: MONUMENT,
+                    cursor: "pointer",
+                    userSelect: "none",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={Boolean(draftingStatsSelectedMonths[index])}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setDraftingStatsSelectedMonths((prev) => {
+                        const next = Array.from({ length: draftingStatsMonthCount }, (_, i) =>
+                          Boolean(prev[i])
+                        );
+                        next[index] = checked;
+                        return next;
+                      });
+                    }}
+                  />
+                  {month}
+                </label>
+              ))}
+            </div>
+            {draftingStatsLoading ? (
+              <div style={{ fontSize: "0.95rem", color: MONUMENT }}>Loading…</div>
+            ) : draftingStatsError ? (
+              <div style={{ color: "#cc3333", fontSize: "0.95rem" }}>{draftingStatsError}</div>
+            ) : draftingStatsGroups.length === 0 ? (
+              <div style={{ fontSize: "0.95rem", color: UI.textMuted }}>
+                No assigned projects for this year.
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                {(() => {
+                  const {
+                    viewed,
+                    includedIndexes,
+                    monthCount: selectedMonthCount,
+                    monthTotals,
+                    grandTotal,
+                  } = filterDraftingStatsBySelectedMonths(
+                    draftingStatsGroups,
+                    draftingStatsSelectedMonths
+                  );
+                  const visibleMonths = includedIndexes.map(
+                    (index) => DRAFTING_STATS_MONTHS[index]
+                  );
+                  if (!selectedMonthCount) {
+                    return (
+                      <div style={{ fontSize: "0.95rem", color: UI.textMuted }}>
+                        Select at least one month.
+                      </div>
+                    );
+                  }
+                  if (!viewed.length) {
+                    return (
+                      <div style={{ fontSize: "0.95rem", color: UI.textMuted }}>
+                        No assigned projects in the selected months.
+                      </div>
+                    );
+                  }
+                  const maxMonthCount = draftingStatsMaxMonthCount(viewed);
+                  const maxRowTotal = Math.max(0, ...viewed.map((g) => g.total));
+                  const maxMonthTotal = Math.max(0, ...monthTotals);
+                  const printExact = draftingStatsPrintExact();
+                  const headerFill = { background: "#d9dde3", color: "#323233", ...printExact };
+                  const nameFill = { background: "#ffffff", color: "#323233", ...printExact };
+                  const spacerCell = {
+                    width: "16px",
+                    minWidth: "16px",
+                    padding: 0,
+                    border: "none",
+                    background: "#ffffff",
+                    ...printExact,
+                  };
+                  const totalCellBase = {
+                    textAlign: "center",
+                    padding: "8px 6px",
+                    border: "1px solid #c5c9ce",
+                    fontWeight: 700,
+                    ...printExact,
+                  };
+                  return (
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    fontSize: "0.85rem",
+                    color: "#323233",
+                  }}
+                >
+                  <thead>
+                    <tr>
+                      <th
+                        style={{
+                          textAlign: "left",
+                          padding: "8px 10px",
+                          border: "1px solid #c5c9ce",
+                          position: "sticky",
+                          left: 0,
+                          zIndex: 1,
+                          whiteSpace: "nowrap",
+                          ...headerFill,
+                        }}
+                      >
+                        Draftsperson
+                      </th>
+                      {visibleMonths.map((month) => (
+                        <th
+                          key={month}
+                          style={{
+                            textAlign: "center",
+                            padding: "8px 6px",
+                            border: "1px solid #c5c9ce",
+                            fontWeight: 700,
+                            letterSpacing: "0.04em",
+                            ...headerFill,
+                          }}
+                        >
+                          {month}
+                        </th>
+                      ))}
+                      <th
+                        style={{
+                          textAlign: "center",
+                          padding: "8px 8px",
+                          border: "1px solid #c5c9ce",
+                          fontWeight: 700,
+                          whiteSpace: "nowrap",
+                          ...headerFill,
+                        }}
+                      >
+                        Total
+                      </th>
+                      <th aria-hidden="true" style={spacerCell} />
+                      <th
+                        style={{
+                          textAlign: "center",
+                          padding: "8px 8px",
+                          border: "1px solid #c5c9ce",
+                          fontWeight: 700,
+                          whiteSpace: "nowrap",
+                          ...headerFill,
+                        }}
+                      >
+                        Avg
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewed.map((group) => {
+                      const avgValue = selectedMonthCount
+                        ? group.total / selectedMonthCount
+                        : 0;
+                      const maxAvg = selectedMonthCount
+                        ? maxRowTotal / selectedMonthCount
+                        : 0;
+                      return (
+                      <tr key={group.name}>
+                        <td
+                          style={{
+                            textAlign: "left",
+                            padding: "8px 10px",
+                            border: "1px solid #c5c9ce",
+                            position: "sticky",
+                            left: 0,
+                            whiteSpace: "nowrap",
+                            fontWeight: 600,
+                            ...nameFill,
+                          }}
+                        >
+                          {group.name}
+                        </td>
+                        {group.months.map((count, monthIndex) => {
+                          const heat = draftingStatsHeatFill(count, maxMonthCount);
+                          return (
+                          <td
+                            key={visibleMonths[monthIndex]}
+                            style={{
+                              textAlign: "center",
+                              padding: "8px 6px",
+                              border: "1px solid #c5c9ce",
+                              fontWeight: count ? 700 : 400,
+                              ...heat,
+                            }}
+                          >
+                            {count}
+                          </td>
+                          );
+                        })}
+                        <td
+                          style={{
+                            ...totalCellBase,
+                            ...draftingStatsHeatFill(group.total, maxRowTotal),
+                          }}
+                        >
+                          {group.total}
+                        </td>
+                        <td aria-hidden="true" style={spacerCell} />
+                        <td
+                          style={{
+                            ...totalCellBase,
+                            ...draftingStatsHeatFill(avgValue, maxAvg),
+                          }}
+                        >
+                          {formatDraftingStatsAverage(group.total, selectedMonthCount)}
+                        </td>
+                      </tr>
+                      );
+                    })}
+                    <tr>
+                      <td
+                        style={{
+                          textAlign: "left",
+                          padding: "8px 10px",
+                          border: "1px solid #c5c9ce",
+                          position: "sticky",
+                          left: 0,
+                          whiteSpace: "nowrap",
+                          fontWeight: 700,
+                          ...headerFill,
+                        }}
+                      >
+                        Total
+                      </td>
+                      {monthTotals.map((count, monthIndex) => (
+                        <td
+                          key={`total-${visibleMonths[monthIndex]}`}
+                          style={{
+                            ...totalCellBase,
+                            ...draftingStatsHeatFill(count, maxMonthTotal),
+                          }}
+                        >
+                          {count}
+                        </td>
+                      ))}
+                      <td
+                        style={{
+                          ...totalCellBase,
+                          ...draftingStatsHeatFill(grandTotal, grandTotal),
+                        }}
+                      >
+                        {grandTotal}
+                      </td>
+                      <td aria-hidden="true" style={spacerCell} />
+                      <td
+                        style={{
+                          ...totalCellBase,
+                          ...draftingStatsHeatFill(grandTotal, grandTotal),
+                        }}
+                      >
+                        {formatDraftingStatsAverage(grandTotal, selectedMonthCount)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                  );
+                })()}
+              </div>
+            )}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "24px" }}>
+              <button
+                type="button"
+                onClick={printDraftingStats}
+                disabled={
+                  draftingStatsLoading ||
+                  draftingStatsGroups.length === 0 ||
+                  !draftingStatsSelectedMonths.some(Boolean)
+                }
+                style={{
+                  padding: "10px 20px",
+                  background: "#4D93D9",
+                  color: PAGE_TEXT,
+                  border: "none",
+                  borderRadius: "8px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor:
+                    draftingStatsLoading ||
+                    draftingStatsGroups.length === 0 ||
+                    !draftingStatsSelectedMonths.some(Boolean)
+                      ? "default"
+                      : "pointer",
+                  opacity:
+                    draftingStatsLoading ||
+                    draftingStatsGroups.length === 0 ||
+                    !draftingStatsSelectedMonths.some(Boolean)
+                      ? 0.6
+                      : 1,
+                }}
+              >
+                Print
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowDraftingStatsModal(false)}
+                style={{
+                  padding: "10px 20px",
+                  background: SECTION_GREY,
+                  color: MONUMENT,
+                  border: "none",
+                  borderRadius: "8px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Email List Modal */}
       {showEmailModal && (
@@ -1882,10 +2531,11 @@ export default function DrawingManager() {
                 <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
                   Body
                 </label>
-                <textarea
-                  value={reminderEmailBody}
-                  onChange={(e) => setReminderEmailBody(e.target.value)}
-                  disabled={reminderSending}
+                <div
+                  ref={reminderBodyRef}
+                  contentEditable={!reminderSending}
+                  onInput={(e) => setReminderEmailBody(e.currentTarget.innerHTML)}
+                  onBlur={(e) => setReminderEmailBody(e.currentTarget.innerHTML)}
                   style={{
                     width: "100%",
                     minHeight: "240px",
@@ -1897,8 +2547,9 @@ export default function DrawingManager() {
                     background: WHITE,
                     boxSizing: "border-box",
                     lineHeight: 1.5,
-                    resize: "vertical",
+                    outline: "none",
                     fontFamily: "inherit",
+                    opacity: reminderSending ? 0.7 : 1,
                   }}
                 />
               </div>

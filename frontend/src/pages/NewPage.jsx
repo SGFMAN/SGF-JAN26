@@ -30,6 +30,9 @@ const emptyQuote = () => ({
   email: "",
   phone: "",
   active: true,
+  reminder_1_sent_at: null,
+  reminder_2_sent_at: null,
+  reminder_3_sent_at: null,
 });
 
 const COLS = [
@@ -41,7 +44,10 @@ const COLS = [
   { key: "name", label: "Name", type: "text", width: "12%" },
   { key: "email", label: "Email", type: "email", width: "16%" },
   { key: "phone", label: "Phone", type: "tel", width: "10%" },
-  { key: "active", label: "Active", type: "activeCheck", width: "7%" },
+  { key: "active", label: "Active", type: "activeCheck", width: "52px" },
+  { key: "reminder_1_sent_at", label: "1", type: "reminderSent", width: "36px" },
+  { key: "reminder_2_sent_at", label: "2", type: "reminderSent", width: "36px" },
+  { key: "reminder_3_sent_at", label: "3", type: "reminderSent", width: "36px" },
 ];
 
 const cellBorder = `1px solid ${GRID_LINE}`;
@@ -126,6 +132,9 @@ function quoteFromApi(q) {
     email: q.email || "",
     phone: q.phone || "",
     active: q.active !== false,
+    reminder_1_sent_at: q.reminder_1_sent_at || null,
+    reminder_2_sent_at: q.reminder_2_sent_at || null,
+    reminder_3_sent_at: q.reminder_3_sent_at || null,
   };
 }
 
@@ -269,6 +278,25 @@ function QuoteSheetRow({ value, disabled, onResetClick, onActiveChange, trailing
             </td>
           );
         }
+        if (col.type === "reminderSent") {
+          const sentAt = value[col.key];
+          const sent = Boolean(sentAt);
+          const n = col.key === "reminder_2_sent_at" ? 2 : col.key === "reminder_3_sent_at" ? 3 : 1;
+          return (
+            <td key={col.key} style={checkCellStyle}>
+              <input
+                type="checkbox"
+                checked={sent}
+                disabled
+                readOnly
+                tabIndex={-1}
+                aria-label={sent ? `Reminder ${n} sent` : `Reminder ${n} not sent`}
+                title={sent ? `Reminder ${n} sent ${formatQuoteDateAdded(sentAt)}` : `Reminder ${n} not sent`}
+                style={{ pointerEvents: "none", opacity: 1, cursor: "default", accentColor: MONUMENT }}
+              />
+            </td>
+          );
+        }
         return (
           <td key={col.key} style={{ ...tdStyle, ...cellTextStyle }} title={value[col.key] || ""}>
             {value[col.key] || ""}
@@ -312,10 +340,12 @@ export default function NewPage() {
     };
   }, []);
 
-  const loadQuotes = useCallback(async () => {
+  const loadQuotes = useCallback(async ({ silent } = {}) => {
     try {
-      setLoading(true);
-      setError(null);
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
       const res = await fetch(`${API_URL}/api/quotes`, { headers: getApiHeaders() });
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
@@ -325,15 +355,24 @@ export default function NewPage() {
       for (const q of list) nextEdits[q.id] = quoteFromApi(q);
       setEdits(nextEdits);
     } catch (err) {
-      setError(err.message || "Failed to load quotes");
-      setQuotes([]);
+      if (!silent) {
+        setError(err.message || "Failed to load quotes");
+        setQuotes([]);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void loadQuotes();
+  }, [loadQuotes]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      void loadQuotes({ silent: true });
+    }, 20000);
+    return () => clearInterval(timer);
   }, [loadQuotes]);
 
   function openAddressModalFromPaste(text) {
@@ -560,7 +599,7 @@ export default function NewPage() {
 
   return (
     <div
-      className="page-container"
+      className="page-container project-list-page"
       style={{
         position: "fixed",
         inset: 0,
@@ -607,7 +646,6 @@ export default function NewPage() {
           marginLeft: "auto",
           marginRight: "auto",
           gap: "32px",
-          paddingBottom: "32px",
           boxSizing: "border-box",
         }}
       >
@@ -641,7 +679,7 @@ export default function NewPage() {
             borderRadius: "18px",
             flex: 1,
             minWidth: 0,
-            minHeight: "60vh",
+            minHeight: 0,
             boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
             padding: "20px 22px",
             boxSizing: "border-box",
@@ -649,6 +687,7 @@ export default function NewPage() {
             display: "flex",
             flexDirection: "column",
             gap: "12px",
+            overflow: "hidden",
           }}
         >
           <div
@@ -657,6 +696,7 @@ export default function NewPage() {
               borderRadius: "10px",
               border: `1px dashed #aaa`,
               padding: "12px 14px",
+              flexShrink: 0,
             }}
           >
             <label
@@ -702,6 +742,7 @@ export default function NewPage() {
             <div style={{ color: "#cc3333", fontSize: "1rem" }}>Error: {error}</div>
           ) : (
             <div
+              className="project-list-scroll"
               style={{
                 flex: 1,
                 minHeight: 0,
@@ -727,7 +768,14 @@ export default function NewPage() {
                 <thead>
                   <tr>
                     {COLS.map((col) => (
-                      <th key={col.key} style={thStyle}>
+                      <th
+                        key={col.key}
+                        style={{
+                          ...thStyle,
+                          textAlign: col.type === "activeCheck" || col.type === "reminderSent" ? "center" : "left",
+                        }}
+                        title={col.type === "reminderSent" ? `Reminder ${col.label}` : undefined}
+                      >
                         {col.label}
                       </th>
                     ))}

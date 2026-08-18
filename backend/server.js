@@ -7118,11 +7118,15 @@ function contentTypeForImageFile(filePath) {
  * Normalises Windows (\r\n) and old Mac (\r) line endings first.
  */
 function convertEmailBodyNewlinesToBr(htmlBody) {
-  return String(htmlBody || "")
+  const raw = String(htmlBody || "")
     .trim()
     .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .replace(/\n/g, "<br>");
+    .replace(/\r/g, "\n");
+  if (!raw) return "";
+  if (/<(?:p|div|ul|ol|li|h[1-6]|table|blockquote)\b/i.test(raw)) {
+    return raw;
+  }
+  return raw.replace(/\n/g, "<br>");
 }
 
 // Helper: embed logo at end of HTML via CID inline part (visible in body, not a separate attachment)

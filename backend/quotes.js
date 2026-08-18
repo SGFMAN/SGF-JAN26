@@ -6,7 +6,7 @@
 const QUOTE_STATUS = "Quote";
 
 const QUOTE_SELECT = `id, access_token, name, status, suburb, street, state, client_name, email, phone,
-  quote_active, quote_added_at, updated_at`;
+  quote_active, quote_added_at, quote_reminder_1_sent_at, quote_reminder_2_sent_at, quote_reminder_3_sent_at, updated_at`;
 
 function normalizeAddressHyphensForFilesystem(s) {
   if (s == null) return "";
@@ -164,6 +164,9 @@ function rowToQuoteApi(row) {
     phone: row.phone || "",
     active: row.quote_active !== false,
     created_at: row.quote_added_at || row.updated_at || null,
+    reminder_1_sent_at: row.quote_reminder_1_sent_at || null,
+    reminder_2_sent_at: row.quote_reminder_2_sent_at || null,
+    reminder_3_sent_at: row.quote_reminder_3_sent_at || null,
     updated_at: row.updated_at,
   };
 }

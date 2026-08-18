@@ -7,7 +7,7 @@ import { DRAFTSPERSON_UNASSIGNED } from "../utils/draftspersonSentinel";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 import { replaceContractAndColorStatusTokens } from "../utils/designPhaseStatusTiles";
-import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
+import { normalizeBodyHtmlForEditor } from "../components/EmailBodyEditor.jsx";
 import {
   formatDepositPaidToken,
   formatDepositStatusToken,
@@ -43,6 +43,7 @@ export default function Overview({ project }) {
   const [previewFrom, setPreviewFrom] = useState("");
   const [previewSubject, setPreviewSubject] = useState("");
   const [previewBody, setPreviewBody] = useState("");
+  const previewBodyRef = useRef(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [displayedTexts, setDisplayedTexts] = useState({}); // Store word-by-word displayed text for each result
@@ -58,6 +59,14 @@ export default function Overview({ project }) {
   useEffect(() => {
     fetchEmailTemplates();
   }, []);
+
+  useEffect(() => {
+    if (previewModalOpen && previewBodyRef.current && previewBody) {
+      if (previewBodyRef.current.innerHTML !== previewBody) {
+        previewBodyRef.current.innerHTML = previewBody;
+      }
+    }
+  }, [previewModalOpen, previewBody]);
 
   useEffect(() => {
     const refresh = () => setUiButtonStyleRevision((n) => n + 1);
@@ -340,7 +349,7 @@ export default function Overview({ project }) {
     setPreviewTo(toAddresses.join(", "));
     setPreviewFrom(fromAddress);
     setPreviewSubject(subject);
-    setPreviewBody(htmlBody);
+    setPreviewBody(normalizeBodyHtmlForEditor(htmlBody));
     setPreviewModalOpen(true);
   }
 
@@ -1242,37 +1251,27 @@ export default function Overview({ project }) {
 
               <div>
                 <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
-                  Body (HTML)
+                  Body
                 </label>
-                <textarea
-                  value={previewBody}
-                  onChange={(e) => setPreviewBody(e.target.value)}
+                <div
+                  ref={previewBodyRef}
+                  contentEditable
+                  onInput={(e) => setPreviewBody(e.currentTarget.innerHTML)}
+                  onBlur={(e) => setPreviewBody(e.currentTarget.innerHTML)}
                   style={{
                     width: "100%",
                     minHeight: "300px",
-                    padding: "10px 12px",
+                    padding: "12px",
                     borderRadius: "8px",
                     border: `1px solid ${SECTION_GREY}`,
-                    fontSize: "1rem",
+                    fontSize: "0.9rem",
                     color: MONUMENT,
                     background: WHITE,
                     boxSizing: "border-box",
-                    resize: "vertical",
-                    fontFamily: "monospace",
+                    lineHeight: "1.6",
+                    outline: "none",
                   }}
                 />
-                <div style={{ marginTop: "8px", padding: "12px", background: UI.inputBg, borderRadius: "8px", border: `1px solid ${SECTION_GREY}` }}>
-                  <div style={{ fontSize: "0.85rem", color: UI.textMuted, marginBottom: "8px", fontWeight: 500 }}>Preview:</div>
-                  <div
-                    style={{
-                      fontSize: "0.9rem",
-                      color: MONUMENT,
-                      lineHeight: "1.6",
-                      whiteSpace: "pre-wrap",
-                    }}
-                    dangerouslySetInnerHTML={{ __html: convertEmailBodyNewlinesToBr(previewBody) }}
-                  />
-                </div>
               </div>
 
               <div className="overview-email-actions">

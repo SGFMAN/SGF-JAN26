@@ -2325,7 +2325,7 @@ export default function Drawings({
 
     if (!clientFromResolved || !String(clientFromResolved).trim()) {
       alert(
-        "No sender email in Stream Settings for this stream (Send Drawings to Client — From). Configure Settings → Stream Settings → Drawings."
+        "No sender email in Stream Settings for this stream (Send Drawings to Client — From [DESIGN] / [PERMIT]). Configure Settings → Stream Settings → Drawings."
       );
       return;
     }
@@ -3324,7 +3324,7 @@ export default function Drawings({
 
     if (!sendFromOverride || !String(sendFromOverride).trim()) {
       alert(
-        "No sender email in Stream Settings (Send Drawings to Client — From). Configure Settings → Stream Settings → Drawings."
+        "No sender email in Stream Settings (Send Drawings to Client — From [DESIGN] / [PERMIT]). Configure Settings → Stream Settings → Drawings."
       );
       return;
     }

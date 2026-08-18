@@ -146,6 +146,8 @@ function drawingsSendClientFieldKeys(fieldGroup) {
       label: "Send Drawings to Client",
       fromVic: "salespersonToClientFromEmail",
       fromQld: "qldSalespersonToClientFromEmail",
+      fromPermitVic: "salespersonToClientPermitFromEmail",
+      fromPermitQld: "qldSalespersonToClientPermitFromEmail",
       sendVic: "sendToClients",
       sendQld: "qldSendToClients",
       extraPrefix: "",
@@ -319,6 +321,7 @@ function defaultDrawingsState() {
     /** VIC: Drawings Upload To (additional 3) [CONSTRUCTION] */
     designToSalespersonConstructionToEmail4: "",
     salespersonToClientFromEmail: "",
+    salespersonToClientPermitFromEmail: "",
     sendToClients: false,
     extraEmail1: false,
     extraEmail1Address: "",
@@ -348,6 +351,7 @@ function defaultDrawingsState() {
     /** QLD: Drawings Upload To (additional 3) [CONSTRUCTION] */
     qldDesignToSalespersonConstructionToEmail4: "",
     qldSalespersonToClientFromEmail: "",
+    qldSalespersonToClientPermitFromEmail: "",
     designNotesFromEmail: "",
     designNotesToEmail: "",
     qldDesignNotesFromEmail: "",
@@ -448,6 +452,13 @@ function normalizeStreamSettingsMap(raw, streamOptions = STREAM_OPTIONS_FALLBACK
     }
     if (!row.drawings.qldSalespersonToClientFromEmail) {
       row.drawings.qldSalespersonToClientFromEmail = row.drawings.salespersonToClientFromEmail || "";
+    }
+    if (!row.drawings.salespersonToClientPermitFromEmail) {
+      row.drawings.salespersonToClientPermitFromEmail = row.drawings.salespersonToClientFromEmail || "";
+    }
+    if (!row.drawings.qldSalespersonToClientPermitFromEmail) {
+      row.drawings.qldSalespersonToClientPermitFromEmail =
+        row.drawings.qldSalespersonToClientFromEmail || row.drawings.salespersonToClientFromEmail || "";
     }
     if (row.drawings.qldSendToClients == null) {
       row.drawings.qldSendToClients = !!row.drawings.sendToClients;
@@ -2492,24 +2503,29 @@ export default function StreamSettings() {
                                       const K = drawingsSendClientFieldKeys(section.fieldGroup);
                                       if (!K) return null;
                                       const fromKey = isQld ? K.fromQld : K.fromVic;
+                                      const fromPermitKey = isQld ? K.fromPermitQld : K.fromPermitVic;
                                       const sendKey = isQld ? K.sendQld : K.sendVic;
                                       const slots = drawingsSendClientExtraSlotDefs(K.extraPrefix);
-                                      return (
-                                        <>
+                                      const fromSelect = (fieldKey, heading) => (
                                           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                             <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                              {K.label} — From
+                                              {heading}
                                             </span>
                                             <DrawingNotifySmtpSelect
                                               smtpOptions={smtpSlotEmails}
-                                              value={d[fromKey] || ""}
+                                              value={d[fieldKey] || ""}
                                               disabled={saving}
                                               onValueChange={(next) => {
-                                                updateDrawingText(rowKey, fromKey, next);
+                                                updateDrawingText(rowKey, fieldKey, next);
                                               }}
                                               onCommit={flushPersist}
                                             />
                                           </div>
+                                      );
+                                      return (
+                                        <>
+                                          {fromSelect(fromKey, "Send Drawings to Client - From [DESIGN]")}
+                                          {fromSelect(fromPermitKey, "Send Drawings to Client - From [PERMIT]")}
                                           <label
                                             style={{
                                               display: "flex",
