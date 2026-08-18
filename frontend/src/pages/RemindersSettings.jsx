@@ -35,7 +35,7 @@ function normalizeReminders(raw) {
 }
 
 function delayLabel(n) {
-  return n === 1 ? "1 minute" : `${n} minutes`;
+  return n === 1 ? "1 hour" : `${n} hours`;
 }
 
 export default function RemindersSettings() {
@@ -175,9 +175,6 @@ export default function RemindersSettings() {
         >
           Quotes
         </h2>
-        <p style={{ margin: "6px 0 0", fontSize: "0.85rem", color: UI.textMuted }}>
-          Delays are in minutes for testing.
-        </p>
       </div>
 
       {reminders.map((row, index) => (

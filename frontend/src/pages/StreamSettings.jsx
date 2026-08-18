@@ -1170,7 +1170,7 @@ export default function StreamSettings() {
         minHeight: 0,
         flex: 1,
         display: "grid",
-        gridTemplateColumns: "260px 220px minmax(0, 1fr)",
+        gridTemplateColumns: "max-content max-content minmax(0, 1fr)",
         alignItems: "stretch",
         padding: "16px",
         gap: "16px",
@@ -1180,8 +1180,8 @@ export default function StreamSettings() {
     >
       <div
         style={{
-          width: "100%",
-          minWidth: "240px",
+          width: "max-content",
+          maxWidth: "100%",
           alignSelf: "stretch",
           display: "flex",
           flexDirection: "column",
@@ -1213,6 +1213,7 @@ export default function StreamSettings() {
             outline: emailNavScope === EMAIL_NAV_GENERAL ? `2px solid ${UI.outline}` : "none",
             boxShadow: emailNavScope === EMAIL_NAV_GENERAL ? "0 2px 4px rgba(50,50,51,.04)" : "none",
             textAlign: "left",
+            whiteSpace: "nowrap",
           }}
         >
           <h3
@@ -1221,6 +1222,7 @@ export default function StreamSettings() {
               fontSize: "1rem",
               fontWeight: 700,
               color: emailNavScope === EMAIL_NAV_GENERAL ? MONUMENT : UI.textSecondary,
+              whiteSpace: "nowrap",
             }}
           >
             General
@@ -1252,6 +1254,7 @@ export default function StreamSettings() {
             outline: emailNavScope === "stream" ? `2px solid ${UI.outline}` : "none",
             boxShadow: emailNavScope === "stream" ? "0 2px 4px rgba(50,50,51,.04)" : "none",
             textAlign: "left",
+            whiteSpace: "nowrap",
           }}
         >
           <h3
@@ -1260,6 +1263,7 @@ export default function StreamSettings() {
               fontSize: "1rem",
               fontWeight: 700,
               color: emailNavScope === "stream" ? MONUMENT : UI.textSecondary,
+              whiteSpace: "nowrap",
             }}
           >
             By Stream
@@ -1269,6 +1273,8 @@ export default function StreamSettings() {
 
       <div
         style={{
+          width: "max-content",
+          maxWidth: "100%",
           alignSelf: "stretch",
           backgroundColor: "#E5E5E7",
           border: `1px solid ${UI.outline}`,
@@ -1281,9 +1287,56 @@ export default function StreamSettings() {
           gap: "8px",
         }}
       >
+        <div
+          aria-hidden
+          style={{
+            height: 0,
+            overflow: "hidden",
+            visibility: "hidden",
+            pointerEvents: "none",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-start",
+          }}
+        >
+          <div style={{ margin: "0 0 4px 0", fontSize: "0.92rem", fontWeight: 700, whiteSpace: "nowrap" }}>
+            Sections
+          </div>
+          <div style={{ margin: "0 0 4px 0", fontSize: "0.92rem", fontWeight: 700, whiteSpace: "nowrap" }}>
+            Streams
+          </div>
+          {GLOBAL_EMAIL_SECTIONS.map((section) => (
+            <div
+              key={`nav-size-${section.key}`}
+              style={{
+                padding: "10px 8px",
+                fontSize: "0.92rem",
+                fontWeight: 500,
+                letterSpacing: "0.2px",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {section.label} ▾
+            </div>
+          ))}
+          {streamDisplayList.map(({ label }) => (
+            <div
+              key={`nav-size-stream-${label}`}
+              style={{
+                padding: "10px 8px",
+                fontSize: "0.92rem",
+                fontWeight: 500,
+                letterSpacing: "0.2px",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {label}
+            </div>
+          ))}
+        </div>
         {emailNavScope === EMAIL_NAV_GENERAL ? (
           <>
-            <h4 style={{ margin: "0 0 4px 0", fontSize: "0.92rem", fontWeight: 700 }}>Sections</h4>
+            <h4 style={{ margin: "0 0 4px 0", fontSize: "0.92rem", fontWeight: 700, whiteSpace: "nowrap" }}>Sections</h4>
             {GLOBAL_EMAIL_SECTIONS.map((section) => {
               const isOpen = globalEmailSection === section.key;
               return (
@@ -1306,6 +1359,7 @@ export default function StreamSettings() {
                     letterSpacing: "0.2px",
                     cursor: "pointer",
                     outline: isOpen ? `1px solid ${UI.outline}` : "none",
+                    whiteSpace: "nowrap",
                   }}
                 >
                   {section.label} {isOpen ? "▾" : "▸"}
@@ -1315,7 +1369,7 @@ export default function StreamSettings() {
           </>
         ) : (
           <>
-            <h4 style={{ margin: "0 0 4px 0", fontSize: "0.92rem", fontWeight: 700 }}>Streams</h4>
+            <h4 style={{ margin: "0 0 4px 0", fontSize: "0.92rem", fontWeight: 700, whiteSpace: "nowrap" }}>Streams</h4>
             {streamDisplayList.map(({ label, keys }) => {
               const isSelected = keys.includes(selectedStream);
               return (
@@ -1339,6 +1393,7 @@ export default function StreamSettings() {
                     letterSpacing: "0.2px",
                     cursor: "pointer",
                     outline: isSelected ? `1px solid ${UI.outline}` : "none",
+                    whiteSpace: "nowrap",
                   }}
                 >
                   {label}

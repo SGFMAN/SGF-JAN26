@@ -1,6 +1,5 @@
 /**
  * Settings → Reminders (quotes). Shared parse for API + scheduler.
- * delayUnit is minutes while testing; switch emptyReminderSettings to "days" later.
  */
 
 const QUOTE_REMINDER_COUNT = 3;
@@ -30,7 +29,7 @@ function sanitizeQuoteReminder(raw, index) {
 
 function emptyReminderSettings() {
   return {
-    delayUnit: "minutes",
+    delayUnit: "hours",
     quotes: {
       reminders: Array.from({ length: QUOTE_REMINDER_COUNT }, (_, i) => emptyQuoteReminder(i)),
     },

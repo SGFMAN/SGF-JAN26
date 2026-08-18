@@ -111,7 +111,11 @@ async function processOneReminder(pool, helpers, reminder, index, delayUnit) {
        AND ${sentCol} IS NULL
        AND NULLIF(BTRIM(COALESCE(email, '')), '') IS NOT NULL
        AND quote_added_at <= NOW() - ${
-         delayUnit === "days" ? "make_interval(days => $1::int)" : "make_interval(mins => $1::int)"
+         delayUnit === "days"
+           ? "make_interval(days => $1::int)"
+           : delayUnit === "minutes"
+             ? "make_interval(mins => $1::int)"
+             : "make_interval(hours => $1::int)"
        }
      ORDER BY quote_added_at ASC, id ASC
      LIMIT $2`;
@@ -160,7 +164,10 @@ async function runQuoteReminderTick(pool, helpers) {
   if (!pool) return;
   const settings = await loadReminderSettings(pool);
   const reminders = settings?.quotes?.reminders || [];
-  const delayUnit = settings?.delayUnit === "days" ? "days" : "minutes";
+  const delayUnit =
+    settings?.delayUnit === "days" || settings?.delayUnit === "minutes"
+      ? settings.delayUnit
+      : "hours";
   for (let i = 0; i < QUOTE_REMINDER_COUNT; i += 1) {
     await processOneReminder(pool, helpers, reminders[i], i, delayUnit);
   }
