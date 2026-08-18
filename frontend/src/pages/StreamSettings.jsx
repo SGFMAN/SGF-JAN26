@@ -156,9 +156,6 @@ function drawingsSendClientFieldKeys(fieldGroup) {
   return null;
 }
 
-const SECTION_OPTIONS = [{ key: "drawings", label: "Drawings" }];
-
-/** Stored on `clientEmailTo` / `clientEmailTo2`; expanded at send time to active client contact emails. */
 const NEW_PROJECT_CLIENT_TO_TOKEN = "{Contact1}";
 const NEW_PROJECT_CLIENT_TO_TOKENS = ["{Contact1}", "{Contact2}", "{Contact3}"];
 
@@ -710,7 +707,7 @@ const GLOBAL_EMAIL_SECTIONS = [
 ];
 
 export default function StreamSettings() {
-  const [emailNavScope, setEmailNavScope] = useState("stream"); // "stream" | EMAIL_NAV_GENERAL
+  const [emailNavScope, setEmailNavScope] = useState(EMAIL_NAV_GENERAL);
   const [streamsCatalog, setStreamsCatalog] = useState(FALLBACK_STREAMS);
   const [streamOptions, setStreamOptions] = useState(STREAM_OPTIONS_FALLBACK);
   const [selectedStream, setSelectedStream] = useState(STREAM_OPTIONS_FALLBACK[0]);
@@ -1195,7 +1192,7 @@ export default function StreamSettings() {
         }}
       >
         <h3 style={{ margin: "0 0 12px 0", fontSize: "1rem", fontWeight: 700 }}>
-          General & streams ({streamDisplayList.length + 1})
+          Email Settings
         </h3>
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
           <button
@@ -1224,38 +1221,35 @@ export default function StreamSettings() {
           >
             General
           </button>
-          {streamDisplayList.map(({ label, keys }) => {
-            const isSelected = emailNavScope === "stream" && keys.includes(selectedStream);
-            const onPick = () => {
+          <button
+            type="button"
+            onClick={() => {
               setEmailNavScope("stream");
-              setSelectedStream(isSelected ? selectedStream : keys[0]);
-            };
-            return (
-            <button
-              key={label}
-              type="button"
-              onClick={onPick}
-              style={{
-                width: "fit-content",
-                minWidth: "100%",
-                background: isSelected ? WHITE : "transparent",
-                color: isSelected ? MONUMENT : UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "10px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                letterSpacing: "0.3px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                outline: isSelected ? `1px solid ${UI.outline}` : "none",
-                boxShadow: isSelected ? "0 2px 4px rgba(50,50,51,.04)" : "none",
-              }}
-            >
-              {label}
-            </button>
-          );})}
+              setActiveSection("drawings");
+              setSelectedStream((prev) =>
+                streamOptions.includes(prev) ? prev : streamOptions[0] || prev
+              );
+            }}
+            style={{
+              width: "fit-content",
+              minWidth: "100%",
+              background: emailNavScope === "stream" ? WHITE : "transparent",
+              color: emailNavScope === "stream" ? MONUMENT : UI.textSecondary,
+              border: "none",
+              borderRadius: "10px",
+              padding: "10px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 600,
+              textAlign: "center",
+              letterSpacing: "0.3px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              outline: emailNavScope === "stream" ? `1px solid ${UI.outline}` : "none",
+              boxShadow: emailNavScope === "stream" ? "0 2px 4px rgba(50,50,51,.04)" : "none",
+            }}
+          >
+            Send Drawings
+          </button>
         </div>
 
       </div>
@@ -1274,9 +1268,10 @@ export default function StreamSettings() {
           gap: "8px",
         }}
       >
-        <h4 style={{ margin: "0 0 4px 0", fontSize: "0.92rem", fontWeight: 700 }}>Sections</h4>
-        {emailNavScope === EMAIL_NAV_GENERAL
-          ? GLOBAL_EMAIL_SECTIONS.map((section) => {
+        {emailNavScope === EMAIL_NAV_GENERAL ? (
+          <>
+            <h4 style={{ margin: "0 0 4px 0", fontSize: "0.92rem", fontWeight: 700 }}>Sections</h4>
+            {GLOBAL_EMAIL_SECTIONS.map((section) => {
               const isOpen = globalEmailSection === section.key;
               return (
                 <button
@@ -1303,18 +1298,25 @@ export default function StreamSettings() {
                   {section.label} {isOpen ? "▾" : "▸"}
                 </button>
               );
-            })
-          : SECTION_OPTIONS.map((section) => {
-              const isOpen = activeSection === section.key;
+            })}
+          </>
+        ) : (
+          <>
+            <h4 style={{ margin: "0 0 4px 0", fontSize: "0.92rem", fontWeight: 700 }}>Streams</h4>
+            {streamDisplayList.map(({ label, keys }) => {
+              const isSelected = keys.includes(selectedStream);
               return (
                 <button
-                  key={section.key}
+                  key={label}
                   type="button"
-                  onClick={() => setActiveSection((prev) => (prev === section.key ? null : section.key))}
+                  onClick={() => {
+                    setSelectedStream(isSelected ? selectedStream : keys[0]);
+                    setActiveSection("drawings");
+                  }}
                   style={{
                     width: "100%",
-                    background: isOpen ? WHITE : "transparent",
-                    color: isOpen ? MONUMENT : UI.textSecondary,
+                    background: isSelected ? WHITE : "transparent",
+                    color: isSelected ? MONUMENT : UI.textSecondary,
                     border: "none",
                     borderRadius: "10px",
                     padding: "10px 8px",
@@ -1323,13 +1325,15 @@ export default function StreamSettings() {
                     textAlign: "left",
                     letterSpacing: "0.2px",
                     cursor: "pointer",
-                    outline: isOpen ? `1px solid ${UI.outline}` : "none",
+                    outline: isSelected ? `1px solid ${UI.outline}` : "none",
                   }}
                 >
-                  {section.label} {isOpen ? "▾" : "▸"}
+                  {label}
                 </button>
               );
             })}
+          </>
+        )}
       </div>
 
       <div
@@ -2398,11 +2402,8 @@ export default function StreamSettings() {
               </div>
             </div>
           ) : null
-        ) : !activeSection ? (
-          <div style={{ fontSize: "0.95rem", color: UI.textMuted }}>Select a section in column 2.</div>
         ) : (
           <div style={{ flex: 1, minHeight: 0 }}>
-            {activeSection === "drawings" ? (
               <div style={{ ...columnPanelStyle, minHeight: "100%" }}>
                 <h4
                   style={{
@@ -2600,7 +2601,6 @@ export default function StreamSettings() {
                   })}
                 </div>
               </div>
-            ) : null}
           </div>
         )}
       </div>
