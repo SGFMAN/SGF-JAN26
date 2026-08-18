@@ -57,6 +57,7 @@ import {
   newDrawingHistoryEntryFields,
   parseDrawingsHistory,
   formatDrawingApprovalDateLabel,
+  resolveSendDrawingsToClientTemplateName,
 } from "../utils/drawingsStatusRules";
 
 import { getApiHeaders, isUserAdmin } from "../utils/auth";
@@ -2283,16 +2284,13 @@ export default function Drawings({
       return;
     }
 
-    let templateName = "";
-    if (drawingsStatus === "Drawings Complete") {
-      templateName = "DRAWINGS - Client - General";
-    } else if (drawingsStatus === "Concept Stage") {
-      templateName = "DRAWINGS - Client - CONCEPT";
-    } else if (drawingsStatus === "Working Drawing Stage") {
-      templateName = "DRAWINGS - Client - WD";
-    } else {
+    const templateName = resolveSendDrawingsToClientTemplateName(
+      effectiveProjectStatus(),
+      drawingsStatus
+    );
+    if (!templateName) {
       alert(
-        "Please set the drawings status to Concept Stage, Working Drawing Stage, or Drawings Complete before sending to client."
+        "Please set the project to Design Phase (Concept or Working Drawings) or Permit Phase (Concept) before sending to client."
       );
       return;
     }

@@ -1,5 +1,11 @@
 /** Drawings status + per-revision approval flags (see product rules). */
 
+import {
+  isDesignPhaseStatus,
+  isPermitPhaseStatus,
+  isPreEngagementPhaseStatus,
+} from "./projectStatus";
+
 export const DRAWINGS_STATUS = {
   NOT_ASSIGNED: "Not Assigned",
   CONCEPT_STAGE: "Concept Stage",
@@ -184,4 +190,42 @@ export function newDrawingHistoryEntryFields() {
     conceptApprovedDate: null,
     workingDrawingsApprovedDate: null,
   };
+}
+
+export const DRAWINGS_CLIENT_TEMPLATE = {
+  CONCEPT: "DRAWINGS - Client - CONCEPT",
+  WD: "DRAWINGS - Client - WD",
+  GENERAL: "DRAWINGS - Client - General",
+};
+
+function drawingsKindFromStatus(drawingsStatus) {
+  const s = String(drawingsStatus || "").trim().toLowerCase();
+  if (s === "concept stage" || s === "concept") return "concept";
+  if (s === "working drawing stage" || s === "working drawings" || s === "working") {
+    return "working";
+  }
+  if (s === "drawings complete" || s === "complete") return "complete";
+  return "";
+}
+
+/**
+ * Send Drawings to Client template from project phase + drawings status:
+ * Design + Concept → DRAWINGS - Client - CONCEPT
+ * Design + Working Drawings → DRAWINGS - Client - WD
+ * Permit + Concept → DRAWINGS - Client - General
+ */
+export function resolveSendDrawingsToClientTemplateName(projectStatus, drawingsStatus) {
+  const kind = drawingsKindFromStatus(drawingsStatus);
+  const designLike =
+    isDesignPhaseStatus(projectStatus) || isPreEngagementPhaseStatus(projectStatus);
+
+  if (designLike && kind === "concept") return DRAWINGS_CLIENT_TEMPLATE.CONCEPT;
+  if (designLike && kind === "working") return DRAWINGS_CLIENT_TEMPLATE.WD;
+  if (isPermitPhaseStatus(projectStatus) && kind === "concept") {
+    return DRAWINGS_CLIENT_TEMPLATE.GENERAL;
+  }
+  if (kind === "complete") return DRAWINGS_CLIENT_TEMPLATE.GENERAL;
+  if (kind === "working") return DRAWINGS_CLIENT_TEMPLATE.WD;
+  if (kind === "concept") return DRAWINGS_CLIENT_TEMPLATE.CONCEPT;
+  return null;
 }

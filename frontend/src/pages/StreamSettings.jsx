@@ -1171,7 +1171,7 @@ export default function StreamSettings() {
         flex: 1,
         display: "grid",
         gridTemplateColumns: "260px 220px minmax(0, 1fr)",
-        alignItems: "flex-start",
+        alignItems: "stretch",
         padding: "16px",
         gap: "16px",
         boxSizing: "border-box",
@@ -1180,78 +1180,91 @@ export default function StreamSettings() {
     >
       <div
         style={{
-          width: "fit-content",
+          width: "100%",
           minWidth: "240px",
           alignSelf: "stretch",
-          backgroundColor: "#E5E5E7",
-          border: `1px solid ${UI.outline}`,
-          borderRadius: "10px",
-          padding: "14px 16px",
-          color: MONUMENT,
+          display: "flex",
+          flexDirection: "column",
+          gap: "16px",
+          minHeight: 0,
           boxSizing: "border-box",
         }}
       >
-        <h3 style={{ margin: "0 0 12px 0", fontSize: "1rem", fontWeight: 700 }}>
-          Email Settings
-        </h3>
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          <button
-            type="button"
-            onClick={() => {
-              setEmailNavScope(EMAIL_NAV_GENERAL);
-              setGlobalEmailSection("colours");
-            }}
+        <button
+          type="button"
+          onClick={() => {
+            setEmailNavScope(EMAIL_NAV_GENERAL);
+            setGlobalEmailSection("colours");
+          }}
+          style={{
+            flex: 1,
+            minHeight: 0,
+            width: "100%",
+            backgroundColor: "#E5E5E7",
+            border: `1px solid ${UI.outline}`,
+            borderRadius: "10px",
+            padding: "14px 16px",
+            color: MONUMENT,
+            boxSizing: "border-box",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "stretch",
+            cursor: "pointer",
+            outline: emailNavScope === EMAIL_NAV_GENERAL ? `2px solid ${UI.outline}` : "none",
+            boxShadow: emailNavScope === EMAIL_NAV_GENERAL ? "0 2px 4px rgba(50,50,51,.04)" : "none",
+            textAlign: "left",
+          }}
+        >
+          <h3
             style={{
-              width: "fit-content",
-              minWidth: "100%",
-              background: emailNavScope === EMAIL_NAV_GENERAL ? WHITE : "transparent",
+              margin: 0,
+              fontSize: "1rem",
+              fontWeight: 700,
               color: emailNavScope === EMAIL_NAV_GENERAL ? MONUMENT : UI.textSecondary,
-              border: "none",
-              borderRadius: "10px",
-              padding: "10px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 600,
-              textAlign: "center",
-              letterSpacing: "0.3px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              outline: emailNavScope === EMAIL_NAV_GENERAL ? `1px solid ${UI.outline}` : "none",
-              boxShadow: emailNavScope === EMAIL_NAV_GENERAL ? "0 2px 4px rgba(50,50,51,.04)" : "none",
             }}
           >
             General
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setEmailNavScope("stream");
-              setActiveSection("drawings");
-              setSelectedStream((prev) =>
-                streamOptions.includes(prev) ? prev : streamOptions[0] || prev
-              );
-            }}
+          </h3>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setEmailNavScope("stream");
+            setActiveSection("drawings");
+            setSelectedStream((prev) =>
+              streamOptions.includes(prev) ? prev : streamOptions[0] || prev
+            );
+          }}
+          style={{
+            flex: 1,
+            minHeight: 0,
+            width: "100%",
+            backgroundColor: "#E5E5E7",
+            border: `1px solid ${UI.outline}`,
+            borderRadius: "10px",
+            padding: "14px 16px",
+            color: MONUMENT,
+            boxSizing: "border-box",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "stretch",
+            cursor: "pointer",
+            outline: emailNavScope === "stream" ? `2px solid ${UI.outline}` : "none",
+            boxShadow: emailNavScope === "stream" ? "0 2px 4px rgba(50,50,51,.04)" : "none",
+            textAlign: "left",
+          }}
+        >
+          <h3
             style={{
-              width: "fit-content",
-              minWidth: "100%",
-              background: emailNavScope === "stream" ? WHITE : "transparent",
+              margin: 0,
+              fontSize: "1rem",
+              fontWeight: 700,
               color: emailNavScope === "stream" ? MONUMENT : UI.textSecondary,
-              border: "none",
-              borderRadius: "10px",
-              padding: "10px 8px",
-              fontSize: "0.95rem",
-              fontWeight: 600,
-              textAlign: "center",
-              letterSpacing: "0.3px",
-              cursor: "pointer",
-              transition: "background 0.18s, color 0.15s",
-              outline: emailNavScope === "stream" ? `1px solid ${UI.outline}` : "none",
-              boxShadow: emailNavScope === "stream" ? "0 2px 4px rgba(50,50,51,.04)" : "none",
             }}
           >
-            Send Drawings
-          </button>
-        </div>
-
+            By Stream
+          </h3>
+        </button>
       </div>
 
       <div
