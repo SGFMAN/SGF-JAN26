@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   DESIGN_PHASE,
+  isDesignPhaseStatus,
   isDesignPipelineStatus,
   isExcludedFromProjectLists,
   isCancelledStatus,
@@ -259,15 +260,21 @@ function sortProjectsByDaysDescending(projectsList) {
 }
 
 /**
- * Pre-Engagement / Permit by project status; Concept & Working Drawing unchanged (drawings_status).
- * Design Phase with neither Concept nor Working lands in Pre-Engagement (was Not Assigned).
+ * Tab membership:
+ * Pre-Engagement — project status is Pre-Engagement Phase
+ * Concept — Design Phase and drawings status Concept Stage
+ * WD — Design Phase and drawings status Working Drawing Stage
+ * Permit — project status is Permit Phase
+ * Design Phase with neither Concept nor WD stays on Pre-Engagement (Not Assigned).
  */
 function getDrawingManagerStatusBucket(project) {
   if (isPermitPhaseStatus(project?.status)) return "Permit Phase";
   if (isPreEngagementPhaseStatus(project?.status)) return "Pre-Engagement";
-  const drawingsStatus = (project?.drawings_status || "").trim();
-  if (drawingsStatus === "Concept Stage") return "Concept Stage";
-  if (drawingsStatus === "Working Drawing Stage") return "Working Drawing Stage";
+  if (isDesignPhaseStatus(project?.status)) {
+    const drawingsStatus = (project?.drawings_status || "").trim();
+    if (drawingsStatus === "Concept Stage") return "Concept Stage";
+    if (drawingsStatus === "Working Drawing Stage") return "Working Drawing Stage";
+  }
   return "Pre-Engagement";
 }
 
@@ -663,6 +670,8 @@ export default function DrawingManager() {
   }
 
   function shouldShowInDrawingManagerList(project) {
+    // Permit Phase stays on the Permit tab after WD approval / Drawings Complete.
+    if (isPermitPhaseStatus(project?.status)) return true;
     const status = (project?.drawings_status || "").trim();
     if (status === "Drawings Complete") return false;
     return !isLatestRevisionWorkingDrawingsApproved(project);
