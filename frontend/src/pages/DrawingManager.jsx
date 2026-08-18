@@ -15,7 +15,17 @@ import { Link } from "react-router-dom";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { getStateFilter } from "../utils/stateFilter";
 import { projectPath } from "../utils/projectUrl";
-import { resolveNewProjectClientToEmails } from "../utils/streamNewProjectEmail";
+import {
+  getProjectClientEmailsForDrawings,
+  getStreamExtraDrawingEmails,
+  isStreamSendDrawingsToClientsEnabled,
+  mergeUniqueEmails,
+  stripProjectClientEmailsWhenDisabled,
+} from "../utils/streamDrawingsSettings";
+import {
+  resolveSalespersonToClientFrom,
+  resolveSalespersonToClientToEmails,
+} from "../utils/drawingNotifyFrom";
 import {
   DRAFTSPERSON_UNASSIGNED,
   normalizeDraftspersonField,
@@ -31,8 +41,7 @@ import { useManagersAccess } from "../hooks/useManagersAccess";
 
 import StateFilterButtons from "../components/StateFilterButtons";
 import { UI, BANNER, INDICATOR, STREAM, MENU, outlineBorder } from "../utils/uiThemeTokens.js";
-import { getThemeBannerColors, readStoredUiThemeId } from "../themes/applyUiTheme";
-import { getLoggedInUserId, getApiHeaders, isUserAdmin } from "../utils/auth";
+import { getApiHeaders, isUserAdmin } from "../utils/auth";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
@@ -291,16 +300,6 @@ function groupProjectsByDrawingStatus(projectsList) {
   return groups;
 }
 
-/** Escape text for inclusion in HTML email fragments. */
-function escapeHtmlForEmailList(s) {
-  if (s == null) return "";
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 export default function DrawingManager() {
   const logo = useAppLogo();
   const { runWithEmailOverlay } = useEmailSendOverlay();
@@ -321,12 +320,6 @@ export default function DrawingManager() {
   const [reminderSending, setReminderSending] = useState(false);
   const [sortColumn, setSortColumn] = useState(null);
   const [sortDirection, setSortDirection] = useState("asc");
-  const [showEmailModal, setShowEmailModal] = useState(false);
-  const [emailTo, setEmailTo] = useState("ben@superiorgrannyflats.com.au");
-  const [emailFrom, setEmailFrom] = useState("info@superiorgrannyflats.com.au");
-  const [emailSubject, setEmailSubject] = useState("Drawing Manager Projects List");
-  /** Styled HTML body for the list email (matches preview; sent as htmlBody). */
-  const [emailListHtml, setEmailListHtml] = useState("");
   const [notesModalProjectId, setNotesModalProjectId] = useState(null);
   const [notesModalLabel, setNotesModalLabel] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
@@ -334,6 +327,7 @@ export default function DrawingManager() {
   /** Snapshot when the modal opened — Cancel restores this (nothing is saved until OK). */
   const notesSnapshotRef = useRef("");
   const reminderBodyRef = useRef(null);
+  const reminderSendToClientsEnabledRef = useRef(true);
   const [showDraftingStatsModal, setShowDraftingStatsModal] = useState(false);
   const [draftingStatsLoading, setDraftingStatsLoading] = useState(false);
   const [draftingStatsError, setDraftingStatsError] = useState(null);
@@ -498,13 +492,36 @@ export default function DrawingManager() {
       const contact3 = project?.client3_active === "true" && project?.client3_email ? project.client3_email : "";
 
       const userTokens = await resolveLoggedInUserEmailTokens();
-      const fromEmail = String(userTokens.UserEmail || "").trim();
-      if (!fromEmail) {
+      const streamSettingsJson = settings?.stream_settings_json || {};
+      const sendToClients = isStreamSendDrawingsToClientsEnabled(
+        project?.stream,
+        streamSettingsJson,
+        project
+      );
+      reminderSendToClientsEnabledRef.current = sendToClients;
+      const clientTo = sendToClients ? getProjectClientEmailsForDrawings(project) : [];
+      const extraTo = getStreamExtraDrawingEmails(project?.stream, streamSettingsJson, project);
+      const fromEmail = resolveSalespersonToClientFrom(settings, project, "");
+      const toEmails = resolveSalespersonToClientToEmails(
+        settings,
+        project,
+        [],
+        mergeUniqueEmails(clientTo, extraTo)
+      );
+
+      if (!fromEmail || !String(fromEmail).trim()) {
         alert(
-          "Your user account has no email address set. Add it under Settings → Users so Drawing Reminder emails can send From your email."
+          "No sender email in Stream Settings for this stream (Send Drawings to Client — From [DESIGN] / [PERMIT]). Configure Settings → Email Settings → By Stream."
         );
         return;
       }
+      if (!toEmails.length) {
+        alert(
+          "No recipient addresses for this send. Add stream extra emails in Settings → Email Settings → By Stream, enable Send to Clients, and/or add active client emails on the project."
+        );
+        return;
+      }
+
       const tokenMap = {
         ProjectName: projectName,
         projectname: projectName,
@@ -532,13 +549,12 @@ export default function DrawingManager() {
         username: userTokens.UserName,
         UserPosition: userTokens.UserPosition,
         userposition: userTokens.UserPosition,
-        UserEmail: fromEmail,
-        useremail: fromEmail,
+        UserEmail: userTokens.UserEmail,
+        useremail: userTokens.UserEmail,
       };
 
       setSelectedProjectForReminder(project);
-      const streamTo = resolveNewProjectClientToEmails(settings, project);
-      setReminderEmailTo(streamTo.join(", ") || mainEmail || "");
+      setReminderEmailTo(toEmails.join(", "));
       setReminderEmailFrom(fromEmail);
       setReminderEmailSubject(applyTemplateTokens(template.subject || "", tokenMap));
       setReminderEmailBody(normalizeBodyHtmlForEditor(applyTemplateTokens(template.body || "", tokenMap)));
@@ -589,6 +605,7 @@ export default function DrawingManager() {
   }
 
   async function openDraftingStats() {
+    if (!isAdmin) return;
     const year = new Date().getFullYear();
     const monthCount = new Date().getMonth() + 1;
     setDraftingStatsYear(year);
@@ -707,163 +724,6 @@ export default function DrawingManager() {
     } finally {
       setLoading(false);
     }
-  }
-
-  /** Same filter + sort order as the on-screen lists (for Email List). */
-  function getDrawingManagerListProjectsForEmail() {
-    let filteredProjects =
-      stateFilter !== "All"
-        ? projects.filter((project) => {
-            const projectState = (project.state || "").toUpperCase();
-            return projectState === stateFilter.toUpperCase();
-          })
-        : projects;
-    const grouped = groupProjectsByDrawingStatus(filteredProjects);
-    if (sortColumn) {
-      return DRAWING_MANAGER_STATUS_SECTIONS.flatMap((title) =>
-        sortProjects(grouped[title], sortColumn, sortDirection)
-      );
-    }
-    return DRAWING_MANAGER_STATUS_SECTIONS.flatMap((title) => grouped[title]);
-  }
-
-  function getHolderDisplayForEmailList(project) {
-    const holder = project.drawings_holder || "design team";
-    let displayText = "Design Team";
-    if (holder === "sales team") displayText = "Sales Team";
-    if (holder === "client") displayText = "Client";
-    let daysText = "";
-    if (shouldCountHolderDays(project)) {
-      const daysNum = getHolderDaysNum(project);
-      daysText = `${daysNum} day${daysNum !== 1 ? "s" : ""}`;
-    }
-    return { text: displayText, days: daysText };
-  }
-
-  /**
-   * HTML table matching the Drawing Manager grid: columns, greens/reds, deposit badge, etc.
-   * Many clients support tables + inline CSS; Outlook may simplify some styles.
-   */
-  function buildEmailListHtml(projectRows) {
-    const DEPOSIT_ORANGE = INDICATOR.orange;
-    const banner = getThemeBannerColors(readStoredUiThemeId(getLoggedInUserId()));
-    const EMAIL_W = 960;
-    const PROJECT_W = 320;
-    const OTHER_W = 128;
-    const ROW_H = 46;
-    const BORDER = "#d0d4d8";
-    const parts = [];
-    parts.push(
-      `<div style="width:${EMAIL_W}px;max-width:100%;margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.25;color:${MONUMENT};-webkit-text-size-adjust:100%;">`
-    );
-    parts.push(
-      `<div style="font-weight:700;font-size:15px;line-height:1.2;margin:0 0 6px 0;">Drawing Manager Projects List</div>`
-    );
-    parts.push(
-      `<div style="color:#666;font-size:11px;line-height:1.2;margin:0 0 10px 0;">Total: ${projectRows.length} projects</div>`
-    );
-
-    const grouped = groupProjectsByDrawingStatus(projectRows);
-    const th = (label, widthPx, align = "center") =>
-      `<td width="${widthPx}" style="width:${widthPx}px;min-width:${widthPx}px;max-width:${widthPx}px;border:1px solid ${BORDER};padding:5px 4px;background:${MONUMENT};color:${WHITE};font-weight:600;font-size:10px;line-height:1.2;text-align:${align};vertical-align:middle;mso-line-height-rule:exactly;white-space:nowrap;">${label}</td>`;
-    const tdBase = `border:1px solid ${BORDER};height:${ROW_H}px;padding:4px 5px;vertical-align:middle;font-size:11px;line-height:1.25;mso-line-height-rule:exactly;`;
-
-    const renderSectionTable = (sectionTitle, sectionProjects) => {
-      parts.push(
-        `<div style="font-weight:700;font-size:13px;line-height:1.2;margin:16px 0 8px 0;">${escapeHtmlForEmailList(sectionTitle)} (${sectionProjects.length})</div>`
-      );
-      if (sectionProjects.length === 0) {
-        parts.push(`<div style="color:#666;font-size:11px;margin:0 0 8px 0;">No projects</div>`);
-        return;
-      }
-      parts.push(
-        `<table role="presentation" cellpadding="0" cellspacing="0" width="${EMAIL_W}" style="width:100%;max-width:${EMAIL_W}px;border-collapse:collapse;table-layout:fixed;border:1px solid ${BORDER};background:${WHITE};margin-bottom:8px;">`
-      );
-      parts.push("<tr>");
-      parts.push(
-        `<td width="${PROJECT_W}" style="width:${PROJECT_W}px;min-width:${PROJECT_W}px;max-width:${PROJECT_W}px;border:1px solid ${BORDER};padding:5px 6px;background:${MONUMENT};color:${WHITE};font-weight:600;font-size:10px;line-height:1.2;text-align:left;vertical-align:middle;">Project</td>`
-      );
-      parts.push(th("Draftsperson", OTHER_W));
-      parts.push(th("Drawings With", OTHER_W));
-      parts.push(th("Windows", OTHER_W));
-      parts.push(th("Energy", OTHER_W));
-      parts.push(th("Building Permit", OTHER_W));
-      parts.push("</tr>");
-
-      sectionProjects.forEach((project) => {
-        const suburb = project.suburb || "";
-        const street = project.street || "";
-        const projectName =
-          suburb && street ? `${suburb} - ${street}` : suburb || street || "Unknown Project";
-        const draftspersonName = getDraftspersonName(project.draftsperson) || "None";
-        const holder = getHolderDisplayForEmailList(project);
-        const needsDeposit = isPartialDeposit(project);
-        const onHold = isOnHoldFlag(project);
-        const windowsStatus =
-          project.window_status && String(project.window_status).trim()
-            ? String(project.window_status)
-            : "Not Ordered";
-        const energyStatus =
-          project.energy_report_status && String(project.energy_report_status).trim()
-            ? String(project.energy_report_status)
-            : "Not Submitted";
-        const buildingPermitStatus =
-          project.building_permit_status && String(project.building_permit_status).trim()
-            ? String(project.building_permit_status)
-            : "Not Submitted";
-
-        parts.push("<tr>");
-        parts.push(
-          `<td style="${tdBase}text-align:left;background:${WHITE};">` +
-            `<span style="word-break:break-word;">${escapeHtmlForEmailList(projectName)}</span>` +
-            (onHold
-              ? `<br/><span style="display:inline-block;margin-top:2px;padding:2px 5px;background:${banner.onHold};color:${banner.onHoldText};border-radius:2px;font-size:9px;font-weight:700;line-height:1.1;">ON HOLD</span>`
-              : "") +
-            (needsDeposit
-              ? `<br/><span style="display:inline-block;margin-top:2px;padding:2px 5px;background:${DEPOSIT_ORANGE};color:${WHITE};border-radius:2px;font-size:9px;font-weight:700;line-height:1.1;">NEEDS DEPOSIT</span>`
-              : "") +
-            `</td>`
-        );
-        parts.push(
-          `<td style="${tdBase}text-align:center;background:${WHITE};word-break:break-word;">${escapeHtmlForEmailList(
-            draftspersonName
-          )}</td>`
-        );
-        const holderDaysHtml = holder.days
-          ? ` <span style="color:#666;font-size:10px;">- ${escapeHtmlForEmailList(holder.days)}</span>`
-          : "";
-        parts.push(
-          `<td style="${tdBase}text-align:center;background:${WHITE};">${escapeHtmlForEmailList(
-            holder.text
-          )}${holderDaysHtml}</td>`
-        );
-        parts.push(
-          `<td style="${tdBase}text-align:center;background:${WHITE};font-size:9px;line-height:1.15;white-space:nowrap;">${escapeHtmlForEmailList(
-            windowsStatus
-          )}</td>`
-        );
-        parts.push(
-          `<td style="${tdBase}text-align:center;background:${WHITE};font-size:9px;line-height:1.15;white-space:nowrap;">${escapeHtmlForEmailList(
-            energyStatus
-          )}</td>`
-        );
-        parts.push(
-          `<td style="${tdBase}text-align:center;background:${WHITE};font-size:9px;line-height:1.15;white-space:nowrap;">${escapeHtmlForEmailList(
-            buildingPermitStatus
-          )}</td>`
-        );
-        parts.push("</tr>");
-      });
-
-      parts.push("</table>");
-    };
-
-    for (const sectionTitle of DRAWING_MANAGER_STATUS_SECTIONS) {
-      renderSectionTable(sectionTitle, grouped[sectionTitle]);
-    }
-
-    parts.push("</div>");
-    return parts.join("");
   }
 
   // Toggle who has the project
@@ -1600,6 +1460,7 @@ export default function DrawingManager() {
                     {activeLabel} {`(${activeProjects.length})`}
                   </h2>
                   <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                    {isAdmin ? (
                     <button
                       type="button"
                       onClick={() => {
@@ -1625,31 +1486,7 @@ export default function DrawingManager() {
                     >
                       Drafting Stats
                     </button>
-                    <button
-                      onClick={() => {
-                        setEmailListHtml(buildEmailListHtml(getDrawingManagerListProjectsForEmail()));
-                        setShowEmailModal(true);
-                      }}
-                      style={{
-                        padding: "10px 20px",
-                        background: "#4D93D9",
-                        color: PAGE_TEXT,
-                        border: "none",
-                        borderRadius: "8px",
-                        fontSize: "0.9rem",
-                        fontWeight: 500,
-                        cursor: "pointer",
-                        transition: "background 0.2s",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = "#3d7bc9";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = "#4D93D9";
-                      }}
-                    >
-                      Email List
-                    </button>
+                    ) : null}
                   </div>
                 </div>
 
@@ -1761,7 +1598,7 @@ export default function DrawingManager() {
         </div>
       </div>
 
-      {showDraftingStatsModal ? (
+      {isAdmin && showDraftingStatsModal ? (
         <div
           style={{
             position: "fixed",
@@ -2134,208 +1971,6 @@ export default function DrawingManager() {
         </div>
       ) : null}
 
-      {/* Email List Modal */}
-      {showEmailModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              background: WHITE,
-              borderRadius: "12px",
-              padding: "24px",
-              maxWidth: "900px",
-              width: "90%",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
-            }}
-          >
-            <h2 style={{ marginTop: 0, marginBottom: "20px", color: MONUMENT }}>
-              Email Projects List
-            </h2>
-            
-            <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "20px" }}>
-              <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
-                  To (comma-separated)
-                </label>
-                <input
-                  type="text"
-                  value={emailTo}
-                  onChange={(e) => setEmailTo(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: `1px solid ${SECTION_GREY}`,
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    background: WHITE,
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
-              
-              <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
-                  From
-                </label>
-                <input
-                  type="text"
-                  value={emailFrom}
-                  onChange={(e) => setEmailFrom(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: `1px solid ${SECTION_GREY}`,
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    background: WHITE,
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
-              
-              <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
-                  Subject
-                </label>
-                <input
-                  type="text"
-                  value={emailSubject}
-                  onChange={(e) => setEmailSubject(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: "8px",
-                    border: `1px solid ${SECTION_GREY}`,
-                    fontSize: "1rem",
-                    color: MONUMENT,
-                    background: WHITE,
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
-            </div>
-            
-            <div style={{ marginBottom: "20px" }}>
-              <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
-                Preview (960px wide — same grid as the sent email)
-              </label>
-              <div
-                style={{
-                  border: `1px solid ${SECTION_GREY}`,
-                  borderRadius: "8px",
-                  padding: "10px",
-                  background: UI.inputBg,
-                  maxHeight: "420px",
-                  overflow: "auto",
-                  lineHeight: 1.25,
-                  fontSize: "12px",
-                }}
-              >
-                <div
-                  style={{
-                    width: "960px",
-                    maxWidth: "100%",
-                    margin: "0 auto",
-                    boxSizing: "border-box",
-                  }}
-                  dangerouslySetInnerHTML={{ __html: emailListHtml }}
-                />
-              </div>
-            </div>
-            
-            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
-              <button
-                onClick={() => {
-                  setShowEmailModal(false);
-                  setEmailTo("ben@superiorgrannyflats.com.au");
-                  setEmailFrom("info@superiorgrannyflats.com.au");
-                  setEmailSubject("Drawing Manager Projects List");
-                  setEmailListHtml("");
-                }}
-                style={{
-                  padding: "10px 20px",
-                  fontSize: "1rem",
-                  fontWeight: 500,
-                  color: MONUMENT,
-                  background: "transparent",
-                  border: `1px solid ${SECTION_GREY}`,
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  const toAddresses = emailTo.split(",").map(a => a.trim()).filter(a => a.length > 0);
-                  if (toAddresses.length === 0) {
-                    alert("Please enter at least one email address");
-                    return;
-                  }
-                  if (!emailFrom || !emailFrom.trim()) {
-                    alert("From address is required");
-                    return;
-                  }
-
-                  try {
-                    await runWithEmailOverlay(async () => {
-                      const res = await fetch(`${API_URL}/api/emails/send`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          to: toAddresses,
-                          from: emailFrom,
-                          subject: emailSubject,
-                          htmlBody: emailListHtml,
-                        }),
-                      });
-                      const data = await res.json().catch(() => ({}));
-                      if (!res.ok) {
-                        throw new Error(data.error || `Send failed (${res.status})`);
-                      }
-                      alert(data.message || "Email sent successfully!");
-                    });
-                    setShowEmailModal(false);
-                    setEmailTo("ben@superiorgrannyflats.com.au");
-                    setEmailFrom("info@superiorgrannyflats.com.au");
-                    setEmailSubject("Drawing Manager Projects List");
-                    setEmailListHtml("");
-                  } catch (err) {
-                    console.error("Send email error:", err);
-                    alert(err.message || "Failed to send email.");
-                  }
-                }}
-                style={{
-                  padding: "10px 20px",
-                  fontSize: "1rem",
-                  fontWeight: 500,
-                  color: WHITE,
-                  background: MONUMENT,
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                }}
-              >
-                Send Email
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Per-job Drawing Manager notes (saved only when you click OK) */}
       {notesModalProjectId != null && (
         <div
@@ -2589,10 +2224,14 @@ export default function DrawingManager() {
                     alert("Project is missing.");
                     return;
                   }
-                  const toAddresses = reminderEmailTo
-                    .split(",")
-                    .map((a) => a.trim())
-                    .filter((a) => a.length > 0);
+                  const toAddresses = stripProjectClientEmailsWhenDisabled(
+                    reminderEmailTo
+                      .split(",")
+                      .map((a) => a.trim())
+                      .filter((a) => a.length > 0),
+                    selectedProjectForReminder,
+                    reminderSendToClientsEnabledRef.current
+                  );
                   if (toAddresses.length === 0) {
                     alert("Please enter at least one email address.");
                     return;
@@ -2607,7 +2246,8 @@ export default function DrawingManager() {
                     await runWithEmailOverlay(async () => {
                       const res = await fetch(`${API_URL}/api/emails/send-drawings`, {
                         method: "POST",
-                        headers: { "Content-Type": "application/json" },
+                        headers: { "Content-Type": "application/json", ...getApiHeaders() },
+                        credentials: "include",
                         body: JSON.stringify({
                           ...emailLinkBaseForApiBody(),
                           projectId: selectedProjectForReminder.id,

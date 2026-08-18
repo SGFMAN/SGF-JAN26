@@ -123,10 +123,11 @@ export function getStreamExtraDrawingEmails(stream, streamSettingsJson, projectO
       ? streamSettingsJson
       : {};
   const d = key && map[key] && map[key].drawings && typeof map[key].drawings === "object" ? map[key].drawings : {};
+  const qld = isQldStreamSettingsRowKey(key);
   const out = [];
   for (let i = 1; i <= 3; i++) {
-    const ck = `extraEmail${i}`;
-    const ak = `extraEmail${i}Address`;
+    const ck = qld ? `qldExtraEmail${i}` : `extraEmail${i}`;
+    const ak = qld ? `qldExtraEmail${i}Address` : `extraEmail${i}Address`;
     if (d[ck] === true && d[ak] && String(d[ak]).trim()) {
       out.push(String(d[ak]).trim());
     }
