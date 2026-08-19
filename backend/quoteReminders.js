@@ -91,6 +91,12 @@ function appendCallbackList(bodyHtml, rows) {
   return `${body}${listHtml}`;
 }
 
+function firstNameOnly(raw) {
+  const full = String(raw || "").trim();
+  if (!full) return "";
+  return full.split(/\s+/)[0] || full;
+}
+
 function replaceQuoteReminderTokens(text, quote) {
   if (!text) return "";
   const address = [quote?.street, quote?.suburb].filter(Boolean).join(", ");
@@ -100,7 +106,7 @@ function replaceQuoteReminderTokens(text, quote) {
     "{Street}": quote?.street || "",
     "{Suburb}": quote?.suburb || "",
     "{State}": quote?.state || "",
-    "{ClientName}": quote?.client_name || quote?.name || "",
+    "{ClientName}": firstNameOnly(quote?.client_name || quote?.name || ""),
     "{Contact1}": quote?.email || "",
     "{Email}": quote?.email || "",
     "{Phone}": quote?.phone || "",

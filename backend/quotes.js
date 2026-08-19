@@ -246,7 +246,7 @@ async function createQuote(pool, body) {
      ) VALUES (
        $1, $2, $3, $4, $5, $6, $7, $8, $9,
        $6, $7, $8, 'true', null, null,
-       $10, COALESCE($11, NOW()), $12,
+       TRUE, COALESCE($10, NOW()), $11,
        'Not Sent', 'Not Sent', 'Not Required', 'Not Sent',
        'Not Selected', 'Not Submitted', 'Not Submitted', 'Not Submitted', 'Not Required',
        'Not Done', 'Not Done', 'Not Done', 'Not Done', 'Not Done',
@@ -263,7 +263,6 @@ async function createQuote(pool, body) {
       q.email,
       q.phone,
       projectDate,
-      q.active,
       q.quote_added_at,
       initialLogEntry,
     ]

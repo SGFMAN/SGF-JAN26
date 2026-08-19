@@ -123,14 +123,6 @@ function formatQuoteDateTime(value) {
   return `${formatQuoteDateAdded(value)} ${time}`;
 }
 
-function isQuoteDateOlderThanThreeDays(value) {
-  if (!value) return false;
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return false;
-  const ageMs = Date.now() - d.getTime();
-  return ageMs > 3 * 24 * 60 * 60 * 1000;
-}
-
 function quoteFromApi(q) {
   const stateRaw = String(q?.state ?? "").trim().toUpperCase();
   return {
@@ -148,6 +140,24 @@ function quoteFromApi(q) {
     reminder_3_sent_at: q.reminder_3_sent_at || null,
     reminder_4_sent_at: q.reminder_4_sent_at || null,
   };
+}
+
+/** Keep the current row order. New quotes go on top; checkboxes never reshuffle. */
+function mergeQuoteListPreservingOrder(prev, incoming) {
+  const byId = new Map((incoming || []).map((q) => [q.id, q]));
+  const kept = [];
+  const seen = new Set();
+  for (const q of prev || []) {
+    const next = byId.get(q.id);
+    if (!next) continue;
+    kept.push(next);
+    seen.add(q.id);
+  }
+  const added = [];
+  for (const q of incoming || []) {
+    if (!seen.has(q.id)) added.push(q);
+  }
+  return [...added, ...kept];
 }
 
 function quoteEmailButtonStyle() {
@@ -250,15 +260,12 @@ function QuoteSheetRow({ value, disabled, onActiveChange, onContactChange, trail
     <tr>
       {COLS.map((col) => {
         if (col.type === "date") {
-          const stale = isQuoteDateOlderThanThreeDays(value.created_at);
           return (
             <td
               key={col.key}
               style={{
                 ...tdStyle,
                 ...cellTextStyle,
-                color: stale ? "#cc3333" : MONUMENT,
-                fontWeight: stale ? 700 : 400,
                 minWidth: 100,
               }}
             >
@@ -399,7 +406,7 @@ export default function NewPage() {
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       const list = Array.isArray(data) ? data : [];
-      setQuotes(list);
+      setQuotes((prev) => (silent ? mergeQuoteListPreservingOrder(prev, list) : list));
       const nextEdits = {};
       for (const q of list) nextEdits[q.id] = quoteFromApi(q);
       setEdits(nextEdits);
@@ -539,6 +546,7 @@ export default function NewPage() {
         name,
         email,
         phone,
+        ...(isEdit ? {} : { active: true, contact: false }),
       };
       const res = await fetch(
         isEdit ? `${API_URL}/api/quotes/${editingQuoteId}` : `${API_URL}/api/quotes`,
@@ -715,7 +723,7 @@ export default function NewPage() {
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       const normalised = quoteFromApi(data);
       setEdits((prev) => ({ ...prev, [id]: { ...(prev[id] || emptyQuote()), ...normalised } }));
-      setQuotes((prev) => prev.map((q) => (q.id === id ? { ...q, ...data } : q)));
+      setQuotes((prev) => prev.map((q) => (q.id === id ? { ...q, active: normalised.active } : q)));
     } catch (err) {
       setEdits((prev) => ({
         ...prev,
@@ -743,7 +751,7 @@ export default function NewPage() {
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       const normalised = quoteFromApi(data);
       setEdits((prev) => ({ ...prev, [id]: { ...(prev[id] || emptyQuote()), ...normalised } }));
-      setQuotes((prev) => prev.map((q) => (q.id === id ? { ...q, ...data } : q)));
+      setQuotes((prev) => prev.map((q) => (q.id === id ? { ...q, contact: normalised.contact } : q)));
     } catch (err) {
       setEdits((prev) => ({
         ...prev,
