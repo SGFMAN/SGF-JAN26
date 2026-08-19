@@ -464,9 +464,12 @@ function addCornerColumn(parent, {
  *
  * Pass `footprintPoints` (normalized Trace Plan external polygon) to use that
  * shape. Otherwise the default rectangle is used.
+ *
+ * `embedded`: render inline (Colour Settings) instead of a full-screen overlay.
  */
 export default function Building3DModal({
   onClose,
+  embedded = false,
   title = "3D Unit",
   widthM = 11.3,
   depthM = 5.0,
@@ -2753,28 +2756,42 @@ export default function Building3DModal({
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
+      role={embedded ? "region" : "dialog"}
+      aria-modal={embedded ? undefined : true}
       aria-labelledby="building-3d-modal-title"
       onClick={() => {
-        if (renderBusy || renderOptionsOpen) return;
+        if (embedded || renderBusy || renderOptionsOpen) return;
         onClose?.();
       }}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1001,
-        display: "flex",
-        padding: "16px",
-        boxSizing: "border-box",
-        background: "rgba(0, 0, 0, 0.58)",
-      }}
+      style={
+        embedded
+          ? {
+              position: "relative",
+              flex: 1,
+              minHeight: 0,
+              width: "100%",
+              display: "flex",
+              boxSizing: "border-box",
+              background: "transparent",
+            }
+          : {
+              position: "fixed",
+              inset: 0,
+              zIndex: 1001,
+              display: "flex",
+              padding: "16px",
+              boxSizing: "border-box",
+              background: "rgba(0, 0, 0, 0.58)",
+            }
+      }
     >
       <div
         onClick={(event) => event.stopPropagation()}
         style={{
           width: "100%",
           height: "100%",
+          flex: embedded ? 1 : undefined,
+          minHeight: embedded ? 0 : undefined,
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
@@ -2899,6 +2916,7 @@ export default function Building3DModal({
             >
               {renderBusy ? "Rendering…" : "Render"}
             </button>
+            {onClose ? (
             <button
               type="button"
               onClick={onClose}
@@ -2911,6 +2929,7 @@ export default function Building3DModal({
             >
               Close
             </button>
+            ) : null}
           </div>
         </div>
 

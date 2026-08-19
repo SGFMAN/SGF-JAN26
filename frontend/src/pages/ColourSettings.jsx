@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AuthedImg from "../components/AuthedImg";
 import ModalBackdrop from "../components/ModalBackdrop";
+import Building3DModal from "../components/Building3DModal.jsx";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
 import {
   COLORBOND_RANGE_KEY,
@@ -24,6 +25,7 @@ const SETTINGS_TABS = [
   { id: "colours", label: "Colours and Groups" },
   { id: "ranges", label: "Colour Ranges" },
   { id: "materials", label: "Materials" },
+  { id: "model", label: "3D Model" },
 ];
 const SETTINGS_TAB_WIDTH = `calc(${Math.max(...SETTINGS_TABS.map((t) => t.label.length))}ch + 28px)`;
 const FIELD_OUTLINE = `1px solid ${UI.outline}`;
@@ -900,7 +902,7 @@ export default function ColourSettings() {
         display: "flex",
         flexDirection: "column",
         gap: "24px",
-        overflow: "auto",
+        overflow: settingsTab === "model" ? "hidden" : "auto",
         boxSizing: "border-box",
       }}
     >
@@ -1507,6 +1509,26 @@ export default function ColourSettings() {
               </button>
             </form>
           ) : null}
+        </div>
+      ) : null}
+
+      {settingsTab === "model" ? (
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          <Building3DModal
+            embedded
+            title="Base 3D Model"
+            widthM={11.3}
+            depthM={5.0}
+            subfloorHeightM={0.65}
+          />
         </div>
       ) : null}
 

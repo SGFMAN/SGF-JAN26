@@ -1,14 +1,13 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import MainSidebarMenu from "../components/MainSidebarMenu";
 import ModalBackdrop from "../components/ModalBackdrop";
 import NewProject2 from "./NewProject_2_ClientDetails";
-import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { getApiHeaders } from "../utils/auth";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { parseAustralianAddress, STATE_OPTIONS } from "../utils/parseAustralianAddress.js";
 import { buildSavedButtonStyle, ensureUiButtonStylesLoaded } from "../utils/uiButtonStyles.js";
-import { UI } from "../utils/uiThemeTokens.js";
+import { UI, STREAM } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
@@ -18,7 +17,6 @@ const PAGE_TEXT = UI.pageText;
 const GRID_LINE = "#c5c9ce";
 const HEADER_BG = "#e8eaed";
 const API_URL = "";
-const QUOTE_EMAIL_BUTTON_ID = 1;
 const QUOTE_DELETE_BUTTON_ID = 2;
 const QUOTE_HOTLIST_BUTTON_ID = 3;
 const QUOTE_EDIT_BUTTON_ID = 5;
@@ -160,27 +158,24 @@ function mergeQuoteListPreservingOrder(prev, incoming) {
   return [...added, ...kept];
 }
 
-function quoteEmailButtonStyle() {
-  const saved = buildSavedButtonStyle(QUOTE_EMAIL_BUTTON_ID, true);
-  const fallback = {
-    background: MONUMENT,
-    color: PAGE_TEXT,
-    border: `1px solid ${MONUMENT}`,
-    borderRadius: "6px",
-    fontWeight: 600,
-  };
-  return {
-    ...(saved || fallback),
-    width: "auto",
-    minWidth: "58px",
-    height: "auto",
-    padding: "4px 8px",
-    fontSize: (saved && saved.fontSize) || "0.75rem",
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-    boxSizing: "border-box",
-    lineHeight: 1.2,
-  };
+function quoteMatchesSearch(value, query) {
+  const raw = String(query || "").trim();
+  if (!raw) return true;
+  const lower = raw.toLowerCase();
+  const digits = raw.replace(/\D/g, "");
+  const name = String(value?.name || "").toLowerCase();
+  const email = String(value?.email || "").toLowerCase();
+  const street = String(value?.street || "").toLowerCase();
+  const suburb = String(value?.suburb || "").toLowerCase();
+  const state = String(value?.state || "").toLowerCase();
+  const phone = String(value?.phone || "");
+  const phoneDigits = phone.replace(/\D/g, "");
+  const address = [street, suburb, state].filter(Boolean).join(" ");
+  if (name.includes(lower) || email.includes(lower) || street.includes(lower) || suburb.includes(lower) || state.includes(lower) || address.includes(lower) || phone.toLowerCase().includes(lower)) {
+    return true;
+  }
+  if (digits.length >= 2 && phoneDigits.includes(digits)) return true;
+  return false;
 }
 
 function quoteHotlistButtonStyle() {
@@ -257,7 +252,7 @@ function QuoteSheetRow({ value, disabled, onActiveChange, onContactChange, trail
     ? String(value.state).trim().toUpperCase()
     : "";
   return (
-    <tr>
+    <tr className="quote-sheet-row">
       {COLS.map((col) => {
         if (col.type === "date") {
           return (
@@ -360,12 +355,13 @@ function QuoteSheetRow({ value, disabled, onActiveChange, onContactChange, trail
 export default function NewPage() {
   const location = useLocation();
   const logo = useAppLogo();
-  const { runWithEmailOverlay } = useEmailSendOverlay();
   const pasteRef = useRef(null);
-  const emailBodyRef = useRef(null);
+  const searchRef = useRef(null);
   const [quotes, setQuotes] = useState([]);
   const [edits, setEdits] = useState({});
+  const [searchQuery, setSearchQuery] = useState("");
   const [pasteBox, setPasteBox] = useState("");
+  const [newQuotePasteOpen, setNewQuotePasteOpen] = useState(false);
   const [addressModalOpen, setAddressModalOpen] = useState(false);
   const [addressForm, setAddressForm] = useState({ state: "", street: "", suburb: "" });
   const [rawPaste, setRawPaste] = useState("");
@@ -375,14 +371,6 @@ export default function NewPage() {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
   const [error, setError] = useState(null);
-  const [emailPreviewOpen, setEmailPreviewOpen] = useState(false);
-  const [emailPreviewQuoteId, setEmailPreviewQuoteId] = useState(null);
-  const [emailPreviewTo, setEmailPreviewTo] = useState("");
-  const [emailPreviewFrom, setEmailPreviewFrom] = useState("");
-  const [emailPreviewSubject, setEmailPreviewSubject] = useState("");
-  const [emailPreviewBody, setEmailPreviewBody] = useState("");
-  const [emailPreviewLoadingId, setEmailPreviewLoadingId] = useState(null);
-  const [emailPreviewSending, setEmailPreviewSending] = useState(false);
   const [, setUiButtonStyleRevision] = useState(0);
 
   useEffect(() => {
@@ -425,17 +413,31 @@ export default function NewPage() {
   }, [loadQuotes]);
 
   useEffect(() => {
-    if (emailPreviewOpen) return;
     const timer = setInterval(() => {
       void loadQuotes({ silent: true });
     }, 20000);
     return () => clearInterval(timer);
-  }, [loadQuotes, emailPreviewOpen]);
+  }, [loadQuotes]);
 
   useEffect(() => {
-    if (!emailPreviewOpen || !emailBodyRef.current) return;
-    emailBodyRef.current.innerHTML = emailPreviewBody || "";
-  }, [emailPreviewOpen, emailPreviewQuoteId]);
+    if (!newQuotePasteOpen) return;
+    requestAnimationFrame(() => pasteRef.current?.focus());
+  }, [newQuotePasteOpen]);
+
+  const filteredQuotes = useMemo(
+    () => quotes.filter((quote) => quoteMatchesSearch(edits[quote.id] || quote, searchQuery)),
+    [quotes, edits, searchQuery]
+  );
+
+  function openNewQuotePasteModal() {
+    setPasteBox("");
+    setNewQuotePasteOpen(true);
+  }
+
+  function closeNewQuotePasteModal() {
+    setNewQuotePasteOpen(false);
+    setPasteBox("");
+  }
 
   function openAddressModalFromPaste(text) {
     const trimmed = String(text || "").trim();
@@ -447,8 +449,9 @@ export default function NewPage() {
       street: parsed.street || "",
       suburb: parsed.suburb || "",
     });
-    setAddressModalOpen(true);
+    setNewQuotePasteOpen(false);
     setPasteBox("");
+    setAddressModalOpen(true);
   }
 
   function handlePasteBoxPaste(e) {
@@ -471,7 +474,6 @@ export default function NewPage() {
     setEditingQuoteId(null);
     setRawPaste("");
     setAddressForm({ state: "", street: "", suburb: "" });
-    requestAnimationFrame(() => pasteRef.current?.focus());
   }
 
   function openEditQuote(quoteId) {
@@ -610,76 +612,6 @@ export default function NewPage() {
     }
   }
 
-  function closeEmailPreview() {
-    if (emailPreviewSending) return;
-    setEmailPreviewOpen(false);
-    setEmailPreviewQuoteId(null);
-    setEmailPreviewTo("");
-    setEmailPreviewFrom("");
-    setEmailPreviewSubject("");
-    setEmailPreviewBody("");
-  }
-
-  async function openEmailPreview(id) {
-    try {
-      setEmailPreviewLoadingId(id);
-      setError(null);
-      const res = await fetch(`${API_URL}/api/quotes/${id}/reminder-1-preview`, {
-        headers: getApiHeaders(),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
-      setEmailPreviewQuoteId(id);
-      setEmailPreviewTo(data.to || "");
-      setEmailPreviewFrom(data.from || "");
-      setEmailPreviewSubject(data.subject || "");
-      setEmailPreviewBody(data.body || "");
-      setEmailPreviewOpen(true);
-    } catch (err) {
-      alert(err.message || "Failed to load reminder email");
-    } finally {
-      setEmailPreviewLoadingId(null);
-    }
-  }
-
-  async function handleSendReminder1() {
-    if (!emailPreviewQuoteId || emailPreviewSending) return;
-    const quoteId = emailPreviewQuoteId;
-    try {
-      setEmailPreviewSending(true);
-      await runWithEmailOverlay(async () => {
-        const res = await fetch(`${API_URL}/api/quotes/${quoteId}/reminder-1-send`, {
-          method: "POST",
-          headers: getApiHeaders(),
-          body: JSON.stringify({
-            to: emailPreviewTo,
-            from: emailPreviewFrom,
-            subject: emailPreviewSubject,
-            body: emailBodyRef.current?.innerHTML ?? emailPreviewBody,
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
-        const normalised = quoteFromApi(data);
-        setQuotes((prev) => prev.map((q) => (q.id === data.id ? { ...q, ...data } : q)));
-        setEdits((prev) => ({
-          ...prev,
-          [data.id]: { ...(prev[data.id] || emptyQuote()), ...normalised },
-        }));
-      });
-      setEmailPreviewSending(false);
-      setEmailPreviewOpen(false);
-      setEmailPreviewQuoteId(null);
-      setEmailPreviewTo("");
-      setEmailPreviewFrom("");
-      setEmailPreviewSubject("");
-      setEmailPreviewBody("");
-    } catch (err) {
-      alert(err.message || "Failed to send reminder email");
-      setEmailPreviewSending(false);
-    }
-  }
-
   async function handleDeleteQuote(id) {
     const row = edits[id];
     const label = [row?.suburb, row?.street, row?.name].filter(Boolean).join(" · ") || "this quote";
@@ -762,10 +694,7 @@ export default function NewPage() {
     }
   }
 
-  const busy =
-    savingId === "new" ||
-    (editingQuoteId != null && savingId === editingQuoteId) ||
-    emailPreviewOpen;
+  const busy = savingId === "new" || (editingQuoteId != null && savingId === editingQuoteId);
 
   return (
     <div
@@ -778,6 +707,11 @@ export default function NewPage() {
         width: "100vw",
       }}
     >
+      <style>{`
+        .project-list-page tr.quote-sheet-row:hover td {
+          background: ${STREAM.vicBlue} !important;
+        }
+      `}</style>
       <div
         style={{
           margin: "32px auto 14px auto",
@@ -862,48 +796,51 @@ export default function NewPage() {
         >
           <div
             style={{
-              background: WHITE,
-              borderRadius: "10px",
-              border: `1px dashed #aaa`,
-              padding: "12px 14px",
+              display: "flex",
+              gap: "12px",
+              alignItems: "center",
               flexShrink: 0,
             }}
           >
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.9rem",
-                fontWeight: 600,
-                color: MONUMENT,
-                marginBottom: "8px",
-              }}
-            >
-              Paste address
-            </label>
             <input
-              ref={pasteRef}
-              type="text"
-              value={pasteBox}
-              disabled={busy}
-              placeholder="e.g. 12 Ocean Ave, Bondi, QLD 2026"
-              onChange={(e) => setPasteBox(e.target.value)}
-              onPaste={handlePasteBoxPaste}
-              onKeyDown={handlePasteBoxKeyDown}
+              ref={searchRef}
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search name, email, address or phone"
               style={{
-                width: "100%",
+                flex: 1,
+                minWidth: 0,
                 padding: "10px 12px",
                 borderRadius: "8px",
                 border: `1px solid ${GRID_LINE}`,
                 fontSize: "1rem",
-                background: "#f6f6f7",
+                background: WHITE,
                 color: MONUMENT,
                 boxSizing: "border-box",
               }}
               autoComplete="off"
             />
-            <div style={{ marginTop: "6px", fontSize: "0.8rem", color: UI.textMuted }}>
-              Paste an address to split into State, Street and Suburb.
-            </div>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={openNewQuotePasteModal}
+              style={{
+                background: MONUMENT,
+                color: PAGE_TEXT,
+                border: "none",
+                borderRadius: "10px",
+                padding: "10px 20px",
+                fontSize: "1rem",
+                fontWeight: 500,
+                cursor: busy ? "default" : "pointer",
+                opacity: busy ? 0.6 : 1,
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+              }}
+            >
+              New Quote
+            </button>
           </div>
 
           {loading ? (
@@ -973,11 +910,25 @@ export default function NewPage() {
                           fontSize: "0.9rem",
                         }}
                       >
-                        No quotes yet — paste an address above.
+                        No quotes yet — click New Quote to add one.
+                      </td>
+                    </tr>
+                  ) : filteredQuotes.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={COLS.length + 1}
+                        style={{
+                          ...tdStyle,
+                          padding: "12px 8px",
+                          color: UI.textMuted,
+                          fontSize: "0.9rem",
+                        }}
+                      >
+                        No matching quotes.
                       </td>
                     </tr>
                   ) : (
-                    quotes.map((quote) => {
+                    filteredQuotes.map((quote) => {
                       const value = edits[quote.id] || emptyQuote();
                       const rowBusy = savingId === quote.id;
                       return (
@@ -989,48 +940,6 @@ export default function NewPage() {
                           onContactChange={(checked) => handleToggleQuoteContact(quote.id, checked)}
                           trailing={
                             <div style={{ display: "flex", gap: "6px", alignItems: "center", justifyContent: "flex-start" }}>
-                              <button
-                                type="button"
-                                disabled={
-                                  busy ||
-                                  rowBusy ||
-                                  emailPreviewLoadingId === quote.id ||
-                                  Boolean(value.reminder_1_sent_at) ||
-                                  Boolean(value.reminder_4_sent_at) ||
-                                  !String(value.email || "").trim()
-                                }
-                                title={
-                                  value.reminder_1_sent_at
-                                    ? "Reminder 1 already sent"
-                                    : value.reminder_4_sent_at
-                                      ? "Already on the Call Back List"
-                                      : !String(value.email || "").trim()
-                                        ? "This quote has no email"
-                                        : "Preview and send reminder 1"
-                                }
-                                onClick={() => openEmailPreview(quote.id)}
-                                style={{
-                                  ...quoteEmailButtonStyle(),
-                                  opacity:
-                                    busy ||
-                                    rowBusy ||
-                                    value.reminder_1_sent_at ||
-                                    value.reminder_4_sent_at ||
-                                    !String(value.email || "").trim()
-                                      ? 0.6
-                                      : 1,
-                                  cursor:
-                                    busy ||
-                                    rowBusy ||
-                                    value.reminder_1_sent_at ||
-                                    value.reminder_4_sent_at ||
-                                    !String(value.email || "").trim()
-                                      ? "default"
-                                      : "pointer",
-                                }}
-                              >
-                                {emailPreviewLoadingId === quote.id ? "…" : "Email"}
-                              </button>
                               <button
                                 type="button"
                                 disabled={busy || rowBusy}
@@ -1079,6 +988,86 @@ export default function NewPage() {
           )}
         </div>
       </div>
+
+      {newQuotePasteOpen ? (
+        <ModalBackdrop zIndex={1000}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="new-quote-paste-title"
+            style={{
+              background: SECTION_GREY,
+              borderRadius: "18px",
+              padding: "32px",
+              width: "90%",
+              maxWidth: "500px",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              id="new-quote-paste-title"
+              style={{
+                fontSize: "1.5rem",
+                fontWeight: 600,
+                marginTop: 0,
+                marginBottom: "8px",
+                color: MONUMENT,
+              }}
+            >
+              New Quote
+            </h2>
+            <p style={{ margin: "0 0 20px 0", fontSize: "0.85rem", color: UI.textMuted }}>
+              Paste an address to split into State, Street and Suburb.
+            </p>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.9rem",
+                color: UI.textMuted,
+                marginBottom: "6px",
+              }}
+            >
+              Paste address
+            </label>
+            <input
+              ref={pasteRef}
+              type="text"
+              value={pasteBox}
+              disabled={busy}
+              placeholder="e.g. 12 Ocean Ave, Bondi, QLD 2026"
+              onChange={(e) => setPasteBox(e.target.value)}
+              onPaste={handlePasteBoxPaste}
+              onKeyDown={handlePasteBoxKeyDown}
+              style={{
+                ...modalInputStyle,
+                background: "#f6f6f7",
+                border: `1px solid ${GRID_LINE}`,
+              }}
+              autoComplete="off"
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px" }}>
+              <button
+                type="button"
+                onClick={closeNewQuotePasteModal}
+                disabled={busy}
+                style={{
+                  background: UI.inputBg,
+                  color: MONUMENT,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </ModalBackdrop>
+      ) : null}
 
       {addressModalOpen ? (
         <ModalBackdrop zIndex={1000}>
@@ -1207,142 +1196,6 @@ export default function NewPage() {
               >
                 {savingId === "new" ? "Next…" : "Next"}
               </button>
-            </div>
-          </div>
-        </ModalBackdrop>
-      ) : null}
-
-      {emailPreviewOpen ? (
-        <ModalBackdrop zIndex={20000}>
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="quote-reminder-email-title"
-            style={{
-              background: WHITE,
-              borderRadius: "12px",
-              padding: "24px",
-              width: "90%",
-              maxWidth: "800px",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2
-              id="quote-reminder-email-title"
-              style={{ margin: "0 0 20px 0", fontSize: "1.5rem", color: MONUMENT }}
-            >
-              Preview reminder 1
-            </h2>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
-                  To
-                </label>
-                <input
-                  type="text"
-                  value={emailPreviewTo}
-                  onChange={(e) => setEmailPreviewTo(e.target.value)}
-                  disabled={emailPreviewSending}
-                  style={modalInputStyle}
-                  autoComplete="off"
-                />
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
-                  From
-                </label>
-                <input
-                  type="text"
-                  value={emailPreviewFrom}
-                  onChange={(e) => setEmailPreviewFrom(e.target.value)}
-                  disabled={emailPreviewSending}
-                  style={modalInputStyle}
-                  autoComplete="off"
-                />
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
-                  Subject
-                </label>
-                <input
-                  type="text"
-                  value={emailPreviewSubject}
-                  onChange={(e) => setEmailPreviewSubject(e.target.value)}
-                  disabled={emailPreviewSending}
-                  style={modalInputStyle}
-                  autoComplete="off"
-                />
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
-                  Body
-                </label>
-                <div
-                  ref={emailBodyRef}
-                  contentEditable={!emailPreviewSending}
-                  suppressContentEditableWarning
-                  onInput={(e) => setEmailPreviewBody(e.currentTarget.innerHTML)}
-                  onBlur={(e) => setEmailPreviewBody(e.currentTarget.innerHTML)}
-                  style={{
-                    ...modalInputStyle,
-                    minHeight: "280px",
-                    maxHeight: "42vh",
-                    overflowY: "auto",
-                    lineHeight: 1.6,
-                    outline: "none",
-                    cursor: emailPreviewSending ? "default" : "text",
-                  }}
-                />
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
-                <button
-                  type="button"
-                  onClick={closeEmailPreview}
-                  disabled={emailPreviewSending}
-                  style={{
-                    background: UI.inputBg,
-                    color: MONUMENT,
-                    border: "none",
-                    borderRadius: "10px",
-                    padding: "10px 20px",
-                    fontSize: "1rem",
-                    fontWeight: 500,
-                    cursor: emailPreviewSending ? "default" : "pointer",
-                    opacity: emailPreviewSending ? 0.6 : 1,
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSendReminder1}
-                  disabled={emailPreviewSending || !String(emailPreviewTo || "").trim()}
-                  style={{
-                    background: MONUMENT,
-                    color: PAGE_TEXT,
-                    border: "none",
-                    borderRadius: "10px",
-                    padding: "10px 20px",
-                    fontSize: "1rem",
-                    fontWeight: 500,
-                    cursor:
-                      emailPreviewSending || !String(emailPreviewTo || "").trim()
-                        ? "default"
-                        : "pointer",
-                    opacity: emailPreviewSending || !String(emailPreviewTo || "").trim() ? 0.6 : 1,
-                  }}
-                >
-                  {emailPreviewSending ? "Sending…" : "Send"}
-                </button>
-              </div>
             </div>
           </div>
         </ModalBackdrop>
