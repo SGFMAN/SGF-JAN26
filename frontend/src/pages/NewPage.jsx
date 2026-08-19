@@ -17,7 +17,7 @@ const PAGE_TEXT = UI.pageText;
 const GRID_LINE = "#c5c9ce";
 const HEADER_BG = "#e8eaed";
 const API_URL = "";
-const QUOTE_RESET_BUTTON_ID = 1;
+const QUOTE_DELETE_BUTTON_ID = 2;
 const QUOTE_HOTLIST_BUTTON_ID = 3;
 const QUOTE_EDIT_BUTTON_ID = 5;
 
@@ -38,14 +38,13 @@ const emptyQuote = () => ({
 });
 
 const COLS = [
-  { key: "reset_action", label: "", type: "resetBtn", width: "72px" },
-  { key: "created_at", label: "Date added", type: "date", width: "148px" },
-  { key: "state", label: "State", type: "state", width: "72px" },
+  { key: "created_at", label: "Date added", type: "date", width: "100px" },
+  { key: "state", label: "State", type: "state", width: "auto" },
   { key: "suburb", label: "Suburb", type: "text", width: "12%" },
   { key: "street", label: "Street", type: "text", width: "16%" },
   { key: "name", label: "Name", type: "text", width: "12%" },
   { key: "email", label: "Email", type: "email", width: "16%" },
-  { key: "phone", label: "Phone", type: "tel", width: "10%" },
+  { key: "phone", label: "Phone", type: "tel", width: "auto" },
   { key: "active", label: "Active", type: "activeCheck", width: "52px" },
   { key: "reminder_1_sent_at", label: "1", type: "reminderSent", width: "36px" },
   { key: "reminder_2_sent_at", label: "2", type: "reminderSent", width: "36px" },
@@ -111,10 +110,15 @@ function formatQuoteDateAdded(value) {
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const yyyy = d.getFullYear();
-  const hh = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  const ss = String(d.getSeconds()).padStart(2, "0");
-  return `${dd}/${mm}/${yyyy} ${hh}:${min}:${ss}`;
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function formatQuoteDateTime(value) {
+  if (!value) return "";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+  return `${formatQuoteDateAdded(value)} ${time}`;
 }
 
 function isQuoteDateOlderThanThreeDays(value) {
@@ -144,29 +148,6 @@ function quoteFromApi(q) {
   };
 }
 
-function quoteResetButtonStyle() {
-  const saved = buildSavedButtonStyle(QUOTE_RESET_BUTTON_ID, true);
-  const fallback = {
-    background: MONUMENT,
-    color: PAGE_TEXT,
-    border: `1px solid ${MONUMENT}`,
-    borderRadius: "6px",
-    fontWeight: 600,
-  };
-  return {
-    ...(saved || fallback),
-    width: "auto",
-    minWidth: "58px",
-    height: "auto",
-    padding: "4px 8px",
-    fontSize: (saved && saved.fontSize) || "0.75rem",
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-    boxSizing: "border-box",
-    lineHeight: 1.2,
-  };
-}
-
 function quoteHotlistButtonStyle() {
   const saved = buildSavedButtonStyle(QUOTE_HOTLIST_BUTTON_ID, true);
   const fallback = {
@@ -180,6 +161,29 @@ function quoteHotlistButtonStyle() {
     ...(saved || fallback),
     width: "auto",
     minWidth: "110px",
+    height: "auto",
+    padding: "4px 8px",
+    fontSize: (saved && saved.fontSize) || "0.75rem",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    boxSizing: "border-box",
+    lineHeight: 1.2,
+  };
+}
+
+function quoteDeleteButtonStyle() {
+  const saved = buildSavedButtonStyle(QUOTE_DELETE_BUTTON_ID, true);
+  const fallback = {
+    background: MONUMENT,
+    color: PAGE_TEXT,
+    border: `1px solid ${MONUMENT}`,
+    borderRadius: "6px",
+    fontWeight: 600,
+  };
+  return {
+    ...(saved || fallback),
+    width: "auto",
+    minWidth: "58px",
     height: "auto",
     padding: "4px 8px",
     fontSize: (saved && saved.fontSize) || "0.75rem",
@@ -213,31 +217,13 @@ function quoteEditButtonStyle() {
   };
 }
 
-function QuoteSheetRow({ value, disabled, onResetClick, onActiveChange, onContactChange, trailing }) {
+function QuoteSheetRow({ value, disabled, onActiveChange, onContactChange, trailing }) {
   const stateValue = STATE_OPTIONS.includes(String(value.state || "").trim().toUpperCase())
     ? String(value.state).trim().toUpperCase()
     : "";
   return (
     <tr>
       {COLS.map((col) => {
-        if (col.type === "resetBtn") {
-          return (
-            <td key={col.key} style={{ ...tdStyle, padding: "4px 6px", textAlign: "center" }}>
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() => onResetClick?.()}
-                style={{
-                  ...quoteResetButtonStyle(),
-                  opacity: disabled ? 0.6 : 1,
-                  cursor: disabled ? "default" : "pointer",
-                }}
-              >
-                Reset
-              </button>
-            </td>
-          );
-        }
         if (col.type === "date") {
           const stale = isQuoteDateOlderThanThreeDays(value.created_at);
           return (
@@ -248,7 +234,7 @@ function QuoteSheetRow({ value, disabled, onResetClick, onActiveChange, onContac
                 ...cellTextStyle,
                 color: stale ? "#cc3333" : MONUMENT,
                 fontWeight: stale ? 700 : 400,
-                minWidth: 148,
+                minWidth: 100,
               }}
             >
               {formatQuoteDateAdded(value.created_at)}
@@ -262,7 +248,8 @@ function QuoteSheetRow({ value, disabled, onResetClick, onActiveChange, onContac
               style={{
                 ...tdStyle,
                 ...cellTextStyle,
-                minWidth: 72,
+                width: "1%",
+                whiteSpace: "nowrap",
                 fontWeight: stateValue ? 700 : 400,
                 color: stateValue ? MONUMENT : UI.textMuted,
               }}
@@ -310,20 +297,28 @@ function QuoteSheetRow({ value, disabled, onResetClick, onActiveChange, onContac
                 readOnly
                 tabIndex={-1}
                 aria-label={sent ? `Reminder ${n} sent` : `Reminder ${n} not sent`}
-                title={sent ? `Reminder ${n} sent ${formatQuoteDateAdded(sentAt)}` : `Reminder ${n} not sent`}
+                title={sent ? `Reminder ${n} sent ${formatQuoteDateTime(sentAt)}` : `Reminder ${n} not sent`}
                 style={{ pointerEvents: "none", opacity: 1, cursor: "default", accentColor: MONUMENT }}
               />
             </td>
           );
         }
         return (
-          <td key={col.key} style={{ ...tdStyle, ...cellTextStyle }} title={value[col.key] || ""}>
+          <td
+            key={col.key}
+            style={{
+              ...tdStyle,
+              ...cellTextStyle,
+              ...(col.width === "auto" ? { width: "1%", whiteSpace: "nowrap" } : null),
+            }}
+            title={value[col.key] || ""}
+          >
             {value[col.key] || ""}
           </td>
         );
       })}
       {trailing ? (
-        <td style={{ ...tdStyle, padding: "4px 6px", whiteSpace: "nowrap", width: "1%" }}>{trailing}</td>
+        <td style={{ ...tdStyle, padding: "4px 6px 4px 4px", whiteSpace: "nowrap", width: "1%" }}>{trailing}</td>
       ) : null}
     </tr>
   );
@@ -566,21 +561,27 @@ export default function NewPage() {
     }
   }
 
-  async function handleResetQuoteAddedAt(id) {
+  async function handleDeleteQuote(id) {
+    const row = edits[id];
+    const label = [row?.suburb, row?.street, row?.name].filter(Boolean).join(" · ") || "this quote";
+    if (!window.confirm(`Delete “${label}”? This cannot be undone.`)) return;
     try {
       setSavingId(id);
       setError(null);
-      const res = await fetch(`${API_URL}/api/quotes/${id}/reset-added-at`, {
-        method: "POST",
+      const res = await fetch(`${API_URL}/api/quotes/${id}`, {
+        method: "DELETE",
         headers: getApiHeaders(),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
-      const normalised = quoteFromApi(data);
-      setQuotes((prev) => prev.map((q) => (q.id === id ? { ...q, ...data } : q)));
-      setEdits((prev) => ({ ...prev, [id]: { ...(prev[id] || emptyQuote()), ...normalised } }));
+      setQuotes((prev) => prev.filter((q) => q.id !== id));
+      setEdits((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     } catch (err) {
-      alert(err.message || "Failed to reset quote date");
+      alert(err.message || "Failed to delete quote");
     } finally {
       setSavingId(null);
     }
@@ -803,14 +804,17 @@ export default function NewPage() {
                 style={{
                   width: "100%",
                   borderCollapse: "collapse",
-                  tableLayout: "fixed",
+                  tableLayout: "auto",
                 }}
               >
                 <colgroup>
                   {COLS.map((col) => (
-                    <col key={col.key} style={{ width: col.width }} />
+                    <col
+                      key={col.key}
+                      style={col.width && col.width !== "auto" ? { width: col.width } : { width: "1%" }}
+                    />
                   ))}
-                  <col style={{ width: "210px" }} />
+                  <col style={{ width: "1%" }} />
                 </colgroup>
                 <thead>
                   <tr>
@@ -825,13 +829,14 @@ export default function NewPage() {
                             col.type === "reminderSent"
                               ? "center"
                               : "left",
+                          ...(col.width === "auto" ? { width: "1%", whiteSpace: "nowrap" } : null),
                         }}
                         title={col.type === "reminderSent" ? `Reminder ${col.label}` : undefined}
                       >
                         {col.label}
                       </th>
                     ))}
-                    <th style={{ ...thStyle, textAlign: "center", width: 210 }}> </th>
+                    <th style={{ ...thStyle, textAlign: "center", width: "1%", whiteSpace: "nowrap" }}> </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -858,11 +863,22 @@ export default function NewPage() {
                           key={quote.id}
                           value={value}
                           disabled={busy || rowBusy}
-                          onResetClick={() => handleResetQuoteAddedAt(quote.id)}
                           onActiveChange={(checked) => handleToggleQuoteActive(quote.id, checked)}
                           onContactChange={(checked) => handleToggleQuoteContact(quote.id, checked)}
                           trailing={
-                            <div style={{ display: "flex", gap: "6px", alignItems: "center", justifyContent: "flex-end" }}>
+                            <div style={{ display: "flex", gap: "6px", alignItems: "center", justifyContent: "flex-start" }}>
+                              <button
+                                type="button"
+                                disabled={busy || rowBusy}
+                                onClick={() => handleDeleteQuote(quote.id)}
+                                style={{
+                                  ...quoteDeleteButtonStyle(),
+                                  opacity: busy || rowBusy ? 0.6 : 1,
+                                  cursor: busy || rowBusy ? "default" : "pointer",
+                                }}
+                              >
+                                Delete
+                              </button>
                               <button
                                 type="button"
                                 disabled={busy || rowBusy}

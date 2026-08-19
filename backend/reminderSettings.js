@@ -7,6 +7,7 @@ const CALLBACK_LIST_INDEX = 3;
 const CALLBACK_LIST_TEMPLATE_NAME = "Call Back List";
 const REMINDER_DELAY_MIN = 1;
 const REMINDER_DELAY_MAX = 10;
+const DEFAULT_AUDIT_HOUR = 9;
 
 function emptyQuoteReminder(index) {
   const isCallback = index === CALLBACK_LIST_INDEX;
@@ -28,18 +29,21 @@ function sanitizeQuoteReminder(raw, index) {
   return {
     enabled: Boolean(src.enabled),
     delay,
-    templateName: isCallback
-      ? CALLBACK_LIST_TEMPLATE_NAME
-      : src.templateName != null
-        ? String(src.templateName).trim().slice(0, 200)
-        : "",
+    templateName: src.templateName != null ? String(src.templateName).trim().slice(0, 200) : "",
     toEmail: isCallback ? String(src.toEmail != null ? src.toEmail : "").trim().slice(0, 200) : "",
   };
 }
 
+function sanitizeAuditHour(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return DEFAULT_AUDIT_HOUR;
+  return Math.min(23, Math.max(0, Math.round(n)));
+}
+
 function emptyReminderSettings() {
   return {
-    delayUnit: "minutes",
+    delayUnit: "days",
+    auditHour: DEFAULT_AUDIT_HOUR,
     quotes: {
       reminders: Array.from({ length: QUOTE_REMINDER_COUNT }, (_, i) => emptyQuoteReminder(i)),
     },
@@ -66,6 +70,7 @@ function parseReminderSettingsColumn(raw) {
   const empty = emptyReminderSettings();
   return {
     delayUnit: empty.delayUnit,
+    auditHour: sanitizeAuditHour(obj.auditHour ?? quotes.auditHour),
     quotes: { reminders },
   };
 }
@@ -74,5 +79,7 @@ module.exports = {
   QUOTE_REMINDER_COUNT,
   CALLBACK_LIST_INDEX,
   CALLBACK_LIST_TEMPLATE_NAME,
+  DEFAULT_AUDIT_HOUR,
+  sanitizeAuditHour,
   parseReminderSettingsColumn,
 };

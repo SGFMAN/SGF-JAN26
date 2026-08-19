@@ -345,24 +345,6 @@ async function promoteQuoteToHotlist(pool, id) {
   return { project: r.rows[0] };
 }
 
-async function resetQuoteAddedAt(pool, id) {
-  await ensureQuoteProjectColumns(pool);
-  const r = await pool.query(
-    `UPDATE projects SET
-       quote_added_at = NOW(),
-       quote_reminder_1_sent_at = NULL,
-       quote_reminder_2_sent_at = NULL,
-       quote_reminder_3_sent_at = NULL,
-       quote_reminder_4_sent_at = NULL,
-       updated_at = NOW()
-     WHERE id = $1 AND status = $2
-     RETURNING ${QUOTE_SELECT}`,
-    [id, QUOTE_STATUS]
-  );
-  if (!r.rows.length) return { notFound: true };
-  return { quote: rowToQuoteApi(r.rows[0]) };
-}
-
 async function updateQuoteActive(pool, id, active) {
   await ensureQuoteProjectColumns(pool);
   const r = await pool.query(
@@ -413,7 +395,6 @@ module.exports = {
   updateQuoteContact,
   deleteQuote,
   promoteQuoteToHotlist,
-  resetQuoteAddedAt,
   findExistingQuoteId,
   parseQuoteAddedAt,
 };

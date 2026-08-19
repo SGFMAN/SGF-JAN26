@@ -10,6 +10,16 @@ const REMINDER_COUNT = 4;
 const CALLBACK_LIST_INDEX = 3;
 const CALLBACK_LIST_TEMPLATE_NAME = "Call Back List";
 const DELAY_OPTIONS = Array.from({ length: 10 }, (_, i) => i + 1);
+const DEFAULT_AUDIT_HOUR = 9;
+const AUDIT_HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i);
+
+function hourLabel(hour) {
+  const h = Number(hour);
+  if (h === 0) return "12:00 am";
+  if (h === 12) return "12:00 pm";
+  if (h < 12) return `${h}:00 am`;
+  return `${h - 12}:00 pm`;
+}
 
 function emptyReminder(index) {
   const isCallback = index === CALLBACK_LIST_INDEX;
@@ -34,18 +44,20 @@ function normalizeReminders(raw) {
     return {
       enabled: Boolean(src.enabled),
       delay: Number.isFinite(delayN) ? Math.min(10, Math.max(1, Math.round(delayN))) : fallback.delay,
-      templateName: isCallback
-        ? CALLBACK_LIST_TEMPLATE_NAME
-        : src.templateName != null
-          ? String(src.templateName)
-          : "",
+      templateName: src.templateName != null ? String(src.templateName) : fallback.templateName,
       toEmail: isCallback ? String(src.toEmail != null ? src.toEmail : "") : "",
     };
   });
 }
 
+function normalizeAuditHour(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return DEFAULT_AUDIT_HOUR;
+  return Math.min(23, Math.max(0, Math.round(n)));
+}
+
 function delayLabel(n) {
-  return n === 1 ? "1 minute" : `${n} minutes`;
+  return n === 1 ? "1 day" : `${n} days`;
 }
 
 /** Non-empty `smtp_user_1`…`smtp_user_16` from settings (deduped, sorted). */
@@ -68,14 +80,20 @@ function smtpSlotEmailsFromSettings(data) {
 
 export default function RemindersSettings() {
   const [reminders, setReminders] = useState(() => emptyReminders());
+  const [auditHour, setAuditHour] = useState(DEFAULT_AUDIT_HOUR);
   const [templates, setTemplates] = useState([]);
   const [smtpEmails, setSmtpEmails] = useState([]);
   const [loading, setLoading] = useState(true);
   const valuesRef = useRef(reminders);
+  const auditHourRef = useRef(auditHour);
 
   useEffect(() => {
     valuesRef.current = reminders;
   }, [reminders]);
+
+  useEffect(() => {
+    auditHourRef.current = auditHour;
+  }, [auditHour]);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,8 +109,10 @@ export default function RemindersSettings() {
         if (settingsRes.ok) {
           const data = await settingsRes.json().catch(() => ({}));
           setReminders(normalizeReminders(data?.settings?.quotes?.reminders));
+          setAuditHour(normalizeAuditHour(data?.settings?.auditHour));
         } else {
           setReminders(emptyReminders());
+          setAuditHour(DEFAULT_AUDIT_HOUR);
         }
         if (templatesRes.ok) {
           const list = await templatesRes.json().catch(() => []);
@@ -110,6 +130,7 @@ export default function RemindersSettings() {
         console.error("Error loading reminder settings:", err);
         if (!cancelled) {
           setReminders(emptyReminders());
+          setAuditHour(DEFAULT_AUDIT_HOUR);
           setTemplates([]);
           setSmtpEmails([]);
         }
@@ -122,13 +143,14 @@ export default function RemindersSettings() {
     };
   }, []);
 
-  async function saveReminders(nextReminders) {
+  async function saveSettings(nextReminders, nextAuditHour) {
     try {
       const response = await fetch(`${API_URL}/api/reminder-settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           settings: {
+            auditHour: nextAuditHour,
             quotes: { reminders: nextReminders },
           },
         }),
@@ -147,9 +169,16 @@ export default function RemindersSettings() {
     setReminders((prev) => {
       const next = prev.map((row, i) => (i === index ? { ...row, ...patch } : row));
       valuesRef.current = next;
-      void saveReminders(next);
+      void saveSettings(next, auditHourRef.current);
       return next;
     });
+  }
+
+  function updateAuditHour(hour) {
+    const nextHour = normalizeAuditHour(hour);
+    auditHourRef.current = nextHour;
+    setAuditHour(nextHour);
+    void saveSettings(valuesRef.current, nextHour);
   }
 
   const cardStyle = {
@@ -231,6 +260,32 @@ export default function RemindersSettings() {
     );
   }
 
+  function renderTemplateSelect(row, index) {
+    return (
+      <div>
+        <label style={labelStyle} htmlFor={`quote-reminder-template-${index}`}>
+          Email template
+        </label>
+        <select
+          id={`quote-reminder-template-${index}`}
+          value={row.templateName}
+          onChange={(e) => updateReminder(index, { templateName: e.target.value })}
+          style={selectStyle}
+        >
+          <option value="">Select a template…</option>
+          {row.templateName && !templates.some((t) => t.name === row.templateName) ? (
+            <option value={row.templateName}>{row.templateName}</option>
+          ) : null}
+          {templates.map((t) => (
+            <option key={t.id} value={t.name}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
   function renderReminderCard(row, index) {
     return (
       <div key={index} style={cardStyle}>
@@ -240,28 +295,37 @@ export default function RemindersSettings() {
 
         {renderEnableRow(row, index, "Enable reminder")}
         {renderDelaySelect(row, index)}
+        {renderTemplateSelect(row, index)}
+      </div>
+    );
+  }
 
+  function renderAuditTimeCard() {
+    return (
+      <div style={cardStyle}>
+        <h3 style={{ fontSize: "1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>
+          Daily check time
+        </h3>
         <div>
-          <label style={labelStyle} htmlFor={`quote-reminder-template-${index}`}>
-            Email template
+          <label style={labelStyle} htmlFor="quote-reminder-audit-hour">
+            Run at
           </label>
           <select
-            id={`quote-reminder-template-${index}`}
-            value={row.templateName}
-            onChange={(e) => updateReminder(index, { templateName: e.target.value })}
+            id="quote-reminder-audit-hour"
+            value={auditHour}
+            onChange={(e) => updateAuditHour(Number(e.target.value))}
             style={selectStyle}
           >
-            <option value="">Select a template…</option>
-            {row.templateName && !templates.some((t) => t.name === row.templateName) ? (
-              <option value={row.templateName}>{row.templateName}</option>
-            ) : null}
-            {templates.map((t) => (
-              <option key={t.id} value={t.name}>
-                {t.name}
+            {AUDIT_HOUR_OPTIONS.map((hour) => (
+              <option key={hour} value={hour}>
+                {hourLabel(hour)}
               </option>
             ))}
           </select>
         </div>
+        <p style={{ margin: 0, fontSize: "0.85rem", color: UI.textMuted, lineHeight: 1.4 }}>
+          Melbourne time. Reminders 1–3 and the Call Back List are sent once a day at this time.
+        </p>
       </div>
     );
   }
@@ -276,6 +340,7 @@ export default function RemindersSettings() {
 
         {renderEnableRow(row, index, "Enable Call Back List")}
         {renderDelaySelect(row, index)}
+        {renderTemplateSelect(row, index)}
 
         <div>
           <label style={labelStyle} htmlFor={`quote-reminder-to-${index}`}>
@@ -300,8 +365,8 @@ export default function RemindersSettings() {
         </div>
 
         <p style={{ margin: 0, fontSize: "0.85rem", color: UI.textMuted, lineHeight: 1.4 }}>
-          Uses the {CALLBACK_LIST_TEMPLATE_NAME} template. When this delay elapses, one email is sent
-          with every quote that has reached this age (Contact quotes are excluded).
+          At the daily audit, one email is sent using this template, then the due quote list is
+          added. Contact quotes are excluded.
         </p>
       </div>
     );
@@ -336,19 +401,26 @@ export default function RemindersSettings() {
         >
           Quotes
         </h2>
+        <p style={{ margin: "8px 0 0 0", fontSize: "0.9rem", color: UI.textMuted, lineHeight: 1.4 }}>
+          Reminder emails and the Call Back List are sent once a day at the time set below (Melbourne
+          time). Quotes that become due later wait until the next day.
+        </p>
       </div>
 
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
           gap: "16px",
           width: "100%",
           alignItems: "start",
         }}
       >
         {reminders.slice(0, 3).map((row, index) => renderReminderCard(row, index))}
-        {reminders[CALLBACK_LIST_INDEX] ? renderCallbackCard(reminders[CALLBACK_LIST_INDEX]) : null}
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px", minWidth: 0 }}>
+          {reminders[CALLBACK_LIST_INDEX] ? renderCallbackCard(reminders[CALLBACK_LIST_INDEX]) : null}
+          {renderAuditTimeCard()}
+        </div>
       </div>
     </div>
   );

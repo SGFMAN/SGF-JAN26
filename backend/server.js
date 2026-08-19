@@ -88,7 +88,6 @@ const {
   updateQuote,
   deleteQuote,
   promoteQuoteToHotlist,
-  resetQuoteAddedAt,
   updateQuoteActive,
   updateQuoteContact,
 } = require("./quotes");
@@ -12765,21 +12764,6 @@ app.post("/api/quotes/:id/add-to-hotlist", async (req, res) => {
   } catch (e) {
     console.error("[quotes] add-to-hotlist error:", e);
     res.status(500).json({ error: e.message || "Failed to add quote to hotlist" });
-  }
-});
-
-app.post("/api/quotes/:id/reset-added-at", async (req, res) => {
-  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
-  if (!(await requireHotlistSalesAccess(req, res))) return;
-  const id = Number(req.params.id);
-  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
-  try {
-    const result = await resetQuoteAddedAt(pool, id);
-    if (result.notFound) return res.status(404).json({ error: "quote not found" });
-    res.json(result.quote);
-  } catch (e) {
-    console.error("[quotes] reset-added-at error:", e);
-    res.status(500).json({ error: e.message || "Failed to reset quote date" });
   }
 });
 

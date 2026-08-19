@@ -1,7 +1,8 @@
 /**
- * Quote list reminders: send configured templates after quote_added_at + delay.
+ * Quote list reminders: one daily audit at the configured Melbourne time.
  * Reminders 1–3: To = projects.email only. No CC, no client-contact fallback, no extra addresses.
  * Reminder 4 (Call Back List): one batched email to the configured SMTP To address.
+ * Quotes that become due after the daily audit wait until the next day.
  */
 
 const nodemailer = require("nodemailer");
@@ -10,6 +11,7 @@ const {
   parseReminderSettingsColumn,
   CALLBACK_LIST_INDEX,
   CALLBACK_LIST_TEMPLATE_NAME,
+  sanitizeAuditHour,
 } = require("./reminderSettings");
 
 const SENT_COLUMNS = [
@@ -19,8 +21,9 @@ const SENT_COLUMNS = [
   "quote_reminder_4_sent_at",
 ];
 const TICK_MS = 20 * 1000;
-const MAX_SENDS_PER_REMINDER_PER_TICK = 10;
-const MAX_CALLBACK_QUOTES_PER_TICK = 500;
+const MAX_SENDS_PER_REMINDER_PER_AUDIT = 500;
+const MAX_CALLBACK_QUOTES_PER_AUDIT = 500;
+const CALLBACK_TZ = "Australia/Melbourne";
 const SINGLE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function quoteListEmailOnly(raw) {
@@ -48,32 +51,27 @@ function stateKey(row) {
   return String(row?.state || "").trim().toUpperCase();
 }
 
-function formatFullAddress(row) {
-  const street = String(row?.street || "").trim();
-  const suburb = String(row?.suburb || "").trim();
-  const state = stateKey(row);
-  const locality = [suburb, state].filter(Boolean).join(" ");
-  const address = [street, locality].filter(Boolean).join(", ");
-  return address || "—";
-}
-
-function formatCallbackQuoteBlock(row) {
-  const name = String(row?.client_name || "").trim() || "—";
-  const email = String(row?.email || "").trim() || "—";
-  const phone = String(row?.phone || "").trim() || "—";
-  return [
-    escapeHtml(formatFullAddress(row)),
-    escapeHtml(name),
-    escapeHtml(email),
-    escapeHtml(phone),
-  ].join("<br>");
+function formatCallbackQuoteLine(row) {
+  const bits = [
+    String(row?.suburb || "").trim(),
+    String(row?.street || "").trim(),
+    String(row?.client_name || "").trim(),
+    String(row?.email || "").trim(),
+    String(row?.phone || "").trim(),
+  ].filter(Boolean);
+  return escapeHtml(bits.join(" ") || "—");
 }
 
 function callbackSectionHtml(title, rows) {
   const items = rows.length
-    ? rows.map((row) => `<li style="margin:0 0 12px 0;">${formatCallbackQuoteBlock(row)}</li>`).join("")
-    : `<li style="margin:0 0 12px 0;">None</li>`;
-  return `<h3 style="margin:16px 0 8px 0;">${escapeHtml(title)}</h3><ul style="margin:0;padding-left:20px;">${items}</ul>`;
+    ? rows
+        .map(
+          (row) =>
+            `<div style="margin:0 0 4px 0;">${formatCallbackQuoteLine(row)}</div>`
+        )
+        .join("")
+    : `<div style="margin:0 0 4px 0;">None</div>`;
+  return `<h3 style="margin:16px 0 8px 0;">${escapeHtml(title)}</h3>${items}`;
 }
 
 function appendCallbackList(bodyHtml, rows) {
@@ -112,6 +110,58 @@ function replaceQuoteReminderTokens(text, quote) {
     out = out.split(k).join(v || "");
   }
   return out;
+}
+
+function melbourneClock(now = new Date()) {
+  const parts = {};
+  for (const part of new Intl.DateTimeFormat("en-US", {
+    timeZone: CALLBACK_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now)) {
+    if (part.type !== "literal") parts[part.type] = part.value;
+  }
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    minutesOfDay: Number(parts.hour) * 60 + Number(parts.minute),
+  };
+}
+
+async function ensureDailyAuditColumn(pool) {
+  await pool.query(`
+    ALTER TABLE settings
+      ADD COLUMN IF NOT EXISTS quote_callback_compiled_on DATE,
+      ADD COLUMN IF NOT EXISTS quote_reminders_audited_on DATE
+  `);
+}
+
+function dateText(raw) {
+  return raw ? String(raw).slice(0, 10) : "";
+}
+
+async function getDailyAuditDate(pool) {
+  const r = await pool.query(
+    `SELECT quote_reminders_audited_on::text AS audited_on,
+            quote_callback_compiled_on::text AS compiled_on
+     FROM settings WHERE id = 1`
+  );
+  const row = r.rows[0] || {};
+  return dateText(row.audited_on) || dateText(row.compiled_on);
+}
+
+async function markDailyAuditDone(pool, date) {
+  await pool.query(
+    `UPDATE settings
+     SET quote_reminders_audited_on = $1::date,
+         quote_callback_compiled_on = $1::date,
+         updated_at = NOW()
+     WHERE id = 1`,
+    [date]
+  );
 }
 
 async function loadReminderSettings(pool) {
@@ -160,50 +210,116 @@ async function sendQuoteReminderEmail(helpers, { to, from, subject, htmlBody }) 
   });
 }
 
-async function processOneReminder(pool, helpers, reminder, index, delayUnit) {
-  if (index === CALLBACK_LIST_INDEX) return;
-  if (!reminder?.enabled) return;
-  const templateName = String(reminder.templateName || "").trim();
-  if (!templateName) return;
-  const delay = Number(reminder.delay);
-  if (!Number.isFinite(delay) || delay < 1) return;
+function delaySeconds(delay, delayUnit) {
+  const n = Number(delay);
+  if (!Number.isFinite(n) || n < 1) return null;
+  if (delayUnit === "days") return n * 86400;
+  if (delayUnit === "minutes") return n * 60;
+  return n * 3600;
+}
 
-  const template = await loadTemplateByName(pool, templateName);
-  if (!template) {
-    console.warn(`[quote-reminders] template "${templateName}" not found; skipping reminder ${index + 1}`);
-    return;
+function highestDueClientReminder(row, reminders, delayUnit) {
+  const ageSeconds = Number(row.age_seconds);
+  if (!Number.isFinite(ageSeconds) || ageSeconds < 0) return -1;
+  const sent = [
+    row.quote_reminder_1_sent_at,
+    row.quote_reminder_2_sent_at,
+    row.quote_reminder_3_sent_at,
+  ];
+  let highestDue = -1;
+  for (let i = 0; i < CALLBACK_LIST_INDEX; i += 1) {
+    const reminder = reminders[i];
+    if (!reminder?.enabled) continue;
+    const seconds = delaySeconds(reminder.delay, delayUnit);
+    if (seconds == null) continue;
+    if (ageSeconds < seconds) continue;
+    highestDue = i;
+  }
+  if (highestDue < 0) return -1;
+  if (sent[highestDue]) return -1;
+  return highestDue;
+}
+
+async function markClientRemindersThrough(pool, id, highest) {
+  const sets = [];
+  for (let i = 0; i <= highest; i += 1) {
+    sets.push(`${SENT_COLUMNS[i]} = COALESCE(${SENT_COLUMNS[i]}, NOW())`);
+  }
+  const claimed = await pool.query(
+    `UPDATE projects
+     SET ${sets.join(", ")}, updated_at = NOW()
+     WHERE id = $1
+       AND status = 'Quote'
+       AND quote_active IS TRUE
+       AND quote_reminder_4_sent_at IS NULL
+     RETURNING id`,
+    [id]
+  );
+  return claimed.rows.length > 0;
+}
+
+async function restoreClientReminders(pool, id, highest, previous) {
+  const sets = [];
+  const params = [id];
+  for (let i = 0; i <= highest; i += 1) {
+    params.push(previous[SENT_COLUMNS[i]] || null);
+    sets.push(`${SENT_COLUMNS[i]} = $${params.length}`);
+  }
+  await pool.query(
+    `UPDATE projects SET ${sets.join(", ")}, updated_at = NOW() WHERE id = $1`,
+    params
+  );
+}
+
+async function processClientReminders(pool, helpers, reminders, delayUnit) {
+  const enabled = (reminders || []).slice(0, CALLBACK_LIST_INDEX).some((row) => row?.enabled);
+  if (!enabled) return { done: true };
+
+  const templates = [];
+  for (let i = 0; i < CALLBACK_LIST_INDEX; i += 1) {
+    const reminder = reminders[i];
+    if (!reminder?.enabled) {
+      templates[i] = null;
+      continue;
+    }
+    const templateName = String(reminder.templateName || "").trim();
+    if (!templateName) {
+      templates[i] = null;
+      continue;
+    }
+    templates[i] = await loadTemplateByName(pool, templateName);
+    if (!templates[i]) {
+      console.warn(`[quote-reminders] template "${templateName}" not found; skipping reminder ${i + 1}`);
+    }
   }
 
-  const sentCol = SENT_COLUMNS[index];
-  const dueSql = `SELECT id, email, client_name, suburb, street, state, phone, quote_added_at
+  const due = await pool.query(
+    `SELECT id, email, client_name, suburb, street, state, phone, quote_added_at,
+            quote_reminder_1_sent_at, quote_reminder_2_sent_at, quote_reminder_3_sent_at,
+            EXTRACT(EPOCH FROM (NOW() - quote_added_at)) AS age_seconds
      FROM projects
      WHERE status = 'Quote'
        AND quote_active IS TRUE
        AND quote_added_at IS NOT NULL
-       AND ${sentCol} IS NULL
        AND quote_reminder_4_sent_at IS NULL
        AND NULLIF(BTRIM(COALESCE(email, '')), '') IS NOT NULL
-       AND quote_added_at <= NOW() - ${delayIntervalSql(delayUnit)}
      ORDER BY quote_added_at ASC, id ASC
-     LIMIT $2`;
-  const due = await pool.query(dueSql, [delay, MAX_SENDS_PER_REMINDER_PER_TICK]);
+     LIMIT $1`,
+    [MAX_SENDS_PER_REMINDER_PER_AUDIT]
+  );
 
+  let processedDue = 0;
   for (const row of due.rows) {
+    const highest = highestDueClientReminder(row, reminders, delayUnit);
+    if (highest < 0) continue;
+    processedDue += 1;
+    const template = templates[highest];
+    if (!template) continue;
     const to = quoteListEmailOnly(row.email);
     if (!to) continue;
 
-    const claimed = await pool.query(
-      `UPDATE projects
-       SET ${sentCol} = NOW(), updated_at = NOW()
-       WHERE id = $1
-         AND status = 'Quote'
-         AND quote_active IS TRUE
-         AND ${sentCol} IS NULL
-         AND quote_reminder_4_sent_at IS NULL
-       RETURNING id`,
-      [row.id]
-    );
-    if (!claimed.rows.length) continue;
+    const claimed = await markClientRemindersThrough(pool, row.id, highest);
+    if (!claimed) continue;
 
     const quote = { ...row, email: to, name: row.client_name || "" };
     try {
@@ -214,36 +330,37 @@ async function processOneReminder(pool, helpers, reminder, index, delayUnit) {
         subject: replaceQuoteReminderTokens(template.subject || "", quote),
         htmlBody: replaceQuoteReminderTokens(template.body || "", quote),
       });
-      console.log(`[quote-reminders] reminder ${index + 1} sent to ${to} (project ${row.id})`);
+      console.log(`[quote-reminders] reminder ${highest + 1} sent to ${to} (project ${row.id})`);
     } catch (e) {
-      await pool.query(
-        `UPDATE projects SET ${sentCol} = NULL, updated_at = NOW() WHERE id = $1`,
-        [row.id]
-      );
+      await restoreClientReminders(pool, row.id, highest, row);
       console.error(
-        `[quote-reminders] reminder ${index + 1} failed for project ${row.id}:`,
+        `[quote-reminders] reminder ${highest + 1} failed for project ${row.id}:`,
         e.message || e
       );
     }
   }
+
+  return { done: due.rows.length < MAX_SENDS_PER_REMINDER_PER_AUDIT || processedDue === 0 };
 }
 
 async function processCallbackList(pool, helpers, reminder, delayUnit) {
-  if (!reminder?.enabled) return;
+  if (!reminder?.enabled) return { ok: true };
   const delay = Number(reminder.delay);
-  if (!Number.isFinite(delay) || delay < 1) return;
+  if (!Number.isFinite(delay) || delay < 1) return { ok: true };
+
   const to = quoteListEmailOnly(reminder.toEmail);
   if (!to) {
     console.warn("[quote-reminders] Call Back List is enabled but no valid To address is set; skipping");
-    return;
+    return { ok: false };
   }
 
-  const template = await loadTemplateByName(pool, CALLBACK_LIST_TEMPLATE_NAME);
+  const templateName = String(reminder.templateName || "").trim() || CALLBACK_LIST_TEMPLATE_NAME;
+  const template = await loadTemplateByName(pool, templateName);
   if (!template) {
     console.warn(
-      `[quote-reminders] template "${CALLBACK_LIST_TEMPLATE_NAME}" not found; skipping Call Back List`
+      `[quote-reminders] template "${templateName}" not found; skipping Call Back List`
     );
-    return;
+    return { ok: false };
   }
 
   const dueSql = `SELECT id, email, client_name, suburb, street, state, phone, quote_added_at
@@ -256,8 +373,11 @@ async function processCallbackList(pool, helpers, reminder, delayUnit) {
        AND quote_added_at <= NOW() - ${delayIntervalSql(delayUnit)}
      ORDER BY quote_added_at ASC, id ASC
      LIMIT $2`;
-  const due = await pool.query(dueSql, [delay, MAX_CALLBACK_QUOTES_PER_TICK]);
-  if (!due.rows.length) return;
+  const due = await pool.query(dueSql, [delay, MAX_CALLBACK_QUOTES_PER_AUDIT]);
+  if (!due.rows.length) {
+    console.log("[quote-reminders] Call Back List compiled (no quotes due)");
+    return { ok: true };
+  }
 
   const ids = due.rows.map((row) => row.id);
   const claimed = await pool.query(
@@ -271,7 +391,7 @@ async function processCallbackList(pool, helpers, reminder, delayUnit) {
      RETURNING id, email, client_name, suburb, street, state, phone, quote_added_at`,
     [ids]
   );
-  if (!claimed.rows.length) return;
+  if (!claimed.rows.length) return { ok: true };
 
   const byId = new Map(claimed.rows.map((row) => [row.id, row]));
   const claimedRows = ids.map((id) => byId.get(id)).filter(Boolean);
@@ -281,34 +401,47 @@ async function processCallbackList(pool, helpers, reminder, delayUnit) {
     await sendQuoteReminderEmail(helpers, {
       to,
       from,
-      subject: String(template.subject || "").trim() || CALLBACK_LIST_TEMPLATE_NAME,
+      subject: String(template.subject || "").trim() || templateName,
       htmlBody: appendCallbackList(template.body || "", claimedRows),
     });
     console.log(
       `[quote-reminders] Call Back List sent to ${to} (${claimedRows.length} quote${claimedRows.length === 1 ? "" : "s"})`
     );
+    return { ok: true };
   } catch (e) {
     await pool.query(
       `UPDATE projects SET quote_reminder_4_sent_at = NULL, updated_at = NOW() WHERE id = ANY($1::int[])`,
       [claimedRows.map((row) => row.id)]
     );
     console.error("[quote-reminders] Call Back List failed:", e.message || e);
+    return { ok: false };
   }
 }
 
 async function runQuoteReminderTick(pool, helpers) {
   if (!pool) return;
   await ensureQuoteProjectColumns(pool);
+  await ensureDailyAuditColumn(pool);
+
   const settings = await loadReminderSettings(pool);
+  const auditHour = sanitizeAuditHour(settings?.auditHour);
+  const clock = melbourneClock();
+  if (clock.minutesOfDay < auditHour * 60) return;
+  const alreadyAudited = await getDailyAuditDate(pool);
+  if (alreadyAudited === clock.date) return;
+
   const reminders = settings?.quotes?.reminders || [];
   const delayUnit =
     settings?.delayUnit === "days" || settings?.delayUnit === "minutes"
       ? settings.delayUnit
       : "hours";
-  for (let i = 0; i < CALLBACK_LIST_INDEX; i += 1) {
-    await processOneReminder(pool, helpers, reminders[i], i, delayUnit);
-  }
-  await processCallbackList(pool, helpers, reminders[CALLBACK_LIST_INDEX], delayUnit);
+  const client = await processClientReminders(pool, helpers, reminders, delayUnit);
+  if (!client?.done) return;
+  const callback = await processCallbackList(pool, helpers, reminders[CALLBACK_LIST_INDEX], delayUnit);
+  if (!callback?.ok) return;
+
+  await markDailyAuditDone(pool, clock.date);
+  console.log(`[quote-reminders] daily audit complete for ${clock.date} at ${auditHour}:00`);
 }
 
 function startQuoteReminderScheduler(helpers) {
