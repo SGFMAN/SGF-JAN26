@@ -44,6 +44,9 @@ export default function NewProject2({
   onFormDataChange,
   onBack,
   onNext,
+  onDelete,
+  deleteDisabled = false,
+  deleteButtonStyle,
   nextLabel = "Next",
 }) {
   const [fieldErrors, setFieldErrors] = useState({});
@@ -168,7 +171,33 @@ export default function NewProject2({
           />
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
+          <div>
+            {onDelete ? (
+              <button
+                type="button"
+                onClick={onDelete}
+                disabled={deleteDisabled}
+                style={{
+                  ...(deleteButtonStyle || {
+                    background: UI.inputBg,
+                    color: MONUMENT,
+                    border: "none",
+                    borderRadius: "10px",
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    transition: "background 0.17s",
+                  }),
+                  cursor: deleteDisabled ? "default" : "pointer",
+                  opacity: deleteDisabled ? 0.6 : 1,
+                }}
+              >
+                Delete
+              </button>
+            ) : null}
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
           <button
             type="button"
             onClick={onBack}
@@ -220,6 +249,7 @@ export default function NewProject2({
           >
             {nextLabel}
           </button>
+          </div>
         </div>
       </div>
     </ModalBackdrop>

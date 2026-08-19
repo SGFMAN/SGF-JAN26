@@ -19,7 +19,6 @@ const HEADER_BG = "#e8eaed";
 const API_URL = "";
 const QUOTE_DELETE_BUTTON_ID = 2;
 const QUOTE_HOTLIST_BUTTON_ID = 3;
-const QUOTE_EDIT_BUTTON_ID = 5;
 
 const emptyQuote = () => ({
   created_at: null,
@@ -201,49 +200,24 @@ function quoteHotlistButtonStyle() {
   };
 }
 
-function quoteDeleteButtonStyle() {
+function quoteModalDeleteButtonStyle() {
   const saved = buildSavedButtonStyle(QUOTE_DELETE_BUTTON_ID, true);
   const fallback = {
     background: MONUMENT,
     color: PAGE_TEXT,
-    border: `1px solid ${MONUMENT}`,
-    borderRadius: "6px",
-    fontWeight: 600,
+    border: "none",
+    borderRadius: "10px",
+    fontWeight: 500,
   };
   return {
     ...(saved || fallback),
     width: "auto",
-    minWidth: "58px",
     height: "auto",
-    padding: "4px 8px",
-    fontSize: (saved && saved.fontSize) || "0.75rem",
+    padding: "10px 20px",
+    fontSize: "1rem",
     cursor: "pointer",
     whiteSpace: "nowrap",
     boxSizing: "border-box",
-    lineHeight: 1.2,
-  };
-}
-
-function quoteEditButtonStyle() {
-  const saved = buildSavedButtonStyle(QUOTE_EDIT_BUTTON_ID, true);
-  const fallback = {
-    background: SECTION_GREY,
-    color: MONUMENT,
-    border: `1px solid ${GRID_LINE}`,
-    borderRadius: "6px",
-    fontWeight: 600,
-  };
-  return {
-    ...(saved || fallback),
-    width: "auto",
-    minWidth: "52px",
-    height: "auto",
-    padding: "4px 8px",
-    fontSize: (saved && saved.fontSize) || "0.75rem",
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-    boxSizing: "border-box",
-    lineHeight: 1.2,
   };
 }
 
@@ -639,6 +613,7 @@ export default function NewPage() {
         delete next[id];
         return next;
       });
+      cancelQuoteModalFlow();
     } catch (err) {
       alert(err.message || "Failed to delete quote");
     } finally {
@@ -955,30 +930,6 @@ export default function NewPage() {
                               <button
                                 type="button"
                                 disabled={busy || rowBusy}
-                                onClick={() => handleDeleteQuote(quote.id)}
-                                style={{
-                                  ...quoteDeleteButtonStyle(),
-                                  opacity: busy || rowBusy ? 0.6 : 1,
-                                  cursor: busy || rowBusy ? "default" : "pointer",
-                                }}
-                              >
-                                Delete
-                              </button>
-                              <button
-                                type="button"
-                                disabled={busy || rowBusy}
-                                onClick={() => openEditQuote(quote.id)}
-                                style={{
-                                  ...quoteEditButtonStyle(),
-                                  opacity: busy || rowBusy ? 0.6 : 1,
-                                  cursor: busy || rowBusy ? "default" : "pointer",
-                                }}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                disabled={busy || rowBusy}
                                 onClick={() => handleAddToHotlist(quote.id)}
                                 style={{
                                   ...quoteHotlistButtonStyle(),
@@ -1173,41 +1124,59 @@ export default function NewPage() {
               />
             </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px" }}>
-              <button
-                type="button"
-                onClick={cancelQuoteModalFlow}
-                disabled={busy}
-                style={{
-                  background: UI.inputBg,
-                  color: MONUMENT,
-                  border: "none",
-                  borderRadius: "10px",
-                  padding: "10px 20px",
-                  fontSize: "1rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmAddress}
-                disabled={busy}
-                style={{
-                  background: MONUMENT,
-                  color: PAGE_TEXT,
-                  border: "none",
-                  borderRadius: "10px",
-                  padding: "10px 20px",
-                  fontSize: "1rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                }}
-              >
-                {savingId === "new" ? "Next…" : "Next"}
-              </button>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginTop: "24px" }}>
+              <div>
+                {editingQuoteId != null ? (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteQuote(editingQuoteId)}
+                    disabled={busy}
+                    style={{
+                      ...quoteModalDeleteButtonStyle(),
+                      opacity: busy ? 0.6 : 1,
+                      cursor: busy ? "default" : "pointer",
+                    }}
+                  >
+                    Delete
+                  </button>
+                ) : null}
+              </div>
+              <div style={{ display: "flex", gap: "12px" }}>
+                <button
+                  type="button"
+                  onClick={cancelQuoteModalFlow}
+                  disabled={busy}
+                  style={{
+                    background: UI.inputBg,
+                    color: MONUMENT,
+                    border: "none",
+                    borderRadius: "10px",
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmAddress}
+                  disabled={busy}
+                  style={{
+                    background: MONUMENT,
+                    color: PAGE_TEXT,
+                    border: "none",
+                    borderRadius: "10px",
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  {savingId === "new" ? "Next…" : "Next"}
+                </button>
+              </div>
             </div>
           </div>
         </ModalBackdrop>
@@ -1221,6 +1190,9 @@ export default function NewPage() {
         onFormDataChange={setClientForm}
         onBack={handleClientModalBack}
         onNext={handleClientModalNext}
+        onDelete={editingQuoteId != null ? () => handleDeleteQuote(editingQuoteId) : undefined}
+        deleteDisabled={busy}
+        deleteButtonStyle={quoteModalDeleteButtonStyle()}
         nextLabel={
           savingId === "new" || (editingQuoteId != null && savingId === editingQuoteId)
             ? "Saving…"
