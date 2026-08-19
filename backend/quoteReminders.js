@@ -44,35 +44,53 @@ function delayIntervalSql(delayUnit) {
   return "make_interval(hours => $1::int)";
 }
 
-function formatQuoteAddedAt(value) {
-  if (!value) return "";
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
+function stateKey(row) {
+  return String(row?.state || "").trim().toUpperCase();
 }
 
-function formatCallbackQuoteLine(row) {
-  const address = [row.street, row.suburb].filter(Boolean).join(", ") || "—";
-  const bits = [
-    address,
-    row.client_name,
-    row.email,
-    row.phone,
-    row.state,
-    formatQuoteAddedAt(row.quote_added_at) ? `added ${formatQuoteAddedAt(row.quote_added_at)}` : "",
-  ].filter((v) => v != null && String(v).trim() !== "");
-  return bits.join(" — ");
+function formatFullAddress(row) {
+  const street = String(row?.street || "").trim();
+  const suburb = String(row?.suburb || "").trim();
+  const state = stateKey(row);
+  const locality = [suburb, state].filter(Boolean).join(" ");
+  const address = [street, locality].filter(Boolean).join(", ");
+  return address || "—";
+}
+
+function formatCallbackQuoteBlock(row) {
+  const name = String(row?.client_name || "").trim() || "—";
+  const email = String(row?.email || "").trim() || "—";
+  const phone = String(row?.phone || "").trim() || "—";
+  return [
+    escapeHtml(formatFullAddress(row)),
+    escapeHtml(name),
+    escapeHtml(email),
+    escapeHtml(phone),
+  ].join("<br>");
+}
+
+function callbackSectionHtml(title, rows) {
+  const items = rows.length
+    ? rows.map((row) => `<li style="margin:0 0 12px 0;">${formatCallbackQuoteBlock(row)}</li>`).join("")
+    : `<li style="margin:0 0 12px 0;">None</li>`;
+  return `<h3 style="margin:16px 0 8px 0;">${escapeHtml(title)}</h3><ul style="margin:0;padding-left:20px;">${items}</ul>`;
 }
 
 function appendCallbackList(bodyHtml, rows) {
-  const items = rows.map((row) => `<li>${escapeHtml(formatCallbackQuoteLine(row))}</li>`).join("");
-  const list = `<p><strong>Call Back List</strong></p><ul>${items}</ul>`;
+  const list = Array.isArray(rows) ? rows : [];
+  const vic = list.filter((row) => stateKey(row) === "VIC");
+  const qld = list.filter((row) => stateKey(row) === "QLD");
+  const other = list.filter((row) => {
+    const state = stateKey(row);
+    return state !== "VIC" && state !== "QLD";
+  });
+  const sections = `${callbackSectionHtml("VIC", vic)}${callbackSectionHtml("QLD", qld)}${
+    other.length ? callbackSectionHtml("Other", other) : ""
+  }`;
+  const listHtml = `<p><strong>Call Back List</strong></p>${sections}`;
   const body = String(bodyHtml || "").trim();
-  if (!body) return list;
-  return `${body}${list}`;
+  if (!body) return listHtml;
+  return `${body}${listHtml}`;
 }
 
 function replaceQuoteReminderTokens(text, quote) {
