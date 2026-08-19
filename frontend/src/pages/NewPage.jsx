@@ -247,12 +247,15 @@ function quoteEditButtonStyle() {
   };
 }
 
-function QuoteSheetRow({ value, disabled, onActiveChange, onContactChange, trailing }) {
+function QuoteSheetRow({ value, disabled, onActiveChange, onContactChange, trailing, onRowClick }) {
   const stateValue = STATE_OPTIONS.includes(String(value.state || "").trim().toUpperCase())
     ? String(value.state).trim().toUpperCase()
     : "";
   return (
-    <tr className="quote-sheet-row">
+    <tr
+      className="quote-sheet-row"
+      onClick={disabled ? undefined : onRowClick}
+    >
       {COLS.map((col) => {
         if (col.type === "date") {
           return (
@@ -287,7 +290,7 @@ function QuoteSheetRow({ value, disabled, onActiveChange, onContactChange, trail
         }
         if (col.type === "activeCheck") {
           return (
-            <td key={col.key} style={checkCellStyle}>
+            <td key={col.key} style={checkCellStyle} onClick={(e) => e.stopPropagation()}>
               <input
                 type="checkbox"
                 checked={value.active !== false}
@@ -300,7 +303,7 @@ function QuoteSheetRow({ value, disabled, onActiveChange, onContactChange, trail
         }
         if (col.type === "contactCheck") {
           return (
-            <td key={col.key} style={checkCellStyle}>
+            <td key={col.key} style={checkCellStyle} onClick={(e) => e.stopPropagation()}>
               <input
                 type="checkbox"
                 checked={value.contact === true}
@@ -345,7 +348,12 @@ function QuoteSheetRow({ value, disabled, onActiveChange, onContactChange, trail
         );
       })}
       {trailing ? (
-        <td style={{ ...tdStyle, padding: "4px 6px 4px 4px", whiteSpace: "nowrap", width: "1%" }}>{trailing}</td>
+        <td
+          style={{ ...tdStyle, padding: "4px 6px 4px 4px", whiteSpace: "nowrap", width: "1%" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {trailing}
+        </td>
       ) : null}
     </tr>
   );
@@ -708,6 +716,9 @@ export default function NewPage() {
       }}
     >
       <style>{`
+        .project-list-page tr.quote-sheet-row {
+          cursor: pointer;
+        }
         .project-list-page tr.quote-sheet-row:hover td {
           background: ${STREAM.vicBlue} !important;
         }
@@ -938,6 +949,7 @@ export default function NewPage() {
                           disabled={busy || rowBusy}
                           onActiveChange={(checked) => handleToggleQuoteActive(quote.id, checked)}
                           onContactChange={(checked) => handleToggleQuoteContact(quote.id, checked)}
+                          onRowClick={() => openEditQuote(quote.id)}
                           trailing={
                             <div style={{ display: "flex", gap: "6px", alignItems: "center", justifyContent: "flex-start" }}>
                               <button
