@@ -371,6 +371,16 @@ async function updateQuoteContact(pool, id, contact) {
   return { quote: rowToQuoteApi(r.rows[0]) };
 }
 
+async function getQuoteById(pool, id) {
+  await ensureQuoteProjectColumns(pool);
+  const r = await pool.query(
+    `SELECT ${QUOTE_SELECT} FROM projects WHERE id = $1 AND status = $2`,
+    [id, QUOTE_STATUS]
+  );
+  if (!r.rows.length) return null;
+  return rowToQuoteApi(r.rows[0]);
+}
+
 async function findExistingQuoteId(pool, street, suburb, state) {
   const r = await pool.query(
     `SELECT id FROM projects
@@ -395,6 +405,7 @@ module.exports = {
   updateQuoteContact,
   deleteQuote,
   promoteQuoteToHotlist,
+  getQuoteById,
   findExistingQuoteId,
   parseQuoteAddedAt,
 };

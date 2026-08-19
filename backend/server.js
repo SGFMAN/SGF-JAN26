@@ -92,7 +92,7 @@ const {
   updateQuoteContact,
 } = require("./quotes");
 const { parseReminderSettingsColumn } = require("./reminderSettings");
-const { startQuoteReminderScheduler } = require("./quoteReminders");
+const { startQuoteReminderScheduler, previewQuoteReminder1, sendQuoteReminder1Manual } = require("./quoteReminders");
 const { ensureMapQuoteItemsTable, listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
 const {
   ACCESS_AREAS,
@@ -12806,6 +12806,46 @@ app.put("/api/quotes/:id/contact", async (req, res) => {
   } catch (e) {
     console.error("[quotes] update contact error:", e);
     res.status(500).json({ error: e.message || "Failed to update quote contact" });
+  }
+});
+
+app.get("/api/quotes/:id/reminder-1-preview", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await requireHotlistSalesAccess(req, res))) return;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const result = await previewQuoteReminder1(pool, id);
+    if (result.notFound) return res.status(404).json({ error: "quote not found" });
+    if (result.alreadySent) return res.status(409).json({ error: "Reminder 1 has already been sent" });
+    if (result.finished) return res.status(409).json({ error: "This quote is already on the Call Back List" });
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json(result);
+  } catch (e) {
+    console.error("[quotes] reminder-1 preview error:", e);
+    res.status(500).json({ error: e.message || "Failed to preview reminder email" });
+  }
+});
+
+app.post("/api/quotes/:id/reminder-1-send", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await requireHotlistSalesAccess(req, res))) return;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const result = await sendQuoteReminder1Manual(pool, {
+      getSmtpCredentialsForFromAddress,
+      addLogoToEmail,
+      convertEmailBodyNewlinesToBr,
+    }, id, req.body || {});
+    if (result.notFound) return res.status(404).json({ error: "quote not found" });
+    if (result.alreadySent) return res.status(409).json({ error: "Reminder 1 has already been sent" });
+    if (result.finished) return res.status(409).json({ error: "This quote is already on the Call Back List" });
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json(result.quote);
+  } catch (e) {
+    console.error("[quotes] reminder-1 send error:", e);
+    res.status(500).json({ error: e.message || "Failed to send reminder email" });
   }
 });
 

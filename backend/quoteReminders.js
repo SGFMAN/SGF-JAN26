@@ -6,7 +6,7 @@
  */
 
 const nodemailer = require("nodemailer");
-const { ensureQuoteProjectColumns } = require("./quotes");
+const { ensureQuoteProjectColumns, getQuoteById } = require("./quotes");
 const {
   parseReminderSettingsColumn,
   CALLBACK_LIST_INDEX,
@@ -226,7 +226,9 @@ function highestDueClientReminder(row, reminders, delayUnit) {
     row.quote_reminder_2_sent_at,
     row.quote_reminder_3_sent_at,
   ];
+  const alreadyStarted = sent.some(Boolean);
   let highestDue = -1;
+  let nextSequentialDue = -1;
   for (let i = 0; i < CALLBACK_LIST_INDEX; i += 1) {
     const reminder = reminders[i];
     if (!reminder?.enabled) continue;
@@ -234,10 +236,13 @@ function highestDueClientReminder(row, reminders, delayUnit) {
     if (seconds == null) continue;
     if (ageSeconds < seconds) continue;
     highestDue = i;
+    if (nextSequentialDue < 0 && !sent[i]) nextSequentialDue = i;
   }
-  if (highestDue < 0) return -1;
-  if (sent[highestDue]) return -1;
-  return highestDue;
+  // Untouched quotes jump to the latest due stage. Once any reminder has been
+  // sent (including a manual reminder 1), continue in order instead of skipping.
+  const chosen = alreadyStarted ? nextSequentialDue : highestDue;
+  if (chosen < 0 || sent[chosen]) return -1;
+  return chosen;
 }
 
 async function markClientRemindersThrough(pool, id, highest) {
@@ -466,7 +471,81 @@ function startQuoteReminderScheduler(helpers) {
   void tick();
 }
 
+async function previewQuoteReminder1(pool, id) {
+  await ensureQuoteProjectColumns(pool);
+  const r = await pool.query(
+    `SELECT id, email, client_name, suburb, street, state, phone,
+            quote_reminder_1_sent_at, quote_reminder_4_sent_at
+     FROM projects
+     WHERE id = $1 AND status = 'Quote'`,
+    [id]
+  );
+  if (!r.rows.length) return { notFound: true };
+  const row = r.rows[0];
+  if (row.quote_reminder_1_sent_at) return { alreadySent: true };
+  if (row.quote_reminder_4_sent_at) return { finished: true };
+
+  const settings = await loadReminderSettings(pool);
+  const reminder = settings?.quotes?.reminders?.[0];
+  const templateName = String(reminder?.templateName || "").trim();
+  if (!templateName) return { error: "Reminder 1 has no email template set." };
+  const template = await loadTemplateByName(pool, templateName);
+  if (!template) return { error: `Template "${templateName}" not found.` };
+
+  const to = quoteListEmailOnly(row.email);
+  if (!to) return { error: "This quote has no valid email address." };
+  const from = String(template.from_address || "").trim();
+  if (!from) return { error: "Reminder 1 template has no From address." };
+
+  const quote = { ...row, email: to, name: row.client_name || "" };
+  return {
+    to,
+    from,
+    subject: replaceQuoteReminderTokens(template.subject || "", quote),
+    body: replaceQuoteReminderTokens(template.body || "", quote),
+  };
+}
+
+async function sendQuoteReminder1Manual(pool, helpers, id, payload = {}) {
+  const preview = await previewQuoteReminder1(pool, id);
+  if (preview.notFound || preview.alreadySent || preview.finished || preview.error) return preview;
+
+  const to = quoteListEmailOnly(payload.to) || preview.to;
+  const from = String(payload.from != null ? payload.from : preview.from).trim();
+  const subject = payload.subject != null ? String(payload.subject) : preview.subject;
+  const htmlBody = payload.body != null ? String(payload.body) : preview.body;
+  if (!to) return { error: "No valid To address." };
+  if (!from) return { error: "No From address." };
+
+  const claimed = await pool.query(
+    `UPDATE projects
+     SET quote_reminder_1_sent_at = NOW(), updated_at = NOW()
+     WHERE id = $1
+       AND status = 'Quote'
+       AND quote_reminder_1_sent_at IS NULL
+       AND quote_reminder_4_sent_at IS NULL
+     RETURNING id`,
+    [id]
+  );
+  if (!claimed.rows.length) return { alreadySent: true };
+
+  try {
+    await sendQuoteReminderEmail(helpers, { to, from, subject, htmlBody });
+  } catch (e) {
+    await pool.query(
+      `UPDATE projects SET quote_reminder_1_sent_at = NULL, updated_at = NOW() WHERE id = $1`,
+      [id]
+    );
+    throw e;
+  }
+
+  const quote = await getQuoteById(pool, id);
+  return { quote };
+}
+
 module.exports = {
   startQuoteReminderScheduler,
   runQuoteReminderTick,
+  previewQuoteReminder1,
+  sendQuoteReminder1Manual,
 };
