@@ -81,11 +81,13 @@ function smtpSlotEmailsFromSettings(data) {
 export default function RemindersSettings() {
   const [reminders, setReminders] = useState(() => emptyReminders());
   const [auditHour, setAuditHour] = useState(DEFAULT_AUDIT_HOUR);
+  const [fromEmail, setFromEmail] = useState("");
   const [templates, setTemplates] = useState([]);
   const [smtpEmails, setSmtpEmails] = useState([]);
   const [loading, setLoading] = useState(true);
   const valuesRef = useRef(reminders);
   const auditHourRef = useRef(auditHour);
+  const fromEmailRef = useRef(fromEmail);
 
   useEffect(() => {
     valuesRef.current = reminders;
@@ -94,6 +96,10 @@ export default function RemindersSettings() {
   useEffect(() => {
     auditHourRef.current = auditHour;
   }, [auditHour]);
+
+  useEffect(() => {
+    fromEmailRef.current = fromEmail;
+  }, [fromEmail]);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,9 +116,11 @@ export default function RemindersSettings() {
           const data = await settingsRes.json().catch(() => ({}));
           setReminders(normalizeReminders(data?.settings?.quotes?.reminders));
           setAuditHour(normalizeAuditHour(data?.settings?.auditHour));
+          setFromEmail(String(data?.settings?.fromEmail || "").trim());
         } else {
           setReminders(emptyReminders());
           setAuditHour(DEFAULT_AUDIT_HOUR);
+          setFromEmail("");
         }
         if (templatesRes.ok) {
           const list = await templatesRes.json().catch(() => []);
@@ -131,6 +139,7 @@ export default function RemindersSettings() {
         if (!cancelled) {
           setReminders(emptyReminders());
           setAuditHour(DEFAULT_AUDIT_HOUR);
+          setFromEmail("");
           setTemplates([]);
           setSmtpEmails([]);
         }
@@ -143,7 +152,7 @@ export default function RemindersSettings() {
     };
   }, []);
 
-  async function saveSettings(nextReminders, nextAuditHour) {
+  async function saveSettings(nextReminders, nextAuditHour, nextFromEmail) {
     try {
       const response = await fetch(`${API_URL}/api/reminder-settings`, {
         method: "PUT",
@@ -151,6 +160,7 @@ export default function RemindersSettings() {
         body: JSON.stringify({
           settings: {
             auditHour: nextAuditHour,
+            fromEmail: nextFromEmail,
             quotes: { reminders: nextReminders },
           },
         }),
@@ -169,7 +179,7 @@ export default function RemindersSettings() {
     setReminders((prev) => {
       const next = prev.map((row, i) => (i === index ? { ...row, ...patch } : row));
       valuesRef.current = next;
-      void saveSettings(next, auditHourRef.current);
+      void saveSettings(next, auditHourRef.current, fromEmailRef.current);
       return next;
     });
   }
@@ -178,7 +188,14 @@ export default function RemindersSettings() {
     const nextHour = normalizeAuditHour(hour);
     auditHourRef.current = nextHour;
     setAuditHour(nextHour);
-    void saveSettings(valuesRef.current, nextHour);
+    void saveSettings(valuesRef.current, nextHour, fromEmailRef.current);
+  }
+
+  function updateFromEmail(email) {
+    const nextFrom = String(email || "").trim();
+    fromEmailRef.current = nextFrom;
+    setFromEmail(nextFrom);
+    void saveSettings(valuesRef.current, auditHourRef.current, nextFrom);
   }
 
   const cardStyle = {
@@ -300,6 +317,36 @@ export default function RemindersSettings() {
     );
   }
 
+  function renderFromCard() {
+    return (
+      <div style={cardStyle}>
+        <h3 style={{ fontSize: "1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>
+          From
+        </h3>
+        <select
+          id="quote-reminder-from-email"
+          aria-label="From"
+          value={fromEmail}
+          onChange={(e) => updateFromEmail(e.target.value)}
+          style={selectStyle}
+        >
+          <option value="">Select a From address…</option>
+          {fromEmail && !smtpEmails.some((e) => e.toLowerCase() === fromEmail.toLowerCase()) ? (
+            <option value={fromEmail}>{fromEmail}</option>
+          ) : null}
+          {smtpEmails.map((email) => (
+            <option key={email} value={email}>
+              {email}
+            </option>
+          ))}
+        </select>
+        <p style={{ margin: 0, fontSize: "0.85rem", color: UI.textMuted, lineHeight: 1.4 }}>
+          Used as the From address on reminder 1–3 and the Call Back List.
+        </p>
+      </div>
+    );
+  }
+
   function renderAuditTimeCard() {
     return (
       <div style={cardStyle}>
@@ -416,7 +463,11 @@ export default function RemindersSettings() {
           alignItems: "start",
         }}
       >
-        {reminders.slice(0, 3).map((row, index) => renderReminderCard(row, index))}
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px", minWidth: 0 }}>
+          {reminders[0] ? renderReminderCard(reminders[0], 0) : null}
+          {renderFromCard()}
+        </div>
+        {reminders.slice(1, 3).map((row, index) => renderReminderCard(row, index + 1))}
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", minWidth: 0 }}>
           {reminders[CALLBACK_LIST_INDEX] ? renderCallbackCard(reminders[CALLBACK_LIST_INDEX]) : null}
           {renderAuditTimeCard()}

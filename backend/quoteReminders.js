@@ -180,6 +180,12 @@ async function loadTemplateByName(pool, name) {
   return r.rows[0] || null;
 }
 
+function reminderFromAddress(settings, template) {
+  const fromSettings = String(settings?.fromEmail || "").trim();
+  if (fromSettings) return fromSettings;
+  return String(template?.from_address || "").trim();
+}
+
 async function sendQuoteReminderEmail(helpers, { to, from, subject, htmlBody }) {
   const creds = await helpers.getSmtpCredentialsForFromAddress(from);
   const smtpUser = creds?.smtpUser;
@@ -276,7 +282,7 @@ async function restoreClientReminders(pool, id, highest, previous) {
   );
 }
 
-async function processClientReminders(pool, helpers, reminders, delayUnit) {
+async function processClientReminders(pool, helpers, reminders, delayUnit, settings) {
   const enabled = (reminders || []).slice(0, CALLBACK_LIST_INDEX).some((row) => row?.enabled);
   if (!enabled) return { done: true };
 
@@ -328,7 +334,12 @@ async function processClientReminders(pool, helpers, reminders, delayUnit) {
 
     const quote = { ...row, email: to, name: row.client_name || "" };
     try {
-      const from = String(template.from_address || "").trim();
+      const from = reminderFromAddress(settings, template);
+      if (!from) {
+        await restoreClientReminders(pool, row.id, highest, row);
+        console.warn(`[quote-reminders] no From address for reminder ${highest + 1}; skipping project ${row.id}`);
+        continue;
+      }
       await sendQuoteReminderEmail(helpers, {
         to,
         from,
@@ -348,7 +359,7 @@ async function processClientReminders(pool, helpers, reminders, delayUnit) {
   return { done: due.rows.length < MAX_SENDS_PER_REMINDER_PER_AUDIT || processedDue === 0 };
 }
 
-async function processCallbackList(pool, helpers, reminder, delayUnit) {
+async function processCallbackList(pool, helpers, reminder, delayUnit, settings) {
   if (!reminder?.enabled) return { ok: true };
   const delay = Number(reminder.delay);
   if (!Number.isFinite(delay) || delay < 1) return { ok: true };
@@ -402,7 +413,7 @@ async function processCallbackList(pool, helpers, reminder, delayUnit) {
   const claimedRows = ids.map((id) => byId.get(id)).filter(Boolean);
 
   try {
-    const from = String(template.from_address || "").trim() || to;
+    const from = reminderFromAddress(settings, template) || to;
     await sendQuoteReminderEmail(helpers, {
       to,
       from,
@@ -440,9 +451,15 @@ async function runQuoteReminderTick(pool, helpers) {
     settings?.delayUnit === "days" || settings?.delayUnit === "minutes"
       ? settings.delayUnit
       : "hours";
-  const client = await processClientReminders(pool, helpers, reminders, delayUnit);
+  const client = await processClientReminders(pool, helpers, reminders, delayUnit, settings);
   if (!client?.done) return;
-  const callback = await processCallbackList(pool, helpers, reminders[CALLBACK_LIST_INDEX], delayUnit);
+  const callback = await processCallbackList(
+    pool,
+    helpers,
+    reminders[CALLBACK_LIST_INDEX],
+    delayUnit,
+    settings
+  );
   if (!callback?.ok) return;
 
   await markDailyAuditDone(pool, clock.date);
@@ -494,8 +511,8 @@ async function previewQuoteReminder1(pool, id) {
 
   const to = quoteListEmailOnly(row.email);
   if (!to) return { error: "This quote has no valid email address." };
-  const from = String(template.from_address || "").trim();
-  if (!from) return { error: "Reminder 1 template has no From address." };
+  const from = reminderFromAddress(settings, template);
+  if (!from) return { error: "Choose a From address on the Quotes reminders page." };
 
   const quote = { ...row, email: to, name: row.client_name || "" };
   return {

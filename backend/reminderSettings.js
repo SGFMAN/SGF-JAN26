@@ -40,10 +40,15 @@ function sanitizeAuditHour(raw) {
   return Math.min(23, Math.max(0, Math.round(n)));
 }
 
+function sanitizeFromEmail(raw) {
+  return String(raw != null ? raw : "").trim().slice(0, 200);
+}
+
 function emptyReminderSettings() {
   return {
     delayUnit: "days",
     auditHour: DEFAULT_AUDIT_HOUR,
+    fromEmail: "",
     quotes: {
       reminders: Array.from({ length: QUOTE_REMINDER_COUNT }, (_, i) => emptyQuoteReminder(i)),
     },
@@ -71,6 +76,7 @@ function parseReminderSettingsColumn(raw) {
   return {
     delayUnit: empty.delayUnit,
     auditHour: sanitizeAuditHour(obj.auditHour ?? quotes.auditHour),
+    fromEmail: sanitizeFromEmail(obj.fromEmail ?? quotes.fromEmail),
     quotes: { reminders },
   };
 }
