@@ -2,15 +2,19 @@
  * Settings → Reminders (quotes). Shared parse for API + scheduler.
  */
 
-const QUOTE_REMINDER_COUNT = 3;
+const QUOTE_REMINDER_COUNT = 4;
+const CALLBACK_LIST_INDEX = 3;
+const CALLBACK_LIST_TEMPLATE_NAME = "Call Back List";
 const REMINDER_DELAY_MIN = 1;
 const REMINDER_DELAY_MAX = 10;
 
 function emptyQuoteReminder(index) {
+  const isCallback = index === CALLBACK_LIST_INDEX;
   return {
     enabled: false,
     delay: Math.min(REMINDER_DELAY_MAX, Math.max(REMINDER_DELAY_MIN, index + 1)),
-    templateName: "",
+    templateName: isCallback ? CALLBACK_LIST_TEMPLATE_NAME : "",
+    toEmail: "",
   };
 }
 
@@ -20,16 +24,22 @@ function sanitizeQuoteReminder(raw, index) {
   const delay = Number.isFinite(delayN)
     ? Math.min(REMINDER_DELAY_MAX, Math.max(REMINDER_DELAY_MIN, Math.round(delayN)))
     : emptyQuoteReminder(index).delay;
+  const isCallback = index === CALLBACK_LIST_INDEX;
   return {
     enabled: Boolean(src.enabled),
     delay,
-    templateName: src.templateName != null ? String(src.templateName).trim().slice(0, 200) : "",
+    templateName: isCallback
+      ? CALLBACK_LIST_TEMPLATE_NAME
+      : src.templateName != null
+        ? String(src.templateName).trim().slice(0, 200)
+        : "",
+    toEmail: isCallback ? String(src.toEmail != null ? src.toEmail : "").trim().slice(0, 200) : "",
   };
 }
 
 function emptyReminderSettings() {
   return {
-    delayUnit: "hours",
+    delayUnit: "minutes",
     quotes: {
       reminders: Array.from({ length: QUOTE_REMINDER_COUNT }, (_, i) => emptyQuoteReminder(i)),
     },
@@ -62,5 +72,7 @@ function parseReminderSettingsColumn(raw) {
 
 module.exports = {
   QUOTE_REMINDER_COUNT,
+  CALLBACK_LIST_INDEX,
+  CALLBACK_LIST_TEMPLATE_NAME,
   parseReminderSettingsColumn,
 };

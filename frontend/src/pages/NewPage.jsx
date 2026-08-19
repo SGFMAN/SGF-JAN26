@@ -30,9 +30,11 @@ const emptyQuote = () => ({
   email: "",
   phone: "",
   active: true,
+  contact: false,
   reminder_1_sent_at: null,
   reminder_2_sent_at: null,
   reminder_3_sent_at: null,
+  reminder_4_sent_at: null,
 });
 
 const COLS = [
@@ -48,6 +50,8 @@ const COLS = [
   { key: "reminder_1_sent_at", label: "1", type: "reminderSent", width: "36px" },
   { key: "reminder_2_sent_at", label: "2", type: "reminderSent", width: "36px" },
   { key: "reminder_3_sent_at", label: "3", type: "reminderSent", width: "36px" },
+  { key: "reminder_4_sent_at", label: "4", type: "reminderSent", width: "36px" },
+  { key: "contact", label: "Contact", type: "contactCheck", width: "68px" },
 ];
 
 const cellBorder = `1px solid ${GRID_LINE}`;
@@ -132,9 +136,11 @@ function quoteFromApi(q) {
     email: q.email || "",
     phone: q.phone || "",
     active: q.active !== false,
+    contact: q.contact === true,
     reminder_1_sent_at: q.reminder_1_sent_at || null,
     reminder_2_sent_at: q.reminder_2_sent_at || null,
     reminder_3_sent_at: q.reminder_3_sent_at || null,
+    reminder_4_sent_at: q.reminder_4_sent_at || null,
   };
 }
 
@@ -207,7 +213,7 @@ function quoteEditButtonStyle() {
   };
 }
 
-function QuoteSheetRow({ value, disabled, onResetClick, onActiveChange, trailing }) {
+function QuoteSheetRow({ value, disabled, onResetClick, onActiveChange, onContactChange, trailing }) {
   const stateValue = STATE_OPTIONS.includes(String(value.state || "").trim().toUpperCase())
     ? String(value.state).trim().toUpperCase()
     : "";
@@ -278,10 +284,23 @@ function QuoteSheetRow({ value, disabled, onResetClick, onActiveChange, trailing
             </td>
           );
         }
+        if (col.type === "contactCheck") {
+          return (
+            <td key={col.key} style={checkCellStyle}>
+              <input
+                type="checkbox"
+                checked={value.contact === true}
+                disabled={disabled}
+                aria-label="Contact"
+                onChange={(e) => onContactChange?.(e.target.checked)}
+              />
+            </td>
+          );
+        }
         if (col.type === "reminderSent") {
           const sentAt = value[col.key];
           const sent = Boolean(sentAt);
-          const n = col.key === "reminder_2_sent_at" ? 2 : col.key === "reminder_3_sent_at" ? 3 : 1;
+          const n = Number(String(col.key).replace(/\D/g, "")) || 1;
           return (
             <td key={col.key} style={checkCellStyle}>
               <input
@@ -595,6 +614,34 @@ export default function NewPage() {
     }
   }
 
+  async function handleToggleQuoteContact(id, nextContact) {
+    const previous = edits[id]?.contact === true;
+    setEdits((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] || emptyQuote()), contact: nextContact },
+    }));
+    setQuotes((prev) => prev.map((q) => (q.id === id ? { ...q, contact: nextContact } : q)));
+    try {
+      const res = await fetch(`${API_URL}/api/quotes/${id}/contact`, {
+        method: "PUT",
+        headers: getApiHeaders(),
+        body: JSON.stringify({ contact: nextContact }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      const normalised = quoteFromApi(data);
+      setEdits((prev) => ({ ...prev, [id]: { ...(prev[id] || emptyQuote()), ...normalised } }));
+      setQuotes((prev) => prev.map((q) => (q.id === id ? { ...q, ...data } : q)));
+    } catch (err) {
+      setEdits((prev) => ({
+        ...prev,
+        [id]: { ...(prev[id] || emptyQuote()), contact: previous },
+      }));
+      setQuotes((prev) => prev.map((q) => (q.id === id ? { ...q, contact: previous } : q)));
+      alert(err.message || "Failed to update Contact");
+    }
+  }
+
   const busy = savingId === "new" || (editingQuoteId != null && savingId === editingQuoteId);
 
   return (
@@ -772,7 +819,12 @@ export default function NewPage() {
                         key={col.key}
                         style={{
                           ...thStyle,
-                          textAlign: col.type === "activeCheck" || col.type === "reminderSent" ? "center" : "left",
+                          textAlign:
+                            col.type === "activeCheck" ||
+                            col.type === "contactCheck" ||
+                            col.type === "reminderSent"
+                              ? "center"
+                              : "left",
                         }}
                         title={col.type === "reminderSent" ? `Reminder ${col.label}` : undefined}
                       >
@@ -808,6 +860,7 @@ export default function NewPage() {
                           disabled={busy || rowBusy}
                           onResetClick={() => handleResetQuoteAddedAt(quote.id)}
                           onActiveChange={(checked) => handleToggleQuoteActive(quote.id, checked)}
+                          onContactChange={(checked) => handleToggleQuoteContact(quote.id, checked)}
                           trailing={
                             <div style={{ display: "flex", gap: "6px", alignItems: "center", justifyContent: "flex-end" }}>
                               <button
@@ -848,7 +901,7 @@ export default function NewPage() {
       </div>
 
       {addressModalOpen ? (
-        <ModalBackdrop zIndex={1000} onClick={cancelQuoteModalFlow}>
+        <ModalBackdrop zIndex={1000}>
           <div
             role="dialog"
             aria-modal="true"
@@ -982,6 +1035,7 @@ export default function NewPage() {
       <NewProject2
         isOpen={clientModalOpen}
         onClose={cancelQuoteModalFlow}
+        closeOnBackdropClick={false}
         formData={clientForm}
         onFormDataChange={setClientForm}
         onBack={handleClientModalBack}

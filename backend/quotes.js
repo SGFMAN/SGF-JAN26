@@ -5,24 +5,43 @@
 
 const QUOTE_STATUS = "Quote";
 
-const QUOTE_SELECT = `id, access_token, name, status, suburb, street, state, client_name, email, phone,
-  quote_active, quote_added_at, quote_reminder_1_sent_at, quote_reminder_2_sent_at, quote_reminder_3_sent_at, updated_at`;
+const QUOTE_SELECT = `id, name, status, suburb, street, state, client_name, email, phone,
+  quote_active, quote_contact, quote_added_at, quote_reminder_1_sent_at, quote_reminder_2_sent_at, quote_reminder_3_sent_at, quote_reminder_4_sent_at, updated_at`;
 
 function normalizeAddressHyphensForFilesystem(s) {
   if (s == null) return "";
   return String(s).replace(/[\u2013\u2014\u2212]/g, "-");
 }
 
+let quoteColumnsReady = null;
+
 async function ensureQuoteProjectColumns(pool) {
-  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS quote_contacted BOOLEAN NOT NULL DEFAULT FALSE`);
-  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS quote_contacted_email BOOLEAN NOT NULL DEFAULT FALSE`);
-  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS quote_contacted_phone BOOLEAN NOT NULL DEFAULT FALSE`);
-  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS quote_contacted_visit BOOLEAN NOT NULL DEFAULT FALSE`);
-  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS quote_added_at TIMESTAMPTZ`);
-  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS quote_active BOOLEAN NOT NULL DEFAULT TRUE`);
-  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS quote_reminder_1_sent_at TIMESTAMPTZ`);
-  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS quote_reminder_2_sent_at TIMESTAMPTZ`);
-  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS quote_reminder_3_sent_at TIMESTAMPTZ`);
+  if (quoteColumnsReady) return quoteColumnsReady;
+  quoteColumnsReady = (async () => {
+    await pool.query(`
+      ALTER TABLE projects
+        ADD COLUMN IF NOT EXISTS quote_contacted BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS quote_contacted_email BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS quote_contacted_phone BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS quote_contacted_visit BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS quote_added_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS quote_active BOOLEAN NOT NULL DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS quote_reminder_1_sent_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS quote_reminder_2_sent_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS quote_reminder_3_sent_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS quote_reminder_4_sent_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS quote_contact BOOLEAN NOT NULL DEFAULT FALSE
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS projects_quotes_list_idx
+      ON projects (quote_added_at DESC NULLS LAST, id DESC)
+      WHERE status = 'Quote'
+    `);
+  })().catch((e) => {
+    quoteColumnsReady = null;
+    throw e;
+  });
+  return quoteColumnsReady;
 }
 
 /**
@@ -153,7 +172,6 @@ function rowToQuoteApi(row) {
   if (!row) return null;
   return {
     id: row.id,
-    access_token: row.access_token,
     status: row.status,
     name: row.client_name || "",
     client_name: row.client_name || "",
@@ -163,10 +181,12 @@ function rowToQuoteApi(row) {
     email: row.email || "",
     phone: row.phone || "",
     active: row.quote_active !== false,
+    contact: row.quote_contact === true,
     created_at: row.quote_added_at || row.updated_at || null,
     reminder_1_sent_at: row.quote_reminder_1_sent_at || null,
     reminder_2_sent_at: row.quote_reminder_2_sent_at || null,
     reminder_3_sent_at: row.quote_reminder_3_sent_at || null,
+    reminder_4_sent_at: row.quote_reminder_4_sent_at || null,
     updated_at: row.updated_at,
   };
 }
@@ -198,7 +218,7 @@ async function listQuotes(pool) {
     `SELECT ${QUOTE_SELECT}
      FROM projects
      WHERE status = $1
-     ORDER BY COALESCE(quote_added_at, updated_at) DESC, id DESC`,
+     ORDER BY quote_added_at DESC NULLS LAST, id DESC`,
     [QUOTE_STATUS]
   );
   return r.rows.map(rowToQuoteApi);
@@ -333,6 +353,7 @@ async function resetQuoteAddedAt(pool, id) {
        quote_reminder_1_sent_at = NULL,
        quote_reminder_2_sent_at = NULL,
        quote_reminder_3_sent_at = NULL,
+       quote_reminder_4_sent_at = NULL,
        updated_at = NOW()
      WHERE id = $1 AND status = $2
      RETURNING ${QUOTE_SELECT}`,
@@ -350,6 +371,19 @@ async function updateQuoteActive(pool, id, active) {
      WHERE id = $1 AND status = $3
      RETURNING ${QUOTE_SELECT}`,
     [id, Boolean(active), QUOTE_STATUS]
+  );
+  if (!r.rows.length) return { notFound: true };
+  return { quote: rowToQuoteApi(r.rows[0]) };
+}
+
+async function updateQuoteContact(pool, id, contact) {
+  await ensureQuoteProjectColumns(pool);
+  const r = await pool.query(
+    `UPDATE projects
+     SET quote_contact = $2, updated_at = NOW()
+     WHERE id = $1 AND status = $3
+     RETURNING ${QUOTE_SELECT}`,
+    [id, Boolean(contact), QUOTE_STATUS]
   );
   if (!r.rows.length) return { notFound: true };
   return { quote: rowToQuoteApi(r.rows[0]) };
@@ -376,6 +410,7 @@ module.exports = {
   createQuote,
   updateQuote,
   updateQuoteActive,
+  updateQuoteContact,
   deleteQuote,
   promoteQuoteToHotlist,
   resetQuoteAddedAt,

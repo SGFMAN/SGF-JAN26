@@ -90,6 +90,7 @@ const {
   promoteQuoteToHotlist,
   resetQuoteAddedAt,
   updateQuoteActive,
+  updateQuoteContact,
 } = require("./quotes");
 const { parseReminderSettingsColumn } = require("./reminderSettings");
 const { startQuoteReminderScheduler } = require("./quoteReminders");
@@ -12800,6 +12801,27 @@ app.put("/api/quotes/:id/active", async (req, res) => {
   } catch (e) {
     console.error("[quotes] update active error:", e);
     res.status(500).json({ error: e.message || "Failed to update quote active" });
+  }
+});
+
+app.put("/api/quotes/:id/contact", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await requireHotlistSalesAccess(req, res))) return;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const contact = req.body?.contact;
+    if (contact === undefined) return res.status(400).json({ error: "contact is required" });
+    const result = await updateQuoteContact(
+      pool,
+      id,
+      contact === true || contact === "true" || contact === 1 || contact === "1"
+    );
+    if (result.notFound) return res.status(404).json({ error: "quote not found" });
+    res.json(result.quote);
+  } catch (e) {
+    console.error("[quotes] update contact error:", e);
+    res.status(500).json({ error: e.message || "Failed to update quote contact" });
   }
 });
 

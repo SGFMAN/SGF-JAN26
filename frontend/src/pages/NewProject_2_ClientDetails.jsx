@@ -39,6 +39,7 @@ function looksLikeEmail(value) {
 export default function NewProject2({
   isOpen,
   onClose,
+  closeOnBackdropClick = true,
   formData,
   onFormDataChange,
   onBack,
@@ -110,7 +111,7 @@ export default function NewProject2({
   });
 
   return (
-    <ModalBackdrop zIndex={1000} onClick={onClose}>
+    <ModalBackdrop zIndex={1000} onClick={closeOnBackdropClick ? onClose : undefined}>
       <div
         style={{
           background: SECTION_GREY,

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 
-import { UI } from "../utils/uiThemeTokens.js";
+import { UI, STREAM } from "../utils/uiThemeTokens.js";
 import EmailBodyEditor, { editorHtmlToStored } from "../components/EmailBodyEditor.jsx";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
+const VIC_BLUE_LIGHT = STREAM.vicBlueLight;
 const API_URL = "";
 const TEMPLATE_TEST_EMAIL_TO = "ben@superiorgrannyflats.com.au";
 const TEMPLATE_SECTIONS = ["Colours", "Drawings", "New Project", "Misc"];
@@ -800,6 +801,22 @@ export default function EmailTemplate() {
           Body
         </h2>
         <div style={{ display: "flex", gap: "8px", marginBottom: "8px", flexWrap: "wrap", flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => bodyEditorRef.current?.insertLink?.()}
+            style={{
+              padding: "6px 12px",
+              fontSize: "0.85rem",
+              fontWeight: 500,
+              color: MONUMENT,
+              background: VIC_BLUE_LIGHT,
+              border: `1px solid ${SECTION_GREY}`,
+              borderRadius: "6px",
+              cursor: "pointer",
+            }}
+          >
+            [LINK]
+          </button>
           <button
             type="button"
             onClick={() => insertToken("body", "ProjectName")}
