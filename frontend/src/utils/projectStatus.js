@@ -77,8 +77,9 @@ export function isDesignPipelineStatus(status) {
 /** Default status for newly created (non-hotlist) projects. */
 export const DEFAULT_NEW_PROJECT_STATUS = PRE_ENGAGEMENT_PHASE;
 
-/** on_hold checkbox / API flag (blue sash). */
+/** on_hold checkbox / API flag (blue sash). Cancelled jobs are never treated as on hold. */
 export function isOnHoldFlag(project) {
   if (!project) return false;
+  if (isCancelledStatus(project.status)) return false;
   return project.on_hold === true || project.on_hold === "true";
 }

@@ -29,6 +29,7 @@ const PROJECT_CARD_COLUMNS = [
   "salesperson",
   "classification",
   "on_hold",
+  "on_hold_reason",
   "substatus",
   "substatus_detail",
   "duplicate_source_project_id",

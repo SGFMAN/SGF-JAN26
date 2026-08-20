@@ -3385,7 +3385,7 @@ app.put("/api/projects/:id", async (req, res) => {
       return res.status(404).json({ error: "not found" });
     }
 
-    const ON_HOLD_REASONS = new Set(["Finance", "Waiting Deposit"]);
+    const ON_HOLD_REASONS = new Set(["Finance", "Waiting Deposit", "Covenant"]);
     const putBody = req.body || {};
     if (onHoldValue === "__NULL__") {
       try {
@@ -3402,6 +3402,19 @@ app.put("/api/projects/:id", async (req, res) => {
         r.rows[0].on_hold_reason = reason;
       } catch (reasonErr) {
         console.log("on_hold_reason update after PUT:", reasonErr.message);
+      }
+    }
+
+    if (String(r.rows[0].status || "").trim().toLowerCase() === "cancelled") {
+      try {
+        await pool.query(
+          `UPDATE projects SET on_hold = NULL, on_hold_reason = NULL WHERE id = $1`,
+          [id]
+        );
+        r.rows[0].on_hold = null;
+        r.rows[0].on_hold_reason = null;
+      } catch (holdErr) {
+        console.log("clear on_hold after cancelled status:", holdErr.message);
       }
     }
 

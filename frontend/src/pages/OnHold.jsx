@@ -11,7 +11,7 @@ import {
 } from "../utils/projectListFilters";
 import ProjectRectangleCard from "../components/ProjectRectangleCard";
 import ProjectListGroupHeader from "../components/ProjectListGroupHeader";
-import { getProjectListGroupKey } from "../utils/projectListGrouping";
+import { compareOnHoldReasonGroups, getOnHoldReasonGroupLabel } from "../utils/projectListGrouping";
 import { isOnHoldFlag, isExcludedFromProjectLists } from "../utils/projectStatus";
 import useAppLogo from "../hooks/useAppLogo.js";
 
@@ -74,15 +74,17 @@ export default function OnHold() {
   );
 
   const filteredProjects = useMemo(
-    () =>
-      applyProjectListFilters(projects, {
+    () => {
+      const list = applyProjectListFilters(projects, {
         scopeFilter,
         stateFilter,
         selectedField,
         selectedValue,
         searchQuery,
         sortMode,
-      }),
+      });
+      return [...list].sort(compareOnHoldReasonGroups);
+    },
     [projects, stateFilter, selectedField, selectedValue, searchQuery, sortMode]
   );
 
@@ -245,8 +247,8 @@ export default function OnHold() {
             >
               {filteredProjects.map((project, index) => {
                 const prevProject = index > 0 ? filteredProjects[index - 1] : null;
-                const groupKey = getProjectListGroupKey(project, sortMode);
-                const prevGroupKey = getProjectListGroupKey(prevProject, sortMode);
+                const groupKey = getOnHoldReasonGroupLabel(project);
+                const prevGroupKey = prevProject ? getOnHoldReasonGroupLabel(prevProject) : "";
                 const showGroupHeader = groupKey && groupKey !== prevGroupKey;
 
                 return (

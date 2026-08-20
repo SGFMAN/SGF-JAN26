@@ -4,6 +4,7 @@ import { CLASSIFICATION_BADGE_MAP } from "../utils/classifications";
 import { getProjectStreamBadge } from "../utils/streamBadges";
 import { projectPath } from "../utils/projectUrl";
 import { OnHoldSash, CancelledSash } from "./ProjectStatusSash";
+import { isOnHoldFlag } from "../utils/projectStatus";
 
 import { UI, PROJECT_CARD, outlineBorder } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -42,7 +43,7 @@ export default function ProjectRectangleCard({ project, fitColumn = false, onInt
     ? CLASSIFICATION_BADGE_MAP[project.classification]
     : null;
   const streamInfo = getProjectStreamBadge(project);
-  const onHold = project.on_hold === "true" || project.on_hold === true;
+  const onHold = isOnHoldFlag(project);
   const cancelled = project.status === "Cancelled";
 
   const face = (

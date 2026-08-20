@@ -5,12 +5,13 @@ import { CLASSIFICATION_OPTIONS } from "../utils/classifications";
 import { UI, MENU, INDICATOR } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
+import { openAuthedPdfInNewTab } from "../utils/openAuthedPdf.js";
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
 const FIELD_OUTLINE = `1px solid ${UI.outline}`;
 const API_URL = "";
 const SPECS_OPTIONS = ["Affordable", "Superior"];
-const ON_HOLD_REASONS = ["Finance", "Waiting Deposit"];
+const ON_HOLD_REASONS = ["Finance", "Waiting Deposit", "Covenant"];
 
 const RENOVATION_DUPLICATE_BUTTON_ID = 4;
 const PROPOSAL_BUTTON_ID = 3;
@@ -220,6 +221,12 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
     const newStatus = e.target.value;
     setStatus(newStatus);
     valuesRef.current.status = newStatus;
+    if (String(newStatus).trim().toLowerCase() === "cancelled") {
+      setOnHold(false);
+      setOnHoldReason("");
+      valuesRef.current.onHold = false;
+      valuesRef.current.onHoldReason = "";
+    }
     console.log("Saving status:", newStatus);
     await saveField("status", newStatus);
   }
@@ -851,14 +858,16 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                 if (project?.proposal_pdf_location) {
                   try {
                     const pdfUrl = `${API_URL}/api/files/proposal/${project.id}`;
-                    const response = await fetch(pdfUrl);
-                    if (!response.ok) {
-                      fileInputRef.current?.click();
-                    } else {
-                      window.open(pdfUrl, "_blank");
+                    const result = await openAuthedPdfInNewTab(pdfUrl);
+                    if (!result.ok) {
+                      if (result.status === 404) {
+                        fileInputRef.current?.click();
+                      } else {
+                        alert(result.error || "Could not open proposal");
+                      }
                     }
                   } catch (error) {
-                    console.error("Error checking proposal PDF:", error);
+                    console.error("Error opening proposal PDF:", error);
                     fileInputRef.current?.click();
                   }
                 } else {
