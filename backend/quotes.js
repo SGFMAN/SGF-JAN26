@@ -30,7 +30,10 @@ async function ensureQuoteProjectColumns(pool) {
         ADD COLUMN IF NOT EXISTS quote_reminder_2_sent_at TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS quote_reminder_3_sent_at TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS quote_reminder_4_sent_at TIMESTAMPTZ,
-        ADD COLUMN IF NOT EXISTS quote_contact BOOLEAN NOT NULL DEFAULT FALSE
+        ADD COLUMN IF NOT EXISTS quote_contact BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS quote_contact_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS hotlist_added_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS sold_at TIMESTAMPTZ
     `);
     await pool.query(`
       CREATE INDEX IF NOT EXISTS projects_quotes_list_idx
@@ -335,7 +338,7 @@ async function promoteQuoteToHotlist(pool, id) {
 
   const r = await pool.query(
     `UPDATE projects
-     SET status = $2, stream = $3, project_log = $4, updated_at = NOW()
+     SET status = $2, stream = $3, project_log = $4, hotlist_added_at = NOW(), updated_at = NOW()
      WHERE id = $1 AND status = $5
      RETURNING id, access_token, name, status, suburb, street, state, stream, client_name, email, phone, updated_at`,
     [id, "Hotlist", stream, logEntry, QUOTE_STATUS]
@@ -361,7 +364,12 @@ async function updateQuoteContact(pool, id, contact) {
   await ensureQuoteProjectColumns(pool);
   const r = await pool.query(
     `UPDATE projects
-     SET quote_contact = $2, updated_at = NOW()
+     SET quote_contact = $2,
+         quote_contact_at = CASE
+           WHEN $2 THEN COALESCE(quote_contact_at, NOW())
+           ELSE NULL
+         END,
+         updated_at = NOW()
      WHERE id = $1 AND status = $3
      RETURNING ${QUOTE_SELECT}`,
     [id, Boolean(contact), QUOTE_STATUS]

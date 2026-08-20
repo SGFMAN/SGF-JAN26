@@ -10,6 +10,7 @@ const WHITE = UI.cardBg;
 const FIELD_OUTLINE = `1px solid ${UI.outline}`;
 const API_URL = "";
 const SPECS_OPTIONS = ["Affordable", "Superior"];
+const ON_HOLD_REASONS = ["Finance", "Waiting Deposit"];
 
 const RENOVATION_DUPLICATE_BUTTON_ID = 4;
 const PROPOSAL_BUTTON_ID = 3;
@@ -53,17 +54,18 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
   const [classification, setClassification] = useState(project?.classification || "");
   const [projectInfoNotes, setProjectInfoNotes] = useState(project?.project_info_notes || "");
   const [onHold, setOnHold] = useState(project?.on_hold === 'true' || project?.on_hold === true);
+  const [onHoldReason, setOnHoldReason] = useState(project?.on_hold_reason || "");
   const [qpNumber, setQpNumber] = useState(project?.qp_number || "");
   const [openingProjectFolder, setOpeningProjectFolder] = useState(false);
   const [, setUiButtonStyleRevision] = useState(0);
 
   // Use ref to track latest values for saving
-  const valuesRef = useRef({ status, street, suburb, state, specs, classification, projectInfoNotes, onHold, qpNumber });
+  const valuesRef = useRef({ status, street, suburb, state, specs, classification, projectInfoNotes, onHold, onHoldReason, qpNumber });
 
   // Update ref whenever state changes
   useEffect(() => {
-    valuesRef.current = { status, street, suburb, state, specs, classification, projectInfoNotes, onHold, qpNumber };
-  }, [status, street, suburb, state, specs, classification, projectInfoNotes, onHold, qpNumber]);
+    valuesRef.current = { status, street, suburb, state, specs, classification, projectInfoNotes, onHold, onHoldReason, qpNumber };
+  }, [status, street, suburb, state, specs, classification, projectInfoNotes, onHold, onHoldReason, qpNumber]);
   
   // For autosizing selects (now fixed at 300px)
   const statusSelectRef = useRef(null);
@@ -84,6 +86,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
     setClassification(project?.classification || "");
     setProjectInfoNotes(project?.project_info_notes || "");
     setOnHold(project?.on_hold === "true" || project?.on_hold === true);
+    setOnHoldReason(project?.on_hold_reason || "");
     setQpNumber(project?.qp_number || "");
   }, [project?.id]);
 
@@ -137,6 +140,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
           classification: currentValues.classification || null,
           project_info_notes: currentValues.projectInfoNotes || null,
           on_hold: currentValues.onHold || null,
+          on_hold_reason: currentValues.onHold ? (currentValues.onHoldReason || null) : null,
           project_cost: project?.project_cost || null,
           deposit: project?.deposit || null,
           ...(isQldState(currentValues.state)
@@ -183,6 +187,8 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
         state: currentValues.state,
         project_cost: project?.project_cost || null,
         deposit: project?.deposit || null,
+        on_hold: currentValues.onHold || null,
+        on_hold_reason: currentValues.onHold ? (currentValues.onHoldReason || null) : null,
         [fieldName]: value,
       };
       console.log("Saving field:", fieldName, "=", value, "Update data:", updateData);
@@ -220,10 +226,20 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
 
   async function handleOnHoldChange(e) {
     const newValue = e.target.checked;
+    const nextReason = newValue ? valuesRef.current.onHoldReason : "";
     setOnHold(newValue);
+    setOnHoldReason(nextReason);
     valuesRef.current.onHold = newValue;
+    valuesRef.current.onHoldReason = nextReason;
     console.log("Saving on_hold:", newValue);
     await saveField("on_hold", newValue);
+  }
+
+  async function handleOnHoldReasonChange(e) {
+    const newValue = e.target.value;
+    setOnHoldReason(newValue);
+    valuesRef.current.onHoldReason = newValue;
+    await saveField("on_hold_reason", newValue || null);
   }
 
   function handleStreetChange(e) {
@@ -322,16 +338,16 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
     transition: "background 0.17s, border-color 0.17s",
   });
   const projectFolderButtonStyle = mergeProjectInfoButtonStyle(PROJECT_FOLDER_BUTTON_ID, {
-    width: "100%",
-    padding: "10px 12px",
-    borderRadius: "8px",
+    padding: "10px 20px",
+    borderRadius: "10px",
     border: FIELD_OUTLINE,
-    fontSize: "0.95rem",
-    fontWeight: 600,
+    fontSize: "0.9rem",
+    fontWeight: 500,
     color: MONUMENT,
     background: WHITE,
     cursor: "pointer",
     boxSizing: "border-box",
+    flexShrink: 0,
   });
   const renovationUsesSavedStyle = Boolean(buildSavedButtonStyle(RENOVATION_DUPLICATE_BUTTON_ID, true));
   const proposalUsesSavedStyle = Boolean(buildSavedButtonStyle(PROPOSAL_BUTTON_ID, true));
@@ -430,6 +446,8 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                   </option>
                 ))}
               </select>
+            </div>
+            <div style={{ marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
               <label
                 style={{
                   display: "flex",
@@ -451,6 +469,32 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                 />
                 <span style={{ fontSize: "0.9rem", color: UI.textMuted, whiteSpace: "nowrap" }}>On Hold</span>
               </label>
+              <select
+                name="on_hold_reason"
+                value={onHold ? onHoldReason : ""}
+                onChange={handleOnHoldReasonChange}
+                disabled={!onHold}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: FIELD_OUTLINE,
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                  cursor: onHold ? "pointer" : "default",
+                  opacity: onHold ? 1 : 0.65,
+                }}
+              >
+                <option value="">Select reason...</option>
+                {ON_HOLD_REASONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
             </div>
             <div style={{ marginBottom: "16px" }}>
               <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
@@ -583,20 +627,6 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                   ))}
                 </select>
               </div>
-            </div>
-            <div style={{ marginBottom: "16px" }}>
-              <button
-                type="button"
-                onClick={handleOpenProjectFolder}
-                disabled={openingProjectFolder || !project?.id}
-                style={{
-                  ...projectFolderButtonStyle,
-                  opacity: openingProjectFolder || !project?.id ? 0.65 : 1,
-                  cursor: openingProjectFolder || !project?.id ? "default" : "pointer",
-                }}
-              >
-                {openingProjectFolder ? "Opening…" : "Project Folder"}
-              </button>
             </div>
             {(project?.classification || "").trim() === "Renovation" &&
               typeof onRequestRenovationDuplicate === "function" &&
@@ -802,6 +832,19 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
                 e.target.value = "";
               }}
             />
+            <button
+              type="button"
+              onClick={handleOpenProjectFolder}
+              disabled={openingProjectFolder || !project?.id}
+              style={{
+                ...projectFolderButtonStyle,
+                width: "auto",
+                opacity: openingProjectFolder || !project?.id ? 0.65 : 1,
+                cursor: openingProjectFolder || !project?.id ? "default" : "pointer",
+              }}
+            >
+              {openingProjectFolder ? "Opening…" : "Project Folder"}
+            </button>
             <button
               type="button"
               onClick={async () => {
