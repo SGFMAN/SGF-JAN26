@@ -27,7 +27,8 @@ import { newJobPreEngagementPaymentFields } from "../utils/projectDeposit";
 import useIsMobile from "../hooks/useIsMobile";
 import ProjectPageMobile from "../mobile/ProjectPageMobile";
 import useAppLogo from "../hooks/useAppLogo.js";
-import { mergeDestructiveButtonStyle, destructiveButtonUsesSavedStyle } from "../utils/uiButtonStyles.js";
+import { mergeDestructiveButtonStyle, destructiveButtonUsesSavedStyle, buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
+import { invalidateProjectsListCache, refreshProjectsListForNavigation } from "../utils/projectsListCache";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
 import { UI, MENU, STREAM, outlineBorder } from "../utils/uiThemeTokens.js";
@@ -46,6 +47,42 @@ const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 
 const API_URL = "";
+
+const BACK_HISTORY_BUTTON_ID = 1;
+const BACK_TO_MAIN_BUTTON_ID = 2;
+
+const SIDEBAR_NAV_BUTTON_FALLBACK = {
+  width: "100%",
+  height: "48px",
+  boxSizing: "border-box",
+  background: WHITE,
+  color: MONUMENT,
+  border: outlineBorder,
+  borderRadius: "8px",
+  fontSize: "0.9rem",
+  fontWeight: 500,
+  cursor: "pointer",
+  padding: "0 12px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  textAlign: "center",
+  textDecoration: "none",
+};
+
+function mergeSidebarNavButtonStyle(styleId) {
+  const saved = buildSavedButtonStyle(styleId, true);
+  return {
+    ...(saved || SIDEBAR_NAV_BUTTON_FALLBACK),
+    width: "100%",
+    boxSizing: "border-box",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textDecoration: "none",
+    letterSpacing: "0.5px",
+  };
+}
 
 const DELETE_PROJECT_BUTTON_FALLBACK = {
   padding: "8px 16px",
@@ -167,7 +204,6 @@ const MENU_OPTIONS = [
   { label: "Contract", key: "contract" },
   { label: "Planning - OLD", key: "planning-old", hidden: true },
   { label: "Planning", key: "planning" },
-  { label: "Planning - Underconstruction", key: "planning-underconstruction", adminOnly: true },
   { label: "Variations", key: "variations", adminOnly: true },
   { label: "Admin", key: "admin" },
 ];
@@ -215,6 +251,8 @@ export default function ProjectPage() {
   const copyToastAnimIdRef = useRef(0);
   const [copyToastAnimId, setCopyToastAnimId] = useState(0);
   const portalProjectIdRef = useRef(null);
+  const leavingProjectRef = useRef(false);
+  const [leavingProject, setLeavingProject] = useState(false);
 
   useEffect(() => {
     portalProjectIdRef.current = project?.id ?? null;
@@ -435,6 +473,26 @@ export default function ProjectPage() {
     }
   }
 
+  async function leaveProjectPage(destination) {
+    if (leavingProjectRef.current) return;
+    leavingProjectRef.current = true;
+    setLeavingProject(true);
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+      updateTimeoutRef.current = null;
+    }
+    try {
+      await refreshProjectsListForNavigation();
+    } catch {
+      // Still leave so the user is not stuck on the project page.
+    }
+    if (destination === "history" && location.key !== "default") {
+      navigate(-1);
+      return;
+    }
+    navigate(isPortalProjectPath ? "/portal" : "/projects");
+  }
+
   useEffect(() => {
     if (!isPortalProjectPath) return undefined;
     const origFetch = window.fetch.bind(window);
@@ -489,6 +547,7 @@ export default function ProjectPage() {
         const errorData = await response.json().catch(() => ({ error: response.statusText }));
         throw new Error(errorData.error || "Failed to delete project");
       }
+      invalidateProjectsListCache();
       // Navigate back to home page after successful delete
       navigate("/projects");
     } catch (err) {
@@ -1013,29 +1072,44 @@ export default function ProjectPage() {
             );
           })}
           </div>
-          <Link
-            to={isPortalProjectPath ? "/portal" : "/projects"}
+          <div
             style={{
-              background: WHITE,
-              color: MONUMENT,
-              border: outlineBorder,
-              borderRadius: "10px",
-              padding: "13px 8px",
-              fontSize: "1.05rem",
-              fontWeight: 500,
-              textAlign: "center",
-              textDecoration: "none",
-              letterSpacing: "0.5px",
-              cursor: "pointer",
-              transition: "background 0.17s",
-              marginBottom: "4px",
-              display: "block",
-              width: "100%",
-              boxSizing: "border-box",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              flexShrink: 0,
             }}
           >
-            ← Back to Main
-          </Link>
+            <button
+              type="button"
+              disabled={leavingProject}
+              onClick={() => {
+                void leaveProjectPage("history");
+              }}
+              style={{
+                ...mergeSidebarNavButtonStyle(BACK_HISTORY_BUTTON_ID),
+                opacity: leavingProject ? 0.7 : 1,
+                cursor: leavingProject ? "wait" : "pointer",
+              }}
+            >
+              Back...
+            </button>
+            <Link
+              to={isPortalProjectPath ? "/portal" : "/projects"}
+              onClick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+                e.preventDefault();
+                void leaveProjectPage("main");
+              }}
+              style={{
+                ...mergeSidebarNavButtonStyle(BACK_TO_MAIN_BUTTON_ID),
+                opacity: leavingProject ? 0.7 : 1,
+                pointerEvents: leavingProject ? "none" : "auto",
+              }}
+            >
+              ← Back to Main
+            </Link>
+          </div>
         </div>
         {/* Section 3: Project Content */}
         <div

@@ -3,50 +3,46 @@ import { buildDesignPhaseStatusTiles } from "../utils/designPhaseStatusTiles.js"
 import { UI } from "../utils/uiThemeTokens.js";
 import "../pages/Overview.css";
 
-const overviewStatusLabelStyle = {
-  fontSize: "0.9rem",
-  color: UI.textMuted,
-  flexShrink: 0,
-};
-
-function OverviewStatusTile({ label, value, indicatorStyle, onClick, readOnly }) {
+function OverviewStatusRow({ label, value, indicatorStyle, onClick, readOnly }) {
   const interactive = !readOnly && typeof onClick === "function";
 
   return (
-    <div className="overview-status-item">
-      <div className="overview-status-label" style={overviewStatusLabelStyle}>
+    <div
+      className="overview-status-row"
+      role={interactive ? "button" : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onClick={interactive ? onClick : undefined}
+      onKeyDown={
+        interactive
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
+      style={{ cursor: interactive ? "pointer" : "default" }}
+    >
+      <div className="overview-status-heading" style={{ color: UI.textPrimary }}>
         {label}
       </div>
       <div
-        role={interactive ? "button" : undefined}
-        tabIndex={interactive ? 0 : undefined}
-        className="overview-status-card"
+        className="overview-status-tab"
         style={{
           background: indicatorStyle.background,
           color: indicatorStyle.color,
           border: indicatorStyle.border ?? "none",
-          cursor: interactive ? "pointer" : "default",
         }}
-        onClick={interactive ? onClick : undefined}
-        onKeyDown={
-          interactive
-            ? (e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onClick();
-                }
-              }
-            : undefined
-        }
       >
-        <span className="overview-status-card__text">{value}</span>
+        <span className="overview-status-tab__text">{value}</span>
       </div>
     </div>
   );
 }
 
 /**
- * Design Phase Progress grid — shared by staff Overview and Client Portal.
+ * Design Phase Progress list — shared by staff Overview and Client Portal.
  */
 export default function DesignPhaseStatusPanel({
   project,
@@ -63,9 +59,9 @@ export default function DesignPhaseStatusPanel({
       <div className="overview-progress-block">
         {showHeading ? <h2 className="overview-progress-heading">{heading}</h2> : null}
         <div className="overview-progress-section">
-          <div className="overview-status-grid">
+          <div className="overview-status-list">
             {tiles.map((tile) => (
-              <OverviewStatusTile
+              <OverviewStatusRow
                 key={tile.key}
                 label={tile.label}
                 value={tile.value}

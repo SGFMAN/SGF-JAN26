@@ -18,6 +18,14 @@ const WHITE = UI.cardBg;
 const FIELD_OUTLINE = `1px solid ${UI.outline || "#000"}`;
 const API_URL = "";
 
+const SURVEY_SOIL_STATUS_OPTIONS = ["Not Booked", "Booked", "Complete"];
+
+function normalizeSurveySoilStatus(value) {
+  const t = value != null ? String(value).trim() : "";
+  if (SURVEY_SOIL_STATUS_OPTIONS.includes(t)) return t;
+  return "Not Booked";
+}
+
 /** Fit width from longest label (ch) + padding for select chevron. */
 function fitWidthCh(labels, extraCh = 3.5) {
   const maxLen = Math.max(1, ...labels.map((s) => String(s).length));
@@ -115,6 +123,8 @@ export default function PlanningMain({ project, onUpdate }) {
   const [buildingPermitStatus, setBuildingPermitStatus] = useState(
     normalizeMandatoryPlanningStatus(null, project?.planning_building_permit_received_at)
   );
+  const [soilStatus, setSoilStatus] = useState(normalizeSurveySoilStatus(project?.soil_status));
+  const [surveyStatus, setSurveyStatus] = useState(normalizeSurveySoilStatus(project?.survey_status));
 
   async function saveFields(fields) {
     if (!project?.id) return false;
@@ -197,6 +207,8 @@ export default function PlanningMain({ project, onUpdate }) {
     setBuildingPermitStatus(
       normalizeMandatoryPlanningStatus(null, project?.planning_building_permit_received_at)
     );
+    setSoilStatus(normalizeSurveySoilStatus(project?.soil_status));
+    setSurveyStatus(normalizeSurveySoilStatus(project?.survey_status));
   }, [
     project?.id,
     project?.planning_town_planning,
@@ -208,6 +220,8 @@ export default function PlanningMain({ project, onUpdate }) {
     project?.planning_energy_report_received_at,
     project?.planning_footing_certification_received_at,
     project?.planning_building_permit_received_at,
+    project?.soil_status,
+    project?.survey_status,
   ]);
 
   const disabled = !project?.id || isSaving;
@@ -220,6 +234,23 @@ export default function PlanningMain({ project, onUpdate }) {
         </label>
         <select id={id} value={value} onChange={onChange} disabled={disabled} style={selectStyle}>
           {PLANNING_REQUIREMENT_SELECT_OPTIONS.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
+  function renderSurveySoilSelect(id, value, onChange) {
+    return (
+      <div>
+        <label htmlFor={id} style={labelStyle}>
+          Status
+        </label>
+        <select id={id} value={value} onChange={onChange} disabled={disabled} style={selectStyle}>
+          {SURVEY_SOIL_STATUS_OPTIONS.map((opt) => (
             <option key={opt} value={opt}>
               {opt}
             </option>
@@ -440,8 +471,26 @@ export default function PlanningMain({ project, onUpdate }) {
         </div>
 
         <div style={stackColumnStyle}>
-          <section aria-label="Reserved" style={panelStyle} />
-          <section aria-label="Reserved" style={panelStyle} />
+          <section aria-labelledby="soil-test-title" style={panelStyle}>
+            <h3 id="soil-test-title" style={{ margin: 0, color: MONUMENT, fontSize: "1.1rem" }}>
+              Soil Test
+            </h3>
+            {renderSurveySoilSelect("soil-test-select", soilStatus, (e) => {
+              const next = normalizeSurveySoilStatus(e.target.value);
+              setSoilStatus(next);
+              void saveFields({ soil_status: next });
+            })}
+          </section>
+          <section aria-labelledby="site-survey-title" style={panelStyle}>
+            <h3 id="site-survey-title" style={{ margin: 0, color: MONUMENT, fontSize: "1.1rem" }}>
+              Site Survey
+            </h3>
+            {renderSurveySoilSelect("site-survey-select", surveyStatus, (e) => {
+              const next = normalizeSurveySoilStatus(e.target.value);
+              setSurveyStatus(next);
+              void saveFields({ survey_status: next });
+            })}
+          </section>
         </div>
       </div>
     </div>

@@ -6,6 +6,7 @@ import { UI, MENU, INDICATOR } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 import { openAuthedPdfInNewTab } from "../utils/openAuthedPdf.js";
+import { registerProjectSaveFlush, trackProjectMutation } from "../utils/projectsListCache";
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
 const FIELD_OUTLINE = `1px solid ${UI.outline}`;
@@ -19,7 +20,7 @@ const PROJECT_FOLDER_BUTTON_ID = 5;
 
 /** Align action buttons with sidebar Back to Main (same as Drawings page). */
 const PROJECT_PANEL_HEIGHT_PX = 758;
-const SIDEBAR_BELOW_GREEN_MENU_PX = 101;
+const SIDEBAR_BELOW_GREEN_MENU_PX = 154;
 const PROJECT_INFO_HEADER_OFFSET_PX = 74;
 const PROJECT_INFO_BODY_MAX_HEIGHT_PX =
   PROJECT_PANEL_HEIGHT_PX - SIDEBAR_BELOW_GREEN_MENU_PX - PROJECT_INFO_HEADER_OFFSET_PX;
@@ -73,6 +74,7 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
   const fileInputRef = useRef(null);
   /** Debounced PUT for street / suburb / state / QP (same payload as notes blur save). */
   const projectInfoSaveTimerRef = useRef(null);
+  const saveAllFieldsRef = useRef(null);
 
   useEffect(() => {
     if (projectInfoSaveTimerRef.current) {
@@ -126,7 +128,8 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
     // Derive name from street + suburb
     const projectName = `${currentValues.street}, ${currentValues.suburb}`.trim() || "";
     try {
-      const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
+      const response = await trackProjectMutation(
+        fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -148,7 +151,8 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
             ? { qp_number: (currentValues.qpNumber || "").trim() || null }
             : {}),
         }),
-      });
+        })
+      );
       if (!response.ok) {
         const errorText = await response.text().catch(() => response.statusText);
         console.error("Error saving fields - Status:", response.status, "Error:", errorText);
@@ -170,6 +174,16 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
       console.error("Error saving fields:", error);
     }
   }
+  saveAllFieldsRef.current = saveAllFields;
+
+  useEffect(() => {
+    return registerProjectSaveFlush(() => {
+      if (!projectInfoSaveTimerRef.current) return;
+      clearTimeout(projectInfoSaveTimerRef.current);
+      projectInfoSaveTimerRef.current = null;
+      return saveAllFieldsRef.current?.();
+    });
+  }, []);
 
   async function saveField(fieldName, value) {
     if (!project?.id) {
@@ -193,13 +207,15 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
         [fieldName]: value,
       };
       console.log("Saving field:", fieldName, "=", value, "Update data:", updateData);
-      const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
+      const response = await trackProjectMutation(
+        fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(updateData),
-      });
+        })
+      );
       if (!response.ok) {
         const errorText = await response.text().catch(() => response.statusText);
         console.error("Error saving field - Status:", response.status, "Error:", errorText);

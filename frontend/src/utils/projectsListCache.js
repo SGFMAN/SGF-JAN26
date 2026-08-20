@@ -84,3 +84,59 @@ export function getCachedProjectsList(view = "card") {
   const hit = cacheByKey.get(cacheKey(view));
   return hit ? hit.data : null;
 }
+
+let mutationCount = 0;
+const mutationWaiters = [];
+const saveFlushHandlers = new Set();
+
+/** Track an in-flight project save so Back can wait for it before reloading lists. */
+export function trackProjectMutation(promise) {
+  mutationCount += 1;
+  return Promise.resolve(promise).finally(() => {
+    mutationCount = Math.max(0, mutationCount - 1);
+    if (mutationCount === 0) {
+      const pending = mutationWaiters.splice(0, mutationWaiters.length);
+      pending.forEach((resolve) => resolve());
+    }
+  });
+}
+
+export function waitForProjectMutations(timeoutMs = 5000) {
+  if (mutationCount <= 0) return Promise.resolve();
+  return Promise.race([
+    new Promise((resolve) => {
+      mutationWaiters.push(resolve);
+    }),
+    new Promise((resolve) => {
+      setTimeout(resolve, timeoutMs);
+    }),
+  ]);
+}
+
+export function registerProjectSaveFlush(handler) {
+  saveFlushHandlers.add(handler);
+  return () => {
+    saveFlushHandlers.delete(handler);
+  };
+}
+
+async function flushPendingProjectSaves() {
+  const handlers = [...saveFlushHandlers];
+  if (!handlers.length) return;
+  await Promise.all(handlers.map((fn) => Promise.resolve().then(fn)));
+}
+
+/**
+ * Wait for pending saves, then reload the card list into cache
+ * so the previous page mounts with up-to-date grouping.
+ */
+export async function refreshProjectsListForNavigation() {
+  await flushPendingProjectSaves();
+  await waitForProjectMutations();
+  invalidateProjectsListCache();
+  try {
+    await fetchProjectsList({ view: "card", force: true });
+  } catch {
+    // List pages will retry on mount.
+  }
+}

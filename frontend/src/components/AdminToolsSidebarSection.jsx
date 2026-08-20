@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { UI, MENU } from "../utils/uiThemeTokens";
+import { TOOLS_PAGE_PATH, isToolsPath } from "../constants/toolsMenu.js";
 
 const LINK_BASE_STYLE = {
   border: "none",
@@ -19,13 +20,11 @@ const LINK_BASE_STYLE = {
 };
 
 const ADMIN_TOOL_LINKS = [
-  { to: "/email-generator", label: "Email Generator" },
-  { to: "/maps", label: "Maps" },
+  { to: TOOLS_PAGE_PATH, label: "Tools" },
   { to: "/settings", label: "Settings" },
-  { to: "/apply-fields", label: "Apply Fields" },
 ];
 
-/** Purple admin menu: Email Generator → Maps → Settings → Apply Fields. */
+/** Purple admin menu: Tools → Settings. */
 export default function AdminToolsSidebarSection({ activePath = "", visible = true }) {
   if (!visible) return null;
 
@@ -42,7 +41,10 @@ export default function AdminToolsSidebarSection({ activePath = "", visible = tr
       }}
     >
       {ADMIN_TOOL_LINKS.map(({ to, label }) => {
-        const active = activePath === to || (to === "/settings" && String(activePath).startsWith("/settings"));
+        const active =
+          to === TOOLS_PAGE_PATH
+            ? isToolsPath(activePath)
+            : activePath === to || String(activePath).startsWith("/settings");
         return (
           <Link
             key={to}

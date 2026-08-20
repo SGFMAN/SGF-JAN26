@@ -14,7 +14,7 @@ const API_URL = "";
 
 /** Align action buttons with sidebar Back to Main (same as Project Info / Drawings). */
 const PROJECT_PANEL_HEIGHT_PX = 758;
-const SIDEBAR_BELOW_GREEN_MENU_PX = 101;
+const SIDEBAR_BELOW_GREEN_MENU_PX = 154;
 const CLIENT_INFO_HEADER_OFFSET_PX = 74;
 const CLIENT_INFO_BODY_MAX_HEIGHT_PX =
   PROJECT_PANEL_HEIGHT_PX - SIDEBAR_BELOW_GREEN_MENU_PX - CLIENT_INFO_HEADER_OFFSET_PX;

@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 
+import { ToolsNavLinks } from "./ToolsSidebarMenu";
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
@@ -134,6 +135,7 @@ export default function MapsSidebar({
 
   return (
     <div className="sidebar-menu" style={sgfSidebarMenuStyle}>
+      <ToolsNavLinks />
       <Link to="/maps" style={navLinkStyle(activeView === "map")}>
         Map
       </Link>

@@ -1,6 +1,8 @@
 import { STREAM, INDICATOR, UI } from "./uiThemeTokens.js";
 import { getOverviewIndicatorStyle } from "./uiButtonStyles.js";
 import {
+  getMandatoryPlanningOverviewKind,
+  getPlanningRequirementOverviewKind,
   getSewerConnectionOverviewKind,
   normalizePlanningStatus,
   normalizeSewerConnectionType,
@@ -9,6 +11,7 @@ import {
   getOverviewDepositStatusLabel,
   getOverviewDepositStatusLevel,
 } from "./projectDeposit.js";
+import { DRAWINGS_STATUS } from "./drawingsStatusRules.js";
 
 const PAGE_TEXT = UI.pageText;
 
@@ -56,11 +59,37 @@ function getDepositStatusIndicator(project) {
   return indicatorRed();
 }
 
-function getDrawingsStatusIndicator(project) {
-  const status = field(project, "drawings_status", "drawingsStatus") || "Not Assigned";
-  if (status === "Concept Stage") return indicatorOrange();
-  if (status === "Working Drawing Stage") return indicatorOrange();
-  if (status === "Drawings Complete") return indicatorGreen();
+function getDrawingsStatus(project) {
+  return field(project, "drawings_status", "drawingsStatus") || DRAWINGS_STATUS.NOT_ASSIGNED;
+}
+
+function getConceptDrawingsStatus(project) {
+  const status = getDrawingsStatus(project);
+  if (status === DRAWINGS_STATUS.COMPLETE || status === DRAWINGS_STATUS.WORKING_STAGE) {
+    return "Complete";
+  }
+  if (status === DRAWINGS_STATUS.CONCEPT_STAGE) return "In Progress";
+  return "Incomplete";
+}
+
+function getConceptDrawingsStatusIndicator(project) {
+  const label = getConceptDrawingsStatus(project);
+  if (label === "Complete") return indicatorGreen();
+  if (label === "In Progress") return indicatorOrange();
+  return indicatorRed();
+}
+
+function getWorkingDrawingsStatus(project) {
+  const status = getDrawingsStatus(project);
+  if (status === DRAWINGS_STATUS.COMPLETE) return "Complete";
+  if (status === DRAWINGS_STATUS.WORKING_STAGE) return "In Progress";
+  return "Incomplete";
+}
+
+function getWorkingDrawingsStatusIndicator(project) {
+  const label = getWorkingDrawingsStatus(project);
+  if (label === "Complete") return indicatorGreen();
+  if (label === "In Progress") return indicatorOrange();
   return indicatorRed();
 }
 
@@ -139,9 +168,9 @@ function getContractStatusIndicator(project) {
   return indicatorRed();
 }
 
-function getRequirementStatusIndicator(status) {
-  if (status === "Not Required" || status === "Complete") return indicatorGreen();
-  if (status === "Incomplete") return indicatorOrange();
+function overviewKindToIndicator(kind) {
+  if (kind === "green") return indicatorGreen();
+  if (kind === "orange") return indicatorOrange();
   return indicatorRed();
 }
 
@@ -158,20 +187,24 @@ function getTownPlanningStatus(project) {
 }
 
 function getTownPlanningStatusIndicator(project) {
-  return getRequirementStatusIndicator(getTownPlanningStatus(project));
+  return overviewKindToIndicator(getPlanningRequirementOverviewKind(getTownPlanningStatus(project)));
 }
 
-/** Mandatory items (Energy / Footing / Building Permit): Incomplete → orange; Complete → green. */
+function getBalStatus(project) {
+  return normalizePlanningStatus(field(project, "planning_bal", "planningBal"));
+}
+
+function getBalStatusIndicator(project) {
+  return overviewKindToIndicator(getPlanningRequirementOverviewKind(getBalStatus(project)));
+}
+
+/** Energy / Footing / Building Permit: Incomplete → red; Complete → green. */
 function hasStampDate(value) {
   return value != null && String(value).trim() !== "";
 }
 
 function getMandatoryStatusLabel(receivedAt) {
   return hasStampDate(receivedAt) ? "Complete" : "Incomplete";
-}
-
-function getMandatoryStatusIndicator(receivedAt) {
-  return hasStampDate(receivedAt) ? indicatorGreen() : indicatorOrange();
 }
 
 function getEnergyReportStatus(project) {
@@ -181,8 +214,11 @@ function getEnergyReportStatus(project) {
 }
 
 function getEnergyReportStatusIndicator(project) {
-  return getMandatoryStatusIndicator(
-    field(project, "planning_energy_report_received_at", "planningEnergyReportReceivedAt")
+  return overviewKindToIndicator(
+    getMandatoryPlanningOverviewKind(
+      null,
+      field(project, "planning_energy_report_received_at", "planningEnergyReportReceivedAt")
+    )
   );
 }
 
@@ -193,8 +229,11 @@ function getFootingCertificationStatus(project) {
 }
 
 function getFootingCertificationStatusIndicator(project) {
-  return getMandatoryStatusIndicator(
-    field(project, "planning_footing_certification_received_at", "planningFootingCertificationReceivedAt")
+  return overviewKindToIndicator(
+    getMandatoryPlanningOverviewKind(
+      null,
+      field(project, "planning_footing_certification_received_at", "planningFootingCertificationReceivedAt")
+    )
   );
 }
 
@@ -205,8 +244,11 @@ function getBuildingPermitStatus(project) {
 }
 
 function getBuildingPermitStatusIndicator(project) {
-  return getMandatoryStatusIndicator(
-    field(project, "planning_building_permit_received_at", "planningBuildingPermitReceivedAt")
+  return overviewKindToIndicator(
+    getMandatoryPlanningOverviewKind(
+      null,
+      field(project, "planning_building_permit_received_at", "planningBuildingPermitReceivedAt")
+    )
   );
 }
 
@@ -244,6 +286,23 @@ function getSurveySoilsStatusIndicator(project) {
   return indicatorOrange();
 }
 
+export const OVERVIEW_STATUS_HEADINGS = [
+  { key: "deposit", label: "Deposit" },
+  { key: "concept-drawings", label: "Concept" },
+  { key: "working-drawings", label: "Working Drawings" },
+  { key: "site-visit", label: "Site Visit" },
+  { key: "colours", label: "Colours" },
+  { key: "windows", label: "Windows" },
+  { key: "contract", label: "Contract" },
+  { key: "survey-soils", label: "Survey & Soils" },
+  { key: "town-planning", label: "Town Planning" },
+  { key: "bal", label: "BAL" },
+  { key: "energy", label: "Energy Report" },
+  { key: "footing", label: "Footing Certification" },
+  { key: "building-permit", label: "Building Permit" },
+  { key: "sewer-connection", label: "Sewer Connection" },
+];
+
 /**
  * Design phase status tiles (deposit, drawings, site visit, etc.) with RAG colours.
  */
@@ -259,10 +318,17 @@ export function buildDesignPhaseStatusTiles(project) {
       view: "admin",
     },
     {
-      key: "drawings",
-      label: "Drawings",
-      value: field(project, "drawings_status", "drawingsStatus") || "Not Assigned",
-      indicatorStyle: getDrawingsStatusIndicator(project),
+      key: "concept-drawings",
+      label: "Concept",
+      value: getConceptDrawingsStatus(project),
+      indicatorStyle: getConceptDrawingsStatusIndicator(project),
+      view: "drawings",
+    },
+    {
+      key: "working-drawings",
+      label: "Working Drawings",
+      value: getWorkingDrawingsStatus(project),
+      indicatorStyle: getWorkingDrawingsStatusIndicator(project),
       view: "drawings",
     },
     {
@@ -305,6 +371,13 @@ export function buildDesignPhaseStatusTiles(project) {
       label: "Town Planning",
       value: getTownPlanningStatus(project),
       indicatorStyle: getTownPlanningStatusIndicator(project),
+      view: "planning",
+    },
+    {
+      key: "bal",
+      label: "BAL",
+      value: getBalStatus(project),
+      indicatorStyle: getBalStatusIndicator(project),
       view: "planning",
     },
     {

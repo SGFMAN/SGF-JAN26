@@ -98,9 +98,9 @@ const DESTRUCTIVE_BUTTON_FALLBACK = {
   textAlign: "center",
 };
 
-/** Sidebar green menu bottom aligns 101px above the 758px panel (gap + Back to Main + padding). */
+/** Sidebar green menu bottom aligns 154px above the 758px panel (gap + Back... + Back to Main + padding). */
 const PROJECT_PANEL_HEIGHT_PX = 758;
-const SIDEBAR_BELOW_GREEN_MENU_PX = 101;
+const SIDEBAR_BELOW_GREEN_MENU_PX = 154;
 /** Content header: 24px pad + ~26px title + 10px row margin from panel top. */
 const DRAWINGS_HEADER_OFFSET_PX = 60;
 const DRAWINGS_LIST_MAX_HEIGHT_PX =

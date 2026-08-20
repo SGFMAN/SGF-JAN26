@@ -74,6 +74,21 @@ export function getSewerConnectionOverviewKind(project) {
   return "orange";
 }
 
+/** Overview RAG: Not Selected → red; Not Required or Complete → green; else orange. */
+export function getPlanningRequirementOverviewKind(value) {
+  const status = normalizePlanningStatus(value);
+  if (status === "Not Selected") return "red";
+  if (status === "Not Required" || status === "Complete") return "green";
+  return "orange";
+}
+
+/** Overview RAG: Incomplete → red; Complete → green. */
+export function getMandatoryPlanningOverviewKind(value, receivedAtFallback) {
+  return normalizeMandatoryPlanningStatus(value, receivedAtFallback) === "Complete"
+    ? "green"
+    : "red";
+}
+
 export function planningRequirementSelectValue(status) {
   return normalizePlanningStatus(status);
 }

@@ -6,6 +6,7 @@ import ProjectPage from "./pages/ProjectPage";
 import SettingsPage from "./pages/SettingsPage";
 import MobilePreviewPage from "./pages/MobilePreviewPage";
 import ApplyFields from "./pages/ApplyFields";
+import Planner from "./pages/Planner";
 import FinishedProjects from "./pages/FinishedProjects";
 import PreEngagementPhase from "./pages/PreEngagementPhase";
 import PermitPhase from "./pages/PermitPhase";
@@ -19,6 +20,7 @@ import Cancelled from "./pages/Cancelled";
 import OnHold from "./pages/OnHold";
 import Archive from "./pages/Archive";
 import Managers from "./pages/Managers";
+import Tools from "./pages/Tools";
 import ContractManager from "./pages/ContractManager";
 import ColourManager from "./pages/ColourManager";
 import StatusManager from "./pages/StatusManager";
@@ -107,7 +109,9 @@ export default function App() {
             <Route path="/project/:token" element={<Auth><ProjectPage /></Auth>} />
             <Route path="/settings" element={<Auth><AdminAccessRoute><SettingsPage /></AdminAccessRoute></Auth>} />
             <Route path="/settings/mobile" element={<Auth><AdminAccessRoute><MobilePreviewPage /></AdminAccessRoute></Auth>} />
+            <Route path="/tools" element={<Auth><AdminAccessRoute><Tools /></AdminAccessRoute></Auth>} />
             <Route path="/apply-fields" element={<Auth><AdminAccessRoute><ApplyFields /></AdminAccessRoute></Auth>} />
+            <Route path="/planner" element={<Auth><AdminAccessRoute><Planner /></AdminAccessRoute></Auth>} />
             <Route path="/finished-projects" element={<Auth><FinishedProjects /></Auth>} />
             <Route path="/pre-engagement-phase" element={<Auth><PreEngagementPhase /></Auth>} />
             <Route path="/permit-phase" element={<Auth><PermitPhase /></Auth>} />
