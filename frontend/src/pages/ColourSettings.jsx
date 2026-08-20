@@ -10,6 +10,11 @@ import {
   emptyColourSectionRanges,
   normalizeColourSectionRanges,
 } from "../constants/colourSectionRanges";
+import {
+  DEFAULT_BUILDING_3D,
+  building3dDraftFromDefaults,
+  normalizeBuilding3dDefaults,
+} from "../constants/building3dDefaults";
 import { getApiHeaders } from "../utils/auth";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 import { MENU, UI } from "../utils/uiThemeTokens.js";
@@ -29,6 +34,12 @@ const SETTINGS_TABS = [
 ];
 const SETTINGS_TAB_WIDTH = `calc(${Math.max(...SETTINGS_TABS.map((t) => t.label.length))}ch + 28px)`;
 const FIELD_OUTLINE = `1px solid ${UI.outline}`;
+const MODEL_DEFAULT_FIELDS = [
+  { key: "subfloorHeightM", label: "Subfloor depth", step: "0.05", min: "0.15", max: "3" },
+  { key: "wallHeightM", label: "Wall height", step: "0.05", min: "1.5", max: "6" },
+  { key: "depthM", label: "Building width", step: "0.1", min: "2", max: "20" },
+  { key: "widthM", label: "Building length", step: "0.1", min: "2", max: "40" },
+];
 
 const SECTION_TITLE_SIZE = "0.9rem";
 const LIST_ROW_GAP = "6px";
@@ -142,6 +153,10 @@ export default function ColourSettings() {
   const [editingMaterial, setEditingMaterial] = useState(false);
   const [editingMaterialName, setEditingMaterialName] = useState("");
   const [materialSaving, setMaterialSaving] = useState(false);
+  const [modelDefaults, setModelDefaults] = useState(() => DEFAULT_BUILDING_3D);
+  const [modelDraft, setModelDraft] = useState(() => building3dDraftFromDefaults(DEFAULT_BUILDING_3D));
+  const [modelDefaultsSaving, setModelDefaultsSaving] = useState(false);
+  const [modelDefaultsSaveError, setModelDefaultsSaveError] = useState("");
   const [subgroupDraftName, setSubgroupDraftName] = useState("");
   const [editingSubgroupId, setEditingSubgroupId] = useState(null);
   const [editingSubgroupName, setEditingSubgroupName] = useState("");
@@ -253,12 +268,31 @@ export default function ColourSettings() {
     }
   }, []);
 
+  const loadBuilding3dDefaults = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/building-3d-defaults`, {
+        headers: getApiHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      const next = normalizeBuilding3dDefaults(data.defaults);
+      setModelDefaults(next);
+      setModelDraft(building3dDraftFromDefaults(next));
+      setModelDefaultsSaveError("");
+    } catch (e) {
+      console.error(e);
+      setModelDefaults(DEFAULT_BUILDING_3D);
+      setModelDraft(building3dDraftFromDefaults(DEFAULT_BUILDING_3D));
+    }
+  }, []);
+
   useEffect(() => {
     void loadColourGroups();
     void loadColoursAndFinishesPath();
     void loadSectionRanges();
     void loadMaterials();
-  }, [loadColourGroups, loadColoursAndFinishesPath, loadSectionRanges, loadMaterials]);
+    void loadBuilding3dDefaults();
+  }, [loadColourGroups, loadColoursAndFinishesPath, loadSectionRanges, loadMaterials, loadBuilding3dDefaults]);
 
   useEffect(() => {
     if (!selectedGroup || selectedGroup === "colorbond") {
@@ -269,6 +303,43 @@ export default function ColourSettings() {
     }
     void loadGroupCatalogue(selectedGroup);
   }, [selectedGroup, loadGroupCatalogue]);
+
+  const previewModel = useMemo(() => normalizeBuilding3dDefaults(modelDraft), [modelDraft]);
+
+  useEffect(() => {
+    const next = previewModel;
+    const unchanged =
+      next.subfloorHeightM === modelDefaults.subfloorHeightM &&
+      next.wallHeightM === modelDefaults.wallHeightM &&
+      next.widthM === modelDefaults.widthM &&
+      next.depthM === modelDefaults.depthM;
+    if (unchanged) return undefined;
+    const allNumeric = MODEL_DEFAULT_FIELDS.every((field) =>
+      Number.isFinite(Number(String(modelDraft[field.key] ?? "").trim()))
+    );
+    if (!allNumeric) return undefined;
+    const timer = setTimeout(async () => {
+      try {
+        setModelDefaultsSaving(true);
+        setModelDefaultsSaveError("");
+        const res = await fetch(`${API_URL}/api/building-3d-defaults`, {
+          method: "PUT",
+          headers: getApiHeaders(),
+          body: JSON.stringify({ defaults: next }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+        const saved = normalizeBuilding3dDefaults(data.defaults);
+        setModelDefaults(saved);
+      } catch (err) {
+        console.error(err);
+        setModelDefaultsSaveError(err.message || "Failed to save 3D defaults");
+      } finally {
+        setModelDefaultsSaving(false);
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [modelDraft, modelDefaults, previewModel]);
 
   const rangeSelectOptions = useMemo(() => {
     const options = [{ key: COLORBOND_RANGE_KEY, label: "Colorbond" }];
@@ -1519,16 +1590,79 @@ export default function ColourSettings() {
             minHeight: 0,
             display: "flex",
             flexDirection: "column",
+            gap: "16px",
             overflow: "hidden",
           }}
         >
-          <Building3DModal
-            embedded
-            title="Base 3D Model"
-            widthM={11.3}
-            depthM={5.0}
-            subfloorHeightM={0.65}
-          />
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "10px",
+              flexShrink: 0,
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, minmax(140px, 1fr))",
+                gap: "12px",
+                maxWidth: "920px",
+              }}
+            >
+              {MODEL_DEFAULT_FIELDS.map((field) => (
+                <label
+                  key={field.key}
+                  style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+                >
+                  <span style={sectionHeadingStyle()}>{field.label} (m)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step={field.step}
+                    min={field.min}
+                    max={field.max}
+                    value={modelDraft[field.key]}
+                    onChange={(e) =>
+                      setModelDraft((prev) => ({ ...prev, [field.key]: e.target.value }))
+                    }
+                    onBlur={() =>
+                      setModelDraft(building3dDraftFromDefaults(previewModel))
+                    }
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px",
+                      borderRadius: "8px",
+                      border: "1px solid #ddd",
+                      fontSize: SECTION_TITLE_SIZE,
+                      fontWeight: 600,
+                      color: MONUMENT,
+                      background: WHITE,
+                      boxSizing: "border-box",
+                      minHeight: LIST_ROW_HEIGHT,
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+            <div style={{ fontSize: "0.8rem", color: UI.textMuted, minHeight: "1.2em" }}>
+              {modelDefaultsSaveError
+                ? modelDefaultsSaveError
+                : modelDefaultsSaving
+                  ? "Saving…"
+                  : "Used for the preview below and as the default rectangle on the Colours 3D view when there is no traced plan."}
+            </div>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+            <Building3DModal
+              embedded
+              title="Base 3D Model"
+              widthM={previewModel.widthM}
+              depthM={previewModel.depthM}
+              subfloorHeightM={previewModel.subfloorHeightM}
+              wallHeightM={previewModel.wallHeightM}
+            />
+          </div>
         </div>
       ) : null}
 

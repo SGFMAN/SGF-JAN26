@@ -24,6 +24,7 @@ import {
   resolveUnitFinishHexes,
   UNIT_MATERIAL_META,
 } from "../utils/buildingUnitFinishes.js";
+import { DEFAULT_BUILDING_3D } from "../constants/building3dDefaults.js";
 import {
   assignTimberDeckUVs,
   createTimberDeckMaterial,
@@ -145,7 +146,7 @@ const DECK_TOP_CAP_THICKNESS_M = 0.008;
 const CLADDING_LAYER_COUNT = 1;
 /** Single cladding slab (weatherboard texture to be applied later). */
 const CLADDING_LAYER_HEIGHT_M = 2.6;
-const CLADDING_HEIGHT_M = CLADDING_LAYER_COUNT * CLADDING_LAYER_HEIGHT_M;
+const DEFAULT_CLADDING_HEIGHT_M = CLADDING_LAYER_COUNT * CLADDING_LAYER_HEIGHT_M;
 const WINDOW_HEIGHT_M = 1.8;
 const WINDOW_TOP_ABOVE_SUBFLOOR_M = 2.1;
 const WINDOW_PANEL_THICKNESS_M = 0.01;
@@ -471,9 +472,10 @@ export default function Building3DModal({
   onClose,
   embedded = false,
   title = "3D Unit",
-  widthM = 11.3,
-  depthM = 5.0,
-  subfloorHeightM = 0.65,
+  widthM = DEFAULT_BUILDING_3D.widthM,
+  depthM = DEFAULT_BUILDING_3D.depthM,
+  subfloorHeightM = DEFAULT_BUILDING_3D.subfloorHeightM,
+  wallHeightM = DEFAULT_BUILDING_3D.wallHeightM,
   footprintPoints = null,
   roofPoints = null,
   roofPivotLine = null,
@@ -501,6 +503,20 @@ export default function Building3DModal({
   /** { cabinetImageUrl, cabinetColorHex, benchtopImageUrl, benchtopColorHex } */
   kitchenFinishes = null,
 }) {
+  const CLADDING_HEIGHT_M =
+    Number.isFinite(Number(wallHeightM)) && Number(wallHeightM) > 0.5
+      ? Number(wallHeightM)
+      : DEFAULT_CLADDING_HEIGHT_M;
+  const subfloorLayerCount = SUBFLOOR_LAYER_IDS.length;
+  const subfloorGapM =
+    Number(subfloorHeightM) >= 0.4
+      ? SUBFLOOR_LAYER_GAP_M
+      : Math.max(0.004, Number(subfloorHeightM) * 0.038);
+  const subfloorLayerHeightM = Math.max(
+    0.04,
+    (Number(subfloorHeightM) - subfloorGapM * (subfloorLayerCount - 1)) / subfloorLayerCount
+  );
+  const eyeHeightM = Number(subfloorHeightM) + STANDING_EYE_ABOVE_FLOOR_M;
   const containerRef = useRef(null);
   const captureRef = useRef(null);
   const cameraHeightRef = useRef(EYE_HEIGHT_M);
@@ -750,16 +766,16 @@ export default function Building3DModal({
         widthM: bounds.widthM,
         depthM: bounds.depthM,
         heightM: subfloorHeightM,
-        layerHeightM: SUBFLOOR_LAYER_HEIGHT_M,
-        layerGapM: SUBFLOOR_LAYER_GAP_M,
+        layerHeightM: subfloorLayerHeightM,
+        layerGapM: subfloorGapM,
       };
       modelGroup.add(subfloor);
 
       // Subfloor: 200 + 25 + 200 + 25 + 200 = 650 mm, custom footprint slabs.
       let builtSubfloorLayers = 0;
       SUBFLOOR_LAYER_IDS.forEach((partId, index) => {
-        const bottomY = index * (SUBFLOOR_LAYER_HEIGHT_M + SUBFLOOR_LAYER_GAP_M);
-        const topY = bottomY + SUBFLOOR_LAYER_HEIGHT_M;
+        const bottomY = index * (subfloorLayerHeightM + subfloorGapM);
+        const topY = bottomY + subfloorLayerHeightM;
         if (
           addFootprintSlab(subfloor, {
             partId,
@@ -783,7 +799,7 @@ export default function Building3DModal({
         partId: BUILDING_3D_PARTS.CORNER_COLUMNS,
         partType: "corner-columns",
         columnSizeM: CORNER_COLUMN_SIZE_M,
-        columnHeightM: CORNER_COLUMN_HEIGHT_M,
+        columnHeightM: subfloorHeightM,
         exteriorProjectionM: CORNER_COLUMN_PROJECTION_M,
       };
       modelGroup.add(cornerColumns);
@@ -795,8 +811,8 @@ export default function Building3DModal({
             partType: "corner-column",
             x,
             z,
-            y: CORNER_COLUMN_HEIGHT_M / 2,
-            heightM: CORNER_COLUMN_HEIGHT_M,
+            y: subfloorHeightM / 2,
+            heightM: subfloorHeightM,
             color: finishHex.baseboards,
             roughness: 0.72,
             metalness: 0.08,
@@ -823,16 +839,16 @@ export default function Building3DModal({
           partId: BUILDING_3D_PARTS.DECK,
           partType: "deck",
           deckIndex,
-          layerHeightM: SUBFLOOR_LAYER_HEIGHT_M,
-          layerGapM: SUBFLOOR_LAYER_GAP_M,
-          heightM: subfloorHeightM,
+        layerHeightM: subfloorLayerHeightM,
+        layerGapM: subfloorGapM,
+        heightM: subfloorHeightM,
         };
         modelGroup.add(deckGroup);
 
         let builtDeckLayers = 0;
         DECK_LAYER_IDS.forEach((partId, index) => {
-          const bottomY = index * (SUBFLOOR_LAYER_HEIGHT_M + SUBFLOOR_LAYER_GAP_M);
-          const topY = bottomY + SUBFLOOR_LAYER_HEIGHT_M;
+          const bottomY = index * (subfloorLayerHeightM + subfloorGapM);
+          const topY = bottomY + subfloorLayerHeightM;
           if (
             addFootprintSlab(deckGroup, {
               partId: deckIndex === 0 ? partId : `${partId}-${deckIndex}`,
@@ -1060,7 +1076,7 @@ export default function Building3DModal({
             partType: "robes",
             ring: robesResolved.ring,
             bottomY: subfloorHeightM,
-            topY: subfloorHeightM + ROBES_HEIGHT_M,
+            topY: subfloorHeightM + CLADDING_HEIGHT_M,
             color: ROBES_COLOR,
             roughness: 0.7,
             metalness: 0.04,
@@ -2279,6 +2295,7 @@ export default function Building3DModal({
             widthM: bounds.widthM,
             depthM: bounds.depthM,
             subfloorHeightM,
+            wallHeightM: CLADDING_HEIGHT_M,
           },
           footprintRing: ring,
           fromTrace,
@@ -2329,8 +2346,8 @@ export default function Building3DModal({
     let walkZ = distance * Math.cos(theta);
     let yaw = theta + Math.PI;
     // External view: fixed standing eye height (no mouse/keyboard height adjust).
-    externalCameraHeightRef.current = EYE_HEIGHT_M;
-    let cameraHeight = EYE_HEIGHT_M;
+    externalCameraHeightRef.current = eyeHeightM;
+    let cameraHeight = eyeHeightM;
     const keysDown = new Set();
     let lastFrameTs = performance.now();
 
@@ -2406,9 +2423,9 @@ export default function Building3DModal({
       }
       cameraHeight = next === VIEW_MODE_INTERNAL
         ? INTERNAL_VIEW_CAMERA_HEIGHT_M
-        : EYE_HEIGHT_M;
+        : eyeHeightM;
       if (next === VIEW_MODE_EXTERNAL) {
-        externalCameraHeightRef.current = EYE_HEIGHT_M;
+        externalCameraHeightRef.current = eyeHeightM;
       }
       cameraHeightRef.current = cameraHeight;
       syncCursor();
@@ -2416,11 +2433,11 @@ export default function Building3DModal({
     };
 
     walkModeRef.current = walkMode;
-    externalCameraHeightRef.current = EYE_HEIGHT_M;
+    externalCameraHeightRef.current = eyeHeightM;
     cameraHeight =
       viewModeRef.current === VIEW_MODE_INTERNAL
         ? INTERNAL_VIEW_CAMERA_HEIGHT_M
-        : EYE_HEIGHT_M;
+        : eyeHeightM;
     cameraHeightRef.current = cameraHeight;
     syncCursor();
     updateCamera();
@@ -2642,7 +2659,7 @@ export default function Building3DModal({
         container.removeChild(renderer.domElement);
       }
     };
-  }, [buildModel, depthM, footprintKey, footprintPoints, roofPointsKey, roofPoints, roofPivotKey, roofPivotLine, deckPointsKey, resolvedDecks, kitchenBenchesKey, resolvedKitchenBenches, robesKey, resolvedRobes, windowsKey, windows, doorsKey, doors, slidingDoorsKey, slidingDoors, internalWallsKey, internalWallSegments, internalDoorsKey, internalDoors, flooringPointsKey, flooringPoints, hybridRegionsKey, hybridRegions, tilesRegionsKey, tilesRegions, carpetRegionsKey, carpetRegions, flooringImagesKey, flooringImages, flooringScalesKey, flooringScales, calibrationKey, calibration, subfloorHeightM, widthM, finishesKey, finishHex, kitchenFinishesKey, kitchenFinishes]);
+  }, [buildModel, depthM, footprintKey, footprintPoints, roofPointsKey, roofPoints, roofPivotKey, roofPivotLine, deckPointsKey, resolvedDecks, kitchenBenchesKey, resolvedKitchenBenches, robesKey, resolvedRobes, windowsKey, windows, doorsKey, doors, slidingDoorsKey, slidingDoors, internalWallsKey, internalWallSegments, internalDoorsKey, internalDoors, flooringPointsKey, flooringPoints, hybridRegionsKey, hybridRegions, tilesRegionsKey, tilesRegions, carpetRegionsKey, carpetRegions, flooringImagesKey, flooringImages, flooringScalesKey, flooringScales, calibrationKey, calibration, subfloorHeightM, wallHeightM, widthM, finishesKey, finishHex, kitchenFinishesKey, kitchenFinishes]);
 
   function openRenderOptions() {
     if (renderBusy) return;
@@ -2723,6 +2740,8 @@ export default function Building3DModal({
   }
 
   const footprintLabel = footprintPoints?.length >= 3 ? "traced plan footprint" : `${widthM.toFixed(1)} m × ${depthM.toFixed(1)} m`;
+  const wallHeightMm = Math.round(CLADDING_HEIGHT_M * 1000);
+  const subfloorHeightMm = Math.round(Number(subfloorHeightM) * 1000);
   const roofLabel =
     roofPoints?.length >= 3
       ? isSuperiorSkillionRoofStyle(finishes?.roofStyle)
@@ -2733,7 +2752,7 @@ export default function Building3DModal({
       : "";
   const deckLabel =
     resolvedDecks.length
-      ? ` · Deck${resolvedDecks.length > 1 ? `s (${resolvedDecks.length})` : ""}: 200 / 25 / 200 / 25 / 200 mm + timber top`
+      ? ` · Deck${resolvedDecks.length > 1 ? `s (${resolvedDecks.length})` : ""}: ${subfloorHeightMm} mm + timber top`
       : "";
   const kitchenBenchLabel =
     resolvedKitchenBenches.length
@@ -2741,7 +2760,7 @@ export default function Building3DModal({
       : "";
   const robesLabel =
     resolvedRobes.length
-      ? ` · Robe${resolvedRobes.length > 1 ? `s (${resolvedRobes.length})` : ""}: 2600 mm slab on floor`
+      ? ` · Robe${resolvedRobes.length > 1 ? `s (${resolvedRobes.length})` : ""}: ${wallHeightMm} mm slab on floor`
       : "";
   const headerBtnStyle = {
     padding: "7px 13px",
@@ -2816,8 +2835,8 @@ export default function Building3DModal({
               {title}
             </h2>
             <div style={{ marginTop: "4px", color: "rgba(255,255,255,0.68)", fontSize: "0.85rem" }}>
-              Subfloor: 200 / 25 / 200 / 25 / 200 mm solid slabs · {footprintLabel}
-              {" · "}Cladding: 1 × 2600 mm slab, 100 mm thick
+              Subfloor: {subfloorHeightMm} mm · {footprintLabel}
+              {" · "}Cladding: {wallHeightMm} mm slab, 100 mm thick
               {deckLabel}
               {kitchenBenchLabel}
               {robesLabel}

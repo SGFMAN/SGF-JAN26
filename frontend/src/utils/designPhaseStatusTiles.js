@@ -1,6 +1,10 @@
 import { STREAM, INDICATOR, UI } from "./uiThemeTokens.js";
 import { getOverviewIndicatorStyle } from "./uiButtonStyles.js";
-import { normalizePlanningStatus } from "../constants/planningStatusFields.js";
+import {
+  getSewerConnectionOverviewKind,
+  normalizePlanningStatus,
+  normalizeSewerConnectionType,
+} from "../constants/planningStatusFields.js";
 import {
   getOverviewDepositStatusLabel,
   getOverviewDepositStatusLevel,
@@ -207,13 +211,16 @@ function getBuildingPermitStatusIndicator(project) {
 }
 
 function getSewerConnectionStatus(project) {
-  return normalizePlanningStatus(
+  return normalizeSewerConnectionType(
     field(project, "planning_sewer_connection", "planningSewerConnection")
   );
 }
 
 function getSewerConnectionStatusIndicator(project) {
-  return getRequirementStatusIndicator(getSewerConnectionStatus(project));
+  const kind = getSewerConnectionOverviewKind(project);
+  if (kind === "green") return indicatorGreen();
+  if (kind === "orange") return indicatorOrange();
+  return indicatorRed();
 }
 
 function getSurveySoilsStatusText(project) {

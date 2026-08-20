@@ -29,6 +29,10 @@ import {
   normalizeRoofStyle,
 } from "../constants/roofStyles.js";
 import { unitFinishHex } from "../utils/buildingUnitFinishes.js";
+import {
+  DEFAULT_BUILDING_3D,
+  normalizeBuilding3dDefaults,
+} from "../constants/building3dDefaults.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
@@ -177,6 +181,7 @@ export default function Colours({ project, onUpdate }) {
   const [showTracePlanModal, setShowTracePlanModal] = useState(false);
   const [showBuilding3DModal, setShowBuilding3DModal] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [building3dDefaults, setBuilding3dDefaults] = useState(() => DEFAULT_BUILDING_3D);
   const planTrace = useMemo(
     () => parsePlanTracePolygon(project?.colours_plan_trace_polygon),
     [project?.colours_plan_trace_polygon]
@@ -661,6 +666,25 @@ export default function Colours({ project, onUpdate }) {
         setCladdingMaterialOptions([NOTHING_SELECTED, ...names]);
       } catch (e) {
         if (!cancelled) setCladdingMaterialOptions(UNWIRED_COLOUR_OPTIONS);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/building-3d-defaults`, {
+          headers: getApiHeaders(),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || cancelled) return;
+        setBuilding3dDefaults(normalizeBuilding3dDefaults(data.defaults));
+      } catch (e) {
+        if (!cancelled) setBuilding3dDefaults(DEFAULT_BUILDING_3D);
       }
     })();
     return () => {
@@ -1917,8 +1941,8 @@ export default function Colours({ project, onUpdate }) {
               >
                 <div style={{ position: "absolute", inset: 8 }}>
                   <BuildingElevations
-                    widthM={11.3}
-                    depthM={5.0}
+                    widthM={building3dDefaults.widthM}
+                    depthM={building3dDefaults.depthM}
                     footprintPoints={planTraceFootprintPoints}
                     roofPoints={planTraceRoofPoints}
                     roofPivotLine={planTraceRoofPivotLine}
@@ -2462,9 +2486,10 @@ export default function Colours({ project, onUpdate }) {
       {isAdmin && showBuilding3DModal && (
         <Building3DModal
           title="3D Unit"
-          widthM={11.3}
-          depthM={5.0}
-          subfloorHeightM={0.65}
+          widthM={building3dDefaults.widthM}
+          depthM={building3dDefaults.depthM}
+          subfloorHeightM={building3dDefaults.subfloorHeightM}
+          wallHeightM={building3dDefaults.wallHeightM}
           footprintPoints={planTraceFootprintPoints}
           roofPoints={planTraceRoofPoints}
           roofPivotLine={planTraceRoofPivotLine}

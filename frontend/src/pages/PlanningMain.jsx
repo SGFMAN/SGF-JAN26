@@ -3,8 +3,14 @@ import { UI } from "../utils/uiThemeTokens.js";
 import {
   PLANNING_REQUIREMENT_SELECT_OPTIONS,
   MANDATORY_PLANNING_SELECT_OPTIONS,
+  SEWER_CONNECTION_TYPE_OPTIONS,
+  SEPTIC_PERMIT_TYPE_OPTIONS,
   normalizePlanningStatus,
   normalizeMandatoryPlanningStatus,
+  normalizeSewerConnectionType,
+  normalizeSepticPermitType,
+  isSewerPicChecked,
+  isSepticPermitChecked,
 } from "../constants/planningStatusFields.js";
 
 const MONUMENT = UI.textPrimary;
@@ -20,6 +26,10 @@ function fitWidthCh(labels, extraCh = 3.5) {
 
 const SHARED_SELECT_WIDTH = fitWidthCh(
   [...PLANNING_REQUIREMENT_SELECT_OPTIONS, ...MANDATORY_PLANNING_SELECT_OPTIONS],
+  3.75
+);
+const SEWER_SELECT_WIDTH = fitWidthCh(
+  [...SEWER_CONNECTION_TYPE_OPTIONS, ...SEPTIC_PERMIT_TYPE_OPTIONS],
   3.75
 );
 
@@ -41,6 +51,18 @@ const selectStyle = {
   color: MONUMENT,
   background: WHITE,
   boxSizing: "border-box",
+};
+
+const sewerSelectStyle = {
+  ...selectStyle,
+  width: SEWER_SELECT_WIDTH,
+};
+
+const checkboxLabelStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: "8px",
+  cursor: "pointer",
 };
 
 const panelStyle = {
@@ -77,8 +99,13 @@ export default function PlanningMain({ project, onUpdate }) {
   );
   const [balStatus, setBalStatus] = useState(normalizePlanningStatus(project?.planning_bal));
   const [sewerConnection, setSewerConnection] = useState(
-    normalizePlanningStatus(project?.planning_sewer_connection)
+    normalizeSewerConnectionType(project?.planning_sewer_connection)
   );
+  const [sewerPicChecked, setSewerPicChecked] = useState(() => isSewerPicChecked(project));
+  const [septicPermitType, setSepticPermitType] = useState(
+    normalizeSepticPermitType(project?.planning_sewer_septic_type)
+  );
+  const [septicPermitChecked, setSepticPermitChecked] = useState(() => isSepticPermitChecked(project));
   const [energyStatus, setEnergyStatus] = useState(
     normalizeMandatoryPlanningStatus(null, project?.planning_energy_report_received_at)
   );
@@ -157,7 +184,10 @@ export default function PlanningMain({ project, onUpdate }) {
   useEffect(() => {
     setTownPlanningStatus(normalizePlanningStatus(project?.planning_town_planning));
     setBalStatus(normalizePlanningStatus(project?.planning_bal));
-    setSewerConnection(normalizePlanningStatus(project?.planning_sewer_connection));
+    setSewerConnection(normalizeSewerConnectionType(project?.planning_sewer_connection));
+    setSewerPicChecked(isSewerPicChecked(project));
+    setSepticPermitType(normalizeSepticPermitType(project?.planning_sewer_septic_type));
+    setSepticPermitChecked(isSepticPermitChecked(project));
     setEnergyStatus(
       normalizeMandatoryPlanningStatus(null, project?.planning_energy_report_received_at)
     );
@@ -172,6 +202,9 @@ export default function PlanningMain({ project, onUpdate }) {
     project?.planning_town_planning,
     project?.planning_bal,
     project?.planning_sewer_connection,
+    project?.pic,
+    project?.planning_sewer_septic_type,
+    project?.planning_sewer_septic_permit,
     project?.planning_energy_report_received_at,
     project?.planning_footing_certification_received_at,
     project?.planning_building_permit_received_at,
@@ -305,13 +338,90 @@ export default function PlanningMain({ project, onUpdate }) {
             <h3 id="sewer-connection-title" style={{ margin: 0, color: MONUMENT, fontSize: "1.1rem" }}>
               Sewer Connection
             </h3>
-            {renderRequirementSelect("sewer-connection-select", sewerConnection, (e) =>
-              void handleRequirementChange(
-                "planning_sewer_connection",
-                e.target.value,
-                setSewerConnection
-              )
-            )}
+            <div>
+              <label htmlFor="sewer-connection-select" style={labelStyle}>
+                Connection
+              </label>
+              <select
+                id="sewer-connection-select"
+                value={sewerConnection}
+                onChange={(e) => {
+                  const next = normalizeSewerConnectionType(e.target.value);
+                  setSewerConnection(next);
+                  void saveFields({ planning_sewer_connection: next });
+                }}
+                disabled={disabled}
+                style={sewerSelectStyle}
+              >
+                {SEWER_CONNECTION_TYPE_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {sewerConnection === "Council Sewer" ? (
+              <label htmlFor="sewer-pic-checkbox" style={checkboxLabelStyle}>
+                <input
+                  id="sewer-pic-checkbox"
+                  type="checkbox"
+                  checked={sewerPicChecked}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setSewerPicChecked(checked);
+                    void saveFields({ pic: checked ? "Yes" : "No" });
+                  }}
+                  disabled={disabled}
+                  style={{ width: "18px", height: "18px", cursor: disabled ? "not-allowed" : "pointer" }}
+                />
+                <span style={{ fontSize: "0.95rem", fontWeight: 500, color: MONUMENT }}>PIC</span>
+              </label>
+            ) : null}
+            {sewerConnection === "Septic" ? (
+              <>
+                <div>
+                  <label htmlFor="septic-permit-type-select" style={labelStyle}>
+                    Permit type
+                  </label>
+                  <select
+                    id="septic-permit-type-select"
+                    value={septicPermitType}
+                    onChange={(e) => {
+                      const next = normalizeSepticPermitType(e.target.value);
+                      setSepticPermitType(next);
+                      void saveFields({
+                        planning_sewer_septic_type: next === "Not Selected" ? null : next,
+                      });
+                    }}
+                    disabled={disabled}
+                    style={sewerSelectStyle}
+                  >
+                    {SEPTIC_PERMIT_TYPE_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <label htmlFor="septic-permit-checkbox" style={checkboxLabelStyle}>
+                  <input
+                    id="septic-permit-checkbox"
+                    type="checkbox"
+                    checked={septicPermitChecked}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setSepticPermitChecked(checked);
+                      void saveFields({ planning_sewer_septic_permit: checked ? "Yes" : "No" });
+                    }}
+                    disabled={disabled}
+                    style={{ width: "18px", height: "18px", cursor: disabled ? "not-allowed" : "pointer" }}
+                  />
+                  <span style={{ fontSize: "0.95rem", fontWeight: 500, color: MONUMENT }}>
+                    Septic Permit
+                  </span>
+                </label>
+              </>
+            ) : null}
           </section>
 
           <section aria-labelledby="building-permit-title" style={panelStyle}>
