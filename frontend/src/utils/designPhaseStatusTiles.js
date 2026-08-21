@@ -23,13 +23,13 @@ const indicatorFallbacks = {
 };
 
 function indicatorRed() {
-  return getOverviewIndicatorStyle("red", indicatorFallbacks);
+  return { ...getOverviewIndicatorStyle("red", indicatorFallbacks), variant: "red" };
 }
 function indicatorOrange() {
-  return getOverviewIndicatorStyle("orange", indicatorFallbacks);
+  return { ...getOverviewIndicatorStyle("orange", indicatorFallbacks), variant: "orange" };
 }
 function indicatorGreen() {
-  return getOverviewIndicatorStyle("green", indicatorFallbacks);
+  return { ...getOverviewIndicatorStyle("green", indicatorFallbacks), variant: "green" };
 }
 
 /** Read staff snake_case or client camelCase project fields. */
@@ -288,7 +288,7 @@ function getSurveySoilsStatusIndicator(project) {
 
 export const OVERVIEW_STATUS_HEADINGS = [
   { key: "deposit", label: "Deposit" },
-  { key: "concept-drawings", label: "Concept" },
+  { key: "concept-drawings", label: "Concept Drawings" },
   { key: "working-drawings", label: "Working Drawings" },
   { key: "site-visit", label: "Site Visit" },
   { key: "colours", label: "Colours" },
@@ -319,7 +319,7 @@ export function buildDesignPhaseStatusTiles(project) {
     },
     {
       key: "concept-drawings",
-      label: "Concept",
+      label: "Concept Drawings",
       value: getConceptDrawingsStatus(project),
       indicatorStyle: getConceptDrawingsStatusIndicator(project),
       view: "drawings",

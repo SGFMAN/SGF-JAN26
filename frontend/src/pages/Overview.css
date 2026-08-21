@@ -53,16 +53,19 @@
 
 .overview-status-list {
   display: grid;
-  grid-template-columns: max-content max-content;
+  grid-template-columns: max-content max-content max-content max-content;
   row-gap: 6px;
   column-gap: 12px;
   justify-content: start;
+  align-items: center;
+  width: max-content;
+  max-width: 100%;
 }
 
 .overview-status-row {
   display: grid;
   grid-template-columns: subgrid;
-  grid-column: 1 / -1;
+  grid-column: 1 / 4;
   align-items: center;
   min-width: 0;
   max-width: none !important;
@@ -71,6 +74,13 @@
 .overview-status-heading {
   font-size: 0.95rem;
   font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.overview-status-requires {
+  font-size: 0.95rem;
+  font-weight: 500;
   line-height: 1.25;
   white-space: nowrap;
 }
@@ -98,6 +108,29 @@
 
 .overview-status-row:hover .overview-status-tab {
   opacity: 0.85;
+}
+
+.overview-working-column {
+  grid-column: 4;
+  grid-row: 1 / span var(--overview-row-count, 1);
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.overview-working-heading {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.overview-working-item {
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
 /* Mobile project shell — 3×4 grid fills remaining viewport height */
@@ -148,7 +181,10 @@
   row-gap: 4px;
 }
 
-.project-page-mobile__content--overview .overview-status-heading {
+.project-page-mobile__content--overview .overview-status-heading,
+.project-page-mobile__content--overview .overview-status-requires,
+.project-page-mobile__content--overview .overview-working-heading,
+.project-page-mobile__content--overview .overview-working-item {
   font-size: 0.8rem;
 }
 
@@ -180,7 +216,10 @@
     font-size: 1rem;
   }
 
-  .overview-status-heading {
+  .overview-status-heading,
+  .overview-status-requires,
+  .overview-working-heading,
+  .overview-working-item {
     font-size: 0.85rem;
   }
 
@@ -201,7 +240,10 @@
     margin-right: auto;
   }
 
-  .overview-status-heading {
+  .overview-status-heading,
+  .overview-status-requires,
+  .overview-working-heading,
+  .overview-working-item {
     font-size: 1.05rem;
   }
 

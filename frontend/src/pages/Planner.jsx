@@ -3,6 +3,7 @@ import { Link as RouterLink } from "react-router-dom";
 import ToolsSidebarMenu from "../components/ToolsSidebarMenu";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { OVERVIEW_STATUS_HEADINGS } from "../utils/designPhaseStatusTiles.js";
+import { loadPlannerLayout, savePlannerLayout } from "../utils/plannerLayout.js";
 import { UI } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
@@ -11,7 +12,6 @@ const LIGHT_MONUMENT = UI.pageBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 
-const STORAGE_KEY = "sgf-planner-layout-v1";
 const LINK_HOVER = "#D32F2F";
 const RECT_WIDTH = 188;
 const RECT_HEIGHT = 72;
@@ -19,7 +19,6 @@ const GRID_COLS = 4;
 const GRID_GAP_X = 16;
 const GRID_GAP_Y = 16;
 const GRID_ORIGIN = 16;
-const VALID_KEYS = new Set(OVERVIEW_STATUS_HEADINGS.map((item) => item.key));
 
 const PASTEL_COLORS = [
   "#F8C8DC",
@@ -52,45 +51,11 @@ function defaultPositions() {
 }
 
 function loadLayout() {
-  const defaults = defaultPositions();
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { positions: defaults, links: [] };
-    const parsed = JSON.parse(raw);
-    const saved = parsed?.positions && typeof parsed.positions === "object" ? parsed.positions : {};
-    const positions = { ...defaults };
-    for (const item of OVERVIEW_STATUS_HEADINGS) {
-      const point = saved[item.key];
-      if (point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y))) {
-        positions[item.key] = { x: Number(point.x), y: Number(point.y) };
-      }
-    }
-    const links = Array.isArray(parsed?.links)
-      ? parsed.links
-          .filter(
-            (link) =>
-              link &&
-              VALID_KEYS.has(link.from) &&
-              VALID_KEYS.has(link.to)
-          )
-          .map((link, index) => ({
-            id: String(link.id || `link-${index}`),
-            from: link.from,
-            to: link.to,
-          }))
-      : [];
-    return { positions, links };
-  } catch {
-    return { positions: defaults, links: [] };
-  }
+  return loadPlannerLayout(defaultPositions());
 }
 
 function saveLayout(positions, links) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ positions, links }));
-  } catch {
-    // ignore quota / private mode
-  }
+  savePlannerLayout(positions, links);
 }
 
 function rectCenter(point) {
@@ -139,6 +104,7 @@ export default function Planner() {
   const [linking, setLinking] = useState(false);
   const [linkSourceKey, setLinkSourceKey] = useState(null);
   const [hoveredLinkId, setHoveredLinkId] = useState(null);
+  const [analyseOpen, setAnalyseOpen] = useState(false);
   const nextLinkIdRef = useRef(saved.links.length + 1);
 
   useEffect(() => {
@@ -188,6 +154,15 @@ export default function Planner() {
     window.addEventListener("contextmenu", onContextMenu);
     return () => window.removeEventListener("contextmenu", onContextMenu);
   }, [cancelLinking, linking]);
+
+  useEffect(() => {
+    if (!analyseOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setAnalyseOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [analyseOpen]);
 
   function startDrag(event, key) {
     if (linking) return;
@@ -272,6 +247,25 @@ export default function Planner() {
     }
     return drawn;
   }, [links, positions]);
+
+  const analysisRows = useMemo(() => {
+    const labels = Object.fromEntries(OVERVIEW_STATUS_HEADINGS.map((item) => [item.key, item.label]));
+    return OVERVIEW_STATUS_HEADINGS.map((item) => {
+      const dependsOn = [];
+      const seen = new Set();
+      for (const link of links) {
+        if (link.to !== item.key) continue;
+        if (seen.has(link.from)) continue;
+        seen.add(link.from);
+        dependsOn.push(labels[link.from] || link.from);
+      }
+      return {
+        key: item.key,
+        label: item.label,
+        dependsOn,
+      };
+    });
+  }, [links]);
 
   return (
     <div
@@ -360,6 +354,16 @@ export default function Planner() {
               style={toolbarButtonStyle(linking)}
             >
               Link
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                cancelLinking();
+                setAnalyseOpen(true);
+              }}
+              style={toolbarButtonStyle(false)}
+            >
+              Analyse
             </button>
             <button
               type="button"
@@ -536,6 +540,85 @@ export default function Planner() {
           </div>
         </div>
       </div>
+
+      {analyseOpen ? (
+        <div
+          onClick={() => setAnalyseOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2000,
+            padding: "20px",
+            boxSizing: "border-box",
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="planner-analyse-title"
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              width: "100%",
+              maxWidth: "640px",
+              maxHeight: "90vh",
+              overflow: "auto",
+              boxShadow: "0 4px 20px rgba(0, 0, 0, 0.3)",
+              position: "relative",
+              boxSizing: "border-box",
+              color: MONUMENT,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setAnalyseOpen(false)}
+              aria-label="Close"
+              style={{
+                position: "absolute",
+                top: "12px",
+                right: "12px",
+                background: "transparent",
+                border: "none",
+                fontSize: "1.5rem",
+                cursor: "pointer",
+                color: MONUMENT,
+                width: "40px",
+                height: "40px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: "4px",
+              }}
+            >
+              ×
+            </button>
+            <h2
+              id="planner-analyse-title"
+              style={{ margin: "0 40px 16px 0", fontSize: "1.45rem", fontWeight: 700, color: MONUMENT }}
+            >
+              Analyse
+            </h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px", color: MONUMENT }}>
+              {analysisRows.map((row) => (
+                <div key={row.key}>
+                  <div style={{ fontWeight: 700, marginBottom: "2px" }}>{row.label}</div>
+                  <div style={{ fontSize: "0.95rem", lineHeight: 1.4 }}>
+                    {row.dependsOn.length
+                      ? `Depends on: ${row.dependsOn.join(", ")}`
+                      : "Depends on: none"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
