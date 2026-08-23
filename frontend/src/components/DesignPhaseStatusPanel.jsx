@@ -116,7 +116,7 @@ export default function DesignPhaseStatusPanel({
               );
             })}
             <div className="overview-working-column" style={{ color: UI.textPrimary }}>
-              <div className="overview-working-heading">Currently Working On:</div>
+              <div className="overview-working-heading">Next to Work On:</div>
               {readyNow.length ? (
                 readyNow.map((tile) => {
                   const interactive = !readOnly && typeof onTileClick === "function";

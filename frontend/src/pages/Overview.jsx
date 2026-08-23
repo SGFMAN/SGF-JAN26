@@ -435,15 +435,14 @@ export default function Overview({ project }) {
   function getContractStatusText() {
     const contractStatus = project?.contract_status || "Not Sent";
     const supportingDocsStatus = project?.supporting_documents_status || "Not Sent";
-    const waterDeclStatus = project?.water_declaration_status || "Not Required";
+    const waterDeclStatus = project?.water_declaration_status;
+    const waterAuthority = project?.water_authority || "Not Required";
 
-    // Check if all required documents are complete
-    const isContractComplete = contractStatus === "Complete";
-    const isSupportingDocsComplete = supportingDocsStatus === "Complete";
-    // Water declaration is complete if it's "Complete" OR "Not Required"
-    const isWaterDeclComplete = waterDeclStatus === "Complete" || waterDeclStatus === "Not Required";
-
-    if (isContractComplete && isSupportingDocsComplete && isWaterDeclComplete) {
+    if (
+      contractStatus === "Complete" &&
+      supportingDocsStatus === "Complete" &&
+      (waterDeclStatus === "Complete" || waterAuthority === "Not Required")
+    ) {
       return "All Documents Complete";
     }
 
@@ -453,17 +452,16 @@ export default function Overview({ project }) {
   function getContractStatusIndicator() {
     const contractStatus = project?.contract_status || "Not Sent";
     const supportingDocsStatus = project?.supporting_documents_status || "Not Sent";
-    const waterDeclStatus = project?.water_declaration_status || "Not Required";
+    const waterDeclStatus = project?.water_declaration_status;
+    const waterAuthority = project?.water_authority || "Not Required";
 
     if (
       contractStatus === "Complete" &&
       supportingDocsStatus === "Complete" &&
-      (waterDeclStatus === "Complete" || waterDeclStatus === "Not Required")
+      (waterDeclStatus === "Complete" || waterAuthority === "Not Required")
     ) {
       return indicatorGreen();
     }
-
-    if (contractStatus === "Sent") return indicatorOrange();
 
     return indicatorRed();
   }
@@ -537,10 +535,13 @@ export default function Overview({ project }) {
     // Check contract status - all three must be complete
     const contractStatus = project?.contract_status || "Not Sent";
     const supportingDocsStatus = project?.supporting_documents_status || "Not Sent";
-    const waterDeclStatus = project?.water_declaration_status || "Not Required";
-    if (contractStatus !== "Complete" || 
-        supportingDocsStatus !== "Complete" || 
-        (waterDeclStatus !== "Complete" && waterDeclStatus !== "Not Required")) {
+    const waterDeclStatus = project?.water_declaration_status;
+    const waterAuthority = project?.water_authority || "Not Required";
+    if (
+      contractStatus !== "Complete" ||
+      supportingDocsStatus !== "Complete" ||
+      (waterDeclStatus !== "Complete" && waterAuthority !== "Not Required")
+    ) {
       return false;
     }
 

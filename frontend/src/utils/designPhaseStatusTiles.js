@@ -114,26 +114,24 @@ function getSiteVisitStatusIndicator(project) {
   return indicatorRed();
 }
 
+function isOverviewContractComplete(project) {
+  const contractStatus = field(project, "contract_status", "contractStatus") || "Not Sent";
+  const supportingDocsStatus =
+    field(project, "supporting_documents_status", "supportingDocumentsStatus") || "Not Sent";
+  const waterDeclStatus = field(project, "water_declaration_status", "waterDeclarationStatus");
+  const waterAuthority = field(project, "water_authority", "waterAuthority") || "Not Required";
+  return (
+    contractStatus === "Complete" &&
+    supportingDocsStatus === "Complete" &&
+    (waterDeclStatus === "Complete" || waterAuthority === "Not Required")
+  );
+}
+
 /** Overview Contract tile value ("All Documents Complete" | "Documents Missing"). */
 export function getContractStatusText(project) {
   const preset = field(project, "contract_status_text", "contractStatusText");
   if (preset != null && String(preset).trim() !== "") return String(preset);
-
-  const contractStatus = field(project, "contract_status", "contractStatus") || "Not Sent";
-  const supportingDocsStatus =
-    field(project, "supporting_documents_status", "supportingDocumentsStatus") || "Not Sent";
-  const waterDeclStatus =
-    field(project, "water_declaration_status", "waterDeclarationStatus") || "Not Required";
-
-  const isContractComplete = contractStatus === "Complete";
-  const isSupportingDocsComplete = supportingDocsStatus === "Complete";
-  const isWaterDeclComplete =
-    waterDeclStatus === "Complete" || waterDeclStatus === "Not Required";
-
-  if (isContractComplete && isSupportingDocsComplete && isWaterDeclComplete) {
-    return "All Documents Complete";
-  }
-  return "Documents Missing";
+  return isOverviewContractComplete(project) ? "All Documents Complete" : "Documents Missing";
 }
 
 /** Overview Colours tile value (e.g. Not Sent / Sent / Complete). */
@@ -151,21 +149,7 @@ export function replaceContractAndColorStatusTokens(text, project) {
 }
 
 function getContractStatusIndicator(project) {
-  const contractStatus = field(project, "contract_status", "contractStatus") || "Not Sent";
-  const supportingDocsStatus =
-    field(project, "supporting_documents_status", "supportingDocumentsStatus") || "Not Sent";
-  const waterDeclStatus =
-    field(project, "water_declaration_status", "waterDeclarationStatus") || "Not Required";
-
-  if (
-    contractStatus === "Complete" &&
-    supportingDocsStatus === "Complete" &&
-    (waterDeclStatus === "Complete" || waterDeclStatus === "Not Required")
-  ) {
-    return indicatorGreen();
-  }
-  if (contractStatus === "Sent") return indicatorOrange();
-  return indicatorRed();
+  return isOverviewContractComplete(project) ? indicatorGreen() : indicatorRed();
 }
 
 function overviewKindToIndicator(kind) {
