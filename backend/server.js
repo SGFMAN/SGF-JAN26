@@ -1490,6 +1490,7 @@ async function ensureSchema() {
     await addMissingColumns(pool, "settings", [
       "ui_button_styles_json",
       "ui_theme_color_overrides_json",
+      "planner_layout_json",
       "colour_section_ranges_json",
       "planning_manager_layout_json",
       "planning_manager_cells_json",
@@ -2085,6 +2086,13 @@ async function ensureSchema() {
   } catch (e) {
     if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
       console.log(`Error adding column ui_button_styles_json:`, e.message);
+    }
+  }
+  try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN planner_layout_json TEXT`);
+  } catch (e) {
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column planner_layout_json:`, e.message);
     }
   }
   try {
@@ -5818,6 +5826,60 @@ app.put("/api/ui-theme-colors", async (req, res) => {
   } catch (e) {
     console.error("Error saving UI theme colours:", e);
     return res.status(500).json({ error: e.message || "Failed to save UI theme colours" });
+  }
+});
+
+function parsePlannerLayoutColumn(raw) {
+  if (raw == null || raw === "") return null;
+  let obj = raw;
+  if (typeof raw === "string") {
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
+  const positions =
+    obj.positions && typeof obj.positions === "object" && !Array.isArray(obj.positions)
+      ? obj.positions
+      : {};
+  const links = Array.isArray(obj.links) ? obj.links : [];
+  return { positions, links };
+}
+
+// Tools → Planner flowchart (boxes, arrows). Shared for all staff so local and portal match.
+app.get("/api/planner-layout", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const userId = getStaffUserIdFromRequest(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  try {
+    const r = await pool.query("SELECT planner_layout_json FROM settings WHERE id = 1");
+    const layout = parsePlannerLayoutColumn(r.rows[0]?.planner_layout_json);
+    return res.json({ ok: true, layout });
+  } catch (e) {
+    console.error("Error fetching planner layout:", e);
+    return res.status(500).json({ error: e.message || "Failed to fetch planner layout" });
+  }
+});
+
+app.put("/api/planner-layout", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const layout = parsePlannerLayoutColumn(body.layout ?? body) || { positions: {}, links: [] };
+    const json = JSON.stringify(layout);
+    await pool.query(
+      `INSERT INTO settings (id, planner_layout_json, updated_at)
+       VALUES (1, $1, NOW())
+       ON CONFLICT (id) DO UPDATE SET planner_layout_json = EXCLUDED.planner_layout_json, updated_at = NOW()`,
+      [json]
+    );
+    return res.json({ ok: true, layout });
+  } catch (e) {
+    console.error("Error saving planner layout:", e);
+    return res.status(500).json({ error: e.message || "Failed to save planner layout" });
   }
 });
 

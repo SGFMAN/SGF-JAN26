@@ -1,6 +1,7 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { buildDesignPhaseStatusTiles } from "../utils/designPhaseStatusTiles.js";
 import {
+  fetchPlannerLayoutFromApi,
   getPlannerRequirementKeysByItem,
   loadPlannerLayout,
   plannerLabelForKey,
@@ -68,9 +69,21 @@ export default function DesignPhaseStatusPanel({
   showHeading = true,
 }) {
   const tiles = buildDesignPhaseStatusTiles(project);
-  const requirementsByKey = useMemo(() => {
-    const { links } = loadPlannerLayout();
-    return getPlannerRequirementKeysByItem(links);
+  const [plannerLinks, setPlannerLinks] = useState(() => loadPlannerLayout().links);
+  const requirementsByKey = useMemo(
+    () => getPlannerRequirementKeysByItem(plannerLinks),
+    [plannerLinks]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchPlannerLayoutFromApi().then((layout) => {
+      if (cancelled || !layout) return;
+      setPlannerLinks(layout.links);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [project]);
 
   if (!project || tiles.length === 0) return null;

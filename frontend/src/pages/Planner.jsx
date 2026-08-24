@@ -3,7 +3,7 @@ import { Link as RouterLink } from "react-router-dom";
 import ToolsSidebarMenu from "../components/ToolsSidebarMenu";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { OVERVIEW_STATUS_HEADINGS } from "../utils/designPhaseStatusTiles.js";
-import { loadPlannerLayout, savePlannerLayout } from "../utils/plannerLayout.js";
+import { loadPlannerLayout, savePlannerLayout, fetchPlannerLayoutFromApi, persistPlannerLayoutToApi, plannerLayoutShouldSeedServer } from "../utils/plannerLayout.js";
 import { UI } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
@@ -106,10 +106,51 @@ export default function Planner() {
   const [hoveredLinkId, setHoveredLinkId] = useState(null);
   const [analyseOpen, setAnalyseOpen] = useState(false);
   const nextLinkIdRef = useRef(saved.links.length + 1);
+  const canPersistRef = useRef(false);
+  const positionsRef = useRef(saved.positions);
+  const linksRef = useRef(saved.links);
+  positionsRef.current = positions;
+  linksRef.current = links;
 
   useEffect(() => {
-    saveLayout(positions, links);
+    let cancelled = false;
+    (async () => {
+      const defaults = defaultPositions();
+      const remote = await fetchPlannerLayoutFromApi(defaults);
+      if (cancelled) return;
+      if (remote) {
+        setPositions(remote.positions);
+        setLinks(remote.links);
+        nextLinkIdRef.current = remote.links.length + 1;
+        savePlannerLayout(remote.positions, remote.links);
+      } else {
+        const local = loadPlannerLayout(defaults);
+        if (plannerLayoutShouldSeedServer(local, defaults)) {
+          persistPlannerLayoutToApi(local.positions, local.links).catch(() => {});
+        }
+      }
+      canPersistRef.current = true;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    savePlannerLayout(positions, links);
+    if (!canPersistRef.current) return undefined;
+    const timer = setTimeout(() => {
+      persistPlannerLayoutToApi(positions, links).catch(() => {});
+    }, 500);
+    return () => clearTimeout(timer);
   }, [positions, links]);
+
+  useEffect(() => {
+    return () => {
+      if (!canPersistRef.current) return;
+      persistPlannerLayoutToApi(positionsRef.current, linksRef.current).catch(() => {});
+    };
+  }, []);
 
   const cancelLinking = useCallback(() => {
     setLinking(false);
