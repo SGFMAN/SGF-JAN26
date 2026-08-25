@@ -53,7 +53,9 @@ import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 import {
   applyConceptApprovalRules,
   applyDrawingUploadKindRules,
+  applyPostApprovalRules,
   applyWorkingDrawingsApprovalRules,
+  isPostApprovalMode,
   newDrawingHistoryEntryFields,
   parseDrawingsHistory,
   formatDrawingApprovalDateLabel,
@@ -72,6 +74,9 @@ const STREAM_GREEN = STREAM.streamGreen;
 const STREAM_GREEN_LIGHT = STREAM.streamGreenLight;
 const VIC_BLUE = STREAM.vicBlue;
 const VIC_BLUE_LIGHT = STREAM.vicBlueLight;
+const INDICATOR_ORANGE = INDICATOR.orange;
+const MENU_PURPLE = MENU.purple;
+const MENU_PURPLE_LIGHT = MENU.purpleLight;
 const QLD_RED = STREAM.qldRed;
 const API_URL = "";
 /** Above `EmailSendOverlay` (2147483000) so folder / upload errors are never hidden behind it. */
@@ -110,6 +115,18 @@ const DRAWINGS_ACTION_ZONE_HEIGHT_PX = SIDEBAR_BELOW_GREEN_MENU_PX - 24;
 function mergeActionButtonStyle(styleId, fallback) {
   const saved = buildSavedButtonStyle(styleId, true);
   return saved ? { ...saved, lineHeight: "1.2" } : fallback;
+}
+
+/** Sent to Client chip: concept = Stream Green, working drawings = VIC Blue, post approval = Menu Purple. */
+function sentToClientMarkerColors(drawing) {
+  const uploadKind = String(drawing?.uploadKind || "").trim().toLowerCase();
+  if (drawing?.postApproved || uploadKind === "certifier") {
+    return { background: MENU_PURPLE, color: PAGE_TEXT };
+  }
+  if (drawing?.workingDrawingsApproved || uploadKind === "working") {
+    return { background: VIC_BLUE, color: PAGE_TEXT };
+  }
+  return { background: STREAM_GREEN, color: PAGE_TEXT };
 }
 
 /** Filename shown for the drawings PDF attachment (matches send-drawings naming). */
@@ -987,6 +1004,108 @@ export default function Drawings({
     }
   }
 
+  async function applyPostApproval() {
+    if (!project?.id) return;
+
+    const drawingsHistory = parseDrawingsHistory(project?.drawings_history);
+    if (drawingsHistory.length === 0) {
+      alert("No drawings have been uploaded yet.");
+      return;
+    }
+
+    const { history: updatedHistory } = applyPostApprovalRules(drawingsHistory);
+    const projectName =
+      project?.street && project?.suburb
+        ? `${project.street}, ${project.suburb}`.trim()
+        : project?.name || "";
+    const currentDrawingsStatus =
+      valuesRef.current.drawingsStatus || project?.drawings_status || null;
+
+    try {
+      const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...getApiHeaders(),
+        },
+        body: JSON.stringify({
+          name: projectName,
+          status: project?.status || null,
+          stream: project?.stream || null,
+          suburb: project?.suburb || null,
+          street: project?.street || null,
+          state: project?.state || null,
+          deposit: project?.deposit || null,
+          project_cost: project?.project_cost || null,
+          client_name: project?.client_name || null,
+          email: project?.email || null,
+          phone: project?.phone || null,
+          client1_name: project?.client1_name || null,
+          client1_email: project?.client1_email || null,
+          client1_phone: project?.client1_phone || null,
+          client1_active: project?.client1_active || null,
+          client2_name: project?.client2_name || null,
+          client2_email: project?.client2_email || null,
+          client2_phone: project?.client2_phone || null,
+          client2_active: project?.client2_active || null,
+          client3_name: project?.client3_name || null,
+          client3_email: project?.client3_email || null,
+          client3_phone: project?.client3_phone || null,
+          client3_active: project?.client3_active || null,
+          site_visit_status: project?.site_visit_status || null,
+          site_visit_date: project?.site_visit_date || null,
+          site_visit_time: project?.site_visit_time || null,
+          contract_status: project?.contract_status || null,
+          contract_sent_date: project?.contract_sent_date || null,
+          contract_complete_date: project?.contract_complete_date || null,
+          supporting_documents_status: project?.supporting_documents_status || null,
+          supporting_documents_sent_date: project?.supporting_documents_sent_date || null,
+          supporting_documents_complete_date: project?.supporting_documents_complete_date || null,
+          water_declaration_status: project?.water_declaration_status || null,
+          water_declaration_sent_date: project?.water_declaration_sent_date || null,
+          water_declaration_complete_date: project?.water_declaration_complete_date || null,
+          notes: project?.notes || null,
+          window_status: project?.window_status || null,
+          window_colour: project?.window_colour || null,
+          window_reveal: project?.window_reveal || null,
+          window_reveal_other: project?.window_reveal_other || null,
+          window_glazing: project?.window_glazing || null,
+          window_bal_rating: project?.window_bal_rating || null,
+          window_date_required: project?.window_date_required || null,
+          window_ordered_date: project?.window_ordered_date || null,
+          window_order_pdf_location: project?.window_order_pdf_location || null,
+          window_order_number: project?.window_order_number || null,
+          drawings_status: currentDrawingsStatus,
+          drawings_pdf_location: project?.drawings_pdf_location || null,
+          drawings_history: JSON.stringify(updatedHistory),
+          drawings_holder: project?.drawings_holder || null,
+          drawings_holder_date: project?.drawings_holder_date || null,
+          colours_status: project?.colours_status || null,
+          planning_status: project?.planning_status || null,
+          energy_report_status: project?.energy_report_status || null,
+          footing_certification_status: project?.footing_certification_status || null,
+          building_permit_status: project?.building_permit_status || null,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to save post approval");
+      }
+
+      if (onUpdate) {
+        onUpdate(true);
+      }
+      return true;
+    } catch (error) {
+      console.error("Error saving post approval:", error);
+      if (onUpdate) {
+        onUpdate();
+      }
+      alert("Failed to save post approval");
+      return false;
+    }
+  }
+
   async function openApprovalEmailPreview(kind) {
     if (!project?.id) return;
     let settingsData = {};
@@ -1127,6 +1246,17 @@ export default function Drawings({
     }
 
     await openApprovalEmailPreview("working");
+  }
+
+  async function handleMarkPostApproved() {
+    if (!canApproveDrawings) return;
+    if (!project?.id) return;
+    const drawingsHistory = parseDrawingsHistory(project?.drawings_history);
+    if (drawingsHistory.length === 0) {
+      alert("No drawings have been uploaded yet.");
+      return;
+    }
+    await applyPostApproval();
   }
 
   async function handleClearDrawingData() {
@@ -3653,7 +3783,9 @@ export default function Drawings({
                   {[...drawingsHistory].reverse().map((drawing, index) => {
                     // Determine background color based on approval status
                     let backgroundColor = WHITE;
-                    if (drawing.workingDrawingsApproved) {
+                    if (drawing.postApproved) {
+                      backgroundColor = MENU_PURPLE_LIGHT;
+                    } else if (drawing.workingDrawingsApproved) {
                       backgroundColor = VIC_BLUE_LIGHT;
                     } else if (drawing.conceptApproved) {
                       backgroundColor = STREAM_GREEN_LIGHT;
@@ -3692,21 +3824,39 @@ export default function Drawings({
                             overflowX: "auto",
                           }}
                         >
-                          {drawing.workingDrawingsApproved ? (
+                          {drawing.postApproved ? (
                             <span
                               style={{
                                 flexShrink: 0,
-                                padding: "0 2px",
-                                fontSize: "0.72rem",
-                                fontWeight: 500,
-                                letterSpacing: "0.04em",
+                                background: MENU_PURPLE_LIGHT,
                                 color: MONUMENT,
-                                background: "transparent",
-                                border: "none",
-                                borderRadius: 0,
+                                padding: "4px 10px",
+                                borderRadius: "6px",
+                                fontSize: "0.8rem",
+                                fontWeight: 500,
                                 whiteSpace: "nowrap",
-                                lineHeight: 1.25,
-                                userSelect: "none",
+                              }}
+                            >
+                              {(() => {
+                                const d = formatDrawingApprovalDateLabel(
+                                  drawing.postApprovedDate
+                                );
+                                return d
+                                  ? `Post Approval Confirmed – ${d}`
+                                  : "Post Approval Confirmed";
+                              })()}
+                            </span>
+                          ) : drawing.workingDrawingsApproved ? (
+                            <span
+                              style={{
+                                flexShrink: 0,
+                                background: VIC_BLUE_LIGHT,
+                                color: MONUMENT,
+                                padding: "4px 10px",
+                                borderRadius: "6px",
+                                fontSize: "0.8rem",
+                                fontWeight: 500,
+                                whiteSpace: "nowrap",
                               }}
                             >
                               {(() => {
@@ -3714,7 +3864,7 @@ export default function Drawings({
                                   drawing.workingDrawingsApprovedDate
                                 );
                                 return d
-                                  ? `Working Drawings Approved ${d}`
+                                  ? `Working Drawings Approved – ${d}`
                                   : "Working Drawings Approved";
                               })()}
                             </span>
@@ -3722,24 +3872,22 @@ export default function Drawings({
                             <span
                               style={{
                                 flexShrink: 0,
-                                padding: "0 2px",
-                                fontSize: "0.72rem",
-                                fontWeight: 500,
-                                letterSpacing: "0.04em",
+                                background: STREAM_GREEN_LIGHT,
                                 color: MONUMENT,
-                                background: "transparent",
-                                border: "none",
-                                borderRadius: 0,
+                                padding: "4px 10px",
+                                borderRadius: "6px",
+                                fontSize: "0.8rem",
+                                fontWeight: 500,
                                 whiteSpace: "nowrap",
-                                lineHeight: 1.25,
-                                userSelect: "none",
                               }}
                             >
                               {(() => {
                                 const d = formatDrawingApprovalDateLabel(
                                   drawing.conceptApprovedDate
                                 );
-                                return d ? `Concept Approved ${d}` : "Concept Approved";
+                                return d
+                                  ? `Concept Approved – ${d}`
+                                  : "Concept Approved";
                               })()}
                             </span>
                           ) : null}
@@ -3757,8 +3905,7 @@ export default function Drawings({
                             <div
                               style={{
                                 flexShrink: 0,
-                                background: STREAM_GREEN,
-                                color: PAGE_TEXT,
+                                ...sentToClientMarkerColors(drawing),
                                 padding: "4px 10px",
                                 borderRadius: "6px",
                                 fontSize: "0.8rem",
@@ -3905,13 +4052,36 @@ export default function Drawings({
                   }
 
                   const hasDrawings = drawingsHistory && drawingsHistory.length > 0;
-                  
-                  // Working drawings can be approved any time, as long as at least one drawing exists.
+                  const postApprovalMode = isPostApprovalMode(project);
                   const canApproveWorkingDrawings = hasDrawings;
 
                   return (
                     <>
-                      {/* Row 1: Approve Concept | Approve Working Drawings */}
+                      {postApprovalMode ? (
+                        <div style={{ display: "flex", gap: "12px", width: "100%" }}>
+                          <button
+                            onClick={handleMarkPostApproved}
+                            disabled={!hasDrawings}
+                            style={{
+                              flex: 1,
+                              background: !hasDrawings ? UI.inputBg : MENU_PURPLE_LIGHT,
+                              color: !hasDrawings ? "#999" : MONUMENT,
+                              border: !hasDrawings ? "1px solid #ccc" : `1px solid ${MENU_PURPLE}`,
+                              borderRadius: "10px",
+                              padding: "8px 8px",
+                              fontSize: "0.95rem",
+                              fontWeight: 500,
+                              textAlign: "center",
+                              letterSpacing: "0.5px",
+                              cursor: !hasDrawings ? "not-allowed" : "pointer",
+                              transition: "background 0.18s, color 0.15s, border-color 0.15s",
+                              opacity: !hasDrawings ? 0.6 : 1,
+                            }}
+                          >
+                            Post Approval
+                          </button>
+                        </div>
+                      ) : (
                       <div style={{ display: "flex", gap: "12px", width: "100%" }}>
                         <button
                           onClick={handleMarkConceptConfirmed}
@@ -3956,6 +4126,7 @@ export default function Drawings({
                           Approve Working Drawings
                         </button>
                       </div>
+                      )}
                     </>
                   );
                 })()}

@@ -2,8 +2,20 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link as RouterLink } from "react-router-dom";
 import ToolsSidebarMenu from "../components/ToolsSidebarMenu";
 import useAppLogo from "../hooks/useAppLogo.js";
-import { OVERVIEW_STATUS_HEADINGS } from "../utils/designPhaseStatusTiles.js";
-import { loadPlannerLayout, savePlannerLayout, fetchPlannerLayoutFromApi, persistPlannerLayoutToApi, plannerLayoutShouldSeedServer } from "../utils/plannerLayout.js";
+import startBuildingImage from "../images/start building.png";
+import {
+  PLANNER_FLOW_ITEMS,
+  PLANNER_SNAP_SIZE,
+  PLANNER_START_BUILDING_KEY,
+  defaultPlannerPositions,
+  fetchPlannerLayoutFromApi,
+  loadPlannerLayout,
+  persistPlannerLayoutToApi,
+  plannerLayoutShouldSeedServer,
+  plannerNodeSize,
+  savePlannerLayout,
+  snapPlannerPoint,
+} from "../utils/plannerLayout.js";
 import { UI } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
@@ -13,11 +25,6 @@ const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 
 const LINK_HOVER = "#D32F2F";
-const RECT_WIDTH = 188;
-const RECT_HEIGHT = 72;
-const GRID_COLS = 4;
-const GRID_GAP_X = 16;
-const GRID_GAP_Y = 16;
 const GRID_ORIGIN = 16;
 
 const PASTEL_COLORS = [
@@ -35,19 +42,12 @@ const PASTEL_COLORS = [
   "#FDE2E4",
   "#D4E6F1",
   "#F9E2AE",
+  "#E8D5B7",
+  "#D7E3FC",
 ];
 
 function defaultPositions() {
-  const positions = {};
-  OVERVIEW_STATUS_HEADINGS.forEach((item, index) => {
-    const col = index % GRID_COLS;
-    const row = Math.floor(index / GRID_COLS);
-    positions[item.key] = {
-      x: GRID_ORIGIN + col * (RECT_WIDTH + GRID_GAP_X),
-      y: GRID_ORIGIN + row * (RECT_HEIGHT + GRID_GAP_Y),
-    };
-  });
-  return positions;
+  return defaultPlannerPositions();
 }
 
 function loadLayout() {
@@ -58,20 +58,21 @@ function saveLayout(positions, links) {
   savePlannerLayout(positions, links);
 }
 
-function rectCenter(point) {
+function rectCenter(point, key) {
+  const size = plannerNodeSize(key);
   return {
-    x: (point?.x || 0) + RECT_WIDTH / 2,
-    y: (point?.y || 0) + RECT_HEIGHT / 2,
+    x: (point?.x || 0) + size.width / 2,
+    y: (point?.y || 0) + size.height / 2,
   };
 }
 
-function boxEdgeToward(center, other) {
+function boxEdgeToward(center, other, size) {
   const dx = other.x - center.x;
   const dy = other.y - center.y;
   if (dx === 0 && dy === 0) return center;
   const t = Math.min(
-    dx === 0 ? Infinity : RECT_WIDTH / 2 / Math.abs(dx),
-    dy === 0 ? Infinity : RECT_HEIGHT / 2 / Math.abs(dy)
+    dx === 0 ? Infinity : size.width / 2 / Math.abs(dx),
+    dy === 0 ? Infinity : size.height / 2 / Math.abs(dy)
   );
   return {
     x: center.x + dx * t,
@@ -166,7 +167,7 @@ export default function Planner() {
     const nextY = Math.max(0, event.clientY - rect.top + board.scrollTop - drag.offsetY);
     setPositions((prev) => ({
       ...prev,
-      [drag.key]: { x: nextX, y: nextY },
+      [drag.key]: snapPlannerPoint({ x: nextX, y: nextY }),
     }));
   }, []);
 
@@ -235,12 +236,13 @@ export default function Planner() {
     setLinkSourceKey(null);
   }
 
-  const boardExtent = OVERVIEW_STATUS_HEADINGS.reduce(
+  const boardExtent = PLANNER_FLOW_ITEMS.reduce(
     (extent, item) => {
       const point = positions[item.key] || { x: 0, y: 0 };
+      const size = plannerNodeSize(item.key);
       return {
-        width: Math.max(extent.width, point.x + RECT_WIDTH + GRID_ORIGIN + 80),
-        height: Math.max(extent.height, point.y + RECT_HEIGHT + GRID_ORIGIN + 80),
+        width: Math.max(extent.width, point.x + size.width + GRID_ORIGIN + 80),
+        height: Math.max(extent.height, point.y + size.height + GRID_ORIGIN + 80),
       };
     },
     { width: 0, height: 0 }
@@ -256,20 +258,22 @@ export default function Planner() {
     const drawn = [];
     for (const group of grouped.values()) {
       group.forEach((link, index) => {
-        const from = rectCenter(positions[link.from]);
-        const to = rectCenter(positions[link.to]);
+        const fromSize = plannerNodeSize(link.from);
+        const toSize = plannerNodeSize(link.to);
+        const from = rectCenter(positions[link.from], link.from);
+        const to = rectCenter(positions[link.to], link.to);
         const total = group.length;
         if (link.from === link.to) {
           const loop = 36 + index * 14;
           drawn.push({
             id: link.id,
             self: true,
-            d: `M ${from.x + RECT_WIDTH / 2} ${from.y - 10} C ${from.x + RECT_WIDTH / 2 + loop} ${from.y - 28 - index * 8}, ${from.x + RECT_WIDTH / 2 + loop} ${from.y + 28 + index * 8}, ${from.x + RECT_WIDTH / 2} ${from.y + 10}`,
+            d: `M ${from.x + fromSize.width / 2} ${from.y - 10} C ${from.x + fromSize.width / 2 + loop} ${from.y - 28 - index * 8}, ${from.x + fromSize.width / 2 + loop} ${from.y + 28 + index * 8}, ${from.x + fromSize.width / 2} ${from.y + 10}`,
           });
           return;
         }
-        const start = boxEdgeToward(from, to);
-        const end = boxEdgeToward(to, from);
+        const start = boxEdgeToward(from, to, fromSize);
+        const end = boxEdgeToward(to, from, toSize);
         const dx = end.x - start.x;
         const dy = end.y - start.y;
         const len = Math.hypot(dx, dy) || 1;
@@ -290,8 +294,8 @@ export default function Planner() {
   }, [links, positions]);
 
   const analysisRows = useMemo(() => {
-    const labels = Object.fromEntries(OVERVIEW_STATUS_HEADINGS.map((item) => [item.key, item.label]));
-    return OVERVIEW_STATUS_HEADINGS.map((item) => {
+    const labels = Object.fromEntries(PLANNER_FLOW_ITEMS.map((item) => [item.key, item.label]));
+    return PLANNER_FLOW_ITEMS.map((item) => {
       const dependsOn = [];
       const seen = new Set();
       for (const link of links) {
@@ -434,6 +438,15 @@ export default function Planner() {
                 minWidth: "100%",
                 height: boardExtent.height,
                 minHeight: "100%",
+                backgroundColor: WHITE,
+                backgroundImage: [
+                  `linear-gradient(to right, rgba(50, 50, 51, 0.22) 1px, transparent 1px)`,
+                  `linear-gradient(to bottom, rgba(50, 50, 51, 0.22) 1px, transparent 1px)`,
+                  `linear-gradient(to right, rgba(50, 50, 51, 0.10) 1px, transparent 1px)`,
+                  `linear-gradient(to bottom, rgba(50, 50, 51, 0.10) 1px, transparent 1px)`,
+                ].join(", "),
+                backgroundSize: `${PLANNER_SNAP_SIZE * 5}px ${PLANNER_SNAP_SIZE * 5}px, ${PLANNER_SNAP_SIZE * 5}px ${PLANNER_SNAP_SIZE * 5}px, ${PLANNER_SNAP_SIZE}px ${PLANNER_SNAP_SIZE}px, ${PLANNER_SNAP_SIZE}px ${PLANNER_SNAP_SIZE}px`,
+                backgroundPosition: "0 0",
               }}
             >
               <svg
@@ -535,11 +548,13 @@ export default function Planner() {
                 })}
               </svg>
 
-              {OVERVIEW_STATUS_HEADINGS.map((item, index) => {
+              {PLANNER_FLOW_ITEMS.map((item, index) => {
                 const point = positions[item.key] || { x: 0, y: 0 };
+                const size = plannerNodeSize(item.key);
                 const color = PASTEL_COLORS[index % PASTEL_COLORS.length];
                 const isDragging = draggingKey === item.key;
                 const isLinkSource = linkSourceKey === item.key;
+                const isStartBuilding = item.key === PLANNER_START_BUILDING_KEY;
                 return (
                   <div
                     key={item.key}
@@ -549,31 +564,52 @@ export default function Planner() {
                       position: "absolute",
                       left: point.x,
                       top: point.y,
-                      width: RECT_WIDTH,
-                      height: RECT_HEIGHT,
+                      width: size.width,
+                      height: size.height,
                       boxSizing: "border-box",
-                      background: color,
-                      border: isLinkSource ? `3px solid ${MONUMENT}` : `1px solid ${UI.outline}`,
-                      borderRadius: "10px",
+                      background: isStartBuilding ? "transparent" : color,
+                      border: isLinkSource
+                        ? `3px solid ${MONUMENT}`
+                        : isStartBuilding
+                          ? "none"
+                          : `1px solid ${UI.outline}`,
+                      borderRadius: isStartBuilding ? 0 : "10px",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      padding: "8px 10px",
+                      padding: isStartBuilding ? 0 : "8px 10px",
                       textAlign: "center",
                       fontSize: "0.95rem",
-                      fontWeight: 600,
+                      fontWeight: item.kind === "heading" ? 700 : 600,
                       color: MONUMENT,
                       cursor: linking ? "pointer" : isDragging ? "grabbing" : "grab",
                       boxShadow: isLinkSource
                         ? "0 0 0 3px rgba(50,50,51,0.18)"
                         : isDragging
                           ? "0 8px 20px rgba(0,0,0,0.18)"
-                          : "0 2px 8px rgba(0,0,0,0.08)",
+                          : isStartBuilding
+                            ? "none"
+                            : "0 2px 8px rgba(0,0,0,0.08)",
                       zIndex: isDragging || isLinkSource ? 20 : 1,
                       touchAction: "none",
                     }}
                   >
-                    {item.label}
+                    {isStartBuilding ? (
+                      <img
+                        src={startBuildingImage}
+                        alt="Start Building"
+                        draggable={false}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "contain",
+                          display: "block",
+                          pointerEvents: "none",
+                        }}
+                      />
+                    ) : (
+                      item.label
+                    )}
                   </div>
                 );
               })}

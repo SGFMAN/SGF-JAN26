@@ -3,6 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI } from "../utils/uiThemeTokens.js";
+import { isPermitPhaseStatus } from "../utils/projectStatus";
+import { DRAWINGS_STATUS } from "../utils/drawingsStatusRules";
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
@@ -13,6 +15,7 @@ export default function ApproveConcept() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const [projectName, setProjectName] = useState("");
+  const [isPostApproval, setIsPostApproval] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [isApproved, setIsApproved] = useState(false);
   const [error, setError] = useState("");
@@ -30,6 +33,12 @@ export default function ApproveConcept() {
           ? `${project.street}, ${project.suburb}`.trim() 
           : project?.name || "";
         setProjectName(name);
+        const workingDate = project?.drawings_working_approved_date;
+        setIsPostApproval(
+          isPermitPhaseStatus(project?.status) ||
+            String(project?.drawings_status || "").trim() === DRAWINGS_STATUS.COMPLETE ||
+            (workingDate != null && String(workingDate).trim() !== "")
+        );
       } catch (error) {
         console.error("Error fetching project:", error);
         setError("Project not found");
@@ -58,9 +67,12 @@ export default function ApproveConcept() {
         },
       });
 
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: response.statusText }));
-        throw new Error(errorData.error || "Failed to approve concept");
+        throw new Error(data.error || "Failed to approve drawings");
+      }
+      if (data.type === "post") {
+        setIsPostApproval(true);
       }
 
       setIsApproved(true);
@@ -105,10 +117,12 @@ export default function ApproveConcept() {
         {isApproved ? (
           <>
             <h1 style={{ fontSize: "2rem", marginBottom: "20px", color: WHITE }}>
-              Concept Approved
+              {isPostApproval ? "Drawings Approved" : "Concept Approved"}
             </h1>
             <p style={{ fontSize: "1.2rem", marginBottom: "40px", color: "var(--sgf-page-text)" }}>
-              Thank you for confirming your concept approval for {projectName || "this project"}.
+              {isPostApproval
+                ? `Thank you for confirming your drawing approval for ${projectName || "this project"}.`
+                : `Thank you for confirming your concept approval for ${projectName || "this project"}.`}
             </p>
             <p style={{ fontSize: "1rem", color: "var(--sgf-page-text)" }}>
               Your approval has been recorded and the team has been notified.
@@ -117,7 +131,7 @@ export default function ApproveConcept() {
         ) : (
           <>
             <h1 style={{ fontSize: "2rem", marginBottom: "20px", color: WHITE }}>
-              Confirm Concept Approval
+              {isPostApproval ? "Confirm Drawing Approval" : "Confirm Concept Approval"}
             </h1>
             {projectName && (
               <p style={{ fontSize: "1.2rem", marginBottom: "40px", color: "var(--sgf-page-text)" }}>
@@ -125,7 +139,9 @@ export default function ApproveConcept() {
               </p>
             )}
             <p style={{ fontSize: "1rem", marginBottom: "40px", color: "var(--sgf-page-text)" }}>
-              Please confirm that you approve the concept drawings for this project.
+              {isPostApproval
+                ? "Please confirm that you approve these drawings for this project."
+                : "Please confirm that you approve the concept drawings for this project."}
             </p>
 
             {error && (

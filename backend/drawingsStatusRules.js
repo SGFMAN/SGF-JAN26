@@ -84,11 +84,22 @@ function applyWorkingDrawingsApprovalRules(drawingsHistory, existingConceptDate)
   };
 }
 
+function applyPostApprovalRules(drawingsHistory) {
+  const today = todayIsoDate();
+  return {
+    history: updateLatestRevisionFlags(drawingsHistory, {
+      postApproved: true,
+      postApprovedDate: today,
+    }),
+  };
+}
+
 module.exports = {
   DRAWINGS_STATUS,
   parseDrawingsHistory,
   applyConceptApprovalRules,
   applyWorkingDrawingsApprovalRules,
+  applyPostApprovalRules,
   getDrawingsHolderResetOnApproval,
   todayIsoDate,
 };

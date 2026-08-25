@@ -79,9 +79,15 @@ function getConceptDrawingsStatusIndicator(project) {
   return indicatorRed();
 }
 
+function hasWorkingDrawingsApproved(project) {
+  const approvedDate = field(project, "drawings_working_approved_date", "drawingsWorkingApprovedDate");
+  if (approvedDate != null && String(approvedDate).trim() !== "") return true;
+  return getDrawingsStatus(project) === DRAWINGS_STATUS.COMPLETE;
+}
+
 function getWorkingDrawingsStatus(project) {
+  if (hasWorkingDrawingsApproved(project)) return "Complete";
   const status = getDrawingsStatus(project);
-  if (status === DRAWINGS_STATUS.COMPLETE) return "Complete";
   if (status === DRAWINGS_STATUS.WORKING_STAGE) return "In Progress";
   return "Incomplete";
 }
@@ -149,7 +155,12 @@ export function replaceContractAndColorStatusTokens(text, project) {
 }
 
 function getContractStatusIndicator(project) {
-  return isOverviewContractComplete(project) ? indicatorGreen() : indicatorRed();
+  if (isOverviewContractComplete(project)) return indicatorGreen();
+  const contractStatus = field(project, "contract_status", "contractStatus") || "Not Sent";
+  const supportingDocsStatus =
+    field(project, "supporting_documents_status", "supportingDocumentsStatus") || "Not Sent";
+  if (contractStatus === "Not Sent" && supportingDocsStatus === "Not Sent") return indicatorRed();
+  return indicatorOrange();
 }
 
 function overviewKindToIndicator(kind) {

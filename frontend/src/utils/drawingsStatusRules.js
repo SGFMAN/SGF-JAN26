@@ -91,8 +91,10 @@ export function applyConceptUploadRules(drawingsHistory) {
     history: updateLatestRevisionFlags(drawingsHistory, {
       conceptApproved: false,
       workingDrawingsApproved: false,
+      postApproved: false,
       conceptApprovedDate: null,
       workingDrawingsApprovedDate: null,
+      postApprovedDate: null,
       uploadKind: "concept",
     }),
     drawingsStatus: DRAWINGS_STATUS.CONCEPT_STAGE,
@@ -107,8 +109,10 @@ export function applyWorkingUploadRules(drawingsHistory) {
     history: updateLatestRevisionFlags(drawingsHistory, {
       conceptApproved: false,
       workingDrawingsApproved: false,
+      postApproved: false,
       conceptApprovedDate: null,
       workingDrawingsApprovedDate: null,
+      postApprovedDate: null,
       uploadKind: "working",
     }),
     drawingsStatus: DRAWINGS_STATUS.WORKING_STAGE,
@@ -183,12 +187,37 @@ export function applyWorkingDrawingsApprovalRules(drawingsHistory, existingConce
   };
 }
 
+/**
+ * Permit-phase Post Approval marker.
+ * Does not change drawings status, concept approval, or working-drawings approval.
+ */
+export function applyPostApprovalRules(drawingsHistory) {
+  const today = todayIsoDate();
+  return {
+    history: updateLatestRevisionFlags(drawingsHistory, {
+      postApproved: true,
+      postApprovedDate: today,
+    }),
+  };
+}
+
+export function isPostApprovalMode(project) {
+  if (!project) return false;
+  if (isPermitPhaseStatus(project.status)) return true;
+  const drawingsStatus = String(project.drawings_status || "").trim();
+  if (drawingsStatus === DRAWINGS_STATUS.COMPLETE) return true;
+  const workingDate = project.drawings_working_approved_date;
+  return workingDate != null && String(workingDate).trim() !== "";
+}
+
 export function newDrawingHistoryEntryFields() {
   return {
     conceptApproved: false,
     workingDrawingsApproved: false,
+    postApproved: false,
     conceptApprovedDate: null,
     workingDrawingsApprovedDate: null,
+    postApprovedDate: null,
   };
 }
 

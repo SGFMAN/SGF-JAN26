@@ -1,8 +1,7 @@
 /**
- * Quote list reminders: one daily audit at the configured Melbourne time.
- * Reminders 1–3: To = projects.email only. No CC, no client-contact fallback, no extra addresses.
- * Reminder 4 (Call Back List): one batched email to the configured SMTP To address.
- * Quotes that become due after the daily audit wait until the next day.
+ * Quote list reminders.
+ * Reminder 1: 24 hours after quote_added_at, checked once per Melbourne hour.
+ * Reminders 2–3 and Call Back List: Daily Check 1 only (relative to quote_added_at).
  */
 
 const nodemailer = require("nodemailer");
@@ -141,8 +140,26 @@ async function ensureDailyAuditColumn(pool) {
   await pool.query(`
     ALTER TABLE settings
       ADD COLUMN IF NOT EXISTS quote_callback_compiled_on DATE,
-      ADD COLUMN IF NOT EXISTS quote_reminders_audited_on DATE
+      ADD COLUMN IF NOT EXISTS quote_reminders_audited_on DATE,
+      ADD COLUMN IF NOT EXISTS quote_reminder_1_hourly_on TEXT
   `);
+}
+
+function melbourneHourKey(clock) {
+  const hour = Math.floor(clock.minutesOfDay / 60);
+  return `${clock.date} ${String(hour).padStart(2, "0")}:00`;
+}
+
+async function getReminder1HourlyKey(pool) {
+  const r = await pool.query(`SELECT quote_reminder_1_hourly_on FROM settings WHERE id = 1`);
+  return String(r.rows[0]?.quote_reminder_1_hourly_on || "");
+}
+
+async function markReminder1HourlyDone(pool, hourKey) {
+  await pool.query(
+    `UPDATE settings SET quote_reminder_1_hourly_on = $1, updated_at = NOW() WHERE id = 1`,
+    [hourKey]
+  );
 }
 
 function dateText(raw) {
@@ -241,7 +258,8 @@ function highestDueClientReminder(row, reminders, delayUnit) {
   const alreadyStarted = sent.some(Boolean);
   let highestDue = -1;
   let nextSequentialDue = -1;
-  for (let i = 0; i < CALLBACK_LIST_INDEX; i += 1) {
+  // Reminders 2 and 3 only. Reminder 1 is sent by the hourly check.
+  for (let i = 1; i < CALLBACK_LIST_INDEX; i += 1) {
     const reminder = reminders[i];
     if (!reminder?.enabled) continue;
     const seconds = delaySeconds(reminder.delay, delayUnit);
@@ -289,11 +307,11 @@ async function restoreClientReminders(pool, id, highest, previous) {
 }
 
 async function processClientReminders(pool, helpers, reminders, delayUnit, settings) {
-  const enabled = (reminders || []).slice(0, CALLBACK_LIST_INDEX).some((row) => row?.enabled);
+  const enabled = (reminders || []).slice(1, CALLBACK_LIST_INDEX).some((row) => row?.enabled);
   if (!enabled) return { done: true };
 
   const templates = [];
-  for (let i = 0; i < CALLBACK_LIST_INDEX; i += 1) {
+  for (let i = 1; i < CALLBACK_LIST_INDEX; i += 1) {
     const reminder = reminders[i];
     if (!reminder?.enabled) {
       templates[i] = null;
@@ -363,6 +381,98 @@ async function processClientReminders(pool, helpers, reminders, delayUnit, setti
   }
 
   return { done: due.rows.length < MAX_SENDS_PER_REMINDER_PER_AUDIT || processedDue === 0 };
+}
+
+async function processReminder1Hourly(pool, helpers, reminder, settings) {
+  if (!reminder?.enabled) return { done: true, sent: 0 };
+  const templateName = String(reminder.templateName || "").trim();
+  if (!templateName) return { done: true, sent: 0 };
+  const template = await loadTemplateByName(pool, templateName);
+  if (!template) {
+    console.warn(`[quote-reminders] template "${templateName}" not found; skipping reminder 1`);
+    return { done: true, sent: 0 };
+  }
+
+  const due = await pool.query(
+    `SELECT id, email, client_name, suburb, street, state, phone, quote_added_at,
+            quote_reminder_1_sent_at
+     FROM projects
+     WHERE status = 'Quote'
+       AND quote_active IS TRUE
+       AND quote_added_at IS NOT NULL
+       AND quote_reminder_1_sent_at IS NULL
+       AND quote_reminder_4_sent_at IS NULL
+       AND NULLIF(BTRIM(COALESCE(email, '')), '') IS NOT NULL
+       AND quote_added_at <= NOW() - interval '24 hours'
+     ORDER BY quote_added_at ASC, id ASC
+     LIMIT $1`,
+    [MAX_SENDS_PER_REMINDER_PER_AUDIT]
+  );
+
+  let sent = 0;
+  let processedDue = 0;
+  for (const row of due.rows) {
+    processedDue += 1;
+    const to = quoteListEmailOnly(row.email);
+    if (!to) continue;
+
+    const claimed = await pool.query(
+      `UPDATE projects
+       SET quote_reminder_1_sent_at = NOW(), updated_at = NOW()
+       WHERE id = $1
+         AND status = 'Quote'
+         AND quote_active IS TRUE
+         AND quote_reminder_1_sent_at IS NULL
+         AND quote_reminder_4_sent_at IS NULL
+       RETURNING id`,
+      [row.id]
+    );
+    if (!claimed.rows.length) continue;
+
+    const quote = { ...row, email: to, name: row.client_name || "" };
+    try {
+      const from = reminderFromAddress(settings, template);
+      if (!from) {
+        await pool.query(
+          `UPDATE projects SET quote_reminder_1_sent_at = NULL, updated_at = NOW() WHERE id = $1`,
+          [row.id]
+        );
+        console.warn(`[quote-reminders] no From address for reminder 1; skipping project ${row.id}`);
+        continue;
+      }
+      await sendQuoteReminderEmail(helpers, {
+        to,
+        from,
+        subject: replaceQuoteReminderTokens(template.subject || "", quote),
+        htmlBody: replaceQuoteReminderTokens(template.body || "", quote),
+      });
+      sent += 1;
+      console.log(`[quote-reminders] reminder 1 sent to ${to} (project ${row.id})`);
+    } catch (e) {
+      await pool.query(
+        `UPDATE projects SET quote_reminder_1_sent_at = NULL, updated_at = NOW() WHERE id = $1`,
+        [row.id]
+      );
+      console.error(`[quote-reminders] reminder 1 failed for project ${row.id}:`, e.message || e);
+    }
+  }
+
+  return { done: due.rows.length < MAX_SENDS_PER_REMINDER_PER_AUDIT || processedDue === 0, sent };
+}
+
+async function runReminder1HourlyIfNeeded(pool, helpers, reminder, settings, clock) {
+  if (!reminder?.enabled) return;
+  const hourKey = melbourneHourKey(clock);
+  const already = await getReminder1HourlyKey(pool);
+  if (already === hourKey) return;
+  const result = await processReminder1Hourly(pool, helpers, reminder, settings);
+  if (!result?.done) return;
+  await markReminder1HourlyDone(pool, hourKey);
+  console.log(
+    `[quote-reminders] reminder 1 hourly ${hourKey}: ${
+      result.sent ? `sent ${result.sent}` : "none due"
+    }`
+  );
 }
 
 async function processCallbackList(pool, helpers, reminder, delayUnit, settings) {
@@ -446,17 +556,20 @@ async function runQuoteReminderTick(pool, helpers) {
   await ensureDailyAuditColumn(pool);
 
   const settings = await loadReminderSettings(pool);
-  const auditHour = sanitizeAuditHour(settings?.auditHour);
-  const clock = melbourneClock();
-  if (clock.minutesOfDay < auditHour * 60) return;
-  const alreadyAudited = await getDailyAuditDate(pool);
-  if (alreadyAudited === clock.date) return;
-
   const reminders = settings?.quotes?.reminders || [];
   const delayUnit =
     settings?.delayUnit === "days" || settings?.delayUnit === "minutes"
       ? settings.delayUnit
       : "hours";
+  const clock = melbourneClock();
+
+  await runReminder1HourlyIfNeeded(pool, helpers, reminders[0], settings, clock);
+
+  const auditHour = sanitizeAuditHour(settings?.auditHour);
+  if (clock.minutesOfDay < auditHour * 60) return;
+  const alreadyAudited = await getDailyAuditDate(pool);
+  if (alreadyAudited === clock.date) return;
+
   const client = await processClientReminders(pool, helpers, reminders, delayUnit, settings);
   if (!client?.done) return;
   const callback = await processCallbackList(
@@ -469,7 +582,7 @@ async function runQuoteReminderTick(pool, helpers) {
   if (!callback?.ok) return;
 
   await markDailyAuditDone(pool, clock.date);
-  console.log(`[quote-reminders] daily audit complete for ${clock.date} at ${auditHour}:00`);
+  console.log(`[quote-reminders] daily check 1 complete for ${clock.date} at ${auditHour}:00`);
 }
 
 function startQuoteReminderScheduler(helpers) {

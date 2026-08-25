@@ -181,7 +181,7 @@ async function ensureProjectPaymentColumns(pool) {
   }
 }
 const { buildProjectsListQuery } = require("./projectQueries");
-const { applyConceptApprovalRules, parseDrawingsHistory } = require("./drawingsStatusRules");
+const { applyConceptApprovalRules, applyPostApprovalRules, parseDrawingsHistory, DRAWINGS_STATUS } = require("./drawingsStatusRules");
 const {
   SESSION_COOKIE_NAME,
   createStaffSession,
@@ -13374,7 +13374,7 @@ app.post("/api/projects/:id/approve-concept", async (req, res) => {
   try {
     // Get current project data
     const projectResult = await pool.query(
-      "SELECT drawings_history, drawings_status, name, status, stream, suburb, street, state, deposit, project_cost, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, site_visit_status, site_visit_date, site_visit_time, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_pdf_location, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, draftsperson, survey_status, soil_status FROM projects WHERE id = $1",
+      "SELECT drawings_history, drawings_status, drawings_working_approved_date, drawings_concept_approved_date, name, status, stream, suburb, street, state, deposit, project_cost, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, site_visit_status, site_visit_date, site_visit_time, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_pdf_location, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, draftsperson, survey_status, soil_status FROM projects WHERE id = $1",
       [id]
     );
 
@@ -13389,6 +13389,33 @@ app.post("/api/projects/:id/approve-concept", async (req, res) => {
 
     if (drawingsHistory.length === 0) {
       return res.status(400).json({ error: "No drawings have been uploaded yet" });
+    }
+
+    const workingDate = project.drawings_working_approved_date;
+    const usePostApproval =
+      normalizeProjectStatus(project.status) === STATUS_PERMIT ||
+      String(project.drawings_status || "").trim() === DRAWINGS_STATUS.COMPLETE ||
+      (workingDate != null && String(workingDate).trim() !== "");
+
+    if (usePostApproval) {
+      const { history: postHistory } = applyPostApprovalRules(drawingsHistory);
+      const postResult = await pool.query(
+        `UPDATE projects
+         SET drawings_history = $1,
+             updated_at = NOW()
+         WHERE id = $2
+         RETURNING id, name, drawings_status, drawings_history`,
+        [JSON.stringify(postHistory), id]
+      );
+      if (postResult.rowCount === 0) {
+        return res.status(404).json({ error: "Failed to update project" });
+      }
+      return res.json({
+        success: true,
+        type: "post",
+        message: "Post approval recorded",
+        project: postResult.rows[0],
+      });
     }
 
     const {
