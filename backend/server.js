@@ -93,6 +93,11 @@ const {
 } = require("./quotes");
 const { parseReminderSettingsColumn } = require("./reminderSettings");
 const { startQuoteReminderScheduler, previewQuoteReminder1, sendQuoteReminder1Manual } = require("./quoteReminders");
+const {
+  listQuoteCallbackLists,
+  setQuoteCallbackItemCalled,
+  deleteQuoteCallbackList,
+} = require("./quoteCallbackLists");
 const { startWeeklyRoundupScheduler } = require("./weeklyRoundup");
 const { ensureMapQuoteItemsTable, listQuoteItems, saveQuoteItems } = require("./mapQuoteItems");
 const {
@@ -13071,6 +13076,54 @@ app.post("/api/quotes/:id/reminder-1-send", async (req, res) => {
   } catch (e) {
     console.error("[quotes] reminder-1 send error:", e);
     res.status(500).json({ error: e.message || "Failed to send reminder email" });
+  }
+});
+
+app.get("/api/quote-callback-lists", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await requireHotlistSalesAccess(req, res))) return;
+  try {
+    res.json(await listQuoteCallbackLists(pool));
+  } catch (e) {
+    console.error("[quote-callback-lists] list error:", e);
+    res.status(500).json({ error: e.message || "Failed to load call back lists" });
+  }
+});
+
+app.put("/api/quote-callback-lists/:id/items/:itemKey", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await requireHotlistSalesAccess(req, res))) return;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const called = req.body?.called;
+    if (called === undefined) return res.status(400).json({ error: "called is required" });
+    const result = await setQuoteCallbackItemCalled(
+      pool,
+      id,
+      req.params.itemKey,
+      called === true || called === "true" || called === 1 || called === "1"
+    );
+    if (result.notFound) return res.status(404).json({ error: "not found" });
+    res.json(result.list);
+  } catch (e) {
+    console.error("[quote-callback-lists] update item error:", e);
+    res.status(500).json({ error: e.message || "Failed to update call back list" });
+  }
+});
+
+app.delete("/api/quote-callback-lists/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await requireHotlistSalesAccess(req, res))) return;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const result = await deleteQuoteCallbackList(pool, id);
+    if (result.notFound) return res.status(404).json({ error: "not found" });
+    res.json({ ok: true, id: result.deleted });
+  } catch (e) {
+    console.error("[quote-callback-lists] delete error:", e);
+    res.status(500).json({ error: e.message || "Failed to erase call back list" });
   }
 });
 

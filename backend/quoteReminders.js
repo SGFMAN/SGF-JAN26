@@ -12,6 +12,7 @@ const {
   CALLBACK_LIST_TEMPLATE_NAME,
   sanitizeAuditHour,
 } = require("./reminderSettings");
+const { saveQuoteCallbackList } = require("./quoteCallbackLists");
 
 const SENT_COLUMNS = [
   "quote_reminder_1_sent_at",
@@ -539,6 +540,14 @@ async function processCallbackList(pool, helpers, reminder, delayUnit, settings)
     console.log(
       `[quote-reminders] Call Back List sent to ${to} (${claimedRows.length} quote${claimedRows.length === 1 ? "" : "s"})`
     );
+    try {
+      await saveQuoteCallbackList(pool, { toEmail: to, rows: claimedRows });
+    } catch (saveErr) {
+      console.error(
+        "[quote-reminders] failed to store Call Back List snapshot:",
+        saveErr.message || saveErr
+      );
+    }
     return { ok: true };
   } catch (e) {
     await pool.query(

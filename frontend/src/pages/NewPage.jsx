@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import MainSidebarMenu from "../components/MainSidebarMenu";
 import ModalBackdrop from "../components/ModalBackdrop";
 import NewProject2 from "./NewProject_2_ClientDetails";
+import QuoteCallbackLists from "./QuoteCallbackLists";
 import { getApiHeaders } from "../utils/auth";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { parseAustralianAddress, STATE_OPTIONS } from "../utils/parseAustralianAddress.js";
@@ -353,6 +354,7 @@ export default function NewPage() {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
   const [error, setError] = useState(null);
+  const [showCallbackLists, setShowCallbackLists] = useState(false);
   const [, setUiButtonStyleRevision] = useState(0);
 
   useEffect(() => {
@@ -788,48 +790,91 @@ export default function NewPage() {
               flexShrink: 0,
             }}
           >
-            <input
-              ref={searchRef}
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search name, email, address or phone"
-              style={{
-                flex: 1,
-                minWidth: 0,
-                padding: "10px 12px",
-                borderRadius: "8px",
-                border: `1px solid ${GRID_LINE}`,
-                fontSize: "1rem",
-                background: WHITE,
-                color: MONUMENT,
-                boxSizing: "border-box",
-              }}
-              autoComplete="off"
-            />
-            <button
-              type="button"
-              disabled={busy}
-              onClick={openNewQuotePasteModal}
-              style={{
-                background: MONUMENT,
-                color: PAGE_TEXT,
-                border: "none",
-                borderRadius: "10px",
-                padding: "10px 20px",
-                fontSize: "1rem",
-                fontWeight: 500,
-                cursor: busy ? "default" : "pointer",
-                opacity: busy ? 0.6 : 1,
-                whiteSpace: "nowrap",
-                flexShrink: 0,
-              }}
-            >
-              New Quote
-            </button>
+            {showCallbackLists ? (
+              <button
+                type="button"
+                onClick={() => setShowCallbackLists(false)}
+                style={{
+                  background: MONUMENT,
+                  color: PAGE_TEXT,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "10px 20px",
+                  fontSize: "1rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                }}
+              >
+                Back to Quotes
+              </button>
+            ) : (
+              <>
+                <input
+                  ref={searchRef}
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search name, email, address or phone"
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${GRID_LINE}`,
+                    fontSize: "1rem",
+                    background: WHITE,
+                    color: MONUMENT,
+                    boxSizing: "border-box",
+                  }}
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCallbackLists(true)}
+                  style={{
+                    background: MONUMENT,
+                    color: PAGE_TEXT,
+                    border: "none",
+                    borderRadius: "10px",
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                  }}
+                >
+                  Call Back Lists
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={openNewQuotePasteModal}
+                  style={{
+                    background: MONUMENT,
+                    color: PAGE_TEXT,
+                    border: "none",
+                    borderRadius: "10px",
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    cursor: busy ? "default" : "pointer",
+                    opacity: busy ? 0.6 : 1,
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                  }}
+                >
+                  New Quote
+                </button>
+              </>
+            )}
           </div>
 
-          {loading ? (
+          {showCallbackLists ? (
+            <QuoteCallbackLists />
+          ) : loading ? (
             <div style={{ fontSize: "1rem" }}>Loading…</div>
           ) : error ? (
             <div style={{ color: "#cc3333", fontSize: "1rem" }}>Error: {error}</div>

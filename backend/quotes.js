@@ -4,6 +4,7 @@
  */
 
 const QUOTE_STATUS = "Quote";
+const { ensureQuoteCallbackListsTable } = require("./quoteCallbackLists");
 
 const QUOTE_SELECT = `id, name, status, suburb, street, state, client_name, email, phone,
   quote_active, quote_contact, quote_added_at, quote_reminder_1_sent_at, quote_reminder_2_sent_at, quote_reminder_3_sent_at, quote_reminder_4_sent_at, updated_at`;
@@ -217,10 +218,19 @@ function normalizeQuoteInput(body = {}) {
 
 async function listQuotes(pool) {
   await ensureQuoteProjectColumns(pool);
+  await ensureQuoteCallbackListsTable(pool);
   const r = await pool.query(
     `SELECT ${QUOTE_SELECT}
      FROM projects
      WHERE status = $1
+       AND quote_reminder_4_sent_at IS NULL
+       AND NOT EXISTS (
+         SELECT 1
+         FROM quote_callback_lists lists,
+              jsonb_array_elements(lists.items) item
+         WHERE (item->>'projectId') ~ '^[0-9]+$'
+           AND (item->>'projectId')::int = projects.id
+       )
      ORDER BY quote_added_at DESC NULLS LAST, id DESC`,
     [QUOTE_STATUS]
   );
