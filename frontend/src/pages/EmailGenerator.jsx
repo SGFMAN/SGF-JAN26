@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import useAppLogo from "../hooks/useAppLogo.js";
 import ToolsSidebarMenu from "../components/ToolsSidebarMenu";
+import { getApiHeaders } from "../utils/auth";
 
 import { UI } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
@@ -28,6 +29,7 @@ export default function EmailGenerator() {
   // Suggestion state
   const [suggestions, setSuggestions] = useState({}); // Map of pointIndex -> suggestion data
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const suggestRequestRef = useRef(0);
   
   // Modal states
   const [showAnswerModal, setShowAnswerModal] = useState(false);
@@ -45,9 +47,7 @@ export default function EmailGenerator() {
     try {
       const response = await fetch(`${API_URL}/api/email-generator/analyze`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: getApiHeaders(),
         body: JSON.stringify({ text: inputText.trim() }),
       });
 
@@ -242,40 +242,48 @@ export default function EmailGenerator() {
     setAnswers(newAnswers);
   };
 
-  // Fetch suggestion for a question
+  // Fetch suggestion from learned_answers in the database
   const fetchSuggestion = async (question, pointIndex) => {
-    if (!question || question.trim().length === 0) return;
-
+    if (!question || question.trim().length === 0) return { suggested: false };
+    const requestId = ++suggestRequestRef.current;
     setLoadingSuggestions(true);
     try {
       const response = await fetch(`${API_URL}/api/email-generator/suggest`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: getApiHeaders(),
         body: JSON.stringify({ question }),
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.suggested) {
-          setSuggestions(prev => ({
-            ...prev,
-            [pointIndex]: data,
-          }));
-        } else {
-          setSuggestions(prev => {
-            const newSuggestions = { ...prev };
-            delete newSuggestions[pointIndex];
-            return newSuggestions;
-          });
-        }
+      if (requestId !== suggestRequestRef.current) return { suggested: false };
+
+      if (!response.ok) {
+        setSuggestions((prev) => {
+          const next = { ...prev };
+          delete next[pointIndex];
+          return next;
+        });
+        return { suggested: false };
       }
+
+      const data = await response.json();
+      if (data.suggested) {
+        setSuggestions((prev) => ({
+          ...prev,
+          [pointIndex]: data,
+        }));
+        return data;
+      }
+      setSuggestions((prev) => {
+        const next = { ...prev };
+        delete next[pointIndex];
+        return next;
+      });
+      return { suggested: false };
     } catch (err) {
       console.error("Error fetching suggestion:", err);
-      // Don't show error to user, just continue without suggestion
+      return { suggested: false };
     } finally {
-      setLoadingSuggestions(false);
+      if (requestId === suggestRequestRef.current) setLoadingSuggestions(false);
     }
   };
 
@@ -329,7 +337,6 @@ export default function EmailGenerator() {
     if (currentPointIndex < analysisResult.points.length - 1) {
       const nextIndex = currentPointIndex + 1;
       setCurrentPointIndex(nextIndex);
-      // Fetch suggestion for next point
       fetchSuggestion(analysisResult.points[nextIndex].question, nextIndex);
     } else {
       // Last point - finish and compile
@@ -346,17 +353,16 @@ export default function EmailGenerator() {
     if (currentPointIndex > 0) {
       const prevIndex = currentPointIndex - 1;
       setCurrentPointIndex(prevIndex);
-      // Fetch suggestion for previous point if not already loaded
-      if (!suggestions[prevIndex]) {
-        fetchSuggestion(analysisResult.points[prevIndex].question, prevIndex);
-      }
+      fetchSuggestion(analysisResult.points[prevIndex].question, prevIndex);
     }
   };
 
   const handleSkip = () => {
     handleAnswerChange("");
     if (currentPointIndex < analysisResult.points.length - 1) {
-      setCurrentPointIndex(currentPointIndex + 1);
+      const nextIndex = currentPointIndex + 1;
+      setCurrentPointIndex(nextIndex);
+      fetchSuggestion(analysisResult.points[nextIndex].question, nextIndex);
     } else {
       handleFinish();
     }
@@ -367,17 +373,17 @@ export default function EmailGenerator() {
     if (!question || !answer || !question.trim() || !answer.trim()) return;
 
     try {
-      await fetch(`${API_URL}/api/email-generator/save-answer`, {
+      const response = await fetch(`${API_URL}/api/email-generator/save-answer`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: getApiHeaders(),
         body: JSON.stringify({
           question: question.trim(),
           answer: answer.trim(),
         }),
       });
-      // Silently save, don't show errors to user
+      if (!response.ok) {
+        console.error("Error saving answer:", response.status);
+      }
     } catch (err) {
       console.error("Error saving answer:", err);
       // Don't show error to user, just log it
@@ -415,13 +421,12 @@ export default function EmailGenerator() {
     try {
       const response = await fetch(`${API_URL}/api/email-generator/compile`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: getApiHeaders(),
         body: JSON.stringify({
           points: analysisResult.points,
           answers: processedAnswers,
           originalText: inputText,
+          clientName: analysisResult.clientName || "",
         }),
       });
 
@@ -795,7 +800,7 @@ export default function EmailGenerator() {
                 </div>
               )}
               
-              {!loadingSuggestions && suggestions[currentPointIndex] && !answers[currentPointIndex] && (
+              {!loadingSuggestions && suggestions[currentPointIndex] && (
                 <div
                   style={{
                     background: "#f0f7ff",
@@ -1044,32 +1049,58 @@ export default function EmailGenerator() {
                 >
                   Body
                 </label>
-                <div
-                  style={{
-                    padding: "12px",
-                    borderRadius: "8px",
-                    border: `1px solid ${SECTION_GREY}`,
-                    fontSize: "0.95rem",
-                    color: MONUMENT,
-                    background: UI.inputBg,
-                    minHeight: "200px",
-                    whiteSpace: "pre-wrap",
-                    lineHeight: "1.6",
-                  }}
-                >
-                  {finalDraft.body}
-                </div>
+                {finalDraft.bodyHtml ? (
+                  <div
+                    style={{
+                      padding: "12px",
+                      borderRadius: "8px",
+                      border: `1px solid ${SECTION_GREY}`,
+                      fontSize: "0.95rem",
+                      color: MONUMENT,
+                      background: UI.inputBg,
+                      minHeight: "200px",
+                      lineHeight: "1.6",
+                    }}
+                    dangerouslySetInnerHTML={{ __html: finalDraft.bodyHtml }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      padding: "12px",
+                      borderRadius: "8px",
+                      border: `1px solid ${SECTION_GREY}`,
+                      fontSize: "0.95rem",
+                      color: MONUMENT,
+                      background: UI.inputBg,
+                      minHeight: "200px",
+                      whiteSpace: "pre-wrap",
+                      lineHeight: "1.6",
+                    }}
+                  >
+                    {finalDraft.body}
+                  </div>
+                )}
               </div>
             </div>
 
             <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "24px" }}>
               <button
-                onClick={() => {
-                  // Copy to clipboard
-                  const emailText = `Subject: ${finalDraft.subject}\n\n${finalDraft.body}`;
-                  navigator.clipboard.writeText(emailText).then(() => {
-                    alert("Email draft copied to clipboard!");
-                  });
+                onClick={async () => {
+                  try {
+                    const response = await fetch(`${API_URL}/api/email-generator/copy-to-clipboard`, {
+                      method: "POST",
+                      headers: getApiHeaders(),
+                      body: JSON.stringify({
+                        html: finalDraft.bodyHtml || "",
+                        rtf: finalDraft.bodyRtf || "",
+                      }),
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok) throw new Error(data.error || `Failed (${response.status})`);
+                    alert("Copied. Paste into your Outlook reply.");
+                  } catch (err) {
+                    alert(err.message || "Could not copy for Outlook.");
+                  }
                 }}
                 style={{
                   padding: "10px 20px",

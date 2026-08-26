@@ -24,69 +24,14 @@ const fieldStyle = {
   boxSizing: "border-box",
 };
 
-function ReadOnlyField({ label, value }) {
-  return (
-    <div className="client-portal-project-field">
-      <div className="client-portal-project-field__label">{label}</div>
-      <div className="client-portal-project-field__value">
-        {value == null || String(value).trim() === "" ? "—" : String(value)}
-      </div>
-    </div>
-  );
-}
-
 function ClientProjectSection({ project, showAddress }) {
-  const info = project.projectInfo || {};
-  const drawingUrl = `${API_URL}/api/client/projects/${project.projectId}/drawing`;
-
   return (
     <section className="client-portal-project">
-      <div className="client-portal-project__overview">
+      <div className="overview-page client-portal-project__overview">
         {showAddress ? (
           <h2 className="client-portal-project__address">{project.address || "Project"}</h2>
         ) : null}
-        <DesignPhaseStatusPanel project={project} readOnly showHeading />
-      </div>
-
-      <div className="client-portal-project__columns">
-        <section className="client-portal-project-info" aria-labelledby={`project-info-${project.projectId}`}>
-          <h2 id={`project-info-${project.projectId}`} className="client-portal-column-heading">
-            Project Info
-          </h2>
-          <div className="client-portal-project-info__panel">
-            <div className="client-portal-project-info__status-row">
-              <ReadOnlyField label="Status" value={info.status} />
-              {info.onHold ? <span className="client-portal-on-hold">On Hold</span> : null}
-            </div>
-            <ReadOnlyField label="Street" value={info.street} />
-            <div className="client-portal-project-info__split">
-              <ReadOnlyField label="Suburb" value={info.suburb} />
-              <ReadOnlyField label="State" value={info.state} />
-            </div>
-            <div className="client-portal-project-info__split">
-              <ReadOnlyField label="Specs" value={info.specs} />
-              <ReadOnlyField label="Classification" value={info.classification} />
-            </div>
-            {info.qpNumber ? <ReadOnlyField label="QP Number" value={info.qpNumber} /> : null}
-          </div>
-        </section>
-
-        <section className="client-portal-drawing" aria-labelledby={`drawing-${project.projectId}`}>
-          <h2 id={`drawing-${project.projectId}`} className="client-portal-column-heading">
-            Drawings
-          </h2>
-          <div className="client-portal-drawing__viewer">
-            {project.hasDrawing ? (
-              <iframe
-                title={`Current drawings for ${project.address || "project"}`}
-                src={drawingUrl}
-                className="client-portal-drawing__frame"
-              />
-            ) : (
-              <div className="client-portal-drawing__empty">No drawing is available yet.</div>
-            )}
-          </div>
-        </section>
+        <DesignPhaseStatusPanel project={project} readOnly showHeading={false} />
       </div>
     </section>
   );
@@ -240,7 +185,7 @@ export default function ClientPortalApp() {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    overflow: "auto",
+    overflow: phase === "app" ? "hidden" : "auto",
     padding: phase === "app" ? "0" : "32px 16px 48px",
     boxSizing: "border-box",
   };

@@ -66,6 +66,7 @@ import {
 import grassImage from "../images/grass.jpg";
 import skyImage from "../images/sky.jpg";
 import { UI } from "../utils/uiThemeTokens.js";
+import { addTimberBoundaryFence } from "../utils/timberFence.js";
 
 export const BUILDING_3D_PARTS = Object.freeze({
   SUBFLOOR: "subfloor",
@@ -467,10 +468,12 @@ function addCornerColumn(parent, {
  * shape. Otherwise the default rectangle is used.
  *
  * `embedded`: render inline (Colour Settings) instead of a full-screen overlay.
+ * `rightPanel`: optional side menu (Colour Settings). View/render buttons sit above it.
  */
 export default function Building3DModal({
   onClose,
   embedded = false,
+  rightPanel = null,
   title = "3D Unit",
   widthM = DEFAULT_BUILDING_3D.widthM,
   depthM = DEFAULT_BUILDING_3D.depthM,
@@ -502,6 +505,9 @@ export default function Building3DModal({
   finishes = null,
   /** { cabinetImageUrl, cabinetColorHex, benchtopImageUrl, benchtopColorHex } */
   kitchenFinishes = null,
+  showFence = DEFAULT_BUILDING_3D.showFence,
+  showSubfloor = DEFAULT_BUILDING_3D.showSubfloor,
+  showWall = DEFAULT_BUILDING_3D.showWall,
 }) {
   const CLADDING_HEIGHT_M =
     Number.isFinite(Number(wallHeightM)) && Number(wallHeightM) > 0.5
@@ -690,10 +696,11 @@ export default function Building3DModal({
     );
     const bounds = footprintBounds(ring);
     const spanM = Math.max(bounds.spanX, bounds.spanZ, 1);
+    const groundSize = Math.max(40, Math.ceil(spanM + 24));
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87c4ef);
-    scene.fog = new THREE.Fog(0xb7daf5, Math.max(28, spanM * 2.2), Math.max(70, spanM * 5.5));
+    scene.fog = new THREE.Fog(0xb7daf5, Math.max(48, spanM * 2.8), Math.max(90, groundSize * 2.4));
 
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
     // preserveDrawingBuffer so we can capture the current view for AI render.
@@ -741,8 +748,8 @@ export default function Building3DModal({
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.set(1024, 1024);
     keyLight.shadow.camera.near = 1;
-    keyLight.shadow.camera.far = 80;
-    const shadowSpan = Math.max(18, spanM + 10);
+    keyLight.shadow.camera.far = 160;
+    const shadowSpan = groundSize / 2 + 4;
     keyLight.shadow.camera.left = -shadowSpan;
     keyLight.shadow.camera.right = shadowSpan;
     keyLight.shadow.camera.top = shadowSpan;
@@ -2302,7 +2309,6 @@ export default function Building3DModal({
         });
       }
 
-      const groundSize = Math.max(40, Math.ceil(spanM + 24));
       const grassTexture = textureLoader.load(grassImage);
       grassTexture.wrapS = THREE.RepeatWrapping;
       grassTexture.wrapT = THREE.RepeatWrapping;
@@ -2324,6 +2330,17 @@ export default function Building3DModal({
       ground.position.y = -0.01;
       ground.receiveShadow = true;
       scene.add(ground);
+      if (showFence) addTimberBoundaryFence(scene, groundSize);
+      const setPartVisible = (partId, visible) => {
+        const obj = modelGroup.getObjectByName(partId);
+        if (obj) obj.visible = visible;
+      };
+      setPartVisible(BUILDING_3D_PARTS.SUBFLOOR, showSubfloor);
+      setPartVisible(BUILDING_3D_PARTS.CORNER_COLUMNS, showSubfloor);
+      setPartVisible(BUILDING_3D_PARTS.CLADDING, showWall);
+      setPartVisible(BUILDING_3D_PARTS.WINDOWS, showWall);
+      setPartVisible(BUILDING_3D_PARTS.DOORS, showWall);
+      setPartVisible(BUILDING_3D_PARTS.SLIDING_DOORS, showWall);
       setError("");
     } catch (err) {
       setError(err?.message || "Could not build the 3D unit");
@@ -2659,7 +2676,7 @@ export default function Building3DModal({
         container.removeChild(renderer.domElement);
       }
     };
-  }, [buildModel, depthM, footprintKey, footprintPoints, roofPointsKey, roofPoints, roofPivotKey, roofPivotLine, deckPointsKey, resolvedDecks, kitchenBenchesKey, resolvedKitchenBenches, robesKey, resolvedRobes, windowsKey, windows, doorsKey, doors, slidingDoorsKey, slidingDoors, internalWallsKey, internalWallSegments, internalDoorsKey, internalDoors, flooringPointsKey, flooringPoints, hybridRegionsKey, hybridRegions, tilesRegionsKey, tilesRegions, carpetRegionsKey, carpetRegions, flooringImagesKey, flooringImages, flooringScalesKey, flooringScales, calibrationKey, calibration, subfloorHeightM, wallHeightM, widthM, finishesKey, finishHex, kitchenFinishesKey, kitchenFinishes]);
+  }, [buildModel, depthM, footprintKey, footprintPoints, roofPointsKey, roofPoints, roofPivotKey, roofPivotLine, deckPointsKey, resolvedDecks, kitchenBenchesKey, resolvedKitchenBenches, robesKey, resolvedRobes, windowsKey, windows, doorsKey, doors, slidingDoorsKey, slidingDoors, internalWallsKey, internalWallSegments, internalDoorsKey, internalDoors, flooringPointsKey, flooringPoints, hybridRegionsKey, hybridRegions, tilesRegionsKey, tilesRegions, carpetRegionsKey, carpetRegions, flooringImagesKey, flooringImages, flooringScalesKey, flooringScales, calibrationKey, calibration, subfloorHeightM, wallHeightM, widthM, finishesKey, finishHex, kitchenFinishesKey, kitchenFinishes, showFence, showSubfloor, showWall]);
 
   function openRenderOptions() {
     if (renderBusy) return;
@@ -2772,6 +2789,128 @@ export default function Building3DModal({
     fontWeight: 600,
     cursor: "pointer",
   };
+  const sideBtnStyle = ({ active = false, walk = false, disabled = false } = {}) => ({
+    padding: "8px 14px",
+    borderRadius: "8px",
+    border:
+      walk && active
+        ? "1px solid rgba(22, 163, 74, 0.85)"
+        : "1px solid #ddd",
+    background: walk && active ? "rgba(34, 197, 94, 0.18)" : UI.cardBg,
+    color: walk && active ? "#15803d" : UI.textPrimary,
+    fontSize: "0.9rem",
+    fontWeight: active ? 700 : 600,
+    cursor: disabled ? "not-allowed" : "pointer",
+    width: "100%",
+    boxSizing: "border-box",
+    whiteSpace: "nowrap",
+    textAlign: "center",
+    opacity: disabled ? 0.65 : 1,
+    minHeight: 40,
+  });
+  const controlsOnSide = Boolean(rightPanel);
+  const viewControlButtons = (placement) => {
+    const side = placement === "side";
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => {
+            const next =
+              viewMode === VIEW_MODE_INTERNAL
+                ? VIEW_MODE_EXTERNAL
+                : VIEW_MODE_INTERNAL;
+            if (next === VIEW_MODE_INTERNAL && walkMode) {
+              setWalkMode(false);
+              applyWalkModeRef.current?.(false);
+            }
+            setViewMode(next);
+            applyViewModeRef.current?.(next);
+          }}
+          title="Toggle internal / external camera height"
+          aria-label={
+            viewMode === VIEW_MODE_INTERNAL
+              ? "Switch to external view"
+              : "Switch to internal view"
+          }
+          style={
+            side
+              ? sideBtnStyle()
+              : {
+                  ...headerBtnStyle,
+                  background: "rgba(255,255,255,0.28)",
+                  border: "1px solid rgba(255,255,255,0.55)",
+                  minWidth: "96px",
+                }
+          }
+        >
+          {viewMode === VIEW_MODE_INTERNAL ? "Internal" : "External"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (walkMode) {
+              setWalkMode(false);
+              applyWalkModeRef.current?.(false);
+              return;
+            }
+            if (viewMode === VIEW_MODE_INTERNAL) {
+              setViewMode(VIEW_MODE_EXTERNAL);
+              applyViewModeRef.current?.(VIEW_MODE_EXTERNAL);
+            }
+            setWalkMode(true);
+            applyWalkModeRef.current?.(true);
+          }}
+          title={
+            walkMode
+              ? "Back to orbit (Esc)"
+              : "Enter walk mode — WASD, mouse look; Esc returns to drag/rotate"
+          }
+          aria-pressed={walkMode}
+          style={
+            side
+              ? sideBtnStyle({ active: walkMode, walk: true })
+              : {
+                  ...headerBtnStyle,
+                  background: walkMode
+                    ? "rgba(34, 197, 94, 0.45)"
+                    : "rgba(255,255,255,0.12)",
+                  border: walkMode
+                    ? "1px solid rgba(134, 239, 172, 0.85)"
+                    : "1px solid rgba(255,255,255,0.25)",
+                  minWidth: "72px",
+                  fontWeight: walkMode ? 700 : 500,
+                }
+          }
+        >
+          {walkMode ? "Walking" : "Walk"}
+        </button>
+        <button
+          type="button"
+          onClick={openRenderOptions}
+          disabled={renderBusy || !projectId}
+          title={
+            !projectId
+              ? "Open from a project to enable AI render"
+              : "Photoreal render of the current camera view"
+          }
+          style={
+            side
+              ? sideBtnStyle({ disabled: renderBusy || !projectId })
+              : {
+                  ...headerBtnStyle,
+                  background: renderBusy ? "rgba(255,255,255,0.06)" : "rgba(94, 160, 255, 0.28)",
+                  border: "1px solid rgba(140, 190, 255, 0.45)",
+                  opacity: renderBusy || !projectId ? 0.65 : 1,
+                  cursor: renderBusy || !projectId ? "not-allowed" : "pointer",
+                }
+          }
+        >
+          {renderBusy ? "Rendering…" : "Render"}
+        </button>
+      </>
+    );
+  };
 
   return (
     <div
@@ -2790,6 +2929,8 @@ export default function Building3DModal({
               minHeight: 0,
               width: "100%",
               display: "flex",
+              flexDirection: controlsOnSide ? "row" : undefined,
+              gap: controlsOnSide ? "16px" : undefined,
               boxSizing: "border-box",
               background: "transparent",
             }
@@ -2807,9 +2948,10 @@ export default function Building3DModal({
       <div
         onClick={(event) => event.stopPropagation()}
         style={{
-          width: "100%",
+          width: controlsOnSide ? undefined : "100%",
           height: "100%",
           flex: embedded ? 1 : undefined,
+          minWidth: embedded ? 0 : undefined,
           minHeight: embedded ? 0 : undefined,
           display: "flex",
           flexDirection: "column",
@@ -2834,6 +2976,7 @@ export default function Building3DModal({
             <h2 id="building-3d-modal-title" style={{ margin: 0, color: UI.cardBg, fontSize: "1.35rem" }}>
               {title}
             </h2>
+            {embedded ? null : (
             <div style={{ marginTop: "4px", color: "rgba(255,255,255,0.68)", fontSize: "0.85rem" }}>
               Subfloor: {subfloorHeightMm} mm · {footprintLabel}
               {" · "}Cladding: {wallHeightMm} mm slab, 100 mm thick
@@ -2849,92 +2992,11 @@ export default function Building3DModal({
                   ? `${INTERNAL_VIEW_CAMERA_HEIGHT_M.toFixed(0)} m internal · drag to rotate · scroll to zoom`
                   : `${STANDING_EYE_ABOVE_FLOOR_M.toFixed(1)} m eye · Orbit · drag to rotate · scroll zoom`}
             </div>
+            )}
           </div>
+          {controlsOnSide && !onClose ? null : (
           <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
-            <button
-              type="button"
-              onClick={() => {
-                const next =
-                  viewMode === VIEW_MODE_INTERNAL
-                    ? VIEW_MODE_EXTERNAL
-                    : VIEW_MODE_INTERNAL;
-                if (next === VIEW_MODE_INTERNAL && walkMode) {
-                  setWalkMode(false);
-                  applyWalkModeRef.current?.(false);
-                }
-                setViewMode(next);
-                applyViewModeRef.current?.(next);
-              }}
-              title="Toggle internal / external camera height"
-              aria-label={
-                viewMode === VIEW_MODE_INTERNAL
-                  ? "Switch to external view"
-                  : "Switch to internal view"
-              }
-              style={{
-                ...headerBtnStyle,
-                background: "rgba(255,255,255,0.28)",
-                border: "1px solid rgba(255,255,255,0.55)",
-                minWidth: "96px",
-              }}
-            >
-              {viewMode === VIEW_MODE_INTERNAL ? "Internal" : "External"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (walkMode) {
-                  setWalkMode(false);
-                  applyWalkModeRef.current?.(false);
-                  return;
-                }
-                // Walk uses eye-level external camera; leave Internal orbit first.
-                if (viewMode === VIEW_MODE_INTERNAL) {
-                  setViewMode(VIEW_MODE_EXTERNAL);
-                  applyViewModeRef.current?.(VIEW_MODE_EXTERNAL);
-                }
-                setWalkMode(true);
-                applyWalkModeRef.current?.(true);
-              }}
-              title={
-                walkMode
-                  ? "Back to orbit (Esc)"
-                  : "Enter walk mode — WASD, mouse look; Esc returns to drag/rotate"
-              }
-              aria-pressed={walkMode}
-              style={{
-                ...headerBtnStyle,
-                background: walkMode
-                  ? "rgba(34, 197, 94, 0.45)"
-                  : "rgba(255,255,255,0.12)",
-                border: walkMode
-                  ? "1px solid rgba(134, 239, 172, 0.85)"
-                  : "1px solid rgba(255,255,255,0.25)",
-                minWidth: "72px",
-                fontWeight: walkMode ? 700 : 500,
-              }}
-            >
-              {walkMode ? "Walking" : "Walk"}
-            </button>
-            <button
-              type="button"
-              onClick={openRenderOptions}
-              disabled={renderBusy || !projectId}
-              title={
-                !projectId
-                  ? "Open from a project to enable AI render"
-                  : "Photoreal render of the current camera view"
-              }
-              style={{
-                ...headerBtnStyle,
-                background: renderBusy ? "rgba(255,255,255,0.06)" : "rgba(94, 160, 255, 0.28)",
-                border: "1px solid rgba(140, 190, 255, 0.45)",
-                opacity: renderBusy || !projectId ? 0.65 : 1,
-                cursor: renderBusy || !projectId ? "not-allowed" : "pointer",
-              }}
-            >
-              {renderBusy ? "Rendering…" : "Render"}
-            </button>
+            {controlsOnSide ? null : viewControlButtons("header")}
             {onClose ? (
             <button
               type="button"
@@ -2950,6 +3012,7 @@ export default function Building3DModal({
             </button>
             ) : null}
           </div>
+          )}
         </div>
 
         {error ? (
@@ -3075,6 +3138,44 @@ export default function Building3DModal({
           )}
         </div>
       </div>
+
+      {controlsOnSide ? (
+        <div
+          style={{
+            width: "240px",
+            flexShrink: 0,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "column",
+            gap: "12px",
+            overflow: "visible",
+            position: "relative",
+            zIndex: 5,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              flexShrink: 0,
+            }}
+          >
+            {viewControlButtons("side")}
+          </div>
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+              overflow: "visible",
+            }}
+          >
+            {rightPanel}
+          </div>
+        </div>
+      ) : null}
 
       {renderOptionsOpen && !renderBusy ? (
         <div

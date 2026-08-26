@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import ModalBackdrop from "../components/ModalBackdrop";
 import { getApiHeaders } from "../utils/auth";
+import { buildSavedButtonStyle, ensureUiButtonStylesLoaded } from "../utils/uiButtonStyles.js";
 import { UI } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
@@ -9,6 +10,31 @@ const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 const GRID_LINE = "#c5c9ce";
 const API_URL = "";
+const QUOTE_HOTLIST_BUTTON_ID = 3;
+
+function quoteHotlistButtonStyle() {
+  const saved = buildSavedButtonStyle(QUOTE_HOTLIST_BUTTON_ID, true);
+  const fallback = {
+    background: MONUMENT,
+    color: PAGE_TEXT,
+    border: `1px solid ${MONUMENT}`,
+    borderRadius: "6px",
+    fontWeight: 600,
+  };
+  return {
+    ...(saved || fallback),
+    width: "auto",
+    minWidth: "110px",
+    height: "auto",
+    padding: "4px 8px",
+    fontSize: (saved && saved.fontSize) || "0.75rem",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    boxSizing: "border-box",
+    lineHeight: 1.2,
+    flexShrink: 0,
+  };
+}
 
 function formatListDate(value) {
   if (!value) return "";
@@ -72,6 +98,19 @@ export default function QuoteCallbackLists() {
   const [savingKey, setSavingKey] = useState("");
   const [eraseList, setEraseList] = useState(null);
   const [erasing, setErasing] = useState(false);
+  const [promotedIds, setPromotedIds] = useState({});
+  const [, setUiButtonStyleRevision] = useState(0);
+
+  useEffect(() => {
+    void ensureUiButtonStylesLoaded();
+    const refresh = () => setUiButtonStyleRevision((n) => n + 1);
+    window.addEventListener("sgf-ui-button-styles-change", refresh);
+    window.addEventListener("sgf-ui-theme-change", refresh);
+    return () => {
+      window.removeEventListener("sgf-ui-button-styles-change", refresh);
+      window.removeEventListener("sgf-ui-theme-change", refresh);
+    };
+  }, []);
 
   const orderedLists = useMemo(
     () =>
@@ -171,6 +210,32 @@ export default function QuoteCallbackLists() {
     }
   }
 
+  async function handleAddToHotlist(item) {
+    const projectId = Number(item?.projectId);
+    if (!Number.isFinite(projectId)) {
+      alert("This call back has no matching quote to add.");
+      return;
+    }
+    const label =
+      [item.suburb, item.street, item.client_name].filter(Boolean).join(" · ") || "this quote";
+    if (!window.confirm(`Add “${label}” to Hotlist?`)) return;
+    const saveKey = `hotlist:${projectId}`;
+    setSavingKey(saveKey);
+    try {
+      const res = await fetch(`${API_URL}/api/quotes/${projectId}/add-to-hotlist`, {
+        method: "POST",
+        headers: getApiHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      setPromotedIds((prev) => ({ ...prev, [projectId]: true }));
+    } catch (err) {
+      alert(err.message || "Failed to add quote to hotlist");
+    } finally {
+      setSavingKey("");
+    }
+  }
+
   function renderSection(title, rows, list) {
     return (
       <div style={{ marginTop: "12px" }}>
@@ -188,39 +253,67 @@ export default function QuoteCallbackLists() {
           <div style={{ fontSize: "0.9rem", color: UI.textMuted, padding: "2px 0 2px 28px" }}>None</div>
         ) : (
           rows.map((item) => {
+            const projectId = Number(item.projectId);
+            const hasProject = Number.isFinite(projectId);
             const rowBusy = savingKey === `${list.id}:${item.key}`;
+            const promoting = savingKey === `hotlist:${projectId}`;
+            const alreadyAdded = hasProject && Boolean(promotedIds[projectId]);
             return (
-              <label
+              <div
                 key={item.key}
                 style={{
                   display: "flex",
                   alignItems: "flex-start",
-                  gap: "10px",
+                  gap: "8px",
                   padding: "4px 0",
-                  cursor: rowBusy ? "default" : "pointer",
-                  opacity: rowBusy ? 0.7 : 1,
+                  opacity: rowBusy || promoting ? 0.7 : 1,
                 }}
               >
-                <input
-                  type="checkbox"
-                  checked={Boolean(item.called)}
-                  disabled={rowBusy}
-                  onChange={(e) => handleToggleCalled(list, item, e.target.checked)}
-                  style={{ width: "18px", height: "18px", marginTop: "2px", flexShrink: 0, cursor: "pointer" }}
-                />
-                <span
+                <label
                   style={{
-                    fontSize: "0.9rem",
-                    color: MONUMENT,
-                    lineHeight: 1.4,
-                    wordBreak: "break-word",
-                    textDecoration: item.called ? "line-through" : "none",
-                    opacity: item.called ? 0.65 : 1,
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "10px",
+                    flex: 1,
+                    minWidth: 0,
+                    cursor: rowBusy ? "default" : "pointer",
                   }}
                 >
-                  {formatCallbackLine(item)}
-                </span>
-              </label>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(item.called)}
+                    disabled={rowBusy || promoting}
+                    onChange={(e) => handleToggleCalled(list, item, e.target.checked)}
+                    style={{ width: "18px", height: "18px", marginTop: "2px", flexShrink: 0, cursor: "pointer" }}
+                  />
+                  <span
+                    style={{
+                      fontSize: "0.9rem",
+                      color: MONUMENT,
+                      lineHeight: 1.4,
+                      wordBreak: "break-word",
+                      textDecoration: item.called ? "line-through" : "none",
+                      opacity: item.called ? 0.65 : 1,
+                    }}
+                  >
+                    {formatCallbackLine(item)}
+                  </span>
+                </label>
+                {hasProject ? (
+                  <button
+                    type="button"
+                    disabled={rowBusy || promoting || alreadyAdded}
+                    onClick={() => handleAddToHotlist(item)}
+                    style={{
+                      ...quoteHotlistButtonStyle(),
+                      opacity: rowBusy || promoting || alreadyAdded ? 0.6 : 1,
+                      cursor: rowBusy || promoting || alreadyAdded ? "default" : "pointer",
+                    }}
+                  >
+                    {promoting ? "Adding…" : alreadyAdded ? "Added" : "Add to Hotlist"}
+                  </button>
+                ) : null}
+              </div>
             );
           })
         )}

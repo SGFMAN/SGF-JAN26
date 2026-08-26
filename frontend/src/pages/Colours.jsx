@@ -2490,6 +2490,9 @@ export default function Colours({ project, onUpdate }) {
           depthM={building3dDefaults.depthM}
           subfloorHeightM={building3dDefaults.subfloorHeightM}
           wallHeightM={building3dDefaults.wallHeightM}
+          showFence={building3dDefaults.showFence}
+          showSubfloor={building3dDefaults.showSubfloor}
+          showWall={building3dDefaults.showWall}
           footprintPoints={planTraceFootprintPoints}
           roofPoints={planTraceRoofPoints}
           roofPivotLine={planTraceRoofPivotLine}

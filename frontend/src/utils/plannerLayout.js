@@ -2,15 +2,22 @@ import { getApiHeaders } from "./auth.js";
 import { OVERVIEW_STATUS_HEADINGS } from "./designPhaseStatusTiles.js";
 
 export const PLANNER_STORAGE_KEY = "sgf-planner-layout-v1";
-export const PLANNER_RECT_WIDTH = 188;
-export const PLANNER_RECT_HEIGHT = 72;
-export const PLANNER_START_BUILDING_WIDTH = Math.round(PLANNER_RECT_WIDTH * 1.5);
-export const PLANNER_START_BUILDING_HEIGHT = Math.round((PLANNER_START_BUILDING_WIDTH * 1024) / 1536);
-export const PLANNER_GRID_COLS = 4;
-export const PLANNER_GRID_GAP_X = 16;
-export const PLANNER_GRID_GAP_Y = 16;
-export const PLANNER_GRID_ORIGIN = 16;
 export const PLANNER_SNAP_SIZE = 16;
+/** One bold graph-paper square. Faint lines are ignored for board and tile size. */
+export const PLANNER_MAJOR_SQUARE_CELLS = 5;
+export const PLANNER_MAJOR_SQUARE_PX = PLANNER_MAJOR_SQUARE_CELLS * PLANNER_SNAP_SIZE;
+export const PLANNER_RECT_WIDTH = PLANNER_MAJOR_SQUARE_PX * 2;
+export const PLANNER_RECT_HEIGHT = PLANNER_MAJOR_SQUARE_PX;
+export const PLANNER_START_BUILDING_WIDTH = PLANNER_SNAP_SIZE * 16;
+export const PLANNER_START_BUILDING_HEIGHT = PLANNER_SNAP_SIZE * 10;
+export const PLANNER_GRID_COLS = 4;
+export const PLANNER_GRID_GAP_X = 0;
+export const PLANNER_GRID_GAP_Y = 0;
+export const PLANNER_GRID_ORIGIN = 0;
+export const PLANNER_BOARD_SQUARES_X = 21;
+export const PLANNER_BOARD_SQUARES_Y = 9;
+export const PLANNER_BOARD_WIDTH = PLANNER_BOARD_SQUARES_X * PLANNER_MAJOR_SQUARE_PX;
+export const PLANNER_BOARD_HEIGHT = PLANNER_BOARD_SQUARES_Y * PLANNER_MAJOR_SQUARE_PX;
 export const PLANNER_START_PROJECT_KEY = "start-project";
 export const PLANNER_START_BUILDING_KEY = "start-building";
 
@@ -50,7 +57,7 @@ export function normalizePlannerLayout(parsed, defaultPositions = {}) {
           to: link.to,
         }))
     : [];
-  return { positions, links };
+  return { positions: clampPlannerPositions(positions), links };
 }
 
 export function loadPlannerLayout(defaultPositions = {}) {
@@ -90,7 +97,10 @@ export function plannerLayoutShouldSeedServer(layout, defaultPositions = {}) {
 
 export async function fetchPlannerLayoutFromApi(defaultPositions = {}) {
   try {
-    const res = await fetch(`${API_URL}/api/planner-layout`, { headers: getApiHeaders() });
+    let res = await fetch(`${API_URL}/api/planner-layout`, { headers: getApiHeaders() });
+    if (res.status === 401 || res.status === 403) {
+      res = await fetch(`${API_URL}/api/client/planner-layout`, { credentials: "same-origin" });
+    }
     if (!res.ok) return null;
     const data = await res.json().catch(() => ({}));
     if (!data?.layout) return null;
@@ -157,6 +167,24 @@ export function snapPlannerPoint(point, size = PLANNER_SNAP_SIZE) {
   };
 }
 
+export function clampPlannerPoint(point, key) {
+  const size = plannerNodeSize(key);
+  const maxX = Math.max(0, PLANNER_BOARD_WIDTH - size.width);
+  const maxY = Math.max(0, PLANNER_BOARD_HEIGHT - size.height);
+  return snapPlannerPoint({
+    x: Math.min(maxX, Math.max(0, Number(point?.x) || 0)),
+    y: Math.min(maxY, Math.max(0, Number(point?.y) || 0)),
+  });
+}
+
+export function clampPlannerPositions(positions) {
+  const next = { ...(positions || {}) };
+  for (const item of PLANNER_FLOW_ITEMS) {
+    next[item.key] = clampPlannerPoint(next[item.key], item.key);
+  }
+  return next;
+}
+
 export function defaultPlannerPositions() {
   const positions = {};
   const stageAreaWidth = PLANNER_GRID_COLS * (PLANNER_RECT_WIDTH + PLANNER_GRID_GAP_X);
@@ -177,7 +205,7 @@ export function defaultPlannerPositions() {
     x: PLANNER_GRID_ORIGIN + stageAreaWidth,
     y: PLANNER_GRID_ORIGIN + (stageRows - 1) * (PLANNER_RECT_HEIGHT + PLANNER_GRID_GAP_Y),
   };
-  return positions;
+  return clampPlannerPositions(positions);
 }
 
 export function plannerNodeSize(key) {
@@ -209,7 +237,7 @@ function plannerBoxEdgeToward(center, other, size) {
 }
 
 export function plannerBoardExtent(positions) {
-  return PLANNER_FLOW_ITEMS.reduce(
+  const content = PLANNER_FLOW_ITEMS.reduce(
     (extent, item) => {
       const point = positions[item.key] || { x: 0, y: 0 };
       const size = plannerNodeSize(item.key);
@@ -220,6 +248,10 @@ export function plannerBoardExtent(positions) {
     },
     { width: 0, height: 0 }
   );
+  return {
+    width: Math.max(PLANNER_BOARD_WIDTH, content.width),
+    height: Math.max(PLANNER_BOARD_HEIGHT, content.height),
+  };
 }
 
 export function buildDrawnPlannerLinks(positions, links) {

@@ -1124,7 +1124,10 @@ export default function ProjectPage() {
             padding: "24px 32px",
             boxSizing: "border-box",
             overflow:
-              activeView === "drawings" || activeView === "project-info" || activeView === "client-info"
+              activeView === "drawings" ||
+              activeView === "project-info" ||
+              activeView === "client-info" ||
+              activeView === "overview"
                 ? "hidden"
                 : "auto",
             color: MONUMENT,

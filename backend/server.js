@@ -91,7 +91,7 @@ const {
   updateQuoteActive,
   updateQuoteContact,
 } = require("./quotes");
-const { parseReminderSettingsColumn } = require("./reminderSettings");
+const { setWindowsOutlookClipboard } = require("./emailGeneratorClipboard");
 const { startQuoteReminderScheduler, previewQuoteReminder1, sendQuoteReminder1Manual } = require("./quoteReminders");
 const {
   listQuoteCallbackLists,
@@ -5921,10 +5921,19 @@ function parseColourSectionRangesColumn(raw) {
 
 const DEFAULT_BUILDING_3D_DEFAULTS = {
   subfloorHeightM: 0.65,
+  megaAnchorsHeightM: 0.65,
+  concreteStumpsHeightM: 0.65,
+  slabHeightM: 0.65,
   wallHeightM: 2.6,
   widthM: 11.3,
   depthM: 5.0,
+  subfloorType: "slab",
+  showFence: true,
+  showSubfloor: true,
+  showWall: true,
 };
+
+const BUILDING_3D_SUBFLOOR_TYPES = ["mega_anchors", "concrete_stumps", "slab"];
 
 function parseBuilding3dDefaultsColumn(raw) {
   let obj = raw;
@@ -5941,16 +5950,47 @@ function parseBuilding3dDefaultsColumn(raw) {
     if (!Number.isFinite(x)) return fallback;
     return Math.min(max, Math.max(min, Math.round(x * 1000) / 1000));
   };
+  const subfloorType = BUILDING_3D_SUBFLOOR_TYPES.includes(String(obj.subfloorType || "").trim())
+    ? String(obj.subfloorType).trim()
+    : DEFAULT_BUILDING_3D_DEFAULTS.subfloorType;
+  const visibleFlag = (value) =>
+    !(
+      value === false ||
+      value === 0 ||
+      value === "0" ||
+      value === "false" ||
+      value === "hide"
+    );
+  const showFence = visibleFlag(obj.showFence);
+  const showSubfloor = visibleFlag(obj.showSubfloor);
+  const showWall = visibleFlag(obj.showWall);
+  const legacyHeight = n(
+    obj.subfloorHeightM ?? obj.subfloorDepthM,
+    DEFAULT_BUILDING_3D_DEFAULTS.subfloorHeightM,
+    0.15,
+    3
+  );
+  const megaAnchorsHeightM = n(obj.megaAnchorsHeightM, legacyHeight, 0.15, 3);
+  const concreteStumpsHeightM = n(obj.concreteStumpsHeightM, legacyHeight, 0.15, 3);
+  const slabHeightM = n(obj.slabHeightM, legacyHeight, 0.15, 3);
+  const subfloorHeightM =
+    subfloorType === "mega_anchors"
+      ? megaAnchorsHeightM
+      : subfloorType === "concrete_stumps"
+        ? concreteStumpsHeightM
+        : slabHeightM;
   return {
-    subfloorHeightM: n(
-      obj.subfloorHeightM ?? obj.subfloorDepthM,
-      DEFAULT_BUILDING_3D_DEFAULTS.subfloorHeightM,
-      0.15,
-      3
-    ),
+    megaAnchorsHeightM,
+    concreteStumpsHeightM,
+    slabHeightM,
+    subfloorHeightM,
     wallHeightM: n(obj.wallHeightM, DEFAULT_BUILDING_3D_DEFAULTS.wallHeightM, 1.5, 6),
     widthM: n(obj.widthM ?? obj.lengthM, DEFAULT_BUILDING_3D_DEFAULTS.widthM, 2, 40),
     depthM: n(obj.depthM ?? obj.buildingWidthM, DEFAULT_BUILDING_3D_DEFAULTS.depthM, 2, 20),
+    subfloorType,
+    showFence,
+    showSubfloor,
+    showWall,
   };
 }
 
@@ -7357,6 +7397,23 @@ function convertEmailBodyNewlinesToBr(htmlBody) {
     return raw;
   }
   return raw.replace(/\n/g, "<br>");
+}
+
+function restoreEscapedInlineEmailTags(html) {
+  return String(html || "").replace(
+    /&lt;(\/?)\s*(b|strong|i|em|u|br)\s*(\/?)\s*&gt;/gi,
+    "<$1$2$3>"
+  );
+}
+
+function insertHtmlAfterScopeHeading(html, insertHtml) {
+  const body = restoreEscapedInlineEmailTags(html);
+  const tagged = /<(b|strong)>\s*Scope\s*<\/\1>/i.exec(body);
+  if (!tagged) return `${body}${insertHtml}`;
+  let insertAt = tagged.index + tagged[0].length;
+  const closeP = body.slice(insertAt).match(/^\s*<\/p>/i);
+  if (closeP) insertAt += closeP[0].length;
+  return body.slice(0, insertAt) + insertHtml + body.slice(insertAt);
 }
 
 // Helper: embed logo at end of HTML via CID inline part (visible in body, not a separate attachment)
@@ -10139,13 +10196,20 @@ app.post("/api/emails/send-windows-order", async (req, res) => {
     return res.status(500).json({ error: `Failed to fetch email template: ${e.message}` });
   }
 
-  // Build window ordering information
-  // Note: windowDateRequired will already be formatted (date string for "Normal", "Urgent" for urgent)
-  const windowInfo = `Window Colour: ${windowColour || "N/A"}
-Reveal: ${windowReveal || "N/A"}
-Glazing: ${windowGlazing || "N/A"}
-BAL Rating: ${windowBalRating || "N/A"}
-Date Required: ${windowDateRequired || "N/A"}`;
+  const windowInfoHtml = `<p>${[
+    `Window Colour: ${windowColour || "N/A"}`,
+    `Reveal: ${windowReveal || "N/A"}`,
+    `Glazing: ${windowGlazing || "N/A"}`,
+    `BAL Rating: ${windowBalRating || "N/A"}`,
+    `Date Required: ${windowDateRequired || "N/A"}`,
+  ]
+    .map((line) =>
+      String(line)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+    )
+    .join("<br>")}</p>`;
 
   // Prepare email content
   const suburb = (project.suburb || "").toUpperCase();
@@ -10156,6 +10220,7 @@ Date Required: ${windowDateRequired || "N/A"}`;
   let subject = (template.subject || "").toString();
   // Use customBody if provided, otherwise use template body
   let htmlBody = (customBody !== undefined && customBody !== null) ? customBody.toString() : (template.body || "").toString();
+  htmlBody = restoreEscapedInlineEmailTags(htmlBody);
   
   // Replace common placeholders
   subject = subject.replace(/\{SUBURB\}/g, suburb)
@@ -10167,20 +10232,7 @@ Date Required: ${windowDateRequired || "N/A"}`;
     htmlBody = htmlBody.replace(/\{SUBURB\}/g, suburb)
                        .replace(/\{STREET\}/g, street)
                        .replace(/\{ProjectName\}/g, projectName);
-    
-    // Insert window info after "<b>Scope</b>"
-    // Look for <b>Scope</b> or <b>scope</b> (case insensitive)
-    const scopePattern = /<b>Scope<\/b>/i;
-    const match = htmlBody.match(scopePattern);
-    if (match) {
-      // Find the position after the closing </b>
-      const insertIndex = match.index + match[0].length;
-      // Insert window info after </b>
-      htmlBody = htmlBody.slice(0, insertIndex) + "\n\n" + windowInfo + htmlBody.slice(insertIndex);
-    } else {
-      // If "<b>Scope</b>" not found, append at the end
-      htmlBody = htmlBody + "\n\n" + windowInfo;
-    }
+    htmlBody = insertHtmlAfterScopeHeading(htmlBody, windowInfoHtml);
   }
   {
     const userTok = await applyStaffUserEmailTokenSubstitution(pool, req, htmlBody, subject);
@@ -14567,14 +14619,16 @@ IMPORTANT GUIDELINES:
 - If the input is legal or contractual, split it clause by clause where possible
 - If the input is an email, identify each question or request separately
 - Make questions actionable and specific
+- For sourceText, copy a short EXACT excerpt from the input (the numbered item or question being answered). Do not paraphrase.
 
 Output ONLY valid JSON in this exact format:
 {
   "title": "Brief summary of the message (optional, max 50 chars)",
+  "clientName": "First name from the sign-off if present, otherwise empty string",
   "points": [
     {
       "id": 1,
-      "sourceText": "Brief summary of the original clause/paragraph/request this point addresses",
+      "sourceText": "Exact excerpt copied from the input",
       "question": "Simple, clear question for the user to answer"
     }
   ]
@@ -14635,6 +14689,7 @@ Respond with ONLY the JSON object, no additional text or explanation.`;
 
     res.json({
       title: parsedResponse.title || "Response Points",
+      clientName: String(parsedResponse.clientName || "").trim(),
       points: validatedPoints,
     });
   } catch (error) {
@@ -14668,14 +14723,141 @@ Respond with ONLY the JSON object, no additional text or explanation.`;
   }
 });
 
+function escapeHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function textToOutlookHtml(s) {
+  const escaped = escapeHtml(s).replace(/\r\n/g, "\n");
+  return escaped
+    .split("\n")
+    .map(
+      (line) =>
+        `<p class="MsoNormal" style="margin:0 0 8pt 0;font-family:Calibri,sans-serif;font-size:11.0pt;color:black;">${
+          line || "&nbsp;"
+        }</p>`
+    )
+    .join("");
+}
+
+function rtfEscapeChars(s) {
+  let out = "";
+  for (const ch of String(s)) {
+    const code = ch.charCodeAt(0);
+    if (ch === "\\" || ch === "{" || ch === "}") out += `\\${ch}`;
+    else if (code > 127) out += `\\u${code}?`;
+    else out += ch;
+  }
+  return out;
+}
+
+function workToRtf(work, answers) {
+  const lines = String(work).replace(/\r\n/g, "\n").split("\n");
+  let rtf = "";
+  for (const line of lines) {
+    const only = line.match(/^@@ANS(\d+)@@$/);
+    if (only) {
+      const answer = String(answers[Number(only[1])] || "").trim();
+      for (const answerLine of answer.split("\n")) {
+        rtf += `\\cf2 ${rtfEscapeChars(answerLine)}\\cf1\\par\n`;
+      }
+      continue;
+    }
+    rtf += `${rtfEscapeChars(line)}\\par\n`;
+  }
+  return rtf;
+}
+
+function wrapRtf(inner) {
+  return `{\\rtf1\\ansi\\ansicpg1252\\deff0{\\fonttbl{\\f0\\fswiss\\fcharset0 Calibri;}}{\\colortbl ;\\red0\\green0\\blue0;\\red255\\green0\\blue0;}\\f0\\fs22\\cf1\n${inner}}`;
+}
+
+function outlookRedHtml(inner) {
+  return `<font color="red"><span style="color:red">${inner}</span></font>`;
+}
+
+function firstNameFromRaw(raw) {
+  const full = String(raw || "").trim();
+  if (!full) return "";
+  return full.split(/\s+/)[0] || full;
+}
+
+function guessClientFirstName(original) {
+  const lines = String(original || "")
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const signOff = /^(cheers|kind regards|regards|thanks|thank you|many thanks|best regards|best|sincerely)[,!.]*$/i;
+  for (let i = 0; i < lines.length - 1; i += 1) {
+    if (signOff.test(lines[i]) && lines[i + 1] && !lines[i + 1].includes("@")) {
+      return firstNameFromRaw(lines[i + 1]);
+    }
+  }
+  const last = lines[lines.length - 1] || "";
+  if (last && !last.includes("@") && last.length < 40 && /^[A-Za-z][A-Za-zÀ-ÿ'.-]*$/.test(last)) {
+    return firstNameFromRaw(last);
+  }
+  return "";
+}
+
+function findSnippetIndex(original, snippet) {
+  const text = String(original || "");
+  const needle = String(snippet || "").trim();
+  if (!needle) return -1;
+  return text.indexOf(needle);
+}
+
+function redAnswerHtml(answer) {
+  const inner = escapeHtml(String(answer || "").trim()).replace(/\r\n/g, "\n").replace(/\n/g, "<br>\n");
+  return outlookRedHtml(inner);
+}
+
+function buildAnnotatedOriginal(originalText, points, answers, anchorsByIndex) {
+  const original = String(originalText || "");
+  const jobs = [];
+  for (let i = 0; i < points.length; i += 1) {
+    const answer = String(answers[i] || "").trim();
+    if (!answer) continue;
+    const candidates = [anchorsByIndex[i], points[i]?.sourceText].filter(Boolean);
+    let at = original.length;
+    for (const candidate of candidates) {
+      const idx = findSnippetIndex(original, candidate);
+      if (idx >= 0) {
+        const snippetEnd = idx + String(candidate).trim().length;
+        const lineEnd = original.indexOf("\n", snippetEnd);
+        at = lineEnd >= 0 && lineEnd - snippetEnd < 80 ? lineEnd : snippetEnd;
+        break;
+      }
+    }
+    jobs.push({ at, index: i });
+  }
+  jobs.sort((a, b) => b.at - a.at || b.index - a.index);
+  let work = original;
+  for (const job of jobs) {
+    work = `${work.slice(0, job.at)}\n\n@@ANS${job.index}@@${work.slice(job.at)}`;
+  }
+  let html = textToOutlookHtml(work);
+  let plain = work;
+  for (let i = 0; i < points.length; i += 1) {
+    const answer = String(answers[i] || "").trim();
+    if (!answer) continue;
+    const token = `@@ANS${i}@@`;
+    html = html.split(token).join(redAnswerHtml(answer));
+    plain = plain.split(token).join(answer);
+  }
+  return { html, plain, rtf: workToRtf(work, answers) };
+}
+
 // Email Generator: Compile answers into professional email draft
 app.post("/api/email-generator/compile", async (req, res) => {
   if (!requireStaffUserId(req, res)) return;
-  if (!openaiClient) {
-    return res.status(503).json({ error: "OpenAI API key not configured" });
-  }
 
-  const { points, answers, originalText } = req.body;
+  const { points, answers, originalText, clientName } = req.body;
 
   if (!points || !Array.isArray(points) || points.length === 0) {
     return res.status(400).json({ error: "Points array is required" });
@@ -14686,119 +14868,115 @@ app.post("/api/email-generator/compile", async (req, res) => {
   }
 
   try {
-    // Build context for the AI
-    const answersContext = points
-      .map((point, index) => {
-        const answer = answers[index] || "";
-        return `Question: ${point.question}\nYour Answer: ${answer}`;
-      })
-      .join("\n\n");
+    const original = String(originalText || "").trim();
+    let name = firstNameFromRaw(clientName) || guessClientFirstName(original);
+    const anchorsByIndex = {};
 
-    const prompt = `You are drafting a professional, concise email reply for a construction/admin business.
+    const missingAnchors = points
+      .map((point, index) => ({ point, index, answer: String(answers[index] || "").trim() }))
+      .filter((row) => row.answer && findSnippetIndex(original, row.point?.sourceText) < 0);
 
-CRITICAL RULES:
-- You MUST use the EXACT answer text provided by the user - copy it directly into the email
-- NEVER use placeholders like "[User's Answer]" or "[Recipient's Name]" - use the actual answer text
-- If the user provided "$4,980 inc GST" or "The cost is $4,980 inc GST", you MUST include that exact text in the email
-- ALL prices in the email MUST include "inc GST" after the dollar amount (e.g., "$150 inc GST", "$4,980 inc GST")
-- If you mention any price or cost in the email, you MUST add "inc GST" after it
-- Be professional but concise - avoid unnecessary pleasantries and fluff
-- Get straight to the point - answer the question directly using the user's provided answer
-- Do NOT add information the user did not provide
-- Do NOT ask for more information if the user already provided a complete answer
+    if (openaiClient && original && (missingAnchors.length || !name)) {
+      try {
+        const qna = points
+          .map((point, index) => {
+            const answer = String(answers[index] || "").trim();
+            if (!answer) return null;
+            return `Point ${index + 1}\nQuestion: ${point.question}\nSource: ${point.sourceText || ""}\nAnswer: ${answer}`;
+          })
+          .filter(Boolean)
+          .join("\n\n");
+        const prompt = `Extract facts from this client email. Copy snippets EXACTLY from the original; do not paraphrase.
 
-Original message (for context):
-${originalText || "Not provided"}
+Original email:
+${original}
 
-User's answers - USE THESE EXACT ANSWERS IN THE EMAIL:
-${answersContext}
+Answered points:
+${qna}
 
-Write a concise, professional email that directly addresses each question using the user's exact answers provided above.
-
-Output ONLY valid JSON:
+Return ONLY JSON:
 {
-  "subject": "Concise subject line (max 80 chars)",
-  "body": "Professional, concise email using the user's exact answers (use \\n for line breaks)"
+  "clientName": "first name from the sign-off, or empty string",
+  "anchors": [
+    { "pointIndex": 1, "exactOriginalSnippet": "exact substring copied from the original email for that point" }
+  ]
 }
 
-Respond with ONLY the JSON object, no additional text.`;
+pointIndex is 1-based. Only include points that have answers. exactOriginalSnippet MUST appear verbatim in the original email.`;
 
-    const completion = await openaiClient.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: "You are a professional email writing assistant. Always respond with valid JSON only.",
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.5,
-    });
-
-    const responseText = completion.choices[0]?.message?.content;
-    
-    if (!responseText) {
-      console.error("OpenAI returned empty response");
-      return res.status(500).json({ error: "AI returned an empty response. Please try again." });
-    }
-    
-    let parsedResponse;
-
-    try {
-      parsedResponse = JSON.parse(responseText);
-    } catch (parseError) {
-      console.error("Failed to parse OpenAI response:", responseText);
-      console.error("Parse error:", parseError);
-      return res.status(500).json({ 
-        error: "Failed to parse AI response. The AI may have returned invalid JSON.",
-        details: process.env.NODE_ENV === "development" ? responseText : undefined,
-      });
+        const completion = await openaiClient.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            {
+              role: "system",
+              content: "You extract names and exact original-email snippets. Respond with valid JSON only.",
+            },
+            { role: "user", content: prompt },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0,
+        });
+        const parsed = JSON.parse(completion.choices[0]?.message?.content || "{}");
+        if (!name) name = firstNameFromRaw(parsed.clientName);
+        if (Array.isArray(parsed.anchors)) {
+          for (const row of parsed.anchors) {
+            const idx = Number(row.pointIndex) - 1;
+            const snippet = String(row.exactOriginalSnippet || "").trim();
+            if (!Number.isFinite(idx) || idx < 0 || !snippet) continue;
+            if (findSnippetIndex(original, snippet) >= 0) anchorsByIndex[idx] = snippet;
+          }
+        }
+      } catch (anchorErr) {
+        console.warn("[email-generator] compile anchors fallback:", anchorErr.message || anchorErr);
+      }
     }
 
-    // Validate response structure
-    if (!parsedResponse.subject || !parsedResponse.body) {
-      return res.status(500).json({ error: "AI did not generate valid email draft" });
-    }
-
-    // Convert \n to actual newlines for display
-    const formattedBody = parsedResponse.body.replace(/\\n/g, "\n");
+    const annotated = buildAnnotatedOriginal(original, points, answers, anchorsByIndex);
+    const greetingName = name || "";
+    const hiLine = greetingName ? `Hi ${greetingName}` : "Hi";
+    const redWordHtml = outlookRedHtml("<b>RED</b>");
+    const p = (inner) =>
+      `<p class="MsoNormal" style="margin:0 0 8pt 0;font-family:Calibri,sans-serif;font-size:11.0pt;color:black;">${inner}</p>`;
+    const introHtml = `${p(escapeHtml(hiLine))}${p("Thanks for your email.")}${p(
+      `Please see my answers below in ${redWordHtml}.`
+    )}`;
+    const introPlain = `${hiLine}\n\nThanks for your email.\n\nPlease see my answers below in RED.\n\n`;
+    const introRtf = `${rtfEscapeChars(hiLine)}\\par\n\\par\nThanks for your email.\\par\n\\par\nPlease see my answers below in \\cf2\\b RED\\b0\\cf1 .\\par\n\\par\n`;
+    const bodyHtml = introHtml + annotated.html;
+    const body = `${introPlain}${annotated.plain}`;
+    const bodyRtf = wrapRtf(introRtf + annotated.rtf);
+    const subject = "Re: your email";
 
     res.json({
-      subject: parsedResponse.subject,
-      body: formattedBody,
+      subject,
+      body,
+      bodyHtml,
+      bodyRtf,
     });
   } catch (error) {
     console.error("Error in email-generator/compile:", error);
-    console.error("Error details:", {
-      message: error.message,
-      status: error.status,
-      statusText: error.statusText,
-      code: error.code,
-      type: error.type,
-    });
-    
-    // Provide more specific error messages
     let errorMessage = "Failed to compile email draft";
-    if (error.status === 401) {
-      errorMessage = "Invalid OpenAI API key. Please check your API key configuration.";
-    } else if (error.status === 429) {
-      errorMessage = "OpenAI API rate limit exceeded. Please try again in a moment.";
-    } else if (error.status === 500) {
-      errorMessage = "OpenAI API server error. Please try again.";
-    } else if (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED") {
-      errorMessage = "Network error connecting to OpenAI API. Please check your internet connection.";
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-    
+    if (error.message) errorMessage = error.message;
     res.status(500).json({
       error: errorMessage,
       details: process.env.NODE_ENV === "development" ? error.stack : undefined,
     });
+  }
+});
+
+app.post("/api/email-generator/copy-to-clipboard", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
+  const html = String(req.body?.html || "").trim();
+  const rtf = String(req.body?.rtf || "").trim();
+  if (!html && !rtf) {
+    return res.status(400).json({ error: "Nothing to copy" });
+  }
+  try {
+    setWindowsOutlookClipboard({ html, rtf });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("[email-generator] copy-to-clipboard:", e);
+    return res.status(500).json({ error: e.message || "Failed to copy for Outlook" });
   }
 });
 
@@ -14826,29 +15004,45 @@ const STOP_WORDS = new Set([
 // Extract meaningful words from a normalized question (excluding stop words)
 function extractMeaningfulWords(normalizedText) {
   if (!normalizedText) return [];
-  return normalizedText
-    .split(" ")
-    .filter(word => word.length > 2 && !STOP_WORDS.has(word));
+  const seen = new Set();
+  const words = [];
+  for (const raw of String(normalizedText).split(" ")) {
+    if (!raw || raw.length <= 2 || STOP_WORDS.has(raw) || /^\d/.test(raw)) continue;
+    let word = raw.toLowerCase();
+    if (word.length > 4 && word.endsWith("ies")) word = `${word.slice(0, -3)}y`;
+    else if (word.length > 3 && word.endsWith("s") && !word.endsWith("ss")) word = word.slice(0, -1);
+    if (word.length <= 2 || STOP_WORDS.has(word) || seen.has(word)) continue;
+    seen.add(word);
+    words.push(word);
+  }
+  return words;
 }
 
 // Calculate similarity score between two sets of words
 function calculateSimilarity(words1, words2) {
   if (words1.length === 0 || words2.length === 0) return 0;
-  
   const set1 = new Set(words1);
   const set2 = new Set(words2);
-  
-  // Count matching words
   let matches = 0;
   for (const word of set1) {
-    if (set2.has(word)) {
-      matches++;
-    }
+    if (set2.has(word)) matches += 1;
   }
-  
-  // Use Jaccard similarity: intersection / union
-  const union = new Set([...set1, ...set2]);
-  return matches / union.size;
+  const unionSize = new Set([...set1, ...set2]).size;
+  const jaccard = unionSize ? matches / unionSize : 0;
+  const overlap = matches / Math.min(set1.size, set2.size);
+  return Math.max(jaccard, overlap);
+}
+
+function hasSharedPhrase(words1, words2) {
+  if (words1.length < 2 || words2.length < 2) return false;
+  const phrases = new Set();
+  for (let i = 0; i < words2.length - 1; i += 1) {
+    phrases.add(`${words2[i]} ${words2[i + 1]}`);
+  }
+  for (let i = 0; i < words1.length - 1; i += 1) {
+    if (phrases.has(`${words1[i]} ${words1[i + 1]}`)) return true;
+  }
+  return false;
 }
 
 // Email Generator: Get suggested answer for a question
@@ -14904,13 +15098,10 @@ app.post("/api/email-generator/suggest", async (req, res) => {
         if (savedWords.length < 2) continue;
 
         const similarity = calculateSimilarity(questionWords, savedWords);
-        
-        // Also check if there's a significant word overlap (at least 2 unique words match)
-        const matchingWords = questionWords.filter(w => savedWords.includes(w));
-        const hasSignificantOverlap = matchingWords.length >= 2;
-
-        // Use similarity score, but boost if there's significant word overlap
-        const finalScore = hasSignificantOverlap ? Math.max(similarity, 0.4) : similarity;
+        const matchingWords = questionWords.filter((w) => savedWords.includes(w));
+        let finalScore = similarity;
+        if (matchingWords.length >= 2) finalScore = Math.max(finalScore, 0.45);
+        if (hasSharedPhrase(questionWords, savedWords)) finalScore = Math.max(finalScore, 0.55);
 
         if (finalScore > bestScore && finalScore >= MIN_SIMILARITY) {
           bestScore = finalScore;

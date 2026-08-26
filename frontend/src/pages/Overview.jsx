@@ -1162,6 +1162,7 @@ export default function Overview({ project }) {
       {project && (
         <DesignPhaseStatusPanel
           project={project}
+          showHeading={false}
           onTileClick={(tile) =>
             navigate(projectPath(project, { view: tile.view, t: Date.now() }), {
               replace: false,

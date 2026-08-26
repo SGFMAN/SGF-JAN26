@@ -76,9 +76,15 @@ export function ToolsNavLinks({ activePath }) {
 }
 
 /** Tools submenu: Email Generator, Maps, Apply Fields — used on the Tools hub and tool pages. */
-export default function ToolsSidebarMenu({ activePath, children }) {
+export default function ToolsSidebarMenu({ activePath, children, fillHeight = false }) {
   return (
-    <div className="sidebar-menu" style={sidebarStyle}>
+    <div
+      className="sidebar-menu"
+      style={{
+        ...sidebarStyle,
+        ...(fillHeight ? { height: "100%", minHeight: 0 } : null),
+      }}
+    >
       <ToolsNavLinks activePath={activePath} />
       {children}
       <div style={{ flex: 1 }} />

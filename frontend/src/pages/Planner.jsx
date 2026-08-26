@@ -4,9 +4,13 @@ import ToolsSidebarMenu from "../components/ToolsSidebarMenu";
 import useAppLogo from "../hooks/useAppLogo.js";
 import startBuildingImage from "../images/start building.png";
 import {
+  PLANNER_BOARD_HEIGHT,
+  PLANNER_BOARD_WIDTH,
   PLANNER_FLOW_ITEMS,
   PLANNER_SNAP_SIZE,
   PLANNER_START_BUILDING_KEY,
+  clampPlannerPoint,
+  clampPlannerPositions,
   defaultPlannerPositions,
   fetchPlannerLayoutFromApi,
   loadPlannerLayout,
@@ -14,7 +18,6 @@ import {
   plannerLayoutShouldSeedServer,
   plannerNodeSize,
   savePlannerLayout,
-  snapPlannerPoint,
 } from "../utils/plannerLayout.js";
 import { UI } from "../utils/uiThemeTokens.js";
 
@@ -25,7 +28,6 @@ const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 
 const LINK_HOVER = "#D32F2F";
-const GRID_ORIGIN = 16;
 
 const PASTEL_COLORS = [
   "#F8C8DC",
@@ -97,15 +99,18 @@ function toolbarButtonStyle(active = false) {
 export default function Planner() {
   const logo = useAppLogo();
   const boardRef = useRef(null);
+  const canvasRef = useRef(null);
   const dragRef = useRef(null);
   const saved = useMemo(() => loadLayout(), []);
-  const [positions, setPositions] = useState(saved.positions);
+  const [positions, setPositions] = useState(() => clampPlannerPositions(saved.positions));
   const [links, setLinks] = useState(saved.links);
   const [draggingKey, setDraggingKey] = useState(null);
   const [linking, setLinking] = useState(false);
   const [linkSourceKey, setLinkSourceKey] = useState(null);
   const [hoveredLinkId, setHoveredLinkId] = useState(null);
   const [analyseOpen, setAnalyseOpen] = useState(false);
+  const [boardScale, setBoardScale] = useState(1);
+  const boardScaleRef = useRef(1);
   const nextLinkIdRef = useRef(saved.links.length + 1);
   const canPersistRef = useRef(false);
   const positionsRef = useRef(saved.positions);
@@ -120,10 +125,10 @@ export default function Planner() {
       const remote = await fetchPlannerLayoutFromApi(defaults);
       if (cancelled) return;
       if (remote) {
-        setPositions(remote.positions);
+        setPositions(clampPlannerPositions(remote.positions));
         setLinks(remote.links);
         nextLinkIdRef.current = remote.links.length + 1;
-        savePlannerLayout(remote.positions, remote.links);
+        savePlannerLayout(clampPlannerPositions(remote.positions), remote.links);
       } else {
         const local = loadPlannerLayout(defaults);
         if (plannerLayoutShouldSeedServer(local, defaults)) {
@@ -160,14 +165,15 @@ export default function Planner() {
 
   const onPointerMove = useCallback((event) => {
     const drag = dragRef.current;
-    const board = boardRef.current;
-    if (!drag || !board) return;
-    const rect = board.getBoundingClientRect();
-    const nextX = Math.max(0, event.clientX - rect.left + board.scrollLeft - drag.offsetX);
-    const nextY = Math.max(0, event.clientY - rect.top + board.scrollTop - drag.offsetY);
+    const canvas = canvasRef.current;
+    if (!drag || !canvas) return;
+    const scale = boardScaleRef.current || 1;
+    const rect = canvas.getBoundingClientRect();
+    const nextX = Math.max(0, (event.clientX - rect.left) / scale - drag.offsetX);
+    const nextY = Math.max(0, (event.clientY - rect.top) / scale - drag.offsetY);
     setPositions((prev) => ({
       ...prev,
-      [drag.key]: snapPlannerPoint({ x: nextX, y: nextY }),
+      [drag.key]: clampPlannerPoint({ x: nextX, y: nextY }, drag.key),
     }));
   }, []);
 
@@ -209,14 +215,15 @@ export default function Planner() {
   function startDrag(event, key) {
     if (linking) return;
     if (event.button != null && event.button !== 0) return;
-    const board = boardRef.current;
-    if (!board) return;
-    const rect = board.getBoundingClientRect();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const scale = boardScaleRef.current || 1;
+    const rect = canvas.getBoundingClientRect();
     const current = positions[key] || { x: 0, y: 0 };
     dragRef.current = {
       key,
-      offsetX: event.clientX - rect.left + board.scrollLeft - current.x,
-      offsetY: event.clientY - rect.top + board.scrollTop - current.y,
+      offsetX: (event.clientX - rect.left) / scale - current.x,
+      offsetY: (event.clientY - rect.top) / scale - current.y,
     };
     setDraggingKey(key);
     event.preventDefault();
@@ -236,17 +243,30 @@ export default function Planner() {
     setLinkSourceKey(null);
   }
 
-  const boardExtent = PLANNER_FLOW_ITEMS.reduce(
-    (extent, item) => {
-      const point = positions[item.key] || { x: 0, y: 0 };
-      const size = plannerNodeSize(item.key);
-      return {
-        width: Math.max(extent.width, point.x + size.width + GRID_ORIGIN + 80),
-        height: Math.max(extent.height, point.y + size.height + GRID_ORIGIN + 80),
-      };
-    },
-    { width: 0, height: 0 }
-  );
+  const boardExtent = { width: PLANNER_BOARD_WIDTH, height: PLANNER_BOARD_HEIGHT };
+
+  boardScaleRef.current = boardScale;
+
+  useEffect(() => {
+    const el = boardRef.current;
+    if (!el) return undefined;
+    const update = () => {
+      const width = el.clientWidth;
+      const height = el.clientHeight;
+      if (width < 1 || height < 1 || boardExtent.width < 1 || boardExtent.height < 1) return;
+      const pad = 8;
+      const next = Math.min(1, (width - pad) / boardExtent.width, (height - pad) / boardExtent.height);
+      setBoardScale(Number.isFinite(next) && next > 0.01 ? next : 1);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [boardExtent.height, boardExtent.width]);
 
   const drawnLinks = useMemo(() => {
     const grouped = new Map();
@@ -319,14 +339,16 @@ export default function Planner() {
         position: "fixed",
         inset: 0,
         background: LIGHT_MONUMENT,
-        minHeight: "100vh",
+        height: "100vh",
         width: "100vw",
-        overflowY: "auto",
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
       }}
     >
       <div
         style={{
-          margin: "32px auto 24px auto",
+          margin: "24px auto 16px auto",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
           display: "flex",
@@ -335,6 +357,7 @@ export default function Planner() {
           position: "relative",
           padding: "0 32px",
           boxSizing: "border-box",
+          flexShrink: 0,
         }}
       >
         <RouterLink to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
@@ -361,11 +384,13 @@ export default function Planner() {
           display: "flex",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          margin: "50px auto 0 auto",
+          margin: "0 auto 24px auto",
           gap: "32px",
+          flex: 1,
+          minHeight: 0,
         }}
       >
-        <ToolsSidebarMenu />
+        <ToolsSidebarMenu fillHeight />
 
         <div
           className="content-section"
@@ -373,8 +398,8 @@ export default function Planner() {
             background: SECTION_GREY,
             borderRadius: "18px",
             flex: 1,
-            minHeight: "758px",
-            height: "758px",
+            minHeight: 0,
+            height: "100%",
             boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
             padding: "16px",
             boxSizing: "border-box",
@@ -427,17 +452,29 @@ export default function Planner() {
               minHeight: 0,
               background: WHITE,
               borderRadius: "12px",
-              overflow: "auto",
+              overflow: "hidden",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
               userSelect: draggingKey || linking ? "none" : "auto",
             }}
           >
             <div
+              ref={canvasRef}
               style={{
-                position: "relative",
-                width: boardExtent.width,
-                minWidth: "100%",
-                height: boardExtent.height,
-                minHeight: "100%",
+                width: boardExtent.width * boardScale,
+                height: boardExtent.height * boardScale,
+                flexShrink: 0,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  position: "relative",
+                  width: boardExtent.width,
+                  height: boardExtent.height,
+                  transform: `scale(${boardScale})`,
+                  transformOrigin: "top left",
                 backgroundColor: WHITE,
                 backgroundImage: [
                   `linear-gradient(to right, rgba(50, 50, 51, 0.22) 1px, transparent 1px)`,
@@ -602,7 +639,7 @@ export default function Planner() {
                         style={{
                           width: "100%",
                           height: "100%",
-                          objectFit: "contain",
+                          objectFit: "fill",
                           display: "block",
                           pointerEvents: "none",
                         }}
@@ -613,6 +650,7 @@ export default function Planner() {
                   </div>
                 );
               })}
+              </div>
             </div>
           </div>
         </div>

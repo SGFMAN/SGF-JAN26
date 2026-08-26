@@ -527,6 +527,30 @@ module.exports = function registerClientPortalRoutes(app, pool, helpers) {
     }
   });
 
+  app.get("/api/client/planner-layout", async (req, res) => {
+    if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+    const clientAccountId = await requireClientAccountId(pool, req, res);
+    if (!clientAccountId) return;
+    try {
+      const r = await pool.query("SELECT planner_layout_json FROM settings WHERE id = 1");
+      let layout = r.rows[0]?.planner_layout_json;
+      if (typeof layout === "string") {
+        try {
+          layout = JSON.parse(layout);
+        } catch {
+          layout = {};
+        }
+      }
+      if (!layout || typeof layout !== "object" || Array.isArray(layout)) {
+        layout = { positions: {}, links: [] };
+      }
+      return res.json({ ok: true, layout });
+    } catch (e) {
+      console.error("GET /api/client/planner-layout:", e);
+      return res.status(500).json({ error: e.message || "Failed to load planner layout" });
+    }
+  });
+
   app.get("/api/client/projects/:projectId", async (req, res) => {
     if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
     const clientAccountId = await requireClientAccountId(pool, req, res);

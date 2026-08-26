@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { buildDesignPhaseStatusTiles } from "../utils/designPhaseStatusTiles.js";
 import startBuildingImage from "../images/start building.png";
 import {
+  PLANNER_BOARD_HEIGHT,
+  PLANNER_BOARD_WIDTH,
   PLANNER_FLOW_ITEMS,
   PLANNER_START_BUILDING_KEY,
   PLANNER_START_PROJECT_KEY,
@@ -11,7 +14,6 @@ import {
   getPlannerRequirementKeysByItem,
   isStartBuildingUnlocked,
   loadPlannerLayout,
-  plannerBoardExtent,
   plannerLabelForKey,
   plannerNodeSize,
 } from "../utils/plannerLayout.js";
@@ -84,24 +86,52 @@ const HEADING_GREEN_STYLE = {
   variant: "green",
 };
 
-function OverviewPlannerBoard({ tiles, layout, inactiveKeys, startBuildingUnlocked, onTileClick, readOnly }) {
+function plannerNodeHoverLines({ item, tile, inactive, requirementsByKey, isSourceDone }) {
+  if (inactive) {
+    const outstanding = (requirementsByKey?.get(item.key) || []).filter((key) => !isSourceDone(key));
+    return outstanding.map(plannerLabelForKey);
+  }
+  const isGreen =
+    item.key === PLANNER_START_PROJECT_KEY ||
+    item.key === PLANNER_START_BUILDING_KEY ||
+    tile?.indicatorStyle?.variant === "green";
+  return [isGreen ? "Complete" : "In Progress"];
+}
+
+function OverviewPlannerBoard({
+  tiles,
+  layout,
+  inactiveKeys,
+  startBuildingUnlocked,
+  onTileClick,
+  readOnly,
+  requirementsByKey,
+  isSourceDone,
+}) {
   const boardRef = useRef(null);
   const [scale, setScale] = useState(1);
+  const [hoverTip, setHoverTip] = useState(null);
   const tileByKey = useMemo(() => new Map(tiles.map((tile) => [tile.key, tile])), [tiles]);
   const drawnLinks = useMemo(
     () => buildDrawnPlannerLinks(layout.positions, layout.links),
     [layout.positions, layout.links]
   );
-  const extent = useMemo(() => plannerBoardExtent(layout.positions), [layout.positions]);
+  const extent = useMemo(
+    () => ({ width: PLANNER_BOARD_WIDTH, height: PLANNER_BOARD_HEIGHT }),
+    []
+  );
 
   useEffect(() => {
     const el = boardRef.current;
     if (!el) return undefined;
     const update = () => {
       const width = el.clientWidth;
+      const height = el.clientHeight;
       if (width < 1 || extent.width < 1 || extent.height < 1) return;
-      const maxHeight = Math.max(240, window.innerHeight * 0.7);
-      setScale(Math.min(width / extent.width, maxHeight / extent.height));
+      const pad = 8;
+      const maxHeight = height >= 40 ? height : Math.max(240, window.innerHeight * 0.7);
+      const next = Math.min((width - pad) / extent.width, (maxHeight - pad) / extent.height);
+      setScale(Number.isFinite(next) && next > 0.01 ? next : 1);
     };
     update();
     const observer = new ResizeObserver(update);
@@ -204,13 +234,33 @@ function OverviewPlannerBoard({ tiles, layout, inactiveKeys, startBuildingUnlock
               : inactive
                 ? `1px solid ${UI.outline}`
                 : style?.border ?? "none";
+            const hoverLines = plannerNodeHoverLines({
+              item,
+              tile,
+              inactive,
+              requirementsByKey,
+              isSourceDone,
+            });
+            const showHover = (event) => {
+              if (hoverLines.length === 0) {
+                setHoverTip(null);
+                return;
+              }
+              setHoverTip({
+                key: item.key,
+                lines: hoverLines,
+                list: Boolean(inactive),
+                x: event.clientX,
+                y: event.clientY,
+              });
+            };
             return (
               <div
                 key={item.key}
                 className={
                   [
                     "overview-planner-node",
-                    inactive ? "overview-planner-node--inactive" : "",
+                    inactive && !isStartBuilding ? "overview-planner-node--inactive" : "",
                     isStartBuilding ? "overview-planner-node--image" : "",
                     !isStartBuilding && item.kind === "heading" ? "overview-planner-node--heading" : "",
                   ]
@@ -220,6 +270,11 @@ function OverviewPlannerBoard({ tiles, layout, inactiveKeys, startBuildingUnlock
                 role={interactive ? "button" : undefined}
                 tabIndex={interactive ? 0 : undefined}
                 onClick={interactive ? () => onTileClick(tile) : undefined}
+                onPointerEnter={showHover}
+                onPointerMove={showHover}
+                onPointerLeave={() =>
+                  setHoverTip((current) => (current?.key === item.key ? null : current))
+                }
                 onKeyDown={
                   interactive
                     ? (e) => {
@@ -240,7 +295,6 @@ function OverviewPlannerBoard({ tiles, layout, inactiveKeys, startBuildingUnlock
                   border,
                   cursor: interactive ? "pointer" : "default",
                 }}
-                title={item.kind === "heading" ? item.label : tile?.value || item.label}
               >
                 {isStartBuilding ? (
                   <img src={startBuildingImage} alt="Start Building" />
@@ -257,6 +311,32 @@ function OverviewPlannerBoard({ tiles, layout, inactiveKeys, startBuildingUnlock
           })}
         </div>
       </div>
+      {hoverTip
+        ? createPortal(
+            <div
+              className="overview-planner-tooltip"
+              role="tooltip"
+              style={{
+                left: hoverTip.x,
+                top: hoverTip.y,
+                transform: `translate(${
+                  hoverTip.x < window.innerWidth / 2 ? "14px" : "calc(-100% - 14px)"
+                }, ${hoverTip.y < window.innerHeight / 2 ? "14px" : "calc(-100% - 14px)"})`,
+              }}
+            >
+              {hoverTip.list ? (
+                <ul>
+                  {hoverTip.lines.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              ) : (
+                hoverTip.lines[0]
+              )}
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }
@@ -388,6 +468,8 @@ export default function DesignPhaseStatusPanel({
               startBuildingUnlocked={startBuildingUnlocked}
               onTileClick={onTileClick}
               readOnly={readOnly}
+              requirementsByKey={requirementsByKey}
+              isSourceDone={isSourceDone}
             />
           ) : (
             listView

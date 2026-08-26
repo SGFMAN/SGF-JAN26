@@ -12,6 +12,7 @@ import {
 } from "../constants/colourSectionRanges";
 import {
   DEFAULT_BUILDING_3D,
+  SUBFLOOR_TYPE_OPTIONS,
   building3dDraftFromDefaults,
   normalizeBuilding3dDefaults,
 } from "../constants/building3dDefaults";
@@ -35,10 +36,35 @@ const SETTINGS_TABS = [
 const SETTINGS_TAB_WIDTH = `calc(${Math.max(...SETTINGS_TABS.map((t) => t.label.length))}ch + 28px)`;
 const FIELD_OUTLINE = `1px solid ${UI.outline}`;
 const MODEL_DEFAULT_FIELDS = [
-  { key: "subfloorHeightM", label: "Subfloor depth", step: "0.05", min: "0.15", max: "3" },
-  { key: "wallHeightM", label: "Wall height", step: "0.05", min: "1.5", max: "6" },
-  { key: "depthM", label: "Building width", step: "0.1", min: "2", max: "20" },
-  { key: "widthM", label: "Building length", step: "0.1", min: "2", max: "40" },
+  { key: "wallHeightM", label: "Wall Height", step: "0.05", min: "1.5", max: "6" },
+  { key: "depthM", label: "Building Width", step: "0.1", min: "2", max: "20" },
+  { key: "widthM", label: "Building Length", step: "0.1", min: "2", max: "40" },
+];
+const SUBFLOOR_HEIGHT_FIELD = {
+  step: "0.05",
+  min: "0.15",
+  max: "3",
+};
+const MODEL_MENU_SECTIONS = [
+  {
+    id: "subfloor",
+    label: "Subfloor",
+    fields: [],
+    includeSubfloorType: true,
+    visibilityKey: "showSubfloor",
+  },
+  {
+    id: "wall",
+    label: "Wall",
+    fields: [MODEL_DEFAULT_FIELDS[0]],
+    visibilityKey: "showWall",
+  },
+  {
+    id: "general",
+    label: "General",
+    fields: [MODEL_DEFAULT_FIELDS[1], MODEL_DEFAULT_FIELDS[2]],
+    includeFence: true,
+  },
 ];
 
 const SECTION_TITLE_SIZE = "0.9rem";
@@ -157,6 +183,10 @@ export default function ColourSettings() {
   const [modelDraft, setModelDraft] = useState(() => building3dDraftFromDefaults(DEFAULT_BUILDING_3D));
   const [modelDefaultsSaving, setModelDefaultsSaving] = useState(false);
   const [modelDefaultsSaveError, setModelDefaultsSaveError] = useState("");
+  const [modelMenuOpenId, setModelMenuOpenId] = useState(null);
+  const [modelFenceMenuOpen, setModelFenceMenuOpen] = useState(false);
+  const [modelSubfloorTypeMenuOpen, setModelSubfloorTypeMenuOpen] = useState(null);
+  const modelMenuLeaveTimerRef = useRef(null);
   const [subgroupDraftName, setSubgroupDraftName] = useState("");
   const [editingSubgroupId, setEditingSubgroupId] = useState(null);
   const [editingSubgroupName, setEditingSubgroupName] = useState("");
@@ -309,13 +339,20 @@ export default function ColourSettings() {
   useEffect(() => {
     const next = previewModel;
     const unchanged =
-      next.subfloorHeightM === modelDefaults.subfloorHeightM &&
+      next.megaAnchorsHeightM === modelDefaults.megaAnchorsHeightM &&
+      next.concreteStumpsHeightM === modelDefaults.concreteStumpsHeightM &&
+      next.slabHeightM === modelDefaults.slabHeightM &&
       next.wallHeightM === modelDefaults.wallHeightM &&
       next.widthM === modelDefaults.widthM &&
-      next.depthM === modelDefaults.depthM;
+      next.depthM === modelDefaults.depthM &&
+      next.subfloorType === modelDefaults.subfloorType &&
+      next.showFence === modelDefaults.showFence &&
+      next.showSubfloor === modelDefaults.showSubfloor &&
+      next.showWall === modelDefaults.showWall;
     if (unchanged) return undefined;
-    const allNumeric = MODEL_DEFAULT_FIELDS.every((field) =>
-      Number.isFinite(Number(String(modelDraft[field.key] ?? "").trim()))
+    const heightKeys = SUBFLOOR_TYPE_OPTIONS.map((option) => option.heightKey);
+    const allNumeric = [...MODEL_DEFAULT_FIELDS.map((field) => field.key), ...heightKeys].every((key) =>
+      Number.isFinite(Number(String(modelDraft[key] ?? "").trim()))
     );
     if (!allNumeric) return undefined;
     const timer = setTimeout(async () => {
@@ -964,6 +1001,38 @@ export default function ColourSettings() {
   const deleteButtonStyle = mergeButtonStyle(DELETE_COLOUR_BUTTON_ID, deleteButtonFallbackStyle);
   const deleteUsesSavedStyle = Boolean(buildSavedButtonStyle(DELETE_COLOUR_BUTTON_ID, true));
 
+  const modelNumberInputStyle = {
+    width: "100%",
+    padding: "8px 10px",
+    borderRadius: "8px",
+    border: "1px solid #ddd",
+    fontSize: SECTION_TITLE_SIZE,
+    fontWeight: 600,
+    color: MONUMENT,
+    background: WHITE,
+    boxSizing: "border-box",
+    minHeight: LIST_ROW_HEIGHT,
+  };
+
+  function openModelMenu(id) {
+    if (modelMenuLeaveTimerRef.current) {
+      clearTimeout(modelMenuLeaveTimerRef.current);
+      modelMenuLeaveTimerRef.current = null;
+    }
+    setModelMenuOpenId(id);
+    if (id !== "general") setModelFenceMenuOpen(false);
+    if (id !== "subfloor") setModelSubfloorTypeMenuOpen(null);
+  }
+
+  function scheduleCloseModelMenu() {
+    if (modelMenuLeaveTimerRef.current) clearTimeout(modelMenuLeaveTimerRef.current);
+    modelMenuLeaveTimerRef.current = setTimeout(() => {
+      setModelMenuOpenId(null);
+      setModelFenceMenuOpen(false);
+      setModelSubfloorTypeMenuOpen(null);
+    }, 160);
+  }
+
   return (
     <div
       style={{
@@ -977,17 +1046,19 @@ export default function ColourSettings() {
         boxSizing: "border-box",
       }}
     >
-      <h2 style={{ fontSize: "1.5rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>Colour Settings</h2>
-
       <div
         style={{
           display: "flex",
           flexDirection: "row",
           flexWrap: "wrap",
-          gap: "10px",
+          gap: "10px 16px",
           alignItems: "center",
+          flexShrink: 0,
         }}
       >
+        <h2 style={{ fontSize: "1.5rem", margin: 0, color: MONUMENT, fontWeight: 600, flexShrink: 0 }}>
+          Colour Settings
+        </h2>
         {SETTINGS_TABS.map((tab) => {
           const selected = settingsTab === tab.id;
           return (
@@ -1589,71 +1660,13 @@ export default function ColourSettings() {
             flex: 1,
             minHeight: 0,
             display: "flex",
-            flexDirection: "column",
+            flexDirection: "row",
             gap: "16px",
             overflow: "hidden",
+            alignItems: "stretch",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "10px",
-              flexShrink: 0,
-            }}
-          >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(4, minmax(140px, 1fr))",
-                gap: "12px",
-                maxWidth: "920px",
-              }}
-            >
-              {MODEL_DEFAULT_FIELDS.map((field) => (
-                <label
-                  key={field.key}
-                  style={{ display: "flex", flexDirection: "column", gap: "6px" }}
-                >
-                  <span style={sectionHeadingStyle()}>{field.label} (m)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step={field.step}
-                    min={field.min}
-                    max={field.max}
-                    value={modelDraft[field.key]}
-                    onChange={(e) =>
-                      setModelDraft((prev) => ({ ...prev, [field.key]: e.target.value }))
-                    }
-                    onBlur={() =>
-                      setModelDraft(building3dDraftFromDefaults(previewModel))
-                    }
-                    style={{
-                      width: "100%",
-                      padding: "8px 10px",
-                      borderRadius: "8px",
-                      border: "1px solid #ddd",
-                      fontSize: SECTION_TITLE_SIZE,
-                      fontWeight: 600,
-                      color: MONUMENT,
-                      background: WHITE,
-                      boxSizing: "border-box",
-                      minHeight: LIST_ROW_HEIGHT,
-                    }}
-                  />
-                </label>
-              ))}
-            </div>
-            <div style={{ fontSize: "0.8rem", color: UI.textMuted, minHeight: "1.2em" }}>
-              {modelDefaultsSaveError
-                ? modelDefaultsSaveError
-                : modelDefaultsSaving
-                  ? "Saving…"
-                  : "Used for the preview below and as the default rectangle on the Colours 3D view when there is no traced plan."}
-            </div>
-          </div>
-          <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "visible" }}>
             <Building3DModal
               embedded
               title="Base 3D Model"
@@ -1661,6 +1674,325 @@ export default function ColourSettings() {
               depthM={previewModel.depthM}
               subfloorHeightM={previewModel.subfloorHeightM}
               wallHeightM={previewModel.wallHeightM}
+              showFence={previewModel.showFence}
+              showSubfloor={previewModel.showSubfloor}
+              showWall={previewModel.showWall}
+              rightPanel={
+          <aside
+            style={{
+              width: "100%",
+              height: "100%",
+              flex: 1,
+              minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              padding: "14px",
+              boxSizing: "border-box",
+              background: WHITE,
+              borderRadius: "12px",
+              border: "1px solid #ddd",
+              overflow: "visible",
+            }}
+          >
+            {MODEL_MENU_SECTIONS.map((section) => {
+              const open = modelMenuOpenId === section.id;
+              return (
+                <div
+                  key={section.id}
+                  style={{ position: "relative", flexShrink: 0 }}
+                  onMouseEnter={() => openModelMenu(section.id)}
+                  onMouseLeave={scheduleCloseModelMenu}
+                >
+                  <div
+                    style={{
+                      ...sortButtonStyle(open),
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "8px",
+                      paddingLeft: section.visibilityKey ? "10px" : undefined,
+                    }}
+                  >
+                    {section.visibilityKey ? (
+                      <input
+                        type="checkbox"
+                        checked={Boolean(modelDraft[section.visibilityKey])}
+                        onChange={(e) =>
+                          setModelDraft((prev) => ({
+                            ...prev,
+                            [section.visibilityKey]: e.target.checked,
+                          }))
+                        }
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`Show ${section.label}`}
+                        style={{
+                          width: "16px",
+                          height: "16px",
+                          flexShrink: 0,
+                          cursor: "pointer",
+                          accentColor: MONUMENT,
+                        }}
+                      />
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setModelMenuOpenId((prev) => (prev === section.id ? null : section.id))
+                      }
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "8px",
+                        margin: 0,
+                        padding: 0,
+                        border: "none",
+                        background: "transparent",
+                        color: "inherit",
+                        font: "inherit",
+                        fontWeight: "inherit",
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <span>{section.label}</span>
+                      <span
+                        style={{
+                          fontSize: "1.1rem",
+                          lineHeight: 1,
+                          transform: open ? "translateX(-2px)" : "none",
+                          transition: "transform 0.12s ease",
+                        }}
+                        aria-hidden
+                      >
+                        ‹
+                      </span>
+                    </button>
+                  </div>
+                  {open ? (
+                    <div
+                      style={{
+                        position: "absolute",
+                        right: "100%",
+                        top: 0,
+                        marginRight: "8px",
+                        width: "240px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "12px",
+                        padding: "12px",
+                        boxSizing: "border-box",
+                        background: WHITE,
+                        borderRadius: "12px",
+                        border: "1px solid #ddd",
+                        boxShadow: "0 8px 24px rgba(0,0,0,0.14)",
+                        zIndex: 20,
+                      }}
+                    >
+                      {section.fields.map((field) => (
+                        <label
+                          key={field.key}
+                          style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+                        >
+                          <span style={sectionHeadingStyle()}>{field.label} (m)</span>
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            step={field.step}
+                            min={field.min}
+                            max={field.max}
+                            value={modelDraft[field.key]}
+                            onChange={(e) =>
+                              setModelDraft((prev) => ({ ...prev, [field.key]: e.target.value }))
+                            }
+                            onBlur={() =>
+                              setModelDraft(building3dDraftFromDefaults(previewModel))
+                            }
+                            style={modelNumberInputStyle}
+                          />
+                        </label>
+                      ))}
+                      {section.includeSubfloorType ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                          {SUBFLOOR_TYPE_OPTIONS.map((option) => {
+                            const selected = modelDraft.subfloorType === option.key;
+                            const typeOpen = modelSubfloorTypeMenuOpen === option.key;
+                            return (
+                              <div key={option.key} style={{ position: "relative" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setModelDraft((prev) => ({ ...prev, subfloorType: option.key }));
+                                    setModelSubfloorTypeMenuOpen((prev) =>
+                                      prev === option.key ? null : option.key
+                                    );
+                                  }}
+                                  onMouseEnter={() => setModelSubfloorTypeMenuOpen(option.key)}
+                                  style={{
+                                    ...sortButtonStyle(selected || typeOpen),
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    gap: "8px",
+                                    fontWeight: selected ? 700 : 600,
+                                  }}
+                                >
+                                  <span>{option.label}</span>
+                                  <span
+                                    style={{
+                                      fontSize: "1.1rem",
+                                      lineHeight: 1,
+                                      transform: typeOpen ? "translateX(-2px)" : "none",
+                                      transition: "transform 0.12s ease",
+                                    }}
+                                    aria-hidden
+                                  >
+                                    ‹
+                                  </span>
+                                </button>
+                                {typeOpen ? (
+                                  <div
+                                    style={{
+                                      position: "absolute",
+                                      right: "100%",
+                                      top: 0,
+                                      marginRight: "8px",
+                                      width: "200px",
+                                      display: "flex",
+                                      flexDirection: "column",
+                                      gap: "8px",
+                                      padding: "12px",
+                                      boxSizing: "border-box",
+                                      background: WHITE,
+                                      borderRadius: "12px",
+                                      border: "1px solid #ddd",
+                                      boxShadow: "0 8px 24px rgba(0,0,0,0.14)",
+                                      zIndex: 21,
+                                    }}
+                                  >
+                                    <label
+                                      style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+                                    >
+                                      <span style={sectionHeadingStyle()}>
+                                        {option.heightLabel} (m)
+                                      </span>
+                                      <input
+                                        type="number"
+                                        inputMode="decimal"
+                                        step={SUBFLOOR_HEIGHT_FIELD.step}
+                                        min={SUBFLOOR_HEIGHT_FIELD.min}
+                                        max={SUBFLOOR_HEIGHT_FIELD.max}
+                                        value={modelDraft[option.heightKey]}
+                                        onChange={(e) =>
+                                          setModelDraft((prev) => ({
+                                            ...prev,
+                                            subfloorType: option.key,
+                                            [option.heightKey]: e.target.value,
+                                          }))
+                                        }
+                                        onBlur={() =>
+                                          setModelDraft(building3dDraftFromDefaults(previewModel))
+                                        }
+                                        style={modelNumberInputStyle}
+                                      />
+                                    </label>
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                      {section.includeFence ? (
+                        <div style={{ position: "relative" }}>
+                          <button
+                            type="button"
+                            onClick={() => setModelFenceMenuOpen((prev) => !prev)}
+                            onMouseEnter={() => setModelFenceMenuOpen(true)}
+                            style={{
+                              ...sortButtonStyle(modelFenceMenuOpen),
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: "8px",
+                            }}
+                          >
+                            <span>Fence</span>
+                            <span
+                              style={{
+                                fontSize: "1.1rem",
+                                lineHeight: 1,
+                                transform: modelFenceMenuOpen ? "translateX(-2px)" : "none",
+                                transition: "transform 0.12s ease",
+                              }}
+                              aria-hidden
+                            >
+                              ‹
+                            </span>
+                          </button>
+                          {modelFenceMenuOpen ? (
+                            <div
+                              style={{
+                                position: "absolute",
+                                right: "100%",
+                                top: 0,
+                                marginRight: "8px",
+                                width: "200px",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "8px",
+                                padding: "12px",
+                                boxSizing: "border-box",
+                                background: WHITE,
+                                borderRadius: "12px",
+                                border: "1px solid #ddd",
+                                boxShadow: "0 8px 24px rgba(0,0,0,0.14)",
+                                zIndex: 21,
+                              }}
+                            >
+                              {[
+                                { value: true, label: "Show Fence" },
+                                { value: false, label: "Hide Fence" },
+                              ].map((option) => {
+                                const selected = Boolean(modelDraft.showFence) === option.value;
+                                return (
+                                  <button
+                                    key={option.label}
+                                    type="button"
+                                    onClick={() =>
+                                      setModelDraft((prev) => ({
+                                        ...prev,
+                                        showFence: option.value,
+                                      }))
+                                    }
+                                    style={{
+                                      ...sortButtonStyle(selected),
+                                      fontWeight: selected ? 700 : 600,
+                                    }}
+                                  >
+                                    {option.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+            {modelDefaultsSaveError || modelDefaultsSaving ? (
+              <div style={{ fontSize: "0.8rem", color: UI.textMuted, lineHeight: 1.4 }}>
+                {modelDefaultsSaveError || "Saving…"}
+              </div>
+            ) : null}
+          </aside>
+              }
             />
           </div>
         </div>

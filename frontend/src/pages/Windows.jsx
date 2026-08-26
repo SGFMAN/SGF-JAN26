@@ -6,6 +6,7 @@ import {
 } from "../utils/emailGeneralSettings";
 import { getApiHeaders } from "../utils/auth";
 import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 
 import { UI, INDICATOR } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
@@ -67,6 +68,31 @@ const BAL_RATING_OPTIONS = [
 
 const DATE_REQUIRED_OPTIONS = ["Normal", "Urgent"];
 
+function escapeWindowsEmailHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** TipTap / old templates sometimes store <b> as &lt;b&gt; — restore so Outlook formats them. */
+function restoreEscapedInlineEmailTags(html) {
+  return String(html || "").replace(
+    /&lt;(\/?)\s*(b|strong|i|em|u|br)\s*(\/?)\s*&gt;/gi,
+    "<$1$2$3>"
+  );
+}
+
+function insertHtmlAfterScopeHeading(html, insertHtml) {
+  const body = restoreEscapedInlineEmailTags(html);
+  const tagged = /<(b|strong)>\s*Scope\s*<\/\1>/i.exec(body);
+  if (!tagged) return `${body}${insertHtml}`;
+  let insertAt = tagged.index + tagged[0].length;
+  const closeP = body.slice(insertAt).match(/^\s*<\/p>/i);
+  if (closeP) insertAt += closeP[0].length;
+  return body.slice(0, insertAt) + insertHtml + body.slice(insertAt);
+}
+
 function resolveWindowsOrderingEmails(settings, project) {
   const code = generalEmailStateCode(project);
   const windows = parseEmailGeneralJson(settings?.email_general_json).windows || {};
@@ -112,6 +138,7 @@ export default function Windows({ project, onUpdate, showResetWindowData = false
   const windowOrderLocateFileRef = useRef(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailBody, setEmailBody] = useState("");
+  const emailBodyRef = useRef(null);
   const [windowOrderEmailFrom, setWindowOrderEmailFrom] = useState("");
   const [windowOrderEmailTo, setWindowOrderEmailTo] = useState("");
   const [showWindowOrderModal, setShowWindowOrderModal] = useState(false);
@@ -131,6 +158,13 @@ export default function Windows({ project, onUpdate, showResetWindowData = false
     setSelectedFile(null);
     setIsDragging(false);
   }, [project?.id, project?.window_order_number, windowStatus]);
+
+  useEffect(() => {
+    if (!showEmailModal || !emailBodyRef.current) return;
+    if (emailBodyRef.current.innerHTML !== emailBody) {
+      emailBodyRef.current.innerHTML = emailBody || "";
+    }
+  }, [showEmailModal, emailBody]);
 
   useEffect(() => {
     if (!requireOrderNumberOpen) return;
@@ -363,17 +397,12 @@ export default function Windows({ project, onUpdate, showResetWindowData = false
       const templates = await templatesRes.json();
       const template = templates.find((t) => t.name === "WINDOWS - Order");
       if (template && template.body) {
-        const windowInfo = buildWindowOrderingInfo();
+        const windowInfoHtml = `<p>${buildWindowOrderingInfo()
+          .split("\n")
+          .map((line) => escapeWindowsEmailHtml(line))
+          .join("<br>")}</p>`;
 
-        let body = template.body;
-        const scopePattern = /<b>Scope<\/b>/i;
-        const match = body.match(scopePattern);
-        if (match) {
-          const insertIndex = match.index + match[0].length;
-          body = body.slice(0, insertIndex) + "\n\n" + windowInfo + body.slice(insertIndex);
-        } else {
-          body = body + "\n\n" + windowInfo;
-        }
+        let body = insertHtmlAfterScopeHeading(template.body, windowInfoHtml);
 
         const suburb = (project?.suburb || "").toUpperCase();
         const street = project?.street || "";
@@ -384,8 +413,9 @@ export default function Windows({ project, onUpdate, showResetWindowData = false
           .replace(/\{STREET\}/g, street)
           .replace(/\{ProjectName\}/g, projectName);
 
-        // Keep as textarea text (newlines). send-windows-order converts \n → <br> on send.
-        setEmailBody(await replaceLoggedInUserEmailTokens(body));
+        setEmailBody(
+          convertEmailBodyNewlinesToBr(await replaceLoggedInUserEmailTokens(body))
+        );
       } else {
         setEmailBody("");
       }
@@ -1655,9 +1685,15 @@ Date Required: ${dateRequiredText}`;
               <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "12px", fontWeight: 500 }}>
                 Email Body
               </div>
-              <textarea
-                value={emailBody}
-                onChange={(e) => setEmailBody(e.target.value)}
+              <div
+                ref={emailBodyRef}
+                contentEditable
+                onInput={(e) => {
+                  setEmailBody(e.currentTarget.innerHTML);
+                }}
+                onBlur={(e) => {
+                  setEmailBody(e.currentTarget.innerHTML);
+                }}
                 style={{
                   width: "100%",
                   flex: 1,
@@ -1668,10 +1704,11 @@ Date Required: ${dateRequiredText}`;
                   fontSize: "0.95rem",
                   fontFamily: "inherit",
                   color: MONUMENT,
-                  resize: "vertical",
                   boxSizing: "border-box",
+                  lineHeight: 1.6,
+                  outline: "none",
+                  overflowY: "auto",
                 }}
-                placeholder="Email body will be loaded from template..."
               />
             </div>
 
