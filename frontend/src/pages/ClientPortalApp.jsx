@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import DesignPhaseStatusPanel from "../components/DesignPhaseStatusPanel.jsx";
 import useAppLogo from "../hooks/useAppLogo.js";
-import { UI } from "../utils/uiThemeTokens";
+import { UI, STREAM } from "../utils/uiThemeTokens";
 import { APP_VERSION } from "../utils/appVersion";
 
 import "../pages/Overview.css";
@@ -216,7 +216,7 @@ export default function ClientPortalApp() {
         <div
           style={{
             fontSize: "0.75rem",
-            color: "#ffffff",
+            color: PAGE_TEXT,
             opacity: 0.7,
             marginBottom: "16px",
           }}
@@ -275,7 +275,7 @@ export default function ClientPortalApp() {
               fontSize: "1rem",
               fontWeight: 500,
               color: UI.buttonPrimaryText,
-              background: requesting ? "#666" : UI.buttonPrimary,
+              background: requesting ? UI.panelBg : UI.buttonPrimary,
               border: "none",
               borderRadius: "8px",
               cursor: requesting ? "not-allowed" : "pointer",
@@ -289,10 +289,10 @@ export default function ClientPortalApp() {
             </div>
           ) : null}
           {requestError ? (
-            <div style={{ color: "#f88", fontSize: "0.95rem" }}>{requestError}</div>
+            <div style={{ color: STREAM.qldRedLight, fontSize: "0.95rem" }}>{requestError}</div>
           ) : null}
           {consumeError ? (
-            <div style={{ color: "#f88", fontSize: "0.95rem" }}>{consumeError}</div>
+            <div style={{ color: STREAM.qldRedLight, fontSize: "0.95rem" }}>{consumeError}</div>
           ) : null}
         </form>
       </div>

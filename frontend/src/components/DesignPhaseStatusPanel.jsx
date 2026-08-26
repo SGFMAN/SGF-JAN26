@@ -19,6 +19,11 @@ import {
 } from "../utils/plannerLayout.js";
 import { STREAM, INDICATOR, UI } from "../utils/uiThemeTokens.js";
 import { getOverviewIndicatorStyle } from "../utils/uiButtonStyles.js";
+import OverviewStoryView, {
+  OVERVIEW_GRAPHIC_TABS,
+  OVERVIEW_GRAPHIC_TAB_STORAGE_KEY,
+  loadOverviewGraphicTab,
+} from "./OverviewStoryViews.jsx";
 import "../pages/Overview.css";
 
 /**
@@ -226,7 +231,7 @@ function OverviewPlannerBoard({
             const background = isStartBuilding
               ? "transparent"
               : inactive
-                ? "#C8C8C8"
+                ? UI.panelBg
                 : style?.background;
             const color = inactive ? UI.textPrimary : style?.color;
             const border = isStartBuilding
@@ -355,6 +360,7 @@ export default function DesignPhaseStatusPanel({
   const [plannerLayout, setPlannerLayout] = useState(() =>
     loadPlannerLayout(defaultPlannerPositions())
   );
+  const [graphicTab, setGraphicTab] = useState(loadOverviewGraphicTab);
   const requirementsByKey = useMemo(
     () => getPlannerRequirementKeysByItem(plannerLayout.links),
     [plannerLayout.links]
@@ -395,6 +401,35 @@ export default function DesignPhaseStatusPanel({
       .filter((tile) => !isTileComplete(tile) && !readyKeys.has(tile.key))
       .map((tile) => tile.key)
   );
+  const storyItems = PLANNER_FLOW_ITEMS.map((item) => {
+    const tile = tiles.find((entry) => entry.key === item.key);
+    const isStartProject = item.key === PLANNER_START_PROJECT_KEY;
+    const isStartBuilding = item.key === PLANNER_START_BUILDING_KEY;
+    const waiting =
+      (isStartBuilding && !startBuildingUnlocked) ||
+      (item.kind === "stage" && inactiveKeys.has(item.key));
+    const complete =
+      isStartProject ||
+      (isStartBuilding && startBuildingUnlocked) ||
+      isTileComplete(tile);
+    return {
+      key: item.key,
+      label: item.label,
+      complete,
+      inProgress: !complete && !waiting,
+      waiting,
+      tile,
+    };
+  });
+
+  function selectGraphicTab(id) {
+    setGraphicTab(id);
+    try {
+      localStorage.setItem(OVERVIEW_GRAPHIC_TAB_STORAGE_KEY, id);
+    } catch {
+      /* ignore */
+    }
+  }
 
   const listView = (
     <div
@@ -460,20 +495,44 @@ export default function DesignPhaseStatusPanel({
       <div className="overview-progress-block">
         {showHeading ? <h2 className="overview-progress-heading">{heading}</h2> : null}
         <div className="overview-progress-section">
-          {SHOW_PLANNER_LAYOUT ? (
-            <OverviewPlannerBoard
-              tiles={tiles}
-              layout={plannerLayout}
-              inactiveKeys={inactiveKeys}
-              startBuildingUnlocked={startBuildingUnlocked}
-              onTileClick={onTileClick}
-              readOnly={readOnly}
-              requirementsByKey={requirementsByKey}
-              isSourceDone={isSourceDone}
-            />
-          ) : (
-            listView
-          )}
+          <div className="overview-view-tabs" role="tablist" aria-label="Overview views">
+            {OVERVIEW_GRAPHIC_TABS.map((tab) => {
+              const selected = graphicTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  className={`overview-view-tab${selected ? " overview-view-tab--selected" : ""}`}
+                  onClick={() => selectGraphicTab(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="overview-view-body">
+            {graphicTab === "flowchart" ? (
+              <OverviewPlannerBoard
+                tiles={tiles}
+                layout={plannerLayout}
+                inactiveKeys={inactiveKeys}
+                startBuildingUnlocked={startBuildingUnlocked}
+                onTileClick={onTileClick}
+                readOnly={readOnly}
+                requirementsByKey={requirementsByKey}
+                isSourceDone={isSourceDone}
+              />
+            ) : (
+              <OverviewStoryView
+                view={graphicTab}
+                items={storyItems}
+                onTileClick={onTileClick}
+                readOnly={readOnly}
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>

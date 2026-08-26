@@ -388,7 +388,7 @@ export default function Overview({ project }) {
       alert(err.message || "Failed to send email.");
     }
   }
-  // Indicator styles — Button 2 red, Button 4 orange, Button 5 green (selected colours)
+  // Indicator styles — Classic palette RAG (QLD Red / Indicator Orange / Stream Green)
   const indicatorFallbacks = { red: STREAM.qldRed, orange: INDICATOR.orange, green: STREAM.streamGreen, text: PAGE_TEXT };
   const indicatorRed = () => getOverviewIndicatorStyle("red", indicatorFallbacks);
   const indicatorOrange = () => getOverviewIndicatorStyle("orange", indicatorFallbacks);

@@ -294,17 +294,8 @@ export function getSavedButtonSelectedBackground(buttonId, fallback, colors = ge
   return resolvePaletteColor(style.colorSelected, colors);
 }
 
-/** Overview status tiles: red=2, orange=4, green=5 (selected button colours). */
+/** Overview status tiles: always Classic palette RAG (QLD Red / Indicator Orange / Stream Green). */
 export function getOverviewIndicatorStyle(variant, fallbacks, colors = getActiveThemeColors()) {
-  const buttonId = { red: 2, orange: 4, green: 5 }[variant];
-  const saved = buildSavedButtonStyle(buttonId, true, colors);
-  if (saved) {
-    return {
-      background: saved.background,
-      color: saved.color,
-      border: saved.border,
-    };
-  }
   return {
     background: fallbacks[variant],
     color: fallbacks.text ?? colors.pageText ?? "#323233",

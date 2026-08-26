@@ -131,7 +131,7 @@
 }
 
 .client-portal-error {
-  color: #ffaaaa;
+  color: var(--sgf-qld-red-light);
 }
 
 @media (max-width: 900px) {

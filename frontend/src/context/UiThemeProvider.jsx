@@ -3,6 +3,7 @@ import { getLoggedInUserId } from "../utils/auth";
 import { applyUiThemeToDocument } from "../themes/applyUiTheme";
 import { DEFAULT_UI_THEME_ID, getUiTheme } from "../themes/uiThemes";
 import { ensureUiButtonStylesLoaded, resetUiButtonStylesCache } from "../utils/uiButtonStyles.js";
+import { isClientPortalEntry } from "../utils/entryPortal";
 import {
   ensureUiThemeSettingsLoaded,
   getGlobalColorOverrides,
@@ -24,7 +25,9 @@ export function UiThemeProvider({ children }) {
     async function loadAllSettings() {
       setReady(false);
 
-      if (!getLoggedInUserId()) {
+      // Client Portal always uses Classic palette colours, even if a staff
+      // session is still in this browser.
+      if (isClientPortalEntry() || !getLoggedInUserId()) {
         resetUiButtonStylesCache();
         resetUiThemeSettingsCache();
         if (!cancelled) {
