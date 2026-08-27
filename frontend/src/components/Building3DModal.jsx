@@ -24,11 +24,31 @@ import {
   resolveUnitFinishHexes,
   UNIT_MATERIAL_META,
 } from "../utils/buildingUnitFinishes.js";
-import { DEFAULT_BUILDING_3D } from "../constants/building3dDefaults.js";
+import {
+  DEFAULT_BUILDING_3D,
+  DEFAULT_SUBFLOOR_TYPE,
+  CONCRETE_STUMP_SIZE_M,
+  CONCRETE_STUMP_PACKING_M,
+  MEGA_ANCHOR_DIAMETER_M,
+  MEGA_ANCHOR_PLATE_SIZE_M,
+  MEGA_ANCHOR_PLATE_THICKNESS_M,
+  MEGA_ANCHOR_PILE_DIAMETER_M,
+  MEGA_ANCHOR_PILE_VISIBLE_M,
+  MEGA_ANCHOR_PILE_BELOW_M,
+  MEGA_ANCHOR_PILE_TILT_RAD,
+  MEGA_ANCHOR_PILE_RAKE_RAD,
+  concreteStumpHeightM,
+  bearerRunAxis,
+} from "../constants/building3dDefaults.js";
+import {
+  normalizeElementVisibility,
+} from "../constants/buildingElements.js";
 import {
   assignTimberDeckUVs,
   createTimberDeckMaterial,
   createTimberDeckTexture,
+  createFramingTimberMaterial,
+  createFramingTimberTexture,
   TIMBER_DECK_BOARD_PITCH_M,
 } from "../utils/timberDeckTexture.js";
 import {
@@ -70,6 +90,8 @@ import { addTimberBoundaryFence } from "../utils/timberFence.js";
 
 export const BUILDING_3D_PARTS = Object.freeze({
   SUBFLOOR: "subfloor",
+  SUBFLOOR_SLAB: "subfloor-slab",
+  SUBFLOOR_STUMPS: "subfloor-stumps",
   SUBFLOOR_LAYER_1: "subfloor-layer-1",
   SUBFLOOR_LAYER_2: "subfloor-layer-2",
   SUBFLOOR_LAYER_3: "subfloor-layer-3",
@@ -79,6 +101,8 @@ export const BUILDING_3D_PARTS = Object.freeze({
   DECK_LAYER_2: "deck-layer-2",
   DECK_LAYER_3: "deck-layer-3",
   DECK_TOP: "deck-top",
+  BEARERS: "bearers",
+  JOISTS: "joists",
   CLADDING: "cladding",
   CLADDING_LAYER_1: "cladding-layer-1",
   CLADDING_LAYER_2: "cladding-layer-2",
@@ -106,6 +130,55 @@ export const BUILDING_3D_PARTS = Object.freeze({
   ROBES: "robes",
 });
 
+function isWallPart(type, id) {
+  const t = String(type || "");
+  const n = String(id || "");
+  return (
+    t.startsWith("cladding") ||
+    t.startsWith("window") ||
+    t.startsWith("door") ||
+    t.startsWith("sliding-door") ||
+    t.startsWith("internal-wall") ||
+    t.startsWith("internal-door") ||
+    n.startsWith("cladding") ||
+    n === "windows" ||
+    n.startsWith("windows-") ||
+    n === "doors" ||
+    n.startsWith("doors-") ||
+    n === "sliding-doors" ||
+    n.startsWith("sliding-doors-") ||
+    n === "internal-walls" ||
+    n.startsWith("internal-walls-") ||
+    n === "internal-doors" ||
+    n.startsWith("internal-doors-")
+  );
+}
+
+function applyBuildingElementVisibility(scene, modelGroup, vis) {
+  const on = (key) => vis?.[key] !== false;
+  if (modelGroup) {
+    modelGroup.traverse((obj) => {
+      const type = obj.userData?.partType;
+      const id = obj.userData?.partId || obj.name;
+      if (type === "subfloor-slab" || id === BUILDING_3D_PARTS.SUBFLOOR_SLAB) {
+        obj.visible = on("slab");
+      } else if (type === "concrete-stumps") {
+        obj.visible = on("concrete-stumps");
+      } else if (type === "mega-anchors") {
+        obj.visible = on("mega-anchors");
+      } else if (type === "bearers" || id === BUILDING_3D_PARTS.BEARERS) {
+        obj.visible = on("bearers");
+      } else if (type === "joists" || id === BUILDING_3D_PARTS.JOISTS) {
+        obj.visible = on("joists");
+      } else if (isWallPart(type, id)) {
+        obj.visible = on("wall");
+      }
+    });
+  }
+  const fence = scene?.getObjectByName("timber-fence");
+  if (fence) fence.visible = on("fence");
+}
+
 /** Finished floor is top of 650 mm subfloor; standing eye height is 1.8 m above that. */
 const SUBFLOOR_TOP_M = 0.65;
 const STANDING_EYE_ABOVE_FLOOR_M = 1.8;
@@ -117,6 +190,10 @@ const INTERNAL_VIEW_CAMERA_HEIGHT_M = 15;
 const INTERNAL_VIEW_FOCUS_Y_M = 0;
 /** External walk speed (metres per second) — no collision. */
 const EXTERNAL_WALK_SPEED_M_S = 4.5;
+/** Q (up) / Z (down) camera height speed. */
+const CAMERA_HEIGHT_SPEED_M_S = 3.5;
+const CAMERA_HEIGHT_MIN_M = 0.2;
+const CAMERA_HEIGHT_MAX_M = 40;
 /** Thin finish layer on top of the subfloor. */
 const FLOOR_FINISH_THICKNESS_M = 0.008;
 const FLOOR_FINISH_Y_EPS_M = 0.002;
@@ -385,6 +462,390 @@ function addFootprintSlab(parent, {
   return true;
 }
 
+/** Single rectangular slab: building length × width × slab height, centred on origin. */
+function addSubfloorSlabCube(parent, { widthM, depthM, heightM, color, roughness, metalness }) {
+  const slabW = Math.max(0.1, Number(widthM) || DEFAULT_BUILDING_3D.widthM);
+  const slabD = Math.max(0.1, Number(depthM) || DEFAULT_BUILDING_3D.depthM);
+  const slabH = Math.max(0.01, Number(heightM) || DEFAULT_BUILDING_3D.slabHeightM);
+  const geometry = new THREE.BoxGeometry(slabW, slabH, slabD);
+  const material = new THREE.MeshStandardMaterial({
+    color,
+    roughness,
+    metalness,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = BUILDING_3D_PARTS.SUBFLOOR_SLAB;
+  mesh.userData = {
+    partId: BUILDING_3D_PARTS.SUBFLOOR_SLAB,
+    partType: "subfloor-slab",
+    widthM: slabW,
+    depthM: slabD,
+    heightM: slabH,
+  };
+  mesh.position.set(0, slabH / 2, 0);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+
+  const outline = new THREE.LineSegments(
+    new THREE.EdgesGeometry(geometry),
+    new THREE.LineBasicMaterial({ color: 0x202124 })
+  );
+  outline.name = `${BUILDING_3D_PARTS.SUBFLOOR_SLAB}-outline`;
+  mesh.add(outline);
+  return true;
+}
+
+function axisGridPositions(lengthM, maxSpanM, sizeM) {
+  const len = Math.max(sizeM, Number(lengthM) || sizeM);
+  const span = Math.max(sizeM, Number(maxSpanM) || sizeM);
+  const first = -len / 2 + sizeM / 2;
+  const last = len / 2 - sizeM / 2;
+  const run = Math.max(0, last - first);
+  if (run < 1e-6) return [0];
+  const steps = Math.max(1, Math.ceil(run / span - 1e-9));
+  const step = run / steps;
+  const out = [];
+  for (let i = 0; i <= steps; i += 1) out.push(first + i * step);
+  return out;
+}
+
+/** Bearer/joist span grid. Concrete stumps are 100×100 mm cubes; mega-anchors are 50 mm cylinders. */
+function addConcreteStumpGrid(parent, {
+  widthM,
+  depthM,
+  subfloorHeightM,
+  bearerHeightM,
+  joistHeightM,
+  bearerWidthM,
+  joistWidthM,
+  bearerSpanMaxM,
+  joistSpanMaxM,
+  style = "concrete_stumps",
+}) {
+  const isMegaAnchors = style === "mega_anchors";
+  const gridSize = CONCRETE_STUMP_SIZE_M;
+  const diameter = MEGA_ANCHOR_DIAMETER_M;
+  const stackHeight = concreteStumpHeightM({
+    subfloorHeightM,
+    bearerHeightM,
+    joistHeightM,
+  });
+  const plateThick = isMegaAnchors ? MEGA_ANCHOR_PLATE_THICKNESS_M : 0;
+  const height = isMegaAnchors
+    ? Math.max(plateThick, stackHeight - plateThick)
+    : stackHeight;
+  const bearerAxis = bearerRunAxis(widthM, depthM);
+  const xs = axisGridPositions(
+    widthM,
+    bearerAxis === "x" ? bearerSpanMaxM : joistSpanMaxM,
+    gridSize
+  );
+  const zs = axisGridPositions(
+    depthM,
+    bearerAxis === "z" ? bearerSpanMaxM : joistSpanMaxM,
+    gridSize
+  );
+  const count = xs.length * zs.length;
+  if (count < 1) return false;
+
+  const geometry = isMegaAnchors
+    ? new THREE.CylinderGeometry(diameter / 2, diameter / 2, height, 20)
+    : new THREE.BoxGeometry(gridSize, height, gridSize);
+  const material = new THREE.MeshStandardMaterial(
+    isMegaAnchors
+      ? { color: 0x8e949a, roughness: 0.38, metalness: 0.62 }
+      : { color: 0xb8b6b1, roughness: 0.94, metalness: 0.02 }
+  );
+  const mesh = new THREE.InstancedMesh(geometry, material, count);
+  mesh.name = BUILDING_3D_PARTS.SUBFLOOR_STUMPS;
+  mesh.userData = {
+    partId: BUILDING_3D_PARTS.SUBFLOOR_STUMPS,
+    partType: isMegaAnchors ? "mega-anchors" : "concrete-stumps",
+    sizeM: isMegaAnchors ? diameter : gridSize,
+    heightM: height,
+    packingM: CONCRETE_STUMP_PACKING_M,
+    count,
+  };
+  const dummy = new THREE.Object3D();
+  let index = 0;
+  for (const x of xs) {
+    for (const z of zs) {
+      dummy.position.set(x, height / 2, z);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(index, dummy.matrix);
+      index += 1;
+    }
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+
+  const assembly = isMegaAnchors ? new THREE.Group() : parent;
+  if (isMegaAnchors) {
+    assembly.name = "mega-anchors";
+    assembly.userData = {
+      partId: BUILDING_3D_PARTS.SUBFLOOR_STUMPS,
+      partType: "mega-anchors",
+    };
+    parent.add(assembly);
+  }
+  assembly.add(mesh);
+
+  if (isMegaAnchors) {
+    addMegaAnchorTopPlates(assembly, {
+      xs,
+      zs,
+      poleHeight: height,
+      material,
+      bearerAxis,
+    });
+    addMegaAnchorPiles(assembly, { xs, zs, material });
+  }
+  addBearerTimbers(parent, {
+    widthM,
+    depthM,
+    bearerAxis,
+    crossPositions: bearerAxis === "x" ? zs : xs,
+    stackHeight,
+    bearerHeightM,
+    bearerWidthM,
+  });
+  addJoistTimbers(parent, {
+    widthM,
+    depthM,
+    bearerAxis,
+    crossPositions: bearerAxis === "x" ? xs : zs,
+    stackHeight,
+    bearerHeightM,
+    joistHeightM,
+    joistWidthM,
+  });
+  return true;
+}
+
+/** Full-length timber bearers on the stump rows, sitting on the 20 mm packing. */
+function addBearerTimbers(parent, {
+  widthM,
+  depthM,
+  bearerAxis,
+  crossPositions,
+  stackHeight,
+  bearerHeightM,
+  bearerWidthM,
+}) {
+  const alongX = bearerAxis !== "z";
+  const height = Math.max(0.02, Number(bearerHeightM) || DEFAULT_BUILDING_3D.bearerHeightM);
+  const y = stackHeight + CONCRETE_STUMP_PACKING_M + height / 2;
+  return addFramingTimbers(parent, {
+    partId: BUILDING_3D_PARTS.BEARERS,
+    partType: "bearers",
+    alongX,
+    lengthM: alongX ? widthM : depthM,
+    heightM: height,
+    widthM: Math.max(0.02, Number(bearerWidthM) || DEFAULT_BUILDING_3D.bearerWidthM),
+    y,
+    crossPositions,
+  });
+}
+
+/** Joists sit on the bearers and run 90° to them, full short-side length. */
+function addJoistTimbers(parent, {
+  widthM,
+  depthM,
+  bearerAxis,
+  crossPositions,
+  stackHeight,
+  bearerHeightM,
+  joistHeightM,
+  joistWidthM,
+}) {
+  const alongX = bearerAxis === "z";
+  const bearerH = Math.max(0.02, Number(bearerHeightM) || DEFAULT_BUILDING_3D.bearerHeightM);
+  const height = Math.max(0.02, Number(joistHeightM) || DEFAULT_BUILDING_3D.joistHeightM);
+  const y = stackHeight + CONCRETE_STUMP_PACKING_M + bearerH + height / 2;
+  return addFramingTimbers(parent, {
+    partId: BUILDING_3D_PARTS.JOISTS,
+    partType: "joists",
+    alongX,
+    lengthM: alongX ? widthM : depthM,
+    heightM: height,
+    widthM: Math.max(0.02, Number(joistWidthM) || DEFAULT_BUILDING_3D.joistWidthM),
+    y,
+    crossPositions,
+  });
+}
+
+function addFramingTimbers(parent, {
+  partId,
+  partType,
+  alongX,
+  lengthM,
+  heightM,
+  widthM,
+  y,
+  crossPositions,
+}) {
+  const length = Math.max(0.3, Number(lengthM) || 0);
+  const height = Math.max(0.02, Number(heightM) || 0.02);
+  const width = Math.max(0.02, Number(widthM) || 0.02);
+  const count = Array.isArray(crossPositions) ? crossPositions.length : 0;
+  if (count < 1 || length < 0.3) return false;
+
+  const geometry = alongX
+    ? new THREE.BoxGeometry(length, height, width)
+    : new THREE.BoxGeometry(width, height, length);
+  const texture = createFramingTimberTexture();
+  texture.repeat.set(Math.max(1, length / 0.35), 1);
+  const material = createFramingTimberMaterial(texture);
+  const mesh = new THREE.InstancedMesh(geometry, material, count);
+  mesh.name = partId;
+  mesh.userData = {
+    partId,
+    partType,
+    lengthM: length,
+    heightM: height,
+    widthM: width,
+    count,
+  };
+  const dummy = new THREE.Object3D();
+  let index = 0;
+  for (const p of crossPositions) {
+    dummy.position.set(alongX ? 0 : p, y, alongX ? p : 0);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(index, dummy.matrix);
+    index += 1;
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return true;
+}
+
+/** 75×75×5 mm cap plus a matching plate stood on edge, parallel to the bearers. */
+function addMegaAnchorTopPlates(parent, { xs, zs, poleHeight, material, bearerAxis }) {
+  const size = MEGA_ANCHOR_PLATE_SIZE_M;
+  const thick = MEGA_ANCHOR_PLATE_THICKNESS_M;
+  const count = xs.length * zs.length;
+  if (count < 1) return false;
+
+  const bearersAlongX = bearerAxis !== "z";
+  const flatGeometry = new THREE.BoxGeometry(size, thick, size);
+  const uprightGeometry = bearersAlongX
+    ? new THREE.BoxGeometry(size, size, thick)
+    : new THREE.BoxGeometry(thick, size, size);
+  const flat = new THREE.InstancedMesh(flatGeometry, material, count);
+  const upright = new THREE.InstancedMesh(uprightGeometry, material, count);
+  flat.name = `${BUILDING_3D_PARTS.SUBFLOOR_STUMPS}-plates`;
+  upright.name = `${BUILDING_3D_PARTS.SUBFLOOR_STUMPS}-plates-upright`;
+  flat.userData = {
+    partId: BUILDING_3D_PARTS.SUBFLOOR_STUMPS,
+    partType: "mega-anchors",
+    sizeM: size,
+    thicknessM: thick,
+    count,
+  };
+  upright.userData = {
+    partId: BUILDING_3D_PARTS.SUBFLOOR_STUMPS,
+    partType: "mega-anchors",
+    sizeM: size,
+    thicknessM: thick,
+    count,
+  };
+  const dummy = new THREE.Object3D();
+  const plateY = poleHeight + thick / 2;
+  const uprightY = poleHeight + thick + size / 2;
+  const edge = (size - thick) / 2;
+  let index = 0;
+  for (const x of xs) {
+    for (const z of zs) {
+      dummy.position.set(x, plateY, z);
+      dummy.updateMatrix();
+      flat.setMatrixAt(index, dummy.matrix);
+      dummy.position.set(
+        bearersAlongX ? x : x + edge,
+        uprightY,
+        bearersAlongX ? z + edge : z
+      );
+      dummy.updateMatrix();
+      upright.setMatrixAt(index, dummy.matrix);
+      index += 1;
+    }
+  }
+  flat.instanceMatrix.needsUpdate = true;
+  upright.instanceMatrix.needsUpdate = true;
+  flat.castShadow = true;
+  flat.receiveShadow = true;
+  upright.castShadow = true;
+  upright.receiveShadow = true;
+  parent.add(flat);
+  parent.add(upright);
+  return true;
+}
+
+/** Three piles around each riser, 120° apart, driven into the ground; 70 mm shows above grade. */
+function addMegaAnchorPiles(parent, { xs, zs, material }) {
+  const visibleM = MEGA_ANCHOR_PILE_VISIBLE_M;
+  const belowM = MEGA_ANCHOR_PILE_BELOW_M;
+  const splay = MEGA_ANCHOR_PILE_TILT_RAD;
+  const rake = MEGA_ANCHOR_PILE_RAKE_RAD;
+  const pileDia = MEGA_ANCHOR_PILE_DIAMETER_M;
+  const topY = visibleM;
+  const bottomY = -belowM;
+  const radiusTop = MEGA_ANCHOR_DIAMETER_M / 2 + pileDia / 2;
+  const axisY = Math.cos(splay) * Math.cos(rake);
+  const length = (topY - bottomY) / axisY;
+  const count = xs.length * zs.length * 3;
+  if (count < 1 || length < 0.05 || axisY < 0.2) return false;
+
+  const geometry = new THREE.CylinderGeometry(pileDia / 2, pileDia / 2, length, 16);
+  const mesh = new THREE.InstancedMesh(geometry, material, count);
+  mesh.name = `${BUILDING_3D_PARTS.SUBFLOOR_STUMPS}-piles`;
+  mesh.userData = {
+    partId: BUILDING_3D_PARTS.SUBFLOOR_STUMPS,
+    partType: "mega-anchors",
+    sizeM: pileDia,
+    visibleM,
+    belowM,
+    count,
+  };
+  const dummy = new THREE.Object3D();
+  const up = new THREE.Vector3(0, 1, 0);
+  const axis = new THREE.Vector3();
+  let index = 0;
+  for (const x of xs) {
+    for (const z of zs) {
+      for (let i = 0; i < 3; i += 1) {
+        const yaw = (i * Math.PI * 2) / 3;
+        const radialX = Math.sin(yaw);
+        const radialZ = Math.cos(yaw);
+        const tangentX = Math.cos(yaw);
+        const tangentZ = -Math.sin(yaw);
+        axis.set(
+          Math.cos(splay) * Math.sin(rake) * tangentX - Math.sin(splay) * radialX,
+          axisY,
+          Math.cos(splay) * Math.sin(rake) * tangentZ - Math.sin(splay) * radialZ
+        );
+        const topX = x + radiusTop * radialX;
+        const topZ = z + radiusTop * radialZ;
+        const botX = topX - axis.x * length;
+        const botZ = topZ - axis.z * length;
+        dummy.position.set((topX + botX) / 2, (topY + bottomY) / 2, (topZ + botZ) / 2);
+        dummy.quaternion.setFromUnitVectors(up, axis);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(index, dummy.matrix);
+        index += 1;
+      }
+    }
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return true;
+}
+
 /** Thin timber-decking cap on the top face of a deck stack. */
 function addDeckTopBoards(parent, ring, topY) {
   const geometry = buildFootprintSlabGeometry(
@@ -474,6 +935,7 @@ export default function Building3DModal({
   onClose,
   embedded = false,
   rightPanel = null,
+  elementsPanel = null,
   title = "3D Unit",
   widthM = DEFAULT_BUILDING_3D.widthM,
   depthM = DEFAULT_BUILDING_3D.depthM,
@@ -508,7 +970,20 @@ export default function Building3DModal({
   showFence = DEFAULT_BUILDING_3D.showFence,
   showSubfloor = DEFAULT_BUILDING_3D.showSubfloor,
   showWall = DEFAULT_BUILDING_3D.showWall,
+  elementVisibility = null,
+  subfloorType = DEFAULT_SUBFLOOR_TYPE,
+  bearerHeightM = DEFAULT_BUILDING_3D.bearerHeightM,
+  joistHeightM = DEFAULT_BUILDING_3D.joistHeightM,
+  bearerWidthM = DEFAULT_BUILDING_3D.bearerWidthM,
+  joistWidthM = DEFAULT_BUILDING_3D.joistWidthM,
+  bearerSpanMaxM = DEFAULT_BUILDING_3D.bearerSpanMaxM,
+  joistSpanMaxM = DEFAULT_BUILDING_3D.joistSpanMaxM,
 }) {
+  const resolvedSubfloorType = (() => {
+    const raw = String(subfloorType || DEFAULT_SUBFLOOR_TYPE).trim() || DEFAULT_SUBFLOOR_TYPE;
+    if (raw === "stumps") return "concrete_stumps";
+    return raw;
+  })();
   const CLADDING_HEIGHT_M =
     Number.isFinite(Number(wallHeightM)) && Number(wallHeightM) > 0.5
       ? Number(wallHeightM)
@@ -527,13 +1002,27 @@ export default function Building3DModal({
   const captureRef = useRef(null);
   const cameraHeightRef = useRef(EYE_HEIGHT_M);
   const externalCameraHeightRef = useRef(EYE_HEIGHT_M);
+  const cameraHeightUserSetRef = useRef(false);
   const viewModeRef = useRef(VIEW_MODE_EXTERNAL);
   const applyViewModeRef = useRef(null);
   const walkModeRef = useRef(false);
   const applyWalkModeRef = useRef(null);
+  const applyVisibilityRef = useRef(null);
+  const resolvedVisibility = useMemo(
+    () =>
+      normalizeElementVisibility(elementVisibility, {
+        showFence,
+        showSubfloor,
+        showWall,
+      }),
+    [elementVisibility, showFence, showSubfloor, showWall]
+  );
+  const elementVisibilityRef = useRef(resolvedVisibility);
+  elementVisibilityRef.current = resolvedVisibility;
   const [error, setError] = useState("");
   const [viewMode, setViewMode] = useState(VIEW_MODE_EXTERNAL);
   const [walkMode, setWalkMode] = useState(false);
+  const [sideMenuMode, setSideMenuMode] = useState("edit");
   const [renderBusy, setRenderBusy] = useState(false);
   const [renderError, setRenderError] = useState("");
   const [renderImageUrl, setRenderImageUrl] = useState(null);
@@ -769,66 +1258,45 @@ export default function Building3DModal({
       subfloor.userData = {
         partId: BUILDING_3D_PARTS.SUBFLOOR,
         partType: "subfloor",
+        subfloorType: resolvedSubfloorType,
         fromTrace,
-        widthM: bounds.widthM,
-        depthM: bounds.depthM,
+        widthM,
+        depthM,
         heightM: subfloorHeightM,
-        layerHeightM: subfloorLayerHeightM,
-        layerGapM: subfloorGapM,
       };
       modelGroup.add(subfloor);
 
-      // Subfloor: 200 + 25 + 200 + 25 + 200 = 650 mm, custom footprint slabs.
-      let builtSubfloorLayers = 0;
-      SUBFLOOR_LAYER_IDS.forEach((partId, index) => {
-        const bottomY = index * (subfloorLayerHeightM + subfloorGapM);
-        const topY = bottomY + subfloorLayerHeightM;
-        if (
-          addFootprintSlab(subfloor, {
-            partId,
-            partType: "subfloor-layer",
-            layerNumber: index + 1,
-            ring,
-            bottomY,
-            topY,
-            color: finishHex.baseboards,
-            roughness: 0.78,
-            metalness: 0.05,
-          })
-        ) {
-          builtSubfloorLayers += 1;
-        }
-      });
+      // Slab: one cube from building length × width × slab height.
+      // Stumps: same bearer/joist span grid. Concrete = 100×100 mm cubes;
+      // mega-anchors = 50 mm cylinders. Height = subfloor − bearer − joist − 20 mm.
+      if (resolvedSubfloorType === "slab") {
+        addSubfloorSlabCube(subfloor, {
+          widthM,
+          depthM,
+          heightM: subfloorHeightM,
+          color: finishHex.baseboards,
+          roughness: 0.78,
+          metalness: 0.05,
+        });
+      } else if (
+        resolvedSubfloorType === "concrete_stumps" ||
+        resolvedSubfloorType === "mega_anchors"
+      ) {
+        addConcreteStumpGrid(subfloor, {
+          widthM,
+          depthM,
+          subfloorHeightM,
+          bearerHeightM,
+          joistHeightM,
+          bearerWidthM,
+          joistWidthM,
+          bearerSpanMaxM,
+          joistSpanMaxM,
+          style: resolvedSubfloorType,
+        });
+      }
 
-      const cornerColumns = new THREE.Group();
-      cornerColumns.name = BUILDING_3D_PARTS.CORNER_COLUMNS;
-      cornerColumns.userData = {
-        partId: BUILDING_3D_PARTS.CORNER_COLUMNS,
-        partType: "corner-columns",
-        columnSizeM: CORNER_COLUMN_SIZE_M,
-        columnHeightM: subfloorHeightM,
-        exteriorProjectionM: CORNER_COLUMN_PROJECTION_M,
-      };
-      modelGroup.add(cornerColumns);
-
-      footprintCornerColumnCenters(ring, CORNER_COLUMN_SIZE_M, CORNER_COLUMN_PROJECTION_M).forEach(
-        ({ x, z, index, rotationY }) => {
-          addCornerColumn(cornerColumns, {
-            partId: `corner-column-${index + 1}`,
-            partType: "corner-column",
-            x,
-            z,
-            y: subfloorHeightM / 2,
-            heightM: subfloorHeightM,
-            color: finishHex.baseboards,
-            roughness: 0.72,
-            metalness: 0.08,
-            rotationY,
-          });
-        }
-      );
-
-      // Decks: same 200 / 25 / 200 / 25 / 200 stack as subfloor, timber boards on top.
+      // Decks: same 200 / 25 / 200 / 25 / 200 stack as the previous subfloor, timber boards on top.
       // No walls above — second subfloor(s) attached beside the unit.
       let hasDeck = false;
       const wallRef = footprintPoints?.length >= 3 ? footprintPoints : null;
@@ -1230,9 +1698,9 @@ export default function Building3DModal({
         }
       );
 
-      if (builtSubfloorLayers < 3 || builtCladdingLayers < 1) {
+      if (builtCladdingLayers < 1) {
         throw new Error(
-          `Could not extrude the unit footprint (${builtSubfloorLayers}/3 subfloor, ${builtCladdingLayers} cladding faces).`
+          `Could not extrude the unit footprint (${builtCladdingLayers} cladding faces).`
         );
       }
 
@@ -2330,17 +2798,10 @@ export default function Building3DModal({
       ground.position.y = -0.01;
       ground.receiveShadow = true;
       scene.add(ground);
-      if (showFence) addTimberBoundaryFence(scene, groundSize);
-      const setPartVisible = (partId, visible) => {
-        const obj = modelGroup.getObjectByName(partId);
-        if (obj) obj.visible = visible;
-      };
-      setPartVisible(BUILDING_3D_PARTS.SUBFLOOR, showSubfloor);
-      setPartVisible(BUILDING_3D_PARTS.CORNER_COLUMNS, showSubfloor);
-      setPartVisible(BUILDING_3D_PARTS.CLADDING, showWall);
-      setPartVisible(BUILDING_3D_PARTS.WINDOWS, showWall);
-      setPartVisible(BUILDING_3D_PARTS.DOORS, showWall);
-      setPartVisible(BUILDING_3D_PARTS.SLIDING_DOORS, showWall);
+      addTimberBoundaryFence(scene, groundSize);
+      applyVisibilityRef.current = (vis) =>
+        applyBuildingElementVisibility(scene, modelGroup, vis);
+      applyVisibilityRef.current(elementVisibilityRef.current);
       setError("");
     } catch (err) {
       setError(err?.message || "Could not build the 3D unit");
@@ -2362,9 +2823,12 @@ export default function Building3DModal({
     let walkX = distance * Math.sin(theta);
     let walkZ = distance * Math.cos(theta);
     let yaw = theta + Math.PI;
-    // External view: fixed standing eye height (no mouse/keyboard height adjust).
-    externalCameraHeightRef.current = eyeHeightM;
+    // External + walk: Q/Z adjust this height. Keep it if the user already set it.
+    if (!cameraHeightUserSetRef.current) {
+      externalCameraHeightRef.current = eyeHeightM;
+    }
     let cameraHeight = eyeHeightM;
+    let internalCameraHeight = INTERNAL_VIEW_CAMERA_HEIGHT_M;
     const keysDown = new Set();
     let lastFrameTs = performance.now();
 
@@ -2384,7 +2848,7 @@ export default function Building3DModal({
         target.y = INTERNAL_VIEW_FOCUS_Y_M;
         camera.position.set(
           target.x + distance * Math.sin(theta),
-          INTERNAL_VIEW_CAMERA_HEIGHT_M,
+          internalCameraHeight,
           target.z + distance * Math.cos(theta)
         );
         camera.lookAt(target.x, INTERNAL_VIEW_FOCUS_Y_M, target.z);
@@ -2439,9 +2903,9 @@ export default function Building3DModal({
         keysDown.clear();
       }
       cameraHeight = next === VIEW_MODE_INTERNAL
-        ? INTERNAL_VIEW_CAMERA_HEIGHT_M
-        : eyeHeightM;
-      if (next === VIEW_MODE_EXTERNAL) {
+        ? internalCameraHeight
+        : externalCameraHeightRef.current;
+      if (next === VIEW_MODE_EXTERNAL && !cameraHeightUserSetRef.current) {
         externalCameraHeightRef.current = eyeHeightM;
       }
       cameraHeightRef.current = cameraHeight;
@@ -2453,8 +2917,8 @@ export default function Building3DModal({
     externalCameraHeightRef.current = eyeHeightM;
     cameraHeight =
       viewModeRef.current === VIEW_MODE_INTERNAL
-        ? INTERNAL_VIEW_CAMERA_HEIGHT_M
-        : eyeHeightM;
+        ? internalCameraHeight
+        : externalCameraHeightRef.current;
     cameraHeightRef.current = cameraHeight;
     syncCursor();
     updateCamera();
@@ -2465,17 +2929,18 @@ export default function Building3DModal({
       el instanceof HTMLSelectElement;
 
     const onWalkKeyDown = (event) => {
-      if (viewModeRef.current !== VIEW_MODE_EXTERNAL || !walkModeRef.current) return;
       if (isTypingTarget(event.target)) return;
       const { code } = event;
-      if (
-        code !== "KeyW" &&
-        code !== "KeyA" &&
-        code !== "KeyS" &&
-        code !== "KeyD"
-      ) {
+      const heightKey = code === "KeyQ" || code === "KeyZ";
+      const walkKey =
+        code === "KeyW" || code === "KeyA" || code === "KeyS" || code === "KeyD";
+      if (heightKey) {
+        event.preventDefault();
+        keysDown.add(code);
         return;
       }
+      if (viewModeRef.current !== VIEW_MODE_EXTERNAL || !walkModeRef.current) return;
+      if (!walkKey) return;
       event.preventDefault();
       keysDown.add(code);
     };
@@ -2648,6 +3113,26 @@ export default function Building3DModal({
           updateCamera();
         }
       }
+      if (keysDown.has("KeyQ") || keysDown.has("KeyZ")) {
+        const dir = (keysDown.has("KeyQ") ? 1 : 0) + (keysDown.has("KeyZ") ? -1 : 0);
+        if (dir !== 0) {
+          const delta = dir * CAMERA_HEIGHT_SPEED_M_S * dt;
+          if (viewModeRef.current === VIEW_MODE_INTERNAL) {
+            internalCameraHeight = Math.max(
+              2,
+              Math.min(80, internalCameraHeight + delta)
+            );
+          } else {
+            cameraHeightUserSetRef.current = true;
+            externalCameraHeightRef.current = Math.max(
+              CAMERA_HEIGHT_MIN_M,
+              Math.min(CAMERA_HEIGHT_MAX_M, externalCameraHeightRef.current + delta)
+            );
+            cameraHeightRef.current = externalCameraHeightRef.current;
+          }
+          updateCamera();
+        }
+      }
       renderer.render(scene, camera);
     };
     render();
@@ -2657,6 +3142,7 @@ export default function Building3DModal({
       captureRef.current = null;
       applyViewModeRef.current = null;
       applyWalkModeRef.current = null;
+      applyVisibilityRef.current = null;
       if (animationId != null) cancelAnimationFrame(animationId);
       resizeObserver?.disconnect();
       container.removeEventListener("pointerenter", onPointerEnter);
@@ -2676,7 +3162,11 @@ export default function Building3DModal({
         container.removeChild(renderer.domElement);
       }
     };
-  }, [buildModel, depthM, footprintKey, footprintPoints, roofPointsKey, roofPoints, roofPivotKey, roofPivotLine, deckPointsKey, resolvedDecks, kitchenBenchesKey, resolvedKitchenBenches, robesKey, resolvedRobes, windowsKey, windows, doorsKey, doors, slidingDoorsKey, slidingDoors, internalWallsKey, internalWallSegments, internalDoorsKey, internalDoors, flooringPointsKey, flooringPoints, hybridRegionsKey, hybridRegions, tilesRegionsKey, tilesRegions, carpetRegionsKey, carpetRegions, flooringImagesKey, flooringImages, flooringScalesKey, flooringScales, calibrationKey, calibration, subfloorHeightM, wallHeightM, widthM, finishesKey, finishHex, kitchenFinishesKey, kitchenFinishes, showFence, showSubfloor, showWall]);
+  }, [buildModel, depthM, footprintKey, footprintPoints, roofPointsKey, roofPoints, roofPivotKey, roofPivotLine, deckPointsKey, resolvedDecks, kitchenBenchesKey, resolvedKitchenBenches, robesKey, resolvedRobes, windowsKey, windows, doorsKey, doors, slidingDoorsKey, slidingDoors, internalWallsKey, internalWallSegments, internalDoorsKey, internalDoors, flooringPointsKey, flooringPoints, hybridRegionsKey, hybridRegions, tilesRegionsKey, tilesRegions, carpetRegionsKey, carpetRegions, flooringImagesKey, flooringImages, flooringScalesKey, flooringScales, calibrationKey, calibration, subfloorHeightM, wallHeightM, widthM, finishesKey, finishHex, kitchenFinishesKey, kitchenFinishes, resolvedSubfloorType, bearerHeightM, joistHeightM, bearerWidthM, joistWidthM, bearerSpanMaxM, joistSpanMaxM]);
+
+  useEffect(() => {
+    applyVisibilityRef.current?.(resolvedVisibility);
+  }, [resolvedVisibility]);
 
   function openRenderOptions() {
     if (renderBusy) return;
@@ -2908,6 +3398,26 @@ export default function Building3DModal({
         >
           {renderBusy ? "Rendering…" : "Render"}
         </button>
+        {elementsPanel ? (
+          <button
+            type="button"
+            onClick={() =>
+              setSideMenuMode((prev) => (prev === "edit" ? "elements" : "edit"))
+            }
+            title={
+              sideMenuMode === "edit"
+                ? "Show building element visibility"
+                : "Back to the 3D edit menu"
+            }
+            style={
+              side
+                ? sideBtnStyle({ active: sideMenuMode === "elements" })
+                : headerBtnStyle
+            }
+          >
+            {sideMenuMode === "edit" ? "Building Elements" : "Edit"}
+          </button>
+        ) : null}
       </>
     );
   };
@@ -2987,10 +3497,10 @@ export default function Building3DModal({
               {" · "}50 mm corner posts, 5 mm proud
               {" — "}
               {walkMode
-                ? `${STANDING_EYE_ABOVE_FLOOR_M.toFixed(1)} m eye · Walk mode · WASD move · mouse look · Esc = orbit`
+                ? `${STANDING_EYE_ABOVE_FLOOR_M.toFixed(1)} m eye · Walk · WASD move · Q/Z height · mouse look · Esc = orbit`
                 : viewMode === VIEW_MODE_INTERNAL
-                  ? `${INTERNAL_VIEW_CAMERA_HEIGHT_M.toFixed(0)} m internal · drag to rotate · scroll to zoom`
-                  : `${STANDING_EYE_ABOVE_FLOOR_M.toFixed(1)} m eye · Orbit · drag to rotate · scroll zoom`}
+                  ? `Internal · drag to rotate · scroll zoom · Q/Z height`
+                  : `${STANDING_EYE_ABOVE_FLOOR_M.toFixed(1)} m eye · Orbit · drag to rotate · scroll zoom · Q/Z height`}
             </div>
             )}
           </div>
@@ -3172,7 +3682,7 @@ export default function Building3DModal({
               overflow: "visible",
             }}
           >
-            {rightPanel}
+            {sideMenuMode === "elements" && elementsPanel ? elementsPanel : rightPanel}
           </div>
         </div>
       ) : null}

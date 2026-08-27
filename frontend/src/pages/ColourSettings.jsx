@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import AuthedImg from "../components/AuthedImg";
 import ModalBackdrop from "../components/ModalBackdrop";
 import Building3DModal from "../components/Building3DModal.jsx";
@@ -12,10 +12,19 @@ import {
 } from "../constants/colourSectionRanges";
 import {
   DEFAULT_BUILDING_3D,
+  STUMP_STYLE_OPTIONS,
   SUBFLOOR_TYPE_OPTIONS,
   building3dDraftFromDefaults,
   normalizeBuilding3dDefaults,
+  resolvedSubfloorDrawType,
 } from "../constants/building3dDefaults";
+import {
+  BUILDING_ELEMENT_GROUPS,
+  BUILDING_ELEMENT_VISIBILITY_GROUPS,
+  emptyBuildingElementMaterials,
+  normalizeBuildingElementMaterials,
+  normalizeElementVisibility,
+} from "../constants/buildingElements";
 import { getApiHeaders } from "../utils/auth";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 import { MENU, UI } from "../utils/uiThemeTokens.js";
@@ -31,6 +40,7 @@ const SETTINGS_TABS = [
   { id: "colours", label: "Colours and Groups" },
   { id: "ranges", label: "Colour Ranges" },
   { id: "materials", label: "Materials" },
+  { id: "elements", label: "Building Elements" },
   { id: "model", label: "3D Model" },
 ];
 const SETTINGS_TAB_WIDTH = `calc(${Math.max(...SETTINGS_TABS.map((t) => t.label.length))}ch + 28px)`;
@@ -51,19 +61,16 @@ const MODEL_MENU_SECTIONS = [
     label: "Subfloor",
     fields: [],
     includeSubfloorType: true,
-    visibilityKey: "showSubfloor",
   },
   {
     id: "wall",
     label: "Wall",
     fields: [MODEL_DEFAULT_FIELDS[0]],
-    visibilityKey: "showWall",
   },
   {
     id: "general",
     label: "General",
     fields: [MODEL_DEFAULT_FIELDS[1], MODEL_DEFAULT_FIELDS[2]],
-    includeFence: true,
   },
 ];
 
@@ -154,6 +161,82 @@ function mergeButtonStyle(styleId, fallback) {
   return saved ? { ...saved } : fallback;
 }
 
+const FLYOUT_EDGE_PAD_PX = 8;
+
+function flyoutClipBounds(el) {
+  let top = 0;
+  let bottom = window.innerHeight;
+  let node = el.parentElement;
+  while (node && node !== document.documentElement) {
+    const overflowY = window.getComputedStyle(node).overflowY;
+    if (overflowY === "hidden" || overflowY === "auto" || overflowY === "scroll" || overflowY === "clip") {
+      const rect = node.getBoundingClientRect();
+      top = Math.max(top, rect.top);
+      bottom = Math.min(bottom, rect.bottom);
+    }
+    node = node.parentElement;
+  }
+  return { top: top + FLYOUT_EDGE_PAD_PX, bottom: bottom - FLYOUT_EDGE_PAD_PX };
+}
+
+function ViewportClampedFlyout({ open, width, zIndex, gap = "8px", children }) {
+  const ref = useRef(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!open || !el) return undefined;
+    const clamp = () => {
+      el.style.transform = "none";
+      el.style.maxHeight = "";
+      el.style.overflowY = "visible";
+      const clip = flyoutClipBounds(el);
+      const available = Math.max(96, clip.bottom - clip.top);
+      let rect = el.getBoundingClientRect();
+      if (rect.height > available) {
+        el.style.maxHeight = `${available}px`;
+        el.style.overflowY = "auto";
+        rect = el.getBoundingClientRect();
+      }
+      let shift = 0;
+      if (rect.bottom > clip.bottom) shift = clip.bottom - rect.bottom;
+      if (rect.top + shift < clip.top) shift = clip.top - rect.top;
+      el.style.transform = shift ? `translateY(${shift}px)` : "none";
+    };
+    clamp();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(clamp) : null;
+    observer?.observe(el);
+    window.addEventListener("resize", clamp);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", clamp);
+    };
+  }, [open, children]);
+  if (!open) return null;
+  return (
+    <div
+      ref={ref}
+      style={{
+        position: "absolute",
+        right: "100%",
+        top: 0,
+        marginRight: "8px",
+        width,
+        display: "flex",
+        flexDirection: "column",
+        gap,
+        padding: "12px",
+        boxSizing: "border-box",
+        background: WHITE,
+        borderRadius: "12px",
+        border: "1px solid #ddd",
+        boxShadow: "0 8px 24px rgba(0,0,0,0.14)",
+        zIndex,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 export default function ColourSettings() {
   const [groupCatalogue, setGroupCatalogue] = useState(null);
   const [loadingCatalogue, setLoadingCatalogue] = useState(false);
@@ -179,13 +262,15 @@ export default function ColourSettings() {
   const [editingMaterial, setEditingMaterial] = useState(false);
   const [editingMaterialName, setEditingMaterialName] = useState("");
   const [materialSaving, setMaterialSaving] = useState(false);
+  const [elementMaterials, setElementMaterials] = useState(() => emptyBuildingElementMaterials());
+  const [elementMaterialsSaving, setElementMaterialsSaving] = useState(false);
   const [modelDefaults, setModelDefaults] = useState(() => DEFAULT_BUILDING_3D);
   const [modelDraft, setModelDraft] = useState(() => building3dDraftFromDefaults(DEFAULT_BUILDING_3D));
   const [modelDefaultsSaving, setModelDefaultsSaving] = useState(false);
   const [modelDefaultsSaveError, setModelDefaultsSaveError] = useState("");
   const [modelMenuOpenId, setModelMenuOpenId] = useState(null);
-  const [modelFenceMenuOpen, setModelFenceMenuOpen] = useState(false);
   const [modelSubfloorTypeMenuOpen, setModelSubfloorTypeMenuOpen] = useState(null);
+  const [modelStumpStyleMenuOpen, setModelStumpStyleMenuOpen] = useState(false);
   const modelMenuLeaveTimerRef = useRef(null);
   const [subgroupDraftName, setSubgroupDraftName] = useState("");
   const [editingSubgroupId, setEditingSubgroupId] = useState(null);
@@ -298,6 +383,20 @@ export default function ColourSettings() {
     }
   }, []);
 
+  const loadBuildingElementMaterials = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/building-element-materials`, {
+        headers: getApiHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      setElementMaterials(normalizeBuildingElementMaterials(data.assignments));
+    } catch (e) {
+      console.error(e);
+      setElementMaterials(emptyBuildingElementMaterials());
+    }
+  }, []);
+
   const loadBuilding3dDefaults = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/building-3d-defaults`, {
@@ -321,8 +420,9 @@ export default function ColourSettings() {
     void loadColoursAndFinishesPath();
     void loadSectionRanges();
     void loadMaterials();
+    void loadBuildingElementMaterials();
     void loadBuilding3dDefaults();
-  }, [loadColourGroups, loadColoursAndFinishesPath, loadSectionRanges, loadMaterials, loadBuilding3dDefaults]);
+  }, [loadColourGroups, loadColoursAndFinishesPath, loadSectionRanges, loadMaterials, loadBuildingElementMaterials, loadBuilding3dDefaults]);
 
   useEffect(() => {
     if (!selectedGroup || selectedGroup === "colorbond") {
@@ -341,19 +441,29 @@ export default function ColourSettings() {
     const unchanged =
       next.megaAnchorsHeightM === modelDefaults.megaAnchorsHeightM &&
       next.concreteStumpsHeightM === modelDefaults.concreteStumpsHeightM &&
+      next.bearerHeightM === modelDefaults.bearerHeightM &&
+      next.joistHeightM === modelDefaults.joistHeightM &&
+      next.bearerWidthM === modelDefaults.bearerWidthM &&
+      next.joistWidthM === modelDefaults.joistWidthM &&
+      next.bearerSpanMaxM === modelDefaults.bearerSpanMaxM &&
+      next.joistSpanMaxM === modelDefaults.joistSpanMaxM &&
       next.slabHeightM === modelDefaults.slabHeightM &&
       next.wallHeightM === modelDefaults.wallHeightM &&
       next.widthM === modelDefaults.widthM &&
       next.depthM === modelDefaults.depthM &&
       next.subfloorType === modelDefaults.subfloorType &&
-      next.showFence === modelDefaults.showFence &&
-      next.showSubfloor === modelDefaults.showSubfloor &&
-      next.showWall === modelDefaults.showWall;
+      next.stumpStyle === modelDefaults.stumpStyle &&
+      JSON.stringify(next.elementVisibility) === JSON.stringify(modelDefaults.elementVisibility);
     if (unchanged) return undefined;
     const heightKeys = SUBFLOOR_TYPE_OPTIONS.map((option) => option.heightKey);
-    const allNumeric = [...MODEL_DEFAULT_FIELDS.map((field) => field.key), ...heightKeys].every((key) =>
-      Number.isFinite(Number(String(modelDraft[key] ?? "").trim()))
+    const extraKeys = SUBFLOOR_TYPE_OPTIONS.flatMap((option) =>
+      (option.extraFields || []).map((field) => field.key)
     );
+    const allNumeric = [
+      ...MODEL_DEFAULT_FIELDS.map((field) => field.key),
+      ...heightKeys,
+      ...extraKeys,
+    ].every((key) => Number.isFinite(Number(String(modelDraft[key] ?? "").trim())));
     if (!allNumeric) return undefined;
     const timer = setTimeout(async () => {
       try {
@@ -409,6 +519,30 @@ export default function ColourSettings() {
       await loadSectionRanges();
     } finally {
       setSectionRangesSaving(false);
+    }
+  }
+
+  async function handleBuildingElementMaterialChange(elementKey, materialId) {
+    const next = normalizeBuildingElementMaterials({
+      ...elementMaterials,
+      [elementKey]: materialId,
+    });
+    setElementMaterials(next);
+    try {
+      setElementMaterialsSaving(true);
+      const res = await fetch(`${API_URL}/api/building-element-materials`, {
+        method: "PUT",
+        headers: getApiHeaders(),
+        body: JSON.stringify({ assignments: next }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+      setElementMaterials(normalizeBuildingElementMaterials(data.assignments));
+    } catch (err) {
+      alert(err.message || "Failed to save building element material");
+      await loadBuildingElementMaterials();
+    } finally {
+      setElementMaterialsSaving(false);
     }
   }
 
@@ -1020,16 +1154,18 @@ export default function ColourSettings() {
       modelMenuLeaveTimerRef.current = null;
     }
     setModelMenuOpenId(id);
-    if (id !== "general") setModelFenceMenuOpen(false);
-    if (id !== "subfloor") setModelSubfloorTypeMenuOpen(null);
+    if (id !== "subfloor") {
+      setModelSubfloorTypeMenuOpen(null);
+      setModelStumpStyleMenuOpen(false);
+    }
   }
 
   function scheduleCloseModelMenu() {
     if (modelMenuLeaveTimerRef.current) clearTimeout(modelMenuLeaveTimerRef.current);
     modelMenuLeaveTimerRef.current = setTimeout(() => {
       setModelMenuOpenId(null);
-      setModelFenceMenuOpen(false);
       setModelSubfloorTypeMenuOpen(null);
+      setModelStumpStyleMenuOpen(false);
     }, 160);
   }
 
@@ -1654,6 +1790,99 @@ export default function ColourSettings() {
         </div>
       ) : null}
 
+      {settingsTab === "elements" ? (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "16px",
+            flex: 1,
+            minHeight: 0,
+            maxWidth: "720px",
+          }}
+        >
+          <div style={sectionHeaderBlockStyle()}>
+            <h3 style={sectionHeadingStyle()}>Building Elements</h3>
+          </div>
+          <p style={{ margin: 0, fontSize: "0.9rem", color: UI.textMuted }}>
+            Assign a material from the Materials tab to each building part. Used later for rendering.
+          </p>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "20px",
+              overflowY: "auto",
+              paddingRight: "8px",
+              flex: 1,
+              minHeight: 0,
+            }}
+          >
+            {BUILDING_ELEMENT_GROUPS.map((group) => (
+              <div key={group.id} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                <h4 style={{ ...sectionHeadingStyle(), fontSize: "1rem" }}>{group.label}</h4>
+                {group.items.map((item) => {
+                  const assignedId = String(elementMaterials[item.key] || "");
+                  const selectValue = materials.some((m) => String(m.id) === assignedId)
+                    ? assignedId
+                    : "";
+                  return (
+                    <label
+                      key={item.key}
+                      style={{
+                        display: "flex",
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: "12px",
+                        minHeight: LIST_ROW_HEIGHT,
+                      }}
+                    >
+                      <span
+                        style={{
+                          ...sectionHeadingStyle(),
+                          flex: "0 0 200px",
+                          width: "200px",
+                        }}
+                      >
+                        {item.label}
+                      </span>
+                      <select
+                        value={selectValue}
+                        disabled={elementMaterialsSaving}
+                        onChange={(e) =>
+                          handleBuildingElementMaterialChange(item.key, e.target.value)
+                        }
+                        style={{
+                          flex: 1,
+                          minWidth: "180px",
+                          padding: "8px 10px",
+                          borderRadius: "8px",
+                          border: "1px solid #ddd",
+                          fontSize: SECTION_TITLE_SIZE,
+                          fontWeight: 600,
+                          color: MONUMENT,
+                          background: WHITE,
+                          boxSizing: "border-box",
+                          minHeight: LIST_ROW_HEIGHT,
+                          cursor: elementMaterialsSaving ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        <option value="">Nothing selected</option>
+                        {materials.map((material) => (
+                          <option key={material.id} value={String(material.id)}>
+                            {material.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {settingsTab === "model" ? (
         <div
           style={{
@@ -1674,9 +1903,17 @@ export default function ColourSettings() {
               depthM={previewModel.depthM}
               subfloorHeightM={previewModel.subfloorHeightM}
               wallHeightM={previewModel.wallHeightM}
+              subfloorType={resolvedSubfloorDrawType(previewModel)}
+              bearerHeightM={previewModel.bearerHeightM}
+              joistHeightM={previewModel.joistHeightM}
+              bearerWidthM={previewModel.bearerWidthM}
+              joistWidthM={previewModel.joistWidthM}
+              bearerSpanMaxM={previewModel.bearerSpanMaxM}
+              joistSpanMaxM={previewModel.joistSpanMaxM}
               showFence={previewModel.showFence}
               showSubfloor={previewModel.showSubfloor}
               showWall={previewModel.showWall}
+              elementVisibility={previewModel.elementVisibility}
               rightPanel={
           <aside
             style={{
@@ -1704,94 +1941,34 @@ export default function ColourSettings() {
                   onMouseEnter={() => openModelMenu(section.id)}
                   onMouseLeave={scheduleCloseModelMenu}
                 >
-                  <div
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setModelMenuOpenId((prev) => (prev === section.id ? null : section.id))
+                    }
                     style={{
                       ...sortButtonStyle(open),
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "space-between",
                       gap: "8px",
-                      paddingLeft: section.visibilityKey ? "10px" : undefined,
                     }}
                   >
-                    {section.visibilityKey ? (
-                      <input
-                        type="checkbox"
-                        checked={Boolean(modelDraft[section.visibilityKey])}
-                        onChange={(e) =>
-                          setModelDraft((prev) => ({
-                            ...prev,
-                            [section.visibilityKey]: e.target.checked,
-                          }))
-                        }
-                        onClick={(e) => e.stopPropagation()}
-                        aria-label={`Show ${section.label}`}
-                        style={{
-                          width: "16px",
-                          height: "16px",
-                          flexShrink: 0,
-                          cursor: "pointer",
-                          accentColor: MONUMENT,
-                        }}
-                      />
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setModelMenuOpenId((prev) => (prev === section.id ? null : section.id))
-                      }
+                    <span>{section.label}</span>
+                    <span
                       style={{
-                        flex: 1,
-                        minWidth: 0,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: "8px",
-                        margin: 0,
-                        padding: 0,
-                        border: "none",
-                        background: "transparent",
-                        color: "inherit",
-                        font: "inherit",
-                        fontWeight: "inherit",
-                        cursor: "pointer",
-                        textAlign: "left",
+                        fontSize: "1.1rem",
+                        lineHeight: 1,
+                        transform: open ? "translateX(-2px)" : "none",
+                        transition: "transform 0.12s ease",
                       }}
+                      aria-hidden
                     >
-                      <span>{section.label}</span>
-                      <span
-                        style={{
-                          fontSize: "1.1rem",
-                          lineHeight: 1,
-                          transform: open ? "translateX(-2px)" : "none",
-                          transition: "transform 0.12s ease",
-                        }}
-                        aria-hidden
-                      >
-                        ‹
-                      </span>
-                    </button>
-                  </div>
+                      ‹
+                    </span>
+                  </button>
                   {open ? (
-                    <div
-                      style={{
-                        position: "absolute",
-                        right: "100%",
-                        top: 0,
-                        marginRight: "8px",
-                        width: "240px",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "12px",
-                        padding: "12px",
-                        boxSizing: "border-box",
-                        background: WHITE,
-                        borderRadius: "12px",
-                        border: "1px solid #ddd",
-                        boxShadow: "0 8px 24px rgba(0,0,0,0.14)",
-                        zIndex: 20,
-                      }}
-                    >
+                    <ViewportClampedFlyout open={open} width="240px" zIndex={20} gap="12px">
                       {section.fields.map((field) => (
                         <label
                           key={field.key}
@@ -1829,8 +2006,12 @@ export default function ColourSettings() {
                                     setModelSubfloorTypeMenuOpen((prev) =>
                                       prev === option.key ? null : option.key
                                     );
+                                    if (option.key !== "stumps") setModelStumpStyleMenuOpen(false);
                                   }}
-                                  onMouseEnter={() => setModelSubfloorTypeMenuOpen(option.key)}
+                                  onMouseEnter={() => {
+                                    setModelSubfloorTypeMenuOpen(option.key);
+                                    if (option.key !== "stumps") setModelStumpStyleMenuOpen(false);
+                                  }}
                                   style={{
                                     ...sortButtonStyle(selected || typeOpen),
                                     display: "flex",
@@ -1854,25 +2035,73 @@ export default function ColourSettings() {
                                   </span>
                                 </button>
                                 {typeOpen ? (
-                                  <div
-                                    style={{
-                                      position: "absolute",
-                                      right: "100%",
-                                      top: 0,
-                                      marginRight: "8px",
-                                      width: "200px",
-                                      display: "flex",
-                                      flexDirection: "column",
-                                      gap: "8px",
-                                      padding: "12px",
-                                      boxSizing: "border-box",
-                                      background: WHITE,
-                                      borderRadius: "12px",
-                                      border: "1px solid #ddd",
-                                      boxShadow: "0 8px 24px rgba(0,0,0,0.14)",
-                                      zIndex: 21,
-                                    }}
+                                  <ViewportClampedFlyout
+                                    open={typeOpen}
+                                    width={option.extraFields?.length ? "420px" : "200px"}
+                                    zIndex={21}
                                   >
+                                    {option.includeStumpStyle ? (
+                                      <div style={{ position: "relative" }}>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setModelStumpStyleMenuOpen((prev) => !prev)
+                                          }
+                                          onMouseEnter={() => setModelStumpStyleMenuOpen(true)}
+                                          style={{
+                                            ...sortButtonStyle(modelStumpStyleMenuOpen),
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "space-between",
+                                            gap: "8px",
+                                          }}
+                                        >
+                                          <span>Style</span>
+                                          <span
+                                            style={{
+                                              fontSize: "1.1rem",
+                                              lineHeight: 1,
+                                              transform: modelStumpStyleMenuOpen
+                                                ? "translateX(-2px)"
+                                                : "none",
+                                              transition: "transform 0.12s ease",
+                                            }}
+                                            aria-hidden
+                                          >
+                                            ‹
+                                          </span>
+                                        </button>
+                                        <ViewportClampedFlyout
+                                          open={modelStumpStyleMenuOpen}
+                                          width="200px"
+                                          zIndex={22}
+                                        >
+                                          {STUMP_STYLE_OPTIONS.map((style) => {
+                                            const styleSelected =
+                                              modelDraft.stumpStyle === style.key;
+                                            return (
+                                              <button
+                                                key={style.key}
+                                                type="button"
+                                                onClick={() =>
+                                                  setModelDraft((prev) => ({
+                                                    ...prev,
+                                                    subfloorType: "stumps",
+                                                    stumpStyle: style.key,
+                                                  }))
+                                                }
+                                                style={{
+                                                  ...sortButtonStyle(styleSelected),
+                                                  fontWeight: styleSelected ? 700 : 600,
+                                                }}
+                                              >
+                                                {style.label}
+                                              </button>
+                                            );
+                                          })}
+                                        </ViewportClampedFlyout>
+                                      </div>
+                                    ) : null}
                                     <label
                                       style={{ display: "flex", flexDirection: "column", gap: "6px" }}
                                     >
@@ -1899,89 +2128,53 @@ export default function ColourSettings() {
                                         style={modelNumberInputStyle}
                                       />
                                     </label>
-                                  </div>
+                                    {(option.extraFields || []).length > 0 ? (
+                                      <div
+                                        style={{
+                                          display: "grid",
+                                          gridTemplateColumns: "1fr 1fr",
+                                          gap: "10px 12px",
+                                        }}
+                                      >
+                                        {(option.extraFields || []).map((field) => (
+                                          <label
+                                            key={field.key}
+                                            style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+                                          >
+                                            <span style={sectionHeadingStyle()}>
+                                              {field.label} (m)
+                                            </span>
+                                            <input
+                                              type="number"
+                                              inputMode="decimal"
+                                              step={field.step}
+                                              min={field.min}
+                                              max={field.max}
+                                              value={modelDraft[field.key]}
+                                              onChange={(e) =>
+                                                setModelDraft((prev) => ({
+                                                  ...prev,
+                                                  subfloorType: option.key,
+                                                  [field.key]: e.target.value,
+                                                }))
+                                              }
+                                              onBlur={() =>
+                                                setModelDraft(building3dDraftFromDefaults(previewModel))
+                                              }
+                                              style={modelNumberInputStyle}
+                                            />
+                                          </label>
+                                        ))}
+                                      </div>
+                                    ) : null}
+                                  </ViewportClampedFlyout>
                                 ) : null}
                               </div>
                             );
                           })}
                         </div>
                       ) : null}
-                      {section.includeFence ? (
-                        <div style={{ position: "relative" }}>
-                          <button
-                            type="button"
-                            onClick={() => setModelFenceMenuOpen((prev) => !prev)}
-                            onMouseEnter={() => setModelFenceMenuOpen(true)}
-                            style={{
-                              ...sortButtonStyle(modelFenceMenuOpen),
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                              gap: "8px",
-                            }}
-                          >
-                            <span>Fence</span>
-                            <span
-                              style={{
-                                fontSize: "1.1rem",
-                                lineHeight: 1,
-                                transform: modelFenceMenuOpen ? "translateX(-2px)" : "none",
-                                transition: "transform 0.12s ease",
-                              }}
-                              aria-hidden
-                            >
-                              ‹
-                            </span>
-                          </button>
-                          {modelFenceMenuOpen ? (
-                            <div
-                              style={{
-                                position: "absolute",
-                                right: "100%",
-                                top: 0,
-                                marginRight: "8px",
-                                width: "200px",
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: "8px",
-                                padding: "12px",
-                                boxSizing: "border-box",
-                                background: WHITE,
-                                borderRadius: "12px",
-                                border: "1px solid #ddd",
-                                boxShadow: "0 8px 24px rgba(0,0,0,0.14)",
-                                zIndex: 21,
-                              }}
-                            >
-                              {[
-                                { value: true, label: "Show Fence" },
-                                { value: false, label: "Hide Fence" },
-                              ].map((option) => {
-                                const selected = Boolean(modelDraft.showFence) === option.value;
-                                return (
-                                  <button
-                                    key={option.label}
-                                    type="button"
-                                    onClick={() =>
-                                      setModelDraft((prev) => ({
-                                        ...prev,
-                                        showFence: option.value,
-                                      }))
-                                    }
-                                    style={{
-                                      ...sortButtonStyle(selected),
-                                      fontWeight: selected ? 700 : 600,
-                                    }}
-                                  >
-                                    {option.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
+                    </ViewportClampedFlyout>
                   ) : null}
                 </div>
               );
@@ -1991,6 +2184,93 @@ export default function ColourSettings() {
                 {modelDefaultsSaveError || "Saving…"}
               </div>
             ) : null}
+          </aside>
+              }
+              elementsPanel={
+          <aside
+            style={{
+              width: "100%",
+              height: "100%",
+              flex: 1,
+              minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+              padding: "14px",
+              boxSizing: "border-box",
+              background: WHITE,
+              borderRadius: "12px",
+              border: "1px solid #ddd",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                overflowY: "auto",
+                display: "flex",
+                flexDirection: "column",
+                gap: "16px",
+                paddingRight: "4px",
+              }}
+            >
+              {BUILDING_ELEMENT_VISIBILITY_GROUPS.map((group) => (
+                <div key={group.id} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <h4 style={{ ...sectionHeadingStyle(), fontSize: "1rem", margin: 0 }}>
+                    {group.label}
+                  </h4>
+                  {group.items.map((item) => {
+                    const vis = normalizeElementVisibility(
+                      previewModel.elementVisibility,
+                      previewModel
+                    );
+                    const checked = vis[item.key] !== false;
+                    return (
+                      <label
+                        key={item.key}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                          minHeight: 36,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            const nextChecked = e.target.checked;
+                            setModelDraft((prev) => {
+                              const current = normalizeElementVisibility(
+                                prev.elementVisibility,
+                                prev
+                              );
+                              return {
+                                ...prev,
+                                elementVisibility: {
+                                  ...current,
+                                  [item.key]: nextChecked,
+                                },
+                              };
+                            });
+                          }}
+                          style={{
+                            width: "16px",
+                            height: "16px",
+                            flexShrink: 0,
+                            cursor: "pointer",
+                            accentColor: MONUMENT,
+                          }}
+                        />
+                        <span style={{ ...sectionHeadingStyle(), flex: 1 }}>{item.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
           </aside>
               }
             />

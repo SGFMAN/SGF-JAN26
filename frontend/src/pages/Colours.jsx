@@ -32,6 +32,7 @@ import { unitFinishHex } from "../utils/buildingUnitFinishes.js";
 import {
   DEFAULT_BUILDING_3D,
   normalizeBuilding3dDefaults,
+  resolvedSubfloorDrawType,
 } from "../constants/building3dDefaults.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
@@ -2490,9 +2491,17 @@ export default function Colours({ project, onUpdate }) {
           depthM={building3dDefaults.depthM}
           subfloorHeightM={building3dDefaults.subfloorHeightM}
           wallHeightM={building3dDefaults.wallHeightM}
+          subfloorType={resolvedSubfloorDrawType(building3dDefaults)}
+          bearerHeightM={building3dDefaults.bearerHeightM}
+          joistHeightM={building3dDefaults.joistHeightM}
+          bearerWidthM={building3dDefaults.bearerWidthM}
+          joistWidthM={building3dDefaults.joistWidthM}
+          bearerSpanMaxM={building3dDefaults.bearerSpanMaxM}
+          joistSpanMaxM={building3dDefaults.joistSpanMaxM}
           showFence={building3dDefaults.showFence}
           showSubfloor={building3dDefaults.showSubfloor}
           showWall={building3dDefaults.showWall}
+          elementVisibility={building3dDefaults.elementVisibility}
           footprintPoints={planTraceFootprintPoints}
           roofPoints={planTraceRoofPoints}
           roofPivotLine={planTraceRoofPivotLine}

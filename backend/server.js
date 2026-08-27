@@ -1515,6 +1515,7 @@ async function ensureSchema() {
       "weekly_roundup_sent_on",
       "weekly_roundup_period_end",
       "building_3d_defaults_json",
+      "building_element_materials_json",
     ]);
     await addMissingColumns(pool, "users", ["password", "ui_theme_id"]);
     await pool.query(`UPDATE users SET password = 'admin' WHERE password IS NULL OR password = ''`);
@@ -2112,6 +2113,13 @@ async function ensureSchema() {
   } catch (e) {
     if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
       console.log(`Error adding column colour_section_ranges_json:`, e.message);
+    }
+  }
+  try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN building_element_materials_json TEXT`);
+  } catch (e) {
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column building_element_materials_json:`, e.message);
     }
   }
   try {
@@ -5919,21 +5927,60 @@ function parseColourSectionRangesColumn(raw) {
   return out;
 }
 
+function parseBuildingElementMaterialsColumn(raw) {
+  const keys = ["slab", "concrete-stumps", "mega-anchors", "bearers", "joists"];
+  const empty = {};
+  for (const key of keys) empty[key] = "";
+  if (raw == null || raw === "") return empty;
+  let obj = raw;
+  if (typeof raw === "string") {
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      obj = {};
+    }
+  }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) obj = {};
+  const src = obj.assignments && typeof obj.assignments === "object" && !Array.isArray(obj.assignments)
+    ? obj.assignments
+    : obj;
+  const out = {};
+  for (const key of keys) {
+    const v = src[key];
+    if (v == null || v === "") {
+      out[key] = "";
+      continue;
+    }
+    const id = Number(v);
+    out[key] = Number.isFinite(id) && id > 0 ? String(id) : "";
+  }
+  return out;
+}
+
 const DEFAULT_BUILDING_3D_DEFAULTS = {
   subfloorHeightM: 0.65,
   megaAnchorsHeightM: 0.65,
   concreteStumpsHeightM: 0.65,
+  bearerHeightM: 0.14,
+  joistHeightM: 0.09,
+  bearerWidthM: 0.045,
+  joistWidthM: 0.045,
+  bearerSpanMaxM: 1.8,
+  joistSpanMaxM: 2.4,
   slabHeightM: 0.65,
   wallHeightM: 2.6,
   widthM: 11.3,
   depthM: 5.0,
   subfloorType: "slab",
+  stumpStyle: "concrete_stumps",
   showFence: true,
   showSubfloor: true,
   showWall: true,
 };
 
-const BUILDING_3D_SUBFLOOR_TYPES = ["mega_anchors", "concrete_stumps", "slab"];
+const BUILDING_3D_SUBFLOOR_TYPES = ["stumps", "slab"];
+const BUILDING_3D_STUMP_STYLES = ["mega_anchors", "concrete_stumps"];
+const BUILDING_3D_LEGACY_SUBFLOOR_TYPES = ["mega_anchors", "concrete_stumps"];
 
 function parseBuilding3dDefaultsColumn(raw) {
   let obj = raw;
@@ -5950,9 +5997,18 @@ function parseBuilding3dDefaultsColumn(raw) {
     if (!Number.isFinite(x)) return fallback;
     return Math.min(max, Math.max(min, Math.round(x * 1000) / 1000));
   };
-  const subfloorType = BUILDING_3D_SUBFLOOR_TYPES.includes(String(obj.subfloorType || "").trim())
-    ? String(obj.subfloorType).trim()
-    : DEFAULT_BUILDING_3D_DEFAULTS.subfloorType;
+  const rawSubfloorType = String(obj.subfloorType || "").trim();
+  const subfloorType = BUILDING_3D_SUBFLOOR_TYPES.includes(rawSubfloorType)
+    ? rawSubfloorType
+    : BUILDING_3D_LEGACY_SUBFLOOR_TYPES.includes(rawSubfloorType)
+      ? "stumps"
+      : DEFAULT_BUILDING_3D_DEFAULTS.subfloorType;
+  const rawStumpStyle = String(obj.stumpStyle || "").trim();
+  const stumpStyle = BUILDING_3D_STUMP_STYLES.includes(rawStumpStyle)
+    ? rawStumpStyle
+    : rawSubfloorType === "mega_anchors"
+      ? "mega_anchors"
+      : DEFAULT_BUILDING_3D_DEFAULTS.stumpStyle;
   const visibleFlag = (value) =>
     !(
       value === false ||
@@ -5964,6 +6020,33 @@ function parseBuilding3dDefaultsColumn(raw) {
   const showFence = visibleFlag(obj.showFence);
   const showSubfloor = visibleFlag(obj.showSubfloor);
   const showWall = visibleFlag(obj.showWall);
+  const visibilityKeys = [
+    "slab",
+    "concrete-stumps",
+    "mega-anchors",
+    "bearers",
+    "joists",
+    "wall",
+    "fence",
+  ];
+  const visSrc =
+    obj.elementVisibility && typeof obj.elementVisibility === "object" && !Array.isArray(obj.elementVisibility)
+      ? obj.elementVisibility
+      : {};
+  const elementVisibility = {};
+  for (const key of visibilityKeys) {
+    if (visSrc[key] === false || visSrc[key] === 0 || visSrc[key] === "0" || visSrc[key] === "false") {
+      elementVisibility[key] = false;
+    } else if (visSrc[key] === true || visSrc[key] === 1 || visSrc[key] === "1" || visSrc[key] === "true") {
+      elementVisibility[key] = true;
+    } else if (key === "fence") {
+      elementVisibility[key] = showFence;
+    } else if (key === "wall") {
+      elementVisibility[key] = showWall;
+    } else {
+      elementVisibility[key] = showSubfloor;
+    }
+  }
   const legacyHeight = n(
     obj.subfloorHeightM ?? obj.subfloorDepthM,
     DEFAULT_BUILDING_3D_DEFAULTS.subfloorHeightM,
@@ -5971,26 +6054,69 @@ function parseBuilding3dDefaultsColumn(raw) {
     3
   );
   const megaAnchorsHeightM = n(obj.megaAnchorsHeightM, legacyHeight, 0.15, 3);
-  const concreteStumpsHeightM = n(obj.concreteStumpsHeightM, legacyHeight, 0.15, 3);
+  let concreteStumpsHeightM = n(obj.concreteStumpsHeightM, legacyHeight, 0.15, 3);
+  if (rawSubfloorType === "mega_anchors" && obj.stumpStyle == null) {
+    concreteStumpsHeightM = megaAnchorsHeightM;
+  }
   const slabHeightM = n(obj.slabHeightM, legacyHeight, 0.15, 3);
-  const subfloorHeightM =
-    subfloorType === "mega_anchors"
-      ? megaAnchorsHeightM
-      : subfloorType === "concrete_stumps"
-        ? concreteStumpsHeightM
-        : slabHeightM;
+  const bearerHeightM = n(
+    obj.bearerHeightM,
+    DEFAULT_BUILDING_3D_DEFAULTS.bearerHeightM,
+    0.02,
+    0.6
+  );
+  const joistHeightM = n(
+    obj.joistHeightM,
+    DEFAULT_BUILDING_3D_DEFAULTS.joistHeightM,
+    0.02,
+    0.6
+  );
+  const bearerWidthM = n(
+    obj.bearerWidthM,
+    DEFAULT_BUILDING_3D_DEFAULTS.bearerWidthM,
+    0.02,
+    0.3
+  );
+  const joistWidthM = n(
+    obj.joistWidthM,
+    DEFAULT_BUILDING_3D_DEFAULTS.joistWidthM,
+    0.02,
+    0.3
+  );
+  const bearerSpanMaxM = n(
+    obj.bearerSpanMaxM,
+    DEFAULT_BUILDING_3D_DEFAULTS.bearerSpanMaxM,
+    0.3,
+    8
+  );
+  const joistSpanMaxM = n(
+    obj.joistSpanMaxM,
+    DEFAULT_BUILDING_3D_DEFAULTS.joistSpanMaxM,
+    0.3,
+    8
+  );
+  const stumpsHeightM = concreteStumpsHeightM;
+  const subfloorHeightM = subfloorType === "stumps" ? stumpsHeightM : slabHeightM;
   return {
-    megaAnchorsHeightM,
-    concreteStumpsHeightM,
+    megaAnchorsHeightM: stumpsHeightM,
+    concreteStumpsHeightM: stumpsHeightM,
+    bearerHeightM,
+    joistHeightM,
+    bearerWidthM,
+    joistWidthM,
+    bearerSpanMaxM,
+    joistSpanMaxM,
     slabHeightM,
     subfloorHeightM,
     wallHeightM: n(obj.wallHeightM, DEFAULT_BUILDING_3D_DEFAULTS.wallHeightM, 1.5, 6),
     widthM: n(obj.widthM ?? obj.lengthM, DEFAULT_BUILDING_3D_DEFAULTS.widthM, 2, 40),
     depthM: n(obj.depthM ?? obj.buildingWidthM, DEFAULT_BUILDING_3D_DEFAULTS.depthM, 2, 20),
     subfloorType,
-    showFence,
-    showSubfloor,
-    showWall,
+    stumpStyle,
+    elementVisibility,
+    showFence: elementVisibility.fence,
+    showSubfloor: elementVisibility.slab,
+    showWall: elementVisibility.wall,
   };
 }
 
@@ -6063,6 +6189,42 @@ app.put("/api/colour-section-ranges", async (req, res) => {
   } catch (e) {
     console.error("Error saving colour section ranges:", e);
     return res.status(500).json({ error: e.message || "Failed to save colour section ranges" });
+  }
+});
+
+app.get("/api/building-element-materials", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  try {
+    const r = await pool.query("SELECT building_element_materials_json FROM settings WHERE id = 1");
+    const assignments = parseBuildingElementMaterialsColumn(r.rows[0]?.building_element_materials_json);
+    return res.json({ ok: true, assignments });
+  } catch (e) {
+    console.error("Error fetching building element materials:", e);
+    return res.status(500).json({ error: e.message || "Failed to fetch building element materials" });
+  }
+});
+
+app.put("/api/building-element-materials", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const assignments = parseBuildingElementMaterialsColumn(body.assignments ?? body);
+    const json = JSON.stringify(assignments);
+    await pool.query(
+      `INSERT INTO settings (id, building_element_materials_json, updated_at)
+       VALUES (1, $1, NOW())
+       ON CONFLICT (id) DO UPDATE SET building_element_materials_json = EXCLUDED.building_element_materials_json, updated_at = NOW()`,
+      [json]
+    );
+    return res.json({ ok: true, assignments });
+  } catch (e) {
+    console.error("Error saving building element materials:", e);
+    return res.status(500).json({ error: e.message || "Failed to save building element materials" });
   }
 });
 

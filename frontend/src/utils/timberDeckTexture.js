@@ -50,6 +50,60 @@ export function createTimberDeckMaterial(texture) {
   });
 }
 
+/** Structural timber grain (bearers / joists), along U. */
+export function createFramingTimberTexture() {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return new THREE.Texture();
+
+  ctx.fillStyle = "#b08958";
+  ctx.fillRect(0, 0, size, size);
+  for (let i = 0; i < size; i += 1) {
+    const wave = Math.sin(i * 0.28) * 0.07 + Math.sin(i * 0.09) * 0.04;
+    const shade = 0.92 + wave + ((i * 11) % 5) * 0.015;
+    const r = Math.min(255, Math.floor(196 * shade));
+    const g = Math.min(255, Math.floor(154 * shade));
+    const b = Math.min(255, Math.floor(96 * shade));
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.fillRect(0, i, size, 1);
+  }
+  ctx.strokeStyle = "#6a4424";
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.18;
+  for (let n = 0; n < 14; n += 1) {
+    const a = 6 + Math.random() * (size - 12);
+    ctx.beginPath();
+    ctx.moveTo(0, a);
+    ctx.quadraticCurveTo(
+      size * 0.5,
+      a + (Math.random() - 0.5) * 10,
+      size,
+      a + (Math.random() - 0.5) * 8
+    );
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+export function createFramingTimberMaterial(texture) {
+  return new THREE.MeshStandardMaterial({
+    map: texture,
+    color: 0xffffff,
+    metalness: 0.02,
+    roughness: 0.78,
+  });
+}
+
 export function assignTimberDeckUVs(positions, uvs, pitchM = TIMBER_DECK_BOARD_PITCH_M) {
   for (let i = 0; i < positions.length; i += 3) {
     const x = positions[i];
