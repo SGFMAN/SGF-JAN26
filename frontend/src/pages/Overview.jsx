@@ -5,7 +5,7 @@ import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { PROCESS_RULES, getRequirementStatus, getUnmetRequirements, getMetRequirements } from "../utils/ProcessRules";
 import { DRAFTSPERSON_UNASSIGNED } from "../utils/draftspersonSentinel";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
-import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../utils/emailUserTokens";
 import { replaceContractAndColorStatusTokens } from "../utils/designPhaseStatusTiles";
 import { normalizeBodyHtmlForEditor } from "../components/EmailBodyEditor.jsx";
 import {
@@ -256,6 +256,7 @@ export default function Overview({ project }) {
     let replaced = text;
 
     replaced = replaced.replace(/{ProjectName}/g, project.name || "");
+    replaced = replaceStreamEmailToken(replaced, project);
     replaced = replaced.replace(/{ClientName}/g, project.client_name || "");
     replaced = replaced.replace(/{ProjectCost}/g, project.project_cost ? `$${project.project_cost.toLocaleString()}` : "");
     replaced = replaced.replace(/{Street}/g, project.street || "");

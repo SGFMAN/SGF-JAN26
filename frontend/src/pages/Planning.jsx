@@ -6,7 +6,7 @@ import {
   resolveNewProjectTeamToEmailsFromStream,
 } from "../utils/streamNewProjectEmail";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
-import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../utils/emailUserTokens";
 import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -199,6 +199,7 @@ export default function Planning({ project, onUpdate }) {
         : projectData.name || "";
 
     replaced = replaced.replace(/{ProjectName}/g, projectName || "");
+    replaced = replaceStreamEmailToken(replaced, projectData);
     replaced = replaced.replace(/{ClientName}/g, projectData.client_name || "");
     replaced = replaced.replace(/{ClientEmail}/g, projectData.email || "");
     replaced = replaced.replace(/{ClientPhone}/g, projectData.phone || "");

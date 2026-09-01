@@ -5,7 +5,7 @@ import {
   parseEmailGeneralJson,
 } from "../utils/emailGeneralSettings";
 import { getApiHeaders } from "../utils/auth";
-import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../utils/emailUserTokens";
 import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 
 import { UI, INDICATOR } from "../utils/uiThemeTokens.js";
@@ -412,6 +412,7 @@ export default function Windows({ project, onUpdate, showResetWindowData = false
           .replace(/\{SUBURB\}/g, suburb)
           .replace(/\{STREET\}/g, street)
           .replace(/\{ProjectName\}/g, projectName);
+        body = replaceStreamEmailToken(body, project);
 
         setEmailBody(
           convertEmailBodyNewlinesToBr(await replaceLoggedInUserEmailTokens(body))

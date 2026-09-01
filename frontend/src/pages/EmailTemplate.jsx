@@ -1,7 +1,19 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 
 import { UI, STREAM } from "../utils/uiThemeTokens.js";
-import EmailBodyEditor, { editorHtmlToStored } from "../components/EmailBodyEditor.jsx";
+import EmailBodyEditor, { editorHtmlToStored, normalizeBodyHtmlForEditor } from "../components/EmailBodyEditor.jsx";
+import { useEmailSendOverlay } from "../components/EmailSendOverlay";
+import { fetchProjectsList } from "../utils/projectsListCache.js";
+import { DRAFTSPERSON_UNASSIGNED } from "../utils/draftspersonSentinel";
+import { getUserPrimaryPositionName } from "../utils/userPosition";
+import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../utils/emailUserTokens";
+import { replaceContractAndColorStatusTokens } from "../utils/designPhaseStatusTiles";
+import {
+  formatDepositPaidToken,
+  formatDepositStatusToken,
+  replaceDepositBalanceToken,
+} from "../utils/projectDeposit";
+import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
@@ -11,6 +23,127 @@ const API_URL = "";
 const TEMPLATE_TEST_EMAIL_TO = "ben@superiorgrannyflats.com.au";
 const TEMPLATE_SECTIONS = ["Colours", "Drawings", "New Project", "Misc"];
 const ADD_NEW_GROUP_VALUE = "__add_new_group__";
+
+function firstSmtpFromAddress(settings) {
+  for (let i = 1; i <= 16; i += 1) {
+    const raw = settings?.[`smtp_user_${i}`];
+    if (raw != null && String(raw).trim()) return String(raw).trim();
+  }
+  return "";
+}
+
+function projectPickerLabel(project) {
+  const addr = [project?.street, project?.suburb].filter(Boolean).join(", ") || project?.name || "Untitled";
+  const stream = String(project?.stream || "").trim();
+  return stream ? `${addr} — ${stream}` : addr;
+}
+
+function draftspersonTokenName(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s || s.toLowerCase() === DRAFTSPERSON_UNASSIGNED.toLowerCase()) return "";
+  return s;
+}
+
+function colourConsultantNamesFromUsers(users) {
+  const names = (Array.isArray(users) ? users : [])
+    .filter((user) =>
+      (user.positions || []).some((position) => String(position?.name || "").toLowerCase() === "colour consultant")
+    )
+    .map((user) => String(user.name || "").trim())
+    .filter(Boolean);
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} & ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")} & ${names[names.length - 1]}`;
+}
+
+async function fetchUsersList() {
+  try {
+    const response = await fetch(`${API_URL}/api/users`);
+    if (!response.ok) return [];
+    const users = await response.json();
+    return Array.isArray(users) ? users : [];
+  } catch {
+    return [];
+  }
+}
+
+async function salespersonDetailsFromUsers(users, salespersonName) {
+  const want = String(salespersonName || "").trim().toLowerCase();
+  if (!want) return { position: "", phone: "", email: "" };
+  const user = users.find((u) => String(u.name || "").trim().toLowerCase() === want);
+  if (!user) return { position: "", phone: "", email: "" };
+  return {
+    position: getUserPrimaryPositionName(user),
+    phone: user.phone || "",
+    email: user.email || "",
+  };
+}
+
+async function applyTemplateTestTokens(text, project, opts = {}) {
+  if (!text) return text || "";
+  if (!project) return text;
+  const html = !!opts.html;
+  let replaced = String(text);
+
+  replaced = replaced.replace(/{ProjectName}/g, project.name || "");
+  replaced = replaceStreamEmailToken(replaced, project);
+  replaced = replaced.replace(/{ClientName}/g, project.client_name || "");
+  replaced = replaced.replace(
+    /{ProjectCost}/g,
+    project.project_cost ? `$${Number(project.project_cost).toLocaleString()}` : ""
+  );
+  replaced = replaced.replace(/{Street}/g, project.street || "");
+  replaced = replaced.replace(/{Suburb}/g, project.suburb || "");
+  replaced = replaced.replace(/{DepositPaid}/g, formatDepositPaidToken(project));
+  replaced = replaced.replace(/{DepositStatus}/g, formatDepositStatusToken(project));
+  replaced = await replaceDepositBalanceToken(replaced, project, opts.settings, API_URL);
+  replaced = replaced.replace(
+    /{Contact1}/g,
+    project.client1_email && project.client1_active ? project.client1_email : ""
+  );
+  replaced = replaced.replace(
+    /{Contact2}/g,
+    project.client2_email && project.client2_active ? project.client2_email : ""
+  );
+  replaced = replaced.replace(
+    /{Contact3}/g,
+    project.client3_email && project.client3_active ? project.client3_email : ""
+  );
+  replaced = replaced.replace(/{Salesperson}/g, project.salesperson || "");
+
+  const users = opts.users || [];
+  const needsDetails =
+    replaced.includes("{SalespersonPosition}") ||
+    replaced.includes("{SalespersonPhone}") ||
+    replaced.includes("{SalespersonEmail}");
+  if (needsDetails) {
+    const { position, phone, email } = await salespersonDetailsFromUsers(users, project.salesperson);
+    const formattedPosition = position ? (html ? `<br>${position}` : `\n${position}`) : "";
+    replaced = replaced.replace(/{SalespersonPosition}/g, formattedPosition);
+    replaced = replaced.replace(/{SalespersonPhone}/g, phone);
+    replaced = replaced.replace(/{SalespersonEmail}/g, email);
+  }
+
+  if (project.site_visit_scheduled_date) {
+    const formattedDate = new Date(`${project.site_visit_scheduled_date}T00:00:00`).toLocaleDateString("en-AU", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    replaced = replaced.replace(/{SiteVisitScheduledDate}/g, formattedDate);
+  } else {
+    replaced = replaced.replace(/{SiteVisitScheduledDate}/g, "");
+  }
+  replaced = replaced.replace(/{SiteVisitScheduledPeriod}/g, project.site_visit_scheduled_period || "");
+  replaced = replaced.replace(/{Draftsperson}/g, draftspersonTokenName(project.draftsperson));
+  replaced = replaced.replace(/{ColourConsultant}/g, colourConsultantNamesFromUsers(users));
+  replaced = replaceContractAndColorStatusTokens(replaced, project);
+  replaced = await replaceLoggedInUserEmailTokens(replaced);
+  if (html) replaced = convertEmailBodyNewlinesToBr(replaced);
+  return replaced;
+}
 
 function normalizeName(name) {
   return (name || "").toLowerCase();
@@ -49,6 +182,7 @@ function getTemplateSection(templateName) {
 }
 
 export default function EmailTemplate() {
+  const { runWithEmailOverlay } = useEmailSendOverlay();
   const [templates, setTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
   const [templateName, setTemplateName] = useState("");
@@ -66,7 +200,19 @@ export default function EmailTemplate() {
   const [loading, setLoading] = useState(true);
   const [openSection, setOpenSection] = useState("Colours");
   const [testSending, setTestSending] = useState(false);
+  const [testModalOpen, setTestModalOpen] = useState(false);
+  const [testMode, setTestMode] = useState("as-is");
+  const [testProjects, setTestProjects] = useState([]);
+  const [testProjectSearch, setTestProjectSearch] = useState("");
+  const [testProjectToken, setTestProjectToken] = useState("");
+  const [testPreviewLoading, setTestPreviewLoading] = useState(false);
+  const [testTo, setTestTo] = useState(TEMPLATE_TEST_EMAIL_TO);
+  const [testFrom, setTestFrom] = useState("");
+  const [testSubject, setTestSubject] = useState("");
+  const [testBody, setTestBody] = useState("");
   const bodyEditorRef = useRef(null);
+  const testBodyRef = useRef(null);
+  const testPreviewGenRef = useRef(0);
 
   useEffect(() => {
     fetchTemplates();
@@ -96,6 +242,39 @@ export default function EmailTemplate() {
     });
   }, [templates]);
 
+  useEffect(() => {
+    if (testModalOpen && testBodyRef.current && testBody != null) {
+      if (testBodyRef.current.innerHTML !== testBody) {
+        testBodyRef.current.innerHTML = testBody;
+      }
+    }
+  }, [testModalOpen, testBody]);
+
+  const filteredTestProjects = useMemo(() => {
+    const q = testProjectSearch.trim().toLowerCase();
+    const list = Array.isArray(testProjects) ? testProjects : [];
+    const matched = q
+      ? list.filter((p) => {
+          const hay = [p.street, p.suburb, p.name, p.client_name, p.stream, p.state]
+            .map((v) => String(v || "").toLowerCase())
+            .join(" ");
+          return hay.includes(q);
+        })
+      : list;
+    return matched
+      .slice()
+      .sort((a, b) => projectPickerLabel(a).localeCompare(projectPickerLabel(b)))
+      .slice(0, 200);
+  }, [testProjects, testProjectSearch]);
+
+  const testProjectSelectOptions = useMemo(() => {
+    const selected = testProjects.find((p) => p.access_token === testProjectToken);
+    if (selected && !filteredTestProjects.some((p) => p.access_token === testProjectToken)) {
+      return [selected, ...filteredTestProjects];
+    }
+    return filteredTestProjects;
+  }, [filteredTestProjects, testProjects, testProjectToken]);
+
   async function fetchTemplates() {
     try {
       setLoading(true);
@@ -113,40 +292,151 @@ export default function EmailTemplate() {
     }
   }
 
-  async function sendFormattingTestEmail() {
-    const subj = subject.trim() || "(no subject)";
-    const bodyContent = editorHtmlToStored(body);
+  async function rawTemplateSubject() {
+    return subject.trim() || "(no subject)";
+  }
+
+  function rawTemplateBody() {
+    return editorHtmlToStored(body) || "<p>(empty body)</p>";
+  }
+
+  function closeTestModal() {
+    if (testSending) return;
+    setTestModalOpen(false);
+    setTestPreviewLoading(false);
+  }
+
+  async function openFormattingTestModal() {
+    const subj = `[Template test] ${await rawTemplateSubject()}`;
+    const bodyContent = rawTemplateBody();
+    setTestMode("as-is");
+    setTestProjectSearch("");
+    setTestProjectToken("");
+    setTestTo(TEMPLATE_TEST_EMAIL_TO);
+    setTestSubject(subj);
+    setTestBody(normalizeBodyHtmlForEditor(bodyContent));
+    setTestPreviewLoading(false);
+    setTestModalOpen(true);
+
     try {
-      setTestSending(true);
-      const settingsRes = await fetch(`${API_URL}/api/settings`);
+      const [settingsRes, projects] = await Promise.all([
+        fetch(`${API_URL}/api/settings`),
+        fetchProjectsList({ view: "lite" }).catch(() => []),
+      ]);
       const settings = settingsRes.ok ? await settingsRes.json() : {};
-      let fromAddr = "";
-      for (let i = 1; i <= 16; i++) {
-        const raw = settings[`smtp_user_${i}`];
-        if (raw != null && String(raw).trim()) {
-          fromAddr = String(raw).trim();
-          break;
-        }
-      }
+      const fromAddr = firstSmtpFromAddress(settings);
+      setTestFrom(fromAddr);
+      setTestProjects(Array.isArray(projects) ? projects : []);
       if (!fromAddr) {
         alert(
           "No SMTP From address found. Configure at least one SMTP user (e.g. smtp_user_1) in Settings before sending a test."
         );
-        return;
       }
-      const res = await fetch(`${API_URL}/api/emails/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: TEMPLATE_TEST_EMAIL_TO,
-          from: fromAddr,
-          subject: `[Template test] ${subj}`,
-          htmlBody: bodyContent || "<p>(empty body)</p>",
-        }),
+    } catch (e) {
+      console.error("Open template test modal:", e);
+    }
+  }
+
+  async function applyAsIsPreview() {
+    const subj = `[Template test] ${await rawTemplateSubject()}`;
+    setTestSubject(subj);
+    setTestBody(normalizeBodyHtmlForEditor(rawTemplateBody()));
+    setTestPreviewLoading(false);
+  }
+
+  async function applyProjectPreview(accessToken) {
+    const gen = ++testPreviewGenRef.current;
+    const sourceSubject = `[Template test] ${await rawTemplateSubject()}`;
+    const sourceBody = rawTemplateBody();
+    if (!accessToken) {
+      setTestSubject(sourceSubject);
+      setTestBody(normalizeBodyHtmlForEditor(sourceBody));
+      setTestPreviewLoading(false);
+      return;
+    }
+    setTestPreviewLoading(true);
+    try {
+      const [projectRes, settingsRes, users] = await Promise.all([
+        fetch(`${API_URL}/api/projects/${accessToken}`),
+        fetch(`${API_URL}/api/settings`),
+        fetchUsersList(),
+      ]);
+      if (gen !== testPreviewGenRef.current) return;
+      if (!projectRes.ok) throw new Error("Failed to load project");
+      const project = await projectRes.json();
+      const settings = settingsRes.ok ? await settingsRes.json() : {};
+      const nextSubject = await applyTemplateTestTokens(sourceSubject, project, { settings, users });
+      const nextBody = await applyTemplateTestTokens(sourceBody, project, {
+        html: true,
+        settings,
+        users,
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Send failed (${res.status})`);
-      alert(`Test email sent to ${TEMPLATE_TEST_EMAIL_TO}`);
+      if (gen !== testPreviewGenRef.current) return;
+      setTestSubject(nextSubject);
+      setTestBody(normalizeBodyHtmlForEditor(nextBody));
+    } catch (e) {
+      if (gen !== testPreviewGenRef.current) return;
+      console.error("Template test project preview:", e);
+      alert(e.message || "Failed to load project tokens.");
+      setTestSubject(sourceSubject);
+      setTestBody(normalizeBodyHtmlForEditor(sourceBody));
+    } finally {
+      if (gen === testPreviewGenRef.current) setTestPreviewLoading(false);
+    }
+  }
+
+  function handleTestModeChange(mode) {
+    setTestMode(mode);
+    if (mode === "as-is") {
+      testPreviewGenRef.current += 1;
+      applyAsIsPreview();
+      return;
+    }
+    applyProjectPreview(testProjectToken);
+  }
+
+  function handleTestProjectChange(accessToken) {
+    setTestProjectToken(accessToken);
+    if (testMode === "project") applyProjectPreview(accessToken);
+  }
+
+  async function sendFormattingTestFromModal() {
+    if (testMode === "project" && !testProjectToken) {
+      alert("Select a project to fill tokens, or choose Send as is.");
+      return;
+    }
+    const toAddresses = String(testTo || "")
+      .split(",")
+      .map((a) => a.trim())
+      .filter((a) => a.length > 0);
+    if (toAddresses.length === 0) {
+      alert("Please enter at least one email address");
+      return;
+    }
+    if (!testFrom || !String(testFrom).trim()) {
+      alert(
+        "No SMTP From address found. Configure at least one SMTP user (e.g. smtp_user_1) in Settings before sending a test."
+      );
+      return;
+    }
+    try {
+      setTestSending(true);
+      await runWithEmailOverlay(async () => {
+        const res = await fetch(`${API_URL}/api/emails/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: toAddresses,
+            from: testFrom.trim(),
+            subject: testSubject || "(no subject)",
+            htmlBody: testBody || "<p>(empty body)</p>",
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Send failed (${res.status})`);
+        alert(data.message || `Test email sent to ${toAddresses.join(", ")}`);
+      });
+      setTestModalOpen(false);
     } catch (e) {
       console.error("Template test send:", e);
       alert(e.message || "Failed to send test email.");
@@ -760,7 +1050,7 @@ export default function EmailTemplate() {
             <button
               type="button"
               disabled={testSending}
-              onClick={sendFormattingTestEmail}
+              onClick={openFormattingTestModal}
               style={{
                 padding: "10px 20px",
                 fontSize: "1rem",
@@ -773,7 +1063,7 @@ export default function EmailTemplate() {
                 opacity: testSending ? 0.75 : 1,
               }}
             >
-              {testSending ? "Sending test…" : "Send formatting test email"}
+              Send formatting test email
             </button>
             <button
               type="button"
@@ -832,6 +1122,22 @@ export default function EmailTemplate() {
             }}
           >
             {"{ProjectName}"}
+          </button>
+          <button
+            type="button"
+            onClick={() => insertToken("body", "Stream")}
+            style={{
+              padding: "6px 12px",
+              fontSize: "0.85rem",
+              fontWeight: 500,
+              color: MONUMENT,
+              background: WHITE,
+              border: `1px solid ${SECTION_GREY}`,
+              borderRadius: "6px",
+              cursor: "pointer",
+            }}
+          >
+            {"{Stream}"}
           </button>
           <button
             type="button"
@@ -1324,6 +1630,295 @@ export default function EmailTemplate() {
               >
                 Add Group
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {testModalOpen && (
+        <div
+          role="presentation"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 3900,
+            pointerEvents: "auto",
+            padding: "16px",
+            boxSizing: "border-box",
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="template-test-modal-title"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && !testSending) closeTestModal();
+            }}
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              width: "100%",
+              maxWidth: "800px",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+              boxSizing: "border-box",
+              position: "relative",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "20px",
+                paddingRight: "36px",
+              }}
+            >
+              <h2 id="template-test-modal-title" style={{ margin: 0, fontSize: "1.5rem", color: MONUMENT }}>
+                Preview & Send Email
+              </h2>
+              <button
+                type="button"
+                onClick={closeTestModal}
+                disabled={testSending}
+                aria-label="Close"
+                style={{
+                  position: "absolute",
+                  top: "12px",
+                  right: "12px",
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "1.5rem",
+                  cursor: testSending ? "wait" : "pointer",
+                  color: MONUMENT,
+                  width: "40px",
+                  height: "40px",
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "8px", fontWeight: 500 }}>
+                  Test using
+                </label>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", color: MONUMENT }}>
+                    <input
+                      type="radio"
+                      name="template-test-mode"
+                      checked={testMode === "as-is"}
+                      onChange={() => handleTestModeChange("as-is")}
+                    />
+                    Send as is (leave tokens unchanged)
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", color: MONUMENT }}>
+                    <input
+                      type="radio"
+                      name="template-test-mode"
+                      checked={testMode === "project"}
+                      onChange={() => handleTestModeChange("project")}
+                    />
+                    Use a project to fill tokens
+                  </label>
+                </div>
+              </div>
+
+              {testMode === "project" && (
+                <div>
+                  <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
+                    Project
+                  </label>
+                  <input
+                    type="search"
+                    value={testProjectSearch}
+                    onChange={(e) => setTestProjectSearch(e.target.value)}
+                    placeholder="Search street, suburb, client or stream"
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: `1px solid ${SECTION_GREY}`,
+                      fontSize: "1rem",
+                      color: MONUMENT,
+                      background: WHITE,
+                      boxSizing: "border-box",
+                      marginBottom: "8px",
+                    }}
+                  />
+                  <select
+                    value={testProjectToken}
+                    onChange={(e) => handleTestProjectChange(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: `1px solid ${SECTION_GREY}`,
+                      fontSize: "1rem",
+                      fontFamily: "inherit",
+                      color: MONUMENT,
+                      background: WHITE,
+                      cursor: "pointer",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <option value="">Select a project…</option>
+                    {testProjectSelectOptions.map((p) => {
+                      const token = p.access_token || "";
+                      if (!token) return null;
+                      return (
+                        <option key={token} value={token}>
+                          {projectPickerLabel(p)}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {testPreviewLoading && (
+                    <div style={{ marginTop: "8px", fontSize: "0.85rem", color: UI.textMuted }}>
+                      Converting tokens…
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
+                  To (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={testTo}
+                  onChange={(e) => setTestTo(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
+                  From
+                </label>
+                <input
+                  type="text"
+                  value={testFrom}
+                  onChange={(e) => setTestFrom(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
+                  Subject
+                </label>
+                <input
+                  type="text"
+                  value={testSubject}
+                  onChange={(e) => setTestSubject(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
+                  Body
+                </label>
+                <div
+                  ref={testBodyRef}
+                  contentEditable={!testPreviewLoading}
+                  onInput={(e) => setTestBody(e.currentTarget.innerHTML)}
+                  onBlur={(e) => setTestBody(e.currentTarget.innerHTML)}
+                  style={{
+                    width: "100%",
+                    minHeight: "220px",
+                    padding: "12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${SECTION_GREY}`,
+                    fontSize: "0.9rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                    lineHeight: "1.6",
+                    outline: "none",
+                    opacity: testPreviewLoading ? 0.65 : 1,
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={closeTestModal}
+                  disabled={testSending}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    color: MONUMENT,
+                    background: "transparent",
+                    border: `1px solid ${SECTION_GREY}`,
+                    borderRadius: "8px",
+                    cursor: testSending ? "wait" : "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={sendFormattingTestFromModal}
+                  disabled={testSending || testPreviewLoading || (testMode === "project" && !testProjectToken)}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    color: WHITE,
+                    background: MONUMENT,
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor:
+                      testSending || testPreviewLoading || (testMode === "project" && !testProjectToken)
+                        ? "wait"
+                        : "pointer",
+                    opacity:
+                      testSending || testPreviewLoading || (testMode === "project" && !testProjectToken) ? 0.7 : 1,
+                  }}
+                >
+                  {testSending ? "Sending…" : "Send Email"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

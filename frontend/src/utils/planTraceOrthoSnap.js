@@ -32,16 +32,22 @@ export function collectOrthoReferenceAxes(points, tolerance = 0.5) {
  * Optional `referenceAxes` (from external walls etc.) soft-snap the current
  * stroke onto matching X/Y lines and draw the same infinite extension guides.
  *
+ * Optional `constructionPoints` (earlier corners of the in-progress outline),
+ * shown when `showConstructionLines` is set, add the same green dashed H/V
+ * guides through those vertices so jogs/alcoves can be aligned before close.
+ *
  * @param {{ x: number, y: number }} prev
  * @param {{ x: number, y: number }} cursor
  * @param {{ x: number, y: number } | null} origin
  * @param {{
  *   snapThreshold?: number,
  *   referenceAxes?: { xs?: number[], ys?: number[] },
+ *   constructionPoints?: { x: number, y: number }[],
+ *   showConstructionLines?: boolean,
  * }} [options]
  * @returns {{
  *   point: { x: number, y: number },
- *   kind: "ortho" | "close-ready" | "reference",
+ *   kind: "ortho" | "close-ready" | "reference" | "construction",
  *   guides: { x1: number, y1: number, x2: number, y2: number, emphasis?: boolean }[],
  * }}
  */
@@ -50,6 +56,16 @@ export function resolvePolygonOrthoSnap(prev, cursor, origin = null, options = {
   const ortho = orthogonalSnap(prev, cursor);
   const refXs = Array.isArray(options.referenceAxes?.xs) ? options.referenceAxes.xs : [];
   const refYs = Array.isArray(options.referenceAxes?.ys) ? options.referenceAxes.ys : [];
+  const constructionPoints = Array.isArray(options.constructionPoints)
+    ? options.constructionPoints
+    : [];
+  const showConstruction =
+    Boolean(options.showConstructionLines) && constructionPoints.length > 0;
+  const constructionAxes = showConstruction
+    ? collectOrthoReferenceAxes(constructionPoints)
+    : { xs: [], ys: [] };
+  const snapXs = [...refXs, ...constructionAxes.xs];
+  const snapYs = [...refYs, ...constructionAxes.ys];
 
   const guides = [
     // Axis through last point (helps keep the current stroke aligned).
@@ -65,8 +81,38 @@ export function resolvePolygonOrthoSnap(prev, cursor, origin = null, options = {
     guides.push({ x1: -1e6, y1: y, x2: 1e6, y2: y });
   }
 
+  if (showConstruction) {
+    const dx = Math.abs(ortho.x - prev.x);
+    const dy = Math.abs(ortho.y - prev.y);
+    const drawingHorizontal = dy <= 1e-9 && dx > 1e-9;
+    const drawingVertical = dx <= 1e-9 && dy > 1e-9;
+    // Vertical stroke → horizontal lines through earlier corners (alcove depth).
+    // Horizontal stroke → vertical lines through earlier corners.
+    // Before the stroke direction is committed, show both.
+    if (!drawingVertical) {
+      for (const x of constructionAxes.xs) {
+        if (Math.abs(x - prev.x) <= 1e-6) continue;
+        guides.push({ x1: x, y1: -1e6, x2: x, y2: 1e6, emphasis: true });
+      }
+    }
+    if (!drawingHorizontal) {
+      for (const y of constructionAxes.ys) {
+        if (Math.abs(y - prev.y) <= 1e-6) continue;
+        guides.push({ x1: -1e6, y1: y, x2: 1e6, y2: y, emphasis: true });
+      }
+    }
+  }
+
   if (!origin) {
-    return applyReferenceAxisSnap(prev, ortho, guides, refXs, refYs, snapThreshold, "ortho");
+    return applyReferenceAxisSnap(
+      prev,
+      ortho,
+      guides,
+      snapXs,
+      snapYs,
+      snapThreshold,
+      showConstruction ? "construction" : "ortho"
+    );
   }
 
   // Origin crosshair — shows where a closing leg would need to land.
@@ -141,13 +187,22 @@ export function resolvePolygonOrthoSnap(prev, cursor, origin = null, options = {
     };
   }
 
-  return applyReferenceAxisSnap(prev, ortho, guides, refXs, refYs, snapThreshold, "ortho");
+  return applyReferenceAxisSnap(
+    prev,
+    ortho,
+    guides,
+    snapXs,
+    snapYs,
+    snapThreshold,
+    showConstruction ? "construction" : "ortho"
+  );
 }
 
 function applyReferenceAxisSnap(prev, ortho, guides, refXs, refYs, snapThreshold, baseKind) {
   const aligned = { ...ortho };
   let kind = baseKind;
   const extraGuides = [];
+  const snappedKind = baseKind === "construction" ? "construction" : "reference";
 
   // Horizontal stroke → soft-snap X onto a reference wall vertical.
   if (Math.abs(ortho.y - prev.y) <= 1e-9 && refXs.length) {
@@ -162,7 +217,7 @@ function applyReferenceAxisSnap(prev, ortho, guides, refXs, refYs, snapThreshold
     }
     if (bestX != null && bestDist <= snapThreshold) {
       aligned.x = bestX;
-      kind = "reference";
+      kind = snappedKind;
       extraGuides.push({
         x1: bestX,
         y1: -1e6,
@@ -186,7 +241,7 @@ function applyReferenceAxisSnap(prev, ortho, guides, refXs, refYs, snapThreshold
     }
     if (bestY != null && bestDist <= snapThreshold) {
       aligned.y = bestY;
-      kind = "reference";
+      kind = snappedKind;
       extraGuides.push({
         x1: -1e6,
         y1: bestY,

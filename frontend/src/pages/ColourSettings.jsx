@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import AuthedImg from "../components/AuthedImg";
 import ModalBackdrop from "../components/ModalBackdrop";
 import Building3DModal from "../components/Building3DModal.jsx";
+import BuildingElementVisibilityPanel from "../components/BuildingElementVisibilityPanel.jsx";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
 import {
   COLORBOND_RANGE_KEY,
@@ -16,14 +17,14 @@ import {
   SUBFLOOR_TYPE_OPTIONS,
   building3dDraftFromDefaults,
   normalizeBuilding3dDefaults,
+  draftFieldsForSubfloorDrawType,
   resolvedSubfloorDrawType,
 } from "../constants/building3dDefaults";
 import {
   BUILDING_ELEMENT_GROUPS,
-  BUILDING_ELEMENT_VISIBILITY_GROUPS,
   emptyBuildingElementMaterials,
   normalizeBuildingElementMaterials,
-  normalizeElementVisibility,
+  visibilityAfterSubfloorDrawType,
 } from "../constants/buildingElements";
 import { getApiHeaders } from "../utils/auth";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
@@ -156,6 +157,11 @@ function sectionHeaderBlockStyle() {
   };
 }
 
+function toMaterialId(raw) {
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
 function mergeButtonStyle(styleId, fallback) {
   const saved = buildSavedButtonStyle(styleId, true);
   return saved ? { ...saved } : fallback;
@@ -262,6 +268,7 @@ export default function ColourSettings() {
   const [editingMaterial, setEditingMaterial] = useState(false);
   const [editingMaterialName, setEditingMaterialName] = useState("");
   const [materialSaving, setMaterialSaving] = useState(false);
+  const [materialLoadError, setMaterialLoadError] = useState("");
   const [elementMaterials, setElementMaterials] = useState(() => emptyBuildingElementMaterials());
   const [elementMaterialsSaving, setElementMaterialsSaving] = useState(false);
   const [modelDefaults, setModelDefaults] = useState(() => DEFAULT_BUILDING_3D);
@@ -270,7 +277,6 @@ export default function ColourSettings() {
   const [modelDefaultsSaveError, setModelDefaultsSaveError] = useState("");
   const [modelMenuOpenId, setModelMenuOpenId] = useState(null);
   const [modelSubfloorTypeMenuOpen, setModelSubfloorTypeMenuOpen] = useState(null);
-  const [modelStumpStyleMenuOpen, setModelStumpStyleMenuOpen] = useState(false);
   const modelMenuLeaveTimerRef = useRef(null);
   const [subgroupDraftName, setSubgroupDraftName] = useState("");
   const [editingSubgroupId, setEditingSubgroupId] = useState(null);
@@ -370,16 +376,22 @@ export default function ColourSettings() {
       });
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error((data && data.error) || `Failed (${res.status})`);
-      const list = Array.isArray(data) ? data : [];
+      const rawList = Array.isArray(data) ? data : Array.isArray(data?.materials) ? data.materials : [];
+      const list = rawList
+        .map((m) => ({ ...m, id: toMaterialId(m?.id) }))
+        .filter((m) => m.id != null && String(m.name || "").trim());
       setMaterials(list);
+      setMaterialLoadError("");
       setSelectedMaterialId((prev) => {
-        if (prev != null && list.some((m) => m.id === prev)) return prev;
+        const prevId = toMaterialId(prev);
+        if (prevId != null && list.some((m) => m.id === prevId)) return prevId;
         return list[0]?.id ?? null;
       });
     } catch (e) {
       console.error(e);
       setMaterials([]);
       setSelectedMaterialId(null);
+      setMaterialLoadError(e.message || "Failed to load materials");
     }
   }, []);
 
@@ -447,12 +459,14 @@ export default function ColourSettings() {
       next.joistWidthM === modelDefaults.joistWidthM &&
       next.bearerSpanMaxM === modelDefaults.bearerSpanMaxM &&
       next.joistSpanMaxM === modelDefaults.joistSpanMaxM &&
+      next.joistCentresM === modelDefaults.joistCentresM &&
       next.slabHeightM === modelDefaults.slabHeightM &&
       next.wallHeightM === modelDefaults.wallHeightM &&
       next.widthM === modelDefaults.widthM &&
       next.depthM === modelDefaults.depthM &&
       next.subfloorType === modelDefaults.subfloorType &&
       next.stumpStyle === modelDefaults.stumpStyle &&
+      next.claddingType === modelDefaults.claddingType &&
       JSON.stringify(next.elementVisibility) === JSON.stringify(modelDefaults.elementVisibility);
     if (unchanged) return undefined;
     const heightKeys = SUBFLOOR_TYPE_OPTIONS.map((option) => option.heightKey);
@@ -566,7 +580,8 @@ export default function ColourSettings() {
       setEditingMaterial(false);
       setEditingMaterialName("");
       await loadMaterials();
-      if (data?.id != null) setSelectedMaterialId(data.id);
+      const createdId = toMaterialId(data?.id);
+      if (createdId != null) setSelectedMaterialId(createdId);
     } catch (err) {
       alert(err.message || "Failed to add material");
     } finally {
@@ -575,7 +590,7 @@ export default function ColourSettings() {
   }
 
   const selectedMaterial = useMemo(
-    () => materials.find((m) => m.id === selectedMaterialId) || null,
+    () => materials.find((m) => m.id === toMaterialId(selectedMaterialId)) || null,
     [materials, selectedMaterialId]
   );
 
@@ -1156,7 +1171,6 @@ export default function ColourSettings() {
     setModelMenuOpenId(id);
     if (id !== "subfloor") {
       setModelSubfloorTypeMenuOpen(null);
-      setModelStumpStyleMenuOpen(false);
     }
   }
 
@@ -1165,7 +1179,6 @@ export default function ColourSettings() {
     modelMenuLeaveTimerRef.current = setTimeout(() => {
       setModelMenuOpenId(null);
       setModelSubfloorTypeMenuOpen(null);
-      setModelStumpStyleMenuOpen(false);
     }, 160);
   }
 
@@ -1654,14 +1667,14 @@ export default function ColourSettings() {
             gap: "16px",
             flex: 1,
             minHeight: 0,
-            maxWidth: "560px",
+            width: "100%",
           }}
         >
           <div style={sectionHeaderBlockStyle()}>
             <h3 style={sectionHeadingStyle()}>Materials</h3>
           </div>
           <p style={{ margin: 0, fontSize: "0.9rem", color: UI.textMuted }}>
-            Used by Colours → External → Cladding - Material.
+            Used by Colours → External → Weatherboards - Material.
           </p>
           <form
             onSubmit={handleAddMaterial}
@@ -1695,98 +1708,147 @@ export default function ColourSettings() {
             </button>
           </form>
 
-          <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
-            <select
-              value={selectedMaterialId ?? ""}
-              onChange={(e) => {
-                const next = e.target.value === "" ? null : Number(e.target.value);
-                setSelectedMaterialId(Number.isFinite(next) ? next : null);
-                setEditingMaterial(false);
-                setEditingMaterialName("");
-              }}
-              disabled={materialSaving || materials.length === 0}
-              style={{
-                flex: 1,
-                minWidth: "180px",
-                padding: "8px 10px",
-                borderRadius: "8px",
-                border: "1px solid #ddd",
-                fontSize: "0.9rem",
-                color: MONUMENT,
-                background: WHITE,
-                boxSizing: "border-box",
-                minHeight: LIST_ROW_HEIGHT,
-              }}
-            >
-              {materials.length === 0 ? (
-                <option value="">No materials yet</option>
-              ) : (
-                materials.map((material) => (
-                  <option key={material.id} value={material.id}>
-                    {material.name}
-                  </option>
-                ))
-              )}
-            </select>
-            <button
-              type="button"
-              onClick={startEditMaterial}
-              disabled={materialSaving || !selectedMaterial || editingMaterial}
-              style={{ ...sortButtonStyle(false), width: "auto" }}
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              onClick={handleDeleteMaterial}
-              disabled={materialSaving || !selectedMaterial}
-              style={{ ...sortButtonStyle(false), width: "auto" }}
-            >
-              Delete
-            </button>
-          </div>
-
-          {editingMaterial && selectedMaterial ? (
-            <form
-              onSubmit={handleSaveMaterial}
-              style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}
-            >
-              <input
-                type="text"
-                value={editingMaterialName}
-                onChange={(e) => setEditingMaterialName(e.target.value)}
-                disabled={materialSaving}
-                autoFocus
-                style={{
-                  flex: 1,
-                  minWidth: "180px",
-                  padding: "8px 10px",
-                  borderRadius: "8px",
-                  border: "1px solid #ddd",
-                  fontSize: "0.9rem",
-                  color: MONUMENT,
-                  background: WHITE,
-                  boxSizing: "border-box",
-                  minHeight: LIST_ROW_HEIGHT,
-                }}
-              />
-              <button
-                type="submit"
-                disabled={materialSaving || !editingMaterialName.trim()}
-                style={{ ...sortButtonStyle(false), width: "auto" }}
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                onClick={cancelEditMaterial}
-                disabled={materialSaving}
-                style={{ ...sortButtonStyle(false), width: "auto" }}
-              >
-                Cancel
-              </button>
-            </form>
+          {materialLoadError ? (
+            <p style={{ margin: 0, fontSize: "0.9rem", color: UI.danger || "#b42318" }}>
+              {materialLoadError}
+            </p>
           ) : null}
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+              gap: LIST_ROW_GAP,
+              alignContent: "start",
+            }}
+          >
+            {materials.length === 0 ? (
+              <p style={{ margin: 0, fontSize: "0.9rem", color: UI.textMuted, gridColumn: "1 / -1" }}>
+                No materials yet.
+              </p>
+            ) : (
+              materials.map((material) => {
+                const isSelected = material.id === toMaterialId(selectedMaterialId);
+                const isEditing = isSelected && editingMaterial;
+                if (isEditing) {
+                  return (
+                    <form
+                      key={material.id}
+                      onSubmit={handleSaveMaterial}
+                      style={{
+                        ...listRowBaseStyle,
+                        height: "auto",
+                        minHeight: LIST_ROW_HEIGHT,
+                        maxHeight: "none",
+                        outline: `1px solid ${MONUMENT}`,
+                        outlineOffset: "-1px",
+                        backgroundColor: UI.inputBg,
+                      }}
+                    >
+                      <input
+                        type="text"
+                        value={editingMaterialName}
+                        onChange={(e) => setEditingMaterialName(e.target.value)}
+                        disabled={materialSaving}
+                        autoFocus
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          padding: "6px 8px",
+                          borderRadius: "8px",
+                          border: "1px solid #ddd",
+                          fontSize: "0.85rem",
+                          color: MONUMENT,
+                          background: WHITE,
+                          boxSizing: "border-box",
+                        }}
+                      />
+                      <button
+                        type="submit"
+                        disabled={materialSaving || !editingMaterialName.trim()}
+                        style={{ ...sortButtonStyle(false), width: "auto", flexShrink: 0 }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelEditMaterial}
+                        disabled={materialSaving}
+                        style={{ ...sortButtonStyle(false), width: "auto", flexShrink: 0 }}
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  );
+                }
+                return (
+                  <div
+                    key={material.id}
+                    onClick={() => {
+                      setSelectedMaterialId(material.id);
+                      setEditingMaterial(false);
+                      setEditingMaterialName("");
+                    }}
+                    style={{
+                      ...listRowBaseStyle,
+                      cursor: "pointer",
+                      transition: "background 0.2s",
+                      backgroundColor: isSelected ? UI.inputBg : "transparent",
+                      outline: isSelected ? `1px solid ${MONUMENT}` : "none",
+                      outlineOffset: "-1px",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) e.currentTarget.style.backgroundColor = UI.inputBg;
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) e.currentTarget.style.backgroundColor = "transparent";
+                    }}
+                  >
+                    <div
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontSize: "0.85rem",
+                        fontWeight: 500,
+                        color: MONUMENT,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {material.name}
+                    </div>
+                    {isSelected ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startEditMaterial();
+                          }}
+                          disabled={materialSaving}
+                          style={{ ...sortButtonStyle(false), width: "auto", flexShrink: 0 }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleDeleteMaterial();
+                          }}
+                          disabled={materialSaving}
+                          style={{ ...sortButtonStyle(false), width: "auto", flexShrink: 0 }}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       ) : null}
 
@@ -1798,7 +1860,7 @@ export default function ColourSettings() {
             gap: "16px",
             flex: 1,
             minHeight: 0,
-            maxWidth: "720px",
+            width: "100%",
           }}
         >
           <div style={sectionHeaderBlockStyle()}>
@@ -1811,7 +1873,7 @@ export default function ColourSettings() {
             style={{
               display: "flex",
               flexDirection: "column",
-              gap: "20px",
+              gap: "24px",
               overflowY: "auto",
               paddingRight: "8px",
               flex: 1,
@@ -1819,8 +1881,16 @@ export default function ColourSettings() {
             }}
           >
             {BUILDING_ELEMENT_GROUPS.map((group) => (
-              <div key={group.id} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div key={group.id} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                 <h4 style={{ ...sectionHeadingStyle(), fontSize: "1rem" }}>{group.label}</h4>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                    gap: "12px 20px",
+                    alignItems: "end",
+                  }}
+                >
                 {group.items.map((item) => {
                   const assignedId = String(elementMaterials[item.key] || "");
                   const selectValue = materials.some((m) => String(m.id) === assignedId)
@@ -1831,17 +1901,16 @@ export default function ColourSettings() {
                       key={item.key}
                       style={{
                         display: "flex",
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: "12px",
-                        minHeight: LIST_ROW_HEIGHT,
+                        flexDirection: "column",
+                        alignItems: "stretch",
+                        gap: "6px",
+                        minWidth: 0,
                       }}
                     >
                       <span
                         style={{
                           ...sectionHeadingStyle(),
-                          flex: "0 0 200px",
-                          width: "200px",
+                          fontSize: SECTION_TITLE_SIZE,
                         }}
                       >
                         {item.label}
@@ -1853,8 +1922,8 @@ export default function ColourSettings() {
                           handleBuildingElementMaterialChange(item.key, e.target.value)
                         }
                         style={{
-                          flex: 1,
-                          minWidth: "180px",
+                          width: "100%",
+                          minWidth: 0,
                           padding: "8px 10px",
                           borderRadius: "8px",
                           border: "1px solid #ddd",
@@ -1877,6 +1946,7 @@ export default function ColourSettings() {
                     </label>
                   );
                 })}
+                </div>
               </div>
             ))}
           </div>
@@ -1895,7 +1965,7 @@ export default function ColourSettings() {
             alignItems: "stretch",
           }}
         >
-          <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "visible" }}>
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden", display: "flex" }}>
             <Building3DModal
               embedded
               title="Base 3D Model"
@@ -1910,10 +1980,12 @@ export default function ColourSettings() {
               joistWidthM={previewModel.joistWidthM}
               bearerSpanMaxM={previewModel.bearerSpanMaxM}
               joistSpanMaxM={previewModel.joistSpanMaxM}
+              joistCentresM={previewModel.joistCentresM}
               showFence={previewModel.showFence}
               showSubfloor={previewModel.showSubfloor}
               showWall={previewModel.showWall}
               elementVisibility={previewModel.elementVisibility}
+              claddingType={previewModel.claddingType}
               rightPanel={
           <aside
             style={{
@@ -2002,15 +2074,28 @@ export default function ColourSettings() {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setModelDraft((prev) => ({ ...prev, subfloorType: option.key }));
+                                    setModelDraft((prev) => {
+                                      const drawType =
+                                        option.key === "slab"
+                                          ? "slab"
+                                          : prev.stumpStyle === "mega_anchors"
+                                            ? "mega_anchors"
+                                            : "concrete_stumps";
+                                      return {
+                                        ...prev,
+                                        ...draftFieldsForSubfloorDrawType(drawType),
+                                        elementVisibility: visibilityAfterSubfloorDrawType(
+                                          prev.elementVisibility,
+                                          drawType
+                                        ),
+                                      };
+                                    });
                                     setModelSubfloorTypeMenuOpen((prev) =>
                                       prev === option.key ? null : option.key
                                     );
-                                    if (option.key !== "stumps") setModelStumpStyleMenuOpen(false);
                                   }}
                                   onMouseEnter={() => {
                                     setModelSubfloorTypeMenuOpen(option.key);
-                                    if (option.key !== "stumps") setModelStumpStyleMenuOpen(false);
                                   }}
                                   style={{
                                     ...sortButtonStyle(selected || typeOpen),
@@ -2041,65 +2126,39 @@ export default function ColourSettings() {
                                     zIndex={21}
                                   >
                                     {option.includeStumpStyle ? (
-                                      <div style={{ position: "relative" }}>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            setModelStumpStyleMenuOpen((prev) => !prev)
-                                          }
-                                          onMouseEnter={() => setModelStumpStyleMenuOpen(true)}
-                                          style={{
-                                            ...sortButtonStyle(modelStumpStyleMenuOpen),
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "space-between",
-                                            gap: "8px",
-                                          }}
-                                        >
-                                          <span>Style</span>
-                                          <span
-                                            style={{
-                                              fontSize: "1.1rem",
-                                              lineHeight: 1,
-                                              transform: modelStumpStyleMenuOpen
-                                                ? "translateX(-2px)"
-                                                : "none",
-                                              transition: "transform 0.12s ease",
-                                            }}
-                                            aria-hidden
-                                          >
-                                            ‹
-                                          </span>
-                                        </button>
-                                        <ViewportClampedFlyout
-                                          open={modelStumpStyleMenuOpen}
-                                          width="200px"
-                                          zIndex={22}
-                                        >
-                                          {STUMP_STYLE_OPTIONS.map((style) => {
-                                            const styleSelected =
-                                              modelDraft.stumpStyle === style.key;
-                                            return (
-                                              <button
-                                                key={style.key}
-                                                type="button"
-                                                onClick={() =>
-                                                  setModelDraft((prev) => ({
-                                                    ...prev,
-                                                    subfloorType: "stumps",
-                                                    stumpStyle: style.key,
-                                                  }))
-                                                }
-                                                style={{
-                                                  ...sortButtonStyle(styleSelected),
-                                                  fontWeight: styleSelected ? 700 : 600,
-                                                }}
-                                              >
-                                                {style.label}
-                                              </button>
-                                            );
-                                          })}
-                                        </ViewportClampedFlyout>
+                                      <div
+                                        style={{
+                                          display: "grid",
+                                          gridTemplateColumns: "1fr 1fr",
+                                          gap: "8px",
+                                        }}
+                                      >
+                                        {STUMP_STYLE_OPTIONS.map((style) => {
+                                          const styleSelected =
+                                            modelDraft.stumpStyle === style.key;
+                                          return (
+                                            <button
+                                              key={style.key}
+                                              type="button"
+                                              onClick={() =>
+                                                setModelDraft((prev) => ({
+                                                  ...prev,
+                                                  ...draftFieldsForSubfloorDrawType(style.key),
+                                                  elementVisibility: visibilityAfterSubfloorDrawType(
+                                                    prev.elementVisibility,
+                                                    style.key
+                                                  ),
+                                                }))
+                                              }
+                                              style={{
+                                                ...sortButtonStyle(styleSelected),
+                                                fontWeight: styleSelected ? 700 : 600,
+                                              }}
+                                            >
+                                              {style.label}
+                                            </button>
+                                          );
+                                        })}
                                       </div>
                                     ) : null}
                                     <label
@@ -2139,7 +2198,12 @@ export default function ColourSettings() {
                                         {(option.extraFields || []).map((field) => (
                                           <label
                                             key={field.key}
-                                            style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+                                            style={{
+                                              display: "flex",
+                                              flexDirection: "column",
+                                              gap: "6px",
+                                              ...(field.column ? { gridColumn: field.column } : {}),
+                                            }}
                                           >
                                             <span style={sectionHeadingStyle()}>
                                               {field.label} (m)
@@ -2187,91 +2251,27 @@ export default function ColourSettings() {
           </aside>
               }
               elementsPanel={
-          <aside
-            style={{
-              width: "100%",
-              height: "100%",
-              flex: 1,
-              minHeight: 0,
-              display: "flex",
-              flexDirection: "column",
-              gap: "12px",
-              padding: "14px",
-              boxSizing: "border-box",
-              background: WHITE,
-              borderRadius: "12px",
-              border: "1px solid #ddd",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                flex: 1,
-                minHeight: 0,
-                overflowY: "auto",
-                display: "flex",
-                flexDirection: "column",
-                gap: "16px",
-                paddingRight: "4px",
-              }}
-            >
-              {BUILDING_ELEMENT_VISIBILITY_GROUPS.map((group) => (
-                <div key={group.id} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  <h4 style={{ ...sectionHeadingStyle(), fontSize: "1rem", margin: 0 }}>
-                    {group.label}
-                  </h4>
-                  {group.items.map((item) => {
-                    const vis = normalizeElementVisibility(
-                      previewModel.elementVisibility,
-                      previewModel
-                    );
-                    const checked = vis[item.key] !== false;
-                    return (
-                      <label
-                        key={item.key}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "10px",
-                          minHeight: 36,
-                          cursor: "pointer",
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            const nextChecked = e.target.checked;
-                            setModelDraft((prev) => {
-                              const current = normalizeElementVisibility(
-                                prev.elementVisibility,
-                                prev
-                              );
-                              return {
-                                ...prev,
-                                elementVisibility: {
-                                  ...current,
-                                  [item.key]: nextChecked,
-                                },
-                              };
-                            });
-                          }}
-                          style={{
-                            width: "16px",
-                            height: "16px",
-                            flexShrink: 0,
-                            cursor: "pointer",
-                            accentColor: MONUMENT,
-                          }}
-                        />
-                        <span style={{ ...sectionHeadingStyle(), flex: 1 }}>{item.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </aside>
+          <BuildingElementVisibilityPanel
+            visibility={previewModel.elementVisibility}
+            fallback={previewModel}
+            claddingType={previewModel.claddingType}
+            subfloorDrawType={resolvedSubfloorDrawType(previewModel)}
+            onChange={(elementVisibility, subfloorDrawType) =>
+              setModelDraft((prev) => ({
+                ...prev,
+                elementVisibility,
+                ...(subfloorDrawType
+                  ? draftFieldsForSubfloorDrawType(subfloorDrawType)
+                  : {}),
+              }))
+            }
+            onCladdingTypeChange={(nextCladdingType) =>
+              setModelDraft((prev) => ({
+                ...prev,
+                claddingType: nextCladdingType,
+              }))
+            }
+          />
               }
             />
           </div>

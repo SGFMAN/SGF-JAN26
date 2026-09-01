@@ -12,7 +12,7 @@ import {
   formatDepositStatusToken,
   replaceDepositBalanceToken,
 } from "../utils/projectDeposit";
-import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../utils/emailUserTokens";
 import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -79,6 +79,7 @@ export default function NewProject_7_EmailClient({
     const contact1 = (project.client1_email && project.client1_active) ? project.client1_email : (project.email || "");
     replaced = replaced.replace(/{Contact1}/g, contact1);
     replaced = replaced.replace(/{ProjectName}/g, project.name || "");
+    replaced = replaceStreamEmailToken(replaced, project);
     const clientFullName = project.client_name || "";
     const clientFirstName = clientFullName.trim().split(/\s+/)[0] || clientFullName;
     replaced = replaced.replace(/{ClientName}/g, clientFirstName);

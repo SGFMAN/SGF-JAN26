@@ -14,9 +14,9 @@ export const ROOF_STYLE_SUPERIOR_HIPPED = "Superior - Hipped";
 
 /**
  * Pitch (degrees) per roof style.
- * Affordable / Gable filled in when those roofs are built.
  */
 export const ROOF_PITCH_DEG = Object.freeze({
+  [ROOF_STYLE_AFFORDABLE]: 3,
   [ROOF_STYLE_SUPERIOR_SKILLION]: 5,
   [ROOF_STYLE_SUPERIOR_HIPPED]: 15,
 });
@@ -44,4 +44,9 @@ export function isSuperiorHippedRoofStyle(roofStyle) {
 /** Pitched 400 mm skillion roof slab. */
 export function isSuperiorSkillionRoofStyle(roofStyle) {
   return normalizeRoofStyle(roofStyle) === ROOF_STYLE_SUPERIOR_SKILLION;
+}
+
+/** Dual-fall slab roof with eave battens. */
+export function isAffordableRoofStyle(roofStyle) {
+  return normalizeRoofStyle(roofStyle) === ROOF_STYLE_AFFORDABLE;
 }

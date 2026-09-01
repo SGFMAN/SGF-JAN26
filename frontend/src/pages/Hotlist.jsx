@@ -636,6 +636,7 @@ export default function Hotlist() {
       "{Contact1}": item?.email || "",
       "{Email}": item?.email || "",
       "{Phone}": item?.phone || "",
+      "{Stream}": item?.stream || "",
     };
     let out = String(text);
     Object.entries(map).forEach(([k, v]) => {

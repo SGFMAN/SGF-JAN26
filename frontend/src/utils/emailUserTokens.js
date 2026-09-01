@@ -59,6 +59,16 @@ export async function resolveLoggedInUserEmailTokens() {
   }
 }
 
+/** `{Stream}` → project.stream (empty if unset). */
+export function replaceStreamEmailToken(text, projectOrStream) {
+  if (text == null || text === "") return text;
+  const stream =
+    projectOrStream && typeof projectOrStream === "object"
+      ? String(projectOrStream.stream ?? "").trim()
+      : String(projectOrStream ?? "").trim();
+  return String(text).replace(/\{Stream\}/g, stream);
+}
+
 /** Sync replace using already-resolved tokens. */
 export function applyLoggedInUserEmailTokens(text, tokens) {
   if (text == null) return text;

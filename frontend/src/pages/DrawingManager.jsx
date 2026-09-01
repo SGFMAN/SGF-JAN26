@@ -545,6 +545,8 @@ export default function DrawingManager() {
         suburb: project?.suburb || "",
         State: project?.state || "",
         state: project?.state || "",
+        Stream: String(project?.stream || "").trim(),
+        stream: String(project?.stream || "").trim(),
         UserName: userTokens.UserName,
         username: userTokens.UserName,
         UserPosition: userTokens.UserPosition,

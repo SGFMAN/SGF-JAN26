@@ -46,6 +46,11 @@ import {
   parseFlooringRegions,
   parsePlanTracePolygon,
   parsePlanTraceRoofPivotLine,
+  parsePlanTraceRoofRidgeAxis,
+  roofTraceAabb,
+  roofRidgeAxisFromCursor,
+  roofRidgeFallLayout,
+  ROOF_RIDGE_VERTICAL,
   TRACE_PLAN_GROUPS,
   TRACE_PLAN_LAYERS,
   WINDOWS_LAYER_ID,
@@ -66,13 +71,19 @@ import {
 import { computeMetresPerPixel } from "../utils/planTraceScale";
 import {
   finalizeInternalWallSegment,
+  cleanupInternalWallSegments,
   externalWallInnerBoundarySource,
   buildInternalWallVisibleOutlines,
   internalWallHalfThicknessSource,
   internalWallSegmentSourceFootprintForRender,
+  trimInternalWallSegmentToExternalInner,
+  internalWallSnapPointForDisplay,
   pointInPolygon,
 } from "../utils/tracePlanInternalWalls";
-import { resolveInternalWallDrawSnap } from "../utils/tracePlanInternalWallSnap";
+import {
+  resolveInternalWallDrawSnap,
+  resolveInternalWallStartSnap,
+} from "../utils/tracePlanInternalWallSnap";
 import {
   collectOrthoReferenceAxes,
   orthogonalSnap,
@@ -92,7 +103,7 @@ const WINDOW_RESIZE_NODE_PX = 12;
 const NODE_HIT_PX = 12;
 const LINE_HIT_PX = 10;
 const MERGE_SNAP_PX = 14;
-const WALL_SNAP_PX = 16;
+const WALL_SNAP_PX = 36;
 const ORTHO_SNAP_PX = 16;
 const WALL_NODE_COINCIDE_PX = 0.75;
 const MIN_CROP_PX = 40;
@@ -102,6 +113,25 @@ const WIZARD_AREA = "area";
 const WIZARD_CALIBRATE = "calibrate";
 const WIZARD_TRACE = "trace";
 
+function doorLiesOnSegments(door, segments, tol = 8) {
+  const a = door?.outerA ?? door?.a;
+  const b = door?.outerB ?? door?.b;
+  if (!a || !b || !Array.isArray(segments) || segments.length === 0) return false;
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  return segments.some((seg) => {
+    if (!seg?.a || !seg?.b) return false;
+    const dx = seg.b.x - seg.a.x;
+    const dy = seg.b.y - seg.a.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1e-9) return Math.hypot(mid.x - seg.a.x, mid.y - seg.a.y) <= tol;
+    let t = ((mid.x - seg.a.x) * dx + (mid.y - seg.a.y) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    const x = seg.a.x + t * dx;
+    const y = seg.a.y + t * dy;
+    return Math.hypot(mid.x - x, mid.y - y) <= tol;
+  });
+}
+
 function wallNodesMatch(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;
@@ -110,6 +140,88 @@ function wallNodesMatch(a, b) {
 
 function pointsCoincide(a, b, epsilon = WALL_NODE_COINCIDE_PX) {
   return Math.hypot(a.x - b.x, a.y - b.y) <= epsilon;
+}
+
+function savedLayerHasContent(layerId, saved, page) {
+  if (!saved || saved.page !== page) return false;
+  if (layerId === EXTERNAL_WALLS_LAYER_ID) return (saved.points?.length ?? 0) >= 3;
+  if (layerId === INTERNAL_WALLS_LAYER_ID) return (saved.internalWallSegments?.length ?? 0) > 0;
+  if (layerId === WINDOWS_LAYER_ID) return (saved.windows?.length ?? 0) > 0;
+  if (layerId === DOORS_LAYER_ID) return (saved.doors?.length ?? 0) > 0;
+  if (layerId === INTERNAL_DOORS_LAYER_ID) return (saved.internalDoors?.length ?? 0) > 0;
+  if (layerId === SLIDING_DOORS_LAYER_ID) return (saved.slidingDoors?.length ?? 0) > 0;
+  if (layerId === ROOF_LAYER_ID) {
+    return (
+      (saved.roofPoints?.length ?? 0) >= 3 ||
+      Boolean(saved.roofPivotLine?.a && saved.roofPivotLine?.b)
+    );
+  }
+  if (layerId === DECK_LAYER_ID) {
+    return (saved.decks?.length ?? 0) > 0 || (saved.deckPoints?.length ?? 0) >= 3;
+  }
+  if (layerId === FLOORING_LAYER_ID) {
+    return (
+      (saved.hybridRegions?.length ?? 0) > 0 ||
+      (saved.tilesRegions?.length ?? 0) > 0 ||
+      (saved.carpetRegions?.length ?? 0) > 0 ||
+      (saved.flooringPoints?.length ?? 0) >= 3
+    );
+  }
+  if (layerId === KITCHEN_BENCH_LAYER_ID) {
+    return (saved.kitchenBenches?.length ?? 0) > 0 || (saved.kitchenBenchPoints?.length ?? 0) >= 3;
+  }
+  if (layerId === ROBES_LAYER_ID) {
+    return (saved.robes?.length ?? 0) > 0 || (saved.robesPoints?.length ?? 0) >= 3;
+  }
+  if (layerId === KITCHEN_ZONE_LAYER_ID) return (saved.kitchenZonePoints?.length ?? 0) >= 4;
+  return false;
+}
+
+function drawFallArrow(ctx, from, to, color, scale) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 4) return;
+  const ux = dx / len;
+  const uy = dy / len;
+  const head = Math.min(14 / scale, len * 0.28);
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 2.4 / scale;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(to.x, to.y);
+  ctx.lineTo(to.x - ux * head - uy * head * 0.55, to.y - uy * head + ux * head * 0.55);
+  ctx.lineTo(to.x - ux * head + uy * head * 0.55, to.y - uy * head - ux * head * 0.55);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawRoofRidgeFall(ctx, layout, { color, dashed, scale, preview }) {
+  if (!layout?.ridge) return;
+  const { a, b } = layout.ridge;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = (preview ? 2.2 : 2.8) / scale;
+  ctx.lineCap = "round";
+  ctx.setLineDash(dashed ? [7 / scale, 5 / scale] : [8 / scale, 5 / scale]);
+  ctx.globalAlpha = preview ? 0.85 : 1;
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  for (const arrow of layout.arrows || []) {
+    drawFallArrow(ctx, arrow.from, arrow.to, color, scale);
+  }
+  ctx.restore();
 }
 
 function distanceToSegment(px, py, ax, ay, bx, by) {
@@ -180,6 +292,8 @@ export default function TracePlanModal({
   const [roofTool, setRoofTool] = useState("outline");
   const [roofPivotDraftStart, setRoofPivotDraftStart] = useState(null);
   const [roofPivotPreviewEnd, setRoofPivotPreviewEnd] = useState(null);
+  const [roofRidgePicking, setRoofRidgePicking] = useState(false);
+  const [roofRidgePreviewAxis, setRoofRidgePreviewAxis] = useState(null);
   const [hoveredDeckIndex, setHoveredDeckIndex] = useState(-1);
   const [editingDeckIndex, setEditingDeckIndex] = useState(-1);
   const [hoveredFurnitureIndex, setHoveredFurnitureIndex] = useState(-1);
@@ -208,6 +322,9 @@ export default function TracePlanModal({
   const [showPdfPlan, setShowPdfPlan] = useState(true);
   const polygonSnapGuidesRef = useRef([]);
   const polygonSnapKindRef = useRef("ortho");
+  const shiftHeldRef = useRef(false);
+  const lastPointerScreenRef = useRef(null);
+  const updateOpenPolygonPreviewRef = useRef(() => {});
 
   const activeLayer = TRACE_PLAN_LAYERS.find((layer) => layer.id === activeLayerId) || TRACE_PLAN_LAYERS[0];
   const isLineLayerActive = isLineTraceLayer(activeLayerId);
@@ -231,7 +348,7 @@ export default function TracePlanModal({
           : isFlooringTraceLayer(activeLayerId)
             ? createEmptyLayerTrace(FLOORING_LAYER_ID)
             : activeLayerId === ROOF_LAYER_ID
-              ? { points: [], polygonClosed: false, pivotLine: null }
+              ? { points: [], polygonClosed: false, pivotLine: null, ridgeAxis: null }
               : { points: [], polygonClosed: false });
   const flooringFinishStyle =
     FLOORING_FINISH_STYLES[flooringTool] || FLOORING_FINISH_STYLES.hybrid;
@@ -385,6 +502,9 @@ export default function TracePlanModal({
     }
     if (layerId === ROOF_LAYER_ID) {
       setRoofTool("outline");
+      const roof = layerTraces[ROOF_LAYER_ID];
+      const closed = roof?.polygonClosed && (roof.points?.length ?? 0) >= 3;
+      setRoofRidgePicking(Boolean(closed && !roof?.ridgeAxis));
     }
     setRoofPivotDraftStart(null);
     setRoofPivotPreviewEnd(null);
@@ -405,7 +525,7 @@ export default function TracePlanModal({
             : layer.id === SLIDING_DOORS_LAYER_ID
               ? "Trace and close External Walls before placing sliding doors."
               : layer.id === ROOF_LAYER_ID
-                ? "Trace and close External Walls before drawing the roof outline or pivot."
+                ? "Trace and close External Walls before drawing the affordable roof outline or pivot."
                 : layer.id === DECK_LAYER_ID
                   ? "Trace and close External Walls before drawing a deck."
                   : layer.id === FLOORING_LAYER_ID
@@ -490,13 +610,32 @@ export default function TracePlanModal({
     }
     if (layer.id === INTERNAL_WALLS_LAYER_ID) {
       setInternalWallTool(item.id);
-      setHoveredInternalWallSegmentIndex(-1);
-      setHoveredWallNode(null);
-      setDraggingWallNode(null);
-      setLinePreviewPoint(null);
-      internalWallDraftRef.current = null;
-      internalWallSnapHintRef.current = null;
-      patchLayerTrace(INTERNAL_WALLS_LAYER_ID, { draftStart: null });
+      clearInternalWallPointerState();
+      if (item.id === "add") {
+        setLayerTraces((prev) => {
+          const current = prev[INTERNAL_WALLS_LAYER_ID] || { segments: [], draftStart: null };
+          const nextSegments = cleanupInternalWallSegments(
+            current.segments ?? [],
+            (prev[EXTERNAL_WALLS_LAYER_ID] || externalTrace).points ?? [],
+            currentMetresPerPixel()
+          );
+          const doors = prev[INTERNAL_DOORS_LAYER_ID]?.doors ?? [];
+          return {
+            ...prev,
+            [INTERNAL_WALLS_LAYER_ID]: {
+              ...current,
+              segments: nextSegments,
+              draftStart: null,
+            },
+            [INTERNAL_DOORS_LAYER_ID]: {
+              ...(prev[INTERNAL_DOORS_LAYER_ID] || { doors: [] }),
+              doors: doors.filter((door) => doorLiesOnSegments(door, nextSegments)),
+            },
+          };
+        });
+      } else {
+        patchLayerTrace(INTERNAL_WALLS_LAYER_ID, { draftStart: null });
+      }
     }
     if (layer.id === FLOORING_LAYER_ID) {
       setFlooringTool(item.id);
@@ -514,6 +653,13 @@ export default function TracePlanModal({
       setRoofPivotPreviewEnd(null);
       clearPolygonPreview();
       setNearOrigin(false);
+      if (item.id === "pivot") {
+        setRoofRidgePicking(false);
+      } else {
+        const roof = layerTraces[ROOF_LAYER_ID];
+        const closed = roof?.polygonClosed && (roof.points?.length ?? 0) >= 3;
+        setRoofRidgePicking(Boolean(closed && !roof?.ridgeAxis));
+      }
     }
     setOpenSubmenuLayerId(null);
   }
@@ -893,9 +1039,13 @@ export default function TracePlanModal({
       activeLayerId === ROOF_LAYER_ID && hasWalls
         ? collectOrthoReferenceAxes(wallPoints)
         : undefined;
+    const constructionPoints =
+      shiftHeldRef.current && points.length >= 2 ? points.slice(0, -1) : [];
     return resolvePolygonOrthoSnap(prev, rawCursor, origin, {
       snapThreshold: orthoSnapThresholdSource(),
       referenceAxes,
+      showConstructionLines: constructionPoints.length > 0,
+      constructionPoints,
     });
   }
 
@@ -904,6 +1054,36 @@ export default function TracePlanModal({
     polygonSnapKindRef.current = "ortho";
     setPolygonPreviewPoint(null);
   }
+
+  function applyOpenPolygonPreviewFromScreen(screenX, screenY) {
+    if (polygonClosed) return;
+    if (
+      !(
+        points.length >= 1 ||
+        activeLayerId === DECK_LAYER_ID ||
+        isMultiPolygonTraceLayer(activeLayerId) ||
+        activeLayerId === FLOORING_LAYER_ID
+      )
+    ) {
+      return;
+    }
+    const raw = clampSourcePoint(screenToSource(screenX, screenY));
+    const snap = resolveActivePolygonSnap(raw);
+    if (!snap?.point) {
+      clearPolygonPreview();
+      return;
+    }
+    polygonSnapGuidesRef.current = snap.guides || [];
+    polygonSnapKindRef.current = snap.kind;
+    setPolygonPreviewPoint((prev) =>
+      prev && prev.x === snap.point.x && prev.y === snap.point.y ? prev : snap.point
+    );
+    if (points.length >= 2) {
+      const previewScreen = sourceToScreen(snap.point.x, snap.point.y);
+      updateNearOrigin(previewScreen.x, previewScreen.y);
+    }
+  }
+  updateOpenPolygonPreviewRef.current = applyOpenPolygonPreviewFromScreen;
 
   function screenToSource(screenX, screenY) {
     const { panX, panY } = viewRef.current;
@@ -921,6 +1101,23 @@ export default function TracePlanModal({
       x: sourceX * scale + panX,
       y: sourceY * scale + panY,
     };
+  }
+
+  function roofRidgeAxisAtScreen(screenX, screenY) {
+    const roof = layerTraces[ROOF_LAYER_ID];
+    const aabb = roofTraceAabb(roof?.points);
+    if (!aabb) return null;
+    const src = clampSourcePoint(screenToSource(screenX, screenY));
+    return roofRidgeAxisFromCursor(aabb, src);
+  }
+
+  function lockRoofRidgeFromScreen(screenX, screenY) {
+    const axis = roofRidgeAxisAtScreen(screenX, screenY);
+    if (!axis) return false;
+    patchLayerTrace(ROOF_LAYER_ID, { ridgeAxis: axis });
+    setRoofRidgePreviewAxis(axis);
+    setRoofRidgePicking(false);
+    return true;
   }
 
   function clampPan(width, height) {
@@ -981,6 +1178,7 @@ export default function TracePlanModal({
         points: denormalizeTracePoints(saved.roofPoints, sourceCanvas.width, sourceCanvas.height),
         polygonClosed: true,
         pivotLine: null,
+        ridgeAxis: parsePlanTraceRoofRidgeAxis(saved.roofRidgeAxis),
       };
     }
     if (saved.page === pageNumber && (saved.kitchenBenches?.length || saved.kitchenBenchPoints?.length >= 3)) {
@@ -1083,12 +1281,22 @@ export default function TracePlanModal({
         polygonClosed: false,
       };
     }
-    if (saved.page === pageNumber && saved.internalWallSegments?.length) {
+    if (saved.page === pageNumber) {
+      const outer = next[EXTERNAL_WALLS_LAYER_ID]?.points ?? [];
+      const savedMpp = computeMetresPerPixel(
+        saved.calibration,
+        sourceCanvas.width,
+        sourceCanvas.height
+      );
       next[INTERNAL_WALLS_LAYER_ID] = {
-        segments: denormalizeTraceSegments(
-          saved.internalWallSegments,
-          sourceCanvas.width,
-          sourceCanvas.height
+        segments: cleanupInternalWallSegments(
+          denormalizeTraceSegments(
+            saved.internalWallSegments ?? [],
+            sourceCanvas.width,
+            sourceCanvas.height
+          ),
+          outer,
+          savedMpp
         ),
         draftStart: null,
       };
@@ -1143,7 +1351,6 @@ export default function TracePlanModal({
     }
     if (
       saved.page === pageNumber &&
-      saved.internalDoors?.length &&
       next[EXTERNAL_WALLS_LAYER_ID]?.points?.length >= 3
     ) {
       const outerPx = next[EXTERNAL_WALLS_LAYER_ID].points;
@@ -1152,7 +1359,7 @@ export default function TracePlanModal({
         sourceCanvas.width,
         sourceCanvas.height
       );
-      const restoredInternalDoors = saved.internalDoors
+      const restoredInternalDoors = (saved.internalDoors ?? [])
         .map((door) => {
           const faceA = { x: door.a.x * sourceCanvas.width, y: door.a.y * sourceCanvas.height };
           const faceB = { x: door.b.x * sourceCanvas.width, y: door.b.y * sourceCanvas.height };
@@ -1265,6 +1472,36 @@ export default function TracePlanModal({
   }, [loading, loadError]);
 
   useEffect(() => {
+    function syncShift(event) {
+      if (event.key !== "Shift") return;
+      const down = event.type === "keydown";
+      if (shiftHeldRef.current === down) return;
+      shiftHeldRef.current = down;
+      const last = lastPointerScreenRef.current;
+      if (last) updateOpenPolygonPreviewRef.current(last.x, last.y);
+      bumpView();
+    }
+    function clearShift() {
+      if (!shiftHeldRef.current) return;
+      shiftHeldRef.current = false;
+      const last = lastPointerScreenRef.current;
+      if (last) updateOpenPolygonPreviewRef.current(last.x, last.y);
+      bumpView();
+    }
+    window.addEventListener("keydown", syncShift);
+    window.addEventListener("keyup", syncShift);
+    window.addEventListener("blur", clearShift);
+    return () => {
+      window.removeEventListener("keydown", syncShift);
+      window.removeEventListener("keyup", syncShift);
+      window.removeEventListener("blur", clearShift);
+    };
+  }, [bumpView]);
+
+  // Only reload when the drawings PDF changes. A parent refetch of savedPolygon
+  // must not restore walls/doors the user just deleted.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setLoadError(null);
@@ -1327,7 +1564,7 @@ export default function TracePlanModal({
       pdfDocRef.current = null;
       if (doc) doc.destroy().catch(() => {});
     };
-  }, [pdfUrl, savedPolygon, bumpView]);
+  }, [pdfUrl]);
 
   useEffect(() => {
     const source = sourceCanvasRef.current;
@@ -1495,7 +1732,7 @@ export default function TracePlanModal({
         ctx.lineWidth = (isActive ? 1.75 : 1.25) / scale;
         ctx.lineCap = "square";
         ctx.lineJoin = "miter";
-        buildInternalWallVisibleOutlines(segments, halfT).forEach(({ a, b }) => {
+        buildInternalWallVisibleOutlines(segments, halfT, outerPoints, metresPerPixel).forEach(({ a, b }) => {
           ctx.beginPath();
           ctx.moveTo(a.x, a.y);
           ctx.lineTo(b.x, b.y);
@@ -1508,12 +1745,18 @@ export default function TracePlanModal({
             isActive &&
             internalWallTool === "delete" &&
             hoveredInternalWallSegmentIndex === segmentIndex;
+          const trimmedSeg = trimInternalWallSegmentToExternalInner(
+            seg,
+            outerPoints,
+            metresPerPixel
+          );
+          if (!trimmedSeg) return;
           ctx.strokeStyle = hoveredDelete ? "#dc2626" : layer.stroke;
           ctx.lineWidth = ((hoveredDelete ? 2.25 : isActive ? 1.25 : 1)) / scale;
           ctx.setLineDash([4 / scale, 3 / scale]);
           ctx.beginPath();
-          ctx.moveTo(seg.a.x, seg.a.y);
-          ctx.lineTo(seg.b.x, seg.b.y);
+          ctx.moveTo(trimmedSeg.a.x, trimmedSeg.a.y);
+          ctx.lineTo(trimmedSeg.b.x, trimmedSeg.b.y);
           ctx.stroke();
           ctx.setLineDash([]);
         });
@@ -1537,12 +1780,18 @@ export default function TracePlanModal({
 
       ctx.globalAlpha = 1;
       if (!isActive) return;
-      if (internalWallTool === "delete") return;
+      if (internalWallTool === "delete" || internalWallTool === "add") return;
       segments.forEach((seg, segmentIndex) => {
+        const trimmedSeg = trimInternalWallSegmentToExternalInner(
+          seg,
+          outerPoints,
+          metresPerPixel
+        );
+        if (!trimmedSeg) return;
         ["a", "b"].forEach((vertex) => {
-          const p = seg[vertex];
           const isHovered = wallNodesMatch(hoveredWallNode, { segmentIndex, vertex });
           const isDragging = wallNodesMatch(draggingWallNode, { segmentIndex, vertex });
+          const p = trimmedSeg[vertex];
           const isActiveNode = isHovered || isDragging;
           const radius = isActiveNode ? 8 / scale : markerRadius;
           ctx.beginPath();
@@ -1735,6 +1984,7 @@ export default function TracePlanModal({
         const snapEmphasis =
           polygonSnapKindRef.current === "close-ready" ||
           polygonSnapKindRef.current === "reference" ||
+          polygonSnapKindRef.current === "construction" ||
           polygonSnapKindRef.current === "wall";
         const emptyMarker =
           layer.mode === "flooring"
@@ -1879,6 +2129,7 @@ export default function TracePlanModal({
         const snapEmphasis =
           polygonSnapKindRef.current === "close-ready" ||
           polygonSnapKindRef.current === "reference" ||
+          polygonSnapKindRef.current === "construction" ||
           polygonSnapKindRef.current === "wall";
 
         ctx.save();
@@ -2197,32 +2448,118 @@ export default function TracePlanModal({
       }
     }
 
-    if (showOnlyInternalLayer && lineDraftStart && linePreviewPoint) {
-      ctx.strokeStyle = activeLayer.stroke;
-      ctx.lineWidth = 2 / scale;
-      ctx.lineCap = "round";
-      ctx.globalAlpha = 0.7;
-      ctx.beginPath();
-      ctx.moveTo(lineDraftStart.x, lineDraftStart.y);
-      ctx.lineTo(linePreviewPoint.x, linePreviewPoint.y);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-
+    if (showOnlyInternalLayer && linePreviewPoint && internalWallTool === "add") {
       const snapHint = internalWallSnapHintRef.current;
-      if (snapHint?.kind === "l" && snapHint.junction) {
+      const wallSnap =
+        snapHint?.kind === "wall" ||
+        snapHint?.kind === "wall-corner" ||
+        snapHint?.kind === "t" ||
+        snapHint?.kind === "l";
+      const source = sourceCanvasRef.current;
+      const clipPad = Math.max(source?.width || 0, source?.height || 0) * 2;
+      const guides = snapHint?.guides || [];
+      ctx.save();
+      guides.forEach((guide) => {
         ctx.beginPath();
-        ctx.arc(snapHint.junction.x, snapHint.junction.y, markerRadius * 0.75, 0, Math.PI * 2);
-        ctx.fillStyle = activeLayer.marker;
+        ctx.moveTo(
+          Math.max(-clipPad, Math.min(clipPad, guide.x1)),
+          Math.max(-clipPad, Math.min(clipPad, guide.y1))
+        );
+        ctx.lineTo(
+          Math.max(-clipPad, Math.min(clipPad, guide.x2)),
+          Math.max(-clipPad, Math.min(clipPad, guide.y2))
+        );
+        ctx.strokeStyle = guide.emphasis ? "#16a34a" : "rgba(37, 99, 235, 0.55)";
+        ctx.lineWidth = (guide.emphasis ? 2 : 1) / scale;
+        ctx.setLineDash(guide.emphasis ? [6 / scale, 4 / scale] : [4 / scale, 4 / scale]);
+        ctx.globalAlpha = guide.emphasis ? 0.95 : 0.7;
+        ctx.stroke();
+      });
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      ctx.restore();
+
+      if (lineDraftStart) {
+        const outerPoints = externalTrace.points;
+        const existing = layerTraces[INTERNAL_WALLS_LAYER_ID]?.segments ?? [];
+        const previewSeg = { a: lineDraftStart, b: linePreviewPoint };
+        const previewSegments = [...existing, previewSeg];
+        const footprint = internalWallSegmentSourceFootprintForRender(
+          previewSeg,
+          existing.length,
+          previewSegments,
+          outerPoints,
+          metresPerPixel
+        );
+        if (footprint?.length >= 3) {
+          ctx.beginPath();
+          footprint.forEach((p, i) => {
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+          });
+          ctx.closePath();
+          ctx.fillStyle = activeLayer.fillClosed;
+          ctx.globalAlpha = 0.55;
+          ctx.fill();
+          ctx.strokeStyle = activeLayer.stroke;
+          ctx.lineWidth = 1.25 / scale;
+          ctx.globalAlpha = 0.85;
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+
+        const trimmedPreview =
+          trimInternalWallSegmentToExternalInner(
+            previewSeg,
+            outerPoints,
+            metresPerPixel
+          ) || previewSeg;
+        ctx.strokeStyle = activeLayer.stroke;
+        ctx.lineWidth = 2 / scale;
+        ctx.lineCap = "round";
+        ctx.setLineDash([4 / scale, 3 / scale]);
+        ctx.globalAlpha = 0.7;
+        ctx.beginPath();
+        ctx.moveTo(trimmedPreview.a.x, trimmedPreview.a.y);
+        ctx.lineTo(trimmedPreview.b.x, trimmedPreview.b.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+
+        ctx.beginPath();
+        ctx.arc(trimmedPreview.a.x, trimmedPreview.a.y, markerRadius, 0, Math.PI * 2);
+        ctx.fillStyle = activeLayer.origin;
         ctx.strokeStyle = WHITE;
         ctx.lineWidth = 2 / scale;
         ctx.fill();
         ctx.stroke();
       }
 
+      const previewNode = lineDraftStart
+        ? (trimInternalWallSegmentToExternalInner(
+            { a: lineDraftStart, b: linePreviewPoint },
+            externalTrace.points,
+            metresPerPixel
+          )?.b || internalWallSnapPointForDisplay(
+            linePreviewPoint,
+            externalTrace.points,
+            metresPerPixel
+          ))
+        : internalWallSnapPointForDisplay(
+            linePreviewPoint,
+            externalTrace.points,
+            metresPerPixel
+          );
       ctx.beginPath();
-      ctx.arc(lineDraftStart.x, lineDraftStart.y, markerRadius, 0, Math.PI * 2);
-      ctx.fillStyle = activeLayer.origin;
-      ctx.strokeStyle = WHITE;
+      ctx.arc(
+        previewNode.x,
+        previewNode.y,
+        wallSnap ? 8 / scale : markerRadius,
+        0,
+        Math.PI * 2
+      );
+      ctx.fillStyle = wallSnap ? "rgba(34, 197, 94, 0.45)" : activeLayer.marker;
+      ctx.strokeStyle = wallSnap ? "#16a34a" : WHITE;
       ctx.lineWidth = 2 / scale;
       ctx.fill();
       ctx.stroke();
@@ -2274,6 +2611,31 @@ export default function TracePlanModal({
         drawPivot(draftA, draftB || draftA, { color: "#7c3aed", dashed: true });
       }
     }
+
+    // Affordable roof: dashed ridge + fall arrows (preview while picking).
+    {
+      const roofTrace = layerTraces[ROOF_LAYER_ID];
+      const closedRoof =
+        roofTrace?.polygonClosed && (roofTrace.points?.length ?? 0) >= 3;
+      const aabb = closedRoof ? roofTraceAabb(roofTrace.points) : null;
+      const picking =
+        isRoofLayerActive &&
+        !isRoofPivotTool &&
+        closedRoof &&
+        (roofRidgePicking || !roofTrace?.ridgeAxis);
+      const axis = picking
+        ? roofRidgePreviewAxis || roofTrace?.ridgeAxis || ROOF_RIDGE_VERTICAL
+        : roofTrace?.ridgeAxis;
+      const layout = aabb && axis ? roofRidgeFallLayout(aabb, axis) : null;
+      if (layout) {
+        drawRoofRidgeFall(ctx, layout, {
+          color: picking ? "#ea580c" : "#c2410c",
+          dashed: true,
+          scale,
+          preview: picking,
+        });
+      }
+    }
     }
   }, [
     layerTraces,
@@ -2322,6 +2684,8 @@ export default function TracePlanModal({
     isRoofPivotTool,
     roofPivotDraftStart,
     roofPivotPreviewEnd,
+    roofRidgePicking,
+    roofRidgePreviewAxis,
     wizardStep,
     cropRectPx,
     cropDraftEnd,
@@ -2337,7 +2701,7 @@ export default function TracePlanModal({
 
   useEffect(() => {
     if (!loading && !loadError) redraw();
-  }, [loading, loadError, pageLoading, layerTraces, activeLayerId, nearOrigin, redraw, viewTick, linePreviewPoint, polygonPreviewPoint, windowPreview, windowTool, hoveredWindowIndex, hoveredResizeIndex, hoveredHeightIndex, resizeWidthM, movingWindowIndex, doorTool, doorPreview, hoveredDoorIndex, movingDoorIndex, internalDoorTool, internalDoorPreview, hoveredInternalDoorIndex, movingInternalDoorIndex, slidingDoorTool, slidingDoorPreview, hoveredSlidingDoorIndex, hoveredSlidingResizeIndex, movingSlidingDoorIndex, slidingResizeWidthM, deckTool, hoveredDeckIndex, editingDeckIndex, furnitureTool, hoveredFurnitureIndex, editingFurnitureIndex, flooringTool, roofTool, roofPivotDraftStart, roofPivotPreviewEnd, wizardStep, cropRectPx, cropDraftEnd, kitchenZoneDraftEnd, calibration, calibDraftStart, calibPreviewEnd, pendingCalibLine, showPdfPlan, internalWallTool, hoveredInternalWallSegmentIndex, hoveredWallNode, draggingWallNode]);
+  }, [loading, loadError, pageLoading, layerTraces, activeLayerId, nearOrigin, redraw, viewTick, linePreviewPoint, polygonPreviewPoint, windowPreview, windowTool, hoveredWindowIndex, hoveredResizeIndex, hoveredHeightIndex, resizeWidthM, movingWindowIndex, doorTool, doorPreview, hoveredDoorIndex, movingDoorIndex, internalDoorTool, internalDoorPreview, hoveredInternalDoorIndex, movingInternalDoorIndex, slidingDoorTool, slidingDoorPreview, hoveredSlidingDoorIndex, hoveredSlidingResizeIndex, movingSlidingDoorIndex, slidingResizeWidthM, deckTool, hoveredDeckIndex, editingDeckIndex, furnitureTool, hoveredFurnitureIndex, editingFurnitureIndex, flooringTool, roofTool, roofPivotDraftStart, roofPivotPreviewEnd, roofRidgePicking, roofRidgePreviewAxis, wizardStep, cropRectPx, cropDraftEnd, kitchenZoneDraftEnd, calibration, calibDraftStart, calibPreviewEnd, pendingCalibLine, showPdfPlan, internalWallTool, hoveredInternalWallSegmentIndex, hoveredWallNode, draggingWallNode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -2378,11 +2742,20 @@ export default function TracePlanModal({
 
   function findInternalWallNodeAtScreen(screenX, screenY) {
     const segments = layerTraces[INTERNAL_WALLS_LAYER_ID]?.segments ?? [];
+    const outerPoints = externalTrace.points;
+    const metresPerPixel = currentMetresPerPixel();
     let best = null;
     let bestDist = NODE_HIT_PX;
     segments.forEach((seg, segmentIndex) => {
+      const trimmedSeg = trimInternalWallSegmentToExternalInner(
+        seg,
+        outerPoints,
+        metresPerPixel
+      );
+      if (!trimmedSeg) return;
       ["a", "b"].forEach((vertex) => {
-        const p = seg[vertex];
+        const p = trimmedSeg[vertex];
+        if (!p) return;
         const s = sourceToScreen(p.x, p.y);
         const d = Math.hypot(screenX - s.x, screenY - s.y);
         if (d <= bestDist) {
@@ -2508,8 +2881,14 @@ export default function TracePlanModal({
     let bestDist = LINE_HIT_PX;
     segments.forEach((seg, index) => {
       if (!seg?.a || !seg?.b) return;
-      const a = sourceToScreen(seg.a.x, seg.a.y);
-      const b = sourceToScreen(seg.b.x, seg.b.y);
+      const trimmed =
+        trimInternalWallSegmentToExternalInner(
+          seg,
+          externalTrace.points,
+          currentMetresPerPixel()
+        ) || seg;
+      const a = sourceToScreen(trimmed.a.x, trimmed.a.y);
+      const b = sourceToScreen(trimmed.b.x, trimmed.b.y);
       const hit = distanceToSegment(screenX, screenY, a.x, a.y, b.x, b.y);
       if (hit.dist <= bestDist) {
         bestDist = hit.dist;
@@ -2519,26 +2898,42 @@ export default function TracePlanModal({
     return bestIndex;
   }
 
+  function clearInternalWallPointerState() {
+    internalWallDraftRef.current = null;
+    internalWallSnapHintRef.current = null;
+    setLinePreviewPoint(null);
+    setHoveredWallNode(null);
+    setDraggingWallNode(null);
+    setHoveredInternalWallSegmentIndex(-1);
+  }
+
   function removeInternalWallSegmentAt(index) {
     if (!(index >= 0)) return;
     setLayerTraces((prev) => {
       const current = prev[INTERNAL_WALLS_LAYER_ID] || { segments: [], draftStart: null };
       const segments = current.segments ?? [];
       if (index >= segments.length) return prev;
+      const nextSegments = cleanupInternalWallSegments(
+        segments.filter((_, i) => i !== index),
+        externalTrace.points,
+        currentMetresPerPixel()
+      );
+      const doors = prev[INTERNAL_DOORS_LAYER_ID]?.doors ?? [];
+      const nextDoors = doors.filter((door) => doorLiesOnSegments(door, nextSegments));
       return {
         ...prev,
         [INTERNAL_WALLS_LAYER_ID]: {
           ...current,
-          segments: segments.filter((_, i) => i !== index),
+          segments: nextSegments,
           draftStart: null,
+        },
+        [INTERNAL_DOORS_LAYER_ID]: {
+          ...(prev[INTERNAL_DOORS_LAYER_ID] || { doors: [] }),
+          doors: nextDoors,
         },
       };
     });
-    setHoveredInternalWallSegmentIndex(-1);
-    setHoveredWallNode(null);
-    setLinePreviewPoint(null);
-    internalWallDraftRef.current = null;
-    internalWallSnapHintRef.current = null;
+    clearInternalWallPointerState();
   }
 
   function clampSourcePoint(pt) {
@@ -2558,7 +2953,20 @@ export default function TracePlanModal({
 
   function internalWallSnapThresholdSource(outerPoints) {
     const halfT = internalWallHalfThicknessSource(outerPoints, currentMetresPerPixel()) ?? 4;
-    return Math.max(WALL_SNAP_PX / viewScale(), halfT * 1.25);
+    return Math.max(WALL_SNAP_PX / viewScale(), halfT * 2.5);
+  }
+
+  function internalWallSnapSegments(segments, outerPoints) {
+    const metresPerPixel = currentMetresPerPixel();
+    return (segments || []).map((seg) => {
+      if (
+        outerPoints?.length >= 3 &&
+        !trimInternalWallSegmentToExternalInner(seg, outerPoints, metresPerPixel)
+      ) {
+        return null;
+      }
+      return seg;
+    });
   }
 
   function resolveSnapForInternalWall(start, end, segments, outerPoints, excludeSegmentIndex = -1) {
@@ -2566,18 +2974,25 @@ export default function TracePlanModal({
       internalWallSnapHintRef.current = null;
       return clampSourcePoint(end);
     }
-    const snap = resolveInternalWallDrawSnap(start, end, segments, outerPoints, {
-      threshold: internalWallSnapThresholdSource(outerPoints),
-      excludeSegmentIndex,
-    });
-    if (snap.kind === "l" && snap.lCorner) {
-      internalWallSnapHintRef.current = {
-        kind: "l",
-        junction: snap.lCorner.junction,
-      };
-    } else {
-      internalWallSnapHintRef.current = snap.kind === "none" ? null : { kind: snap.kind };
-    }
+    const snap = resolveInternalWallDrawSnap(
+      start,
+      end,
+      internalWallSnapSegments(segments, outerPoints),
+      outerPoints,
+      {
+        threshold: internalWallSnapThresholdSource(outerPoints),
+        excludeSegmentIndex,
+        metresPerPixel: currentMetresPerPixel(),
+      }
+    );
+    internalWallSnapHintRef.current =
+      snap.kind === "none"
+        ? { kind: "none", guides: snap.guides || [] }
+        : {
+            kind: snap.kind,
+            junction: snap.lCorner?.junction,
+            guides: snap.guides || [],
+          };
     return clampSourcePoint(snap.point);
   }
 
@@ -2664,55 +3079,63 @@ export default function TracePlanModal({
     const outerPoints = externalTrace.points;
     if (outerPoints.length < 3) return;
 
-      const rawEnd = clampSourcePoint(screenToSource(screenX, screenY));
-    let startedDraft = false;
+    const rawEnd = clampSourcePoint(screenToSource(screenX, screenY));
+    const current = layerTraces[INTERNAL_WALLS_LAYER_ID] || { segments: [], draftStart: null };
+    const start = current.draftStart;
+    const segments = current.segments ?? [];
 
-    setLayerTraces((prev) => {
-      const current = prev[INTERNAL_WALLS_LAYER_ID] || { segments: [], draftStart: null };
-      const start = current.draftStart;
-      const segments = current.segments ?? [];
-
-      if (!start) {
-        startedDraft = true;
-        internalWallDraftRef.current = rawEnd;
-        internalWallSnapHintRef.current = null;
+    if (!start) {
+      const startSnap = resolveInternalWallStartSnap(
+        rawEnd,
+        internalWallSnapSegments(segments, outerPoints),
+        outerPoints,
+        {
+          threshold: internalWallSnapThresholdSource(outerPoints),
+          metresPerPixel: currentMetresPerPixel(),
+        }
+      );
+      const snappedStart = clampSourcePoint(startSnap.point || rawEnd);
+      internalWallDraftRef.current = snappedStart;
+      internalWallSnapHintRef.current =
+        startSnap.kind === "none" ? null : { kind: startSnap.kind };
+      setLayerTraces((prev) => {
+        const prevLayer = prev[INTERNAL_WALLS_LAYER_ID] || { segments: [], draftStart: null };
         return {
           ...prev,
-          [INTERNAL_WALLS_LAYER_ID]: { ...current, draftStart: rawEnd },
+          [INTERNAL_WALLS_LAYER_ID]: { ...prevLayer, draftStart: snappedStart },
         };
-      }
-
-      const orthoEnd = orthogonalSnap(start, rawEnd);
-      const snap = resolveInternalWallDrawSnap(start, orthoEnd, segments, outerPoints, {
-        threshold: internalWallSnapThresholdSource(outerPoints),
       });
-      const end = clampSourcePoint(snap.point);
+      setLinePreviewPoint(snappedStart);
+      return;
+    }
 
-      const parts = finalizeInternalWallSegment(start, end, outerPoints, currentMetresPerPixel());
-      if (parts.length === 0) {
-        internalWallSnapHintRef.current = null;
-        return {
-          ...prev,
-          [INTERNAL_WALLS_LAYER_ID]: { ...current, draftStart: null },
-        };
+    const orthoEnd = orthogonalSnap(start, rawEnd);
+    const snap = resolveInternalWallDrawSnap(
+      start,
+      orthoEnd,
+      internalWallSnapSegments(segments, outerPoints),
+      outerPoints,
+      {
+        threshold: internalWallSnapThresholdSource(outerPoints),
+        metresPerPixel: currentMetresPerPixel(),
       }
-
-      internalWallSnapHintRef.current = null;
-
+    );
+    const end = clampSourcePoint(snap.point);
+    const parts = finalizeInternalWallSegment(start, end, outerPoints, currentMetresPerPixel());
+    internalWallDraftRef.current = null;
+    internalWallSnapHintRef.current = null;
+    setLinePreviewPoint(null);
+    setLayerTraces((prev) => {
+      const prevLayer = prev[INTERNAL_WALLS_LAYER_ID] || { segments: [], draftStart: null };
       return {
         ...prev,
         [INTERNAL_WALLS_LAYER_ID]: {
-          ...current,
-          segments: [...segments, ...parts],
+          ...prevLayer,
+          segments: parts.length === 0 ? prevLayer.segments ?? [] : [...(prevLayer.segments ?? []), ...parts],
           draftStart: null,
         },
       };
     });
-
-    internalWallDraftRef.current = startedDraft ? rawEnd : null;
-
-    if (startedDraft) setLinePreviewPoint(rawEnd);
-    else setLinePreviewPoint(null);
   }
 
   function addPointAtScreen(screenX, screenY) {
@@ -2799,7 +3222,20 @@ export default function TracePlanModal({
           };
         });
       } else {
-        patchActiveTrace({ polygonClosed: true });
+        if (activeLayerId === ROOF_LAYER_ID) {
+          patchActiveTrace({ polygonClosed: true, ridgeAxis: null });
+          setRoofRidgePicking(true);
+          const aabb = roofTraceAabb(points);
+          const last = lastPointerScreenRef.current;
+          if (aabb && last) {
+            const src = clampSourcePoint(screenToSource(last.x, last.y));
+            setRoofRidgePreviewAxis(roofRidgeAxisFromCursor(aabb, src));
+          } else {
+            setRoofRidgePreviewAxis(ROOF_RIDGE_VERTICAL);
+          }
+        } else {
+          patchActiveTrace({ polygonClosed: true });
+        }
       }
       setNearOrigin(false);
       clearPolygonPreview();
@@ -3106,7 +3542,9 @@ export default function TracePlanModal({
     if (!pt) return;
     if (openSubmenuLayerId) setOpenSubmenuLayerId(null);
 
-    if (event.button === 1 || event.button === 2 || event.shiftKey) {
+    const tracingOpenPolygon =
+      showTraceUi && !polygonClosed && points.length >= 1 && !isLineLayerActive;
+    if (event.button === 1 || event.button === 2 || (event.shiftKey && !tracingOpenPolygon)) {
       event.preventDefault();
       interactionRef.current = {
         type: "pan",
@@ -3310,6 +3748,21 @@ export default function TracePlanModal({
         return;
       }
 
+      if (
+        isRoofLayerActive &&
+        !isRoofPivotTool &&
+        polygonClosed &&
+        roofRidgePicking
+      ) {
+        interactionRef.current = {
+          type: "roofRidgePick",
+          startX: pt.x,
+          startY: pt.y,
+          moved: false,
+        };
+        return;
+      }
+
       if (isLineLayerActive) {
         if (internalWallTool === "delete") {
           interactionRef.current = {
@@ -3435,6 +3888,10 @@ export default function TracePlanModal({
     const interaction = interactionRef.current;
     const pt = canvasCoords(event);
     if (!pt) return;
+    lastPointerScreenRef.current = { x: pt.x, y: pt.y };
+    if (event.shiftKey !== shiftHeldRef.current) {
+      shiftHeldRef.current = Boolean(event.shiftKey);
+    }
 
     if (!interaction) {
       if (showCalibrateUi) {
@@ -3456,6 +3913,19 @@ export default function TracePlanModal({
             prev && prev.x === snapped.x && prev.y === snapped.y ? prev : snapped
           );
         }
+        return;
+      }
+      if (
+        isRoofLayerActive &&
+        !isRoofPivotTool &&
+        polygonClosed &&
+        (roofRidgePicking || !layerTraces[ROOF_LAYER_ID]?.ridgeAxis)
+      ) {
+        const axis = roofRidgeAxisAtScreen(pt.x, pt.y);
+        if (axis) {
+          setRoofRidgePreviewAxis((prev) => (prev === axis ? prev : axis));
+        }
+        if (!roofRidgePicking) setRoofRidgePicking(true);
         return;
       }
       if (isWindowsLayerActive) {
@@ -3579,6 +4049,28 @@ export default function TracePlanModal({
           setLinePreviewPoint((prev) =>
             prev && prev.x === snapped.x && prev.y === snapped.y ? prev : snapped
           );
+        } else if (internalWallTool === "add") {
+          const segments = layerTraces[INTERNAL_WALLS_LAYER_ID]?.segments ?? [];
+          const outerPoints = externalTrace.points;
+          const raw = clampSourcePoint(screenToSource(pt.x, pt.y));
+          const startSnap = resolveInternalWallStartSnap(
+            raw,
+            internalWallSnapSegments(segments, outerPoints),
+            outerPoints,
+            {
+              threshold: internalWallSnapThresholdSource(outerPoints),
+              metresPerPixel: currentMetresPerPixel(),
+            }
+          );
+          const snapped = clampSourcePoint(startSnap.point || raw);
+          internalWallSnapHintRef.current = {
+            kind: startSnap.kind || "none",
+            guides: startSnap.guides || [],
+          };
+          setLinePreviewPoint((prev) =>
+            prev && prev.x === snapped.x && prev.y === snapped.y ? prev : snapped
+          );
+          setHoveredWallNode(null);
         } else {
           const hit = findInternalWallNodeAtScreen(pt.x, pt.y);
           setHoveredWallNode((prev) => (wallNodesMatch(prev, hit) ? prev : hit));
@@ -3595,21 +4087,7 @@ export default function TracePlanModal({
         isMultiPolygonTraceLayer(activeLayerId) ||
         activeLayerId === FLOORING_LAYER_ID
       ) {
-        const raw = clampSourcePoint(screenToSource(pt.x, pt.y));
-        const snap = resolveActivePolygonSnap(raw);
-        if (!snap?.point) {
-          clearPolygonPreview();
-        } else {
-          polygonSnapGuidesRef.current = snap.guides || [];
-          polygonSnapKindRef.current = snap.kind;
-          setPolygonPreviewPoint((prev) =>
-            prev && prev.x === snap.point.x && prev.y === snap.point.y ? prev : snap.point
-          );
-          if (points.length >= 2) {
-            const previewScreen = sourceToScreen(snap.point.x, snap.point.y);
-            updateNearOrigin(previewScreen.x, previewScreen.y);
-          }
-        }
+        applyOpenPolygonPreviewFromScreen(pt.x, pt.y);
       } else {
         clearPolygonPreview();
       }
@@ -3772,6 +4250,17 @@ export default function TracePlanModal({
       return;
     }
 
+    if (interaction.type === "roofRidgePick") {
+      const dx = pt.x - interaction.startX;
+      const dy = pt.y - interaction.startY;
+      if (Math.hypot(dx, dy) > 4) interaction.moved = true;
+      const axis = roofRidgeAxisAtScreen(pt.x, pt.y);
+      if (axis) {
+        setRoofRidgePreviewAxis((prev) => (prev === axis ? prev : axis));
+      }
+      return;
+    }
+
     if (interaction.type === "dragInternalWallNode") {
       const dx = pt.x - interaction.startX;
       const dy = pt.y - interaction.startY;
@@ -3812,21 +4301,7 @@ export default function TracePlanModal({
       const dy = pt.y - interaction.startY;
       if (Math.hypot(dx, dy) > 4) interaction.moved = true;
       if (!polygonClosed && (points.length >= 1 || activeLayerId === DECK_LAYER_ID || isMultiPolygonLayerActive)) {
-        const raw = clampSourcePoint(screenToSource(pt.x, pt.y));
-        const snap = resolveActivePolygonSnap(raw);
-        if (!snap?.point) {
-          clearPolygonPreview();
-        } else {
-          polygonSnapGuidesRef.current = snap.guides || [];
-          polygonSnapKindRef.current = snap.kind;
-          setPolygonPreviewPoint((prev) =>
-            prev && prev.x === snap.point.x && prev.y === snap.point.y ? prev : snap.point
-          );
-          if (points.length >= 2) {
-            const previewScreen = sourceToScreen(snap.point.x, snap.point.y);
-            updateNearOrigin(previewScreen.x, previewScreen.y);
-          }
-        }
+        applyOpenPolygonPreviewFromScreen(pt.x, pt.y);
       }
     }
   }
@@ -4057,6 +4532,14 @@ export default function TracePlanModal({
       return;
     }
 
+    if (interaction.type === "roofRidgePick") {
+      if (event.button === 0) {
+        const pt = canvasCoords(event) || { x: interaction.startX, y: interaction.startY };
+        lockRoofRidgeFromScreen(pt.x, pt.y);
+      }
+      return;
+    }
+
     if (interaction.type === "dragInternalWallNode") {
       setDraggingWallNode(null);
       if (interaction.moved) {
@@ -4103,6 +4586,9 @@ export default function TracePlanModal({
       if (interaction.type === "insertOrIdle" && !interaction.moved && event.button === 0) {
         const segment = findSegmentAtScreen(interaction.startX, interaction.startY);
         if (segment) insertNodeOnSegment(segment);
+        else if (isRoofLayerActive && !isRoofPivotTool) {
+          lockRoofRidgeFromScreen(interaction.startX, interaction.startY);
+        }
         if (isDeckLayerActive && editingDeckIndex >= 0) {
           // Sync after potential insert on next tick via points already in state —
           // insertNodeOnSegment updates points synchronously in setState, so sync here from ref is hard.
@@ -4238,6 +4724,20 @@ export default function TracePlanModal({
       }
       return;
     }
+    if (isRoofLayerActive && !isRoofPivotTool) {
+      if (roofRidgePicking) {
+        setRoofRidgePicking(false);
+        setRoofRidgePreviewAxis(null);
+        return;
+      }
+      const roof = layerTraces[ROOF_LAYER_ID];
+      if (roof?.ridgeAxis) {
+        patchLayerTrace(ROOF_LAYER_ID, { ridgeAxis: null });
+        setRoofRidgePreviewAxis(null);
+        setRoofRidgePicking(true);
+        return;
+      }
+    }
     if (isRoofPivotTool) {
       if (roofPivotDraftStart) {
         setRoofPivotDraftStart(null);
@@ -4259,14 +4759,32 @@ export default function TracePlanModal({
         return;
       }
       if ((trace?.segments?.length ?? 0) > 0) {
-        patchLayerTrace(INTERNAL_WALLS_LAYER_ID, {
-          segments: trace.segments.slice(0, -1),
+        const nextSegments = trace.segments.slice(0, -1);
+        setLayerTraces((prev) => {
+          const doors = prev[INTERNAL_DOORS_LAYER_ID]?.doors ?? [];
+          return {
+            ...prev,
+            [INTERNAL_WALLS_LAYER_ID]: {
+              ...(prev[INTERNAL_WALLS_LAYER_ID] || {}),
+              segments: nextSegments,
+            },
+            [INTERNAL_DOORS_LAYER_ID]: {
+              ...(prev[INTERNAL_DOORS_LAYER_ID] || { doors: [] }),
+              doors: doors.filter((door) => doorLiesOnSegments(door, nextSegments)),
+            },
+          };
         });
       }
       return;
     }
     if (polygonClosed) {
-      patchActiveTrace({ polygonClosed: false });
+      if (isRoofLayerActive) {
+        patchActiveTrace({ polygonClosed: false, ridgeAxis: null });
+        setRoofRidgePicking(false);
+        setRoofRidgePreviewAxis(null);
+      } else {
+        patchActiveTrace({ polygonClosed: false });
+      }
       return;
     }
     setActivePoints((prev) => prev.slice(0, -1));
@@ -4334,7 +4852,9 @@ export default function TracePlanModal({
         patchLayerTrace(ROOF_LAYER_ID, { pivotLine: null });
         return;
       }
-      patchActiveTrace({ points: [], polygonClosed: false });
+      patchActiveTrace({ points: [], polygonClosed: false, ridgeAxis: null });
+      setRoofRidgePicking(false);
+      setRoofRidgePreviewAxis(null);
       setNearOrigin(false);
       clearPolygonPreview();
       setHoveredNodeIndex(-1);
@@ -4343,9 +4863,19 @@ export default function TracePlanModal({
       return;
     }
     if (isLineLayerActive) {
-      internalWallDraftRef.current = null;
-      patchLayerTrace(activeLayerId, { segments: [], draftStart: null });
-      setLinePreviewPoint(null);
+      clearInternalWallPointerState();
+      setLayerTraces((prev) => ({
+        ...prev,
+        [INTERNAL_WALLS_LAYER_ID]: {
+          ...(prev[INTERNAL_WALLS_LAYER_ID] || {}),
+          segments: [],
+          draftStart: null,
+        },
+        [INTERNAL_DOORS_LAYER_ID]: {
+          ...(prev[INTERNAL_DOORS_LAYER_ID] || {}),
+          doors: [],
+        },
+      }));
       return;
     }
     patchActiveTrace({ points: [], polygonClosed: false });
@@ -4356,10 +4886,130 @@ export default function TracePlanModal({
     setSnapMergeTargetIndex(-1);
   }
 
+  function requestClose() {
+    if (hasUnsavedPageTraces()) {
+      const proceed = window.confirm("You have unsaved trace changes. Close without saving?");
+      if (!proceed) return;
+    }
+    onClose();
+  }
+
   function handleClearTrace() {
     if (!hasLayerDraft(activeLayerId, layerTraces[activeLayerId])) return;
     if (!window.confirm(`Clear the ${activeLayer.label} trace?`)) return;
     clearActiveLayerTrace();
+  }
+
+  function hasAnyProjectTraces() {
+    if (TRACE_PLAN_LAYERS.some((layer) => hasLayerDraft(layer.id, layerTraces[layer.id]))) {
+      return true;
+    }
+    const saved = savedTraceRef.current;
+    if (!saved) return false;
+    return TRACE_PLAN_LAYERS.some((layer) =>
+      savedLayerHasContent(layer.id, saved, saved.page ?? currentPage)
+    );
+  }
+
+  function resetAllTraceInteractionState() {
+    internalWallDraftRef.current = null;
+    internalWallSnapHintRef.current = null;
+    interactionRef.current = null;
+    clearPolygonPreview();
+    setLinePreviewPoint(null);
+    setNearOrigin(false);
+    setHoveredNodeIndex(-1);
+    setDraggingNodeIndex(-1);
+    setSnapMergeTargetIndex(-1);
+    setHoveredWallNode(null);
+    setDraggingWallNode(null);
+    setHoveredInternalWallSegmentIndex(-1);
+    setInternalWallTool("add");
+    setWindowPreview(null);
+    setWindowTool("add");
+    setHoveredWindowIndex(-1);
+    setHoveredResizeIndex(-1);
+    setHoveredHeightIndex(-1);
+    setResizeWidthM(null);
+    setMovingWindowIndex(-1);
+    setHeightPickerIndex(-1);
+    setDoorPreview(null);
+    setDoorTool("add");
+    setHoveredDoorIndex(-1);
+    setMovingDoorIndex(-1);
+    setInternalDoorPreview(null);
+    setInternalDoorTool("add");
+    setHoveredInternalDoorIndex(-1);
+    setMovingInternalDoorIndex(-1);
+    setSlidingDoorPreview(null);
+    setSlidingDoorTool("add");
+    setHoveredSlidingDoorIndex(-1);
+    setHoveredSlidingResizeIndex(-1);
+    setMovingSlidingDoorIndex(-1);
+    setDeckTool("add");
+    setHoveredDeckIndex(-1);
+    setEditingDeckIndex(-1);
+    setFurnitureTool("add");
+    setHoveredFurnitureIndex(-1);
+    setEditingFurnitureIndex(-1);
+    setKitchenZoneDraftEnd(null);
+    setFlooringTool("hybrid");
+    setRoofTool("outline");
+    setRoofPivotDraftStart(null);
+    setRoofPivotPreviewEnd(null);
+    setRoofRidgePicking(false);
+    setRoofRidgePreviewAxis(null);
+    setSlidingResizeWidthM(null);
+    setActiveLayerId(EXTERNAL_WALLS_LAYER_ID);
+  }
+
+  async function handleClearAllTraces() {
+    if (!hasAnyProjectTraces() || saving || pageLoading) return;
+    const proceed = window.confirm(
+      "Clear ALL traces for this project? This removes every traced item (walls, windows, doors, roof, decks, flooring, kitchen, and robes). Floor-plan area and scale are kept. This cannot be undone."
+    );
+    if (!proceed) return;
+
+    setSaving(true);
+    try {
+      const source = sourceCanvasRef.current;
+      const normalizedCrop = source
+        ? normalizeCropRect(cropRectPx, source.width, source.height)
+        : savedTraceRef.current?.crop ?? null;
+      if (typeof onSave === "function") {
+        await onSave(
+          [],
+          currentPage,
+          [],
+          normalizedCrop,
+          [],
+          calibration,
+          [],
+          [],
+          [],
+          [],
+          null,
+          [],
+          { hybridRegions: [], tilesRegions: [], carpetRegions: [] },
+          [],
+          [],
+          [],
+          []
+        );
+      }
+      savedTraceRef.current = {
+        ...parsePlanTracePolygon(null),
+        page: currentPage,
+        crop: normalizedCrop || null,
+        calibration: calibration || null,
+      };
+      setLayerTraces(createEmptyLayerTraces());
+      resetAllTraceInteractionState();
+    } catch (err) {
+      alert(err.message || "Failed to clear traces");
+    } finally {
+      setSaving(false);
+    }
   }
 
   function hasUnsavedPageTraces() {
@@ -4367,7 +5017,9 @@ export default function TracePlanModal({
     const source = sourceCanvasRef.current;
     return TRACE_PLAN_LAYERS.some((layer) => {
       const trace = layerTraces[layer.id];
-      if (!hasLayerDraft(layer.id, trace)) return false;
+      if (!hasLayerDraft(layer.id, trace)) {
+        return savedLayerHasContent(layer.id, saved, currentPage);
+      }
       if (layer.id === EXTERNAL_WALLS_LAYER_ID) {
         return !(
           saved.page === currentPage &&
@@ -4434,10 +5086,12 @@ export default function TracePlanModal({
           : null;
         const pivotDirty =
           JSON.stringify(pivotNorm) !== JSON.stringify(saved.roofPivotLine ?? null);
+        const ridgeDirty =
+          (trace.ridgeAxis || null) !== (saved.roofRidgeAxis || null);
         const draftOnly =
           !hasOutline &&
           ((trace.points?.length ?? 0) > 0 || Boolean(trace.polygonClosed));
-        return outlineDirty || pivotDirty || draftOnly;
+        return outlineDirty || pivotDirty || ridgeDirty || draftOnly;
       }
       if (
         layer.id === KITCHEN_BENCH_LAYER_ID ||
@@ -4809,6 +5463,7 @@ export default function TracePlanModal({
             },
           })
         : null;
+      const normalizedRoofRidgeAxis = parsePlanTraceRoofRidgeAxis(roof?.ridgeAxis);
       const deckLayer = layerTraces[DECK_LAYER_ID] || { decks: [], points: [], polygonClosed: false };
       // Flush any open draft / edit into the decks list before save.
       const decksForSave = [...(deckLayer.decks ?? [])];
@@ -4888,13 +5543,15 @@ export default function TracePlanModal({
         normalizedInternalDoors,
         normalizedKitchenBenches,
         normalizedRobes,
-        normalizedKitchenZonePoints
+        normalizedKitchenZonePoints,
+        normalizedRoofRidgeAxis
       );
       savedTraceRef.current = {
         page: currentPage,
         points: normalized,
         roofPoints: normalizedRoof,
         roofPivotLine: normalizedRoofPivot,
+        roofRidgeAxis: normalizedRoofRidgeAxis,
         decks: normalizedDecks,
         deckPoints: normalizedDecks[0]?.points ?? [],
         flooringPoints: normalizedFlooring,
@@ -4968,6 +5625,8 @@ export default function TracePlanModal({
               : hoveredWallNode
                 ? "grab"
                 : "crosshair"
+          : roofRidgePicking
+            ? "crosshair"
           : polygonClosed
             ? draggingNodeIndex >= 0
               ? "grabbing"
@@ -5018,14 +5677,16 @@ export default function TracePlanModal({
           ? internalWallTool === "delete"
             ? "Delete internal walls: hover a wall segment (highlights red) and click to remove it. Use the Walls ▸ menu to switch tools."
             : internalWallTool === "edit"
-              ? "Edit internal walls: drag endpoints to move them (horizontal/vertical only; shared junctions move together). Use the Walls ▸ menu to switch tools."
-              : "Add internal walls: click once for each end of a wall line — horizontal or vertical only. Segments trim to the inside edge of external walls. Drag nodes to adjust. Use the Walls ▸ menu to switch tools."
+              ? "Edit internal walls: drag endpoints to move them (horizontal/vertical only; shared junctions move together). Ends snap to the centre of external walls. Use the Walls ▸ menu to switch tools."
+              : "Add internal walls: click once for each end of a wall line — horizontal or vertical only. A node follows the cursor and snaps to the centre of external walls and to other internal walls (green when snapped). Drag nodes to adjust. Use the Walls ▸ menu to switch tools."
           : activeLayerId === ROOF_LAYER_ID
             ? roofTool === "pivot"
               ? "Draw pivot point: click once for each end of a horizontal or vertical hinge line (the skillion roof pitches about this line). A second line replaces the first. Undo clears the draft or the placed pivot."
-              : `Trace the roof outline — horizontal/vertical only (max ${MAX_TRACE_POINTS}). Blue guides show your stroke axes and external-wall alignments; green guides appear when a side can close at 90° or snaps to a wall line. Click the green origin to close.${
+              : roofRidgePicking || (polygonClosed && !layerTraces[ROOF_LAYER_ID]?.ridgeAxis)
+                ? "Move toward the left/right or top/bottom of the affordable roof to preview the ridge and fall, then click to lock it in."
+              : `Trace the affordable roof outline — horizontal/vertical only (max ${MAX_TRACE_POINTS}). Blue guides show your stroke axes and external-wall alignments; green guides appear when a side can close at 90° or snaps to a wall line. Click the green origin to close.${
                 polygonClosed
-                  ? " Drag nodes to move them (edges stay H/V), drop onto another node to merge, or click a line to add a node."
+                  ? " Drag nodes to move them (edges stay H/V), drop onto another node to merge, or click a line to add a node. Click empty space to change ridge direction and fall."
                   : ""
               }`
           : activeLayerId === KITCHEN_BENCH_LAYER_ID ||
@@ -5046,7 +5707,7 @@ export default function TracePlanModal({
               : deckTool === "edit"
                 ? "Edit decks: click a deck to select it, then drag nodes (edges stay H/V). Use the Deck ▸ menu to switch tools."
                 : `Add a deck — start on an external wall edge, then click corners (horizontal/vertical only, max ${MAX_TRACE_POINTS}). Click the green origin to close and place it. You can add more decks the same way.`
-          : `Click corners on the fitted floor plan — lines snap horizontal/vertical only (max ${MAX_TRACE_POINTS}). Blue guides show axes; green guides snap when a side can close back to the origin at 90°. Click the green origin to close.${
+          : `Click corners on the fitted floor plan — lines snap horizontal/vertical only (max ${MAX_TRACE_POINTS}). Blue guides show axes; green guides snap when a side can close back to the origin at 90°. Hold Shift to show construction lines through earlier corners (and snap to them) so jogs and alcoves line up. Click the green origin to close.${
               polygonClosed
                 ? " Drag nodes to move them (edges stay H/V), drop onto another node to merge, or click a line to add a node."
                 : ""
@@ -5089,7 +5750,7 @@ export default function TracePlanModal({
         padding: "16px",
         boxSizing: "border-box",
       }}
-      onClick={onClose}
+      onClick={requestClose}
     >
       <div
         style={{
@@ -5153,7 +5814,7 @@ export default function TracePlanModal({
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             style={{
               background: SECTION_GREY,
               border: "none",
@@ -5495,6 +6156,24 @@ export default function TracePlanModal({
                 </button>
               </>
             )}
+            <button
+              type="button"
+              onClick={handleClearAllTraces}
+              disabled={!hasAnyProjectTraces() || saving || pageLoading || loading}
+              style={{
+                ...navButtonStyle,
+                color: "#b91c1c",
+                borderColor: "#dc2626",
+                opacity: !hasAnyProjectTraces() || saving || pageLoading || loading ? 0.5 : 1,
+                cursor:
+                  !hasAnyProjectTraces() || saving || pageLoading || loading
+                    ? "not-allowed"
+                    : "pointer",
+              }}
+              title="Remove every traced item from this project"
+            >
+              {saving ? "Clearing…" : "Clear ALL"}
+            </button>
             {showAreaUi && cropRectPx && (
               <button
                 type="button"

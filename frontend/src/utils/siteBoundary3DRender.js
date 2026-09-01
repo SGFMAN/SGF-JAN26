@@ -372,6 +372,7 @@ export function disposeThreeObject(root) {
       const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
       materials.forEach((m) => {
         m.map?.dispose();
+        m.normalMap?.dispose();
         m.dispose();
       });
     }

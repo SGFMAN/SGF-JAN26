@@ -5,7 +5,7 @@ import { enAU } from "date-fns/locale";
 import "react-day-picker/style.css";
 import { isUserAdmin } from "../utils/auth";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
-import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../utils/emailUserTokens";
 import {
   formatDepositPaidToken,
   formatDepositStatusToken,
@@ -249,6 +249,7 @@ export default function SiteVisitPlanner() {
     let replaced = text;
 
     replaced = replaced.replace(/{ProjectName}/g, project.name || "");
+    replaced = replaceStreamEmailToken(replaced, project);
     replaced = replaced.replace(/{ClientName}/g, project.client_name || "");
     replaced = replaced.replace(/{ProjectCost}/g, project.project_cost ? `$${project.project_cost.toLocaleString()}` : "");
     replaced = replaced.replace(/{Street}/g, project.street || "");

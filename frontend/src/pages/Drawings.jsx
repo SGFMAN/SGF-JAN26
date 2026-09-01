@@ -31,7 +31,7 @@ function statusAfterWorkingDrawingsApproval(currentStatus) {
   return currentStatus || null;
 }
 import { getUserPrimaryPositionName } from "../utils/userPosition";
-import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../utils/emailUserTokens";
 import { replaceContractAndColorStatusTokens } from "../utils/designPhaseStatusTiles";
 import {
   resolveConceptApprovedFrom,
@@ -2266,6 +2266,7 @@ export default function Drawings({
 
       let body = template.body || "";
       body = body.replace(/{ProjectName}/g, projectName);
+      body = replaceStreamEmailToken(body, project);
       body = body.replace(/{ClientName}/g, clientName);
       body = body.replace(/{Draftsperson}/g, draftspersonName);
       body = body.replace(/{Position}/g, draftspersonPosition);
@@ -2288,6 +2289,7 @@ export default function Drawings({
 
       let subject = template.subject || "";
       subject = subject.replace(/{ProjectName}/g, projectName);
+      subject = replaceStreamEmailToken(subject, project);
       subject = subject.replace(/{ClientName}/g, clientName);
       subject = subject.replace(/{Draftsperson}/g, draftspersonName);
       subject = subject.replace(/{Position}/g, draftspersonPosition);
@@ -2768,6 +2770,7 @@ export default function Drawings({
       
       // Replace {ProjectName} after inserting notes
       body = body.replace(/{ProjectName}/g, projectName);
+      body = replaceStreamEmailToken(body, project);
 
       // Replace other tokens
       body = body.replace(/{Draftsperson}/g, draftspersonName);
@@ -2776,6 +2779,7 @@ export default function Drawings({
       // Replace subject tokens
       let subject = template.subject || "";
       subject = subject.replace(/{ProjectName}/g, projectName);
+      subject = replaceStreamEmailToken(subject, project);
       subject = subject.replace(/{Draftsperson}/g, draftspersonName);
       subject = subject.replace(/{Position}/g, draftspersonPosition);
 
@@ -3091,6 +3095,7 @@ export default function Drawings({
       
       // Replace {ProjectName} after inserting notes
       body = body.replace(/{ProjectName}/g, projectName);
+      body = replaceStreamEmailToken(body, project);
 
       // Replace other tokens
       body = body.replace(/{Draftsperson}/g, draftspersonName);
@@ -3099,6 +3104,7 @@ export default function Drawings({
       // Replace subject tokens
       let subject = template.subject || "";
       subject = subject.replace(/{ProjectName}/g, projectName);
+      subject = replaceStreamEmailToken(subject, project);
       subject = subject.replace(/{Draftsperson}/g, draftspersonName);
       subject = subject.replace(/{Position}/g, draftspersonPosition);
 

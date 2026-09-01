@@ -7,6 +7,7 @@ import {
   resolveFinalCertificatesToEmails,
 } from "../utils/emailGeneralSettings";
 import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
+import { replaceStreamEmailToken } from "../utils/emailUserTokens";
 import { UI, outlineBorder } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
@@ -48,9 +49,12 @@ function resolveClientNameToken(project) {
 function replaceFinalCertificatesTokens(text, project) {
   const projectName = projectAddressLabel(project);
   const clientName = resolveClientNameToken(project);
-  return String(text || "")
-    .replace(/\{ProjectName\}/g, projectName)
-    .replace(/\{ClientName\}/g, clientName);
+  return replaceStreamEmailToken(
+    String(text || "")
+      .replace(/\{ProjectName\}/g, projectName)
+      .replace(/\{ClientName\}/g, clientName),
+    project
+  );
 }
 
 function findFinalCertificatesTemplate(templates) {

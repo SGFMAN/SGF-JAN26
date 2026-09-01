@@ -50,7 +50,7 @@ export const TRACE_PLAN_LAYERS = [
   },
   {
     id: ROOF_LAYER_ID,
-    label: "Roof",
+    label: "Affordable Roof",
     group: "external",
     stroke: "#475569",
     fillClosed: "rgba(71, 85, 105, 0.25)",
@@ -346,7 +346,7 @@ export function createEmptyLayerTrace(layerId) {
     return { segments: [], draftStart: null };
   }
   if (isRoofTraceLayer(layerId)) {
-    return { points: [], polygonClosed: false, pivotLine: null };
+    return { points: [], polygonClosed: false, pivotLine: null, ridgeAxis: null };
   }
   return { points: [], polygonClosed: false };
 }
@@ -403,7 +403,8 @@ export function hasLayerDraft(layerId, trace) {
     return (
       (trace.points?.length ?? 0) > 0 ||
       Boolean(trace.polygonClosed) ||
-      Boolean(trace.pivotLine?.a && trace.pivotLine?.b)
+      Boolean(trace.pivotLine?.a && trace.pivotLine?.b) ||
+      Boolean(trace.ridgeAxis)
     );
   }
   return (trace.points?.length ?? 0) > 0 || Boolean(trace.polygonClosed);
@@ -507,6 +508,94 @@ export function parsePlanTraceCalibration(raw) {
   return out;
 }
 
+export const ROOF_RIDGE_VERTICAL = "vertical";
+export const ROOF_RIDGE_HORIZONTAL = "horizontal";
+
+/** Affordable dual-fall ridge: vertical divides the plan left/right, horizontal up/down. */
+export function parsePlanTraceRoofRidgeAxis(raw) {
+  if (raw === ROOF_RIDGE_VERTICAL || raw === ROOF_RIDGE_HORIZONTAL) return raw;
+  return null;
+}
+
+export function roofTraceAabb(points) {
+  if (!Array.isArray(points) || points.length < 3) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of points) {
+    const x = Number(p?.x);
+    const y = Number(p?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+  if (!Number.isFinite(minX) || maxX - minX < 2 || maxY - minY < 2) return null;
+  return {
+    minX,
+    minY,
+    maxX,
+    maxY,
+    cx: (minX + maxX) / 2,
+    cy: (minY + maxY) / 2,
+  };
+}
+
+/** Cursor nearer left/right → vertical ridge; nearer top/bottom → horizontal ridge. */
+export function roofRidgeAxisFromCursor(aabb, cursor) {
+  if (!aabb || !cursor) return ROOF_RIDGE_VERTICAL;
+  const dLeft = Math.abs(cursor.x - aabb.minX);
+  const dRight = Math.abs(cursor.x - aabb.maxX);
+  const dTop = Math.abs(cursor.y - aabb.minY);
+  const dBottom = Math.abs(cursor.y - aabb.maxY);
+  return Math.min(dLeft, dRight) <= Math.min(dTop, dBottom)
+    ? ROOF_RIDGE_VERTICAL
+    : ROOF_RIDGE_HORIZONTAL;
+}
+
+/**
+ * Midline ridge through the roof AABB, plus two fall arrows away from the ridge.
+ * @returns {{
+ *   axis: string,
+ *   ridge: { a: {x:number,y:number}, b: {x:number,y:number} },
+ *   arrows: { from: {x:number,y:number}, to: {x:number,y:number} }[],
+ * } | null}
+ */
+export function roofRidgeFallLayout(aabb, axis) {
+  if (!aabb) return null;
+  const vertical = axis === ROOF_RIDGE_VERTICAL;
+  const ridge = vertical
+    ? { a: { x: aabb.cx, y: aabb.minY }, b: { x: aabb.cx, y: aabb.maxY } }
+    : { a: { x: aabb.minX, y: aabb.cy }, b: { x: aabb.maxX, y: aabb.cy } };
+  const insetFrom = 0.18;
+  const insetTo = 0.12;
+  const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  const arrows = vertical
+    ? [
+        {
+          from: lerp({ x: aabb.cx, y: aabb.cy }, { x: aabb.minX, y: aabb.cy }, insetFrom),
+          to: lerp({ x: aabb.cx, y: aabb.cy }, { x: aabb.minX, y: aabb.cy }, 1 - insetTo),
+        },
+        {
+          from: lerp({ x: aabb.cx, y: aabb.cy }, { x: aabb.maxX, y: aabb.cy }, insetFrom),
+          to: lerp({ x: aabb.cx, y: aabb.cy }, { x: aabb.maxX, y: aabb.cy }, 1 - insetTo),
+        },
+      ]
+    : [
+        {
+          from: lerp({ x: aabb.cx, y: aabb.cy }, { x: aabb.cx, y: aabb.minY }, insetFrom),
+          to: lerp({ x: aabb.cx, y: aabb.cy }, { x: aabb.cx, y: aabb.minY }, 1 - insetTo),
+        },
+        {
+          from: lerp({ x: aabb.cx, y: aabb.cy }, { x: aabb.cx, y: aabb.maxY }, insetFrom),
+          to: lerp({ x: aabb.cx, y: aabb.cy }, { x: aabb.cx, y: aabb.maxY }, 1 - insetTo),
+        },
+      ];
+  return { axis: vertical ? ROOF_RIDGE_VERTICAL : ROOF_RIDGE_HORIZONTAL, ridge, arrows };
+}
+
 /** Roof skillion pivot / hinge line (normalized endpoints, H or V in plan). */
 export function parsePlanTraceRoofPivotLine(raw) {
   if (!raw || typeof raw !== "object") return null;
@@ -577,6 +666,7 @@ export function parsePlanTracePolygon(raw) {
     points: [],
     roofPoints: [],
     roofPivotLine: null,
+    roofRidgeAxis: null,
     decks: [],
     deckPoints: [],
     flooringPoints: [],
@@ -609,6 +699,7 @@ export function parsePlanTracePolygon(raw) {
     const slidingDoors = parsePlanTraceSlidingDoors(data?.slidingDoors);
     const calibration = parsePlanTraceCalibration(data?.calibration);
     const roofPivotLine = parsePlanTraceRoofPivotLine(data?.roofPivotLine);
+    const roofRidgeAxis = parsePlanTraceRoofRidgeAxis(data?.roofRidgeAxis);
     const roofPoints = Array.isArray(data?.roofPoints)
       ? data.roofPoints
           .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
@@ -635,6 +726,7 @@ export function parsePlanTracePolygon(raw) {
       page: safePage,
       roofPoints,
       roofPivotLine,
+      roofRidgeAxis,
       decks,
       deckPoints,
       flooringPoints,
@@ -685,7 +777,8 @@ export function serializePlanTracePolygon(
   internalDoors = [],
   kitchenBenches = [],
   robes = [],
-  kitchenZonePoints = []
+  kitchenZonePoints = [],
+  roofRidgeAxis = null
 ) {
   const round = (v) => Math.round(v * 1e6) / 1e6;
   const payload = {
@@ -769,6 +862,8 @@ export function serializePlanTracePolygon(
       b: { x: round(pivot.b.x), y: round(pivot.b.y) },
     };
   }
+  const ridgeAxis = parsePlanTraceRoofRidgeAxis(roofRidgeAxis);
+  if (ridgeAxis) payload.roofRidgeAxis = ridgeAxis;
   // Accept either decks[] or a legacy single deckPoints array as the last arg.
   const deckList = Array.isArray(decks) && decks.length && !Number.isFinite(decks[0]?.x)
     ? decks
@@ -796,22 +891,22 @@ export function serializePlanTracePolygon(
     if (Number.isFinite(win.heightM) && win.heightM > 0) out.heightM = round(win.heightM);
     return out;
   });
-  if (normalizedWindows.length) payload.windows = normalizedWindows;
+  payload.windows = normalizedWindows;
   const normalizedDoors = parsePlanTraceDoors(doors).map((door) => ({
     a: { x: round(door.a.x), y: round(door.a.y) },
     b: { x: round(door.b.x), y: round(door.b.y) },
   }));
-  if (normalizedDoors.length) payload.doors = normalizedDoors;
+  payload.doors = normalizedDoors;
   const normalizedInternalDoors = parsePlanTraceInternalDoors(internalDoors).map((door) => ({
     a: { x: round(door.a.x), y: round(door.a.y) },
     b: { x: round(door.b.x), y: round(door.b.y) },
   }));
-  if (normalizedInternalDoors.length) payload.internalDoors = normalizedInternalDoors;
+  payload.internalDoors = normalizedInternalDoors;
   const normalizedSlidingDoors = parsePlanTraceSlidingDoors(slidingDoors).map((door) => ({
     a: { x: round(door.a.x), y: round(door.a.y) },
     b: { x: round(door.b.x), y: round(door.b.y) },
   }));
-  if (normalizedSlidingDoors.length) payload.slidingDoors = normalizedSlidingDoors;
+  payload.slidingDoors = normalizedSlidingDoors;
   const normalizedCrop = parsePlanTraceCrop(crop);
   if (normalizedCrop) payload.crop = normalizedCrop;
   const normalizedCalibration = parsePlanTraceCalibration(calibration);

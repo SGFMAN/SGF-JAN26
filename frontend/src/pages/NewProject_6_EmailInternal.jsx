@@ -12,7 +12,7 @@ import {
   formatDepositStatusToken,
   replaceDepositBalanceToken,
 } from "../utils/projectDeposit";
-import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../utils/emailUserTokens";
 import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -82,6 +82,7 @@ export default function NewProject_6_EmailInternal({
     let replaced = text;
 
     replaced = replaced.replace(/{ProjectName}/g, project.name || "");
+    replaced = replaceStreamEmailToken(replaced, project);
     replaced = replaced.replace(/{ClientName}/g, project.client_name || "");
     // Project cost: support both number and string (e.g. "$500,000" from form)
     let projectCostDisplay = "";

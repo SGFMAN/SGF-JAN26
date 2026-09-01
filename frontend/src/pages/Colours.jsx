@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import TracePlanModal from "../components/TracePlanModal";
 import Building3DModal from "../components/Building3DModal.jsx";
+import BuildingElementVisibilityPanel from "../components/BuildingElementVisibilityPanel.jsx";
 import BuildingElevations from "../components/BuildingElevations.jsx";
 import FlooringPlanPreview from "../components/FlooringPlanPreview.jsx";
 import PolytecKitchenCube from "../components/PolytecKitchenCube.jsx";
@@ -16,7 +17,7 @@ import { streamColorHover } from "../utils/streamColors.js";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 import { isUserAdmin, getApiHeaders } from "../utils/auth";
 import { fetchColourGroupCatalogue } from "../utils/colourCatalogueCache";
-import { replaceLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../utils/emailUserTokens";
 import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
 import {
@@ -33,7 +34,15 @@ import {
   DEFAULT_BUILDING_3D,
   normalizeBuilding3dDefaults,
   resolvedSubfloorDrawType,
+  subfloorHeightForDrawType,
 } from "../constants/building3dDefaults.js";
+import {
+  loadVisualiserViewPrefs,
+  normalizeElementVisibility,
+  parseCladdingType,
+  saveVisualiserViewPrefs,
+  visibilityAfterSubfloorDrawType,
+} from "../constants/buildingElements.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
@@ -181,11 +190,27 @@ export default function Colours({ project, onUpdate }) {
   const [showSendModal, setShowSendModal] = useState(false);
   const [showTracePlanModal, setShowTracePlanModal] = useState(false);
   const [showBuilding3DModal, setShowBuilding3DModal] = useState(false);
+  const [visualiserVisibility, setVisualiserVisibility] = useState(() =>
+    normalizeElementVisibility({})
+  );
+  const [visualiserSubfloorType, setVisualiserSubfloorType] = useState(null);
+  const [visualiserCladdingType, setVisualiserCladdingType] = useState(() =>
+    parseCladdingType(null)
+  );
   const [isAdmin, setIsAdmin] = useState(false);
   const [building3dDefaults, setBuilding3dDefaults] = useState(() => DEFAULT_BUILDING_3D);
   const planTrace = useMemo(
     () => parsePlanTracePolygon(project?.colours_plan_trace_polygon),
     [project?.colours_plan_trace_polygon]
+  );
+  const tracePlanPdfUrl = useMemo(
+    () =>
+      project?.id
+        ? `${API_URL}/api/files/drawings/${project.id}?v=${encodeURIComponent(
+            String(project.drawings_pdf_location || "")
+          )}`
+        : "",
+    [project?.id, project?.drawings_pdf_location]
   );
   const planTraceFootprintPoints = planTrace.points;
   const planTraceFlooringPoints = planTrace.flooringPoints;
@@ -195,6 +220,7 @@ export default function Colours({ project, onUpdate }) {
   const planTraceInternalWalls = planTrace.internalWallSegments;
   const planTraceRoofPoints = planTrace.roofPoints;
   const planTraceRoofPivotLine = planTrace.roofPivotLine;
+  const planTraceRoofRidgeAxis = planTrace.roofRidgeAxis;
   const planTraceDecks = planTrace.decks;
   const planTraceKitchenBenches = planTrace.kitchenBenches;
   const planTraceKitchenZonePoints = planTrace.kitchenZonePoints;
@@ -1082,6 +1108,7 @@ export default function Colours({ project, onUpdate }) {
                            .replace(/\{ClientName\}/g, clientName)
                            .replace(/\{ProjectName\}/g, projectName)
                            .replace(/\{ColourConsultant\}/g, colourConsultantName);
+          subject = replaceStreamEmailToken(subject, project);
           setEmailSubject(await replaceLoggedInUserEmailTokens(subject));
           
           // Replace tokens in body
@@ -1092,6 +1119,7 @@ export default function Colours({ project, onUpdate }) {
                        .replace(/\{ClientName\}/g, clientName)
                        .replace(/\{ProjectName\}/g, projectName)
                        .replace(/\{ColourConsultant\}/g, colourConsultantName);
+            body = replaceStreamEmailToken(body, project);
             setEmailBody(
               convertEmailBodyNewlinesToBr(await replaceLoggedInUserEmailTokens(body))
             );
@@ -1504,6 +1532,18 @@ export default function Colours({ project, onUpdate }) {
 
   function handleOpen3DVisualiser() {
     if (!isAdmin) return;
+    const saved = loadVisualiserViewPrefs(project?.id);
+    const drawType =
+      saved?.subfloorType || resolvedSubfloorDrawType(building3dDefaults);
+    const vis = normalizeElementVisibility(
+      saved?.visibility ?? building3dDefaults.elementVisibility,
+      building3dDefaults
+    );
+    setVisualiserSubfloorType(drawType);
+    setVisualiserCladdingType(parseCladdingType(saved?.claddingType));
+    setVisualiserVisibility(
+      drawType === "slab" ? visibilityAfterSubfloorDrawType(vis, "slab") : vis
+    );
     setShowBuilding3DModal(true);
   }
 
@@ -1524,7 +1564,8 @@ export default function Colours({ project, onUpdate }) {
     internalDoors = [],
     kitchenBenches = [],
     robes = [],
-    kitchenZonePoints = []
+    kitchenZonePoints = [],
+    roofRidgeAxis = null
   ) {
     const projectKey = project?.access_token || project?.id;
     if (!projectKey) {
@@ -1556,7 +1597,8 @@ export default function Colours({ project, onUpdate }) {
           internalDoors,
           kitchenBenches,
           robes,
-          kitchenZonePoints
+          kitchenZonePoints,
+          roofRidgeAxis
         ),
       }),
     });
@@ -1624,13 +1666,13 @@ export default function Colours({ project, onUpdate }) {
   const externalColourFieldGrid = [
     [
       {
-        label: "Cladding Colour",
+        label: "Weatherboards Colour",
         value: claddingColour,
         onChange: handleCladdingColourChange,
         options: externalFieldOptions,
       },
       {
-        label: "Cladding Material",
+        label: "Weatherboards Material",
         value: claddingMaterial,
         onChange: handleCladdingMaterialChange,
         options: claddingMaterialFieldOptions,
@@ -1686,8 +1728,8 @@ export default function Colours({ project, onUpdate }) {
 
   const externalSelectFitCh = useMemo(() => {
     const labels = [
-      "Cladding Colour",
-      "Cladding Material",
+      "Weatherboards Colour",
+      "Weatherboards Material",
       "Baseboards Colour",
       "Roof Colour",
       "Roof style",
@@ -2477,7 +2519,7 @@ export default function Colours({ project, onUpdate }) {
 
       {isAdmin && showTracePlanModal && project?.drawings_pdf_location && (
         <TracePlanModal
-          pdfUrl={`${API_URL}/api/files/drawings/${project.id}?t=${Date.now()}`}
+          pdfUrl={tracePlanPdfUrl}
           savedPolygon={project.colours_plan_trace_polygon}
           onSave={savePlanTracePolygon}
           onClose={() => setShowTracePlanModal(false)}
@@ -2489,22 +2531,59 @@ export default function Colours({ project, onUpdate }) {
           title="3D Unit"
           widthM={building3dDefaults.widthM}
           depthM={building3dDefaults.depthM}
-          subfloorHeightM={building3dDefaults.subfloorHeightM}
+          subfloorHeightM={subfloorHeightForDrawType(
+            building3dDefaults,
+            visualiserSubfloorType ?? resolvedSubfloorDrawType(building3dDefaults)
+          )}
           wallHeightM={building3dDefaults.wallHeightM}
-          subfloorType={resolvedSubfloorDrawType(building3dDefaults)}
+          subfloorType={
+            visualiserSubfloorType ?? resolvedSubfloorDrawType(building3dDefaults)
+          }
           bearerHeightM={building3dDefaults.bearerHeightM}
           joistHeightM={building3dDefaults.joistHeightM}
           bearerWidthM={building3dDefaults.bearerWidthM}
           joistWidthM={building3dDefaults.joistWidthM}
           bearerSpanMaxM={building3dDefaults.bearerSpanMaxM}
           joistSpanMaxM={building3dDefaults.joistSpanMaxM}
-          showFence={building3dDefaults.showFence}
-          showSubfloor={building3dDefaults.showSubfloor}
-          showWall={building3dDefaults.showWall}
-          elementVisibility={building3dDefaults.elementVisibility}
+          joistCentresM={building3dDefaults.joistCentresM}
+          showFence={visualiserVisibility.fence}
+          showSubfloor={visualiserVisibility.footing}
+          showWall={visualiserVisibility.cladding}
+          elementVisibility={visualiserVisibility}
+          claddingType={visualiserCladdingType}
+          elementsPanel={
+            <BuildingElementVisibilityPanel
+              visibility={visualiserVisibility}
+              claddingType={visualiserCladdingType}
+              subfloorDrawType={
+                visualiserSubfloorType ?? resolvedSubfloorDrawType(building3dDefaults)
+              }
+              onChange={(elementVisibility, subfloorDrawType) => {
+                setVisualiserVisibility(elementVisibility);
+                const nextType = subfloorDrawType || visualiserSubfloorType;
+                if (subfloorDrawType) setVisualiserSubfloorType(subfloorDrawType);
+                saveVisualiserViewPrefs(project?.id, {
+                  visibility: elementVisibility,
+                  subfloorType: nextType,
+                  claddingType: visualiserCladdingType,
+                });
+              }}
+              onCladdingTypeChange={(nextCladdingType) => {
+                const parsed = parseCladdingType(nextCladdingType);
+                setVisualiserCladdingType(parsed);
+                saveVisualiserViewPrefs(project?.id, {
+                  visibility: visualiserVisibility,
+                  subfloorType:
+                    visualiserSubfloorType ?? resolvedSubfloorDrawType(building3dDefaults),
+                  claddingType: parsed,
+                });
+              }}
+            />
+          }
           footprintPoints={planTraceFootprintPoints}
           roofPoints={planTraceRoofPoints}
           roofPivotLine={planTraceRoofPivotLine}
+          roofRidgeAxis={planTraceRoofRidgeAxis}
           decks={planTraceDecks}
           kitchenBenches={planTraceKitchenBenches}
           robes={planTraceRobes}
@@ -2537,6 +2616,7 @@ export default function Colours({ project, onUpdate }) {
             windowFramesColour,
             windowSurroundsColour,
             frontDoorColour: doorColour,
+            fasciaGutterColour: project?.fascia_gutter_colour,
           }}
           kitchenFinishes={kitchenFinishes}
           onClose={() => setShowBuilding3DModal(false)}

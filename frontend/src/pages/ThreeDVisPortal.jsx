@@ -18,7 +18,7 @@ const WINDOW_SURROUND_COLOUR_OPTIONS = ["Select", ...COLORBOND_COLOURS.map(c => 
 
 const BUILDING_PARTS = [
   { key: "roof", label: "Roof" },
-  { key: "cladding", label: "Cladding" },
+  { key: "cladding", label: "Weatherboards" },
   { key: "baseboards", label: "Baseboards" },
   { key: "fasciaGutter", label: "Fascia & Gutter" },
   { key: "balustrade", label: "Balustrade" },

@@ -41,16 +41,37 @@ function metreRingToSource(ring, params) {
 }
 
 /**
+ * Offset the outer wall trace inward by `offsetM` (metres) in PDF source coords.
+ */
+export function externalWallOffsetBoundarySource(
+  outerPoints,
+  offsetM,
+  metresPerPixel = null
+) {
+  if (!Array.isArray(outerPoints) || outerPoints.length < 3) return null;
+  if (!(offsetM > 0)) return null;
+  const { ring, params } = sourceToMetreRing(outerPoints, metresPerPixel);
+  const offset = offsetPolygonInward(ring, offsetM);
+  if (!offset || offset.length < 3) return null;
+  return metreRingToSource(offset, params);
+}
+
+/**
  * Inner face of external walls in PDF source coordinates (inside edge of wall band).
  * @param {{ x: number, y: number }[]} outerPoints
  * @returns {{ x: number, y: number }[] | null}
  */
 export function externalWallInnerBoundarySource(outerPoints, metresPerPixel = null) {
-  if (!Array.isArray(outerPoints) || outerPoints.length < 3) return null;
-  const { ring, params } = sourceToMetreRing(outerPoints, metresPerPixel);
-  const inner = offsetPolygonInward(ring, TRACE_WALL_THICKNESS_M);
-  if (!inner || inner.length < 3) return null;
-  return metreRingToSource(inner, params);
+  return externalWallOffsetBoundarySource(outerPoints, TRACE_WALL_THICKNESS_M, metresPerPixel);
+}
+
+/** Centreline of the 100 mm external wall band in PDF source coordinates. */
+export function externalWallCentreBoundarySource(outerPoints, metresPerPixel = null) {
+  return externalWallOffsetBoundarySource(
+    outerPoints,
+    TRACE_WALL_THICKNESS_M / 2,
+    metresPerPixel
+  );
 }
 
 /** Half-width of a 100 mm internal wall band in PDF source coordinates. */
@@ -167,7 +188,7 @@ function findPartnerAtJunction(segmentIndex, vertex, segments) {
 
   let partner = null;
   segments.forEach((seg, index) => {
-    if (index === segmentIndex) return;
+    if (index === segmentIndex || !seg?.a || !seg?.b) return;
     ["a", "b"].forEach((v) => {
       if (!pointsCoincideSource(seg[v], junction)) return;
       const u2 = directionIntoSegmentFromVertex(seg, v);
@@ -231,6 +252,7 @@ function tJunctionAtEndpoint(segmentIndex, vertex, segments, halfT) {
   for (let i = 0; i < segments.length; i += 1) {
     if (i === segmentIndex) continue;
     const other = segments[i];
+    if (!other?.a || !other?.b) continue;
     const proj = projectPointOnSegment(
       junction.x,
       junction.y,
@@ -307,6 +329,96 @@ export function internalWallSegmentForRender(seg, segmentIndex, segments, halfT)
   return { a, b };
 }
 
+function distanceToRing(point, ring) {
+  if (!point || !ring?.length) return Infinity;
+  let best = Infinity;
+  for (let i = 0; i < ring.length; i += 1) {
+    const j = (i + 1) % ring.length;
+    const dSq = distanceToSegmentSq(
+      point.x,
+      point.y,
+      ring[i].x,
+      ring[i].y,
+      ring[j].x,
+      ring[j].y
+    );
+    if (dSq < best) best = dSq;
+  }
+  return Math.sqrt(best);
+}
+
+function lerpPoint(a, b, t) {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+function pullEndpointToInnerFace(end, other, inner, centre, halfT) {
+  if (!end || !other) return end;
+  const len = Math.hypot(other.x - end.x, other.y - end.y);
+  if (len < MIN_SEGMENT_LEN) return end;
+
+  const edgeTol = Math.min(1.5, halfT * 0.08);
+  if (inner && pointInPolygon(end, inner, edgeTol)) return end;
+
+  if (inner && pointInPolygon(other, inner, edgeTol)) {
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 30; i += 1) {
+      const mid = (lo + hi) / 2;
+      const p = lerpPoint(other, end, mid);
+      if (pointInPolygon(p, inner, edgeTol)) lo = mid;
+      else hi = mid;
+    }
+    return lerpPoint(other, end, lo);
+  }
+
+  const onCentre = centre && distanceToRing(end, centre) <= halfT * 1.25;
+  if (!onCentre) return end;
+  const t = Math.min(0.49, halfT / len);
+  return lerpPoint(end, other, t);
+}
+
+/**
+ * Snap targets the external-wall centreline; the drawn 100 mm band must stop
+ * at the inner face so it does not overlap the external wall thickness.
+ */
+export function trimInternalWallSegmentToExternalInner(
+  seg,
+  outerPoints,
+  metresPerPixel = null
+) {
+  if (!seg?.a || !seg?.b) return null;
+  const inner = externalWallInnerBoundarySource(outerPoints, metresPerPixel);
+  const centre = externalWallCentreBoundarySource(outerPoints, metresPerPixel);
+  if (!inner && !centre) return seg;
+  const halfT = internalWallHalfThicknessSource(outerPoints, metresPerPixel) ?? 2;
+  const a = pullEndpointToInnerFace(seg.a, seg.b, inner, centre, halfT);
+  const b = pullEndpointToInnerFace(seg.b, seg.a, inner, centre, halfT);
+  if (Math.hypot(b.x - a.x, b.y - a.y) < MIN_SEGMENT_LEN) return null;
+  return { a, b };
+}
+
+/** Pull a snap/node point back to the inner face for display (snap can stay on centre). */
+export function internalWallSnapPointForDisplay(
+  point,
+  outerPoints,
+  metresPerPixel = null,
+  toward = null
+) {
+  if (!point || !outerPoints?.length) return point;
+  const inner = externalWallInnerBoundarySource(outerPoints, metresPerPixel);
+  if (!inner || inner.length < 3) return point;
+  const other = toward || {
+    x: inner.reduce((sum, p) => sum + p.x, 0) / inner.length,
+    y: inner.reduce((sum, p) => sum + p.y, 0) / inner.length,
+  };
+  const trimmed = trimInternalWallSegmentToExternalInner(
+    { a: point, b: other },
+    outerPoints,
+    metresPerPixel
+  );
+  return trimmed?.a || point;
+}
+
 export function internalWallSegmentSourceFootprintForRender(
   seg,
   segmentIndex,
@@ -318,7 +430,13 @@ export function internalWallSegmentSourceFootprintForRender(
   if (halfT == null) return null;
   const renderSeg = internalWallSegmentForRender(seg, segmentIndex, segments, halfT);
   if (!renderSeg) return null;
-  return internalWallSegmentSourceFootprint(renderSeg, outerPoints, metresPerPixel);
+  const trimmed = trimInternalWallSegmentToExternalInner(
+    renderSeg,
+    outerPoints,
+    metresPerPixel
+  );
+  if (!trimmed) return null;
+  return internalWallSegmentSourceFootprint(trimmed, outerPoints, metresPerPixel);
 }
 
 function endpointSidePoint(segmentIndex, vertex, side, segments, halfT) {
@@ -359,25 +477,53 @@ function endpointSidePoint(segmentIndex, vertex, side, segments, halfT) {
  * @param {number} halfT
  * @returns {{ a: { x: number, y: number }, b: { x: number, y: number } }[]}
  */
-export function buildInternalWallVisibleOutlines(segments, halfT) {
+export function buildInternalWallVisibleOutlines(
+  segments,
+  halfT,
+  outerPoints = null,
+  metresPerPixel = null
+) {
   if (!halfT || !segments?.length) return [];
+
+  const display = outerPoints
+    ? segments.map(
+        (seg) =>
+          trimInternalWallSegmentToExternalInner(seg, outerPoints, metresPerPixel) ||
+          null
+      )
+    : segments;
 
   const lines = [];
 
-  segments.forEach((_, segmentIndex) => {
-    const posA = endpointSidePoint(segmentIndex, "a", "pos", segments, halfT);
-    const posB = endpointSidePoint(segmentIndex, "b", "pos", segments, halfT);
-    const negA = endpointSidePoint(segmentIndex, "a", "neg", segments, halfT);
-    const negB = endpointSidePoint(segmentIndex, "b", "neg", segments, halfT);
+  const inner = outerPoints
+    ? externalWallInnerBoundarySource(outerPoints, metresPerPixel)
+    : null;
+
+  display.forEach((seg, segmentIndex) => {
+    if (!seg?.a || !seg?.b) return;
+    const posA = endpointSidePoint(segmentIndex, "a", "pos", display, halfT);
+    const posB = endpointSidePoint(segmentIndex, "b", "pos", display, halfT);
+    const negA = endpointSidePoint(segmentIndex, "a", "neg", display, halfT);
+    const negB = endpointSidePoint(segmentIndex, "b", "neg", display, halfT);
     if (!posA || !posB || !negA || !negB) return;
 
     lines.push({ a: posA, b: posB });
     lines.push({ a: negA, b: negB });
 
-    if (!lCornerAtEndpoint(segmentIndex, "a", segments, halfT) && !tJunctionAtEndpoint(segmentIndex, "a", segments, halfT)) {
+    const capTol = halfT * 1.25;
+    const buttsExternal = (point) => inner && distanceToRing(point, inner) <= capTol;
+    if (
+      !lCornerAtEndpoint(segmentIndex, "a", display, halfT) &&
+      !tJunctionAtEndpoint(segmentIndex, "a", display, halfT) &&
+      !buttsExternal(seg.a)
+    ) {
       lines.push({ a: posA, b: negA });
     }
-    if (!lCornerAtEndpoint(segmentIndex, "b", segments, halfT) && !tJunctionAtEndpoint(segmentIndex, "b", segments, halfT)) {
+    if (
+      !lCornerAtEndpoint(segmentIndex, "b", display, halfT) &&
+      !tJunctionAtEndpoint(segmentIndex, "b", display, halfT) &&
+      !buttsExternal(seg.b)
+    ) {
       lines.push({ a: posB, b: negB });
     }
   });
@@ -473,8 +619,76 @@ function segmentEdgeIntersectionT(ax, ay, bx, by, cx, cy, dx, dy) {
   if (Math.abs(denom) < 1e-12) return null;
   const t = ((cx - ax) * (dy - cy) - (cy - ay) * (dx - cx)) / denom;
   const u = ((cx - ax) * (by - ay) - (cy - ay) * (bx - ax)) / denom;
-  if (u < 0 || u > 1) return null;
+  if (u < -1e-6 || u > 1 + 1e-6) return null;
   return t;
+}
+
+function findSegmentPolygonCrossingT(a, b, polygon, tolerance) {
+  const aIn = pointInPolygon(a, polygon, tolerance);
+  const bIn = pointInPolygon(b, polygon, tolerance);
+  if (aIn === bIn) return null;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 28; i += 1) {
+    const mid = (lo + hi) / 2;
+    const p = { x: a.x + (b.x - a.x) * mid, y: a.y + (b.y - a.y) * mid };
+    if (pointInPolygon(p, polygon, tolerance) === aIn) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+function segmentLineIntersectionXY(p1, p2, a, b) {
+  const denom = (p1.x - p2.x) * (a.y - b.y) - (p1.y - p2.y) * (a.x - b.x);
+  if (Math.abs(denom) < 1e-12) return null;
+  const t =
+    ((p1.x - a.x) * (a.y - b.y) - (p1.y - a.y) * (a.x - b.x)) / denom;
+  return { x: p1.x + t * (p2.x - p1.x), y: p1.y + t * (p2.y - p1.y) };
+}
+
+function isInsideClipEdgeXY(point, a, b) {
+  return (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x) >= -1e-9;
+}
+
+function clipPolygonToHalfPlaneXY(polygon, a, b) {
+  if (!polygon.length) return [];
+  const output = [];
+  for (let i = 0; i < polygon.length; i += 1) {
+    const current = polygon[i];
+    const previous = polygon[(i - 1 + polygon.length) % polygon.length];
+    const currInside = isInsideClipEdgeXY(current, a, b);
+    const prevInside = isInsideClipEdgeXY(previous, a, b);
+    if (currInside) {
+      if (!prevInside) {
+        const hit = segmentLineIntersectionXY(previous, current, a, b);
+        if (hit) output.push(hit);
+      }
+      output.push(current);
+    } else if (prevInside) {
+      const hit = segmentLineIntersectionXY(previous, current, a, b);
+      if (hit) output.push(hit);
+    }
+  }
+  return output;
+}
+
+function clipPolygonToRingInterior(polygon, ring) {
+  if (!polygon?.length || !ring || ring.length < 3) return [];
+  let signedArea = 0;
+  for (let i = 0; i < ring.length; i += 1) {
+    const j = (i + 1) % ring.length;
+    signedArea += ring[i].x * ring[j].y - ring[j].x * ring[i].y;
+  }
+  const ccw = signedArea > 0;
+  let result = polygon.map((p) => ({ x: p.x, y: p.y }));
+  for (let i = 0; i < ring.length; i += 1) {
+    const j = (i + 1) % ring.length;
+    const a = ccw ? ring[i] : ring[j];
+    const b = ccw ? ring[j] : ring[i];
+    result = clipPolygonToHalfPlaneXY(result, a, b);
+    if (!result.length) return [];
+  }
+  return result;
 }
 
 /**
@@ -521,6 +735,11 @@ export function clipSegmentToPolygonInterior(a, b, polygon, tolerance = 1) {
     if (t !== null && t >= -1e-9 && t <= 1 + 1e-9) ts.add(Math.max(0, Math.min(1, t)));
   }
 
+  if (ts.size === 2) {
+    const crossT = findSegmentPolygonCrossingT(a, b, polygon, tolerance);
+    if (crossT != null) ts.add(Math.max(0, Math.min(1, crossT)));
+  }
+
   const sorted = [...ts].sort((x, y) => x - y);
   const result = [];
 
@@ -551,24 +770,96 @@ export function clipSegmentToPolygonInterior(a, b, polygon, tolerance = 1) {
 export function finalizeInternalWallSegment(start, end, outerPoints, metresPerPixel = null) {
   const len = Math.hypot(end.x - start.x, end.y - start.y);
   if (len < MIN_SEGMENT_LEN) return [];
+  if (outerPoints?.length >= 3) {
+    const visible = trimInternalWallSegmentToExternalInner(
+      { a: start, b: end },
+      outerPoints,
+      metresPerPixel
+    );
+    if (!visible) return [];
+  }
+  return [{ a: { x: start.x, y: start.y }, b: { x: end.x, y: end.y } }];
+}
 
-  const inner = externalWallInnerBoundarySource(outerPoints, metresPerPixel);
-  if (!inner || outerPoints.length < 3) {
-    return [{ a: start, b: end }];
+function tryMergeCollinearSegments(a, b, epsilon = JUNCTION_EPSILON) {
+  if (!a?.a || !a?.b || !b?.a || !b?.b) return null;
+  const aVert = Math.abs(a.a.x - a.b.x) <= epsilon;
+  const aHorz = Math.abs(a.a.y - a.b.y) <= epsilon;
+  const bVert = Math.abs(b.a.x - b.b.x) <= epsilon;
+  const bHorz = Math.abs(b.a.y - b.b.y) <= epsilon;
+  const share = [a.a, a.b].some((p) => [b.a, b.b].some((q) => pointsCoincideSource(p, q, epsilon)));
+  if (!share) return null;
+  if (aVert && bVert) {
+    if (Math.abs(a.a.x - b.a.x) > epsilon) return null;
+    const x = (a.a.x + a.b.x + b.a.x + b.b.x) / 4;
+    const ys = [a.a.y, a.b.y, b.a.y, b.b.y];
+    return { a: { x, y: Math.min(...ys) }, b: { x, y: Math.max(...ys) } };
+  }
+  if (aHorz && bHorz) {
+    if (Math.abs(a.a.y - b.a.y) > epsilon) return null;
+    const y = (a.a.y + a.b.y + b.a.y + b.b.y) / 4;
+    const xs = [a.a.x, a.b.x, b.a.x, b.b.x];
+    return { a: { x: Math.min(...xs), y }, b: { x: Math.max(...xs), y } };
+  }
+  return null;
+}
+
+function restoreEndpointToExternalCentre(end, other, inner, centre, halfT) {
+  if (!end || !other || !centre || halfT == null) return end;
+  if (distanceToRing(end, centre) <= halfT * 0.6) return end;
+  if (!inner || distanceToRing(end, inner) > halfT * 0.6) return end;
+  const len = Math.hypot(end.x - other.x, end.y - other.y);
+  if (len < MIN_SEGMENT_LEN) return end;
+  const ux = (end.x - other.x) / len;
+  const uy = (end.y - other.y) / len;
+  const pushed = { x: end.x + ux * halfT, y: end.y + uy * halfT };
+  if (distanceToRing(pushed, centre) <= halfT * 1.25) return pushed;
+  return end;
+}
+
+/**
+ * Drop segments that cannot be drawn, then join collinear runs that share an
+ * endpoint so leftover T-junction nodes disappear after a wall is deleted.
+ */
+export function cleanupInternalWallSegments(segments, outerPoints = [], metresPerPixel = null) {
+  const next = (segments || [])
+    .filter((seg) => {
+      if (!seg?.a || !seg?.b) return false;
+      if (Math.hypot(seg.b.x - seg.a.x, seg.b.y - seg.a.y) < MIN_SEGMENT_LEN) return false;
+      if (outerPoints.length < 3) return true;
+      return Boolean(
+        trimInternalWallSegmentToExternalInner(seg, outerPoints, metresPerPixel)
+      );
+    })
+    .map((seg) => ({ a: { ...seg.a }, b: { ...seg.b } }));
+
+  if (outerPoints.length >= 3) {
+    const inner = externalWallInnerBoundarySource(outerPoints, metresPerPixel);
+    const centre = externalWallCentreBoundarySource(outerPoints, metresPerPixel);
+    const halfT = internalWallHalfThicknessSource(outerPoints, metresPerPixel);
+    if (inner && centre && halfT != null) {
+      next.forEach((seg) => {
+        seg.a = restoreEndpointToExternalCentre(seg.a, seg.b, inner, centre, halfT);
+        seg.b = restoreEndpointToExternalCentre(seg.b, seg.a, inner, centre, halfT);
+      });
+    }
   }
 
-  const innerParts = clipSegmentToPolygonInterior(start, end, inner);
-  if (innerParts.length > 0) return innerParts;
-
-  const outerParts = clipSegmentToPolygonInterior(start, end, outerPoints);
-  if (outerParts.length > 0) return outerParts;
-
-  const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
-  if (pointInPolygon(mid, inner, 2) || pointInPolygon(mid, outerPoints, 2)) {
-    return [{ a: start, b: end }];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    outer: for (let i = 0; i < next.length; i += 1) {
+      for (let j = i + 1; j < next.length; j += 1) {
+        const merged = tryMergeCollinearSegments(next[i], next[j]);
+        if (!merged) continue;
+        next.splice(j, 1);
+        next[i] = merged;
+        changed = true;
+        break outer;
+      }
+    }
   }
-
-  return [];
+  return next;
 }
 
 /**
@@ -579,5 +870,11 @@ export function finalizeInternalWallSegment(start, end, outerPoints, metresPerPi
 export function clipInternalWallSegment(segment, externalOuterPoints, metresPerPixel = null) {
   const inner = externalWallInnerBoundarySource(externalOuterPoints, metresPerPixel);
   if (!inner) return [];
-  return clipSegmentToPolygonInterior(segment.a, segment.b, inner);
+  const halfT = internalWallHalfThicknessSource(externalOuterPoints, metresPerPixel) ?? 2;
+  return clipSegmentToPolygonInterior(
+    segment.a,
+    segment.b,
+    inner,
+    Math.max(2, halfT * 0.25)
+  );
 }

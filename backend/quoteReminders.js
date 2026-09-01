@@ -110,6 +110,7 @@ function replaceQuoteReminderTokens(text, quote) {
     "{Contact1}": quote?.email || "",
     "{Email}": quote?.email || "",
     "{Phone}": quote?.phone || "",
+    "{Stream}": quote?.stream || "",
   };
   let out = String(text);
   for (const [k, v] of Object.entries(map)) {

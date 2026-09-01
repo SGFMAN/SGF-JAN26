@@ -1,6 +1,6 @@
 /** Default rectangle unit used when there is no traced plan. Metres. */
 
-import { normalizeElementVisibility } from "./buildingElements.js";
+import { normalizeElementVisibility, parseCladdingType } from "./buildingElements.js";
 
 export const STUMP_STYLE_OPTIONS = [
   { key: "mega_anchors", label: "Mega-Anchors" },
@@ -22,6 +22,7 @@ export const SUBFLOOR_TYPE_OPTIONS = [
       { key: "joistWidthM", label: "Joist Width", step: "0.005", min: "0.02", max: "0.3" },
       { key: "bearerSpanMaxM", label: "Bearer Span Max", step: "0.05", min: "0.3", max: "8" },
       { key: "joistSpanMaxM", label: "Joist Span Max", step: "0.05", min: "0.3", max: "8" },
+      { key: "joistCentresM", label: "Joist Centres", step: "0.005", min: "0.2", max: "1.2", column: 2 },
     ],
     includeStumpStyle: true,
   },
@@ -42,6 +43,8 @@ export const MEGA_ANCHOR_DIAMETER_M = 0.05;
 /** Steel cap plate on top of the riser. */
 export const MEGA_ANCHOR_PLATE_SIZE_M = 0.075;
 export const MEGA_ANCHOR_PLATE_THICKNESS_M = 0.005;
+/** Bearer sits this far toward the upright plate from the pole centre. */
+export const MEGA_ANCHOR_BEARER_TO_UPRIGHT_M = 0.01;
 /** Splayed ground piles. */
 export const MEGA_ANCHOR_PILE_DIAMETER_M = 0.03;
 /** Visible pile height above ground. */
@@ -52,8 +55,33 @@ export const MEGA_ANCHOR_PILE_BELOW_M = 0.9;
 export const MEGA_ANCHOR_PILE_TILT_RAD = (30 * Math.PI) / 180;
 /** Extra tilt in the other vertical plane: when a pile lines up with the riser it rakes backward. */
 export const MEGA_ANCHOR_PILE_RAKE_RAD = (30 * Math.PI) / 180;
-/** Packer / gap below the bearer. */
-export const CONCRETE_STUMP_PACKING_M = 0.02;
+/** Particleboard structural floor on the joists. */
+export const STRUCTURAL_FLOOR_THICKNESS_M = 0.02;
+/** Painted baseboard boards wrapping the subfloor. */
+export const BASEBOARD_HEIGHT_M = 0.2;
+export const BASEBOARD_THICKNESS_M = 0.019;
+export const BASEBOARD_GAP_M = 0.025;
+/** Wall frame: 90 × 45 mm timber. 90 mm is wall depth (in from the edge). */
+export const FRAME_TIMBER_DEPTH_M = 0.09;
+export const FRAME_TIMBER_FACE_M = 0.045;
+export const FRAME_STUD_CENTRES_M = 0.6;
+/** Internal wall frame: same 90×45 timber, studs at 450 mm centres. */
+export const INTERNAL_FRAME_STUD_CENTRES_M = 0.45;
+/** Window lintel: 45 × 140 mm, centred on the 90 mm stud, spanning the opening. */
+export const FRAME_WINDOW_LINTEL_HEIGHT_M = 0.14;
+export const FRAME_WINDOW_LINTEL_THICKNESS_M = FRAME_TIMBER_FACE_M;
+/** Lintel bears this far past each side of the window opening. */
+export const FRAME_WINDOW_LINTEL_BEARING_M = 0.2;
+/** Swing and sliding-door jambs sit this far outside the leaf so they do not punch through it. */
+export const FRAME_SWING_DOOR_JAMB_OUTSET_M = 0.02;
+/** Nogging centres sit half a 45 mm face above / below mid-wall so they meet at wall height / 2. */
+export const FRAME_NOGGING_STAGGER_M = FRAME_TIMBER_FACE_M / 2;
+/** Outer mega-anchor / bearer rows sit this far inside the building edge (each side). */
+export const OUTER_BEARER_INSET_M = 0.05;
+/** End mega-anchors on each bearer sit this far inside the short ends (along the long edge). */
+export const OUTER_STUMP_END_INSET_M = 0.1;
+/** Minimum stump / mega-anchor stack height. */
+export const MIN_STUMP_HEIGHT_M = 0.02;
 
 /**
  * Bearers run along the long side of the building. Joists run 90° to that.
@@ -66,6 +94,7 @@ export function bearerRunAxis(widthM, depthM) {
   return width > length ? "z" : "x";
 }
 
+/** Stump / mega-anchor height fills whatever is left of Sub Floor Height. */
 export function concreteStumpHeightM({
   subfloorHeightM,
   bearerHeightM,
@@ -73,11 +102,11 @@ export function concreteStumpHeightM({
 }) {
   const height =
     Number(subfloorHeightM) -
+    STRUCTURAL_FLOOR_THICKNESS_M -
     Number(bearerHeightM) -
-    Number(joistHeightM) -
-    CONCRETE_STUMP_PACKING_M;
-  if (!Number.isFinite(height)) return CONCRETE_STUMP_PACKING_M;
-  return Math.max(CONCRETE_STUMP_PACKING_M, Math.round(height * 1000) / 1000);
+    Number(joistHeightM);
+  if (!Number.isFinite(height)) return MIN_STUMP_HEIGHT_M;
+  return Math.max(MIN_STUMP_HEIGHT_M, Math.round(height * 1000) / 1000);
 }
 
 export const DEFAULT_BUILDING_3D = {
@@ -90,6 +119,7 @@ export const DEFAULT_BUILDING_3D = {
   joistWidthM: 0.045,
   bearerSpanMaxM: 1.8,
   joistSpanMaxM: 2.4,
+  joistCentresM: 0.45,
   slabHeightM: 0.65,
   wallHeightM: 2.6,
   widthM: 11.3,
@@ -99,6 +129,7 @@ export const DEFAULT_BUILDING_3D = {
   showFence: true,
   showSubfloor: true,
   showWall: true,
+  claddingType: "weatherboard",
   elementVisibility: normalizeElementVisibility({}),
 };
 
@@ -141,6 +172,24 @@ export function resolvedSubfloorDrawType(raw) {
   const d = raw && typeof raw === "object" ? raw : {};
   if (normalizeSubfloorType(d.subfloorType) === "slab") return "slab";
   return normalizeStumpStyle(d.stumpStyle, d.subfloorType);
+}
+
+/** Draft fields so the visibility menu can switch slab / stumps / mega-anchors. */
+export function draftFieldsForSubfloorDrawType(drawType) {
+  if (drawType === "slab") return { subfloorType: "slab" };
+  if (drawType === "mega_anchors") {
+    return { subfloorType: "stumps", stumpStyle: "mega_anchors" };
+  }
+  if (drawType === "concrete_stumps") {
+    return { subfloorType: "stumps", stumpStyle: "concrete_stumps" };
+  }
+  return {};
+}
+
+export function subfloorHeightForDrawType(defaults, drawType) {
+  const d = defaults && typeof defaults === "object" ? defaults : {};
+  if (drawType === "slab") return d.slabHeightM ?? d.subfloorHeightM;
+  return d.concreteStumpsHeightM ?? d.subfloorHeightM;
 }
 
 export function normalizeBuilding3dDefaults(raw) {
@@ -194,6 +243,12 @@ export function normalizeBuilding3dDefaults(raw) {
     0.3,
     8
   );
+  const joistCentresM = clampMetres(
+    src.joistCentresM,
+    DEFAULT_BUILDING_3D.joistCentresM,
+    0.2,
+    1.2
+  );
   const subfloorType = normalizeSubfloorType(rawSubfloorType);
   const stumpStyle = normalizeStumpStyle(src.stumpStyle, rawSubfloorType);
   const stumpsHeightM = concreteStumpsHeightM;
@@ -214,6 +269,7 @@ export function normalizeBuilding3dDefaults(raw) {
     joistWidthM,
     bearerSpanMaxM,
     joistSpanMaxM,
+    joistCentresM,
     slabHeightM,
     subfloorHeightM: heightForSubfloorType(subfloorType, {
       concreteStumpsHeightM: stumpsHeightM,
@@ -225,9 +281,10 @@ export function normalizeBuilding3dDefaults(raw) {
     subfloorType,
     stumpStyle,
     elementVisibility,
+    claddingType: parseCladdingType(src.claddingType),
     showFence: elementVisibility.fence,
-    showSubfloor: elementVisibility.slab,
-    showWall: elementVisibility.wall,
+    showSubfloor: elementVisibility.footing,
+    showWall: elementVisibility.cladding,
   };
 }
 
@@ -243,6 +300,7 @@ export function building3dDraftFromDefaults(defaults) {
     joistWidthM: String(d.joistWidthM),
     bearerSpanMaxM: String(d.bearerSpanMaxM),
     joistSpanMaxM: String(d.joistSpanMaxM),
+    joistCentresM: String(d.joistCentresM),
     slabHeightM: String(d.slabHeightM),
     wallHeightM: String(d.wallHeightM),
     widthM: String(d.widthM),
@@ -250,6 +308,7 @@ export function building3dDraftFromDefaults(defaults) {
     subfloorType: d.subfloorType,
     stumpStyle: d.stumpStyle,
     elementVisibility: d.elementVisibility,
+    claddingType: d.claddingType,
     showFence: d.showFence,
     showSubfloor: d.showSubfloor,
     showWall: d.showWall,

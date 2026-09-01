@@ -104,6 +104,115 @@ export function createFramingTimberMaterial(texture) {
   });
 }
 
+/** LOSP treated pine: same grain with a blue-green stain. */
+export function createTreatedPineTexture() {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return new THREE.Texture();
+
+  ctx.fillStyle = "#7a9aa8";
+  ctx.fillRect(0, 0, size, size);
+  for (let i = 0; i < size; i += 1) {
+    const wave = Math.sin(i * 0.28) * 0.07 + Math.sin(i * 0.09) * 0.04;
+    const shade = 0.9 + wave + ((i * 11) % 5) * 0.018;
+    const r = Math.min(255, Math.floor(132 * shade));
+    const g = Math.min(255, Math.floor(168 * shade));
+    const b = Math.min(255, Math.floor(186 * shade));
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.fillRect(0, i, size, 1);
+  }
+  ctx.strokeStyle = "#3d5c68";
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.22;
+  for (let n = 0; n < 14; n += 1) {
+    const a = 6 + Math.random() * (size - 12);
+    ctx.beginPath();
+    ctx.moveTo(0, a);
+    ctx.quadraticCurveTo(
+      size * 0.5,
+      a + (Math.random() - 0.5) * 10,
+      size,
+      a + (Math.random() - 0.5) * 8
+    );
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+export function createTreatedPineMaterial(texture) {
+  return new THREE.MeshStandardMaterial({
+    map: texture,
+    color: 0xffffff,
+    metalness: 0.03,
+    roughness: 0.7,
+  });
+}
+
+/** Compressed particleboard face (yellow-tongue style). */
+export function createParticleBoardTexture() {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return new THREE.Texture();
+
+  ctx.fillStyle = "#c4b089";
+  ctx.fillRect(0, 0, size, size);
+  for (let i = 0; i < 2800; i += 1) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const w = 1 + Math.random() * 5;
+    const h = 1 + Math.random() * 3.5;
+    const shade = 0.52 + Math.random() * 0.55;
+    const r = Math.min(255, Math.floor(198 * shade));
+    const g = Math.min(255, Math.floor(168 * shade));
+    const b = Math.min(255, Math.floor(112 * shade));
+    ctx.fillStyle = `rgba(${r},${g},${b},${0.28 + Math.random() * 0.5})`;
+    ctx.fillRect(x, y, w, h);
+  }
+  ctx.fillStyle = "rgba(90, 70, 40, 0.12)";
+  for (let i = 0; i < 80; i += 1) {
+    ctx.beginPath();
+    ctx.ellipse(
+      Math.random() * size,
+      Math.random() * size,
+      2 + Math.random() * 6,
+      1 + Math.random() * 3,
+      Math.random() * Math.PI,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+export function createParticleBoardMaterial(texture) {
+  return new THREE.MeshStandardMaterial({
+    map: texture,
+    color: 0xffffff,
+    metalness: 0.02,
+    roughness: 0.86,
+  });
+}
+
 export function assignTimberDeckUVs(positions, uvs, pitchM = TIMBER_DECK_BOARD_PITCH_M) {
   for (let i = 0; i < positions.length; i += 3) {
     const x = positions[i];

@@ -8,8 +8,99 @@ import {
 
 export const DEFAULT_UNIT_WIDTH_M = 11.3;
 export const DEFAULT_UNIT_DEPTH_M = 5.0;
-/** External cladding / weatherboard wall thickness (metres). */
+/** Framed external wall depth (metres). Weatherboards sit as 10 mm boards on the outer face. */
 export const CLADDING_WALL_THICKNESS_M = 0.1;
+/** Weatherboard section: 230 mm × 19 mm, lapped 30 mm (200 mm cover). */
+export const WEATHERBOARD_HEIGHT_M = 0.23;
+export const WEATHERBOARD_THICKNESS_M = 0.019;
+export const WEATHERBOARD_LAP_M = 0.03;
+export const WEATHERBOARD_COVER_M = WEATHERBOARD_HEIGHT_M - WEATHERBOARD_LAP_M;
+/** Clearance outside the stud face so boards sit proud of the frame. */
+export const WEATHERBOARD_FRAME_GAP_M = 0.001;
+/** 10 mm plasterboard lining. */
+export const WALL_LINING_THICKNESS_M = 0.01;
+/** Keep lining off the stud face so distant views do not z-fight the frame through it. */
+export const WALL_LINING_FRAME_GAP_M = 0.003;
+/** Dark band on the underside / drip edge so laps read as separate boards. */
+const WEATHERBOARD_UNDERSIDE_SHADOW_M = 0.05;
+/** Drip darkening is 60% of the previous 0.16 shade (1 − 0.84 × 0.6). */
+const WEATHERBOARD_UNDERSIDE_SHADE = 0.496;
+
+/**
+ * Vertex colours: optional drip-edge shade on the board underside.
+ * Always writes a colour attribute so merged weatherboard geos match.
+ */
+function applyWeatherboardVertexColors(geometry, { undersideShadow = false } = {}) {
+  geometry.computeBoundingBox();
+  const pos = geometry.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  if (!undersideShadow) {
+    colors.fill(1);
+  } else {
+    const yMin = geometry.boundingBox.min.y;
+    const band = Math.min(
+      WEATHERBOARD_UNDERSIDE_SHADOW_M,
+      Math.max(0.006, (geometry.boundingBox.max.y - yMin) * 0.35)
+    );
+    const range = 1 - WEATHERBOARD_UNDERSIDE_SHADE;
+    for (let i = 0; i < pos.count; i += 1) {
+      const t = Math.min(1, Math.max(0, (pos.getY(i) - yMin) / band));
+      const shade = WEATHERBOARD_UNDERSIDE_SHADE + range * t;
+      colors[i * 3] = shade;
+      colors[i * 3 + 1] = shade;
+      colors[i * 3 + 2] = shade;
+    }
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+}
+
+/**
+ * Top Y of each weatherboard row within a wall of height `wallHM` (metres).
+ * Rows start at the top of the top plate and step down by the 200 mm cover.
+ */
+export function weatherboardRowTops(wallHM) {
+  const cover = WEATHERBOARD_COVER_M;
+  const wallH = Number(wallHM) || 0;
+  const tops = [];
+  if (!(wallH > 0.02)) return tops;
+  for (let top = wallH; top > 1e-4; top -= cover) {
+    tops.push(Math.round(top * 10000) / 10000);
+  }
+  return tops;
+}
+
+function weatherboardRunsAlongLength(lengthM, cuts) {
+  const L = Math.max(0, Number(lengthM) || 0);
+  if (!(L > 0.02)) return [];
+  const merged = [];
+  const sorted = (cuts || [])
+    .map((c) => ({
+      min: Math.max(0, Number(c.min)),
+      max: Math.min(L, Number(c.max)),
+    }))
+    .filter((c) => c.max - c.min > 0.02)
+    .sort((a, b) => a.min - b.min);
+  for (const cut of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && cut.min <= last.max + 0.01) last.max = Math.max(last.max, cut.max);
+    else merged.push({ ...cut });
+  }
+  const runs = [];
+  let cursor = 0;
+  for (const cut of merged) {
+    if (cut.min - cursor > 0.02) {
+      runs.push({
+        along: (cursor + cut.min) / 2,
+        length: cut.min - cursor,
+      });
+    }
+    cursor = Math.max(cursor, cut.max);
+  }
+  if (L - cursor > 0.02) {
+    runs.push({ along: (cursor + L) / 2, length: L - cursor });
+  }
+  return runs;
+}
 
 /**
  * Axis-aligned rectangle footprint centred on the origin (XZ).
@@ -168,8 +259,30 @@ function ringSignedAreaXZ(ring) {
   return area * 0.5;
 }
 
+function pointInRingXZ(x, z, ring) {
+  if (!Array.isArray(ring) || ring.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    const xi = ring[i].x;
+    const zi = ring[i].z;
+    const xj = ring[j].x;
+    const zj = ring[j].z;
+    const crosses = zi > z !== zj > z;
+    if (!crosses) continue;
+    const atX = ((xj - xi) * (z - zi)) / (zj - zi || 1e-12) + xi;
+    if (x < atX) inside = !inside;
+  }
+  return inside;
+}
+
+/** Inward unit normal for a footprint edge (winding, not centroid — L re-entrants stay correct). */
+export function footprintEdgeInwardXZ(dirX, dirZ, ring) {
+  const ccw = ringSignedAreaXZ(ring) > 0;
+  return ccw ? { x: -dirZ, z: dirX } : { x: dirZ, z: -dirX };
+}
+
 /**
- * Corner column centres: 50×50 posts sitting 5 mm proud of both adjacent faces.
+ * Corner column centres: 50×50 posts sitting proud of both adjacent faces.
  * Only true exterior (convex) corners. Includes rotationY so post faces align
  * with the incoming wall edge (needed for rotated footprints).
  * @returns {{ x: number, z: number, index: number, rotationY: number }[]}
@@ -429,10 +542,6 @@ export function buildFootprintCladdingFaceParts(
   if (clean.length < 3 || !(topYM > bottomYM) || !(thicknessM > 0)) return [];
 
   const wallH = topYM - bottomYM;
-  const centroid = clean.reduce(
-    (acc, p) => ({ x: acc.x + p.x / clean.length, z: acc.z + p.z / clean.length }),
-    { x: 0, z: 0 }
-  );
   const parts = [];
 
   for (let i = 0; i < clean.length; i += 1) {
@@ -444,15 +553,11 @@ export function buildFootprintCladdingFaceParts(
     if (len < 0.02) continue;
     const dirX = dx / len;
     const dirZ = dz / len;
-    // Left of direction (inward for a typical CCW footprint).
-    let inX = -dirZ;
-    let inZ = dirX;
+    const inward = footprintEdgeInwardXZ(dirX, dirZ, clean);
+    const inX = inward.x;
+    const inZ = inward.z;
     const midX = (a.x + b.x) / 2;
     const midZ = (a.z + b.z) / 2;
-    if (inX * (centroid.x - midX) + inZ * (centroid.z - midZ) < 0) {
-      inX = -inX;
-      inZ = -inZ;
-    }
 
     const shape = new THREE.Shape();
     shape.moveTo(0, 0);
@@ -519,6 +624,822 @@ export function buildFootprintCladdingFaceParts(
       position: { x: a.x, y: bottomYM, z: a.z },
       rotationY: rotY,
     });
+  }
+
+  return parts;
+}
+
+function minDistPointToRingXZ(p, ring) {
+  const clean = sanitizeFootprintRing(ring);
+  let best = Infinity;
+  for (let i = 0; i < clean.length; i += 1) {
+    const a = clean[i];
+    const b = clean[(i + 1) % clean.length];
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const lenSq = dx * dx + dz * dz;
+    if (lenSq < 1e-12) continue;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / lenSq));
+    const dist = Math.hypot(p.x - (a.x + t * dx), p.z - (a.z + t * dz));
+    if (dist < best) best = dist;
+  }
+  return best;
+}
+
+function resolvedOpeningLocals({
+  a,
+  dx,
+  dz,
+  len,
+  dirX,
+  dirZ,
+  openings,
+  bottomYM,
+  wallH,
+  maxDistM = 0.25,
+}) {
+  const locals = [];
+  for (const op of openings || []) {
+    if (!(op?.lengthM > 0) && !(op?.x1 > op?.x0)) continue;
+    let x0;
+    let x1;
+    if (Number.isFinite(op.x0) && Number.isFinite(op.x1)) {
+      x0 = op.x0;
+      x1 = op.x1;
+    } else {
+      const half = op.lengthM / 2;
+      const align = Math.abs(op.dirX * dirX + op.dirZ * dirZ);
+      if (align < 0.7) continue;
+      const t = Math.max(
+        0,
+        Math.min(1, ((op.midX - a.x) * dx + (op.midZ - a.z) * dz) / (len * len))
+      );
+      const px = a.x + t * dx;
+      const pz = a.z + t * dz;
+      if (Math.hypot(op.midX - px, op.midZ - pz) > maxDistM) continue;
+      const projectAlong = (qx, qz) =>
+        Math.max(0, Math.min(len, (qx - a.x) * dirX + (qz - a.z) * dirZ));
+      x0 = projectAlong(op.midX - op.dirX * half, op.midZ - op.dirZ * half);
+      x1 = projectAlong(op.midX + op.dirX * half, op.midZ + op.dirZ * half);
+    }
+    if (x1 < x0) {
+      const tmp = x0;
+      x0 = x1;
+      x1 = tmp;
+    }
+    x0 = Math.max(0, x0);
+    x1 = Math.min(len, x1);
+    if (x1 - x0 < 0.05) continue;
+    const y0 = Math.max(0, (op.openingBottomYM ?? bottomYM) - bottomYM);
+    const y1 = Math.min(wallH, (op.openingTopYM ?? bottomYM + wallH) - bottomYM);
+    if (y1 - y0 < 0.05) continue;
+    locals.push({ x0, x1, y0, y1 });
+  }
+  return locals;
+}
+
+function punchResolvedHoles(shape, locals) {
+  for (const { x0, x1, y0, y1 } of locals) {
+    const hole = new THREE.Path();
+    // Opposite winding to the wall sheet so earcut keeps the hole on-size.
+    hole.moveTo(x0, y0);
+    hole.lineTo(x0, y1);
+    hole.lineTo(x1, y1);
+    hole.lineTo(x1, y0);
+    hole.closePath();
+    shape.holes.push(hole);
+  }
+}
+
+function addOpeningRevealParts(parts, {
+  originX,
+  originZ,
+  dirX,
+  dirZ,
+  x0,
+  x1,
+  y0,
+  y1,
+  bottomYM,
+  thicknessM,
+  z0,
+  z1,
+}) {
+  const doorW = x1 - x0;
+  const doorH = y1 - y0;
+  const depth = z1 - z0;
+  if (doorW < 0.05 || doorH < 0.05 || Math.abs(depth) < 0.005 || !(thicknessM > 0)) {
+    return;
+  }
+  const t = thicknessM;
+  const rotY = Math.atan2(-dirZ, dirX);
+  const zLo = Math.min(z0, z1);
+  const zHi = Math.max(z0, z1);
+  const sz = zHi - zLo;
+  const zc = (zLo + zHi) / 2;
+  const xc = (x0 + x1) / 2;
+  const yc = (y0 + y1) / 2;
+  const hasSill = y0 > 0.05;
+
+  const pushBox = (lx, ly, lz, sx, sy, boxZ) => {
+    const geometry = new THREE.BoxGeometry(sx, sy, boxZ);
+    geometry.translate(lx, ly, lz);
+    geometry.computeVertexNormals();
+    parts.push({
+      geometry,
+      position: { x: originX, y: bottomYM, z: originZ },
+      rotationY: rotY,
+      isReveal: true,
+    });
+  };
+
+  // Local X = along wall, Y = up, Z = through the wall (same as the lining sheet).
+  pushBox(x0 + t / 2, yc, zc, t, doorH, sz);
+  pushBox(x1 - t / 2, yc, zc, t, doorH, sz);
+  pushBox(xc, y1 - t / 2, zc, doorW, t, sz);
+  if (hasSill) pushBox(xc, y0 + t / 2, zc, doorW, t, sz);
+}
+
+function extrudeLiningSheet(shape, {
+  originX,
+  originZ,
+  bottomYM,
+  dirX,
+  dirZ,
+  sideX,
+  sideZ,
+  thicknessM,
+}) {
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: thicknessM,
+    bevelEnabled: false,
+    curveSegments: 1,
+  });
+  const rotY = Math.atan2(-dirZ, dirX);
+  const leftX = -dirZ;
+  const leftZ = dirX;
+  const leftIsSide = leftX * sideX + leftZ * sideZ >= 0;
+  if (!leftIsSide) geometry.translate(0, 0, -thicknessM);
+  geometry.computeVertexNormals();
+  return {
+    geometry,
+    position: { x: originX, y: bottomYM, z: originZ },
+    rotationY: rotY,
+  };
+}
+
+/**
+ * 10 mm plaster on the inner face of the external frame, openings cut
+ * for windows, doors, and internal-wall T-junctions.
+ */
+export function buildExternalWallLiningParts(
+  ring,
+  bottomYM,
+  topYM,
+  openings = [],
+  { frameDepthM = 0.09, thicknessM = WALL_LINING_THICKNESS_M, gapM = WALL_LINING_FRAME_GAP_M } = {}
+) {
+  const clean = sanitizeFootprintRing(ring);
+  if (clean.length < 3 || !(topYM > bottomYM) || !(thicknessM > 0)) return [];
+  const insetM = frameDepthM + gapM;
+  const inner = offsetPolygonInward(clean, insetM);
+  let faceRing = inner && inner.length >= 3 ? inner : clean;
+  if (faceRing !== clean) {
+    const outerArea = ringSignedAreaXZ(clean);
+    const innerArea = ringSignedAreaXZ(faceRing);
+    if (outerArea * innerArea < 0) faceRing = [...faceRing].reverse();
+  }
+  const extraInward = inner && inner.length >= 3 ? 0 : insetM;
+  const wallH = topYM - bottomYM;
+  const parts = [];
+
+  for (let i = 0; i < faceRing.length; i += 1) {
+    const a0 = faceRing[i];
+    const b0 = faceRing[(i + 1) % faceRing.length];
+    const dx = b0.x - a0.x;
+    const dz = b0.z - a0.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.02) continue;
+    const dirX = dx / len;
+    const dirZ = dz / len;
+    const inward = footprintEdgeInwardXZ(dirX, dirZ, faceRing);
+    const a = {
+      x: a0.x + inward.x * extraInward,
+      z: a0.z + inward.z * extraInward,
+    };
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    shape.lineTo(len, 0);
+    shape.lineTo(len, wallH);
+    shape.lineTo(0, wallH);
+    shape.closePath();
+    const holeLocals = resolvedOpeningLocals({
+      a,
+      dx,
+      dz,
+      len,
+      dirX,
+      dirZ,
+      openings,
+      bottomYM,
+      wallH,
+      maxDistM: 0.45,
+    });
+    punchResolvedHoles(shape, holeLocals);
+    parts.push(
+      extrudeLiningSheet(shape, {
+        originX: a.x,
+        originZ: a.z,
+        bottomYM,
+        dirX,
+        dirZ,
+        sideX: inward.x,
+        sideZ: inward.z,
+        thicknessM,
+      })
+    );
+    // Frame sits on the opposite side of the lining plane from the room.
+    const leftX = -dirZ;
+    const leftZ = dirX;
+    const leftIsInward = leftX * inward.x + leftZ * inward.z >= 0;
+    const revealDepthM = frameDepthM + gapM;
+    // Include lining thickness so the wrap is flush with the inner face.
+    const z0 = leftIsInward ? -revealDepthM : -thicknessM;
+    const z1 = leftIsInward ? thicknessM : revealDepthM;
+    for (const hole of holeLocals) {
+      const fullHeight = hole.y0 < 0.02 && hole.y1 > wallH - 0.02;
+      if (fullHeight) continue;
+      addOpeningRevealParts(parts, {
+        originX: a.x,
+        originZ: a.z,
+        dirX,
+        dirZ,
+        x0: hole.x0,
+        x1: hole.x1,
+        y0: hole.y0,
+        y1: hole.y1,
+        bottomYM,
+        thicknessM,
+        z0,
+        z1,
+      });
+    }
+  }
+  return parts;
+}
+
+/**
+ * Full-height slots in the external lining where an internal wall T's in.
+ */
+export function liningTJunctionOpeningsOnRing(
+  ring,
+  segmentsXZ,
+  bottomYM,
+  topYM,
+  widthM,
+  endSnapM = 0.16
+) {
+  const clean = sanitizeFootprintRing(ring);
+  if (clean.length < 3 || !(widthM > 0.05)) return [];
+  const openings = [];
+  for (const seg of segmentsXZ || []) {
+    if (!seg?.a || !seg?.b) continue;
+    for (const pt of [seg.a, seg.b]) {
+      let best = null;
+      for (let i = 0; i < clean.length; i += 1) {
+        const a = clean[i];
+        const b = clean[(i + 1) % clean.length];
+        const dx = b.x - a.x;
+        const dz = b.z - a.z;
+        const len = Math.hypot(dx, dz);
+        if (len < 0.05) continue;
+        const dirX = dx / len;
+        const dirZ = dz / len;
+        const along = Math.max(0, Math.min(len, (pt.x - a.x) * dirX + (pt.z - a.z) * dirZ));
+        const px = a.x + dirX * along;
+        const pz = a.z + dirZ * along;
+        const dist = Math.hypot(pt.x - px, pt.z - pz);
+        if (!best || dist < best.dist) {
+          best = { dist, px, pz, dirX, dirZ, along, len };
+        }
+      }
+      if (!best || best.dist > endSnapM) continue;
+      if (best.along < 0.04 || best.along > best.len - 0.04) continue;
+      openings.push({
+        midX: best.px,
+        midZ: best.pz,
+        dirX: best.dirX,
+        dirZ: best.dirZ,
+        lengthM: widthM,
+        openingBottomYM: bottomYM,
+        openingTopYM: topYM,
+      });
+    }
+  }
+  return openings;
+}
+
+/**
+ * 10 mm plaster on both faces of each internal-wall frame, doors cut out.
+ * Ends that T into the external wall stop at the inner stud face.
+ */
+export function buildInternalWallLiningParts({
+  segmentsXZ = [],
+  doors = [],
+  ring = null,
+  bottomYM,
+  topYM,
+  frameDepthM = 0.09,
+  thicknessM = WALL_LINING_THICKNESS_M,
+  gapM = WALL_LINING_FRAME_GAP_M,
+}) {
+  if (!(topYM > bottomYM) || !(thicknessM > 0)) return [];
+  const wallH = topYM - bottomYM;
+  const halfFrame = frameDepthM / 2;
+  const liningOff = halfFrame + gapM;
+  const overallHalf = liningOff + thicknessM;
+  const parts = [];
+  const segs = (segmentsXZ || []).map((seg, index) => {
+    if (!seg?.a || !seg?.b) return null;
+    const dx = seg.b.x - seg.a.x;
+    const dz = seg.b.z - seg.a.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.08) return null;
+    return {
+      index,
+      a: seg.a,
+      b: seg.b,
+      len,
+      dirX: dx / len,
+      dirZ: dz / len,
+    };
+  }).filter(Boolean);
+
+  const endInset = segs.map(() => ({ start: 0, end: 0 }));
+
+  segs.forEach((seg, i) => {
+    if (ring) {
+      if (minDistPointToRingXZ(seg.a, ring) < 0.14) endInset[i].start = liningOff;
+      if (minDistPointToRingXZ(seg.b, ring) < 0.14) endInset[i].end = liningOff;
+    }
+    segs.forEach((other) => {
+      if (other === seg) return;
+      const colinear = Math.abs(seg.dirX * other.dirX + seg.dirZ * other.dirZ) > 0.5;
+      // Parallel / colinear runs are one wall — do not slot the lining between them.
+      if (colinear) return;
+      for (const [pt, which] of [
+        [seg.a, "start"],
+        [seg.b, "end"],
+      ]) {
+        const along =
+          (pt.x - other.a.x) * other.dirX + (pt.z - other.a.z) * other.dirZ;
+        if (along < 0.08 || along > other.len - 0.08) continue;
+        const px = other.a.x + other.dirX * along;
+        const pz = other.a.z + other.dirZ * along;
+        const dist = Math.hypot(pt.x - px, pt.z - pz);
+        if (dist > 0.08) continue;
+        endInset[i][which] = Math.max(endInset[i][which], overallHalf);
+      }
+    });
+  });
+
+  segs.forEach((seg, i) => {
+    const xStart = Math.max(0, endInset[i].start);
+    const xEnd = Math.min(seg.len, seg.len - endInset[i].end);
+    const sheetLen = xEnd - xStart;
+    if (sheetLen < 0.05) return;
+    const origin = {
+      x: seg.a.x + seg.dirX * xStart,
+      z: seg.a.z + seg.dirZ * xStart,
+    };
+    const perpX = -seg.dirZ;
+    const perpZ = seg.dirX;
+    const doorHoles = (doors || [])
+      .filter((d) => d.segmentIndex === seg.index && d.lengthM > 0.05)
+      .map((d) => ({
+        x0: (d.along0 ?? 0) - xStart,
+        x1: (d.along1 ?? 0) - xStart,
+        openingBottomYM: d.openingBottomYM ?? bottomYM,
+        openingTopYM: d.openingTopYM ?? bottomYM + Math.min(2.1, wallH),
+      }));
+    const holeLocals = resolvedOpeningLocals({
+      a: origin,
+      dx: seg.dirX * sheetLen,
+      dz: seg.dirZ * sheetLen,
+      len: sheetLen,
+      dirX: seg.dirX,
+      dirZ: seg.dirZ,
+      openings: doorHoles,
+      bottomYM,
+      wallH,
+    });
+
+    for (const side of [1, -1]) {
+      const sideX = perpX * side;
+      const sideZ = perpZ * side;
+      const face = {
+        x: origin.x + sideX * liningOff,
+        z: origin.z + sideZ * liningOff,
+      };
+      const shape = new THREE.Shape();
+      shape.moveTo(0, 0);
+      shape.lineTo(sheetLen, 0);
+      shape.lineTo(sheetLen, wallH);
+      shape.lineTo(0, wallH);
+      shape.closePath();
+      punchResolvedHoles(shape, holeLocals);
+      parts.push(
+        extrudeLiningSheet(shape, {
+          originX: face.x,
+          originZ: face.z,
+          bottomYM,
+          dirX: seg.dirX,
+          dirZ: seg.dirZ,
+          sideX,
+          sideZ,
+          thicknessM,
+        })
+      );
+    }
+    const revealDepthM = frameDepthM + 2 * gapM;
+    const zHalf = revealDepthM / 2 + thicknessM;
+    for (const hole of holeLocals) {
+      addOpeningRevealParts(parts, {
+        originX: origin.x,
+        originZ: origin.z,
+        dirX: seg.dirX,
+        dirZ: seg.dirZ,
+        x0: hole.x0,
+        x1: hole.x1,
+        y0: hole.y0,
+        y1: hole.y1,
+        bottomYM,
+        thicknessM,
+        z0: -zHalf,
+        z1: zHalf,
+      });
+    }
+  });
+
+  return parts;
+}
+
+/**
+ * Individual weatherboards per footprint edge: 230 × 10 mm, 30 mm lap (200 mm cover).
+ * Rows start at the top of the wall (top plate) and work down; any leftover
+ * short board is at the bottom. Each board runs the wall length. Openings
+ * notch only the height band they occupy — boards above a door or below a
+ * window run through over the studs. Boards sit proud of the frame.
+ *
+ * @param {{ x: number, z: number }[]} ring
+ * @param {number} bottomYM
+ * @param {number} topYM
+ * @param {{
+ *   midX: number, midZ: number,
+ *   dirX: number, dirZ: number,
+ *   lengthM: number,
+ *   openingBottomYM: number,
+ *   openingTopYM: number,
+ * }[]} openings
+ * @param {number} [thicknessM]
+ * @param {{ rowIndexOffset?: number }} [options]
+ * @returns {{ geometry: THREE.BufferGeometry, position: {x,y,z}, rotationY: number, lengthM: number, heightM: number, rowIndex: number }[]}
+ */
+export function buildFootprintWeatherboardParts(
+  ring,
+  bottomYM,
+  topYM,
+  openings = [],
+  thicknessM = WEATHERBOARD_THICKNESS_M,
+  options = {}
+) {
+  const clean = sanitizeFootprintRing(ring);
+  if (clean.length < 3 || !(topYM > bottomYM) || !(thicknessM > 0)) return [];
+
+  const wallH = topYM - bottomYM;
+  const rowIndexOffset = Math.max(0, Math.floor(Number(options.rowIndexOffset) || 0));
+  const parts = [];
+
+  for (let i = 0; i < clean.length; i += 1) {
+    const a = clean[i];
+    const b = clean[(i + 1) % clean.length];
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.02) continue;
+    const dirX = dx / len;
+    const dirZ = dz / len;
+    const inward = footprintEdgeInwardXZ(dirX, dirZ, clean);
+    const inX = inward.x;
+    const inZ = inward.z;
+    const rotY = Math.atan2(-dirZ, dirX);
+    const leftIsInward = -dirZ * inX + dirX * inZ >= 0;
+    const tiltX =
+      Math.atan(thicknessM / WEATHERBOARD_COVER_M) * (leftIsInward ? 1 : -1);
+
+    const wallOpenings = [];
+    for (const op of openings) {
+      if (!(op?.lengthM > 0)) continue;
+      const half = op.lengthM / 2;
+      const align = Math.abs(op.dirX * dirX + op.dirZ * dirZ);
+      if (align < 0.7) continue;
+      const t = Math.max(
+        0,
+        Math.min(1, ((op.midX - a.x) * dx + (op.midZ - a.z) * dz) / (len * len))
+      );
+      const px = a.x + t * dx;
+      const pz = a.z + t * dz;
+      if (Math.hypot(op.midX - px, op.midZ - pz) > 0.2) continue;
+
+      const projectAlong = (qx, qz) =>
+        Math.max(0, Math.min(len, (qx - a.x) * dirX + (qz - a.z) * dirZ));
+      let x0 = projectAlong(op.midX - op.dirX * half, op.midZ - op.dirZ * half);
+      let x1 = projectAlong(op.midX + op.dirX * half, op.midZ + op.dirZ * half);
+      if (x1 < x0) {
+        const tmp = x0;
+        x0 = x1;
+        x1 = tmp;
+      }
+      if (x1 - x0 < 0.05) continue;
+      wallOpenings.push({
+        x0,
+        x1,
+        openingBottomYM: op.openingBottomYM ?? bottomYM,
+        openingTopYM: op.openingTopYM ?? topYM,
+      });
+    }
+
+    weatherboardRowTops(wallH).forEach((rowTop, rowInWall) => {
+      const rowIndex = rowIndexOffset + rowInWall;
+      const thisBoardH = Math.min(WEATHERBOARD_HEIGHT_M, rowTop);
+      if (!(thisBoardH > 0.02)) return;
+      const boardTop = bottomYM + rowTop;
+      const boardBot = boardTop - thisBoardH;
+      const overlapping = wallOpenings.filter(
+        (op) =>
+          op.openingBottomYM < boardTop - 1e-4 && op.openingTopYM > boardBot + 1e-4
+      );
+      const ySet = new Set([boardBot, boardTop]);
+      for (const op of overlapping) {
+        if (
+          op.openingBottomYM > boardBot + 1e-4 &&
+          op.openingBottomYM < boardTop - 1e-4
+        ) {
+          ySet.add(op.openingBottomYM);
+        }
+        if (
+          op.openingTopYM > boardBot + 1e-4 &&
+          op.openingTopYM < boardTop - 1e-4
+        ) {
+          ySet.add(op.openingTopYM);
+        }
+      }
+      const ys = [...ySet].sort((a, b) => a - b);
+      const outward = WEATHERBOARD_FRAME_GAP_M + thicknessM / 2;
+
+      for (let band = 0; band < ys.length - 1; band += 1) {
+        const y0 = ys[band];
+        const y1 = ys[band + 1];
+        const stripH = y1 - y0;
+        if (stripH < 0.006) continue;
+        const midY = (y0 + y1) / 2;
+        const cuts = overlapping
+          .filter(
+            (op) =>
+              op.openingBottomYM < midY - 1e-6 && op.openingTopYM > midY + 1e-6
+          )
+          .map((op) => ({ min: op.x0, max: op.x1 }));
+        const runs = weatherboardRunsAlongLength(len, cuts);
+        const isBoardBottom = Math.abs(y0 - boardBot) < 1e-4;
+
+        const boardCenterY = boardBot + thisBoardH / 2;
+        runs.forEach((run) => {
+          const heightSegs = Math.max(2, Math.round(stripH / 0.015));
+          const geometry = new THREE.BoxGeometry(
+            run.length,
+            stripH,
+            thicknessM,
+            1,
+            heightSegs,
+            1
+          );
+          // Tilt around the original board centre so a notched row stays one board.
+          geometry.translate(0, (y0 + y1) / 2 - boardCenterY, 0);
+          applyWeatherboardVertexColors(geometry, {
+            undersideShadow: isBoardBottom,
+          });
+          geometry.computeVertexNormals();
+          parts.push({
+            geometry,
+            position: {
+              x: a.x + dirX * run.along - inX * outward,
+              y: boardCenterY,
+              z: a.z + dirZ * run.along - inZ * outward,
+            },
+            rotationY: rotY,
+            tiltX,
+            lengthM: run.length,
+            heightM: stripH,
+            rowIndex,
+          });
+        });
+      }
+    });
+  }
+
+  return parts;
+}
+
+/** Duragroove sheet: 10 mm thick, vertical grooves 5 mm wide at 170 mm centres. */
+export const DURAGROOVE_THICKNESS_M = 0.01;
+export const DURAGROOVE_GROOVE_SPACING_M = 0.17;
+export const DURAGROOVE_GROOVE_WIDTH_M = 0.005;
+export const DURAGROOVE_GROOVE_DEPTH_M = 0.007;
+/** Keep the sheet off the stud face so the frame cannot z-fight through. */
+export const DURAGROOVE_FRAME_GAP_M = 0.01;
+
+/** 1 px/mm tile: flat sheet with only a 5 mm groove, no halo. */
+export function getDuragrooveMaps() {
+  const w = 170;
+  const h = 8;
+  const groovePx = 5;
+  const albedo = document.createElement("canvas");
+  albedo.width = w;
+  albedo.height = h;
+  const aCtx = albedo.getContext("2d");
+  const aData = aCtx.createImageData(w, h);
+  const normal = document.createElement("canvas");
+  normal.width = w;
+  normal.height = h;
+  const nCtx = normal.getContext("2d");
+  const nData = nCtx.createImageData(w, h);
+  const halfG = groovePx / 2;
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const dist = Math.min(x, w - x);
+      const i = (y * w + x) * 4;
+      const inGroove = dist < halfG;
+      const c = inGroove ? 168 : 255;
+      aData.data[i] = c;
+      aData.data[i + 1] = c;
+      aData.data[i + 2] = c;
+      aData.data[i + 3] = 255;
+      let nx = 0.5;
+      if (inGroove && dist > 0.2) {
+        nx = x < w / 2 ? 0.62 : 0.38;
+      }
+      nData.data[i] = Math.round(nx * 255);
+      nData.data[i + 1] = 128;
+      nData.data[i + 2] = 255;
+      nData.data[i + 3] = 255;
+    }
+  }
+  aCtx.putImageData(aData, 0, 0);
+  nCtx.putImageData(nData, 0, 0);
+  const map = new THREE.CanvasTexture(albedo);
+  map.wrapS = THREE.RepeatWrapping;
+  map.wrapT = THREE.RepeatWrapping;
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.generateMipmaps = false;
+  map.minFilter = THREE.LinearFilter;
+  map.magFilter = THREE.LinearFilter;
+  map.anisotropy = 4;
+  map.needsUpdate = true;
+  const normalMap = new THREE.CanvasTexture(normal);
+  normalMap.wrapS = THREE.RepeatWrapping;
+  normalMap.wrapT = THREE.RepeatWrapping;
+  normalMap.colorSpace = THREE.NoColorSpace;
+  normalMap.generateMipmaps = false;
+  normalMap.minFilter = THREE.LinearFilter;
+  normalMap.magFilter = THREE.LinearFilter;
+  normalMap.anisotropy = 4;
+  normalMap.needsUpdate = true;
+  return { map, normalMap };
+}
+
+function applyDuragrooveUVs(geometry, alongMid, firstCentreM) {
+  const pos = geometry.attributes.position;
+  const uv = geometry.attributes.uv;
+  const spacing = DURAGROOVE_GROOVE_SPACING_M;
+  for (let i = 0; i < pos.count; i += 1) {
+    const along = alongMid + pos.getX(i);
+    uv.setXY(i, (along - firstCentreM) / spacing, 0.5);
+  }
+  uv.needsUpdate = true;
+}
+
+/**
+ * Vertical Duragroove sheets on each footprint edge: 10 mm board, 5 mm
+ * grooves at 170 mm centres, notched around door/window openings.
+ */
+export function buildFootprintDuragrooveParts(
+  ring,
+  bottomYM,
+  topYM,
+  openings = []
+) {
+  const clean = sanitizeFootprintRing(ring);
+  const thicknessM = DURAGROOVE_THICKNESS_M;
+  const frameGap = DURAGROOVE_FRAME_GAP_M;
+  if (clean.length < 3 || !(topYM > bottomYM)) return [];
+
+  const parts = [];
+
+  for (let i = 0; i < clean.length; i += 1) {
+    const a = clean[i];
+    const b = clean[(i + 1) % clean.length];
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.02) continue;
+    const dirX = dx / len;
+    const dirZ = dz / len;
+    const inward = footprintEdgeInwardXZ(dirX, dirZ, clean);
+    const inX = inward.x;
+    const inZ = inward.z;
+    const rotY = Math.atan2(-dirZ, dirX);
+    const nMod = Math.max(1, Math.round(len / DURAGROOVE_GROOVE_SPACING_M));
+    const firstCentreM = len / 2 - ((nMod - 1) * DURAGROOVE_GROOVE_SPACING_M) / 2;
+
+    const wallOpenings = [];
+    for (const op of openings) {
+      if (!(op?.lengthM > 0)) continue;
+      const half = op.lengthM / 2;
+      const align = Math.abs(op.dirX * dirX + op.dirZ * dirZ);
+      if (align < 0.7) continue;
+      const t = Math.max(
+        0,
+        Math.min(1, ((op.midX - a.x) * dx + (op.midZ - a.z) * dz) / (len * len))
+      );
+      const px = a.x + t * dx;
+      const pz = a.z + t * dz;
+      if (Math.hypot(op.midX - px, op.midZ - pz) > 0.2) continue;
+
+      const projectAlong = (qx, qz) =>
+        Math.max(0, Math.min(len, (qx - a.x) * dirX + (qz - a.z) * dirZ));
+      let x0 = projectAlong(op.midX - op.dirX * half, op.midZ - op.dirZ * half);
+      let x1 = projectAlong(op.midX + op.dirX * half, op.midZ + op.dirZ * half);
+      if (x1 < x0) {
+        const tmp = x0;
+        x0 = x1;
+        x1 = tmp;
+      }
+      if (x1 - x0 < 0.05) continue;
+      wallOpenings.push({
+        x0,
+        x1,
+        openingBottomYM: op.openingBottomYM ?? bottomYM,
+        openingTopYM: op.openingTopYM ?? topYM,
+      });
+    }
+
+    const ySet = new Set([bottomYM, topYM]);
+    for (const op of wallOpenings) {
+      if (op.openingBottomYM > bottomYM + 1e-4 && op.openingBottomYM < topYM - 1e-4) {
+        ySet.add(op.openingBottomYM);
+      }
+      if (op.openingTopYM > bottomYM + 1e-4 && op.openingTopYM < topYM - 1e-4) {
+        ySet.add(op.openingTopYM);
+      }
+    }
+    const ys = [...ySet].sort((left, right) => left - right);
+
+    for (let band = 0; band < ys.length - 1; band += 1) {
+      const y0 = ys[band];
+      const y1 = ys[band + 1];
+      const stripH = y1 - y0;
+      if (stripH < 0.006) continue;
+      const midY = (y0 + y1) / 2;
+      const cuts = wallOpenings
+        .filter(
+          (op) =>
+            op.openingBottomYM < midY - 1e-6 && op.openingTopYM > midY + 1e-6
+        )
+        .map((op) => ({ min: op.x0, max: op.x1 }));
+      const runs = weatherboardRunsAlongLength(len, cuts);
+      runs.forEach((run) => {
+        const runStart = run.along - run.length / 2;
+        const runEnd = run.along + run.length / 2;
+        const segLen = runEnd - runStart;
+        if (!(segLen > 0.002)) return;
+        const along = (runStart + runEnd) / 2;
+        const geometry = new THREE.BoxGeometry(segLen, stripH, thicknessM);
+        applyDuragrooveUVs(geometry, along, firstCentreM);
+        const outM = frameGap + thicknessM / 2;
+        parts.push({
+          geometry,
+          position: {
+            x: a.x + dirX * along - inX * outM,
+            y: midY,
+            z: a.z + dirZ * along - inZ * outM,
+          },
+          rotationY: rotY,
+          tiltX: 0,
+          lengthM: segLen,
+          heightM: stripH,
+        });
+      });
+    }
   }
 
   return parts;
@@ -699,12 +1620,27 @@ export function resolveModelWindows(normalizedPoints, normalizedWindows, calibra
   const mapping = getTracePlanXZMapping(normalizedPoints, calibration);
   if (!mapping || !Array.isArray(normalizedWindows) || !normalizedWindows.length) return [];
 
-  const ringXZ = normalizedPoints.map((p) => normalizedPointToXZ(p, mapping));
-  const centroid = ringXZ.reduce(
-    (acc, p) => ({ x: acc.x + p.x / ringXZ.length, z: acc.z + p.z / ringXZ.length }),
-    { x: 0, z: 0 }
+  const ringXZ = sanitizeFootprintRing(
+    normalizedPoints.map((p) => normalizedPointToXZ(p, mapping))
   );
+  if (ringXZ.length < 3) return [];
 
+  const edges = [];
+  for (let i = 0; i < ringXZ.length; i += 1) {
+    const ea = ringXZ[i];
+    const eb = ringXZ[(i + 1) % ringXZ.length];
+    const edx = eb.x - ea.x;
+    const edz = eb.z - ea.z;
+    const elen = Math.hypot(edx, edz);
+    if (elen < 0.05) continue;
+    const dirX = edx / elen;
+    const dirZ = edz / elen;
+    const inward = footprintEdgeInwardXZ(dirX, dirZ, ringXZ);
+    edges.push({ a: ea, dirX, dirZ, len: elen, inX: inward.x, inZ: inward.z });
+  }
+  if (!edges.length) return [];
+
+  const maxSnapDistM = 0.4;
   const result = [];
   for (const win of normalizedWindows) {
     if (!win?.a || !win?.b) continue;
@@ -712,32 +1648,82 @@ export function resolveModelWindows(normalizedPoints, normalizedWindows, calibra
     const b = normalizedPointToXZ(win.b, mapping);
     const dx = b.x - a.x;
     const dz = b.z - a.z;
-    const lengthM = Math.hypot(dx, dz);
-    if (lengthM < 0.05) continue;
-
-    const dirX = dx / lengthM;
-    const dirZ = dz / lengthM;
+    const tracedLen = Math.hypot(dx, dz);
+    if (tracedLen < 0.05) continue;
+    const tracedDirX = dx / tracedLen;
+    const tracedDirZ = dz / tracedLen;
     const midX = (a.x + b.x) / 2;
     const midZ = (a.z + b.z) / 2;
 
-    // Outward normal (away from centroid).
-    let nX = -dirZ;
-    let nZ = dirX;
-    if (nX * (midX - centroid.x) + nZ * (midZ - centroid.z) < 0) {
-      nX = -nX;
-      nZ = -nZ;
+    let best = null;
+    for (const edge of edges) {
+      const t = Math.max(
+        0,
+        Math.min(1, ((midX - edge.a.x) * edge.dirX + (midZ - edge.a.z) * edge.dirZ) / edge.len)
+      );
+      const px = edge.a.x + t * edge.dirX * edge.len;
+      const pz = edge.a.z + t * edge.dirZ * edge.len;
+      const dist = Math.hypot(midX - px, midZ - pz);
+      const align = Math.abs(tracedDirX * edge.dirX + tracedDirZ * edge.dirZ);
+      if (
+        !best ||
+        dist < best.dist - 1e-6 ||
+        (Math.abs(dist - best.dist) < 1e-6 && align > best.align)
+      ) {
+        best = { edge, dist, align, px, pz };
+      }
     }
 
     const heightM = Number(win.heightM);
+    const resolvedHeight =
+      Number.isFinite(heightM) && heightM > 0 ? heightM : null;
+
+    if (best && best.dist <= maxSnapDistM && best.align >= 0.7) {
+      const edge = best.edge;
+      const projectAlong = (qx, qz) =>
+        Math.max(0, Math.min(edge.len, (qx - edge.a.x) * edge.dirX + (qz - edge.a.z) * edge.dirZ));
+      let along0 = projectAlong(a.x, a.z);
+      let along1 = projectAlong(b.x, b.z);
+      if (along1 < along0) {
+        const tmp = along0;
+        along0 = along1;
+        along1 = tmp;
+      }
+      if (along1 - along0 < 0.05) {
+        const midAlong = projectAlong(midX, midZ);
+        along0 = Math.max(0, midAlong - tracedLen / 2);
+        along1 = Math.min(edge.len, midAlong + tracedLen / 2);
+      }
+      if (along1 - along0 < 0.05) continue;
+      const centerAlong = (along0 + along1) / 2;
+      result.push({
+        midX: edge.a.x + edge.dirX * centerAlong,
+        midZ: edge.a.z + edge.dirZ * centerAlong,
+        dirX: edge.dirX,
+        dirZ: edge.dirZ,
+        normalX: -edge.inX,
+        normalZ: -edge.inZ,
+        lengthM: along1 - along0,
+        heightM: resolvedHeight,
+      });
+      continue;
+    }
+
+    let nX = -tracedDirZ;
+    let nZ = tracedDirX;
+    if (pointInRingXZ(midX + nX * 0.08, midZ + nZ * 0.08, ringXZ)) {
+      nX = -nX;
+      nZ = -nZ;
+    }
     result.push({
       midX,
       midZ,
-      dirX,
-      dirZ,
+      dirX: tracedDirX,
+      dirZ: tracedDirZ,
       normalX: nX,
       normalZ: nZ,
-      lengthM,
-      heightM: Number.isFinite(heightM) && heightM > 0 ? heightM : null,
+      lengthM: tracedLen,
+      heightM: resolvedHeight,
     });
   }
   return result;

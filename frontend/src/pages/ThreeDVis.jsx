@@ -15,7 +15,7 @@ const WINDOW_FRAME_COLOUR_OPTIONS = ["Select", "Monument", "Paperbark", "White",
 const WINDOW_SURROUND_COLOUR_OPTIONS = ["Select", ...COLORBOND_COLOURS.map(c => c.name)];
 
 const BUILDING_PARTS = [
-  { key: "cladding", label: "Cladding" },
+  { key: "cladding", label: "Weatherboards" },
   { key: "roof", label: "Roof" },
   { key: "baseboards", label: "Baseboards" },
   { key: "fasciaGutter", label: "Fascia & Gutter" },

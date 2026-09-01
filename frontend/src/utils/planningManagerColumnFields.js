@@ -67,6 +67,12 @@ export const PLANNING_MANAGER_COL_FIELD = {
   33: { field: "planning_land_flooding_fpa_received_at", kind: "naDate" },
   34: { field: "planning_land_flooding_cc_requested_at", kind: "naDate" },
   35: { field: "planning_land_flooding_cc_received_at", kind: "naDate" },
+  // BAL Required (AK–AL)
+  36: { field: "planning_bal_requested_at", kind: "naDate" },
+  37: { field: "planning_bal_received_at", kind: "naDate" },
+  // Energy Rating (AM–AN)
+  38: { field: "planning_energy_report_requested_at" },
+  39: { field: "planning_energy_report_received_at" },
 };
 
 const DROPDOWN_KINDS = new Set(["note", "select", "naDate"]);

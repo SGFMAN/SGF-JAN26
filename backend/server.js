@@ -781,6 +781,11 @@ const STATUS_PRE_ENGAGEMENT = "Pre-Engagement Phase";
 const STATUS_DESIGN = "Design Phase";
 const STATUS_PERMIT = "Permit Phase";
 
+/** `{Stream}` → projects.stream (empty if unset). */
+function applyStreamEmailToken(text, streamValue) {
+  return String(text ?? "").replace(/\{Stream\}/g, String(streamValue ?? "").trim());
+}
+
 /** For email tokens: empty when unassigned sentinel. */
 function draftspersonTokenDisplay(raw) {
   const s = String(raw ?? "").trim();
@@ -5928,7 +5933,21 @@ function parseColourSectionRangesColumn(raw) {
 }
 
 function parseBuildingElementMaterialsColumn(raw) {
-  const keys = ["slab", "concrete-stumps", "mega-anchors", "bearers", "joists"];
+  const keys = [
+    "slab",
+    "concrete-stumps",
+    "mega-anchors",
+    "bearers",
+    "joists",
+    "structural-floor",
+    "baseboards",
+    "frame",
+    "weatherboards",
+    "internal-wall-lining",
+    "windows",
+    "sliding-doors",
+    "doors",
+  ];
   const empty = {};
   for (const key of keys) empty[key] = "";
   if (raw == null || raw === "") return empty;
@@ -5967,6 +5986,7 @@ const DEFAULT_BUILDING_3D_DEFAULTS = {
   joistWidthM: 0.045,
   bearerSpanMaxM: 1.8,
   joistSpanMaxM: 2.4,
+  joistCentresM: 0.45,
   slabHeightM: 0.65,
   wallHeightM: 2.6,
   widthM: 11.3,
@@ -6026,7 +6046,22 @@ function parseBuilding3dDefaultsColumn(raw) {
     "mega-anchors",
     "bearers",
     "joists",
+    "structural-floor",
+    "baseboards",
+    "frame",
     "wall",
+    "weatherboards",
+    "internal-wall-lining",
+    "windows",
+    "doors",
+    "sliding-doors",
+    "internal-walls",
+    "internal-doors",
+    "roof",
+    "deck",
+    "kitchen",
+    "robes",
+    "flooring",
     "fence",
   ];
   const visSrc =
@@ -6041,12 +6076,43 @@ function parseBuilding3dDefaultsColumn(raw) {
       elementVisibility[key] = true;
     } else if (key === "fence") {
       elementVisibility[key] = showFence;
-    } else if (key === "wall") {
+    } else if (key === "wall" || key === "weatherboards") {
       elementVisibility[key] = showWall;
+    } else if (
+      key === "structural-floor" ||
+      key === "baseboards" ||
+      key === "frame" ||
+      key === "internal-wall-lining" ||
+      key === "windows" ||
+      key === "doors" ||
+      key === "sliding-doors" ||
+      key === "internal-walls" ||
+      key === "internal-doors" ||
+      key === "roof" ||
+      key === "deck" ||
+      key === "kitchen" ||
+      key === "robes" ||
+      key === "flooring"
+    ) {
+      elementVisibility[key] = true;
     } else {
       elementVisibility[key] = showSubfloor;
     }
   }
+  const weatherboardsInSrc =
+    visSrc.weatherboards === false ||
+    visSrc.weatherboards === 0 ||
+    visSrc.weatherboards === "0" ||
+    visSrc.weatherboards === "false" ||
+    visSrc.weatherboards === true ||
+    visSrc.weatherboards === 1 ||
+    visSrc.weatherboards === "1" ||
+    visSrc.weatherboards === "true";
+  if (!weatherboardsInSrc) {
+    elementVisibility.weatherboards = elementVisibility.wall;
+  }
+  elementVisibility.wall = elementVisibility.weatherboards;
+  elementVisibility["internal-walls"] = elementVisibility.frame;
   const legacyHeight = n(
     obj.subfloorHeightM ?? obj.subfloorDepthM,
     DEFAULT_BUILDING_3D_DEFAULTS.subfloorHeightM,
@@ -6095,6 +6161,12 @@ function parseBuilding3dDefaultsColumn(raw) {
     0.3,
     8
   );
+  const joistCentresM = n(
+    obj.joistCentresM,
+    DEFAULT_BUILDING_3D_DEFAULTS.joistCentresM,
+    0.2,
+    1.2
+  );
   const stumpsHeightM = concreteStumpsHeightM;
   const subfloorHeightM = subfloorType === "stumps" ? stumpsHeightM : slabHeightM;
   return {
@@ -6106,6 +6178,7 @@ function parseBuilding3dDefaultsColumn(raw) {
     joistWidthM,
     bearerSpanMaxM,
     joistSpanMaxM,
+    joistCentresM,
     slabHeightM,
     subfloorHeightM,
     wallHeightM: n(obj.wallHeightM, DEFAULT_BUILDING_3D_DEFAULTS.wallHeightM, 1.5, 6),
@@ -6566,6 +6639,8 @@ const PLANNING_MANAGER_WRITABLE_DATE_FIELDS = new Set([
   "planning_footing_certification_requested_at",
   "planning_footing_certification_received_at",
   "planning_site_visit_plans_updated_at",
+  "planning_energy_report_requested_at",
+  "planning_energy_report_received_at",
 ]);
 
 const PLANNING_MANAGER_SELECT_FIELDS = new Set([
@@ -6577,6 +6652,8 @@ const PLANNING_MANAGER_SELECT_FIELDS = new Set([
   "planning_land_flooding_fpa_received_at",
   "planning_land_flooding_cc_requested_at",
   "planning_land_flooding_cc_received_at",
+  "planning_bal_requested_at",
+  "planning_bal_received_at",
 ]);
 
 function parsePlanningMgrTpOptions(raw) {
@@ -7693,6 +7770,16 @@ app.post("/api/emails/send", parseEmailSendRequest, async (req, res) => {
     const userTok = await applyStaffUserEmailTokenSubstitution(pool, req, htmlBody, subject);
     htmlBody = userTok.html;
     subject = userTok.subject;
+    if (projectId && pool) {
+      try {
+        const streamRes = await pool.query("SELECT stream FROM projects WHERE id = $1", [projectId]);
+        const streamVal = streamRes.rows[0]?.stream;
+        htmlBody = applyStreamEmailToken(htmlBody, streamVal);
+        subject = applyStreamEmailToken(subject, streamVal);
+      } catch (streamErr) {
+        console.error("Stream email token:", streamErr.message);
+      }
+    }
 
     const transporter = nodemailer.createTransport({
       host,
@@ -8093,6 +8180,8 @@ app.post("/api/emails/send-drawings", async (req, res) => {
     const spTokens = await applyDrawingsSalespersonTokenSubstitution(pool, htmlBody, subject, project);
     htmlBody = spTokens.html;
     subject = spTokens.subject;
+    htmlBody = applyStreamEmailToken(htmlBody, project.stream);
+    subject = applyStreamEmailToken(subject, project.stream);
     const userTok = await applyStaffUserEmailTokenSubstitution(pool, req, htmlBody, subject);
     htmlBody = userTok.html;
     subject = userTok.subject;
@@ -8454,6 +8543,8 @@ app.post("/api/emails/send-colours", async (req, res) => {
                          .replace(/\{Draftsperson\}/g, draftspersonName)
                          .replace(/\{DRAFTSPERSON\}/g, draftspersonName);
     }
+    subject = applyStreamEmailToken(subject, project.stream);
+    htmlBody = applyStreamEmailToken(htmlBody, project.stream);
     {
       const userTok = await applyStaffUserEmailTokenSubstitution(pool, req, htmlBody, subject);
       htmlBody = userTok.html;
@@ -8863,6 +8954,8 @@ app.post("/api/emails/send-colours-reminder", async (req, res) => {
                          .replace(/\{Draftsperson\}/g, draftspersonName)
                          .replace(/\{DRAFTSPERSON\}/g, draftspersonName);
     }
+    subject = applyStreamEmailToken(subject, project.stream);
+    htmlBody = applyStreamEmailToken(htmlBody, project.stream);
     {
       const userTok = await applyStaffUserEmailTokenSubstitution(pool, req, htmlBody, subject);
       htmlBody = userTok.html;
@@ -9888,6 +9981,8 @@ app.post("/api/emails/send-colours-windows-roof", async (req, res) => {
                          .replace(/\{Draftsperson\}/g, draftspersonName)
                          .replace(/\{DRAFTSPERSON\}/g, draftspersonName);
     }
+    subject = applyStreamEmailToken(subject, project.stream);
+    htmlBody = applyStreamEmailToken(htmlBody, project.stream);
     {
       const userTok = await applyStaffUserEmailTokenSubstitution(pool, req, htmlBody, subject);
       htmlBody = userTok.html;
@@ -10396,6 +10491,8 @@ app.post("/api/emails/send-windows-order", async (req, res) => {
                        .replace(/\{ProjectName\}/g, projectName);
     htmlBody = insertHtmlAfterScopeHeading(htmlBody, windowInfoHtml);
   }
+  subject = applyStreamEmailToken(subject, project.stream);
+  htmlBody = applyStreamEmailToken(htmlBody, project.stream);
   {
     const userTok = await applyStaffUserEmailTokenSubstitution(pool, req, htmlBody, subject);
     htmlBody = userTok.html;
