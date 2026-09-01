@@ -12,6 +12,24 @@
 
 export const FLOODING_REGULATION_OPTIONS = ["N/A", "Required", "REG 153", "REG 154"];
 
+export const SEWER_SEPTIC_AUTHORITY_OPTIONS = [
+  "Barwon Water",
+  "Central Highlands Water",
+  "Coliban Water",
+  "East Gippsland Water",
+  "Gippsland Water",
+  "Goulburn Valley Water",
+  "Grampians Wimmera Mallee Water (GWMWater)",
+  "Greater Western Water",
+  "Lower Murray Water",
+  "North East Water",
+  "South East Water",
+  "South Gippsland Water",
+  "Wannon Water",
+  "Westernport Water",
+  "Yarra Valley Water",
+];
+
 export const PLANNING_MANAGER_COL_FIELD = {
   // Land Channel - Zones & Overlays (C–D)
   2: { field: "planning_land_channel_zones_overlays_sent_at" },
@@ -73,6 +91,28 @@ export const PLANNING_MANAGER_COL_FIELD = {
   // Energy Rating (AM–AN)
   38: { field: "planning_energy_report_requested_at" },
   39: { field: "planning_energy_report_received_at" },
+  // Energy Specs Added to Plans (AO)
+  40: { field: "planning_energy_specs_added_to_plans_at" },
+  // Windows (AP–AQ)
+  41: { field: "planning_windows_requested_at" },
+  42: { field: "planning_windows_received_at" },
+  // Sewer/Septic Application (AR–AT)
+  43: {
+    field: "planning_sewer_septic_authority",
+    kind: "select",
+    options: SEWER_SEPTIC_AUTHORITY_OPTIONS,
+    allowNote: false,
+  },
+  44: { field: "planning_sewer_septic_application_requested_at" },
+  45: { field: "planning_sewer_septic_application_received_at" },
+  // Warranty Insurance (AU)
+  46: { field: "planning_warranty_insurance_at" },
+  // Building Permit (AV–AW) — existing Planning dates
+  47: { field: "planning_building_permit_requested_at" },
+  48: { field: "planning_building_permit_received_at" },
+  // Asset Protection (AX–AY)
+  49: { field: "planning_asset_protection_sent_at" },
+  50: { field: "planning_asset_protection_received_at" },
 };
 
 const DROPDOWN_KINDS = new Set(["note", "select", "naDate"]);
@@ -165,10 +205,13 @@ export function getPlanningManagerDropdownOptions(mapping) {
     ];
   }
   if (mapping.kind === "select" && Array.isArray(mapping.options)) {
-    return [
-      ...mapping.options.map((opt) => ({ label: opt, value: opt })),
-      { label: "Note", value: "__note__" },
-    ];
+    const items = mapping.options.map((opt) => ({ label: opt, value: opt }));
+    if (mapping.allowNote !== false) {
+      items.push({ label: "Note", value: "__note__" });
+    } else {
+      items.push({ label: "Clear", value: "__clear__" });
+    }
+    return items;
   }
   return [];
 }

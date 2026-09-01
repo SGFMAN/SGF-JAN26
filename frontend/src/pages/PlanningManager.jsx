@@ -1259,7 +1259,10 @@ export default function PlanningManager() {
     const rect = anchorEl.getBoundingClientRect();
     const menuWidth = Math.max(
       120,
-      Math.min(200, Math.max(colWidths[colIndex] || DEFAULT_COL_WIDTH, 140))
+      Math.min(
+        mapping.kind === "select" ? 340 : 200,
+        Math.max(colWidths[colIndex] || DEFAULT_COL_WIDTH, mapping.kind === "select" ? 220 : 140)
+      )
     );
     let left = rect.right - menuWidth;
     if (left < 8) left = 8;
