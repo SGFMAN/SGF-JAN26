@@ -566,14 +566,14 @@ export default function ContractManager() {
             boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
             padding: "24px 32px",
             boxSizing: "border-box",
-            overflow: "auto",
+            overflow: "hidden",
             color: MONUMENT,
             display: "flex",
             flexDirection: "column",
             position: "relative",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: "16px", marginBottom: "16px", position: "sticky", top: "-24px", background: SECTION_GREY, zIndex: 9, paddingTop: "24px", marginTop: "-24px", paddingBottom: "8px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: "16px", marginBottom: "16px", flexShrink: 0 }}>
             <div
               style={{
                 display: "grid",
@@ -706,6 +706,7 @@ export default function ContractManager() {
             </div>
           </div>
 
+          <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
           {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && (
             <p style={{ color: INDICATOR.red }}>
@@ -977,6 +978,7 @@ export default function ContractManager() {
               })()}
             </>
           )}
+          </div>
         </div>
       </div>
     </div>
