@@ -24,8 +24,34 @@ const CAR_COLORS = [
   { body: "#4cc9f0", cabin: "#3aa0c0", stroke: "#1e6078" },
 ];
 
+const POSE_MEMORY_MS = 120000;
+const STALE_AFTER_MISSES = 2;
+
 /** @type {Map<import('ws').WebSocket, object>} */
 const players = new Map();
+/** @type {Map<string, { x: number, y: number, heading: number, speed: number, at: number }>} */
+const lastPoses = new Map();
+
+function rememberPose(p) {
+  if (!p) return;
+  lastPoses.set(String(p.userId), {
+    x: p.x,
+    y: p.y,
+    heading: p.heading,
+    speed: p.speed,
+    at: Date.now(),
+  });
+}
+
+function recalledPose(userId) {
+  const saved = lastPoses.get(String(userId));
+  if (!saved) return null;
+  if (Date.now() - saved.at > POSE_MEMORY_MS) {
+    lastPoses.delete(String(userId));
+    return null;
+  }
+  return saved;
+}
 
 function gridPose(index) {
   const col = index % 2;
@@ -71,8 +97,9 @@ function broadcast(msg, exceptWs = null) {
 }
 
 function pruneStaleConnections() {
-  for (const [ws] of players.entries()) {
+  for (const [ws, p] of players.entries()) {
     if (ws.readyState === 2 || ws.readyState === 3) {
+      rememberPose(p);
       players.delete(ws);
     }
   }
@@ -81,6 +108,7 @@ function pruneStaleConnections() {
 function removeSocketForUser(userId) {
   for (const [ws, p] of players.entries()) {
     if (String(p.userId) === String(userId)) {
+      rememberPose(p);
       players.delete(ws);
       try {
         ws.close(4000, "replaced");
@@ -96,6 +124,7 @@ function removeSocketForUser(userId) {
 function removePlayer(ws, { notify = true } = {}) {
   const p = players.get(ws);
   if (!p) return;
+  rememberPose(p);
   players.delete(ws);
   if (notify) {
     broadcast({ type: "peer_left", playerId: p.id, userId: p.userId });
@@ -110,6 +139,7 @@ function lineUpAllPlayers() {
     p.y = pose.y;
     p.heading = pose.heading;
     p.speed = 0;
+    rememberPose(p);
   });
   return list.map(publicPlayer);
 }
@@ -144,15 +174,21 @@ function attachSandpitRaceWebSocket(httpServer, { getPool }) {
   });
 
   const pingTimer = setInterval(() => {
-    for (const [ws] of players.entries()) {
-      if (ws.isAlive === false) {
-        removePlayer(ws);
-        try {
-          ws.terminate();
-        } catch {
-          /* ignore */
+    for (const [ws, p] of players.entries()) {
+      const recentlyActive = p && Date.now() - (p.lastInputAt || 0) < 8000;
+      if (ws.isAlive === false && !recentlyActive) {
+        ws.missedPongs = (ws.missedPongs || 0) + 1;
+        if (ws.missedPongs >= STALE_AFTER_MISSES) {
+          removePlayer(ws);
+          try {
+            ws.terminate();
+          } catch {
+            /* ignore */
+          }
+          continue;
         }
-        continue;
+      } else {
+        ws.missedPongs = 0;
       }
       ws.isAlive = false;
       try {
@@ -202,13 +238,21 @@ function attachSandpitRaceWebSocket(httpServer, { getPool }) {
     }
 
     const previous = removeSocketForUser(join.userId);
-    const pose = previous
-      ? { x: previous.x, y: previous.y, heading: previous.heading, speed: 0 }
+    const remembered = previous || recalledPose(join.userId);
+    const pose = remembered
+      ? {
+          x: remembered.x,
+          y: remembered.y,
+          heading: remembered.heading,
+          speed: remembered.speed || 0,
+        }
       : gridPose(players.size);
 
     ws.isAlive = true;
+    ws.missedPongs = 0;
     ws.on("pong", () => {
       ws.isAlive = true;
+      ws.missedPongs = 0;
     });
 
     const player = {
@@ -220,6 +264,7 @@ function attachSandpitRaceWebSocket(httpServer, { getPool }) {
       y: pose.y,
       heading: pose.heading,
       speed: pose.speed,
+      lastInputAt: Date.now(),
     };
     players.set(ws, player);
 
@@ -247,6 +292,9 @@ function attachSandpitRaceWebSocket(httpServer, { getPool }) {
 
       const p = players.get(ws);
       if (!p) return;
+      ws.isAlive = true;
+      ws.missedPongs = 0;
+      p.lastInputAt = Date.now();
 
       if (msg.type === "leave") {
         removePlayer(ws);
@@ -269,6 +317,7 @@ function attachSandpitRaceWebSocket(httpServer, { getPool }) {
       if (typeof msg.y === "number" && Number.isFinite(msg.y)) p.y = msg.y;
       if (typeof msg.heading === "number" && Number.isFinite(msg.heading)) p.heading = msg.heading;
       if (typeof msg.speed === "number" && Number.isFinite(msg.speed)) p.speed = msg.speed;
+      rememberPose(p);
       broadcast({ type: "peer_state", player: publicPlayer(p) }, ws);
     });
 

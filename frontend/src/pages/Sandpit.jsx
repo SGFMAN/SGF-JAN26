@@ -38,7 +38,10 @@ export default function Sandpit() {
       </Link>
       <button
         type="button"
-        onClick={() => startRaceRef.current?.()}
+        onClick={(e) => {
+          e.currentTarget.blur();
+          startRaceRef.current?.();
+        }}
         style={{
           position: "absolute",
           top: 16,
