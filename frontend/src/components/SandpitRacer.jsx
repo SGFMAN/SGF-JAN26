@@ -11,19 +11,28 @@ const START_X = 0.58;
 const START_Y = 0.765;
 const START_HEADING = Math.PI;
 const STATE_SEND_MS = 40;
-const REMOTE_SMOOTH = 18;
-const REMOTE_EXTRAPOLATE_MAX = 0.2;
-const REMOTE_GONE_MS = 4000;
+const REMOTE_SMOOTH = 14;
+const REMOTE_GONE_MS = 8000;
+const GRID_ORIGIN_X = 0.565;
+const GRID_ORIGIN_Y = 0.748;
 
 const DEFAULT_COLOR = { body: "#d61f26", cabin: "#b01820", stroke: "#8a1016" };
 
-/** Survives React remounts so a socket reconnect cannot rewind the local car. */
+/** Survives React remounts so a socket blip cannot rewind cars. */
 const localCar = {
   x: START_X,
   y: START_Y,
   heading: START_HEADING,
   speed: 0,
 };
+const remoteCars = new Map();
+let localSeq = 0;
+
+function isStartArea(x, y) {
+  const dx = x - GRID_ORIGIN_X;
+  const dy = y - GRID_ORIGIN_Y;
+  return dx * dx + dy * dy < 0.012;
+}
 
 function containRect(cw, ch, iw, ih) {
   const scale = Math.min(cw / iw, ch / ih);
@@ -116,7 +125,7 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
   const canvasRef = useRef(null);
   const keysRef = useRef(new Set());
   const carRef = useRef(localCar);
-  const remotesRef = useRef(new Map());
+  const remotesRef = useRef(remoteCars);
   const localMetaRef = useRef({
     id: String(getLoggedInUserId() || ""),
     name: getLoggedInUserName() || "Driver",
@@ -172,7 +181,14 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
       const now = performance.now();
       const serverAt = Number.isFinite(player.at) ? player.at : 0;
 
+      const seq = Number.isFinite(player.seq) ? player.seq : 0;
+      if (prev && !snap && seq && prev.seq && seq < prev.seq) {
+        return;
+      }
       if (prev && !snap && serverAt && prev.serverAt && serverAt < prev.serverAt) {
+        return;
+      }
+      if (prev && !snap && isStartArea(tx, ty) && !isStartArea(prev.x, prev.y)) {
         return;
       }
 
@@ -191,6 +207,7 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
           ts,
           recvAt: now,
           serverAt,
+          seq,
           goneAt: 0,
         });
         emitDrivers();
@@ -201,6 +218,7 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
       prev.color = player.color || prev.color;
       prev.goneAt = 0;
       if (serverAt) prev.serverAt = serverAt;
+      if (seq) prev.seq = seq;
 
       if (snap) {
         prev.x = tx;
@@ -248,7 +266,7 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
       try {
         ws.send(
           JSON.stringify({
-            type: "state",
+            seq: ++localSeq,
             x: car.x,
             y: car.y,
             heading: car.heading,
@@ -301,6 +319,11 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
       const socket = new WebSocket(getSandpitRaceWsUrl(localId, localMetaRef.current.name));
       ws = socket;
 
+      socket.onopen = () => {
+        if (disposed || gen !== connGen) return;
+        sendState(true);
+      };
+
       socket.onmessage = (event) => {
         if (disposed || gen !== connGen) return;
         let msg;
@@ -316,7 +339,7 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
           for (const other of msg.cars || []) {
             if (!other?.id || String(other.id) === localId) continue;
             if (!remotes.has(String(other.id))) {
-              upsertRemote(other, { snap: true });
+              upsertRemote(other);
             }
           }
           emitDrivers();
@@ -327,7 +350,7 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
         if (msg.type === "peer_joined" && msg.player) {
           const id = String(msg.player.id || "");
           if (id && id !== localId && !remotes.has(id)) {
-            upsertRemote(msg.player, { snap: true, roster: true });
+            upsertRemote(msg.player, { roster: true });
           }
         }
 
@@ -393,12 +416,13 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
         emitDrivers();
         return false;
       }
-      const lag = Math.min(REMOTE_EXTRAPOLATE_MAX, Math.max(0, (now - remote.recvAt) / 1000));
-      const predX = remote.tx + Math.cos(remote.th) * remote.ts * lag;
-      const predY = remote.ty + Math.sin(remote.th) * remote.ts * lag * TRACK_ASPECT;
+      if (!remote.goneAt && remote.ts > 0.002 && now - remote.recvAt > 40) {
+        remote.tx += Math.cos(remote.th) * remote.ts * dt;
+        remote.ty += Math.sin(remote.th) * remote.ts * dt * TRACK_ASPECT;
+      }
       const k = 1 - Math.exp(-dt * REMOTE_SMOOTH);
-      remote.x += (predX - remote.x) * k;
-      remote.y += (predY - remote.y) * k;
+      remote.x += (remote.tx - remote.x) * k;
+      remote.y += (remote.ty - remote.y) * k;
       remote.heading = lerpAngle(remote.heading, remote.th, k);
       return true;
     }
@@ -468,6 +492,16 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
     window.addEventListener("resize", sizeCanvas);
     window.addEventListener("keydown", onKeyDown, { passive: false });
     window.addEventListener("keyup", onKeyUp);
+    const onPageHide = () => {
+      try {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "leave" }));
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    window.addEventListener("pagehide", onPageHide);
 
     return () => {
       disposed = true;
@@ -478,14 +512,8 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
       window.removeEventListener("resize", sizeCanvas);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("pagehide", onPageHide);
       if (ws) {
-        try {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: "leave" }));
-          }
-        } catch {
-          /* ignore */
-        }
         ws.onclose = null;
         closeSocket(ws);
         ws = null;

@@ -25,7 +25,6 @@ const CAR_COLORS = [
 ];
 
 const POSE_MEMORY_MS = 120000;
-const STALE_AFTER_MISSES = 2;
 
 /** @type {Map<import('ws').WebSocket, object>} */
 const players = new Map();
@@ -54,6 +53,7 @@ function rememberPose(p) {
     y: p.y,
     heading: p.heading,
     speed: p.speed,
+    seq: p.seq || 0,
     at: Date.now(),
   });
 }
@@ -95,6 +95,7 @@ function publicPlayer(p) {
     y: p.y,
     heading: p.heading,
     speed: p.speed,
+    seq: p.seq || 0,
     at: p.lastInputAt || Date.now(),
   };
 }
@@ -173,7 +174,7 @@ function lineUpAllPlayers() {
   return list.map(publicPlayer);
 }
 
-function applyIncomingMessage(ws, raw) {
+function applyIncomingMessage(ws, raw, { silent = false } = {}) {
   let msg;
   try {
     msg = JSON.parse(String(raw));
@@ -187,8 +188,8 @@ function applyIncomingMessage(ws, raw) {
   ws.missedPongs = 0;
   p.lastInputAt = Date.now();
 
-      if (msg.type === "leave") {
-        removePlayer(ws, { immediate: true });
+  if (msg.type === "leave") {
+    removePlayer(ws, { immediate: true });
     try {
       ws.close(1000, "left");
     } catch {
@@ -198,6 +199,7 @@ function applyIncomingMessage(ws, raw) {
   }
 
   if (msg.type === "start_race") {
+    if (silent) return;
     const cars = lineUpAllPlayers();
     broadcast({ type: "start_race", cars });
     return;
@@ -208,8 +210,11 @@ function applyIncomingMessage(ws, raw) {
   if (typeof msg.y === "number" && Number.isFinite(msg.y)) p.y = msg.y;
   if (typeof msg.heading === "number" && Number.isFinite(msg.heading)) p.heading = msg.heading;
   if (typeof msg.speed === "number" && Number.isFinite(msg.speed)) p.speed = msg.speed;
+  if (typeof msg.seq === "number" && Number.isFinite(msg.seq)) p.seq = msg.seq;
   rememberPose(p);
-  broadcast({ type: "peer_state", player: publicPlayer(p) }, ws);
+  if (!silent) {
+    broadcast({ type: "peer_state", player: publicPlayer(p) }, ws);
+  }
 }
 
 function parseJoinQuery(reqUrl) {
@@ -243,26 +248,19 @@ function attachSandpitRaceWebSocket(httpServer, { getPool }) {
 
   const pingTimer = setInterval(() => {
     for (const [ws, p] of players.entries()) {
-      const recentlyActive = p && Date.now() - (p.lastInputAt || 0) < 8000;
-      if (ws.isAlive === false && !recentlyActive) {
-        ws.missedPongs = (ws.missedPongs || 0) + 1;
-        if (ws.missedPongs >= STALE_AFTER_MISSES) {
-          removePlayer(ws);
-          try {
-            ws.terminate();
-          } catch {
-            /* ignore */
-          }
-          continue;
+      if (p && Date.now() - (p.lastInputAt || 0) > 45000) {
+        removePlayer(ws);
+        try {
+          ws.terminate();
+        } catch {
+          /* ignore */
         }
-      } else {
-        ws.missedPongs = 0;
+        continue;
       }
-      ws.isAlive = false;
       try {
         ws.ping();
       } catch {
-        removePlayer(ws);
+        /* ignore */
       }
     }
   }, PING_INTERVAL_MS);
@@ -327,10 +325,10 @@ function attachSandpitRaceWebSocket(httpServer, { getPool }) {
         return;
       }
 
-      const rejoined = clearLeaveTimer(join.userId);
-
       const previous = removeSocketForUser(join.userId);
+      const leavePending = clearLeaveTimer(join.userId);
       const remembered = previous || recalledPose(join.userId);
+      const wasAlreadyHere = Boolean(previous || leavePending || remembered);
       const pose = remembered
         ? {
             x: remembered.x,
@@ -349,11 +347,12 @@ function attachSandpitRaceWebSocket(httpServer, { getPool }) {
         y: pose.y,
         heading: pose.heading,
         speed: pose.speed,
+        seq: remembered && Number.isFinite(remembered.seq) ? remembered.seq : 0,
         lastInputAt: Date.now(),
       };
       players.set(ws, player);
 
-      for (const raw of pending) applyIncomingMessage(ws, raw);
+      for (const raw of pending) applyIncomingMessage(ws, raw, { silent: true });
       pending.length = 0;
 
       try {
@@ -368,7 +367,9 @@ function attachSandpitRaceWebSocket(httpServer, { getPool }) {
         /* ignore */
       }
 
-      if (!rejoined) {
+      if (wasAlreadyHere) {
+        broadcast({ type: "peer_state", player: publicPlayer(player) }, ws);
+      } else {
         broadcast({ type: "peer_joined", player: publicPlayer(player) }, ws);
       }
     })().catch(() => {

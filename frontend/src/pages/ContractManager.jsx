@@ -3,27 +3,71 @@ import { Link } from "react-router-dom";
 import { getStateFilter } from "../utils/stateFilter";
 import { isUserAdmin } from "../utils/auth";
 import {
-  isDesignPipelineStatus,
   isExcludedFromProjectLists,
   isCancelledStatus,
+  isCompleteStatus,
 } from "../utils/projectStatus";
 import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { projectPath } from "../utils/projectUrl";
+import { FIELD_DEFINITIONS, filterSelectWidth } from "../utils/projectListFilters";
 
 import StateFilterButtons from "../components/StateFilterButtons";
-import { UI, MENU, STREAM } from "../utils/uiThemeTokens.js";
-import {
-  managerSentCompleteColor,
-  managerDrawingsStatusColor,
-  INDICATOR,
-} from "../utils/managerStatusColors.js";
+import { UI, STREAM, TEXT, outlineBorder } from "../utils/uiThemeTokens.js";
+import { getStreamColorGroup, getStreamGroupColors } from "../utils/streamColors.js";
+import { INDICATOR } from "../utils/managerStatusColors.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 const API_URL = "";
+
+const CONTRACT_FILTER_OPTIONS = FIELD_DEFINITIONS.contract_status.values;
+const DRAWINGS_FILTER_OPTIONS = FIELD_DEFINITIONS.drawings_status.values;
+const SUPPORTING_DOCS_FILTER_OPTIONS = FIELD_DEFINITIONS.supporting_documents_status.values;
+const WATER_AUTHORITY_OPTIONS = ["Not Required", "Barwon Water", "Greater Western Water", "South East Water"];
+const CONTRACT_FILTER_DEFAULT = FIELD_DEFINITIONS.contract_status.defaultValue;
+const DRAWINGS_FILTER_DEFAULT = FIELD_DEFINITIONS.drawings_status.defaultValue;
+const SUPPORTING_DOCS_FILTER_DEFAULT = FIELD_DEFINITIONS.supporting_documents_status.defaultValue;
+const WATER_AUTHORITY_FILTER_DEFAULT = "Not Required";
+const GRID_COLUMNS = "2fr 1fr 1fr 1fr 1fr 1fr";
+
+const FILTER_SELECT_WIDTH = filterSelectWidth(
+  "All",
+  CONTRACT_FILTER_OPTIONS,
+  DRAWINGS_FILTER_OPTIONS,
+  SUPPORTING_DOCS_FILTER_OPTIONS,
+  WATER_AUTHORITY_OPTIONS,
+);
+
+const headingFilterLabelStyle = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "6px",
+  margin: 0,
+  color: MONUMENT,
+  fontSize: "0.9rem",
+  fontWeight: 500,
+  whiteSpace: "nowrap",
+};
+
+const headingFilterSelectStyle = {
+  height: "36px",
+  padding: "0 12px",
+  fontSize: "0.9rem",
+  fontWeight: 500,
+  color: MONUMENT,
+  background: WHITE,
+  border: outlineBorder,
+  borderRadius: "8px",
+  cursor: "pointer",
+  outline: "none",
+  width: FILTER_SELECT_WIDTH,
+  minWidth: FILTER_SELECT_WIDTH,
+  maxWidth: FILTER_SELECT_WIDTH,
+  boxSizing: "border-box",
+};
 
 export default function ContractManager() {
   const logo = useAppLogo();
@@ -32,6 +76,10 @@ export default function ContractManager() {
   const [error, setError] = useState(null);
   const [sortOrder, setSortOrder] = useState("asc"); // "asc" or "desc"
   const [stateFilter, setStateFilter] = useState(getStateFilter());
+  const [contractFilter, setContractFilter] = useState("");
+  const [drawingsFilter, setDrawingsFilter] = useState("");
+  const [supportingDocsFilter, setSupportingDocsFilter] = useState("");
+  const [waterAuthorityFilter, setWaterAuthorityFilter] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const { hasDrawing } = useDrawingAccess();
 
@@ -80,12 +128,12 @@ export default function ContractManager() {
         throw new Error(`Failed to fetch projects: ${response.statusText}`);
       }
       const data = await response.json();
-      const designPhaseProjects = data.filter((project) => {
-        if (isExcludedFromProjectLists(project.status) || isCancelledStatus(project.status)) return false;
-        return isDesignPipelineStatus(project.status);
+      const visibleProjects = data.filter((project) => {
+        if (isExcludedFromProjectLists(project.status)) return false;
+        if (isCancelledStatus(project.status) || isCompleteStatus(project.status)) return false;
+        return true;
       });
-      // Sort by date
-      const sortedProjects = sortProjectsByDate(designPhaseProjects, sortOrder);
+      const sortedProjects = sortProjectsByDate(visibleProjects, sortOrder);
       setProjects(sortedProjects);
     } catch (err) {
       setError(err.message);
@@ -105,24 +153,27 @@ export default function ContractManager() {
   }, [sortOrder]);
 
   // Status options
-  const CONTRACT_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
-  const SUPPORTING_DOCUMENTS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
-  const WATER_AUTHORITY_OPTIONS = ["Not Required", "Barwon Water", "Greater Western Water", "South East Water"];
+  const CONTRACT_STATUS_OPTIONS = FIELD_DEFINITIONS.contract_status.values;
+  const SUPPORTING_DOCUMENTS_STATUS_OPTIONS = FIELD_DEFINITIONS.supporting_documents_status.values;
   const WATER_DECLARATION_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
 
   function getDrawingsStatusColor(status) {
-    return managerDrawingsStatusColor(status);
+    const value = status || "Not Assigned";
+    if (value === "Drawings Complete") return STREAM.streamGreenLight;
+    if (value === "Concept Stage" || value === "Working Drawing Stage") return INDICATOR.orangeLight;
+    return STREAM.qldRedLight;
   }
 
-  // Get status color
   function getStatusColor(status, fieldName = "") {
     if (status === "Not Required") {
-      return "#999999"; // Grey
+      return "#999999";
     }
     if (fieldName === "water_authority") {
-      return STREAM.vicBlue;
+      return STREAM.vicBlueLight;
     }
-    return managerSentCompleteColor(status);
+    if (status === "Complete") return STREAM.streamGreenLight;
+    if (status === "Sent") return INDICATOR.orangeLight;
+    return STREAM.qldRedLight;
   }
 
   // Get effective value with default
@@ -504,10 +555,79 @@ export default function ContractManager() {
             position: "relative",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", position: "sticky", top: "-24px", background: SECTION_GREY, zIndex: 9, paddingTop: "24px", marginTop: "-24px", paddingBottom: "8px" }}>
-            <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: 0 }}>
-              Design Phase Projects
-            </h2>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: "16px", marginBottom: "16px", position: "sticky", top: "-24px", background: SECTION_GREY, zIndex: 9, paddingTop: "24px", marginTop: "-24px", paddingBottom: "8px" }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(4, ${FILTER_SELECT_WIDTH})`,
+                columnGap: "16px",
+              }}
+            >
+              <label style={headingFilterLabelStyle}>
+                Contract
+                <select
+                  value={contractFilter}
+                  onChange={(e) => setContractFilter(e.target.value)}
+                  aria-label="Filter by Contract"
+                  style={headingFilterSelectStyle}
+                >
+                  <option value="">All</option>
+                  {CONTRACT_FILTER_OPTIONS.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={headingFilterLabelStyle}>
+                Drawings
+                <select
+                  value={drawingsFilter}
+                  onChange={(e) => setDrawingsFilter(e.target.value)}
+                  aria-label="Filter by Drawings"
+                  style={headingFilterSelectStyle}
+                >
+                  <option value="">All</option>
+                  {DRAWINGS_FILTER_OPTIONS.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={headingFilterLabelStyle}>
+                Supporting Docs
+                <select
+                  value={supportingDocsFilter}
+                  onChange={(e) => setSupportingDocsFilter(e.target.value)}
+                  aria-label="Filter by Supporting Docs"
+                  style={headingFilterSelectStyle}
+                >
+                  <option value="">All</option>
+                  {SUPPORTING_DOCS_FILTER_OPTIONS.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={headingFilterLabelStyle}>
+                Water Authority
+                <select
+                  value={waterAuthorityFilter}
+                  onChange={(e) => setWaterAuthorityFilter(e.target.value)}
+                  aria-label="Filter by Water Authority"
+                  style={headingFilterSelectStyle}
+                >
+                  <option value="">All</option>
+                  {WATER_AUTHORITY_OPTIONS.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <button
               onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
               style={{
@@ -520,6 +640,7 @@ export default function ContractManager() {
                 borderRadius: "8px",
                 cursor: "pointer",
                 transition: "background 0.2s",
+                flexShrink: 0,
               }}
               onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
               onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
@@ -538,16 +659,37 @@ export default function ContractManager() {
             <>
               {/* Filter projects by state */}
               {(() => {
-                const filteredProjects = stateFilter !== "All" 
+                let filteredProjects = stateFilter !== "All" 
                   ? projects.filter(project => {
                       const projectState = (project.state || "").toUpperCase();
                       return projectState === stateFilter.toUpperCase();
                     })
                   : projects;
+
+                if (contractFilter) {
+                  filteredProjects = filteredProjects.filter((project) =>
+                    getEffectiveValue(project, "contract_status", CONTRACT_FILTER_DEFAULT) === contractFilter
+                  );
+                }
+                if (drawingsFilter) {
+                  filteredProjects = filteredProjects.filter((project) =>
+                    getEffectiveValue(project, "drawings_status", DRAWINGS_FILTER_DEFAULT) === drawingsFilter
+                  );
+                }
+                if (supportingDocsFilter) {
+                  filteredProjects = filteredProjects.filter((project) =>
+                    getEffectiveValue(project, "supporting_documents_status", SUPPORTING_DOCS_FILTER_DEFAULT) === supportingDocsFilter
+                  );
+                }
+                if (waterAuthorityFilter) {
+                  filteredProjects = filteredProjects.filter((project) =>
+                    getEffectiveValue(project, "water_authority", WATER_AUTHORITY_FILTER_DEFAULT) === waterAuthorityFilter
+                  );
+                }
                 
                 if (filteredProjects.length === 0) {
                   return (
-                    <p style={{ color: UI.textMuted }}>No Design Phase projects found.</p>
+                    <p style={{ color: UI.textMuted }}>No projects found.</p>
                   );
                 }
                 
@@ -557,7 +699,7 @@ export default function ContractManager() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 0.5fr",
+                  gridTemplateColumns: GRID_COLUMNS,
                   gap: "16px",
                   padding: "12px 16px",
                   background: MONUMENT,
@@ -577,7 +719,6 @@ export default function ContractManager() {
                 <div>Supporting Docs</div>
                 <div>Water Authority</div>
                 <div>Water Declaration</div>
-                <div>Project Days</div>
               </div>
 
                     {/* Project Rows */}
@@ -589,45 +730,24 @@ export default function ContractManager() {
                 const waterAuthority = getEffectiveValue(project, "water_authority", "Not Required");
                 // For water declaration, if water authority is "Not Required", treat it as "Not Required" for display/color
                 const waterDeclarationStatusRaw = getEffectiveValue(project, "water_declaration_status", "Not Sent");
-                const waterDeclarationStatus = waterAuthority === "Not Required" ? "Not Required" : waterDeclarationStatusRaw;
-                
-                // Calculate project days (same as Admin page and Colour Manager)
-                let projectDays = "";
-                if (project.year) {
-                  let startDate;
-                  if (/^\d{4}-\d{2}-\d{2}$/.test(project.year)) {
-                    startDate = new Date(project.year);
-                  } else if (/^\d{4}$/.test(project.year)) {
-                    startDate = new Date(`${project.year}-01-01`);
-                  } else {
-                    startDate = null;
-                  }
-                  
-                  if (startDate) {
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    startDate.setHours(0, 0, 0, 0);
-                    const diffTime = today - startDate;
-                    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                    projectDays = diffDays >= 0 ? diffDays.toString() : "";
-                  }
-                }
-                
-                // Determine project days background color
-                const projectDaysBgColor = projectDays ? MENU.purple : WHITE;
+                const streamName = String(project.stream || "").trim();
+                const streamFill = streamName
+                  ? getStreamGroupColors(getStreamColorGroup(streamName)).lighter
+                  : null;
 
                 return (
                   <div
                     key={project.id}
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 0.5fr",
+                      gridTemplateColumns: GRID_COLUMNS,
                       gap: "16px",
                       padding: "12px 16px",
                       background: WHITE,
                       borderRadius: "8px",
                       color: MONUMENT,
                       fontSize: "0.9rem",
+                      alignItems: "center",
                     }}
                   >
                     <Link
@@ -636,10 +756,32 @@ export default function ContractManager() {
                         textDecoration: "none",
                         color: MONUMENT,
                         fontWeight: 500,
-                        display: "block",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "2px",
+                        minWidth: 0,
                       }}
                     >
-                      {projectName}
+                      <span>{projectName}</span>
+                      {streamName ? (
+                        <span
+                          style={{
+                            alignSelf: "flex-start",
+                            display: "inline-block",
+                            marginTop: "4px",
+                            padding: "2px 8px",
+                            borderRadius: "6px",
+                            fontSize: "0.75rem",
+                            fontWeight: 600,
+                            lineHeight: 1.3,
+                            color: MONUMENT,
+                            background: streamFill,
+                            boxSizing: "border-box",
+                          }}
+                        >
+                          {streamName}
+                        </span>
+                      ) : null}
                     </Link>
                     <div
                       style={{
@@ -647,7 +789,7 @@ export default function ContractManager() {
                         padding: "8px 10px",
                         borderRadius: "6px",
                         fontSize: "0.9rem",
-                        color: WHITE,
+                        color: TEXT.dark,
                         background: getDrawingsStatusColor(drawingsStatus),
                         fontWeight: 500,
                         boxSizing: "border-box",
@@ -666,7 +808,7 @@ export default function ContractManager() {
                         borderRadius: "6px",
                         border: "none",
                         fontSize: "0.9rem",
-                        color: WHITE,
+                        color: TEXT.dark,
                         background: getStatusColor(contractStatus),
                         cursor: "pointer",
                         fontWeight: 500,
@@ -690,7 +832,7 @@ export default function ContractManager() {
                         borderRadius: "6px",
                         border: "none",
                         fontSize: "0.9rem",
-                        color: WHITE,
+                        color: TEXT.dark,
                         background: getStatusColor(supportingDocsStatus),
                         cursor: "pointer",
                         fontWeight: 500,
@@ -714,7 +856,7 @@ export default function ContractManager() {
                         borderRadius: "6px",
                         border: "none",
                         fontSize: "0.9rem",
-                        color: waterAuthority === "Not Required" ? MONUMENT : PAGE_TEXT,
+                        color: TEXT.dark,
                         background: getStatusColor(waterAuthority, "water_authority"),
                         cursor: "pointer",
                         fontWeight: 500,
@@ -735,7 +877,7 @@ export default function ContractManager() {
                           padding: "8px 10px",
                           borderRadius: "6px",
                           fontSize: "0.9rem",
-                          color: WHITE,
+                          color: TEXT.dark,
                           background: getStatusColor("Not Required"),
                           fontWeight: 500,
                           boxSizing: "border-box",
@@ -755,8 +897,8 @@ export default function ContractManager() {
                           borderRadius: "6px",
                           border: "none",
                           fontSize: "0.9rem",
-                          color: WHITE,
-                          background: getStatusColor(waterDeclarationStatusRaw),
+                        color: TEXT.dark,
+                        background: getStatusColor(waterDeclarationStatusRaw),
                           cursor: "pointer",
                           fontWeight: 500,
                           boxSizing: "border-box",
@@ -770,21 +912,6 @@ export default function ContractManager() {
                         ))}
                       </select>
                     )}
-                    <div
-                      style={{
-                        padding: "8px 10px",
-                        borderRadius: "6px",
-                        background: projectDaysBgColor,
-                        color: projectDays ? PAGE_TEXT : MONUMENT,
-                        fontSize: "0.9rem",
-                        fontWeight: 500,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      {projectDays || "-"}
-                    </div>
                   </div>
                     );
                   })}
