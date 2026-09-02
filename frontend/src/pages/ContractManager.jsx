@@ -10,7 +10,7 @@ import {
 import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { projectPath } from "../utils/projectUrl";
-import { FIELD_DEFINITIONS, filterSelectWidth } from "../utils/projectListFilters";
+import { FIELD_DEFINITIONS, filterSelectWidth, STREAM_SORT_ORDER } from "../utils/projectListFilters";
 
 import StateFilterButtons from "../components/StateFilterButtons";
 import { UI, STREAM, TEXT, outlineBorder } from "../utils/uiThemeTokens.js";
@@ -75,6 +75,7 @@ export default function ContractManager() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [sortOrder, setSortOrder] = useState("asc"); // "asc" or "desc"
+  const [sortMode, setSortMode] = useState("date"); // "date" or "stream"
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [contractFilter, setContractFilter] = useState("");
   const [drawingsFilter, setDrawingsFilter] = useState("");
@@ -107,16 +108,34 @@ export default function ContractManager() {
     return [...projectsList].sort((a, b) => {
       const dateA = parseDate(a);
       const dateB = parseDate(b);
-      
-      // Projects without dates go to the end
       if (!dateA && !dateB) return 0;
       if (!dateA) return 1;
       if (!dateB) return -1;
-      
-      // Compare dates
       const comparison = dateA - dateB;
       return order === "asc" ? comparison : -comparison;
     });
+  }
+
+  function sortProjectsByStream(projectsList) {
+    return [...projectsList].sort((a, b) => {
+      const streamA = (a.stream || "").trim();
+      const streamB = (b.stream || "").trim();
+      const idxA = STREAM_SORT_ORDER.indexOf(streamA);
+      const idxB = STREAM_SORT_ORDER.indexOf(streamB);
+      const safeA = idxA === -1 ? Number.MAX_SAFE_INTEGER : idxA;
+      const safeB = idxB === -1 ? Number.MAX_SAFE_INTEGER : idxB;
+      if (safeA !== safeB) return safeA - safeB;
+      if (streamA !== streamB) return streamA.localeCompare(streamB);
+      const suburbA = (a.suburb || "").toLowerCase();
+      const suburbB = (b.suburb || "").toLowerCase();
+      if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
+      return (a.street || "").toLowerCase().localeCompare((b.street || "").toLowerCase());
+    });
+  }
+
+  function sortProjects(projectsList) {
+    if (sortMode === "stream") return sortProjectsByStream(projectsList);
+    return sortProjectsByDate(projectsList, sortOrder);
   }
 
   async function fetchProjects() {
@@ -133,7 +152,7 @@ export default function ContractManager() {
         if (isCancelledStatus(project.status) || isCompleteStatus(project.status)) return false;
         return true;
       });
-      const sortedProjects = sortProjectsByDate(visibleProjects, sortOrder);
+      const sortedProjects = sortProjects(visibleProjects);
       setProjects(sortedProjects);
     } catch (err) {
       setError(err.message);
@@ -146,11 +165,10 @@ export default function ContractManager() {
   // Re-sort when sort order changes
   useEffect(() => {
     if (projects.length > 0) {
-      const sortedProjects = sortProjectsByDate(projects, sortOrder);
-      setProjects(sortedProjects);
+      setProjects(sortProjects(projects));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sortOrder]);
+  }, [sortOrder, sortMode]);
 
   // Status options
   const CONTRACT_STATUS_OPTIONS = FIELD_DEFINITIONS.contract_status.values;
@@ -628,25 +646,64 @@ export default function ContractManager() {
                 </select>
               </label>
             </div>
-            <button
-              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-              style={{
-                padding: "8px 16px",
-                fontSize: "0.9rem",
-                fontWeight: 500,
-                color: WHITE,
-                background: MONUMENT,
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
-                transition: "background 0.2s",
-                flexShrink: 0,
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
-            >
-              Sort: {sortOrder === "asc" ? "Oldest First" : "Newest First"}
-            </button>
+            <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (sortMode === "date") {
+                    setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+                  } else {
+                    setSortMode("date");
+                  }
+                }}
+                style={{
+                  padding: "8px 16px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  color: sortMode === "date" ? WHITE : MONUMENT,
+                  background: sortMode === "date" ? MONUMENT : WHITE,
+                  border: sortMode === "date" ? "none" : outlineBorder,
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  transition: "background 0.2s",
+                  height: "36px",
+                  boxSizing: "border-box",
+                }}
+                onMouseEnter={(e) => {
+                  if (sortMode === "date") e.currentTarget.style.background = "#1a1a1a";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = sortMode === "date" ? MONUMENT : WHITE;
+                }}
+              >
+                Sort: {sortOrder === "asc" ? "Oldest First" : "Newest First"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSortMode("stream")}
+                style={{
+                  padding: "8px 16px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  color: sortMode === "stream" ? WHITE : MONUMENT,
+                  background: sortMode === "stream" ? MONUMENT : WHITE,
+                  border: sortMode === "stream" ? "none" : outlineBorder,
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  transition: "background 0.2s",
+                  height: "36px",
+                  boxSizing: "border-box",
+                }}
+                onMouseEnter={(e) => {
+                  if (sortMode === "stream") e.currentTarget.style.background = "#1a1a1a";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = sortMode === "stream" ? MONUMENT : WHITE;
+                }}
+              >
+                Sort by Stream
+              </button>
+            </div>
           </div>
 
           {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
