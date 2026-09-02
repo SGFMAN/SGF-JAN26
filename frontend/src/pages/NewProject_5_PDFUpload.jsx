@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import ModalBackdrop from "../components/ModalBackdrop";
 import { newJobPreEngagementPaymentFields } from "../utils/projectDeposit";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -232,18 +233,7 @@ export default function NewProject_5_PDFUpload({
   }
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: transparentBackdrop ? "transparent" : "rgba(0, 0, 0, 0.5)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 2000,
-        pointerEvents: "auto",
-      }}
-    >
+    <ModalBackdrop>
       <div
         style={{
           background: SECTION_GREY,
@@ -487,7 +477,7 @@ export default function NewProject_5_PDFUpload({
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }
  

@@ -114,7 +114,7 @@ export default function NewProject2({
   });
 
   return (
-    <ModalBackdrop zIndex={1000} onClick={closeOnBackdropClick ? onClose : undefined}>
+    <ModalBackdrop onClick={closeOnBackdropClick ? onClose : undefined}>
       <div
         style={{
           background: SECTION_GREY,

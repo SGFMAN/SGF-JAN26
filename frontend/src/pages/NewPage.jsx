@@ -998,7 +998,7 @@ export default function NewPage() {
       </div>
 
       {newQuotePasteOpen ? (
-        <ModalBackdrop zIndex={1000}>
+        <ModalBackdrop>
           <div
             role="dialog"
             aria-modal="true"
@@ -1078,7 +1078,7 @@ export default function NewPage() {
       ) : null}
 
       {addressModalOpen ? (
-        <ModalBackdrop zIndex={1000}>
+        <ModalBackdrop>
           <div
             role="dialog"
             aria-modal="true"

@@ -386,7 +386,7 @@ export default function QuoteCallbackLists() {
       </div>
 
       {eraseList ? (
-        <ModalBackdrop zIndex={1000}>
+        <ModalBackdrop>
           <div
             role="dialog"
             aria-modal="true"

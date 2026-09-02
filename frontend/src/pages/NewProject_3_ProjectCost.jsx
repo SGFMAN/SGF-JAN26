@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import ModalBackdrop from "../components/ModalBackdrop";
 import { CLASSIFICATION_OPTIONS, CLASSIFICATION_ABBREV_MAP as CLASSIFICATION_MAP } from "../utils/classifications";
 import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
 import { FALLBACK_STREAMS, fetchStreams, projectStreamOptions } from "../utils/streamsCatalog";
@@ -546,19 +547,7 @@ export default function NewProject_3_ProjectCost({
 
   return (
     <>
-      {(
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: transparentBackdrop ? "transparent" : "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-            pointerEvents: "auto",
-          }}
-        >
+      <ModalBackdrop>
         <div
           style={{
             background: SECTION_GREY,
@@ -840,22 +829,10 @@ export default function NewProject_3_ProjectCost({
             </button>
           </div>
         </div>
-      </div>
-      )}
+      </ModalBackdrop>
       {/* Deposit Amount Modal */}
       {showDepositModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: transparentBackdrop ? "transparent" : "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 2000,
-          }}
-          onClick={handleDepositModalCancel}
-        >
+        <ModalBackdrop zIndex={21000} onClick={handleDepositModalCancel}>
           <div
             style={{
               background: SECTION_GREY,
@@ -941,7 +918,7 @@ export default function NewProject_3_ProjectCost({
               </button>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
 
     </>

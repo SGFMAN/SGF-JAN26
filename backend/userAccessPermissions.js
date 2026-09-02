@@ -4,6 +4,7 @@ const ACCESS_AREAS = [
   { key: "sales", label: "Sales" },
   { key: "planning", label: "Planning" },
   { key: "drawing", label: "Drawing" },
+  { key: "sandpit", label: "Sandpit" },
 ];
 
 const ACCESS_AREA_KEYS = new Set(ACCESS_AREAS.map((area) => area.key));

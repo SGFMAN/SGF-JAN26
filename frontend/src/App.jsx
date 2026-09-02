@@ -29,6 +29,7 @@ import DrawingManager from "./pages/DrawingManager";
 import DrawingAccessRoute from "./components/DrawingAccessRoute";
 import AdminAccessRoute from "./components/AdminAccessRoute";
 import SalesAccessRoute from "./components/SalesAccessRoute";
+import SandpitAccessRoute from "./components/SandpitAccessRoute";
 import ManagersAccessRoute from "./components/ManagersAccessRoute";
 import ManagersHubAccessRoute from "./components/ManagersHubAccessRoute";
 import Sales from "./pages/Sales";
@@ -43,6 +44,7 @@ import EmailGenerator from "./pages/EmailGenerator";
 import SecretArea from "./pages/SecretArea";
 import SecretLevelEditor from "./pages/SecretLevelEditor";
 import SecretLevel from "./pages/SecretLevel";
+import Sandpit from "./pages/Sandpit";
 import Maps from "./pages/Maps";
 import MapsRecent from "./pages/MapsRecent";
 import { EmailSendOverlayProvider } from "./components/EmailSendOverlay";
@@ -138,6 +140,7 @@ export default function App() {
             <Route path="/sales-person-figures" element={<Auth><SalesAccessRoute><SalesPersonFigures /></SalesAccessRoute></Auth>} />
             <Route path="/sales-projects-overview" element={<Auth><SalesAccessRoute><SalesProjectsOverview /></SalesAccessRoute></Auth>} />
             <Route path="/email-generator" element={<Auth><AdminAccessRoute><EmailGenerator /></AdminAccessRoute></Auth>} />
+            <Route path="/sandpit" element={<Auth><SandpitAccessRoute><Sandpit /></SandpitAccessRoute></Auth>} />
             <Route path="/secret-area" element={<Auth><SecretArea /></Auth>} />
             <Route path="/secret-area/level-editor" element={<Auth><SecretLevelEditor /></Auth>} />
             <Route path="/secret-area/level" element={<Auth><SecretLevel /></Auth>} />

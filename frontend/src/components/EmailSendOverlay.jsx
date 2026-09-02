@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 const EmailSendOverlayContext = createContext(null);
 
@@ -49,7 +50,8 @@ export function EmailSendOverlayProvider({ children }) {
   return (
     <EmailSendOverlayContext.Provider value={{ runWithEmailOverlay }}>
       {children}
-      {state.show && (
+      {state.show &&
+        createPortal(
         <div
           role="dialog"
           aria-live="polite"
@@ -111,7 +113,8 @@ export function EmailSendOverlayProvider({ children }) {
               {state.percent}%
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </EmailSendOverlayContext.Provider>
   );

@@ -7,6 +7,7 @@ let previousPageOverflow = "";
 let previousPagePointerEvents = "";
 let previousRootPointerEvents = "";
 let previousPageInert = false;
+let previousRootInert = false;
 let pageContainerEl = null;
 let rootEl = null;
 
@@ -24,6 +25,7 @@ export function useModalBodyLock(active = true) {
       previousPagePointerEvents = pageContainerEl?.style.pointerEvents || "";
       previousRootPointerEvents = rootEl?.style.pointerEvents || "";
       previousPageInert = Boolean(pageContainerEl?.inert);
+      previousRootInert = Boolean(rootEl?.inert);
 
       document.body.style.overflow = "hidden";
       document.documentElement.style.overflow = "hidden";
@@ -33,7 +35,7 @@ export function useModalBodyLock(active = true) {
         pageContainerEl.inert = true;
       }
       if (rootEl) {
-        rootEl.style.pointerEvents = "none";
+        rootEl.inert = true;
       }
     }
     lockCount += 1;
@@ -50,6 +52,7 @@ export function useModalBodyLock(active = true) {
         }
         if (rootEl) {
           rootEl.style.pointerEvents = previousRootPointerEvents;
+          rootEl.inert = previousRootInert;
         }
         pageContainerEl = null;
         rootEl = null;

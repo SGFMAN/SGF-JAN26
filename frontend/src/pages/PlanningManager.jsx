@@ -38,6 +38,8 @@ const HEADING_BLUE = "rgb(21, 13, 247)";
 const HEADER_SELECT_BG = "rgb(180, 198, 231)";
 const ADDRESS_TEXT = "#000000";
 const CANCELLED_TEXT = "#ff0000";
+const ON_HOLD_FILL = "rgb(255, 182, 193)";
+const HOLD_HIGHLIGHT_STORAGE_KEY = "planningManagerHoldHighlight";
 const COL_A_FILL = "rgb(218, 242, 208)";
 const COL_YELLOW = "rgb(255, 230, 153)";
 const COL_LIGHT_BLUE = HEADER_SELECT_BG;
@@ -249,10 +251,32 @@ function projectLabel(project) {
   return label;
 }
 
+function projectRowIsOnHold(project) {
+  if (!project) return false;
+  if (isOnHoldFlag(project)) return true;
+  const partner = project._planningLinkPartner;
+  return Boolean(partner && isOnHoldFlag(partner));
+}
+
 function projectShowsRed(project) {
-  if (isCancelledStatus(project?.status) || isOnHoldFlag(project)) return true;
+  if (isCancelledStatus(project?.status)) return true;
   const partner = project?._planningLinkPartner;
-  return Boolean(partner && (isCancelledStatus(partner?.status) || isOnHoldFlag(partner)));
+  return Boolean(partner && isCancelledStatus(partner?.status));
+}
+
+function sheetCellFill(colIndex, project, highlightOnHold = true) {
+  if (highlightOnHold && projectRowIsOnHold(project)) return ON_HOLD_FILL;
+  return columnFill(colIndex) || WHITE;
+}
+
+function readHoldHighlightPref() {
+  try {
+    const raw = window.localStorage.getItem(HOLD_HIGHLIGHT_STORAGE_KEY);
+    if (raw == null) return true;
+    return raw !== "false";
+  } catch {
+    return true;
+  }
 }
 
 function buildDefaultColWidths() {
@@ -549,6 +573,7 @@ export default function PlanningManager() {
   const [moveRowModal, setMoveRowModal] = useState(null); // { projectIndex, label, inputValue } | null
   const [checkModal, setCheckModal] = useState(null); // { projectId, fieldKey } | null
   const [projectSearch, setProjectSearch] = useState("");
+  const [holdHighlight, setHoldHighlight] = useState(readHoldHighlightPref);
   const [tpMenu, setTpMenu] = useState(null); // { projectId, colIndex, field, kind, options, top, left, width }
   const [cellEdit, setCellEdit] = useState(null); // { projectId, colIndex, field, saveAs, draft }
   // TEMP: right-click calendar to set historical dates — remove later
@@ -1841,6 +1866,43 @@ export default function PlanningManager() {
           >
             Check
           </button>
+          <label
+            title="Pink highlight for On Hold projects"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              height: 36,
+              padding: "0 10px",
+              border: `1px solid ${HEADER_GRID_LINE}`,
+              borderRadius: 6,
+              background: WHITE,
+              color: ADDRESS_TEXT,
+              fontSize: 14,
+              fontWeight: 600,
+              fontFamily: SHEET_FONT,
+              cursor: "pointer",
+              flexShrink: 0,
+              userSelect: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={holdHighlight}
+              onChange={(e) => {
+                const next = e.target.checked;
+                setHoldHighlight(next);
+                try {
+                  window.localStorage.setItem(HOLD_HIGHLIGHT_STORAGE_KEY, next ? "true" : "false");
+                } catch {
+                  /* ignore */
+                }
+              }}
+              style={{ margin: 0, cursor: "pointer" }}
+            />
+            Hold highlight
+          </label>
           <div
             style={{
               position: "relative",
@@ -2301,6 +2363,12 @@ export default function PlanningManager() {
                 const rowIndex = Math.max(rowStart, DATA_START_ROW) + i;
                 const h = rowHeights[rowIndex] ?? baseRowHeight;
                 const rowIsSelected = selectedRow === rowIndex;
+                const projectIndex = rowIndex - DATA_START_ROW;
+                const project =
+                  projectIndex >= 0 && projectIndex < projects.length
+                    ? projects[projectIndex]
+                    : null;
+                const rowOnHold = holdHighlight && projectRowIsOnHold(project);
                 return (
                   <div
                     key={rowIndex}
@@ -2309,6 +2377,7 @@ export default function PlanningManager() {
                       height: h,
                       width: ROW_HEADER_WIDTH + totalWidth,
                       boxSizing: "border-box",
+                      background: rowOnHold ? ON_HOLD_FILL : undefined,
                     }}
                   >
                     <div
@@ -2351,11 +2420,6 @@ export default function PlanningManager() {
 
                     {/* Frozen column A */}
                     {(() => {
-                      const projectIndex = rowIndex - DATA_START_ROW;
-                      const project =
-                        projectIndex >= 0 && projectIndex < projects.length
-                          ? projects[projectIndex]
-                          : null;
                       const addressText = cellValue(rowIndex, 0);
                       const showRed = projectShowsRed(project);
                       return (
@@ -2391,7 +2455,7 @@ export default function PlanningManager() {
                         fontSize: "15px",
                         fontFamily: SHEET_FONT,
                         WebkitTextStroke: "0.35px currentColor",
-                        background: COL_A_FILL,
+                        background: sheetCellFill(0, project, holdHighlight),
                         boxShadow: isSelected(rowIndex, 0) ? SELECTION_OUTLINE : undefined,
                         flexShrink: 0,
                         cursor: "cell",
@@ -2412,12 +2476,6 @@ export default function PlanningManager() {
                       const colIndex = Math.max(colStart, 1) + j;
                       const value = cellValue(rowIndex, colIndex);
                       const selected = isSelected(rowIndex, colIndex);
-                      const fill = columnFill(colIndex);
-                      const projectIndex = rowIndex - DATA_START_ROW;
-                      const project =
-                        projectIndex >= 0 && projectIndex < projects.length
-                          ? projects[projectIndex]
-                          : null;
                       const mapping = getPlanningManagerColMapping(colIndex);
                       const isDraftCol = colIndex === 1 && project;
                       const isPmDropdownCol = isPlanningManagerDropdownCol(mapping) && project;
@@ -2430,6 +2488,7 @@ export default function PlanningManager() {
                         );
                       const showRed = projectShowsRed(project);
                       const cellTextColor = showRed ? CANCELLED_TEXT : ADDRESS_TEXT;
+                      const fill = sheetCellFill(colIndex, project, holdHighlight);
                       return (
                         <div
                           key={colIndex}

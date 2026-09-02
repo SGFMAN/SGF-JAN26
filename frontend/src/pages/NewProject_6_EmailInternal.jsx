@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import ModalBackdrop from "../components/ModalBackdrop";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { getNewJobInternalTemplateName } from "../utils/newJobInternalTemplate";
 import {
@@ -254,18 +255,7 @@ export default function NewProject_6_EmailInternal({
   if (!isOpen) return null;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: transparentBackdrop ? "transparent" : "rgba(0, 0, 0, 0.5)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 3000,
-        pointerEvents: "auto",
-      }}
-    >
+    <ModalBackdrop>
       <div
         style={{
           background: WHITE,
@@ -442,6 +432,6 @@ export default function NewProject_6_EmailInternal({
           </div>
         )}
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

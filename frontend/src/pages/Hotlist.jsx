@@ -9,6 +9,7 @@ import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
 import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import MainSidebarMenu from "../components/MainSidebarMenu";
+import ModalBackdrop from "../components/ModalBackdrop";
 import { getApiHeaders } from "../utils/auth";
 import { projectPath } from "../utils/projectUrl";
 import { newJobPreEngagementPaymentFields } from "../utils/projectDeposit";
@@ -1668,23 +1669,11 @@ export default function Hotlist() {
 
       {/* Modals */}
       {notesModalItem ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="hotlist-notes-title"
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0,0,0,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1200,
-            padding: "16px",
-          }}
-          onClick={handleCloseNotesModal}
-        >
+        <ModalBackdrop onClick={handleCloseNotesModal} style={{ padding: "16px" }}>
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="hotlist-notes-title"
             style={{
               background: WHITE,
               borderRadius: "12px",
@@ -1759,7 +1748,7 @@ export default function Hotlist() {
               }}
             />
           </div>
-        </div>
+        </ModalBackdrop>
       ) : null}
 
       {isNewItemOpen && (
@@ -1896,22 +1885,10 @@ export default function Hotlist() {
       )}
 
       {soldPreviewOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 99999,
-            background: "transparent",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "24px",
-            pointerEvents: "auto",
-          }}
-        >
+        <ModalBackdrop>
           <div
+            role="dialog"
+            aria-modal="true"
             style={{
               background: WHITE,
               borderRadius: "12px",
@@ -1968,25 +1945,13 @@ export default function Hotlist() {
               </div>
             )}
           </div>
-        </div>
+        </ModalBackdrop>
       )}
       {soldAttachmentModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 99998,
-            background: "transparent",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "24px",
-            pointerEvents: "auto",
-          }}
-        >
+        <ModalBackdrop>
           <div
+            role="dialog"
+            aria-modal="true"
             style={{
               background: WHITE,
               borderRadius: "12px",
@@ -2082,7 +2047,7 @@ export default function Hotlist() {
               </button>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
       </div>
     </>

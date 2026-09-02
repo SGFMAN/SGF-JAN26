@@ -13,6 +13,7 @@ import { CLASSIFICATION_OPTIONS } from "../utils/classifications";
 import ProjectRectangleCard from "../components/ProjectRectangleCard";
 import useAppLogo from "../hooks/useAppLogo.js";
 import useIsMobile from "../hooks/useIsMobile";
+import { useSandpitAccess } from "../hooks/useSandpitAccess";
 import MobileProjectsHome from "../mobile/MobileProjectsHome";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
@@ -213,6 +214,7 @@ export default function HomePage() {
   const logo = useAppLogo();
   const location = useLocation();
   const isMobile = useIsMobile();
+  const { hasSandpit } = useSandpitAccess();
   const cachedProjects = getCachedProjectsList("card");
   const [projects, setProjects] = useState(() => cachedProjects || []);
   const [loading, setLoading] = useState(() => !cachedProjects);
@@ -549,16 +551,53 @@ export default function HomePage() {
           position: "relative",
         }}
       >
-        <Link to="/projects" style={{ position: "absolute", left: "40px", cursor: "pointer" }}>
-          <img
-            src={logo}
-            alt="SGF Logo"
-            style={{
-              width: "120px",
-              height: "auto",
-            }}
-          />
-        </Link>
+        <div
+          style={{
+            position: "absolute",
+            left: "40px",
+            lineHeight: 0,
+          }}
+        >
+          <Link to="/projects" style={{ cursor: "pointer", lineHeight: 0, display: "block" }}>
+            <img
+              src={logo}
+              alt="SGF Logo"
+              style={{
+                width: "120px",
+                height: "auto",
+                display: "block",
+              }}
+            />
+          </Link>
+          {hasSandpit ? (
+            <Link
+              to="/sandpit"
+              title="Sandpit"
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: "88%",
+                transform: "translateX(-50%)",
+                fontSize: "0.62rem",
+                fontWeight: 700,
+                letterSpacing: "0.4px",
+                textTransform: "uppercase",
+                textDecoration: "none",
+                color: PAGE_TEXT,
+                background: SECTION_GREY,
+                border: outlineBorder,
+                borderRadius: 4,
+                padding: "2px 7px",
+                lineHeight: 1.2,
+                boxShadow: "0 1px 4px rgba(0,0,0,0.18)",
+                whiteSpace: "nowrap",
+                zIndex: 1,
+              }}
+            >
+              Sandpit
+            </Link>
+          ) : null}
+        </div>
         <div style={{ display: "flex", alignItems: "center" }}>
           <h1
             style={{

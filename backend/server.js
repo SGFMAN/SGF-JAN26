@@ -15841,12 +15841,14 @@ app.delete("/api/email-generator/learned-answers/:id", async (req, res) => {
 
 const http = require("http");
 const { attachSecretAreaWebSocket } = require("./secretAreaRoom");
+const { attachSandpitRaceWebSocket } = require("./sandpitRaceRoom");
 
 // Start server (listen immediately; migrations run in background)
 (async () => {
   try {
     const httpServer = http.createServer(app);
     attachSecretAreaWebSocket(httpServer);
+    attachSandpitRaceWebSocket(httpServer, { getPool: () => pool });
     httpServer.listen(PORT, "0.0.0.0", () => {
       console.log(`✅ SGF API listening on http://0.0.0.0:${PORT} (migrations running…)`);
     });

@@ -66,7 +66,19 @@ function removePlayer(ws, { notify = true } = {}) {
 }
 
 function attachSecretAreaWebSocket(httpServer) {
-  const wss = new WebSocketServer({ server: httpServer, path: "/ws/secret-area" });
+  const wss = new WebSocketServer({ noServer: true });
+  httpServer.on("upgrade", (req, socket, head) => {
+    let pathname = "";
+    try {
+      pathname = new URL(req.url, "http://localhost").pathname;
+    } catch {
+      return;
+    }
+    if (pathname !== "/ws/secret-area") return;
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit("connection", ws, req);
+    });
+  });
 
   const pingTimer = setInterval(() => {
     for (const [ws] of players.entries()) {

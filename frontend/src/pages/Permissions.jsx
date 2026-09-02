@@ -158,7 +158,7 @@ export default function Permissions() {
 
   const permissionAreas = useMemo(() => {
     const byKey = Object.fromEntries(areas.map((area) => [area.key, area]));
-    return ["admin", "managers", "sales", "planning", "drawing"]
+    return ["admin", "managers", "sales", "planning", "drawing", "sandpit"]
       .map((key) => byKey[key])
       .filter(Boolean);
   }, [areas]);
