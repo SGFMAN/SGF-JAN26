@@ -51,6 +51,7 @@ export default function Sandpit() {
           fontSize: "0.8rem",
           fontWeight: 700,
           cursor: "pointer",
+          tabIndex: -1,
           border: "1px solid rgba(255,255,255,0.4)",
           borderRadius: 8,
           padding: "6px 14px",

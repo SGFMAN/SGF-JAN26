@@ -31,6 +31,21 @@ const STALE_AFTER_MISSES = 2;
 const players = new Map();
 /** @type {Map<string, { x: number, y: number, heading: number, speed: number, at: number }>} */
 const lastPoses = new Map();
+/** @type {Map<string, ReturnType<typeof setTimeout>>} */
+const leaveTimers = new Map();
+
+function clearLeaveTimer(userId) {
+  const key = String(userId);
+  const timer = leaveTimers.get(key);
+  if (!timer) return false;
+  clearTimeout(timer);
+  leaveTimers.delete(key);
+  return true;
+}
+
+function stillInRoom(userId) {
+  return Array.from(players.values()).some((p) => String(p.userId) === String(userId));
+}
 
 function rememberPose(p) {
   if (!p) return;
@@ -80,6 +95,7 @@ function publicPlayer(p) {
     y: p.y,
     heading: p.heading,
     speed: p.speed,
+    at: p.lastInputAt || Date.now(),
   };
 }
 
@@ -121,14 +137,27 @@ function removeSocketForUser(userId) {
   return null;
 }
 
-function removePlayer(ws, { notify = true } = {}) {
+function removePlayer(ws, { notify = true, immediate = false } = {}) {
   const p = players.get(ws);
   if (!p) return;
   rememberPose(p);
   players.delete(ws);
-  if (notify) {
+  if (!notify) return;
+
+  const key = String(p.userId);
+  clearLeaveTimer(key);
+  if (immediate) {
     broadcast({ type: "peer_left", playerId: p.id, userId: p.userId });
+    return;
   }
+  leaveTimers.set(
+    key,
+    setTimeout(() => {
+      leaveTimers.delete(key);
+      if (stillInRoom(p.userId)) return;
+      broadcast({ type: "peer_left", playerId: p.id, userId: p.userId });
+    }, 3000)
+  );
 }
 
 function lineUpAllPlayers() {
@@ -142,6 +171,45 @@ function lineUpAllPlayers() {
     rememberPose(p);
   });
   return list.map(publicPlayer);
+}
+
+function applyIncomingMessage(ws, raw) {
+  let msg;
+  try {
+    msg = JSON.parse(String(raw));
+  } catch {
+    return;
+  }
+
+  const p = players.get(ws);
+  if (!p) return;
+  ws.isAlive = true;
+  ws.missedPongs = 0;
+  p.lastInputAt = Date.now();
+
+      if (msg.type === "leave") {
+        removePlayer(ws, { immediate: true });
+    try {
+      ws.close(1000, "left");
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+
+  if (msg.type === "start_race") {
+    const cars = lineUpAllPlayers();
+    broadcast({ type: "start_race", cars });
+    return;
+  }
+
+  if (msg.type !== "state") return;
+  if (typeof msg.x === "number" && Number.isFinite(msg.x)) p.x = msg.x;
+  if (typeof msg.y === "number" && Number.isFinite(msg.y)) p.y = msg.y;
+  if (typeof msg.heading === "number" && Number.isFinite(msg.heading)) p.heading = msg.heading;
+  if (typeof msg.speed === "number" && Number.isFinite(msg.speed)) p.speed = msg.speed;
+  rememberPose(p);
+  broadcast({ type: "peer_state", player: publicPlayer(p) }, ws);
 }
 
 function parseJoinQuery(reqUrl) {
@@ -201,7 +269,7 @@ function attachSandpitRaceWebSocket(httpServer, { getPool }) {
 
   wss.on("close", () => clearInterval(pingTimer));
 
-  wss.on("connection", async (ws, req) => {
+  wss.on("connection", (ws, req) => {
     pruneStaleConnections();
 
     const join = parseJoinQuery(req.url);
@@ -215,115 +283,101 @@ function attachSandpitRaceWebSocket(httpServer, { getPool }) {
       return;
     }
 
-    const pool = typeof getPool === "function" ? getPool() : null;
-    const allowed = await userHasAccessGrant(pool, join.userId, "sandpit");
-    if (!allowed) {
-      try {
-        ws.send(JSON.stringify({ type: "denied", reason: "permission" }));
-      } catch {
-        /* ignore */
-      }
-      ws.close();
-      return;
-    }
-
-    if (players.size >= MAX_PLAYERS && !Array.from(players.values()).some((p) => String(p.userId) === String(join.userId))) {
-      try {
-        ws.send(JSON.stringify({ type: "full" }));
-      } catch {
-        /* ignore */
-      }
-      ws.close();
-      return;
-    }
-
-    const previous = removeSocketForUser(join.userId);
-    const remembered = previous || recalledPose(join.userId);
-    const pose = remembered
-      ? {
-          x: remembered.x,
-          y: remembered.y,
-          heading: remembered.heading,
-          speed: remembered.speed || 0,
-        }
-      : gridPose(players.size);
-
+    const pending = [];
     ws.isAlive = true;
     ws.missedPongs = 0;
     ws.on("pong", () => {
       ws.isAlive = true;
       ws.missedPongs = 0;
     });
-
-    const player = {
-      id: String(join.userId),
-      userId: join.userId,
-      name: join.name,
-      color: colorForUser(join.userId),
-      x: pose.x,
-      y: pose.y,
-      heading: pose.heading,
-      speed: pose.speed,
-      lastInputAt: Date.now(),
-    };
-    players.set(ws, player);
-
-    try {
-      ws.send(
-        JSON.stringify({
-          type: "joined",
-          player: publicPlayer(player),
-          cars: allPublicPlayers(),
-        })
-      );
-    } catch {
-      /* ignore */
-    }
-
-    broadcast({ type: "peer_joined", player: publicPlayer(player) }, ws);
-
     ws.on("message", (raw) => {
-      let msg;
-      try {
-        msg = JSON.parse(String(raw));
-      } catch {
+      if (!players.has(ws)) {
+        if (pending.length < 40) pending.push(raw);
         return;
       }
+      applyIncomingMessage(ws, raw);
+    });
+    ws.on("close", () => removePlayer(ws));
 
-      const p = players.get(ws);
-      if (!p) return;
-      ws.isAlive = true;
-      ws.missedPongs = 0;
-      p.lastInputAt = Date.now();
+    (async () => {
+      const pool = typeof getPool === "function" ? getPool() : null;
+      const allowed = await userHasAccessGrant(pool, join.userId, "sandpit");
+      if (ws.readyState !== 1) return;
 
-      if (msg.type === "leave") {
-        removePlayer(ws);
+      if (!allowed) {
         try {
-          ws.close(1000, "left");
+          ws.send(JSON.stringify({ type: "denied", reason: "permission" }));
         } catch {
           /* ignore */
         }
+        ws.close();
         return;
       }
 
-      if (msg.type === "start_race") {
-        const cars = lineUpAllPlayers();
-        broadcast({ type: "start_race", cars });
+      if (
+        players.size >= MAX_PLAYERS &&
+        !Array.from(players.values()).some((p) => String(p.userId) === String(join.userId))
+      ) {
+        try {
+          ws.send(JSON.stringify({ type: "full" }));
+        } catch {
+          /* ignore */
+        }
+        ws.close();
         return;
       }
 
-      if (msg.type !== "state") return;
-      if (typeof msg.x === "number" && Number.isFinite(msg.x)) p.x = msg.x;
-      if (typeof msg.y === "number" && Number.isFinite(msg.y)) p.y = msg.y;
-      if (typeof msg.heading === "number" && Number.isFinite(msg.heading)) p.heading = msg.heading;
-      if (typeof msg.speed === "number" && Number.isFinite(msg.speed)) p.speed = msg.speed;
-      rememberPose(p);
-      broadcast({ type: "peer_state", player: publicPlayer(p) }, ws);
+      const rejoined = clearLeaveTimer(join.userId);
+
+      const previous = removeSocketForUser(join.userId);
+      const remembered = previous || recalledPose(join.userId);
+      const pose = remembered
+        ? {
+            x: remembered.x,
+            y: remembered.y,
+            heading: remembered.heading,
+            speed: remembered.speed || 0,
+          }
+        : gridPose(players.size);
+
+      const player = {
+        id: String(join.userId),
+        userId: join.userId,
+        name: join.name,
+        color: colorForUser(join.userId),
+        x: pose.x,
+        y: pose.y,
+        heading: pose.heading,
+        speed: pose.speed,
+        lastInputAt: Date.now(),
+      };
+      players.set(ws, player);
+
+      for (const raw of pending) applyIncomingMessage(ws, raw);
+      pending.length = 0;
+
+      try {
+        ws.send(
+          JSON.stringify({
+            type: "joined",
+            player: publicPlayer(player),
+            cars: allPublicPlayers(),
+          })
+        );
+      } catch {
+        /* ignore */
+      }
+
+      if (!rejoined) {
+        broadcast({ type: "peer_joined", player: publicPlayer(player) }, ws);
+      }
+    })().catch(() => {
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
     });
-
-    const onGone = () => removePlayer(ws);
-    ws.on("close", onGone);
-    ws.on("error", onGone);
   });
 
   return wss;

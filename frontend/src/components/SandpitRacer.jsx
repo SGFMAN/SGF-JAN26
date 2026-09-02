@@ -11,11 +11,19 @@ const START_X = 0.58;
 const START_Y = 0.765;
 const START_HEADING = Math.PI;
 const STATE_SEND_MS = 40;
-const REMOTE_SMOOTH = 16;
-const REMOTE_EXTRAPOLATE_MAX = 0.1;
-const SNAP_DIST2 = 0.012;
+const REMOTE_SMOOTH = 18;
+const REMOTE_EXTRAPOLATE_MAX = 0.2;
+const REMOTE_GONE_MS = 4000;
 
 const DEFAULT_COLOR = { body: "#d61f26", cabin: "#b01820", stroke: "#8a1016" };
+
+/** Survives React remounts so a socket reconnect cannot rewind the local car. */
+const localCar = {
+  x: START_X,
+  y: START_Y,
+  heading: START_HEADING,
+  speed: 0,
+};
 
 function containRect(cw, ch, iw, ih) {
   const scale = Math.min(cw / iw, ch / ih);
@@ -107,13 +115,7 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
   const keysRef = useRef(new Set());
-  const carRef = useRef({
-    x: START_X,
-    y: START_Y,
-    heading: START_HEADING,
-    speed: 0,
-  });
-  const spawnedRef = useRef(false);
+  const carRef = useRef(localCar);
   const remotesRef = useRef(new Map());
   const localMetaRef = useRef({
     id: String(getLoggedInUserId() || ""),
@@ -168,6 +170,11 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
       const th = Number.isFinite(player.heading) ? player.heading : prev?.th ?? START_HEADING;
       const ts = Number.isFinite(player.speed) ? player.speed : prev?.ts ?? 0;
       const now = performance.now();
+      const serverAt = Number.isFinite(player.at) ? player.at : 0;
+
+      if (prev && !snap && serverAt && prev.serverAt && serverAt < prev.serverAt) {
+        return;
+      }
 
       if (!prev) {
         remotes.set(id, {
@@ -183,6 +190,8 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
           th,
           ts,
           recvAt: now,
+          serverAt,
+          goneAt: 0,
         });
         emitDrivers();
         return;
@@ -190,19 +199,26 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
 
       prev.name = player.name || prev.name;
       prev.color = player.color || prev.color;
-      prev.tx = tx;
-      prev.ty = ty;
-      prev.th = th;
-      prev.ts = ts;
-      prev.speed = ts;
-      prev.recvAt = now;
+      prev.goneAt = 0;
+      if (serverAt) prev.serverAt = serverAt;
 
-      const dx = tx - prev.x;
-      const dy = ty - prev.y;
-      if (snap || dx * dx + dy * dy > SNAP_DIST2) {
+      if (snap) {
         prev.x = tx;
         prev.y = ty;
         prev.heading = th;
+        prev.tx = tx;
+        prev.ty = ty;
+        prev.th = th;
+        prev.ts = ts;
+        prev.speed = ts;
+        prev.recvAt = now;
+      } else {
+        prev.tx = tx;
+        prev.ty = ty;
+        prev.th = th;
+        prev.ts = ts;
+        prev.speed = ts;
+        prev.recvAt = now;
       }
 
       if (roster) emitDrivers();
@@ -297,27 +313,27 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
         if (msg.type === "joined" && msg.player) {
           localMetaRef.current.color = msg.player.color || DEFAULT_COLOR;
           localMetaRef.current.name = msg.player.name || localMetaRef.current.name;
-          if (!spawnedRef.current) {
-            spawnedRef.current = true;
-            car.x = msg.player.x;
-            car.y = msg.player.y;
-            car.heading = msg.player.heading;
-            car.speed = 0;
+          for (const other of msg.cars || []) {
+            if (!other?.id || String(other.id) === localId) continue;
+            if (!remotes.has(String(other.id))) {
+              upsertRemote(other, { snap: true });
+            }
           }
-          remotes.clear();
-          for (const other of msg.cars || []) upsertRemote(other, { snap: true });
           emitDrivers();
           sendState(true);
           return;
         }
 
         if (msg.type === "peer_joined" && msg.player) {
-          upsertRemote(msg.player, { snap: true, roster: true });
+          const id = String(msg.player.id || "");
+          if (id && id !== localId && !remotes.has(id)) {
+            upsertRemote(msg.player, { snap: true, roster: true });
+          }
         }
 
         if (msg.type === "peer_left") {
-          remotes.delete(String(msg.playerId || ""));
-          emitDrivers();
+          const remote = remotes.get(String(msg.playerId || ""));
+          if (remote) remote.goneAt = performance.now();
         }
 
         if (msg.type === "peer_state" && msg.player) {
@@ -372,6 +388,11 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
     }
 
     function stepRemote(remote, dt, now) {
+      if (remote.goneAt && now - remote.goneAt > REMOTE_GONE_MS) {
+        remotes.delete(remote.id);
+        emitDrivers();
+        return false;
+      }
       const lag = Math.min(REMOTE_EXTRAPOLATE_MAX, Math.max(0, (now - remote.recvAt) / 1000));
       const predX = remote.tx + Math.cos(remote.th) * remote.ts * lag;
       const predY = remote.ty + Math.sin(remote.th) * remote.ts * lag * TRACK_ASPECT;
@@ -379,6 +400,7 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
       remote.x += (predX - remote.x) * k;
       remote.y += (predY - remote.y) * k;
       remote.heading = lerpAngle(remote.heading, remote.th, k);
+      return true;
     }
 
     function paintCar(ctx, view, pose, color, name, carLen) {
@@ -432,7 +454,7 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
       const carLen = view.w * 0.04;
 
       for (const remote of remotes.values()) {
-        stepRemote(remote, dt, now);
+        if (!stepRemote(remote, dt, now)) continue;
         paintCar(ctx, view, remote, remote.color, remote.name, carLen);
       }
       paintCar(ctx, view, car, localMetaRef.current.color, localMetaRef.current.name, carLen);
