@@ -25,6 +25,12 @@ import "./Overview.css";
 import { UI, STREAM, INDICATOR } from "../utils/uiThemeTokens.js";
 import { getOverviewIndicatorStyle } from "../utils/uiButtonStyles.js";
 import DesignPhaseStatusPanel from "../components/DesignPhaseStatusPanel.jsx";
+import {
+  BUILDING_PERMIT_STATUS_BAMS_PAID,
+  BUILDING_PERMIT_STATUS_WAITING_VINCE,
+  isBuildingPermitIssued,
+  normalizeBuildingPermitStatus,
+} from "../constants/planningStatusFields.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
@@ -569,7 +575,7 @@ export default function Overview({ project }) {
     if (!completeDone(project?.planning_footing_certification_received_at)) {
       return false;
     }
-    if (!completeDone(project?.planning_building_permit_received_at)) {
+    if (!isBuildingPermitIssued(project)) {
       return false;
     }
 
@@ -951,9 +957,17 @@ export default function Overview({ project }) {
     }
     
     // Check Building Permit Status
-    const buildingPermitStatus = project.building_permit_status || "Not Submitted";
-    if (buildingPermitStatus !== "Complete") {
-      if (buildingPermitStatus === "Sent") {
+    const buildingPermitStatus = normalizeBuildingPermitStatus(
+      project.building_permit_status,
+      project.planning_building_permit_received_at
+    );
+    if (!isBuildingPermitIssued(project)) {
+      if (
+        buildingPermitStatus === BUILDING_PERMIT_STATUS_BAMS_PAID ||
+        buildingPermitStatus === BUILDING_PERMIT_STATUS_WAITING_VINCE ||
+        buildingPermitStatus === "Sent" ||
+        buildingPermitStatus === "Submitted"
+      ) {
         outstandingItems.push({
           title: "Building Permit",
           message: "Building permit has been submitted. We're waiting for approval."
@@ -983,7 +997,7 @@ export default function Overview({ project }) {
     const buildingPermitRule = PROCESS_RULES.buildingPermit;
     const unmetRequirements = getUnmetRequirements(buildingPermitRule, project);
     
-    if (unmetRequirements.length > 0 && buildingPermitStatus !== "Complete" && buildingPermitStatus !== "Sent") {
+    if (unmetRequirements.length > 0 && !isBuildingPermitIssued(project) && buildingPermitStatus === "Not Submitted") {
       body += `---\n\n`;
       body += `IMPORTANT: Before we can submit the building permit, we need:\n\n`;
       unmetRequirements.forEach((req, index) => {

@@ -7,8 +7,11 @@ import SiteVisit from "./SiteVisit";
 import {
   PLANNING_REQUIREMENT_SELECT_OPTIONS,
   MANDATORY_PLANNING_SELECT_OPTIONS,
+  BUILDING_PERMIT_STATUS_OPTIONS,
   normalizePlanningStatus,
   normalizeMandatoryPlanningStatus,
+  normalizeBuildingPermitStatus,
+  buildingPermitFieldsForStatus,
   planningRequirementSelectValue,
 } from "../constants/planningStatusFields.js";
 
@@ -831,8 +834,8 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
     null,
     project?.planning_footing_certification_received_at
   );
-  const buildingPermitStatus = normalizeMandatoryPlanningStatus(
-    null,
+  const buildingPermitStatus = normalizeBuildingPermitStatus(
+    project?.building_permit_status,
     project?.planning_building_permit_received_at
   );
 
@@ -2233,11 +2236,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                       id="building-permit-select"
                       value={buildingPermitStatus}
                       onChange={(e) =>
-                        void handleMandatoryPlanningStatusChange(
-                          "planning_building_permit_requested_at",
-                          "planning_building_permit_received_at",
-                          e.target.value
-                        )
+                        void saveJobFileFields(buildingPermitFieldsForStatus(e.target.value, project))
                       }
                       disabled={!project?.id || isSaving}
                       style={{
@@ -2251,7 +2250,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
                         boxSizing: "border-box",
                       }}
                     >
-                      {MANDATORY_PLANNING_SELECT_OPTIONS.map((opt) => (
+                      {BUILDING_PERMIT_STATUS_OPTIONS.map((opt) => (
                         <option key={opt} value={opt}>
                           {opt}
                         </option>

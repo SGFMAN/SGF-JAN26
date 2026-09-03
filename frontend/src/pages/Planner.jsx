@@ -2,13 +2,15 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link as RouterLink } from "react-router-dom";
 import ToolsSidebarMenu from "../components/ToolsSidebarMenu";
 import useAppLogo from "../hooks/useAppLogo.js";
-import startBuildingImage from "../images/start building.png";
+import startProjectImage from "../images/start.png";
+import finishProjectImage from "../images/finish.png";
 import {
   PLANNER_BOARD_HEIGHT,
   PLANNER_BOARD_WIDTH,
   PLANNER_FLOW_ITEMS,
   PLANNER_SNAP_SIZE,
   PLANNER_START_BUILDING_KEY,
+  PLANNER_START_PROJECT_KEY,
   clampPlannerPoint,
   clampPlannerPositions,
   defaultPlannerPositions,
@@ -592,6 +594,9 @@ export default function Planner() {
                 const isDragging = draggingKey === item.key;
                 const isLinkSource = linkSourceKey === item.key;
                 const isStartBuilding = item.key === PLANNER_START_BUILDING_KEY;
+                const isStartProject = item.key === PLANNER_START_PROJECT_KEY;
+                const isImageNode = isStartBuilding || isStartProject;
+                const imageSrc = isStartProject ? startProjectImage : isStartBuilding ? finishProjectImage : null;
                 return (
                   <div
                     key={item.key}
@@ -604,17 +609,17 @@ export default function Planner() {
                       width: size.width,
                       height: size.height,
                       boxSizing: "border-box",
-                      background: isStartBuilding ? "transparent" : color,
+                      background: isImageNode ? "transparent" : color,
                       border: isLinkSource
                         ? `3px solid ${MONUMENT}`
-                        : isStartBuilding
+                        : isImageNode
                           ? "none"
                           : `1px solid ${UI.outline}`,
-                      borderRadius: isStartBuilding ? 0 : "10px",
+                      borderRadius: isImageNode ? 0 : "10px",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      padding: isStartBuilding ? 0 : "8px 10px",
+                      padding: isImageNode ? 0 : "8px 10px",
                       textAlign: "center",
                       fontSize: "0.95rem",
                       fontWeight: item.kind === "heading" ? 700 : 600,
@@ -624,17 +629,17 @@ export default function Planner() {
                         ? "0 0 0 3px rgba(50,50,51,0.18)"
                         : isDragging
                           ? "0 8px 20px rgba(0,0,0,0.18)"
-                          : isStartBuilding
+                          : isImageNode
                             ? "none"
                             : "0 2px 8px rgba(0,0,0,0.08)",
                       zIndex: isDragging || isLinkSource ? 20 : 1,
                       touchAction: "none",
                     }}
                   >
-                    {isStartBuilding ? (
+                    {isImageNode ? (
                       <img
-                        src={startBuildingImage}
-                        alt="Start Building"
+                        src={imageSrc}
+                        alt={item.label}
                         draggable={false}
                         style={{
                           width: "100%",

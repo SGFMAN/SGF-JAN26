@@ -1,11 +1,13 @@
-import { STREAM, INDICATOR, UI } from "./uiThemeTokens.js";
+import { STREAM, INDICATOR, TEXT } from "./uiThemeTokens.js";
 import { getOverviewIndicatorStyle } from "./uiButtonStyles.js";
 import {
   getMandatoryPlanningOverviewKind,
+  getBuildingPermitOverviewKind,
   getPlanningRequirementOverviewKind,
   getSewerConnectionOverviewKind,
+  getSewerConnectionStatusLabel,
+  normalizeBuildingPermitStatus,
   normalizePlanningStatus,
-  normalizeSewerConnectionType,
 } from "../constants/planningStatusFields.js";
 import {
   getOverviewDepositStatusLabel,
@@ -13,17 +15,15 @@ import {
 } from "./projectDeposit.js";
 import { DRAWINGS_STATUS } from "./drawingsStatusRules.js";
 
-const PAGE_TEXT = UI.pageText;
-
 const indicatorFallbacks = {
   red: STREAM.qldRed,
   orange: INDICATOR.orange,
   green: STREAM.streamGreen,
-  text: PAGE_TEXT,
+  text: TEXT.dark,
 };
 
 function indicatorRed() {
-  return { ...getOverviewIndicatorStyle("red", indicatorFallbacks), variant: "red" };
+  return { ...getOverviewIndicatorStyle("red", indicatorFallbacks), variant: "red", color: TEXT.light };
 }
 function indicatorOrange() {
   return { ...getOverviewIndicatorStyle("orange", indicatorFallbacks), variant: "orange" };
@@ -193,7 +193,7 @@ function getBalStatusIndicator(project) {
   return overviewKindToIndicator(getPlanningRequirementOverviewKind(getBalStatus(project)));
 }
 
-/** Energy / Footing / Building Permit: Incomplete → red; Complete → green. */
+/** Energy / Footing: Incomplete → red; Complete → green. */
 function hasStampDate(value) {
   return value != null && String(value).trim() !== "";
 }
@@ -233,24 +233,18 @@ function getFootingCertificationStatusIndicator(project) {
 }
 
 function getBuildingPermitStatus(project) {
-  return getMandatoryStatusLabel(
+  return normalizeBuildingPermitStatus(
+    field(project, "building_permit_status", "buildingPermitStatus"),
     field(project, "planning_building_permit_received_at", "planningBuildingPermitReceivedAt")
   );
 }
 
 function getBuildingPermitStatusIndicator(project) {
-  return overviewKindToIndicator(
-    getMandatoryPlanningOverviewKind(
-      null,
-      field(project, "planning_building_permit_received_at", "planningBuildingPermitReceivedAt")
-    )
-  );
+  return overviewKindToIndicator(getBuildingPermitOverviewKind(project));
 }
 
 function getSewerConnectionStatus(project) {
-  return normalizeSewerConnectionType(
-    field(project, "planning_sewer_connection", "planningSewerConnection")
-  );
+  return getSewerConnectionStatusLabel(project);
 }
 
 function getSewerConnectionStatusIndicator(project) {

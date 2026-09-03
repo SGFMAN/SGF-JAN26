@@ -68,6 +68,37 @@ async function markPlanningJfScrubDone(pool) {
   await setMeta(pool, PLANNING_JF_SCRUB_KEY, "done");
 }
 
+async function ensureBuildingPermitStatusWording(pool) {
+  if (!pool) return;
+  const result = await pool.query(`
+    UPDATE projects
+    SET building_permit_status = CASE
+      WHEN TRIM(COALESCE(building_permit_status, '')) IN ('BAMS Paid', 'Waiting Vince Assessment')
+        THEN building_permit_status
+      WHEN planning_building_permit_received_at IS NOT NULL
+        AND BTRIM(planning_building_permit_received_at::text) <> ''
+        THEN 'Permit Issued'
+      WHEN TRIM(COALESCE(building_permit_status, '')) IN ('Complete', 'Completed', 'Permit Issued')
+        THEN 'Permit Issued'
+      ELSE 'Not Submitted'
+    END
+    WHERE TRIM(COALESCE(building_permit_status, '')) NOT IN (
+      'Not Submitted',
+      'BAMS Paid',
+      'Waiting Vince Assessment',
+      'Permit Issued'
+    )
+    OR (
+      TRIM(COALESCE(building_permit_status, '')) = 'Not Submitted'
+      AND planning_building_permit_received_at IS NOT NULL
+      AND BTRIM(planning_building_permit_received_at::text) <> ''
+    )
+  `);
+  if (result.rowCount > 0) {
+    console.log(`Updated building_permit_status wording on ${result.rowCount} project(s)`);
+  }
+}
+
 module.exports = {
   SCHEMA_VERSION,
   ensureAppMeta,
@@ -79,4 +110,5 @@ module.exports = {
   addMissingColumns,
   shouldRunPlanningJfScrub,
   markPlanningJfScrubDone,
+  ensureBuildingPermitStatusWording,
 };

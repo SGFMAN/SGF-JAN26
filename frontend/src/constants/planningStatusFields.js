@@ -20,10 +20,23 @@ export const SEPTIC_PERMIT_TYPE_OPTIONS = [
 /** @deprecated Use SEWER_CONNECTION_TYPE_OPTIONS */
 export const SEWER_CONNECTION_SELECT_OPTIONS = SEWER_CONNECTION_TYPE_OPTIONS;
 
-/** Energy / Footing / Building Permit (mandatory) */
+/** Energy / Footing (mandatory Incomplete / Complete). Building Permit uses its own options. */
 export const MANDATORY_PLANNING_SELECT_OPTIONS = ["Incomplete", "Complete"];
 
-export const BUILDING_PERMIT_OPTIONS = ["Not Submitted", "Submitted", "Completed"];
+export const BUILDING_PERMIT_STATUS_NOT_SUBMITTED = "Not Submitted";
+export const BUILDING_PERMIT_STATUS_BAMS_PAID = "BAMS Paid";
+export const BUILDING_PERMIT_STATUS_WAITING_VINCE = "Waiting Vince Assessment";
+export const BUILDING_PERMIT_STATUS_PERMIT_ISSUED = "Permit Issued";
+
+export const BUILDING_PERMIT_STATUS_OPTIONS = [
+  BUILDING_PERMIT_STATUS_NOT_SUBMITTED,
+  BUILDING_PERMIT_STATUS_BAMS_PAID,
+  BUILDING_PERMIT_STATUS_WAITING_VINCE,
+  BUILDING_PERMIT_STATUS_PERMIT_ISSUED,
+];
+
+/** @deprecated Use BUILDING_PERMIT_STATUS_OPTIONS */
+export const BUILDING_PERMIT_OPTIONS = BUILDING_PERMIT_STATUS_OPTIONS;
 export const SPECS_ADDED_OPTIONS = ["Not Completed", "Completed"];
 
 export function normalizePlanningStatus(value) {
@@ -64,6 +77,22 @@ export function isSewerPicChecked(project) {
 
 export function isSepticPermitChecked(project) {
   return isYesFlag(project?.planning_sewer_septic_permit);
+}
+
+export const SEWER_STATUS_FILTER_OPTIONS = ["Complete", "Needs PIC", "Needs Septic Permit"];
+
+/** Council Sewer → Needs PIC / Complete; Septic → Needs Septic Permit / Complete. */
+export function getSewerConnectionStatusLabel(project) {
+  const type = normalizeSewerConnectionType(
+    project?.planning_sewer_connection ?? project?.planningSewerConnection
+  );
+  if (type === "Council Sewer") {
+    return isSewerPicChecked(project) ? "Complete" : "Needs PIC";
+  }
+  if (type === "Septic") {
+    return isSepticPermitChecked(project) ? "Complete" : "Needs Septic Permit";
+  }
+  return "Not Selected";
 }
 
 /** Overview RAG: Not Selected → red; PIC or Septic Permit checked → green; else orange. */
@@ -122,12 +151,70 @@ export function normalizeMandatoryPlanningStatus(value, receivedAtFallback) {
   return "Incomplete";
 }
 
-export function normalizeBuildingPermit(value) {
+export function normalizeBuildingPermitStatus(value, receivedAtFallback) {
   const t = value != null ? String(value).trim() : "";
-  if (BUILDING_PERMIT_OPTIONS.includes(t)) return t;
-  if (t === "Sent") return "Submitted";
-  if (t === "Complete") return "Completed";
-  return "Not Submitted";
+  if (BUILDING_PERMIT_STATUS_OPTIONS.includes(t)) return t;
+  if (t === "Complete" || t === "Completed") return BUILDING_PERMIT_STATUS_PERMIT_ISSUED;
+  if (t === "Incomplete" || t === "Sent" || t === "Submitted") return BUILDING_PERMIT_STATUS_NOT_SUBMITTED;
+  if (receivedAtFallback != null && String(receivedAtFallback).trim() !== "") {
+    return BUILDING_PERMIT_STATUS_PERMIT_ISSUED;
+  }
+  return BUILDING_PERMIT_STATUS_NOT_SUBMITTED;
+}
+
+/** @deprecated Use normalizeBuildingPermitStatus */
+export function normalizeBuildingPermit(value, receivedAtFallback) {
+  return normalizeBuildingPermitStatus(value, receivedAtFallback);
+}
+
+export function isBuildingPermitIssued(projectOrStatus) {
+  if (projectOrStatus && typeof projectOrStatus === "object") {
+    return (
+      normalizeBuildingPermitStatus(
+        projectOrStatus.building_permit_status ?? projectOrStatus.buildingPermitStatus,
+        projectOrStatus.planning_building_permit_received_at ??
+          projectOrStatus.planningBuildingPermitReceivedAt
+      ) === BUILDING_PERMIT_STATUS_PERMIT_ISSUED
+    );
+  }
+  return normalizeBuildingPermitStatus(projectOrStatus) === BUILDING_PERMIT_STATUS_PERMIT_ISSUED;
+}
+
+/** Overview RAG: Not Submitted → red; Permit Issued → green; else orange. */
+export function getBuildingPermitOverviewKind(project) {
+  const status = normalizeBuildingPermitStatus(
+    project?.building_permit_status ?? project?.buildingPermitStatus,
+    project?.planning_building_permit_received_at ?? project?.planningBuildingPermitReceivedAt
+  );
+  if (status === BUILDING_PERMIT_STATUS_PERMIT_ISSUED) return "green";
+  if (status === BUILDING_PERMIT_STATUS_NOT_SUBMITTED) return "red";
+  return "orange";
+}
+
+export function buildingPermitFieldsForStatus(nextRaw, project) {
+  const next = normalizeBuildingPermitStatus(nextRaw);
+  const now = new Date().toISOString();
+  if (next === BUILDING_PERMIT_STATUS_PERMIT_ISSUED) {
+    return {
+      building_permit_status: next,
+      planning_building_permit_requested_at:
+        project?.planning_building_permit_requested_at || now,
+      planning_building_permit_received_at:
+        project?.planning_building_permit_received_at || now,
+    };
+  }
+  if (next === BUILDING_PERMIT_STATUS_NOT_SUBMITTED) {
+    return {
+      building_permit_status: next,
+      planning_building_permit_requested_at: null,
+      planning_building_permit_received_at: null,
+    };
+  }
+  return {
+    building_permit_status: next,
+    planning_building_permit_requested_at: project?.planning_building_permit_requested_at || now,
+    planning_building_permit_received_at: null,
+  };
 }
 
 export function normalizeSpecsAdded(value) {

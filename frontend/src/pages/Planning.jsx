@@ -10,6 +10,7 @@ import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../util
 import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 
 import { UI } from "../utils/uiThemeTokens.js";
+import { BUILDING_PERMIT_STATUS_OPTIONS, normalizeBuildingPermitStatus } from "../constants/planningStatusFields.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
@@ -26,7 +27,9 @@ export default function Planning({ project, onUpdate }) {
   const [planningStatus, setPlanningStatus] = useState(project?.planning_status || "Not Selected");
   const [energyReportStatus, setEnergyReportStatus] = useState(project?.energy_report_status || "Not Submitted");
   const [footingCertificationStatus, setFootingCertificationStatus] = useState(project?.footing_certification_status || "Not Submitted");
-  const [buildingPermitStatus, setBuildingPermitStatus] = useState(project?.building_permit_status || "Not Submitted");
+  const [buildingPermitStatus, setBuildingPermitStatus] = useState(
+    normalizeBuildingPermitStatus(project?.building_permit_status, project?.planning_building_permit_received_at)
+  );
   const [septicPermit, setSepticPermit] = useState(
     project?.septic_permit && project.septic_permit !== "Not Selected"
       ? project.septic_permit
@@ -48,7 +51,9 @@ export default function Planning({ project, onUpdate }) {
     setPlanningStatus(project.planning_status || "Not Selected");
     setEnergyReportStatus(project.energy_report_status || "Not Submitted");
     setFootingCertificationStatus(project.footing_certification_status || "Not Submitted");
-    setBuildingPermitStatus(project.building_permit_status || "Not Submitted");
+    setBuildingPermitStatus(
+      normalizeBuildingPermitStatus(project.building_permit_status, project.planning_building_permit_received_at)
+    );
     const incoming = project.septic_permit;
     if (incoming === undefined || incoming === null || incoming === "" || incoming === "Not Selected") {
       setSepticPermit("Not Required");
@@ -124,7 +129,7 @@ export default function Planning({ project, onUpdate }) {
   }
 
   function handleBuildingPermitStatusChange(e) {
-    const newValue = e.target.value;
+    const newValue = normalizeBuildingPermitStatus(e.target.value);
     setBuildingPermitStatus(newValue);
     saveField("building_permit_status", newValue);
   }
@@ -466,7 +471,7 @@ export default function Planning({ project, onUpdate }) {
                   boxSizing: "border-box",
                 }}
               >
-                {STATUS_OPTIONS.map((option) => (
+                {BUILDING_PERMIT_STATUS_OPTIONS.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>

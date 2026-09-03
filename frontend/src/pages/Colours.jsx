@@ -1831,13 +1831,13 @@ export default function Colours({ project, onUpdate }) {
               <div
                 style={{
                   display: "flex",
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: "8px",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  gap: "6px",
                   minWidth: 0,
                 }}
               >
-                <span style={{ fontSize: "0.9rem", color: UI.textMuted, whiteSpace: "nowrap" }}>
+                <span style={{ fontSize: "0.9rem", color: UI.textMuted }}>
                   Status
                 </span>
                 <select
@@ -1866,6 +1866,7 @@ export default function Colours({ project, onUpdate }) {
                   flexDirection: "row",
                   flexWrap: "wrap",
                   alignItems: "center",
+                  alignSelf: "end",
                   gap: "10px",
                   minWidth: 0,
                 }}
@@ -2016,7 +2017,7 @@ export default function Colours({ project, onUpdate }) {
               flexDirection: "row",
               gap: coloursMainGap,
               flexShrink: 0,
-              alignItems: "center",
+              alignItems: "flex-end",
             }}
           >
             {showColoursLeftRail ? (
@@ -2025,13 +2026,13 @@ export default function Colours({ project, onUpdate }) {
                   width: coloursLeftRailWidth,
                   flexShrink: 0,
                   display: "flex",
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: "8px",
+                  flexDirection: "column",
+                  alignItems: "stretch",
+                  gap: "6px",
                   boxSizing: "border-box",
                 }}
               >
-                <span style={{ fontSize: "0.9rem", color: UI.textMuted, whiteSpace: "nowrap" }}>
+                <span style={{ fontSize: "0.9rem", color: UI.textMuted }}>
                   Status
                 </span>
                 <select
@@ -2060,7 +2061,7 @@ export default function Colours({ project, onUpdate }) {
                 display: "flex",
                 flexDirection: "row",
                 flexWrap: "wrap",
-                alignItems: "center",
+                alignItems: "flex-end",
                 gap: "10px",
               }}
             >
@@ -2068,13 +2069,13 @@ export default function Colours({ project, onUpdate }) {
                 <label
                   style={{
                     display: "flex",
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: "8px",
+                    flexDirection: "column",
+                    alignItems: "flex-start",
+                    gap: "6px",
                     flexShrink: 0,
                   }}
                 >
-                  <span style={{ fontSize: "0.9rem", color: UI.textMuted, whiteSpace: "nowrap" }}>
+                  <span style={{ fontSize: "0.9rem", color: UI.textMuted }}>
                     Status
                   </span>
                   <select

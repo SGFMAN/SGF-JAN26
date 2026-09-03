@@ -15,6 +15,7 @@ import useAppLogo from "../hooks/useAppLogo.js";
 import ToolsSidebarMenu from "../components/ToolsSidebarMenu";
 
 import { UI, STREAM } from "../utils/uiThemeTokens.js";
+import { BUILDING_PERMIT_STATUS_OPTIONS } from "../constants/planningStatusFields.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
@@ -117,7 +118,7 @@ const FIELD_DEFINITIONS = {
   },
   building_permit_status: {
     label: "Building Permit",
-    values: ["Not Submitted", "Submitted", "Completed"],
+    values: BUILDING_PERMIT_STATUS_OPTIONS,
     defaultValue: "Not Submitted",
   },
   status: {

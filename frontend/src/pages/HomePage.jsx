@@ -26,6 +26,7 @@ import {
   getDepositPaidFilterCategory,
   projectMatchesDepositPaidFilter,
 } from "../utils/projectDeposit";
+import { BUILDING_PERMIT_STATUS_OPTIONS } from "../constants/planningStatusFields";
 import { matchesSearch } from "../utils/projectListFilters";
 const MONUMENT = UI.textPrimary;
 // A bit lighter version for sections
@@ -94,7 +95,7 @@ const FIELD_DEFINITIONS = {
   },
   building_permit_status: {
     label: "Building Permit",
-    values: ["Not Submitted", "Submitted", "Completed"],
+    values: BUILDING_PERMIT_STATUS_OPTIONS,
     defaultValue: "Not Submitted",
   },
   deposit: {

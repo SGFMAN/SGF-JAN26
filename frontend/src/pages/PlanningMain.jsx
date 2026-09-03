@@ -3,10 +3,13 @@ import { UI } from "../utils/uiThemeTokens.js";
 import {
   PLANNING_REQUIREMENT_SELECT_OPTIONS,
   MANDATORY_PLANNING_SELECT_OPTIONS,
+  BUILDING_PERMIT_STATUS_OPTIONS,
   SEWER_CONNECTION_TYPE_OPTIONS,
   SEPTIC_PERMIT_TYPE_OPTIONS,
   normalizePlanningStatus,
   normalizeMandatoryPlanningStatus,
+  normalizeBuildingPermitStatus,
+  buildingPermitFieldsForStatus,
   normalizeSewerConnectionType,
   normalizeSepticPermitType,
   isSewerPicChecked,
@@ -33,7 +36,11 @@ function fitWidthCh(labels, extraCh = 3.5) {
 }
 
 const SHARED_SELECT_WIDTH = fitWidthCh(
-  [...PLANNING_REQUIREMENT_SELECT_OPTIONS, ...MANDATORY_PLANNING_SELECT_OPTIONS],
+  [
+    ...PLANNING_REQUIREMENT_SELECT_OPTIONS,
+    ...MANDATORY_PLANNING_SELECT_OPTIONS,
+    ...BUILDING_PERMIT_STATUS_OPTIONS,
+  ],
   3.75
 );
 const SEWER_SELECT_WIDTH = fitWidthCh(
@@ -121,7 +128,10 @@ export default function PlanningMain({ project, onUpdate }) {
     normalizeMandatoryPlanningStatus(null, project?.planning_footing_certification_received_at)
   );
   const [buildingPermitStatus, setBuildingPermitStatus] = useState(
-    normalizeMandatoryPlanningStatus(null, project?.planning_building_permit_received_at)
+    normalizeBuildingPermitStatus(
+      project?.building_permit_status,
+      project?.planning_building_permit_received_at
+    )
   );
   const [soilStatus, setSoilStatus] = useState(normalizeSurveySoilStatus(project?.soil_status));
   const [surveyStatus, setSurveyStatus] = useState(normalizeSurveySoilStatus(project?.survey_status));
@@ -191,6 +201,12 @@ export default function PlanningMain({ project, onUpdate }) {
     }
   }
 
+  async function handleBuildingPermitChange(e) {
+    const next = normalizeBuildingPermitStatus(e.target.value);
+    setBuildingPermitStatus(next);
+    await saveFields(buildingPermitFieldsForStatus(next, project));
+  }
+
   useEffect(() => {
     setTownPlanningStatus(normalizePlanningStatus(project?.planning_town_planning));
     setBalStatus(normalizePlanningStatus(project?.planning_bal));
@@ -205,7 +221,10 @@ export default function PlanningMain({ project, onUpdate }) {
       normalizeMandatoryPlanningStatus(null, project?.planning_footing_certification_received_at)
     );
     setBuildingPermitStatus(
-      normalizeMandatoryPlanningStatus(null, project?.planning_building_permit_received_at)
+      normalizeBuildingPermitStatus(
+        project?.building_permit_status,
+        project?.planning_building_permit_received_at
+      )
     );
     setSoilStatus(normalizeSurveySoilStatus(project?.soil_status));
     setSurveyStatus(normalizeSurveySoilStatus(project?.survey_status));
@@ -219,6 +238,7 @@ export default function PlanningMain({ project, onUpdate }) {
     project?.planning_sewer_septic_permit,
     project?.planning_energy_report_received_at,
     project?.planning_footing_certification_received_at,
+    project?.building_permit_status,
     project?.planning_building_permit_received_at,
     project?.soil_status,
     project?.survey_status,
@@ -251,6 +271,23 @@ export default function PlanningMain({ project, onUpdate }) {
         </label>
         <select id={id} value={value} onChange={onChange} disabled={disabled} style={selectStyle}>
           {SURVEY_SOIL_STATUS_OPTIONS.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
+  function renderBuildingPermitSelect(id, value, onChange) {
+    return (
+      <div>
+        <label htmlFor={id} style={labelStyle}>
+          Status
+        </label>
+        <select id={id} value={value} onChange={onChange} disabled={disabled} style={selectStyle}>
+          {BUILDING_PERMIT_STATUS_OPTIONS.map((opt) => (
             <option key={opt} value={opt}>
               {opt}
             </option>
@@ -459,14 +496,7 @@ export default function PlanningMain({ project, onUpdate }) {
             <h3 id="building-permit-title" style={{ margin: 0, color: MONUMENT, fontSize: "1.1rem" }}>
               Building Permit
             </h3>
-            {renderMandatorySelect("building-permit-select", buildingPermitStatus, (e) =>
-              void handleMandatoryChange(
-                "planning_building_permit_requested_at",
-                "planning_building_permit_received_at",
-                e.target.value,
-                setBuildingPermitStatus
-              )
-            )}
+            {renderBuildingPermitSelect("building-permit-select", buildingPermitStatus, handleBuildingPermitChange)}
           </section>
         </div>
 

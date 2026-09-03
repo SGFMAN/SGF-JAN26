@@ -1368,9 +1368,14 @@ export default function DrawingManager() {
                 Status Manager
               </Link>
               {isAdmin ? (
-                <Link to="/managers/planning-manager" style={managerNavLinkStyle}>
-                  Planning Manager
-                </Link>
+                <>
+                  <Link to="/managers/next-outs" style={managerNavLinkStyle}>
+                    Next Outs
+                  </Link>
+                  <Link to="/managers/planning-manager" style={managerNavLinkStyle}>
+                    Planning Manager
+                  </Link>
+                </>
               ) : null}
             </>
           ) : null}

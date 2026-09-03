@@ -134,6 +134,7 @@ const {
   addMissingColumns,
   shouldRunPlanningJfScrub,
   markPlanningJfScrubDone,
+  ensureBuildingPermitStatusWording,
 } = require("./schemaStartup");
 
 /**
@@ -1537,6 +1538,7 @@ async function ensureSchema() {
     await ensurePolytecColourTables(pool);
     await ensureMaterialsTable(pool);
     await ensureQuotesTable(pool);
+    await ensureBuildingPermitStatusWording(pool);
     return;
   }
   console.log(`Applying schema migrations (target ${SCHEMA_VERSION})…`);
@@ -2307,6 +2309,7 @@ async function ensureSchema() {
   await ensurePolytecColourTables(pool);
   await ensureMaterialsTable(pool);
   await ensureQuotesTable(pool);
+  await ensureBuildingPermitStatusWording(pool);
   await markSchemaUpToDate(pool);
   console.log(`Schema ${SCHEMA_VERSION} applied`);
 }

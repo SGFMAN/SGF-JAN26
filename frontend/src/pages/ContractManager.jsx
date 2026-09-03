@@ -10,7 +10,7 @@ import {
 import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { projectPath } from "../utils/projectUrl";
-import { FIELD_DEFINITIONS, filterSelectWidth, STREAM_SORT_ORDER } from "../utils/projectListFilters";
+import { FIELD_DEFINITIONS, STREAM_SORT_ORDER } from "../utils/projectListFilters";
 
 import StateFilterButtons from "../components/StateFilterButtons";
 import { UI, STREAM, TEXT, outlineBorder } from "../utils/uiThemeTokens.js";
@@ -32,29 +32,17 @@ const DRAWINGS_FILTER_DEFAULT = FIELD_DEFINITIONS.drawings_status.defaultValue;
 const SUPPORTING_DOCS_FILTER_DEFAULT = FIELD_DEFINITIONS.supporting_documents_status.defaultValue;
 const WATER_AUTHORITY_FILTER_DEFAULT = "Not Required";
 const GRID_COLUMNS = "2fr 1fr 1fr 1fr 1fr 1fr";
-
-const FILTER_SELECT_WIDTH = filterSelectWidth(
-  "All",
-  CONTRACT_FILTER_OPTIONS,
-  DRAWINGS_FILTER_OPTIONS,
-  SUPPORTING_DOCS_FILTER_OPTIONS,
-  WATER_AUTHORITY_OPTIONS,
-);
-
-const headingFilterLabelStyle = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "6px",
-  margin: 0,
-  color: MONUMENT,
-  fontSize: "0.9rem",
-  fontWeight: 500,
-  whiteSpace: "nowrap",
+const GRID_LAYOUT = {
+  display: "grid",
+  gridTemplateColumns: GRID_COLUMNS,
+  gap: "10px",
+  padding: "4px 10px",
+  boxSizing: "border-box",
 };
 
 const headingFilterSelectStyle = {
   height: "36px",
-  padding: "0 12px",
+  padding: "0 8px",
   fontSize: "0.9rem",
   fontWeight: 500,
   color: MONUMENT,
@@ -63,9 +51,9 @@ const headingFilterSelectStyle = {
   borderRadius: "8px",
   cursor: "pointer",
   outline: "none",
-  width: FILTER_SELECT_WIDTH,
-  minWidth: FILTER_SELECT_WIDTH,
-  maxWidth: FILTER_SELECT_WIDTH,
+  width: "100%",
+  minWidth: 0,
+  maxWidth: "100%",
   boxSizing: "border-box",
 };
 
@@ -482,28 +470,52 @@ export default function ContractManager() {
             Status Manager
           </Link>
           {isAdmin && (
-            <Link
-              to="/managers/planning-manager"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Planning Manager
-            </Link>
+            <>
+              <Link
+                to="/managers/next-outs"
+                style={{
+                  background: "transparent",
+                  color: UI.textSecondary,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "8px 8px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  textDecoration: "none",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  marginBottom: "0px",
+                  lineHeight: "1.4",
+                  display: "block",
+                }}
+              >
+                Next Outs
+              </Link>
+              <Link
+                to="/managers/planning-manager"
+                style={{
+                  background: "transparent",
+                  color: UI.textSecondary,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "8px 8px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  textDecoration: "none",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  marginBottom: "0px",
+                  lineHeight: "1.4",
+                  display: "block",
+                }}
+              >
+                Planning Manager
+              </Link>
+            </>
           )}
           {hasDrawing && (
             <Link
@@ -573,80 +585,45 @@ export default function ContractManager() {
             position: "relative",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: "16px", marginBottom: "16px", flexShrink: 0 }}>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: `repeat(4, ${FILTER_SELECT_WIDTH})`,
-                columnGap: "16px",
-              }}
-            >
-              <label style={headingFilterLabelStyle}>
-                Contract
-                <select
-                  value={contractFilter}
-                  onChange={(e) => setContractFilter(e.target.value)}
-                  aria-label="Filter by Contract"
-                  style={headingFilterSelectStyle}
-                >
-                  <option value="">All</option>
-                  {CONTRACT_FILTER_OPTIONS.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label style={headingFilterLabelStyle}>
-                Drawings
-                <select
-                  value={drawingsFilter}
-                  onChange={(e) => setDrawingsFilter(e.target.value)}
-                  aria-label="Filter by Drawings"
-                  style={headingFilterSelectStyle}
-                >
-                  <option value="">All</option>
-                  {DRAWINGS_FILTER_OPTIONS.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label style={headingFilterLabelStyle}>
-                Supporting Docs
-                <select
-                  value={supportingDocsFilter}
-                  onChange={(e) => setSupportingDocsFilter(e.target.value)}
-                  aria-label="Filter by Supporting Docs"
-                  style={headingFilterSelectStyle}
-                >
-                  <option value="">All</option>
-                  {SUPPORTING_DOCS_FILTER_OPTIONS.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label style={headingFilterLabelStyle}>
-                Water Authority
-                <select
-                  value={waterAuthorityFilter}
-                  onChange={(e) => setWaterAuthorityFilter(e.target.value)}
-                  aria-label="Filter by Water Authority"
-                  style={headingFilterSelectStyle}
-                >
-                  <option value="">All</option>
-                  {WATER_AUTHORITY_OPTIONS.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+          <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+          <div
+            style={{
+              position: "sticky",
+              top: 0,
+              zIndex: 10,
+              background: SECTION_GREY,
+              paddingBottom: "8px",
+            }}
+          >
+          <div
+            style={{
+              ...GRID_LAYOUT,
+              background: MONUMENT,
+              color: PAGE_TEXT,
+              borderRadius: "8px",
+              fontWeight: 600,
+              fontSize: "0.9rem",
+              marginBottom: "8px",
+              alignItems: "center",
+            }}
+          >
+            <div>Project</div>
+            <div>Drawings Status</div>
+            <div>Contract</div>
+            <div>Supporting Docs</div>
+            <div>Water Authority</div>
+            <div>Water Declaration</div>
+          </div>
+
+          <div
+            style={{
+              ...GRID_LAYOUT,
+              flexShrink: 0,
+              marginBottom: "8px",
+              alignItems: "center",
+            }}
+          >
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", minWidth: 0 }}>
               <button
                 type="button"
                 onClick={() => {
@@ -704,9 +681,61 @@ export default function ContractManager() {
                 Sort by Stream
               </button>
             </div>
+            <select
+              value={drawingsFilter}
+              onChange={(e) => setDrawingsFilter(e.target.value)}
+              aria-label="Filter by Drawings Status"
+              style={headingFilterSelectStyle}
+            >
+              <option value="">All</option>
+              {DRAWINGS_FILTER_OPTIONS.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+            <select
+              value={contractFilter}
+              onChange={(e) => setContractFilter(e.target.value)}
+              aria-label="Filter by Contract"
+              style={headingFilterSelectStyle}
+            >
+              <option value="">All</option>
+              {CONTRACT_FILTER_OPTIONS.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+            <select
+              value={supportingDocsFilter}
+              onChange={(e) => setSupportingDocsFilter(e.target.value)}
+              aria-label="Filter by Supporting Docs"
+              style={headingFilterSelectStyle}
+            >
+              <option value="">All</option>
+              {SUPPORTING_DOCS_FILTER_OPTIONS.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+            <select
+              value={waterAuthorityFilter}
+              onChange={(e) => setWaterAuthorityFilter(e.target.value)}
+              aria-label="Filter by Water Authority"
+              style={headingFilterSelectStyle}
+            >
+              <option value="">All</option>
+              {WATER_AUTHORITY_OPTIONS.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+            <div />
           </div>
-
-          <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+          </div>
           {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && (
             <p style={{ color: INDICATOR.red }}>
@@ -752,34 +781,7 @@ export default function ContractManager() {
                 }
                 
                 return (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                    {/* Header Row */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: GRID_COLUMNS,
-                  gap: "16px",
-                  padding: "12px 16px",
-                  background: MONUMENT,
-                  color: PAGE_TEXT,
-                  borderRadius: "8px",
-                  fontWeight: 600,
-                  fontSize: "0.9rem",
-                  position: "sticky",
-                  top: "0",
-                  zIndex: 10,
-                  marginBottom: "8px",
-                }}
-              >
-                <div>Project</div>
-                <div>Drawings Status</div>
-                <div>Contract</div>
-                <div>Supporting Docs</div>
-                <div>Water Authority</div>
-                <div>Water Declaration</div>
-              </div>
-
-                    {/* Project Rows */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                     {filteredProjects.map((project) => {
                 const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "Unknown Project";
                 const drawingsStatus = getEffectiveValue(project, "drawings_status", "Not Assigned");
@@ -797,10 +799,7 @@ export default function ContractManager() {
                   <div
                     key={project.id}
                     style={{
-                      display: "grid",
-                      gridTemplateColumns: GRID_COLUMNS,
-                      gap: "16px",
-                      padding: "12px 16px",
+                      ...GRID_LAYOUT,
                       background: WHITE,
                       borderRadius: "8px",
                       color: MONUMENT,
@@ -815,23 +814,22 @@ export default function ContractManager() {
                         color: MONUMENT,
                         fontWeight: 500,
                         display: "flex",
-                        flexDirection: "column",
-                        gap: "2px",
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: "8px",
                         minWidth: 0,
                       }}
                     >
-                      <span>{projectName}</span>
                       {streamName ? (
                         <span
                           style={{
-                            alignSelf: "flex-start",
+                            flexShrink: 0,
                             display: "inline-block",
-                            marginTop: "4px",
-                            padding: "2px 8px",
-                            borderRadius: "6px",
-                            fontSize: "0.75rem",
+                            padding: "1px 6px",
+                            borderRadius: "4px",
+                            fontSize: "0.72rem",
                             fontWeight: 600,
-                            lineHeight: 1.3,
+                            lineHeight: 1.2,
                             color: MONUMENT,
                             background: streamFill,
                             boxSizing: "border-box",
@@ -840,11 +838,14 @@ export default function ContractManager() {
                           {streamName}
                         </span>
                       ) : null}
+                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {projectName}
+                      </span>
                     </Link>
                     <div
                       style={{
                         width: "100%",
-                        padding: "8px 10px",
+                        padding: "4px 8px",
                         borderRadius: "6px",
                         fontSize: "0.9rem",
                         color: TEXT.dark,
@@ -862,7 +863,7 @@ export default function ContractManager() {
                       onClick={(e) => e.stopPropagation()}
                       style={{
                         width: "100%",
-                        padding: "8px 10px",
+                        padding: "4px 8px",
                         borderRadius: "6px",
                         border: "none",
                         fontSize: "0.9rem",
@@ -886,7 +887,7 @@ export default function ContractManager() {
                       onClick={(e) => e.stopPropagation()}
                       style={{
                         width: "100%",
-                        padding: "8px 10px",
+                        padding: "4px 8px",
                         borderRadius: "6px",
                         border: "none",
                         fontSize: "0.9rem",
@@ -910,7 +911,7 @@ export default function ContractManager() {
                       onClick={(e) => e.stopPropagation()}
                       style={{
                         width: "100%",
-                        padding: "8px 10px",
+                        padding: "4px 8px",
                         borderRadius: "6px",
                         border: "none",
                         fontSize: "0.9rem",
@@ -932,7 +933,7 @@ export default function ContractManager() {
                       <div
                         style={{
                           width: "100%",
-                          padding: "8px 10px",
+                          padding: "4px 8px",
                           borderRadius: "6px",
                           fontSize: "0.9rem",
                           color: TEXT.dark,
@@ -951,7 +952,7 @@ export default function ContractManager() {
                         onClick={(e) => e.stopPropagation()}
                         style={{
                           width: "100%",
-                          padding: "8px 10px",
+                          padding: "4px 8px",
                           borderRadius: "6px",
                           border: "none",
                           fontSize: "0.9rem",

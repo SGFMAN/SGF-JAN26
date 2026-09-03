@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { buildDesignPhaseStatusTiles } from "../utils/designPhaseStatusTiles.js";
-import startBuildingImage from "../images/start building.png";
+import startProjectImage from "../images/start.png";
+import finishProjectImage from "../images/finish.png";
 import {
   PLANNER_BOARD_HEIGHT,
   PLANNER_BOARD_WIDTH,
@@ -17,13 +18,8 @@ import {
   plannerLabelForKey,
   plannerNodeSize,
 } from "../utils/plannerLayout.js";
-import { STREAM, INDICATOR, UI } from "../utils/uiThemeTokens.js";
+import { STREAM, INDICATOR, UI, TEXT } from "../utils/uiThemeTokens.js";
 import { getOverviewIndicatorStyle } from "../utils/uiButtonStyles.js";
-import OverviewStoryView, {
-  OVERVIEW_GRAPHIC_TABS,
-  OVERVIEW_GRAPHIC_TAB_STORAGE_KEY,
-  loadOverviewGraphicTab,
-} from "./OverviewStoryViews.jsx";
 import "../pages/Overview.css";
 
 /**
@@ -38,6 +34,13 @@ function isTileComplete(tile) {
 
 function isTileInProgress(tile) {
   return tile?.indicatorStyle?.variant === "orange";
+}
+
+/** Hide Town Planning / BAL nodes and arrows when Planning marks them Not Required. */
+function isHiddenOptionalPlanningTile(tile) {
+  if (!tile) return false;
+  if (tile.key !== "town-planning" && tile.key !== "bal") return false;
+  return String(tile.value || "").trim() === "Not Required";
 }
 
 function OverviewStatusRow({ label, requires, value, indicatorStyle, onClick, readOnly }) {
@@ -86,7 +89,7 @@ const HEADING_GREEN_STYLE = {
     red: STREAM.qldRed,
     orange: INDICATOR.orange,
     green: STREAM.streamGreen,
-    text: UI.pageText,
+    text: TEXT.dark,
   }),
   variant: "green",
 };
@@ -112,14 +115,20 @@ function OverviewPlannerBoard({
   readOnly,
   requirementsByKey,
   isSourceDone,
+  hiddenKeys,
 }) {
   const boardRef = useRef(null);
   const [scale, setScale] = useState(1);
   const [hoverTip, setHoverTip] = useState(null);
   const tileByKey = useMemo(() => new Map(tiles.map((tile) => [tile.key, tile])), [tiles]);
+  const hidden = hiddenKeys || new Set();
   const drawnLinks = useMemo(
-    () => buildDrawnPlannerLinks(layout.positions, layout.links),
-    [layout.positions, layout.links]
+    () =>
+      buildDrawnPlannerLinks(
+        layout.positions,
+        (layout.links || []).filter((link) => !hidden.has(link.from) && !hidden.has(link.to))
+      ),
+    [layout.positions, layout.links, hidden]
   );
   const extent = useMemo(
     () => ({ width: PLANNER_BOARD_WIDTH, height: PLANNER_BOARD_HEIGHT }),
@@ -210,11 +219,13 @@ function OverviewPlannerBoard({
             )}
           </svg>
           {PLANNER_FLOW_ITEMS.map((item) => {
+            if (hidden.has(item.key)) return null;
             const point = layout.positions[item.key] || { x: 0, y: 0 };
             const size = plannerNodeSize(item.key);
             const tile = tileByKey.get(item.key);
             const isStartProject = item.key === PLANNER_START_PROJECT_KEY;
             const isStartBuilding = item.key === PLANNER_START_BUILDING_KEY;
+            const isImageNode = isStartProject || isStartBuilding;
             const headingUnlocked = isStartProject || (isStartBuilding && startBuildingUnlocked);
             const headingInactive = isStartBuilding && !startBuildingUnlocked;
             const style = isStartProject || headingUnlocked
@@ -228,13 +239,13 @@ function OverviewPlannerBoard({
               !inactive &&
               !readOnly &&
               typeof onTileClick === "function";
-            const background = isStartBuilding
+            const background = isImageNode
               ? "transparent"
               : inactive
                 ? UI.panelBg
                 : style?.background;
-            const color = inactive ? UI.textPrimary : style?.color;
-            const border = isStartBuilding
+            const color = inactive ? TEXT.dark : style?.color;
+            const border = isImageNode
               ? "none"
               : inactive
                 ? `1px solid ${UI.outline}`
@@ -265,9 +276,9 @@ function OverviewPlannerBoard({
                 className={
                   [
                     "overview-planner-node",
-                    inactive && !isStartBuilding ? "overview-planner-node--inactive" : "",
-                    isStartBuilding ? "overview-planner-node--image" : "",
-                    !isStartBuilding && item.kind === "heading" ? "overview-planner-node--heading" : "",
+                    inactive && !isImageNode ? "overview-planner-node--inactive" : "",
+                    isImageNode ? "overview-planner-node--image" : "",
+                    !isImageNode && item.kind === "heading" ? "overview-planner-node--heading" : "",
                   ]
                     .filter(Boolean)
                     .join(" ")
@@ -301,8 +312,10 @@ function OverviewPlannerBoard({
                   cursor: interactive ? "pointer" : "default",
                 }}
               >
-                {isStartBuilding ? (
-                  <img src={startBuildingImage} alt="Start Building" />
+                {isStartProject ? (
+                  <img src={startProjectImage} alt="Start Project" />
+                ) : isStartBuilding ? (
+                  <img src={finishProjectImage} alt="Start Building" />
                 ) : (
                   <>
                     <span className="overview-planner-node__label">{item.label}</span>
@@ -357,10 +370,13 @@ export default function DesignPhaseStatusPanel({
   showHeading = true,
 }) {
   const tiles = buildDesignPhaseStatusTiles(project);
+  const hiddenKeys = useMemo(
+    () => new Set(tiles.filter(isHiddenOptionalPlanningTile).map((tile) => tile.key)),
+    [tiles]
+  );
   const [plannerLayout, setPlannerLayout] = useState(() =>
     loadPlannerLayout(defaultPlannerPositions())
   );
-  const [graphicTab, setGraphicTab] = useState(loadOverviewGraphicTab);
   const requirementsByKey = useMemo(
     () => getPlannerRequirementKeysByItem(plannerLayout.links),
     [plannerLayout.links]
@@ -401,42 +417,19 @@ export default function DesignPhaseStatusPanel({
       .filter((tile) => !isTileComplete(tile) && !readyKeys.has(tile.key))
       .map((tile) => tile.key)
   );
-  const storyItems = PLANNER_FLOW_ITEMS.map((item) => {
-    const tile = tiles.find((entry) => entry.key === item.key);
-    const isStartProject = item.key === PLANNER_START_PROJECT_KEY;
-    const isStartBuilding = item.key === PLANNER_START_BUILDING_KEY;
-    const waiting =
-      (isStartBuilding && !startBuildingUnlocked) ||
-      (item.kind === "stage" && inactiveKeys.has(item.key));
-    const complete =
-      isStartProject ||
-      (isStartBuilding && startBuildingUnlocked) ||
-      isTileComplete(tile);
-    return {
-      key: item.key,
-      label: item.label,
-      complete,
-      inProgress: !complete && !waiting,
-      waiting,
-      tile,
-    };
-  });
-
-  function selectGraphicTab(id) {
-    setGraphicTab(id);
-    try {
-      localStorage.setItem(OVERVIEW_GRAPHIC_TAB_STORAGE_KEY, id);
-    } catch {
-      /* ignore */
-    }
-  }
+  const outstandingTiles = tiles.filter(
+    (tile) =>
+      !hiddenKeys.has(tile.key) &&
+      !isTileComplete(tile) &&
+      !inactiveKeys.has(tile.key)
+  );
 
   const listView = (
     <div
       className="overview-status-list"
-      style={{ "--overview-row-count": String(tiles.length) }}
+      style={{ "--overview-row-count": String(tiles.filter((tile) => !hiddenKeys.has(tile.key)).length) }}
     >
-      {tiles.map((tile) => {
+      {tiles.filter((tile) => !hiddenKeys.has(tile.key)).map((tile) => {
         const outstanding = (requirementsByKey.get(tile.key) || []).filter((key) => !isSourceDone(key));
         const requires = outstanding.map(plannerLabelForKey).join(", ");
         return (
@@ -495,43 +488,46 @@ export default function DesignPhaseStatusPanel({
       <div className="overview-progress-block">
         {showHeading ? <h2 className="overview-progress-heading">{heading}</h2> : null}
         <div className="overview-progress-section">
-          <div className="overview-view-tabs" role="tablist" aria-label="Overview views">
-            {OVERVIEW_GRAPHIC_TABS.map((tab) => {
-              const selected = graphicTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  className={`overview-view-tab${selected ? " overview-view-tab--selected" : ""}`}
-                  onClick={() => selectGraphicTab(tab.id)}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
           <div className="overview-view-body">
-            {graphicTab === "flowchart" ? (
-              <OverviewPlannerBoard
-                tiles={tiles}
-                layout={plannerLayout}
-                inactiveKeys={inactiveKeys}
-                startBuildingUnlocked={startBuildingUnlocked}
-                onTileClick={onTileClick}
-                readOnly={readOnly}
-                requirementsByKey={requirementsByKey}
-                isSourceDone={isSourceDone}
-              />
-            ) : (
-              <OverviewStoryView
-                view={graphicTab}
-                items={storyItems}
-                onTileClick={onTileClick}
-                readOnly={readOnly}
-              />
-            )}
+            <OverviewPlannerBoard
+              tiles={tiles}
+              layout={plannerLayout}
+              inactiveKeys={inactiveKeys}
+              startBuildingUnlocked={startBuildingUnlocked}
+              onTileClick={onTileClick}
+              readOnly={readOnly}
+              requirementsByKey={requirementsByKey}
+              isSourceDone={isSourceDone}
+              hiddenKeys={hiddenKeys}
+            />
+            <aside className="overview-outstanding">
+              <h3 className="overview-outstanding__heading">To Do List</h3>
+              {outstandingTiles.length ? (
+                outstandingTiles.map((tile) => {
+                  const interactive = !readOnly && typeof onTileClick === "function";
+                  return (
+                    <button
+                      key={tile.key}
+                      type="button"
+                      className="overview-outstanding__item"
+                      disabled={!interactive}
+                      onClick={interactive ? () => onTileClick(tile) : undefined}
+                      style={{
+                        background: tile.indicatorStyle?.background,
+                        color: tile.indicatorStyle?.color,
+                        border: tile.indicatorStyle?.border ?? "none",
+                        cursor: interactive ? "pointer" : "default",
+                      }}
+                    >
+                      <span className="overview-outstanding__label">{tile.label}</span>
+                      <span className="overview-outstanding__value">{tile.value}</span>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="overview-outstanding__empty">None</div>
+              )}
+            </aside>
           </div>
         </div>
       </div>

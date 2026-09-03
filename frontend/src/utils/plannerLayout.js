@@ -6,8 +6,8 @@ export const PLANNER_SNAP_SIZE = 16;
 /** One bold graph-paper square. Faint lines are ignored for board and tile size. */
 export const PLANNER_MAJOR_SQUARE_CELLS = 5;
 export const PLANNER_MAJOR_SQUARE_PX = PLANNER_MAJOR_SQUARE_CELLS * PLANNER_SNAP_SIZE;
-export const PLANNER_RECT_WIDTH = PLANNER_MAJOR_SQUARE_PX * 2;
-export const PLANNER_RECT_HEIGHT = PLANNER_MAJOR_SQUARE_PX;
+export const PLANNER_RECT_WIDTH = PLANNER_SNAP_SIZE * 10;
+export const PLANNER_RECT_HEIGHT = PLANNER_SNAP_SIZE * 4;
 export const PLANNER_START_BUILDING_WIDTH = PLANNER_SNAP_SIZE * 16;
 export const PLANNER_START_BUILDING_HEIGHT = PLANNER_SNAP_SIZE * 10;
 export const PLANNER_GRID_COLS = 4;
@@ -15,7 +15,7 @@ export const PLANNER_GRID_GAP_X = 0;
 export const PLANNER_GRID_GAP_Y = 0;
 export const PLANNER_GRID_ORIGIN = 0;
 export const PLANNER_BOARD_SQUARES_X = 21;
-export const PLANNER_BOARD_SQUARES_Y = 9;
+export const PLANNER_BOARD_SQUARES_Y = 11;
 export const PLANNER_BOARD_WIDTH = PLANNER_BOARD_SQUARES_X * PLANNER_MAJOR_SQUARE_PX;
 export const PLANNER_BOARD_HEIGHT = PLANNER_BOARD_SQUARES_Y * PLANNER_MAJOR_SQUARE_PX;
 export const PLANNER_START_PROJECT_KEY = "start-project";
@@ -209,7 +209,7 @@ export function defaultPlannerPositions() {
 }
 
 export function plannerNodeSize(key) {
-  if (key === PLANNER_START_BUILDING_KEY) {
+  if (isPlannerHeadingKey(key)) {
     return { width: PLANNER_START_BUILDING_WIDTH, height: PLANNER_START_BUILDING_HEIGHT };
   }
   return { width: PLANNER_RECT_WIDTH, height: PLANNER_RECT_HEIGHT };

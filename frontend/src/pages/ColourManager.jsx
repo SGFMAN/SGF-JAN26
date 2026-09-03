@@ -10,10 +10,12 @@ import { projectPath } from "../utils/projectUrl";
 import { isUserAdmin } from "../utils/auth";
 import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
+import { FIELD_DEFINITIONS, STREAM_SORT_ORDER } from "../utils/projectListFilters";
 
 import StateFilterButtons from "../components/StateFilterButtons";
-import { UI, MENU } from "../utils/uiThemeTokens.js";
-import { managerSentCompleteColor, INDICATOR } from "../utils/managerStatusColors.js";
+import { UI, STREAM, TEXT, outlineBorder } from "../utils/uiThemeTokens.js";
+import { getStreamColorGroup, getStreamGroupColors } from "../utils/streamColors.js";
+import { INDICATOR } from "../utils/managerStatusColors.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const LIGHT_MONUMENT = UI.pageBg;
@@ -21,12 +23,46 @@ const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
+const COLOURS_FILTER_OPTIONS = FIELD_DEFINITIONS.colours_status.values;
+const COLOURS_FILTER_DEFAULT = FIELD_DEFINITIONS.colours_status.defaultValue;
+const DRAWINGS_FILTER_OPTIONS = FIELD_DEFINITIONS.drawings_status.values;
+const DRAWINGS_FILTER_DEFAULT = FIELD_DEFINITIONS.drawings_status.defaultValue;
+// Same 6-column grid as Contract Manager so the colour-status pill matches Drawings Status width.
+const GRID_COLUMNS = "2fr 1fr 1fr 1fr 1fr 1fr";
+const GRID_LAYOUT = {
+  display: "grid",
+  gridTemplateColumns: GRID_COLUMNS,
+  gap: "10px",
+  padding: "4px 10px",
+  boxSizing: "border-box",
+};
+
+const headingFilterSelectStyle = {
+  height: "36px",
+  padding: "0 8px",
+  fontSize: "0.9rem",
+  fontWeight: 500,
+  color: MONUMENT,
+  background: WHITE,
+  border: outlineBorder,
+  borderRadius: "8px",
+  cursor: "pointer",
+  outline: "none",
+  width: "100%",
+  minWidth: 0,
+  maxWidth: "100%",
+  boxSizing: "border-box",
+};
+
 export default function ColourManager() {
   const logo = useAppLogo();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [sortOrder, setSortOrder] = useState("asc"); // "asc" or "desc"
+  const [sortMode, setSortMode] = useState("date"); // "date" or "stream"
+  const [coloursFilter, setColoursFilter] = useState("");
+  const [drawingsFilter, setDrawingsFilter] = useState("");
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [isAdmin, setIsAdmin] = useState(false);
   const { hasDrawing } = useDrawingAccess();
@@ -55,16 +91,34 @@ export default function ColourManager() {
     return [...projectsList].sort((a, b) => {
       const dateA = parseDate(a);
       const dateB = parseDate(b);
-      
-      // Projects without dates go to the end
       if (!dateA && !dateB) return 0;
       if (!dateA) return 1;
       if (!dateB) return -1;
-      
-      // Compare dates
       const comparison = dateA - dateB;
       return order === "asc" ? comparison : -comparison;
     });
+  }
+
+  function sortProjectsByStream(projectsList) {
+    return [...projectsList].sort((a, b) => {
+      const streamA = (a.stream || "").trim();
+      const streamB = (b.stream || "").trim();
+      const idxA = STREAM_SORT_ORDER.indexOf(streamA);
+      const idxB = STREAM_SORT_ORDER.indexOf(streamB);
+      const safeA = idxA === -1 ? Number.MAX_SAFE_INTEGER : idxA;
+      const safeB = idxB === -1 ? Number.MAX_SAFE_INTEGER : idxB;
+      if (safeA !== safeB) return safeA - safeB;
+      if (streamA !== streamB) return streamA.localeCompare(streamB);
+      const suburbA = (a.suburb || "").toLowerCase();
+      const suburbB = (b.suburb || "").toLowerCase();
+      if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
+      return (a.street || "").toLowerCase().localeCompare((b.street || "").toLowerCase());
+    });
+  }
+
+  function sortProjects(projectsList) {
+    if (sortMode === "stream") return sortProjectsByStream(projectsList);
+    return sortProjectsByDate(projectsList, sortOrder);
   }
 
   async function fetchProjects() {
@@ -80,8 +134,7 @@ const data = await response.json();
         if (isExcludedFromProjectLists(project.status) || isCancelledStatus(project.status)) return false;
         return isDesignPipelineStatus(project.status);
       });
-      // Sort by date
-      const sortedProjects = sortProjectsByDate(designPhaseProjects, sortOrder);
+      const sortedProjects = sortProjects(designPhaseProjects);
       setProjects(sortedProjects);
     } catch (err) {
       setError(err.message);
@@ -94,18 +147,25 @@ const data = await response.json();
   // Re-sort when sort order changes
   useEffect(() => {
     if (projects.length > 0) {
-      const sortedProjects = sortProjectsByDate(projects, sortOrder);
-      setProjects(sortedProjects);
+      setProjects(sortProjects(projects));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sortOrder]);
+  }, [sortOrder, sortMode]);
 
   // Status options
   const COLOURS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
 
-  // Get status color
   function getStatusColor(status) {
-    return managerSentCompleteColor(status);
+    if (status === "Complete") return STREAM.streamGreenLight;
+    if (status === "Sent") return INDICATOR.orangeLight;
+    return STREAM.qldRedLight;
+  }
+
+  function getDrawingsStatusColor(status) {
+    const value = status || "Not Assigned";
+    if (value === "Drawings Complete") return STREAM.streamGreenLight;
+    if (value === "Concept Stage" || value === "Working Drawing Stage") return INDICATOR.orangeLight;
+    return STREAM.qldRedLight;
   }
 
   // Get effective value with default
@@ -355,28 +415,52 @@ const data = await response.json();
             Status Manager
           </Link>
           {isAdmin && (
-            <Link
-              to="/managers/planning-manager"
-              style={{
-                background: "transparent",
-                color: UI.textSecondary,
-                border: "none",
-                borderRadius: "10px",
-                padding: "8px 8px",
-                fontSize: "0.95rem",
-                fontWeight: 500,
-                textAlign: "center",
-                textDecoration: "none",
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-                transition: "background 0.18s, color 0.15s",
-                marginBottom: "0px",
-                lineHeight: "1.4",
-                display: "block",
-              }}
-            >
-              Planning Manager
-            </Link>
+            <>
+              <Link
+                to="/managers/next-outs"
+                style={{
+                  background: "transparent",
+                  color: UI.textSecondary,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "8px 8px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  textDecoration: "none",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  marginBottom: "0px",
+                  lineHeight: "1.4",
+                  display: "block",
+                }}
+              >
+                Next Outs
+              </Link>
+              <Link
+                to="/managers/planning-manager"
+                style={{
+                  background: "transparent",
+                  color: UI.textSecondary,
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "8px 8px",
+                  fontSize: "0.95rem",
+                  fontWeight: 500,
+                  textAlign: "center",
+                  textDecoration: "none",
+                  letterSpacing: "0.5px",
+                  cursor: "pointer",
+                  transition: "background 0.18s, color 0.15s",
+                  marginBottom: "0px",
+                  lineHeight: "1.4",
+                  display: "block",
+                }}
+              >
+                Planning Manager
+              </Link>
+            </>
           )}
           {hasDrawing && (
             <Link
@@ -439,37 +523,132 @@ const data = await response.json();
             boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
             padding: "24px 32px",
             boxSizing: "border-box",
-            overflow: "auto",
+            overflow: "hidden",
             color: MONUMENT,
             display: "flex",
             flexDirection: "column",
             position: "relative",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", position: "sticky", top: "-24px", background: SECTION_GREY, zIndex: 9, paddingTop: "24px", marginTop: "-24px", paddingBottom: "8px" }}>
-            <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: 0 }}>
-              Design Phase Projects
-            </h2>
-            <button
-              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-              style={{
-                padding: "8px 16px",
-                fontSize: "0.9rem",
-                fontWeight: 500,
-                color: WHITE,
-                background: MONUMENT,
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
-                transition: "background 0.2s",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#1a1a1a")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = MONUMENT)}
-            >
-              Sort: {sortOrder === "asc" ? "Oldest First" : "Newest First"}
-            </button>
+          <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+          <div
+            style={{
+              position: "sticky",
+              top: 0,
+              zIndex: 10,
+              background: SECTION_GREY,
+              paddingBottom: "8px",
+            }}
+          >
+          <div
+            style={{
+              ...GRID_LAYOUT,
+              background: MONUMENT,
+              color: PAGE_TEXT,
+              borderRadius: "8px",
+              fontWeight: 600,
+              fontSize: "0.9rem",
+              marginBottom: "8px",
+              alignItems: "center",
+            }}
+          >
+            <div>Project</div>
+            <div>Colours Status</div>
+            <div>Drawings Status</div>
           </div>
 
+          <div
+            style={{
+              ...GRID_LAYOUT,
+              alignItems: "center",
+            }}
+          >
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", minWidth: 0 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (sortMode === "date") {
+                    setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+                  } else {
+                    setSortMode("date");
+                  }
+                }}
+                style={{
+                  padding: "8px 16px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  color: sortMode === "date" ? WHITE : MONUMENT,
+                  background: sortMode === "date" ? MONUMENT : WHITE,
+                  border: sortMode === "date" ? "none" : outlineBorder,
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  transition: "background 0.2s",
+                  height: "36px",
+                  boxSizing: "border-box",
+                }}
+                onMouseEnter={(e) => {
+                  if (sortMode === "date") e.currentTarget.style.background = "#1a1a1a";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = sortMode === "date" ? MONUMENT : WHITE;
+                }}
+              >
+                Sort: {sortOrder === "asc" ? "Oldest First" : "Newest First"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSortMode("stream")}
+                style={{
+                  padding: "8px 16px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  color: sortMode === "stream" ? WHITE : MONUMENT,
+                  background: sortMode === "stream" ? MONUMENT : WHITE,
+                  border: sortMode === "stream" ? "none" : outlineBorder,
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  transition: "background 0.2s",
+                  height: "36px",
+                  boxSizing: "border-box",
+                }}
+                onMouseEnter={(e) => {
+                  if (sortMode === "stream") e.currentTarget.style.background = "#1a1a1a";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = sortMode === "stream" ? MONUMENT : WHITE;
+                }}
+              >
+                Sort by Stream
+              </button>
+            </div>
+            <select
+              value={coloursFilter}
+              onChange={(e) => setColoursFilter(e.target.value)}
+              aria-label="Filter by Colour Status"
+              style={headingFilterSelectStyle}
+            >
+              <option value="">All</option>
+              {COLOURS_FILTER_OPTIONS.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+            <select
+              value={drawingsFilter}
+              onChange={(e) => setDrawingsFilter(e.target.value)}
+              aria-label="Filter by Drawings Status"
+              style={headingFilterSelectStyle}
+            >
+              <option value="">All</option>
+              {DRAWINGS_FILTER_OPTIONS.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </div>
+          </div>
           {loading && <p style={{ color: UI.textMuted }}>Loading projects...</p>}
           {error && (
             <p style={{ color: INDICATOR.red }}>
@@ -478,130 +657,110 @@ const data = await response.json();
           )}
           {!loading && !error && (
             <>
-              {/* Filter projects by state */}
               {(() => {
-                const filteredProjects = stateFilter !== "All" 
+                let filteredProjects = stateFilter !== "All"
                   ? projects.filter(project => {
                       const projectState = (project.state || "").toUpperCase();
                       return projectState === stateFilter.toUpperCase();
                     })
                   : projects;
-                
-                if (filteredProjects.length === 0) {
-                  return (
-                    <p style={{ color: UI.textMuted }}>No Design Phase projects found.</p>
+
+                if (coloursFilter) {
+                  filteredProjects = filteredProjects.filter((project) =>
+                    getEffectiveValue(project, "colours_status", COLOURS_FILTER_DEFAULT) === coloursFilter
                   );
                 }
-                
-                return (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px" }}>
-                    {/* Header Row - spans columns 1, 2, 3, and 4 */}
-              <div
-                style={{
-                  gridColumn: "1 / 5",
-                  display: "grid",
-                  gridTemplateColumns: "3fr 1fr 0.5fr 1fr",
-                  gap: "16px",
-                  padding: "12px 16px",
-                  background: MONUMENT,
-                  color: PAGE_TEXT,
-                  borderRadius: "8px",
-                  fontWeight: 600,
-                  fontSize: "0.9rem",
-                  position: "sticky",
-                  top: "0",
-                  zIndex: 10,
-                  marginBottom: "8px",
-                }}
-              >
-                <div>Project</div>
-                <div>Colours Status</div>
-                <div>Project Days</div>
-                <div>Drawings Status</div>
-              </div>
+                if (drawingsFilter) {
+                  filteredProjects = filteredProjects.filter((project) =>
+                    getEffectiveValue(project, "drawings_status", DRAWINGS_FILTER_DEFAULT) === drawingsFilter
+                  );
+                }
 
-                    {/* Project Rows - spans columns 1, 2, 3, and 4 */}
+                if (filteredProjects.length === 0) {
+                  return (
+                    <p style={{ color: UI.textMuted }}>No projects found.</p>
+                  );
+                }
+
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                     {filteredProjects.map((project) => {
                 const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "Unknown Project";
                 const coloursStatus = getEffectiveValue(project, "colours_status", "Not Sent");
-                const drawingsStatus = getEffectiveValue(project, "drawings_status", "Not Assigned");
-                
-                // Calculate project days (same as Admin page)
-                let projectDays = "";
-                if (project.year) {
-                  let startDate;
-                  if (/^\d{4}-\d{2}-\d{2}$/.test(project.year)) {
-                    startDate = new Date(project.year);
-                  } else if (/^\d{4}$/.test(project.year)) {
-                    startDate = new Date(`${project.year}-01-01`);
-                  } else {
-                    startDate = null;
-                  }
-                  
-                  if (startDate) {
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    startDate.setHours(0, 0, 0, 0);
-                    const diffTime = today - startDate;
-                    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                    projectDays = diffDays >= 0 ? diffDays.toString() : "";
-                  }
-                }
-                
-                // Determine project days background color
-                const projectDaysBgColor = projectDays ? MENU.purple : WHITE;
+                const drawingsStatus = getEffectiveValue(project, "drawings_status", DRAWINGS_FILTER_DEFAULT);
+                const streamName = String(project.stream || "").trim();
+                const streamFill = streamName
+                  ? getStreamGroupColors(getStreamColorGroup(streamName)).lighter
+                  : null;
+                const canRender =
+                  project.drawings_pdf_location &&
+                  project.colours_pdf_location &&
+                  String(project.drawings_pdf_location).trim() &&
+                  String(project.colours_pdf_location).trim();
 
                 return (
                   <div
                     key={project.id}
                     style={{
-                      gridColumn: "1 / 5",
-                      display: "grid",
-                      gridTemplateColumns: "3fr 1fr 0.5fr 1fr",
-                      gap: "16px",
-                      padding: "12px 16px",
+                      ...GRID_LAYOUT,
                       background: WHITE,
                       borderRadius: "8px",
                       color: MONUMENT,
                       fontSize: "0.9rem",
+                      alignItems: "center",
                     }}
                   >
-                    <div style={{ display: "flex", flexDirection: "column", gap: "6px", minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
                       <Link
                         to={projectPath(project)}
                         style={{
                           textDecoration: "none",
                           color: MONUMENT,
                           fontWeight: 500,
-                          display: "block",
+                          display: "flex",
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: "8px",
+                          minWidth: 0,
+                          flex: 1,
                         }}
                       >
-                        {projectName}
+                        {streamName ? (
+                          <span
+                            style={{
+                              flexShrink: 0,
+                              display: "inline-block",
+                              padding: "1px 6px",
+                              borderRadius: "4px",
+                              fontSize: "0.72rem",
+                              fontWeight: 600,
+                              lineHeight: 1.2,
+                              color: MONUMENT,
+                              background: streamFill,
+                              boxSizing: "border-box",
+                            }}
+                          >
+                            {streamName}
+                          </span>
+                        ) : null}
+                        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {projectName}
+                        </span>
                       </Link>
-                      {project.drawings_pdf_location &&
-                      project.colours_pdf_location &&
-                      String(project.drawings_pdf_location).trim() &&
-                      String(project.colours_pdf_location).trim() ? (
+                      {canRender ? (
                         <Link
                           to={projectPath(project, { view: "colours" })}
                           style={{
-                            fontSize: "0.82rem",
+                            fontSize: "0.75rem",
                             color: LIGHT_MONUMENT,
                             textDecoration: "underline",
                             fontWeight: 500,
-                            alignSelf: "flex-start",
+                            flexShrink: 0,
                           }}
                         >
                           Render
                         </Link>
-                      ) : (
-                        <span
-                          title="Needs drawings PDF and colours PDF paths on the project"
-                          style={{ fontSize: "0.82rem", color: "var(--sgf-text-primary)" }}
-                        >
-                          Render (paths needed)
-                        </span>
-                      )}
+                      ) : null}
                     </div>
                     <select
                       value={coloursStatus}
@@ -609,11 +768,11 @@ const data = await response.json();
                       onClick={(e) => e.stopPropagation()}
                       style={{
                         width: "100%",
-                        padding: "8px 10px",
+                        padding: "4px 8px",
                         borderRadius: "6px",
                         border: "none",
                         fontSize: "0.9rem",
-                        color: WHITE,
+                        color: TEXT.dark,
                         background: getStatusColor(coloursStatus),
                         cursor: "pointer",
                         fontWeight: 500,
@@ -629,30 +788,15 @@ const data = await response.json();
                     </select>
                     <div
                       style={{
-                        padding: "8px 10px",
+                        width: "100%",
+                        padding: "4px 8px",
                         borderRadius: "6px",
-                        background: projectDaysBgColor,
-                        color: projectDays ? PAGE_TEXT : MONUMENT,
                         fontSize: "0.9rem",
+                        color: TEXT.dark,
+                        background: getDrawingsStatusColor(drawingsStatus),
                         fontWeight: 500,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      {projectDays || "-"}
-                    </div>
-                    <div
-                      style={{
-                        padding: "8px 10px",
-                        borderRadius: "6px",
-                        background: WHITE,
-                        color: MONUMENT,
-                        fontSize: "0.9rem",
-                        fontWeight: 500,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
+                        boxSizing: "border-box",
+                        textAlign: "center",
                       }}
                     >
                       {drawingsStatus}
@@ -665,6 +809,7 @@ const data = await response.json();
               })()}
             </>
           )}
+          </div>
         </div>
       </div>
     </div>

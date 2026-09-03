@@ -161,9 +161,14 @@ export default function Managers() {
                 Status Manager
               </Link>
               {isAdmin ? (
-                <Link to="/managers/planning-manager" style={navLinkStyle}>
-                  Planning Manager
-                </Link>
+                <>
+                  <Link to="/managers/next-outs" style={navLinkStyle}>
+                    Next Outs
+                  </Link>
+                  <Link to="/managers/planning-manager" style={navLinkStyle}>
+                    Planning Manager
+                  </Link>
+                </>
               ) : null}
             </>
           ) : null}

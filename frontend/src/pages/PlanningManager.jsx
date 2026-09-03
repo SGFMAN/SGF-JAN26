@@ -2038,6 +2038,9 @@ export default function PlanningManager() {
           <Link to="/managers/status-manager" style={inactiveLinkStyle}>
             Status Manager
           </Link>
+          <Link to="/managers/next-outs" style={inactiveLinkStyle}>
+            Next Outs
+          </Link>
           <Link to="/managers/planning-manager" style={activeLinkStyle}>
             Planning Manager
           </Link>

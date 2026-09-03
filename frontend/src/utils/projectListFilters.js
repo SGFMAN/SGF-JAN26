@@ -1,5 +1,6 @@
 import { PROJECT_STATUS_OPTIONS } from "./projectStatus";
 import { CLASSIFICATION_OPTIONS } from "./classifications";
+import { BUILDING_PERMIT_STATUS_OPTIONS } from "../constants/planningStatusFields";
 import {
   getDepositPaidFilterCategory,
   projectMatchesDepositPaidFilter,
@@ -58,7 +59,7 @@ export const FIELD_DEFINITIONS = {
   },
   building_permit_status: {
     label: "Building Permit",
-    values: ["Not Submitted", "Sent", "Complete"],
+    values: BUILDING_PERMIT_STATUS_OPTIONS,
     defaultValue: "Not Submitted",
   },
   deposit: {

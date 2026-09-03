@@ -25,6 +25,7 @@ import ContractManager from "./pages/ContractManager";
 import ColourManager from "./pages/ColourManager";
 import StatusManager from "./pages/StatusManager";
 import PlanningManager from "./pages/PlanningManager";
+import NextOuts from "./pages/NextOuts";
 import DrawingManager from "./pages/DrawingManager";
 import DrawingAccessRoute from "./components/DrawingAccessRoute";
 import AdminAccessRoute from "./components/AdminAccessRoute";
@@ -132,6 +133,7 @@ export default function App() {
             <Route path="/managers/contract-manager" element={<Auth><ManagersAccessRoute><ContractManager /></ManagersAccessRoute></Auth>} />
             <Route path="/managers/colour-manager" element={<Auth><ManagersAccessRoute><ColourManager /></ManagersAccessRoute></Auth>} />
             <Route path="/managers/status-manager" element={<Auth><ManagersAccessRoute><StatusManager /></ManagersAccessRoute></Auth>} />
+            <Route path="/managers/next-outs" element={<Auth><ManagersAccessRoute><AdminAccessRoute><NextOuts /></AdminAccessRoute></ManagersAccessRoute></Auth>} />
             <Route path="/managers/planning-manager" element={<Auth><ManagersAccessRoute><AdminAccessRoute><PlanningManager /></AdminAccessRoute></ManagersAccessRoute></Auth>} />
             <Route path="/managers/drawing-manager" element={<Auth><DrawingAccessRoute><DrawingManager /></DrawingAccessRoute></Auth>} />
             <Route path="/sales" element={<Auth><SalesAccessRoute><Sales /></SalesAccessRoute></Auth>} />
