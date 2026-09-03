@@ -55,11 +55,13 @@ import {
   applyDrawingUploadKindRules,
   applyPostApprovalRules,
   applyWorkingDrawingsApprovalRules,
+  DRAWINGS_STATUS,
   isPostApprovalMode,
   newDrawingHistoryEntryFields,
   parseDrawingsHistory,
   formatDrawingApprovalDateLabel,
   resolveSendDrawingsToClientTemplateName,
+  todayIsoDate,
 } from "../utils/drawingsStatusRules";
 
 import { getApiHeaders, isUserAdmin } from "../utils/auth";
@@ -102,6 +104,30 @@ const DESTRUCTIVE_BUTTON_FALLBACK = {
   boxSizing: "border-box",
   textAlign: "center",
 };
+
+const DRAWINGS_STATUS_OPTIONS = [
+  DRAWINGS_STATUS.NOT_ASSIGNED,
+  DRAWINGS_STATUS.CONCEPT_STAGE,
+  DRAWINGS_STATUS.WORKING_STAGE,
+  DRAWINGS_STATUS.COMPLETE,
+];
+
+function applyBannerDraftToEntry(entry, draft) {
+  const today = todayIsoDate();
+  return {
+    ...entry,
+    conceptApproved: draft.conceptApproved === true,
+    workingDrawingsApproved: draft.workingDrawingsApproved === true,
+    postApproved: draft.postApproved === true,
+    conceptApprovedDate: draft.conceptApproved
+      ? draft.conceptApprovedDate || today
+      : null,
+    workingDrawingsApprovedDate: draft.workingDrawingsApproved
+      ? draft.workingDrawingsApprovedDate || today
+      : null,
+    postApprovedDate: draft.postApproved ? draft.postApprovedDate || today : null,
+  };
+}
 
 /** Sidebar green menu bottom aligns 154px above the 758px panel (gap + Back... + Back to Main + padding). */
 const PROJECT_PANEL_HEIGHT_PX = 758;
@@ -458,6 +484,9 @@ export default function Drawings({
   const [showDrawingsPathErrorModal, setShowDrawingsPathErrorModal] = useState(false);
   const [drawingsPathErrorMessage, setDrawingsPathErrorMessage] = useState("");
   const [, setUiButtonStyleRevision] = useState(0);
+  const [drawingEntriesEditMode, setDrawingEntriesEditMode] = useState(false);
+  const [editEntryDraft, setEditEntryDraft] = useState(null);
+  const [savingEditEntry, setSavingEditEntry] = useState(false);
 
   const valuesRef = useRef({ drawingsStatus, draftsperson });
   
@@ -1367,6 +1396,151 @@ export default function Drawings({
     } catch (error) {
       console.error("Error clearing drawing data:", error);
       alert(`Error clearing drawing data: ${error.message}`);
+    }
+  }
+
+  function handleToggleEditEntries() {
+    if (!showClearDrawingData) return;
+    if (editEntryDraft) return;
+    setDrawingEntriesEditMode((on) => !on);
+  }
+
+  function openEditEntryModal(originalIndex) {
+    if (!showClearDrawingData || !drawingEntriesEditMode) return;
+    const history = parseDrawingsHistory(project?.drawings_history);
+    const entry = history[originalIndex];
+    if (!entry) return;
+    const currentStatus = drawingsStatus || project?.drawings_status || DRAWINGS_STATUS.NOT_ASSIGNED;
+    setEditEntryDraft({
+      index: originalIndex,
+      name: entry.name || "",
+      revision: entry.revision,
+      conceptApproved: entry.conceptApproved === true,
+      workingDrawingsApproved: entry.workingDrawingsApproved === true,
+      postApproved: entry.postApproved === true,
+      conceptApprovedDate: entry.conceptApprovedDate || null,
+      workingDrawingsApprovedDate: entry.workingDrawingsApprovedDate || null,
+      postApprovedDate: entry.postApprovedDate || null,
+      status: currentStatus,
+    });
+  }
+
+  function handleCancelEditEntry() {
+    if (savingEditEntry) return;
+    setEditEntryDraft(null);
+  }
+
+  function toggleEditEntryBanner(key) {
+    setEditEntryDraft((prev) => {
+      if (!prev) return prev;
+      const present = prev[key] === true;
+      const dateKey =
+        key === "conceptApproved"
+          ? "conceptApprovedDate"
+          : key === "workingDrawingsApproved"
+            ? "workingDrawingsApprovedDate"
+            : "postApprovedDate";
+      return {
+        ...prev,
+        [key]: !present,
+        [dateKey]: present ? null : prev[dateKey] || todayIsoDate(),
+      };
+    });
+  }
+
+  async function handleSaveEditEntry() {
+    if (!showClearDrawingData || !editEntryDraft || !project?.id) return;
+    if (savingEditEntry) return;
+
+    const history = parseDrawingsHistory(project?.drawings_history);
+    const index = editEntryDraft.index;
+    if (!history[index]) {
+      alert("That drawing entry could not be found.");
+      return;
+    }
+
+    const previousStatus = String(drawingsStatus || project?.drawings_status || "").trim();
+    const nextStatus = String(editEntryDraft.status || DRAWINGS_STATUS.NOT_ASSIGNED).trim();
+    const originalEntry = history[index];
+    const updatedHistory = [...history];
+    updatedHistory[index] = applyBannerDraftToEntry(originalEntry, editEntryDraft);
+    const updatedEntry = updatedHistory[index];
+    const isLatest = index === updatedHistory.length - 1;
+    const statusChanged = nextStatus !== previousStatus;
+    const conceptBannerChanged =
+      Boolean(originalEntry.conceptApproved) !== Boolean(updatedEntry.conceptApproved);
+    const workingBannerChanged =
+      Boolean(originalEntry.workingDrawingsApproved) !== Boolean(updatedEntry.workingDrawingsApproved);
+    const projectName =
+      project?.street && project?.suburb
+        ? `${project.street}, ${project.suburb}`.trim()
+        : project?.name || "";
+
+    setSavingEditEntry(true);
+    try {
+      const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
+        method: "PUT",
+        headers: getApiHeaders(),
+        credentials: "include",
+        body: JSON.stringify({
+          name: projectName,
+          status: project?.status || null,
+          drawings_status: nextStatus,
+          drawings_history: JSON.stringify(updatedHistory),
+        }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to save drawing entry");
+      }
+
+      const shouldUpdateApprovalDates =
+        (isLatest && (conceptBannerChanged || workingBannerChanged)) || statusChanged;
+      if (shouldUpdateApprovalDates) {
+        let conceptDate = project?.drawings_concept_approved_date || null;
+        let workingDate = project?.drawings_working_approved_date || null;
+        if (isLatest && conceptBannerChanged) {
+          conceptDate = updatedEntry.conceptApproved
+            ? updatedEntry.conceptApprovedDate || null
+            : null;
+        }
+        if (isLatest && workingBannerChanged) {
+          workingDate = updatedEntry.workingDrawingsApproved
+            ? updatedEntry.workingDrawingsApprovedDate || null
+            : null;
+        }
+        // Changing status updates which approval buttons show (unless already Permit Phase).
+        if (
+          statusChanged &&
+          nextStatus !== DRAWINGS_STATUS.COMPLETE &&
+          !isPermitPhaseStatus(project?.status)
+        ) {
+          workingDate = null;
+        }
+
+        await fetch(`${API_URL}/api/projects/${project.id}/drawing-approval-dates`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            ...getApiHeaders(),
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            drawings_concept_approved_date: conceptDate || null,
+            drawings_working_approved_date: workingDate || null,
+          }),
+        });
+      }
+
+      setDrawingsStatus(nextStatus);
+      valuesRef.current.drawingsStatus = nextStatus;
+      setEditEntryDraft(null);
+      if (onUpdate) onUpdate();
+    } catch (error) {
+      console.error("Error saving drawing entry:", error);
+      alert(`Failed to save drawing entry: ${error.message}`);
+    } finally {
+      setSavingEditEntry(false);
     }
   }
 
@@ -3707,6 +3881,31 @@ export default function Drawings({
             Clear<br />Drawing Data
           </button>
         )}
+        {showClearDrawingData && (
+          <button
+            type="button"
+            onClick={handleToggleEditEntries}
+            style={{
+              background: drawingEntriesEditMode ? MONUMENT : WHITE,
+              color: drawingEntriesEditMode ? PAGE_TEXT : MONUMENT,
+              border: `1px solid ${MONUMENT}`,
+              borderRadius: "6px",
+              padding: "6px 8px",
+              fontSize: "0.8rem",
+              fontWeight: 500,
+              cursor: editEntryDraft ? "default" : "pointer",
+              transition: "background 0.18s, color 0.15s",
+              lineHeight: "1.2",
+              width: "100px",
+              boxSizing: "border-box",
+              textAlign: "center",
+              alignSelf: "stretch",
+              opacity: editEntryDraft ? 0.7 : 1,
+            }}
+          >
+            Edit<br />Entries
+          </button>
+        )}
       </div>
     );
   };
@@ -3753,6 +3952,7 @@ export default function Drawings({
                 return (
                   <div style={{ color: UI.textMuted, fontSize: "0.9rem", fontStyle: "italic" }}>
                     No drawings uploaded yet
+                    {drawingEntriesEditMode ? " — upload a drawing before editing entries." : ""}
                   </div>
                 );
               }
@@ -3784,6 +3984,20 @@ export default function Drawings({
                     <div style={{ textAlign: "right" }}>Sales Notes</div>
                     <div style={{ textAlign: "right" }}>Drafting Notes</div>
                   </div>
+                  {drawingEntriesEditMode && (
+                    <div
+                      style={{
+                        fontSize: "0.82rem",
+                        color: MONUMENT,
+                        background: UI.inputBg,
+                        borderRadius: "6px",
+                        padding: "8px 10px",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      Click a drawing entry to edit it.
+                    </div>
+                  )}
                   {/* Drawing Rows Container - scrollable, grows to fill space but doesn't overlap buttons */}
                   <div style={{ flex: "1", display: "flex", flexDirection: "column", overflowY: "auto", overflowX: "hidden", minHeight: 0 }}>
                   {[...drawingsHistory].reverse().map((drawing, index) => {
@@ -3803,7 +4017,15 @@ export default function Drawings({
                     const currentRevision = isCurrentRevision(originalIndex);
 
                     return (
-                      <div key={index}>
+                      <div
+                        key={index}
+                        onClickCapture={(e) => {
+                          if (!drawingEntriesEditMode) return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openEditEntryModal(originalIndex);
+                        }}
+                      >
                         <div
                           style={{
                             display: "grid",
@@ -3816,6 +4038,9 @@ export default function Drawings({
                             borderRadius: currentRevision ? "4px 4px 0 0" : "4px",
                             minHeight: "32px",
                             alignItems: "center",
+                            cursor: drawingEntriesEditMode ? "pointer" : "default",
+                            outline: drawingEntriesEditMode ? `1px dashed ${MONUMENT}` : "none",
+                            outlineOffset: drawingEntriesEditMode ? "-1px" : 0,
                           }}
                         >
                         <div style={{ fontWeight: "500", color: MONUMENT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}>
@@ -4246,6 +4471,176 @@ export default function Drawings({
         >
           {renderDrawingsActionBar()}
         </div>
+        </div>
+      )}
+
+      {/* Admin: edit a drawing-list entry */}
+      {editEntryDraft && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              maxWidth: "480px",
+              width: "90%",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: "6px", color: MONUMENT }}>
+              Edit Entry
+            </h3>
+            <div style={{ fontSize: "0.88rem", color: UI.textMuted, marginBottom: "18px" }}>
+              {editEntryDraft.name || "Drawing"}
+              {editEntryDraft.revision != null && editEntryDraft.revision !== ""
+                ? ` · Revision ${editEntryDraft.revision}`
+                : ""}
+            </div>
+            {(() => {
+              const bannerRow = (label, present, key) => (
+                <div
+                  key={key}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "12px",
+                    padding: "10px 0",
+                    borderBottom: `1px solid ${SECTION_GREY}`,
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: "0.92rem", color: MONUMENT, fontWeight: 500 }}>
+                      {label}
+                    </div>
+                    <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginTop: "2px" }}>
+                      {present ? "Showing on this entry" : "Not showing"}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleEditEntryBanner(key)}
+                    disabled={savingEditEntry}
+                    style={{
+                      background: present ? WHITE : MONUMENT,
+                      color: present ? MONUMENT : PAGE_TEXT,
+                      border: `1px solid ${MONUMENT}`,
+                      borderRadius: "8px",
+                      padding: "8px 14px",
+                      fontSize: "0.85rem",
+                      fontWeight: 500,
+                      cursor: savingEditEntry ? "not-allowed" : "pointer",
+                      minWidth: "88px",
+                    }}
+                  >
+                    {present ? "Remove" : "Add"}
+                  </button>
+                </div>
+              );
+              const draftPostApprovalMode =
+                isPermitPhaseStatus(project?.status) ||
+                String(editEntryDraft.status || "").trim() === DRAWINGS_STATUS.COMPLETE;
+              const statusOptions = DRAWINGS_STATUS_OPTIONS.includes(editEntryDraft.status)
+                ? DRAWINGS_STATUS_OPTIONS
+                : [...DRAWINGS_STATUS_OPTIONS, editEntryDraft.status];
+              return (
+                <>
+                  {bannerRow("Concept Approval banner", editEntryDraft.conceptApproved, "conceptApproved")}
+                  {bannerRow(
+                    "Working Drawings Approval banner",
+                    editEntryDraft.workingDrawingsApproved,
+                    "workingDrawingsApproved"
+                  )}
+                  {bannerRow("Post Approval banner", editEntryDraft.postApproved, "postApproved")}
+                  <div style={{ marginTop: "16px", marginBottom: "8px" }}>
+                    <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
+                      Status
+                    </div>
+                    <select
+                      value={editEntryDraft.status}
+                      disabled={savingEditEntry}
+                      onChange={(e) =>
+                        setEditEntryDraft((prev) =>
+                          prev ? { ...prev, status: e.target.value } : prev
+                        )
+                      }
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: `1px solid ${SECTION_GREY}`,
+                        fontSize: "1rem",
+                        color: MONUMENT,
+                        background: WHITE,
+                        boxSizing: "border-box",
+                        cursor: savingEditEntry ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {statusOptions.map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </select>
+                    <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginTop: "8px" }}>
+                      Approval buttons:{" "}
+                      {draftPostApprovalMode
+                        ? "Post Approval"
+                        : "Approve Concept and Approve Working Drawings"}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "20px" }}>
+              <button
+                type="button"
+                onClick={handleCancelEditEntry}
+                disabled={savingEditEntry}
+                style={{
+                  background: SECTION_GREY,
+                  color: WHITE,
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "10px 20px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: savingEditEntry ? "not-allowed" : "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEditEntry}
+                disabled={savingEditEntry}
+                style={{
+                  background: VIC_BLUE,
+                  color: PAGE_TEXT,
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "10px 20px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: savingEditEntry ? "not-allowed" : "pointer",
+                }}
+              >
+                {savingEditEntry ? "Saving…" : "Ok"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
