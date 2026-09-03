@@ -186,7 +186,7 @@ async function ensureProjectPaymentColumns(pool) {
   }
 }
 const { buildProjectsListQuery } = require("./projectQueries");
-const { applyConceptApprovalRules, applyPostApprovalRules, parseDrawingsHistory, DRAWINGS_STATUS } = require("./drawingsStatusRules");
+const { applyConceptApprovalRules, applyPostApprovalRules, parseDrawingsHistory } = require("./drawingsStatusRules");
 const {
   SESSION_COOKIE_NAME,
   createStaffSession,
@@ -13793,11 +13793,7 @@ app.post("/api/projects/:id/approve-concept", async (req, res) => {
       return res.status(400).json({ error: "No drawings have been uploaded yet" });
     }
 
-    const workingDate = project.drawings_working_approved_date;
-    const usePostApproval =
-      normalizeProjectStatus(project.status) === STATUS_PERMIT ||
-      String(project.drawings_status || "").trim() === DRAWINGS_STATUS.COMPLETE ||
-      (workingDate != null && String(workingDate).trim() !== "");
+    const usePostApproval = normalizeProjectStatus(project.status) === STATUS_PERMIT;
 
     if (usePostApproval) {
       const { history: postHistory } = applyPostApprovalRules(drawingsHistory);

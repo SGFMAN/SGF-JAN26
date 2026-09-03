@@ -1459,14 +1459,12 @@ export default function Drawings({
       return;
     }
 
-    const previousStatus = String(drawingsStatus || project?.drawings_status || "").trim();
     const nextStatus = String(editEntryDraft.status || DRAWINGS_STATUS.NOT_ASSIGNED).trim();
     const originalEntry = history[index];
     const updatedHistory = [...history];
     updatedHistory[index] = applyBannerDraftToEntry(originalEntry, editEntryDraft);
     const updatedEntry = updatedHistory[index];
     const isLatest = index === updatedHistory.length - 1;
-    const statusChanged = nextStatus !== previousStatus;
     const conceptBannerChanged =
       Boolean(originalEntry.conceptApproved) !== Boolean(updatedEntry.conceptApproved);
     const workingBannerChanged =
@@ -1494,28 +1492,18 @@ export default function Drawings({
         throw new Error(err.error || "Failed to save drawing entry");
       }
 
-      const shouldUpdateApprovalDates =
-        (isLatest && (conceptBannerChanged || workingBannerChanged)) || statusChanged;
-      if (shouldUpdateApprovalDates) {
+      if (isLatest && (conceptBannerChanged || workingBannerChanged)) {
         let conceptDate = project?.drawings_concept_approved_date || null;
         let workingDate = project?.drawings_working_approved_date || null;
-        if (isLatest && conceptBannerChanged) {
+        if (conceptBannerChanged) {
           conceptDate = updatedEntry.conceptApproved
             ? updatedEntry.conceptApprovedDate || null
             : null;
         }
-        if (isLatest && workingBannerChanged) {
+        if (workingBannerChanged) {
           workingDate = updatedEntry.workingDrawingsApproved
             ? updatedEntry.workingDrawingsApprovedDate || null
             : null;
-        }
-        // Changing status updates which approval buttons show (unless already Permit Phase).
-        if (
-          statusChanged &&
-          nextStatus !== DRAWINGS_STATUS.COMPLETE &&
-          !isPermitPhaseStatus(project?.status)
-        ) {
-          workingDate = null;
         }
 
         await fetch(`${API_URL}/api/projects/${project.id}/drawing-approval-dates`, {
@@ -4549,9 +4537,6 @@ export default function Drawings({
                   </button>
                 </div>
               );
-              const draftPostApprovalMode =
-                isPermitPhaseStatus(project?.status) ||
-                String(editEntryDraft.status || "").trim() === DRAWINGS_STATUS.COMPLETE;
               const statusOptions = DRAWINGS_STATUS_OPTIONS.includes(editEntryDraft.status)
                 ? DRAWINGS_STATUS_OPTIONS
                 : [...DRAWINGS_STATUS_OPTIONS, editEntryDraft.status];
@@ -4594,12 +4579,6 @@ export default function Drawings({
                         </option>
                       ))}
                     </select>
-                    <div style={{ fontSize: "0.8rem", color: UI.textMuted, marginTop: "8px" }}>
-                      Approval buttons:{" "}
-                      {draftPostApprovalMode
-                        ? "Post Approval"
-                        : "Approve Concept and Approve Working Drawings"}
-                    </div>
                   </div>
                 </>
               );

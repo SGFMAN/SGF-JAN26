@@ -4,7 +4,6 @@ import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI } from "../utils/uiThemeTokens.js";
 import { isPermitPhaseStatus } from "../utils/projectStatus";
-import { DRAWINGS_STATUS } from "../utils/drawingsStatusRules";
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
@@ -33,12 +32,7 @@ export default function ApproveConcept() {
           ? `${project.street}, ${project.suburb}`.trim() 
           : project?.name || "";
         setProjectName(name);
-        const workingDate = project?.drawings_working_approved_date;
-        setIsPostApproval(
-          isPermitPhaseStatus(project?.status) ||
-            String(project?.drawings_status || "").trim() === DRAWINGS_STATUS.COMPLETE ||
-            (workingDate != null && String(workingDate).trim() !== "")
-        );
+        setIsPostApproval(isPermitPhaseStatus(project?.status));
       } catch (error) {
         console.error("Error fetching project:", error);
         setError("Project not found");

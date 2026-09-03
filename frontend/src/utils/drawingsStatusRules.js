@@ -201,13 +201,10 @@ export function applyPostApprovalRules(drawingsHistory) {
   };
 }
 
+/** Permit Phase → Post Approval button. Design Phase (and any other phase) → Concept + Working Drawings. */
 export function isPostApprovalMode(project) {
   if (!project) return false;
-  if (isPermitPhaseStatus(project.status)) return true;
-  const drawingsStatus = String(project.drawings_status || "").trim();
-  if (drawingsStatus === DRAWINGS_STATUS.COMPLETE) return true;
-  const workingDate = project.drawings_working_approved_date;
-  return workingDate != null && String(workingDate).trim() !== "";
+  return isPermitPhaseStatus(project.status);
 }
 
 export function newDrawingHistoryEntryFields() {
