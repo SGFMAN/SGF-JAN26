@@ -2035,6 +2035,9 @@ export default function PlanningManager() {
           <Link to="/managers/colour-manager" style={inactiveLinkStyle}>
             Colour Manager
           </Link>
+          <Link to="/managers/windows-manager" style={inactiveLinkStyle}>
+            Windows Manager
+          </Link>
           <Link to="/managers/status-manager" style={inactiveLinkStyle}>
             Status Manager
           </Link>

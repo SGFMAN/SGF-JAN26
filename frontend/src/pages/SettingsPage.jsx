@@ -13,6 +13,7 @@ import UISettings from "./UISettings";
 import PaymentsSettings from "./PaymentsSettings";
 import PlanningSettings from "./PlanningSettings";
 import RemindersSettings from "./RemindersSettings";
+import ManagerSettings from "./ManagerSettings";
 import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -29,6 +30,7 @@ const menuOptions = [
   { key: "emailTemplates", label: "Email Templates" },
   { key: "file", label: "File Settings" },
   { key: "maps", label: "Maps" },
+  { key: "managers", label: "Managers" },
   { key: "payments", label: "Payments" },
   { key: "planning", label: "Planning" },
   { key: "reminders", label: "Reminders" },
@@ -81,6 +83,8 @@ export default function SettingsPage() {
         return <ColourSettings />;
       case "maps":
         return <MapsSettings />;
+      case "managers":
+        return <ManagerSettings />;
       case "payments":
         return <PaymentsSettings />;
       case "planning":
@@ -120,6 +124,7 @@ export default function SettingsPage() {
   const stretchMainContent =
     selected === "streamSettings" ||
     selected === "maps" ||
+    selected === "managers" ||
     selected === "permissions" ||
     selected === "streams" ||
     selected === "emailTemplates" ||

@@ -1,31 +1,32 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
-  PRE_ENGAGEMENT_PHASE,
-  DESIGN_PHASE,
-  PERMIT_PHASE,
-  isDesignPipelineStatus,
   isExcludedFromProjectLists,
-  isCancelledStatus,
-  isDesignPhaseStatus,
-  isPermitPhaseStatus,
 } from "../utils/projectStatus";
 import { getStateFilter } from "../utils/stateFilter";
 import { projectPath } from "../utils/projectUrl";
 import { isUserAdmin } from "../utils/auth";
 import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
-import { FIELD_DEFINITIONS, STREAM_SORT_ORDER } from "../utils/projectListFilters";
+import { FIELD_DEFINITIONS } from "../utils/projectListFilters";
+import {
+  DEFAULT_NEXT_OUTS_OVERVIEW_KEYS,
+  DEFAULT_NEXT_OUTS_SORT,
+  headingsFromOverviewKeys,
+  normalizeManagerSettings,
+  projectMatchesNextOutsIncludedPhase,
+} from "../utils/managerSettings";
 import {
   SEWER_STATUS_FILTER_OPTIONS,
   BUILDING_PERMIT_STATUS_OPTIONS,
-  getSewerConnectionStatusLabel,
-  normalizeBuildingPermitStatus,
-  normalizePlanningStatus,
+  MANDATORY_PLANNING_SELECT_OPTIONS,
 } from "../constants/planningStatusFields";
+import {
+  buildDesignPhaseStatusTiles,
+} from "../utils/designPhaseStatusTiles.js";
 
 import StateFilterButtons from "../components/StateFilterButtons";
-import { UI, STREAM, TEXT, outlineBorder } from "../utils/uiThemeTokens.js";
+import { UI, TEXT, outlineBorder } from "../utils/uiThemeTokens.js";
 import { getStreamColorGroup, getStreamGroupColors } from "../utils/streamColors.js";
 import { INDICATOR } from "../utils/managerStatusColors.js";
 
@@ -36,28 +37,109 @@ const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
-const PHASE_FILTER_OPTIONS = [PRE_ENGAGEMENT_PHASE, DESIGN_PHASE, PERMIT_PHASE];
 const TOWN_PLANNING_COMPLETE_FILTER = "Not Required / Complete";
 const TOWN_PLANNING_COMPLETE_GROUP = new Set(["Not Required", "Complete"]);
-const TOWN_PLANNING_FILTER_OPTIONS = ["Not Selected", "Incomplete", TOWN_PLANNING_COMPLETE_FILTER];
-const CONTRACT_FILTER_OPTIONS = FIELD_DEFINITIONS.contract_status.values;
-const CONTRACT_FILTER_DEFAULT = FIELD_DEFINITIONS.contract_status.defaultValue;
-const COLOURS_FILTER_OPTIONS = FIELD_DEFINITIONS.colours_status.values;
-const COLOURS_FILTER_DEFAULT = FIELD_DEFINITIONS.colours_status.defaultValue;
+const PLANNING_REQUIREMENT_FILTER_OPTIONS = ["Not Selected", "Incomplete", TOWN_PLANNING_COMPLETE_FILTER];
+const DRAWINGS_FILTER_OPTIONS = ["Incomplete", "In Progress", "Complete"];
+const DEPOSIT_FILTER_OPTIONS = ["Full Deposit", "Partial Deposit", "No Deposit"];
+const CONTRACT_OVERVIEW_FILTER_OPTIONS = ["Documents Missing", "All Documents Complete"];
+const SURVEY_SOILS_FILTER_OPTIONS = ["Not Booked", "In Progress", "Complete"];
+const SEWER_FILTER_OPTIONS = ["Not Selected", ...SEWER_STATUS_FILTER_OPTIONS];
 
-const GRID_COLUMNS = "2fr 1fr 1fr 1fr 1fr";
-const GRID_LAYOUT = {
-  display: "grid",
-  gridTemplateColumns: GRID_COLUMNS,
-  gap: "10px",
-  padding: "4px 10px",
-  boxSizing: "border-box",
-};
+function getGridLayout(headingCount) {
+  const gridTemplateColumns =
+    headingCount > 0
+      ? `minmax(200px, 1fr) repeat(${headingCount}, 100px)`
+      : "minmax(200px, 1fr)";
+  return {
+    display: "grid",
+    gridTemplateColumns,
+    gap: "4px",
+    padding: "4px 8px",
+    boxSizing: "border-box",
+    minWidth: `${200 + headingCount * 104}px`,
+  };
+}
+
+function getOverviewFilterOptions(key) {
+  switch (key) {
+    case "deposit":
+      return DEPOSIT_FILTER_OPTIONS;
+    case "concept-drawings":
+    case "working-drawings":
+      return DRAWINGS_FILTER_OPTIONS;
+    case "site-visit":
+      return FIELD_DEFINITIONS.site_visit_status.values;
+    case "colours":
+      return FIELD_DEFINITIONS.colours_status.values;
+    case "windows":
+      return FIELD_DEFINITIONS.window_status.values;
+    case "contract":
+      return CONTRACT_OVERVIEW_FILTER_OPTIONS;
+    case "survey-soils":
+      return SURVEY_SOILS_FILTER_OPTIONS;
+    case "town-planning":
+    case "bal":
+      return PLANNING_REQUIREMENT_FILTER_OPTIONS;
+    case "energy":
+    case "footing":
+      return MANDATORY_PLANNING_SELECT_OPTIONS;
+    case "building-permit":
+      return BUILDING_PERMIT_STATUS_OPTIONS;
+    case "sewer-connection":
+      return SEWER_FILTER_OPTIONS;
+    default:
+      return [];
+  }
+}
+
+function tileMatchesFilter(tile, selected, key) {
+  if (!selected) return true;
+  if ((key === "town-planning" || key === "bal") && selected === TOWN_PLANNING_COMPLETE_FILTER) {
+    return TOWN_PLANNING_COMPLETE_GROUP.has(tile?.value);
+  }
+  return tile?.value === selected;
+}
+
+function tilesByKey(project) {
+  return Object.fromEntries(buildDesignPhaseStatusTiles(project).map((tile) => [tile.key, tile]));
+}
+
+function projectDisplayName(project) {
+  return (
+    project?.name ||
+    `${project?.street || ""}, ${project?.suburb || ""}`.trim() ||
+    "Unknown Project"
+  );
+}
+
+function compareStatusValues(left, right) {
+  const a = String(left?.value || "").trim();
+  const b = String(right?.value || "").trim();
+  return a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+}
+
+function compareProjectsByNextOuts(a, b, sortLevels) {
+  const tilesA = tilesByKey(a);
+  const tilesB = tilesByKey(b);
+  for (const level of sortLevels || []) {
+    if (!level?.key) continue;
+    const comparison = compareStatusValues(tilesA[level.key], tilesB[level.key]);
+    if (comparison !== 0) return level.direction === "desc" ? -comparison : comparison;
+  }
+  return projectDisplayName(a).localeCompare(projectDisplayName(b), undefined, {
+    sensitivity: "base",
+  });
+}
+
+function sortNextOutsProjects(projectsList, sortLevels) {
+  return [...projectsList].sort((a, b) => compareProjectsByNextOuts(a, b, sortLevels));
+}
 
 const headingFilterSelectStyle = {
-  height: "36px",
-  padding: "0 8px",
-  fontSize: "0.9rem",
+  height: "28px",
+  padding: "0 2px",
+  fontSize: "0.68rem",
   fontWeight: 500,
   color: MONUMENT,
   background: WHITE,
@@ -99,13 +181,18 @@ const activeLinkStyle = {
 
 const statusPillStyle = {
   width: "100%",
-  padding: "4px 8px",
+  padding: "3px 4px",
   borderRadius: "6px",
-  fontSize: "0.85rem",
+  fontSize: "0.65rem",
   color: TEXT.dark,
   fontWeight: 500,
   boxSizing: "border-box",
   textAlign: "center",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  textDecoration: "none",
+  display: "block",
 };
 
 export default function NextOuts() {
@@ -113,14 +200,11 @@ export default function NextOuts() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [sortOrder, setSortOrder] = useState("asc");
-  const [sortMode, setSortMode] = useState("date");
-  const [phaseFilter, setPhaseFilter] = useState("");
-  const [townPlanningFilter, setTownPlanningFilter] = useState("");
-  const [contractFilter, setContractFilter] = useState("");
-  const [coloursFilter, setColoursFilter] = useState("");
-  const [sewerStatusFilter, setSewerStatusFilter] = useState("");
-  const [buildingPermitFilter, setBuildingPermitFilter] = useState("");
+  const [tileFilters, setTileFilters] = useState({});
+  const [statusHeadings, setStatusHeadings] = useState(() =>
+    headingsFromOverviewKeys(DEFAULT_NEXT_OUTS_OVERVIEW_KEYS)
+  );
+  const [sortLevels, setSortLevels] = useState(DEFAULT_NEXT_OUTS_SORT);
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [isAdmin, setIsAdmin] = useState(false);
   const { hasDrawing } = useDrawingAccess();
@@ -130,65 +214,28 @@ export default function NextOuts() {
     (async () => setIsAdmin(await isUserAdmin()))();
   }, []);
 
-  function parseDate(project) {
-    if (!project.year) return null;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(project.year)) {
-      return new Date(project.year);
-    }
-    if (/^\d{4}$/.test(project.year)) {
-      return new Date(`${project.year}-01-01`);
-    }
-    return null;
-  }
-
-  function sortProjectsByDate(projectsList, order) {
-    return [...projectsList].sort((a, b) => {
-      const dateA = parseDate(a);
-      const dateB = parseDate(b);
-      if (!dateA && !dateB) return 0;
-      if (!dateA) return 1;
-      if (!dateB) return -1;
-      const comparison = dateA - dateB;
-      return order === "asc" ? comparison : -comparison;
-    });
-  }
-
-  function sortProjectsByStream(projectsList) {
-    return [...projectsList].sort((a, b) => {
-      const streamA = (a.stream || "").trim();
-      const streamB = (b.stream || "").trim();
-      const idxA = STREAM_SORT_ORDER.indexOf(streamA);
-      const idxB = STREAM_SORT_ORDER.indexOf(streamB);
-      const safeA = idxA === -1 ? Number.MAX_SAFE_INTEGER : idxA;
-      const safeB = idxB === -1 ? Number.MAX_SAFE_INTEGER : idxB;
-      if (safeA !== safeB) return safeA - safeB;
-      if (streamA !== streamB) return streamA.localeCompare(streamB);
-      const suburbA = (a.suburb || "").toLowerCase();
-      const suburbB = (b.suburb || "").toLowerCase();
-      if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
-      return (a.street || "").toLowerCase().localeCompare((b.street || "").toLowerCase());
-    });
-  }
-
-  function sortProjects(projectsList) {
-    if (sortMode === "stream") return sortProjectsByStream(projectsList);
-    return sortProjectsByDate(projectsList, sortOrder);
-  }
-
   async function fetchProjects() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`${API_URL}/api/projects`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch projects: ${response.statusText}`);
+      const [projectsRes, settingsRes] = await Promise.all([
+        fetch(`${API_URL}/api/projects`),
+        fetch(`${API_URL}/api/manager-settings`),
+      ]);
+      if (!projectsRes.ok) {
+        throw new Error(`Failed to fetch projects: ${projectsRes.statusText}`);
       }
-      const data = await response.json();
+      const data = await projectsRes.json();
+      const managerSettings = settingsRes.ok
+        ? normalizeManagerSettings((await settingsRes.json().catch(() => ({})))?.settings)
+        : normalizeManagerSettings(null);
+      setStatusHeadings(headingsFromOverviewKeys(managerSettings.nextOutsOverviewKeys));
+      setSortLevels(managerSettings.nextOutsSort);
       const visibleProjects = data.filter((project) => {
-        if (isExcludedFromProjectLists(project.status) || isCancelledStatus(project.status)) return false;
-        return isDesignPipelineStatus(project.status);
+        if (isExcludedFromProjectLists(project.status)) return false;
+        return projectMatchesNextOutsIncludedPhase(project.status, managerSettings.nextOutsIncludedPhases);
       });
-      setProjects(sortProjects(visibleProjects));
+      setProjects(visibleProjects);
     } catch (err) {
       setError(err.message);
       console.error("Error fetching projects:", err);
@@ -197,64 +244,93 @@ export default function NextOuts() {
     }
   }
 
-  useEffect(() => {
-    if (projects.length > 0) {
-      setProjects(sortProjects(projects));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sortOrder, sortMode]);
-
-  function getEffectiveValue(project, fieldName, defaultValue) {
-    const value = project[fieldName];
-    if (!value || value === null || value === undefined || value === "") {
-      return defaultValue || "";
-    }
-    return value;
+  function setTileFilter(key, value) {
+    setTileFilters((prev) => ({ ...prev, [key]: value }));
   }
 
-  function getTownPlanningValue(project) {
-    return normalizePlanningStatus(project.planning_town_planning ?? project.planning_status);
-  }
+  const gridLayout = getGridLayout(statusHeadings.length);
 
-  function getBuildingPermitValue(project) {
-    return normalizeBuildingPermitStatus(
-      project.building_permit_status ?? project.buildingPermitStatus,
-      project.planning_building_permit_received_at ?? project.planningBuildingPermitReceivedAt
+  function renderProjectRow(project) {
+    const projectName = projectDisplayName(project);
+    const streamName = String(project.stream || "").trim();
+    const streamFill = streamName
+      ? getStreamGroupColors(getStreamColorGroup(streamName)).lighter
+      : null;
+    const byKey = tilesByKey(project);
+    const tiles = statusHeadings.map((heading) => byKey[heading.key]).filter(Boolean);
+
+    return (
+      <div
+        key={project.id}
+        style={{
+          ...gridLayout,
+          background: WHITE,
+          borderRadius: "8px",
+          color: MONUMENT,
+          fontSize: "0.9rem",
+          alignItems: "center",
+        }}
+      >
+        <Link
+          to={projectPath(project)}
+          style={{
+            position: "sticky",
+            left: 0,
+            zIndex: 1,
+            background: WHITE,
+            textDecoration: "none",
+            color: MONUMENT,
+            fontWeight: 500,
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: "8px",
+            minWidth: 0,
+          }}
+        >
+          {streamName ? (
+            <span
+              style={{
+                flexShrink: 0,
+                display: "inline-block",
+                padding: "1px 6px",
+                borderRadius: "4px",
+                fontSize: "0.72rem",
+                fontWeight: 600,
+                lineHeight: 1.2,
+                color: MONUMENT,
+                background: streamFill,
+                boxSizing: "border-box",
+              }}
+            >
+              {streamName}
+            </span>
+          ) : null}
+          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {projectName}
+          </span>
+        </Link>
+        {tiles.map((tile) => {
+          const style = tile?.indicatorStyle || {};
+          return (
+            <Link
+              key={tile.key}
+              to={projectPath(project, { view: tile.view })}
+              title={`${tile.label}: ${tile.value}`}
+              style={{
+                ...statusPillStyle,
+                background: style.background,
+                color: style.color || TEXT.dark,
+                border: style.border ?? "none",
+              }}
+            >
+              {tile.value}
+            </Link>
+          );
+        })}
+      </div>
     );
   }
-
-  function getPhaseColor(status) {
-    if (isPermitPhaseStatus(status)) return STREAM.vicBlueLight;
-    if (isDesignPhaseStatus(status)) return STREAM.streamGreenLight;
-    return INDICATOR.orangeLight;
-  }
-
-  function getTownPlanningColor(status) {
-    const value = normalizePlanningStatus(status);
-    if (value === "Not Required" || value === "Complete") return STREAM.streamGreenLight;
-    if (value === "Incomplete") return INDICATOR.orangeLight;
-    return STREAM.qldRedLight;
-  }
-
-  function getSentCompleteColor(status) {
-    if (status === "Complete") return STREAM.streamGreenLight;
-    if (status === "Sent") return INDICATOR.orangeLight;
-    return STREAM.qldRedLight;
-  }
-
-  const sortButtonStyle = (active) => ({
-    padding: "8px 16px",
-    fontSize: "0.9rem",
-    fontWeight: 500,
-    color: active ? WHITE : MONUMENT,
-    background: active ? MONUMENT : WHITE,
-    border: active ? "none" : outlineBorder,
-    borderRadius: "8px",
-    cursor: "pointer",
-    transition: "background 0.2s",
-    height: "36px",
-    boxSizing: "border-box",
-  });
 
   return (
     <div
@@ -357,6 +433,9 @@ export default function NextOuts() {
           <Link to="/managers/colour-manager" style={inactiveLinkStyle}>
             Colour Manager
           </Link>
+          <Link to="/managers/windows-manager" style={inactiveLinkStyle}>
+            Windows Manager
+          </Link>
           <Link to="/managers/status-manager" style={inactiveLinkStyle}>
             Status Manager
           </Link>
@@ -390,7 +469,7 @@ export default function NextOuts() {
             minHeight: "758px",
             height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
-            padding: "24px 32px",
+            padding: "24px 16px",
             boxSizing: "border-box",
             overflow: "hidden",
             color: MONUMENT,
@@ -411,153 +490,74 @@ export default function NextOuts() {
             >
               <div
                 style={{
-                  ...GRID_LAYOUT,
+                  ...gridLayout,
                   background: MONUMENT,
                   color: PAGE_TEXT,
                   borderRadius: "8px",
                   fontWeight: 600,
                   fontSize: "0.9rem",
                   marginBottom: "8px",
-                  alignItems: "center",
+                  alignItems: "end",
                 }}
               >
-                <div>Project</div>
-                <div>Phase</div>
-                <div>Town Planning</div>
-                <div>Contract</div>
-                <div>Colours</div>
-              </div>
-
-              <div
-                style={{
-                  ...GRID_LAYOUT,
-                  alignItems: "center",
-                }}
-              >
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", minWidth: 0 }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (sortMode === "date") {
-                        setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-                      } else {
-                        setSortMode("date");
-                      }
-                    }}
-                    style={sortButtonStyle(sortMode === "date")}
-                    onMouseEnter={(e) => {
-                      if (sortMode === "date") e.currentTarget.style.background = "#1a1a1a";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = sortMode === "date" ? MONUMENT : WHITE;
-                    }}
-                  >
-                    Sort: {sortOrder === "asc" ? "Oldest First" : "Newest First"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSortMode("stream")}
-                    style={sortButtonStyle(sortMode === "stream")}
-                    onMouseEnter={(e) => {
-                      if (sortMode === "stream") e.currentTarget.style.background = "#1a1a1a";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = sortMode === "stream" ? MONUMENT : WHITE;
-                    }}
-                  >
-                    Sort by Stream
-                  </button>
+                <div
+                  style={{
+                    position: "sticky",
+                    left: 0,
+                    zIndex: 12,
+                    background: MONUMENT,
+                    padding: "4px 0",
+                  }}
+                >
+                  Project
                 </div>
-                <select
-                  value={phaseFilter}
-                  onChange={(e) => setPhaseFilter(e.target.value)}
-                  aria-label="Filter by Phase"
-                  style={headingFilterSelectStyle}
-                >
-                  <option value="">All</option>
-                  {PHASE_FILTER_OPTIONS.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={townPlanningFilter}
-                  onChange={(e) => setTownPlanningFilter(e.target.value)}
-                  aria-label="Filter by Town Planning"
-                  style={headingFilterSelectStyle}
-                >
-                  <option value="">All</option>
-                  {TOWN_PLANNING_FILTER_OPTIONS.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={contractFilter}
-                  onChange={(e) => setContractFilter(e.target.value)}
-                  aria-label="Filter by Contract"
-                  style={headingFilterSelectStyle}
-                >
-                  <option value="">All</option>
-                  {CONTRACT_FILTER_OPTIONS.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={coloursFilter}
-                  onChange={(e) => setColoursFilter(e.target.value)}
-                  aria-label="Filter by Colours"
-                  style={headingFilterSelectStyle}
-                >
-                  <option value="">All</option>
-                  {COLOURS_FILTER_OPTIONS.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
+                {statusHeadings.map((item) => (
+                  <div
+                    key={item.key}
+                    style={{
+                      textAlign: "center",
+                      fontSize: "0.7rem",
+                      lineHeight: 1.15,
+                      whiteSpace: "normal",
+                      padding: "4px 0",
+                    }}
+                  >
+                    {item.label}
+                  </div>
+                ))}
               </div>
 
               <div
                 style={{
-                  ...GRID_LAYOUT,
+                  ...gridLayout,
                   alignItems: "center",
-                  marginTop: "8px",
                 }}
               >
-                <div />
-                <select
-                  value={sewerStatusFilter}
-                  onChange={(e) => setSewerStatusFilter(e.target.value)}
-                  aria-label="Filter by Sewer Status"
-                  style={headingFilterSelectStyle}
-                >
-                  <option value="">Sewer Status</option>
-                  {SEWER_STATUS_FILTER_OPTIONS.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={buildingPermitFilter}
-                  onChange={(e) => setBuildingPermitFilter(e.target.value)}
-                  aria-label="Filter by Building Permit Status"
-                  style={headingFilterSelectStyle}
-                >
-                  <option value="">Building Permit</option>
-                  {BUILDING_PERMIT_STATUS_OPTIONS.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-                <div />
-                <div />
+                <div
+                  style={{
+                    position: "sticky",
+                    left: 0,
+                    zIndex: 11,
+                    background: SECTION_GREY,
+                    minWidth: 0,
+                  }}
+                />
+                {statusHeadings.map((item) => (
+                  <select
+                    key={item.key}
+                    value={tileFilters[item.key] || ""}
+                    onChange={(e) => setTileFilter(item.key, e.target.value)}
+                    aria-label={`Filter by ${item.label}`}
+                    style={headingFilterSelectStyle}
+                  >
+                    <option value="">All</option>
+                    {getOverviewFilterOptions(item.key).map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                ))}
               </div>
             </div>
 
@@ -577,41 +577,16 @@ export default function NextOuts() {
                       })
                     : projects;
 
-                  if (phaseFilter) {
-                    filteredProjects = filteredProjects.filter(
-                      (project) => (project.status || "") === phaseFilter
-                    );
-                  }
-                  if (townPlanningFilter === TOWN_PLANNING_COMPLETE_FILTER) {
-                    filteredProjects = filteredProjects.filter((project) =>
-                      TOWN_PLANNING_COMPLETE_GROUP.has(getTownPlanningValue(project))
-                    );
-                  } else if (townPlanningFilter) {
-                    filteredProjects = filteredProjects.filter(
-                      (project) => getTownPlanningValue(project) === townPlanningFilter
-                    );
-                  }
-                  if (contractFilter) {
-                    filteredProjects = filteredProjects.filter(
-                      (project) =>
-                        getEffectiveValue(project, "contract_status", CONTRACT_FILTER_DEFAULT) === contractFilter
-                    );
-                  }
-                  if (coloursFilter) {
-                    filteredProjects = filteredProjects.filter(
-                      (project) =>
-                        getEffectiveValue(project, "colours_status", COLOURS_FILTER_DEFAULT) === coloursFilter
-                    );
-                  }
-                  if (sewerStatusFilter) {
-                    filteredProjects = filteredProjects.filter(
-                      (project) => getSewerConnectionStatusLabel(project) === sewerStatusFilter
-                    );
-                  }
-                  if (buildingPermitFilter) {
-                    filteredProjects = filteredProjects.filter(
-                      (project) => getBuildingPermitValue(project) === buildingPermitFilter
-                    );
+                  const activeTileFilters = statusHeadings.filter(
+                    (heading) => tileFilters[heading.key]
+                  );
+                  if (activeTileFilters.length > 0) {
+                    filteredProjects = filteredProjects.filter((project) => {
+                      const byKey = tilesByKey(project);
+                      return activeTileFilters.every((heading) =>
+                        tileMatchesFilter(byKey[heading.key], tileFilters[heading.key], heading.key)
+                      );
+                    });
                   }
 
                   if (filteredProjects.length === 0) {
@@ -620,84 +595,11 @@ export default function NextOuts() {
                     );
                   }
 
+                  const sortedProjects = sortNextOutsProjects(filteredProjects, sortLevels);
+
                   return (
                     <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                      {filteredProjects.map((project) => {
-                        const projectName =
-                          project.name ||
-                          `${project.street || ""}, ${project.suburb || ""}`.trim() ||
-                          "Unknown Project";
-                        const phase = project.status || PRE_ENGAGEMENT_PHASE;
-                        const townPlanning = getTownPlanningValue(project);
-                        const contractStatus = getEffectiveValue(project, "contract_status", CONTRACT_FILTER_DEFAULT);
-                        const coloursStatus = getEffectiveValue(project, "colours_status", COLOURS_FILTER_DEFAULT);
-                        const streamName = String(project.stream || "").trim();
-                        const streamFill = streamName
-                          ? getStreamGroupColors(getStreamColorGroup(streamName)).lighter
-                          : null;
-
-                        return (
-                          <div
-                            key={project.id}
-                            style={{
-                              ...GRID_LAYOUT,
-                              background: WHITE,
-                              borderRadius: "8px",
-                              color: MONUMENT,
-                              fontSize: "0.9rem",
-                              alignItems: "center",
-                            }}
-                          >
-                            <Link
-                              to={projectPath(project)}
-                              style={{
-                                textDecoration: "none",
-                                color: MONUMENT,
-                                fontWeight: 500,
-                                display: "flex",
-                                flexDirection: "row",
-                                alignItems: "center",
-                                gap: "8px",
-                                minWidth: 0,
-                              }}
-                            >
-                              {streamName ? (
-                                <span
-                                  style={{
-                                    flexShrink: 0,
-                                    display: "inline-block",
-                                    padding: "1px 6px",
-                                    borderRadius: "4px",
-                                    fontSize: "0.72rem",
-                                    fontWeight: 600,
-                                    lineHeight: 1.2,
-                                    color: MONUMENT,
-                                    background: streamFill,
-                                    boxSizing: "border-box",
-                                  }}
-                                >
-                                  {streamName}
-                                </span>
-                              ) : null}
-                              <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {projectName}
-                              </span>
-                            </Link>
-                            <div style={{ ...statusPillStyle, background: getPhaseColor(phase) }}>
-                              {phase}
-                            </div>
-                            <div style={{ ...statusPillStyle, background: getTownPlanningColor(townPlanning) }}>
-                              {townPlanning}
-                            </div>
-                            <div style={{ ...statusPillStyle, background: getSentCompleteColor(contractStatus) }}>
-                              {contractStatus}
-                            </div>
-                            <div style={{ ...statusPillStyle, background: getSentCompleteColor(coloursStatus) }}>
-                              {coloursStatus}
-                            </div>
-                          </div>
-                        );
-                      })}
+                      {sortedProjects.map((project) => renderProjectRow(project))}
                     </div>
                   );
                 })()}

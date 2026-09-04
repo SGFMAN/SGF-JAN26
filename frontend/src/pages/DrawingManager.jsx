@@ -1364,6 +1364,9 @@ export default function DrawingManager() {
               <Link to="/managers/colour-manager" style={managerNavLinkStyle}>
                 Colour Manager
               </Link>
+              <Link to="/managers/windows-manager" style={managerNavLinkStyle}>
+                Windows Manager
+              </Link>
               <Link to="/managers/status-manager" style={managerNavLinkStyle}>
                 Status Manager
               </Link>

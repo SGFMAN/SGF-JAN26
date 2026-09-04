@@ -93,6 +93,7 @@ const {
 } = require("./quotes");
 const { setWindowsOutlookClipboard } = require("./emailGeneratorClipboard");
 const { startQuoteReminderScheduler, previewQuoteReminder1, sendQuoteReminder1Manual } = require("./quoteReminders");
+const { parseManagerSettingsColumn } = require("./managerSettings");
 const {
   listQuoteCallbackLists,
   setQuoteCallbackItemCalled,
@@ -1516,6 +1517,7 @@ async function ensureSchema() {
       "planning_manager_cells_json",
       "planning_mgr_tp_options_json",
       "reminders_json",
+      "manager_settings_json",
       "timesheet_export_path",
       "colours_and_finishes_path",
       "holding_amount",
@@ -2161,6 +2163,13 @@ async function ensureSchema() {
   } catch (e) {
     if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
       console.log(`Error adding column reminders_json:`, e.message);
+    }
+  }
+  try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN manager_settings_json TEXT`);
+  } catch (e) {
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column manager_settings_json:`, e.message);
     }
   }
   try {
@@ -6364,6 +6373,42 @@ app.put("/api/reminder-settings", async (req, res) => {
   } catch (e) {
     console.error("Error saving reminder settings:", e);
     return res.status(500).json({ error: e.message || "Failed to save reminder settings" });
+  }
+});
+
+app.get("/api/manager-settings", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  try {
+    const r = await pool.query("SELECT manager_settings_json FROM settings WHERE id = 1");
+    const settings = parseManagerSettingsColumn(r.rows[0]?.manager_settings_json);
+    return res.json({ ok: true, settings });
+  } catch (e) {
+    console.error("Error fetching manager settings:", e);
+    return res.status(500).json({ error: e.message || "Failed to fetch manager settings" });
+  }
+});
+
+app.put("/api/manager-settings", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const settings = parseManagerSettingsColumn(body.settings ?? body);
+    const json = JSON.stringify(settings);
+    await pool.query(
+      `INSERT INTO settings (id, manager_settings_json, updated_at)
+       VALUES (1, $1, NOW())
+       ON CONFLICT (id) DO UPDATE SET manager_settings_json = EXCLUDED.manager_settings_json, updated_at = NOW()`,
+      [json]
+    );
+    return res.json({ ok: true, settings });
+  } catch (e) {
+    console.error("Error saving manager settings:", e);
+    return res.status(500).json({ error: e.message || "Failed to save manager settings" });
   }
 });
 

@@ -157,6 +157,9 @@ export default function Managers() {
               <Link to="/managers/colour-manager" style={navLinkStyle}>
                 Colour Manager
               </Link>
+              <Link to="/managers/windows-manager" style={navLinkStyle}>
+                Windows Manager
+              </Link>
               <Link to="/managers/status-manager" style={navLinkStyle}>
                 Status Manager
               </Link>
