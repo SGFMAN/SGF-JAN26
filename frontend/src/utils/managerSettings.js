@@ -14,28 +14,18 @@ import {
 import { OVERVIEW_STATUS_HEADINGS } from "./designPhaseStatusTiles.js";
 
 export const NEXT_OUTS_PHASE_OPTIONS = PROJECT_STATUS_OPTIONS;
-export const DEFAULT_NEXT_OUTS_INCLUDED_PHASES = [PERMIT_PHASE];
 export const NEXT_OUTS_OVERVIEW_OPTIONS = OVERVIEW_STATUS_HEADINGS;
-export const DEFAULT_NEXT_OUTS_OVERVIEW_KEYS = [
-  "contract",
-  "colours",
-  "energy",
-  "windows",
-  "footing",
-  "sewer-connection",
-  "building-permit",
-];
 export const NEXT_OUTS_SORT_DIRECTIONS = [
   { value: "asc", label: "A-Z" },
   { value: "desc", label: "Z-A" },
 ];
-export const DEFAULT_NEXT_OUTS_SORT = [{ key: "", direction: "asc" }];
+export const EMPTY_NEXT_OUTS_SORT = [{ key: "", direction: "asc" }];
 
 const OVERVIEW_KEY_SET = new Set(OVERVIEW_STATUS_HEADINGS.map((item) => item.key));
 
 export function normalizeNextOutsIncludedPhases(raw) {
   const allowed = new Set(PROJECT_STATUS_OPTIONS);
-  if (!Array.isArray(raw)) return [...DEFAULT_NEXT_OUTS_INCLUDED_PHASES];
+  if (!Array.isArray(raw)) return [];
   const seen = new Set();
   const out = [];
   for (const item of raw) {
@@ -48,7 +38,7 @@ export function normalizeNextOutsIncludedPhases(raw) {
 }
 
 export function normalizeNextOutsOverviewKeys(raw) {
-  if (!Array.isArray(raw)) return [...DEFAULT_NEXT_OUTS_OVERVIEW_KEYS];
+  if (!Array.isArray(raw)) return [];
   const seen = new Set();
   for (const item of raw) {
     const value = String(item ?? "").trim();
@@ -64,7 +54,7 @@ export function headingsFromOverviewKeys(keys) {
 }
 
 export function normalizeNextOutsSort(raw) {
-  if (!Array.isArray(raw) || raw.length === 0) return [...DEFAULT_NEXT_OUTS_SORT];
+  if (!Array.isArray(raw) || raw.length === 0) return [...EMPTY_NEXT_OUTS_SORT];
   const seen = new Set();
   const out = [];
   let fallbackDirection = "asc";

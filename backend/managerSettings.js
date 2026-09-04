@@ -26,17 +26,7 @@ const OVERVIEW_STATUS_KEYS = [
   "building-permit",
   "sewer-connection",
 ];
-const DEFAULT_NEXT_OUTS_INCLUDED_PHASES = ["Permit Phase"];
-const DEFAULT_NEXT_OUTS_OVERVIEW_KEYS = [
-  "contract",
-  "colours",
-  "energy",
-  "windows",
-  "footing",
-  "sewer-connection",
-  "building-permit",
-];
-const DEFAULT_NEXT_OUTS_SORT = [{ key: "", direction: "asc" }];
+const EMPTY_NEXT_OUTS_SORT = [{ key: "", direction: "asc" }];
 const OVERVIEW_KEY_SET = new Set(OVERVIEW_STATUS_KEYS);
 
 function parseJsonObject(raw) {
@@ -55,7 +45,7 @@ function parseJsonObject(raw) {
 
 function normalizeNextOutsIncludedPhases(raw) {
   const allowed = new Set(PROJECT_STATUS_OPTIONS);
-  if (!Array.isArray(raw)) return [...DEFAULT_NEXT_OUTS_INCLUDED_PHASES];
+  if (!Array.isArray(raw)) return [];
   const seen = new Set();
   const out = [];
   for (const item of raw) {
@@ -69,7 +59,7 @@ function normalizeNextOutsIncludedPhases(raw) {
 
 function normalizeNextOutsOverviewKeys(raw) {
   const allowed = new Set(OVERVIEW_STATUS_KEYS);
-  if (!Array.isArray(raw)) return [...DEFAULT_NEXT_OUTS_OVERVIEW_KEYS];
+  if (!Array.isArray(raw)) return [];
   const seen = new Set();
   for (const item of raw) {
     const value = String(item ?? "").trim();
@@ -80,7 +70,7 @@ function normalizeNextOutsOverviewKeys(raw) {
 }
 
 function normalizeNextOutsSort(raw) {
-  if (!Array.isArray(raw) || raw.length === 0) return DEFAULT_NEXT_OUTS_SORT.map((row) => ({ ...row }));
+  if (!Array.isArray(raw) || raw.length === 0) return EMPTY_NEXT_OUTS_SORT.map((row) => ({ ...row }));
   const seen = new Set();
   const out = [];
   let fallbackDirection = "asc";
@@ -120,8 +110,5 @@ function parseManagerSettingsColumn(raw) {
 module.exports = {
   PROJECT_STATUS_OPTIONS,
   OVERVIEW_STATUS_KEYS,
-  DEFAULT_NEXT_OUTS_INCLUDED_PHASES,
-  DEFAULT_NEXT_OUTS_OVERVIEW_KEYS,
-  DEFAULT_NEXT_OUTS_SORT,
   parseManagerSettingsColumn,
 };

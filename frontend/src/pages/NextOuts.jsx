@@ -10,8 +10,6 @@ import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { FIELD_DEFINITIONS } from "../utils/projectListFilters";
 import {
-  DEFAULT_NEXT_OUTS_OVERVIEW_KEYS,
-  DEFAULT_NEXT_OUTS_SORT,
   headingsFromOverviewKeys,
   normalizeManagerSettings,
   projectMatchesNextOutsIncludedPhase,
@@ -201,10 +199,8 @@ export default function NextOuts() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [tileFilters, setTileFilters] = useState({});
-  const [statusHeadings, setStatusHeadings] = useState(() =>
-    headingsFromOverviewKeys(DEFAULT_NEXT_OUTS_OVERVIEW_KEYS)
-  );
-  const [sortLevels, setSortLevels] = useState(DEFAULT_NEXT_OUTS_SORT);
+  const [statusHeadings, setStatusHeadings] = useState([]);
+  const [sortLevels, setSortLevels] = useState([]);
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [isAdmin, setIsAdmin] = useState(false);
   const { hasDrawing } = useDrawingAccess();
@@ -228,7 +224,7 @@ export default function NextOuts() {
       const data = await projectsRes.json();
       const managerSettings = settingsRes.ok
         ? normalizeManagerSettings((await settingsRes.json().catch(() => ({})))?.settings)
-        : normalizeManagerSettings(null);
+        : { nextOutsIncludedPhases: [], nextOutsOverviewKeys: [], nextOutsSort: [] };
       setStatusHeadings(headingsFromOverviewKeys(managerSettings.nextOutsOverviewKeys));
       setSortLevels(managerSettings.nextOutsSort);
       const visibleProjects = data.filter((project) => {
